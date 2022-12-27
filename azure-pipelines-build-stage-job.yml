@@ -35,18 +35,18 @@ jobs:
       - bash: |
           rm -rf upload
           mkdir upload
-          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release
+          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_CI
           if ! grep -q $VERSION MM_VERSION; then
             echo $VERSION > MM_VERSION
           fi
           cat MM_VERSION
           if [ $AGENT_OS = "Darwin" ]
           then
-            cargo build --bin mm2 --release --target x86_64-apple-darwin
+            cargo build --bin mm2 --profile ci --target x86_64-apple-darwin
           else
-            cargo build --bin mm2 --release
+            cargo build --bin mm2 --profile ci
           fi
-        displayName: 'Build MM2 Release'
+        displayName: 'Build MM2'
         condition: ne ( variables['Build.Reason'], 'PullRequest' )
         env:
           MANUAL_MM_VERSION: true
@@ -80,9 +80,9 @@ jobs:
       - bash: |
           if [ $AGENT_OS = "Darwin" ]
           then
-            cargo test --all --target x86_64-apple-darwin -- --test-threads=16
+            cargo test --all --target x86_64-apple-darwin --profile ci -- --test-threads=16
           else
-            cargo test --all -- --test-threads=32
+            cargo test --all --profile ci -- --test-threads=32
           fi
         displayName: 'Test MM2'
         timeoutInMinutes: 22
@@ -105,17 +105,16 @@ jobs:
         # Run unconditionally even if previous steps failed
         condition: true
       - bash: |
-          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 -j
-        displayName: 'Prepare release build upload Linux'
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-CI target/ci/mm2 -j
+        displayName: 'Prepare CI build upload Linux'
         condition: and ( eq( variables['Agent.OS'], 'Linux' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - bash: |
-          cd target/x86_64-apple-darwin/release
-          zip ../../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 -r
-        displayName: 'Prepare release build upload MacOS'
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-CI target/x86_64-apple-darwin/ci/mm2 -j
+        displayName: 'Prepare CI build upload MacOS'
         condition: and ( eq( variables['Agent.OS'], 'Darwin' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - powershell: |
-          7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip .\target\release\mm2.exe .\target\release\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
-        displayName: 'Prepare release build upload Windows'
+          7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-CI.zip .\target\ci\mm2.exe .\target\ci\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
+        displayName: 'Prepare CI build upload Windows'
         condition: and ( eq( variables['Agent.OS'], 'Windows_NT' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       # https://docs.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/copy-files-over-ssh?view=vsts
       - task: CopyFilesOverSSH@0

@@ -60,7 +60,7 @@ impl From<CoinFindError> for HDAccountBalanceRpcError {
 impl From<UnexpectedDerivationMethod> for HDAccountBalanceRpcError {
     fn from(e: UnexpectedDerivationMethod) -> Self {
         match e {
-            UnexpectedDerivationMethod::HDWalletUnavailable => HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet,
+            UnexpectedDerivationMethod::ExpectedHDWallet => HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet,
             unexpected_error => HDAccountBalanceRpcError::Internal(unexpected_error.to_string()),
         }
     }
@@ -97,7 +97,7 @@ impl From<AddressDerivingError> for HDAccountBalanceRpcError {
 impl From<RpcTaskError> for HDAccountBalanceRpcError {
     fn from(e: RpcTaskError) -> Self {
         match e {
-            RpcTaskError::Canceled => HDAccountBalanceRpcError::Internal("Canceled".to_owned()),
+            RpcTaskError::Cancelled => HDAccountBalanceRpcError::Internal("Cancelled".to_owned()),
             RpcTaskError::Timeout(timeout) => HDAccountBalanceRpcError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_)
             // `UnexpectedTaskStatus` and `UnexpectedUserAction` are not expected at the balance request.

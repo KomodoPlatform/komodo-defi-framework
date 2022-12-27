@@ -1,7 +1,7 @@
 //! Human-readable logging and statuses.
 
-use super::executor::{spawn, Timer};
 use super::{now_ms, writeln};
+use crate::executor::{spawn_abortable, AbortOnDropHandle, Timer};
 use crate::filename;
 use chrono::format::strftime::StrftimeItems;
 use chrono::format::DelayedFormat;
@@ -155,6 +155,7 @@ pub fn short_log_time(ms: u64) -> DelayedFormat<StrftimeItems<'static>> {
     // NB: Given that the debugging logs are targeted at the developers and not the users
     // I think it's better to output the time in GMT here
     // in order for the developers to more easily match the events between the various parts of the peer-to-peer system.
+    #[allow(deprecated)]
     let time = Utc.timestamp_millis(ms as i64);
     time.format("%d %H:%M:%S")
 }
@@ -464,6 +465,7 @@ impl Default for LogEntry {
 
 impl LogEntry {
     pub fn format(&self, buf: &mut String) -> Result<(), fmt::Error> {
+        #[allow(deprecated)]
         let time = Local.timestamp_millis(self.time as i64);
         let time_formatted = time.format("%Y-%m-%d %H:%M:%S %z");
         let emotion = if self.emotion.is_empty() { "·" } else { &self.emotion };
@@ -601,6 +603,8 @@ pub struct LogState {
     gravity: PaMutex<Option<Arc<Gravity>>>,
     /// Keeps track of the log level that the log state is initiated with
     level: LogLevel,
+    /// `log_dashboard_sometimes` abort handle if it has been spawned.
+    _dashboard_abort_handle: Option<AbortOnDropHandle>,
 }
 
 #[derive(Clone)]
@@ -608,7 +612,7 @@ pub struct LogArc(pub Arc<LogState>);
 
 impl Deref for LogArc {
     type Target = LogState;
-    fn deref(&self) -> &LogState { &*self.0 }
+    fn deref(&self) -> &LogState { &self.0 }
 }
 
 impl LogArc {
@@ -730,20 +734,21 @@ impl LogState {
             tail: Arc::new(PaMutex::new(VecDeque::with_capacity(64))),
             gravity: PaMutex::new(None),
             level: LogLevel::default(),
+            _dashboard_abort_handle: None,
         }
     }
 
     /// Initialize according to the MM command-line configuration.
     pub fn mm(_conf: &Json) -> LogState {
         let dashboard = Arc::new(PaMutex::new(Vec::new()));
-
-        spawn(log_dashboard_sometimes(Arc::downgrade(&dashboard)));
+        let abort_handle = spawn_abortable(log_dashboard_sometimes(Arc::downgrade(&dashboard)));
 
         LogState {
             dashboard,
             tail: Arc::new(PaMutex::new(VecDeque::with_capacity(64))),
             gravity: PaMutex::new(None),
             level: LogLevel::default(),
+            _dashboard_abort_handle: Some(abort_handle),
         }
     }
 
@@ -769,7 +774,7 @@ impl LogState {
 
     pub fn with_tail(&self, cb: &mut dyn FnMut(&VecDeque<LogEntry>)) {
         let tail = self.tail.lock();
-        cb(&*tail)
+        cb(&tail)
     }
 
     pub fn with_gravity_tail(&self, cb: &mut dyn FnMut(&VecDeque<String>)) {
@@ -777,7 +782,7 @@ impl LogState {
         if let Some(ref gravity) = gravity {
             gravity.flush();
             let tail = gravity.tail.lock();
-            cb(&*tail);
+            cb(&tail);
         }
     }
 

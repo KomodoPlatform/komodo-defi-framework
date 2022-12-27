@@ -1,6 +1,6 @@
 /// The module is responsible for mm2 network stats collection
 ///
-use common::executor::{spawn, Timer};
+use common::executor::{SpawnFuture, Timer};
 use common::{log, now_ms, HttpStatusCode};
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
@@ -259,7 +259,8 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
         add_reserved_peer_addresses(&ctx, peer_id, addresses);
     }
 
-    spawn(stat_collection_loop(ctx, interval));
+    let spawner = ctx.spawner();
+    spawner.spawn(stat_collection_loop(ctx, interval));
 
     Ok("success".into())
 }

@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,
                           TrezorRpcTaskConnectProcessor};
-use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwCtxInitError, HwDeviceInfo, HwError, HwPubkey, HwRpcError,
+use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, HwCtxInitError, HwDeviceInfo, HwError, HwPubkey, HwRpcError,
              HwWalletType, WithHwRpcError};
 use derive_more::Display;
 use enum_from::EnumFromTrait;
@@ -47,8 +47,8 @@ impl From<HwError> for InitHwError {
     fn from(hw_error: HwError) -> Self { from_hw_error(hw_error) }
 }
 
-impl From<CryptoInitError> for InitHwError {
-    fn from(e: CryptoInitError) -> Self { InitHwError::Internal(e.to_string()) }
+impl From<CryptoCtxError> for InitHwError {
+    fn from(e: CryptoCtxError) -> Self { InitHwError::Internal(e.to_string()) }
 }
 
 impl From<HwCtxInitError<RpcTaskError>> for InitHwError {
@@ -66,7 +66,7 @@ impl From<RpcTaskError> for InitHwError {
     fn from(e: RpcTaskError) -> Self {
         let error = e.to_string();
         match e {
-            RpcTaskError::Canceled => InitHwError::Internal("Canceled".to_owned()),
+            RpcTaskError::Cancelled => InitHwError::Internal("Cancelled".to_owned()),
             RpcTaskError::Timeout(timeout) => InitHwError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => InitHwError::Internal(error),
             RpcTaskError::UnexpectedUserAction { expected } => InitHwError::UnexpectedUserAction { expected },
@@ -163,12 +163,13 @@ impl RpcTask for InitHwTask {
 
 pub async fn init_trezor(ctx: MmArc, req: InitHwRequest) -> MmResult<InitRpcTaskResponse, InitHwError> {
     let init_ctx = MmInitContext::from_ctx(&ctx).map_to_mm(InitHwError::Internal)?;
+    let spawner = ctx.spawner();
     let task = InitHwTask {
         ctx,
         hw_wallet_type: HwWalletType::Trezor,
         req,
     };
-    let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_hw_task_manager, task)?;
+    let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_hw_task_manager, &spawner, task)?;
     Ok(InitRpcTaskResponse { task_id })
 }
 

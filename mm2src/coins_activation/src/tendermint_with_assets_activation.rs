@@ -1,22 +1,88 @@
 use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       PlatformWithTokensActivationOps, TokenAsMmCoinInitializer};
+                                       InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
+                                       TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
+                                       TokenInitializer, TokenOf};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::tendermint::{TendermintActivationParams, TendermintCoin, TendermintInitError, TendermintInitErrorKind,
-                        TendermintProtocolInfo};
-use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
+use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
+use coins::tendermint::{TendermintCoin, TendermintCommons, TendermintConf, TendermintInitError,
+                        TendermintInitErrorKind, TendermintProtocolInfo, TendermintToken,
+                        TendermintTokenActivationParams, TendermintTokenInitError, TendermintTokenProtocolInfo};
+use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy};
+use common::executor::{AbortSettings, SpawnAbortable};
 use common::Future01CompatExt;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+use std::collections::HashMap;
+
+impl TokenOf for TendermintToken {
+    type PlatformCoin = TendermintCoin;
+}
+
+impl RegisterTokenInfo<TendermintToken> for TendermintCoin {
+    fn register_token_info(&self, token: &TendermintToken) {
+        self.add_activated_token_info(token.ticker.clone(), token.decimals, token.denom.clone())
+    }
+}
+
+#[derive(Clone, Deserialize)]
+pub struct TendermintActivationParams {
+    rpc_urls: Vec<String>,
+    pub tokens_params: Vec<TokenActivationRequest<TendermintTokenActivationParams>>,
+    #[serde(default)]
+    tx_history: bool,
+}
 
 impl TxHistory for TendermintActivationParams {
-    fn tx_history(&self) -> bool { false }
+    fn tx_history(&self) -> bool { self.tx_history }
+}
+
+struct TendermintTokenInitializer {
+    platform_coin: TendermintCoin,
+}
+
+struct TendermintTokenInitializerErr {
+    ticker: String,
+    inner: TendermintTokenInitError,
+}
+
+#[async_trait]
+impl TokenInitializer for TendermintTokenInitializer {
+    type Token = TendermintToken;
+    type TokenActivationRequest = TendermintTokenActivationParams;
+    type TokenProtocol = TendermintTokenProtocolInfo;
+    type InitTokensError = TendermintTokenInitializerErr;
+
+    fn tokens_requests_from_platform_request(
+        platform_request: &TendermintActivationParams,
+    ) -> Vec<TokenActivationRequest<Self::TokenActivationRequest>> {
+        platform_request.tokens_params.clone()
+    }
+
+    async fn enable_tokens(
+        &self,
+        params: Vec<TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>>,
+    ) -> Result<Vec<Self::Token>, MmError<Self::InitTokensError>> {
+        params
+            .into_iter()
+            .map(|param| {
+                let ticker = param.ticker.clone();
+                TendermintToken::new(
+                    param.ticker,
+                    self.platform_coin.clone(),
+                    param.protocol.decimals,
+                    param.protocol.denom,
+                )
+                .mm_err(|inner| TendermintTokenInitializerErr { ticker, inner })
+            })
+            .collect()
+    }
+
+    fn platform_coin(&self) -> &<Self::Token as TokenOf>::PlatformCoin { &self.platform_coin }
 }
 
 impl TryFromCoinProtocol for TendermintProtocolInfo {
@@ -28,12 +94,39 @@ impl TryFromCoinProtocol for TendermintProtocolInfo {
     }
 }
 
+impl TryFromCoinProtocol for TendermintTokenProtocolInfo {
+    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>> {
+        match proto {
+            CoinProtocol::TENDERMINTTOKEN(proto) => Ok(proto),
+            other => MmError::err(other),
+        }
+    }
+}
+
+impl From<TendermintTokenInitializerErr> for InitTokensAsMmCoinsError {
+    fn from(err: TendermintTokenInitializerErr) -> Self {
+        match err.inner {
+            TendermintTokenInitError::InvalidDenom(error) => InitTokensAsMmCoinsError::TokenProtocolParseError {
+                ticker: err.ticker,
+                error,
+            },
+            TendermintTokenInitError::MyAddressError(error) | TendermintTokenInitError::Internal(error) => {
+                InitTokensAsMmCoinsError::Internal(error)
+            },
+            TendermintTokenInitError::CouldNotFetchBalance(error) => {
+                InitTokensAsMmCoinsError::CouldNotFetchBalance(error)
+            },
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct TendermintActivationResult {
+    ticker: String,
     address: String,
     current_block: u64,
     balance: CoinBalance,
-    ticker: String,
+    tokens_balances: HashMap<String, CoinBalance>,
 }
 
 impl CurrentBlock for TendermintActivationResult {
@@ -54,7 +147,6 @@ impl From<TendermintInitError> for EnablePlatformCoinWithTokensError {
 }
 
 #[async_trait]
-#[allow(unused_variables)]
 impl PlatformWithTokensActivationOps for TendermintCoin {
     type ActivationRequest = TendermintActivationParams;
     type PlatformProtocolInfo = TendermintProtocolInfo;
@@ -62,20 +154,37 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     type ActivationError = TendermintInitError;
 
     async fn enable_platform_coin(
-        _ctx: MmArc,
+        ctx: MmArc,
         ticker: String,
-        _coin_conf: Json,
+        coin_conf: Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
-        priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        TendermintCoin::init(ticker, protocol_conf, activation_request, priv_key).await
+        let conf = TendermintConf::try_from_json(&ticker, &coin_conf)?;
+
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).mm_err(|e| TendermintInitError {
+            ticker: ticker.clone(),
+            kind: TendermintInitErrorKind::Internal(e.to_string()),
+        })?;
+
+        TendermintCoin::init(
+            &ctx,
+            ticker,
+            conf,
+            protocol_conf,
+            activation_request.rpc_urls,
+            activation_request.tx_history,
+            priv_key_policy,
+        )
+        .await
     }
 
     fn token_initializers(
         &self,
     ) -> Vec<Box<dyn TokenAsMmCoinInitializer<PlatformCoin = Self, ActivationRequest = Self::ActivationRequest>>> {
-        Vec::new()
+        vec![Box::new(TendermintTokenInitializer {
+            platform_coin: self.clone(),
+        })]
     }
 
     async fn get_activation_result(&self) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
@@ -84,7 +193,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             kind: TendermintInitErrorKind::RpcError(e),
         })?;
 
-        let balance = self.my_balance().compat().await.mm_err(|e| TendermintInitError {
+        let balances = self.all_balances().await.mm_err(|e| TendermintInitError {
             ticker: self.ticker().to_owned(),
             kind: TendermintInitErrorKind::RpcError(e.to_string()),
         })?;
@@ -92,17 +201,33 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         Ok(TendermintActivationResult {
             address: self.account_id.to_string(),
             current_block,
-            balance,
+            balance: CoinBalance {
+                spendable: balances.platform_balance,
+                unspendable: BigDecimal::default(),
+            },
+            tokens_balances: balances
+                .tokens_balances
+                .into_iter()
+                .map(|(ticker, balance)| {
+                    (ticker, CoinBalance {
+                        spendable: balance,
+                        unspendable: BigDecimal::default(),
+                    })
+                })
+                .collect(),
             ticker: self.ticker().to_owned(),
         })
     }
 
     fn start_history_background_fetching(
         &self,
-        metrics: MetricsArc,
+        ctx: MmArc,
         storage: impl TxHistoryStorage,
         initial_balance: BigDecimal,
-    ) -> AbortHandle {
-        unimplemented!()
+    ) {
+        let fut = tendermint_history_loop(self.clone(), storage, ctx, initial_balance);
+
+        let settings = AbortSettings::info_on_abort(format!("tendermint_history_loop stopped for {}", self.ticker()));
+        self.spawner().spawn_with_settings(fut, settings);
     }
 }

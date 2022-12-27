@@ -1,4 +1,4 @@
-use common::custom_futures::TimeoutError;
+use common::custom_futures::timeout::TimeoutError;
 use derive_more::Display;
 use futures::channel::oneshot;
 use mm2_err_handle::prelude::*;
@@ -52,7 +52,7 @@ pub enum RpcTaskError {
     UnexpectedUserAction {
         expected: String,
     },
-    Canceled,
+    Cancelled,
     Internal(String),
 }
 
@@ -61,6 +61,7 @@ pub enum TaskStatusError {
     Idle,
     InProgress,
     AwaitingUserAction,
+    Cancelled,
     Finished,
 }
 

@@ -1,5 +1,7 @@
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::mm2::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
+#[cfg(target_arch = "wasm32")]
+use crate::mm2::lp_native_dex::init_metamask::{cancel_connect_metamask, connect_metamask, connect_metamask_status};
 use crate::mm2::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot,
                                 stop_simple_market_maker_bot};
 use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
@@ -20,7 +22,7 @@ use coins::rpc_command::{account_balance::account_balance,
                          init_scan_for_new_addresses::{cancel_scan_for_new_addresses, init_scan_for_new_addresses,
                                                        init_scan_for_new_addresses_status},
                          init_withdraw::{cancel_withdraw, init_withdraw, withdraw_status, withdraw_user_action}};
-use coins::tendermint::TendermintCoin;
+use coins::tendermint::{TendermintCoin, TendermintToken};
 use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
@@ -29,8 +31,9 @@ use coins::{add_delegation, get_raw_transaction, get_staking_infos, remove_deleg
             withdraw};
 #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 use coins::{SolanaCoin, SplToken};
-use coins_activation::{cancel_init_standalone_coin, enable_l2, enable_platform_coin_with_tokens, enable_token,
-                       init_standalone_coin, init_standalone_coin_status, init_standalone_coin_user_action};
+use coins_activation::{cancel_init_l2, cancel_init_standalone_coin, enable_platform_coin_with_tokens, enable_token,
+                       init_l2, init_l2_status, init_l2_user_action, init_standalone_coin,
+                       init_standalone_coin_status, init_standalone_coin_user_action};
 use common::log::{error, warn};
 use common::HttpStatusCode;
 use futures::Future as Future03;
@@ -43,10 +46,7 @@ use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 
 cfg_native! {
-    use coins::lightning::{add_trusted_node, close_channel, connect_to_lightning_node, generate_invoice, get_channel_details,
-        get_claimable_balances, get_payment_details, list_closed_channels_by_filter, list_open_channels_by_filter,
-        list_payments_by_filter, list_trusted_nodes, open_channel, remove_trusted_node, send_payment, update_channel,
-        LightningCoin};
+    use coins::lightning::LightningCoin;
     use coins::z_coin::ZCoin;
 }
 
@@ -136,6 +136,12 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         return gui_storage_dispatcher(request, ctx, &gui_storage_method).await;
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(lightning_method) = request.method.strip_prefix("lightning::") {
+        let lightning_method = lightning_method.to_owned();
+        return lightning_dispatcher(request, ctx, &lightning_method).await;
+    }
+
     match request.method.as_str() {
         "account_balance" => handle_mmrpc(ctx, request, account_balance).await,
         "add_delegation" => handle_mmrpc(ctx, request, add_delegation).await,
@@ -148,6 +154,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "enable_tendermint_with_assets" => {
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },
+        "enable_tendermint_token" => handle_mmrpc(ctx, request, enable_token::<TendermintToken>).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
@@ -171,28 +178,12 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
         #[cfg(not(target_arch = "wasm32"))]
         native_only_methods => match native_only_methods {
-            "add_trusted_node" => handle_mmrpc(ctx, request, add_trusted_node).await,
-            "close_channel" => handle_mmrpc(ctx, request, close_channel).await,
-            "connect_to_lightning_node" => handle_mmrpc(ctx, request, connect_to_lightning_node).await,
-            "enable_lightning" => handle_mmrpc(ctx, request, enable_l2::<LightningCoin>).await,
             #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
             "enable_solana_with_tokens" => {
                 handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<SolanaCoin>).await
             },
             #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
             "enable_spl" => handle_mmrpc(ctx, request, enable_token::<SplToken>).await,
-            "generate_invoice" => handle_mmrpc(ctx, request, generate_invoice).await,
-            "get_channel_details" => handle_mmrpc(ctx, request, get_channel_details).await,
-            "get_claimable_balances" => handle_mmrpc(ctx, request, get_claimable_balances).await,
-            "get_payment_details" => handle_mmrpc(ctx, request, get_payment_details).await,
-            "list_closed_channels_by_filter" => handle_mmrpc(ctx, request, list_closed_channels_by_filter).await,
-            "list_open_channels_by_filter" => handle_mmrpc(ctx, request, list_open_channels_by_filter).await,
-            "list_payments_by_filter" => handle_mmrpc(ctx, request, list_payments_by_filter).await,
-            "list_trusted_nodes" => handle_mmrpc(ctx, request, list_trusted_nodes).await,
-            "open_channel" => handle_mmrpc(ctx, request, open_channel).await,
-            "remove_trusted_node" => handle_mmrpc(ctx, request, remove_trusted_node).await,
-            "send_payment" => handle_mmrpc(ctx, request, send_payment).await,
-            "update_channel" => handle_mmrpc(ctx, request, update_channel).await,
             "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
             _ => MmError::err(DispatcherError::NoSuchMethod),
         },
@@ -244,6 +235,10 @@ async fn rpc_task_dispatcher(
         "withdraw::user_action" => handle_mmrpc(ctx, request, withdraw_user_action).await,
         #[cfg(not(target_arch = "wasm32"))]
         native_only_methods => match native_only_methods {
+            "enable_lightning::cancel" => handle_mmrpc(ctx, request, cancel_init_l2::<LightningCoin>).await,
+            "enable_lightning::init" => handle_mmrpc(ctx, request, init_l2::<LightningCoin>).await,
+            "enable_lightning::status" => handle_mmrpc(ctx, request, init_l2_status::<LightningCoin>).await,
+            "enable_lightning::user_action" => handle_mmrpc(ctx, request, init_l2_user_action::<LightningCoin>).await,
             "enable_z_coin::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<ZCoin>).await,
             "enable_z_coin::init" => handle_mmrpc(ctx, request, init_standalone_coin::<ZCoin>).await,
             "enable_z_coin::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<ZCoin>).await,
@@ -251,7 +246,12 @@ async fn rpc_task_dispatcher(
             _ => MmError::err(DispatcherError::NoSuchMethod),
         },
         #[cfg(target_arch = "wasm32")]
-        _ => MmError::err(DispatcherError::NoSuchMethod),
+        wasm_only_methods => match wasm_only_methods {
+            "connect_metamask::cancel" => handle_mmrpc(ctx, request, cancel_connect_metamask).await,
+            "connect_metamask::init" => handle_mmrpc(ctx, request, connect_metamask).await,
+            "connect_metamask::status" => handle_mmrpc(ctx, request, connect_metamask_status).await,
+            _ => MmError::err(DispatcherError::NoSuchMethod),
+        },
     }
 }
 
@@ -279,6 +279,43 @@ async fn gui_storage_dispatcher(
         "set_account_balance" => handle_mmrpc(ctx, request, gui_storage_rpc::set_account_balance).await,
         "set_account_description" => handle_mmrpc(ctx, request, gui_storage_rpc::set_account_description).await,
         "set_account_name" => handle_mmrpc(ctx, request, gui_storage_rpc::set_account_name).await,
+        _ => MmError::err(DispatcherError::NoSuchMethod),
+    }
+}
+
+/// `lightning` dispatcher.
+///
+/// # Note
+///
+/// `lightning_method` is a method name with the `lightning::` prefix removed.
+#[cfg(not(target_arch = "wasm32"))]
+async fn lightning_dispatcher(
+    request: MmRpcRequest,
+    ctx: MmArc,
+    lightning_method: &str,
+) -> DispatcherResult<Response<Vec<u8>>> {
+    use coins::rpc_command::lightning::{channels, nodes, payments};
+
+    match lightning_method {
+        "channels::close_channel" => handle_mmrpc(ctx, request, channels::close_channel).await,
+        "channels::get_channel_details" => handle_mmrpc(ctx, request, channels::get_channel_details).await,
+        "channels::get_claimable_balances" => handle_mmrpc(ctx, request, channels::get_claimable_balances).await,
+        "channels::list_closed_channels_by_filter" => {
+            handle_mmrpc(ctx, request, channels::list_closed_channels_by_filter).await
+        },
+        "channels::list_open_channels_by_filter" => {
+            handle_mmrpc(ctx, request, channels::list_open_channels_by_filter).await
+        },
+        "channels::open_channel" => handle_mmrpc(ctx, request, channels::open_channel).await,
+        "channels::update_channel" => handle_mmrpc(ctx, request, channels::update_channel).await,
+        "nodes::add_trusted_node" => handle_mmrpc(ctx, request, nodes::add_trusted_node).await,
+        "nodes::connect_to_node" => handle_mmrpc(ctx, request, nodes::connect_to_node).await,
+        "nodes::list_trusted_nodes" => handle_mmrpc(ctx, request, nodes::list_trusted_nodes).await,
+        "nodes::remove_trusted_node" => handle_mmrpc(ctx, request, nodes::remove_trusted_node).await,
+        "payments::generate_invoice" => handle_mmrpc(ctx, request, payments::generate_invoice).await,
+        "payments::get_payment_details" => handle_mmrpc(ctx, request, payments::get_payment_details).await,
+        "payments::list_payments_by_filter" => handle_mmrpc(ctx, request, payments::list_payments_by_filter).await,
+        "payments::send_payment" => handle_mmrpc(ctx, request, payments::send_payment).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

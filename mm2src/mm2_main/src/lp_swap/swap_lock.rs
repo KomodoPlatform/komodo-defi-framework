@@ -57,10 +57,8 @@ mod native_lock {
     impl SwapLockOps for SwapLock {
         async fn lock(ctx: &MmArc, swap_uuid: Uuid, ttl_sec: f64) -> SwapLockResult<Option<SwapLock>> {
             let lock_path = my_swaps_dir(ctx).join(format!("{}.lock", swap_uuid));
-            let file_lock = match FileLock::lock(lock_path, ttl_sec)? {
-                Some(lock) => lock,
-                None => return Ok(None),
-            };
+            let file_lock = some_or_return_ok_none!(FileLock::lock(lock_path, ttl_sec)?);
+
             Ok(Some(SwapLock { file_lock }))
         }
 
@@ -73,7 +71,7 @@ mod wasm_lock {
     use super::*;
     use crate::mm2::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, ItemId, SwapLockTable};
     use crate::mm2::lp_swap::SwapsContext;
-    use common::executor::spawn;
+    use common::executor::SpawnFuture;
     use common::log::{debug, error};
     use common::{now_float, now_ms};
 
@@ -121,7 +119,7 @@ mod wasm_lock {
                 }
                 debug!("SwapLock::drop] Finish");
             };
-            spawn(fut);
+            self.ctx.spawner().spawn(fut);
         }
     }
 

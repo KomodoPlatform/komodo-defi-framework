@@ -11,10 +11,9 @@ use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  OrdermatchContext, SetPriceReq},
                  lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
 use coins::{lp_coinfind, GetNonZeroBalance};
-use common::Future01CompatExt;
-use common::{executor::{spawn, Timer},
+use common::{executor::{SpawnFuture, Timer},
              log::{debug, error, info, warn},
-             HttpStatusCode, StatusCode};
+             Future01CompatExt, HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -111,7 +110,6 @@ impl From<std::string::String> for OrderProcessingError {
     fn from(error: std::string::String) -> Self { OrderProcessingError::LegacyError(error) }
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 pub struct StartSimpleMakerBotRequest {
     cfg: SimpleMakerBotRegistry,
@@ -119,24 +117,13 @@ pub struct StartSimpleMakerBotRequest {
     bot_refresh_rate: Option<f64>,
 }
 
-#[cfg(test)]
-impl StartSimpleMakerBotRequest {
-    pub fn new() -> StartSimpleMakerBotRequest {
-        return StartSimpleMakerBotRequest {
-            cfg: Default::default(),
-            price_url: None,
-            bot_refresh_rate: None,
-        };
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StopSimpleMakerBotRes {
     result: String,
 }
 
-#[cfg(test)]
 impl StopSimpleMakerBotRes {
+    #[allow(dead_code)]
     pub fn get_result(&self) -> String { self.result.clone() }
 }
 
@@ -145,8 +132,8 @@ pub struct StartSimpleMakerBotRes {
     result: String,
 }
 
-#[cfg(test)]
 impl StartSimpleMakerBotRes {
+    #[allow(dead_code)]
     pub fn get_result(&self) -> String { self.result.clone() }
 }
 
@@ -733,7 +720,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             drop(state);
             let event: TradingBotEvent = TradingBotStarted { nb_pairs }.into();
             dispatcher.dispatch_async(ctx.clone(), event.into()).await;
-            spawn(lp_bot_loop(ctx.clone()));
+            ctx.spawner().spawn(lp_bot_loop(ctx.clone()));
             Ok(StartSimpleMakerBotRes {
                 result: "Success".to_string(),
             })
@@ -762,5 +749,40 @@ pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleM
                 result: "Success".to_string(),
             })
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest};
+    use common::block_on;
+    use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
+    use serde_json::Value as Json;
+
+    #[test]
+    fn test_start_and_stop_simple_market_maker_bot_from_ctx() {
+        let ctx = mm_ctx_with_iguana(Some(
+            "also shoot benefit prefer juice shell elder veteran woman mimic image kidney",
+        ));
+
+        let cloned_ctx = ctx.clone();
+        let another_cloned_ctx = ctx.clone();
+        let req = StartSimpleMakerBotRequest {
+            cfg: Default::default(),
+            price_url: None,
+            bot_refresh_rate: None,
+        };
+        let answer = block_on(start_simple_market_maker_bot(ctx, req)).unwrap();
+        assert_eq!(answer.get_result(), "Success");
+
+        let req = StartSimpleMakerBotRequest {
+            cfg: Default::default(),
+            price_url: None,
+            bot_refresh_rate: None,
+        };
+        let answer = block_on(start_simple_market_maker_bot(cloned_ctx, req));
+        assert!(answer.is_err());
+        let answer = block_on(stop_simple_market_maker_bot(another_cloned_ctx, Json::default())).unwrap();
+        assert_eq!(answer.get_result(), "Success");
     }
 }

@@ -1,10 +1,11 @@
-use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::coin_errors::MyAddressError;
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
-use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
-                                UtxoFieldsWithIguanaPrivKeyBuilder};
+use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
+                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
+                                UtxoFieldsWithIguanaSecretBuilder};
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
                                payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address,
@@ -12,20 +13,28 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
                   UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
-use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyActivationPolicy, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyActivationPolicy, PrivKeyBuildPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps,
+            TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
             TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
+            WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
-use bitcrypto::{dhash160, dhash256};
+use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
+use common::executor::{AbortableSystem, AbortedError};
+use common::sha256_digest;
 use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
+use crypto::{Bip32DerPathOps, GlobalHDAccountArc, StandardHDPathToCoin};
 use db_common::sqlite::offset_by_id;
 use db_common::sqlite::rusqlite::{Error as SqlError, Row, NO_PARAMS};
 use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
@@ -46,6 +55,7 @@ use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
+use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
 use zcash_client_backend::data_api::WalletRead;
@@ -62,8 +72,10 @@ use zcash_primitives::sapling::note_encryption::try_sapling_output_recovery;
 use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
+use zcash_primitives::zip32::ChildIndex as Zip32Child;
 use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
+use zcash_proofs::default_params_folder;
 use zcash_proofs::prover::LocalTxProver;
 
 mod z_htlc;
@@ -103,6 +115,10 @@ const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
 const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
 const TRANSACTIONS_TABLE: &str = "transactions";
 const BLOCKS_TABLE: &str = "blocks";
+const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
+const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
+const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
+const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinConsensusParams {
@@ -133,6 +149,8 @@ pub struct CheckPointBlockInfo {
 pub struct ZcoinProtocolInfo {
     consensus_params: ZcoinConsensusParams,
     check_point_block: Option<CheckPointBlockInfo>,
+    // `z_derivation_path` can be the same or different from [`UtxoCoinFields::derivation_path`].
+    z_derivation_path: Option<StandardHDPathToCoin>,
 }
 
 impl Parameters for ZcoinConsensusParams {
@@ -696,6 +714,7 @@ pub struct ZcoinActivationParams {
     pub mode: ZcoinRpcMode,
     pub required_confirmations: Option<u64>,
     pub requires_notarization: Option<bool>,
+    pub zcash_params_path: Option<String>,
 }
 
 pub async fn z_coin_from_conf_and_params(
@@ -704,11 +723,40 @@ pub async fn z_coin_from_conf_and_params(
     conf: &Json,
     params: &ZcoinActivationParams,
     protocol_info: ZcoinProtocolInfo,
-    secp_priv_key: &[u8],
+    priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
-    let z_key = ExtendedSpendingKey::master(secp_priv_key);
-    let db_dir = ctx.dbdir();
-    z_coin_from_conf_and_params_with_z_key(ctx, ticker, conf, params, secp_priv_key, db_dir, z_key, protocol_info).await
+    let db_dir_path = ctx.dbdir();
+    let z_spending_key = None;
+    let builder = ZCoinBuilder::new(
+        ctx,
+        ticker,
+        conf,
+        params,
+        priv_key_policy,
+        db_dir_path,
+        z_spending_key,
+        protocol_info,
+    );
+    builder.build().await
+}
+
+fn verify_checksum_zcash_params(spend_path: &PathBuf, output_path: &PathBuf) -> Result<bool, ZCoinBuildError> {
+    let spend_hash = sha256_digest(spend_path)?;
+    let out_hash = sha256_digest(output_path)?;
+    Ok(spend_hash == SAPLING_SPEND_EXPECTED_HASH && out_hash == SAPLING_OUTPUT_EXPECTED_HASH)
+}
+
+fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCoinBuildError> {
+    if !params_dir.exists() {
+        return Err(ZCoinBuildError::ZCashParamsNotFound);
+    };
+    let spend_path = params_dir.join(SAPLING_SPEND_NAME);
+    let output_path = params_dir.join(SAPLING_OUTPUT_NAME);
+
+    if !(spend_path.exists() && output_path.exists()) {
+        return Err(ZCoinBuildError::ZCashParamsNotFound);
+    }
+    Ok((spend_path, output_path))
 }
 
 pub struct ZCoinBuilder<'a> {
@@ -717,9 +765,10 @@ pub struct ZCoinBuilder<'a> {
     conf: &'a Json,
     z_coin_params: &'a ZcoinActivationParams,
     utxo_params: UtxoActivationParams,
-    secp_priv_key: &'a [u8],
+    priv_key_policy: PrivKeyBuildPolicy,
     db_dir_path: PathBuf,
-    z_spending_key: ExtendedSpendingKey,
+    /// `Some` if `ZCoin` should be initialized with a forced spending key.
+    z_spending_key: Option<ExtendedSpendingKey>,
     protocol_info: ZcoinProtocolInfo,
 }
 
@@ -733,22 +782,31 @@ impl<'a> UtxoCoinBuilderCommonOps for ZCoinBuilder<'a> {
     fn ticker(&self) -> &str { self.ticker }
 }
 
-#[async_trait]
-impl<'a> UtxoFieldsWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {}
+impl<'a> UtxoFieldsWithIguanaSecretBuilder for ZCoinBuilder<'a> {}
+
+impl<'a> UtxoFieldsWithGlobalHDBuilder for ZCoinBuilder<'a> {}
+
+/// Although, `ZCoin` doesn't support [`PrivKeyBuildPolicy::Trezor`] yet,
+/// `UtxoCoinBuilder` trait requires `UtxoFieldsWithHardwareWalletBuilder` to be implemented.
+impl<'a> UtxoFieldsWithHardwareWalletBuilder for ZCoinBuilder<'a> {}
 
 #[async_trait]
-impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
+impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
     type ResultCoin = ZCoin;
     type Error = ZCoinBuildError;
 
-    fn priv_key(&self) -> &[u8] { self.secp_priv_key }
+    fn priv_key_policy(&self) -> PrivKeyBuildPolicy { self.priv_key_policy.clone() }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
-        let utxo = self.build_utxo_fields_with_iguana_priv_key(self.priv_key()).await?;
+        let utxo = self.build_utxo_fields().await?;
         let utxo_arc = UtxoArc::new(utxo);
 
-        let (_, my_z_addr) = self
-            .z_spending_key
+        let z_spending_key = match self.z_spending_key {
+            Some(ref z_spending_key) => z_spending_key.clone(),
+            None => extended_spending_key_from_protocol_info_and_policy(&self.protocol_info, &self.priv_key_policy)?,
+        };
+
+        let (_, my_z_addr) = z_spending_key
             .default_address()
             .map_err(|_| MmError::new(ZCoinBuildError::GetAddressError))?;
 
@@ -759,16 +817,28 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         .expect("DEX_FEE_Z_ADDR is a valid z-address")
         .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
-        let z_tx_prover = async_blocking(LocalTxProver::with_default_location)
-            .await
-            .or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
+        let params_dir = match &self.z_coin_params.zcash_params_path {
+            None => default_params_folder().or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?,
+            Some(file_path) => PathBuf::from(file_path),
+        };
+
+        let z_tx_prover = async_blocking(move || {
+            let (spend_path, output_path) = get_spend_output_paths(params_dir)?;
+            let verification_successful = verify_checksum_zcash_params(&spend_path, &output_path)?;
+            if verification_successful {
+                Ok(LocalTxProver::new(&spend_path, &output_path))
+            } else {
+                MmError::err(ZCoinBuildError::SaplingParamsInvalidChecksum)
+            }
+        })
+        .await?;
 
         let my_z_addr_encoded = encode_payment_address(
             self.protocol_info.consensus_params.hrp_sapling_payment_address(),
             &my_z_addr,
         );
 
-        let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
+        let evk = ExtendedFullViewingKey::from(&z_spending_key);
         let cache_db_path = self.db_dir_path.join(format!("{}_cache.db", self.ticker));
         let wallet_db_path = self.db_dir_path.join(format!("{}_wallet.db", self.ticker));
         let blocks_db =
@@ -810,8 +880,8 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             dex_fee_addr,
             my_z_addr,
             my_z_addr_encoded,
-            evk: ExtendedFullViewingKey::from(&self.z_spending_key),
-            z_spending_key: self.z_spending_key,
+            evk: ExtendedFullViewingKey::from(&z_spending_key),
+            z_spending_key,
             z_tx_prover: Arc::new(z_tx_prover),
             light_wallet_db,
             consensus_params: self.protocol_info.consensus_params,
@@ -834,9 +904,9 @@ impl<'a> ZCoinBuilder<'a> {
         ticker: &'a str,
         conf: &'a Json,
         z_coin_params: &'a ZcoinActivationParams,
-        secp_priv_key: &'a [u8],
+        priv_key_policy: PrivKeyBuildPolicy,
         db_dir_path: PathBuf,
-        z_spending_key: ExtendedSpendingKey,
+        z_spending_key: Option<ExtendedSpendingKey>,
         protocol_info: ZcoinProtocolInfo,
     ) -> ZCoinBuilder<'a> {
         let utxo_mode = match &z_coin_params.mode {
@@ -854,7 +924,7 @@ impl<'a> ZCoinBuilder<'a> {
             address_format: None,
             gap_limit: None,
             enable_params: Default::default(),
-            priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
+            priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
             check_utxo_maturity: None,
         };
         ZCoinBuilder {
@@ -863,7 +933,7 @@ impl<'a> ZCoinBuilder<'a> {
             conf,
             z_coin_params,
             utxo_params,
-            secp_priv_key,
+            priv_key_policy,
             db_dir_path,
             z_spending_key,
             protocol_info,
@@ -871,13 +941,15 @@ impl<'a> ZCoinBuilder<'a> {
     }
 }
 
+/// Initialize `ZCoin` with a forced `z_spending_key`.
+#[cfg(all(test, feature = "zhtlc-native-tests"))]
 #[allow(clippy::too_many_arguments)]
 async fn z_coin_from_conf_and_params_with_z_key(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
     params: &ZcoinActivationParams,
-    secp_priv_key: &[u8],
+    priv_key_policy: PrivKeyBuildPolicy,
     db_dir_path: PathBuf,
     z_spending_key: ExtendedSpendingKey,
     protocol_info: ZcoinProtocolInfo,
@@ -887,9 +959,9 @@ async fn z_coin_from_conf_and_params_with_z_key(
         ticker,
         conf,
         params,
-        secp_priv_key,
+        priv_key_policy,
         db_dir_path,
-        z_spending_key,
+        Some(z_spending_key),
         protocol_info,
     );
     builder.build().await
@@ -977,12 +1049,14 @@ impl MarketCoinOps for ZCoin {
         utxo_common::wait_for_confirmations(self.as_ref(), tx, confirmations, requires_nota, wait_until, check_every)
     }
 
-    fn wait_for_tx_spend(
+    fn wait_for_htlc_tx_spend(
         &self,
         transaction: &[u8],
+        _secret_hash: &[u8],
         wait_until: u64,
         from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        check_every: f64,
     ) -> TransactionFut {
         utxo_common::wait_for_output_spend(
             self.as_ref(),
@@ -990,6 +1064,7 @@ impl MarketCoinOps for ZCoin {
             utxo_common::DEFAULT_SWAP_VOUT,
             from_block,
             wait_until,
+            check_every,
         )
     }
 
@@ -1029,19 +1104,13 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_payment(
-        &self,
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
+    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs<'_>) -> TransactionFut {
         let selfi = self.clone();
-        let maker_key_pair = self.derive_htlc_key_pair(swap_unique_data);
-        let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
-        let secret_hash = secret_hash.to_vec();
+        let maker_key_pair = self.derive_htlc_key_pair(maker_payment_args.swap_unique_data);
+        let taker_pub = try_tx_fus!(Public::from_slice(maker_payment_args.other_pubkey));
+        let secret_hash = maker_payment_args.secret_hash.to_vec();
+        let time_lock = maker_payment_args.time_lock;
+        let amount = maker_payment_args.amount;
         let fut = async move {
             let utxo_tx = try_tx_s!(
                 z_send_htlc(
@@ -1059,19 +1128,13 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_payment(
-        &self,
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
+    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs<'_>) -> TransactionFut {
         let selfi = self.clone();
-        let taker_keypair = self.derive_htlc_key_pair(swap_unique_data);
-        let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
-        let secret_hash = secret_hash.to_vec();
+        let taker_keypair = self.derive_htlc_key_pair(taker_payment_args.swap_unique_data);
+        let maker_pub = try_tx_fus!(Public::from_slice(taker_payment_args.other_pubkey));
+        let secret_hash = taker_payment_args.secret_hash.to_vec();
+        let time_lock = taker_payment_args.time_lock;
+        let amount = taker_payment_args.amount;
         let fut = async move {
             let utxo_tx = try_tx_s!(
                 z_send_htlc(
@@ -1091,23 +1154,19 @@ impl SwapOps for ZCoin {
 
     fn send_maker_spends_taker_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs<'_>,
     ) -> TransactionFut {
-        let tx = try_tx_fus!(ZTransaction::read(taker_payment_tx));
-        let key_pair = self.derive_htlc_key_pair(swap_unique_data);
+        let tx = try_tx_fus!(ZTransaction::read(maker_spends_payment_args.other_payment_tx));
+        let key_pair = self.derive_htlc_key_pair(maker_spends_payment_args.swap_unique_data);
+        let time_lock = maker_spends_payment_args.time_lock;
         let redeem_script = payment_script(
             time_lock,
-            &*dhash160(secret),
-            &try_tx_fus!(Public::from_slice(taker_pub)),
+            maker_spends_payment_args.secret_hash,
+            &try_tx_fus!(Public::from_slice(maker_spends_payment_args.other_pubkey)),
             key_pair.public(),
         );
         let script_data = ScriptBuilder::default()
-            .push_data(secret)
+            .push_data(maker_spends_payment_args.secret)
             .push_opcode(Opcode::OP_0)
             .into_script();
         let selfi = self.clone();
@@ -1125,38 +1184,23 @@ impl SwapOps for ZCoin {
             Ok(tx.into())
         };
         Box::new(fut.boxed().compat())
-    }
-
-    fn create_taker_spends_maker_payment_preimage(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!();
     }
 
     fn send_taker_spends_maker_payment(
         &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs<'_>,
     ) -> TransactionFut {
-        let tx = try_tx_fus!(ZTransaction::read(maker_payment_tx));
-        let key_pair = self.derive_htlc_key_pair(swap_unique_data);
+        let tx = try_tx_fus!(ZTransaction::read(taker_spends_payment_args.other_payment_tx));
+        let key_pair = self.derive_htlc_key_pair(taker_spends_payment_args.swap_unique_data);
+        let time_lock = taker_spends_payment_args.time_lock;
         let redeem_script = payment_script(
             time_lock,
-            &*dhash160(secret),
-            &try_tx_fus!(Public::from_slice(maker_pub)),
+            taker_spends_payment_args.secret_hash,
+            &try_tx_fus!(Public::from_slice(taker_spends_payment_args.other_pubkey)),
             key_pair.public(),
         );
         let script_data = ScriptBuilder::default()
-            .push_data(secret)
+            .push_data(taker_spends_payment_args.secret)
             .push_opcode(Opcode::OP_0)
             .into_script();
         let selfi = self.clone();
@@ -1176,26 +1220,18 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
-        unimplemented!();
-    }
-
     fn send_taker_refunds_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        taker_refunds_payment_args: SendTakerRefundsPaymentArgs<'_>,
     ) -> TransactionFut {
-        let tx = try_tx_fus!(ZTransaction::read(taker_payment_tx));
-        let key_pair = self.derive_htlc_key_pair(swap_unique_data);
+        let tx = try_tx_fus!(ZTransaction::read(taker_refunds_payment_args.payment_tx));
+        let key_pair = self.derive_htlc_key_pair(taker_refunds_payment_args.swap_unique_data);
+        let time_lock = taker_refunds_payment_args.time_lock;
         let redeem_script = payment_script(
             time_lock,
-            secret_hash,
+            taker_refunds_payment_args.secret_hash,
             key_pair.public(),
-            &try_tx_fus!(Public::from_slice(maker_pub)),
+            &try_tx_fus!(Public::from_slice(taker_refunds_payment_args.other_pubkey)),
         );
         let script_data = ScriptBuilder::default().push_opcode(Opcode::OP_1).into_script();
         let selfi = self.clone();
@@ -1217,20 +1253,16 @@ impl SwapOps for ZCoin {
 
     fn send_maker_refunds_payment(
         &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>,
     ) -> TransactionFut {
-        let tx = try_tx_fus!(ZTransaction::read(maker_payment_tx));
-        let key_pair = self.derive_htlc_key_pair(swap_unique_data);
+        let tx = try_tx_fus!(ZTransaction::read(maker_refunds_payment_args.payment_tx));
+        let key_pair = self.derive_htlc_key_pair(maker_refunds_payment_args.swap_unique_data);
+        let time_lock = maker_refunds_payment_args.time_lock;
         let redeem_script = payment_script(
             time_lock,
-            secret_hash,
+            maker_refunds_payment_args.secret_hash,
             key_pair.public(),
-            &try_tx_fus!(Public::from_slice(taker_pub)),
+            &try_tx_fus!(Public::from_slice(maker_refunds_payment_args.other_pubkey)),
         );
         let script_data = ScriptBuilder::default().push_opcode(Opcode::OP_1).into_script();
         let selfi = self.clone();
@@ -1252,19 +1284,15 @@ impl SwapOps for ZCoin {
 
     fn validate_fee(
         &self,
-        fee_tx: &TransactionEnum,
-        _expected_sender: &[u8],
-        _fee_addr: &[u8],
-        amount: &BigDecimal,
-        min_block_number: u64,
-        uuid: &[u8],
+        validate_fee_args: ValidateFeeArgs<'_>,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let z_tx = match fee_tx {
+        let z_tx = match validate_fee_args.fee_tx {
             TransactionEnum::ZTransaction(t) => t.clone(),
-            _ => panic!("Unexpected tx {:?}", fee_tx),
+            _ => panic!("Unexpected tx {:?}", validate_fee_args.fee_tx),
         };
-        let amount_sat = try_fus!(sat_from_big_decimal(amount, self.utxo_arc.decimals));
-        let expected_memo = MemoBytes::from_bytes(uuid).expect("Uuid length < 512");
+        let amount_sat = try_fus!(sat_from_big_decimal(validate_fee_args.amount, self.utxo_arc.decimals));
+        let expected_memo = MemoBytes::from_bytes(validate_fee_args.uuid).expect("Uuid length < 512");
+        let min_block_number = validate_fee_args.min_block_number;
 
         let coin = self.clone();
         let fut = async move {
@@ -1335,33 +1363,31 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_maker_payment(self, input)
     }
 
+    #[inline]
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_taker_payment(self, input)
     }
 
-    fn watcher_validate_taker_payment(
-        &self,
-        _input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
-        unimplemented!();
-    }
-
+    #[inline]
     fn check_if_my_payment_sent(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        _search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        if_my_payment_spent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
+        utxo_common::check_if_my_payment_sent(
+            self.clone(),
+            if_my_payment_spent_args.time_lock,
+            if_my_payment_spent_args.other_pub,
+            if_my_payment_spent_args.secret_hash,
+            if_my_payment_spent_args.swap_unique_data,
+        )
     }
 
+    #[inline]
     async fn search_for_swap_tx_spend_my(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
@@ -1369,6 +1395,7 @@ impl SwapOps for ZCoin {
         utxo_common::search_for_swap_tx_spend_my(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
+    #[inline]
     async fn search_for_swap_tx_spend_other(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
@@ -1376,10 +1403,16 @@ impl SwapOps for ZCoin {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
+        unimplemented!();
+    }
+
+    #[inline]
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
+    #[inline]
     fn negotiate_swap_contract_addr(
         &self,
         _other_side_address: Option<&[u8]>,
@@ -1395,14 +1428,106 @@ impl SwapOps for ZCoin {
         key_pair_from_secret(key.as_slice()).expect("valid privkey")
     }
 
+    #[inline]
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
+    }
+
+    async fn maker_payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+        _maker_lock_duration: u64,
+        _expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    async fn taker_payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+        _expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    fn validate_maker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+        _maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn validate_taker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn is_supported_by_watchers(&self) -> bool { false }
+}
+
+#[async_trait]
+impl WatcherOps for ZCoin {
+    fn create_maker_payment_spend_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn send_maker_payment_spend_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn create_taker_payment_refund_preimage(
+        &self,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn send_taker_payment_refund_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        _input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
+        unimplemented!();
     }
 }
 
 #[async_trait]
 impl MmCoin for ZCoin {
     fn is_asset_chain(&self) -> bool { self.utxo_arc.conf.asset_chain }
+
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.as_ref().abortable_system) }
 
     fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut {
         Box::new(futures01::future::err(MmError::new(WithdrawError::InternalError(
@@ -1412,6 +1537,14 @@ impl MmCoin for ZCoin {
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
+    }
+
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+        Box::new(
+            utxo_common::get_tx_hex_by_hash(&self.utxo_arc, tx_hash)
+                .boxed()
+                .compat(),
+        )
     }
 
     fn decimals(&self) -> u8 { self.utxo_arc.decimals }
@@ -1460,7 +1593,7 @@ impl MmCoin for ZCoin {
         })
     }
 
-    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         utxo_common::get_receiver_trade_fee(self.clone())
     }
 
@@ -1490,6 +1623,8 @@ impl MmCoin for ZCoin {
 
     fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
 
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { utxo_common::fallback_swap_contract() }
+
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
 
     fn coin_protocol_info(&self) -> Vec<u8> { utxo_common::coin_protocol_info(self) }
@@ -1497,6 +1632,10 @@ impl MmCoin for ZCoin {
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
         utxo_common::is_coin_protocol_supported(self, info)
     }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
+
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }
 
 #[async_trait]
@@ -1550,8 +1689,8 @@ impl GetUtxoListOps for ZCoin {
 
 #[async_trait]
 impl UtxoCommonOps for ZCoin {
-    async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64> {
-        utxo_common::get_htlc_spend_fee(self, tx_size).await
+    async fn get_htlc_spend_fee(&self, tx_size: u64, stage: &FeeApproxStage) -> UtxoRpcResult<u64> {
+        utxo_common::get_htlc_spend_fee(self, tx_size, stage).await
     }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String> {
@@ -1679,13 +1818,15 @@ impl InitWithdrawCoin for ZCoin {
 
         task_handle.update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)?;
         let satoshi = sat_from_big_decimal(&amount, self.decimals())?;
+
+        let memo = req.memo.map(|memo| interpret_memo_string(&memo)).transpose()?;
         let z_output = ZOutput {
             to_addr,
             amount: Amount::from_u64(satoshi)
                 .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {}", amount)))?,
             // TODO add optional viewing_key and memo fields to the WithdrawRequest
             viewing_key: Some(self.z_fields.evk.fvk.ovk),
-            memo: None,
+            memo,
         };
 
         let (tx, data, _sync_guard) = self.gen_tx(vec![], vec![z_output]).await?;
@@ -1721,6 +1862,68 @@ impl InitWithdrawCoin for ZCoin {
     }
 }
 
+/// Interpret a string or hex-encoded memo, and return a Memo object.
+/// Inspired by https://github.com/adityapk00/zecwallet-light-cli/blob/v1.7.20/lib/src/lightwallet/utils.rs#L23
+#[allow(clippy::result_large_err)]
+pub fn interpret_memo_string(memo_str: &str) -> MmResult<MemoBytes, WithdrawError> {
+    // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
+    // interpret it as a hex.
+    let s_bytes = if let Some(memo_hexadecimal) = memo_str.to_lowercase().strip_prefix("0x") {
+        hex::decode(memo_hexadecimal).unwrap_or_else(|_| memo_str.as_bytes().to_vec())
+    } else {
+        memo_str.as_bytes().to_vec()
+    };
+
+    MemoBytes::from_bytes(&s_bytes).map_to_mm(|_| {
+        let error = format!("Memo '{:?}' is too long", memo_str);
+        WithdrawError::InvalidMemo(error)
+    })
+}
+
+fn extended_spending_key_from_protocol_info_and_policy(
+    protocol_info: &ZcoinProtocolInfo,
+    priv_key_policy: &PrivKeyBuildPolicy,
+) -> MmResult<ExtendedSpendingKey, ZCoinBuildError> {
+    match priv_key_policy {
+        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(ExtendedSpendingKey::master(iguana.as_slice())),
+        PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
+            extended_spending_key_from_global_hd_account(protocol_info, global_hd)
+        },
+        PrivKeyBuildPolicy::Trezor => {
+            let priv_key_err = PrivKeyPolicyNotAllowed::HardwareWalletNotSupported;
+            MmError::err(ZCoinBuildError::UtxoBuilderError(
+                UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err),
+            ))
+        },
+    }
+}
+
+fn extended_spending_key_from_global_hd_account(
+    protocol_info: &ZcoinProtocolInfo,
+    global_hd: &GlobalHDAccountArc,
+) -> MmResult<ExtendedSpendingKey, ZCoinBuildError> {
+    let path_to_coin = protocol_info
+        .z_derivation_path
+        .clone()
+        .or_mm_err(|| ZCoinBuildError::ZDerivationPathNotSet)?;
+
+    let path_to_account = path_to_coin
+        .to_derivation_path()
+        .into_iter()
+        // Map `bip32::ChildNumber` to `zip32::Zip32Child`.
+        .map(|child| Zip32Child::from_index(child.0))
+        // Push the hardened `account` index, so the derivation path looks like:
+        // `m/purpose'/coin'/account'`.
+        .chain(iter::once(Zip32Child::Hardened(global_hd.account_id())));
+
+    let mut spending_key = ExtendedSpendingKey::master(global_hd.root_seed_bytes());
+    for zip32_child in path_to_account {
+        spending_key = spending_key.derive_child(zip32_child);
+    }
+
+    Ok(spending_key)
+}
+
 #[test]
 fn derive_z_key_from_mm_seed() {
     use crypto::privkey::key_pair_from_seed;
@@ -1751,4 +1954,22 @@ fn derive_z_key_from_mm_seed() {
         encoded_addr,
         "zs1funuwrjr2stlr6fnhkdh7fyz3p7n0p8rxase9jnezdhc286v5mhs6q3myw0phzvad5mvqgfxpam"
     );
+}
+
+#[test]
+fn test_interpret_memo_string() {
+    use std::str::FromStr;
+    use zcash_primitives::memo::Memo;
+
+    let actual = interpret_memo_string("68656c6c6f207a63617368").unwrap();
+    let expected = Memo::from_str("68656c6c6f207a63617368").unwrap().encode();
+    assert_eq!(actual, expected);
+
+    let actual = interpret_memo_string("A custom memo").unwrap();
+    let expected = Memo::from_str("A custom memo").unwrap().encode();
+    assert_eq!(actual, expected);
+
+    let actual = interpret_memo_string("0x68656c6c6f207a63617368").unwrap();
+    let expected = MemoBytes::from_bytes(&hex::decode("68656c6c6f207a63617368").unwrap()).unwrap();
+    assert_eq!(actual, expected);
 }

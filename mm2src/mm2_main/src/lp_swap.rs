@@ -58,21 +58,21 @@
 //
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
-use async_std::sync as async_std_sync;
+use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
+use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
-             executor::{spawn, Timer},
+             executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
              log::{error, info},
-             now_ms, spawn_abortable, var, AbortOnDropHandle, PagingOptions};
+             now_ms, var, PagingOptions};
 use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
+use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPrefix};
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use parking_lot::Mutex as PaMutex;
-use primitives::hash::{H160, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
@@ -81,6 +81,7 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
 use uuid::Uuid;
 
 #[cfg(feature = "custom-swap-locktime")]
@@ -102,21 +103,24 @@ use std::sync::atomic::{AtomicU64, Ordering};
 mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
+use crypto::CryptoCtx;
 use keys::KeyPair;
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
                      MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
-                     RunMakerSwapInput};
+                     RunMakerSwapInput, MAKER_PAYMENT_SENT_LOG};
 use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, WATCHER_PREFIX};
+pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
+                       MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT,
+                       WATCHER_PREFIX};
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
-                     TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage};
+                     TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage, WATCHER_MESSAGE_SENT_LOG};
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
@@ -130,13 +134,13 @@ cfg_wasm32! {
     pub type SwapDbLocked<'a> = DbLocked<'a, SwapDb>;
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 pub enum SwapMsg {
     Negotiation(NegotiationDataMsg),
     NegotiationReply(NegotiationDataMsg),
     Negotiated(bool),
-    TakerFee(Vec<u8>),
-    MakerPayment(Vec<u8>),
+    TakerFee(SwapTxDataMsg),
+    MakerPayment(SwapTxDataMsg),
     TakerPayment(Vec<u8>),
 }
 
@@ -145,8 +149,8 @@ pub struct SwapMsgStore {
     negotiation: Option<NegotiationDataMsg>,
     negotiation_reply: Option<NegotiationDataMsg>,
     negotiated: Option<bool>,
-    taker_fee: Option<Vec<u8>>,
-    maker_payment: Option<Vec<u8>>,
+    taker_fee: Option<SwapTxDataMsg>,
+    maker_payment: Option<SwapTxDataMsg>,
     taker_payment: Option<Vec<u8>>,
     accept_only_from: bits256,
 }
@@ -157,6 +161,38 @@ impl SwapMsgStore {
             accept_only_from,
             ..Default::default()
         }
+    }
+}
+
+/// Returns key-pair for signing P2P messages and an optional `PeerId` if it should be used forcibly
+/// instead of local peer ID.
+///
+/// # Panic
+///
+/// This function panics if `CryptoCtx` hasn't been initialized yet.
+pub fn p2p_keypair_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&KeyPair>) -> (KeyPair, Option<PeerId>) {
+    match p2p_privkey {
+        Some(keypair) => (*keypair, Some(keypair.libp2p_peer_id())),
+        None => {
+            let crypto_ctx = CryptoCtx::from_ctx(ctx).expect("CryptoCtx must be initialized already");
+            (*crypto_ctx.mm2_internal_key_pair(), None)
+        },
+    }
+}
+
+/// Returns private key for signing P2P messages and an optional `PeerId` if it should be used forcibly
+/// instead of local peer ID.
+///
+/// # Panic
+///
+/// This function panics if `CryptoCtx` hasn't been initialized yet.
+pub fn p2p_private_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&KeyPair>) -> ([u8; 32], Option<PeerId>) {
+    match p2p_privkey {
+        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
+        None => {
+            let crypto_ctx = CryptoCtx::from_ctx(ctx).expect("CryptoCtx must be initialized already");
+            (crypto_ctx.mm2_internal_privkey_secret().take(), None)
+        },
     }
 }
 
@@ -180,21 +216,18 @@ pub fn broadcast_swap_message_every<T: 'static + Serialize + Clone + Send>(
 
 /// Broadcast the swap message once
 pub fn broadcast_swap_message<T: Serialize>(ctx: &MmArc, topic: String, msg: T, p2p_privkey: &Option<KeyPair>) {
-    let (p2p_private, from) = match p2p_privkey {
-        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
-        None => (ctx.secp256k1_key_pair().private().secret.take(), None),
-    };
+    let (p2p_private, from) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey.as_ref());
     let encoded_msg = encode_and_sign(&msg, &p2p_private).unwrap();
     broadcast_p2p_msg(ctx, vec![topic], encoded_msg, from);
 }
 
 /// Broadcast the tx message once
 pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p2p_privkey: &Option<KeyPair>) {
-    let (p2p_private, from) = match p2p_privkey {
-        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
-        None => (ctx.secp256k1_key_pair().private().secret.take(), None),
-    };
+    if !msg.supports_tx_helper() {
+        return;
+    }
 
+    let (p2p_private, from) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey.as_ref());
     let encoded_msg = encode_and_sign(&msg.tx_hex(), &p2p_private).unwrap();
     broadcast_p2p_msg(ctx, vec![topic], encoded_msg, from);
 }
@@ -236,8 +269,8 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
                 SwapMsg::Negotiation(data) => msg_store.negotiation = Some(data),
                 SwapMsg::NegotiationReply(data) => msg_store.negotiation_reply = Some(data),
                 SwapMsg::Negotiated(negotiated) => msg_store.negotiated = Some(negotiated),
-                SwapMsg::TakerFee(taker_fee) => msg_store.taker_fee = Some(taker_fee),
-                SwapMsg::MakerPayment(maker_payment) => msg_store.maker_payment = Some(maker_payment),
+                SwapMsg::TakerFee(data) => msg_store.taker_fee = Some(data),
+                SwapMsg::MakerPayment(data) => msg_store.maker_payment = Some(data),
                 SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
             }
         } else {
@@ -308,6 +341,22 @@ pub fn get_payment_locktime() -> u64 {
     PAYMENT_LOCKTIME.load(Ordering::Relaxed)
 }
 
+#[inline]
+pub fn taker_payment_spend_duration(locktime: u64) -> u64 { (locktime * 4) / 5 }
+
+#[inline]
+pub fn taker_payment_spend_deadline(swap_started_at: u64, locktime: u64) -> u64 {
+    swap_started_at + taker_payment_spend_duration(locktime)
+}
+
+#[inline]
+pub fn wait_for_maker_payment_conf_duration(locktime: u64) -> u64 { (locktime * 2) / 5 }
+
+#[inline]
+pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
+    swap_started_at + wait_for_maker_payment_conf_duration(locktime)
+}
+
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
 const _SWAP_DEFAULT_MAX_CONFIRMS: u32 = 6;
 /// MM2 checks that swap payment is confirmed every WAIT_CONFIRM_INTERVAL seconds
@@ -364,14 +413,8 @@ impl From<TakerSwapEvent> for SwapEvent {
 struct SwapsContext {
     running_swaps: Mutex<Vec<Weak<dyn AtomicSwap>>>,
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
-    /// The cloneable receiver of multi-consumer async channel awaiting for shutdown_tx.send() to be
-    /// invoked to stop all running swaps.
-    /// MM2 is used as static lib on some platforms e.g. iOS so it doesn't run as separate process.
-    /// So when stop was invoked the swaps could stay running on shared executors causing
-    /// Very unpleasant consequences
-    shutdown_rx: async_std_sync::Receiver<()>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
-    taker_swap_watchers: PaMutex<HashSet<Uuid>>,
+    taker_swap_watchers: PaMutex<DuplicateCache<Vec<u8>>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
 }
@@ -380,26 +423,11 @@ impl SwapsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     fn from_ctx(ctx: &MmArc) -> Result<Arc<SwapsContext>, String> {
         Ok(try_s!(from_ctx(&ctx.swaps_ctx, move || {
-            let (shutdown_tx, shutdown_rx) = async_std_sync::channel(1);
-            let mut shutdown_tx = Some(shutdown_tx);
-            ctx.on_stop(Box::new(move || {
-                if let Some(shutdown_tx) = shutdown_tx.take() {
-                    info!("on_stop] firing shutdown_tx!");
-                    spawn(async move {
-                        shutdown_tx.send(()).await;
-                    });
-                    Ok(())
-                } else {
-                    ERR!("on_stop callback called twice!")
-                }
-            }));
-
             Ok(SwapsContext {
                 running_swaps: Mutex::new(vec![]),
                 banned_pubkeys: Mutex::new(HashMap::new()),
-                shutdown_rx,
                 swap_msgs: Mutex::new(HashMap::new()),
-                taker_swap_watchers: PaMutex::new(HashSet::new()),
+                taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(TAKER_SWAP_ENTRY_TIMEOUT))),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
             })
@@ -470,13 +498,13 @@ fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &Uuid, coin: &str)
         })
 }
 
-pub fn active_swaps_using_coin(ctx: &MmArc, coin: &str) -> Result<Vec<Uuid>, String> {
+pub fn active_swaps_using_coins(ctx: &MmArc, coins: &HashSet<String>) -> Result<Vec<Uuid>, String> {
     let swap_ctx = try_s!(SwapsContext::from_ctx(ctx));
     let swaps = try_s!(swap_ctx.running_swaps.lock());
     let mut uuids = vec![];
     for swap in swaps.iter() {
         if let Some(swap) = swap.upgrade() {
-            if swap.maker_coin() == coin || swap.taker_coin() == coin {
+            if coins.contains(&swap.maker_coin().to_string()) || coins.contains(&swap.taker_coin().to_string()) {
                 uuids.push(*swap.uuid())
             }
         }
@@ -535,7 +563,10 @@ pub fn lp_atomic_locktime_v2(
     my_conf_settings: &SwapConfirmationsSettings,
     other_conf_settings: &SwapConfirmationsSettings,
 ) -> u64 {
-    if maker_coin == "BTC"
+    if taker_coin.contains("-lightning") {
+        // A good value for lightning taker locktime is about 24 hours to find a good 3 hop or less path for the payment
+        get_payment_locktime() * 12
+    } else if maker_coin == "BTC"
         || taker_coin == "BTC"
         || coin_with_4x_locktime(maker_coin)
         || coin_with_4x_locktime(taker_coin)
@@ -562,6 +593,7 @@ pub fn lp_atomic_locktime(maker_coin: &str, taker_coin: &str, version: AtomicLoc
 }
 
 fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
+    // Todo: This should be reduced for lightning swaps.
     // 0.0001
     let min_fee = MmNumber::from((1, 10000));
     if min_fee < min_tx_amount {
@@ -572,7 +604,7 @@ fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
 }
 
 fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
-    let fee_discount_tickers: &[&str] = if cfg!(test) && var("MYCOIN_FEE_DISCOUNT").is_ok() {
+    let fee_discount_tickers: &[&str] = if var("MYCOIN_FEE_DISCOUNT").is_ok() {
         &["KMD", "MYCOIN"]
     } else {
         &["KMD"]
@@ -696,18 +728,54 @@ impl NegotiationDataMsg {
     }
 }
 
-/// Data to be exchanged and validated on swap start, the replacement of LP_pubkeys_data, LP_choosei_data, etc.
-#[derive(Debug, Default, Deserializable, Eq, PartialEq, Serializable)]
-struct SwapNegotiationData {
-    started_at: u64,
-    payment_locktime: u64,
-    secret_hash: H160,
-    persistent_pubkey: H264,
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub struct PaymentWithInstructions {
+    data: Vec<u8>,
+    // Next step instructions for the other side whether taker or maker.
+    // An example for this is a maker/taker sending the taker/maker a lightning invoice to be payed.
+    next_step_instructions: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum SwapTxDataMsg {
+    Regular(Vec<u8>),
+    WithInstructions(PaymentWithInstructions),
+}
+
+impl SwapTxDataMsg {
+    #[inline]
+    pub fn data(&self) -> &[u8] {
+        match self {
+            SwapTxDataMsg::Regular(data) => data,
+            SwapTxDataMsg::WithInstructions(p) => &p.data,
+        }
+    }
+
+    #[inline]
+    pub fn instructions(&self) -> Option<&[u8]> {
+        match self {
+            SwapTxDataMsg::Regular(_) => None,
+            SwapTxDataMsg::WithInstructions(p) => Some(&p.next_step_instructions),
+        }
+    }
+
+    #[inline]
+    pub fn new(data: Vec<u8>, instructions: Option<Vec<u8>>) -> Self {
+        match instructions {
+            Some(next_step_instructions) => SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
+                data,
+                next_step_instructions,
+            }),
+            None => SwapTxDataMsg::Regular(data),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TransactionIdentifier {
-    /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction
+    /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction.
+    /// Some payments like lightning payments don't have a tx_hex, for such payments tx_hex will be equal to tx_hash.
     tx_hex: BytesJson,
     /// Transaction hash in hexadecimal format
     tx_hash: BytesJson,
@@ -1004,7 +1072,7 @@ pub async fn my_recent_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
                 let swap_json = json::to_value(MySwapStatusResponse::from(swap)).unwrap();
                 swaps.push(swap_json)
             },
-            Ok(None) => error!("No such swap with the uuid '{}'", uuid),
+            Ok(None) => warn!("No such swap with the uuid '{}'", uuid),
             Err(e) => error!("Error loading a swap with the uuid '{}': {}", uuid, e),
         }
     }
@@ -1053,23 +1121,8 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         coins.insert(maker_coin_ticker.clone());
         coins.insert(taker_coin_ticker.clone());
 
-        let ctx = ctx.clone();
-
-        // kick-start the swap in a separate thread.
-        #[cfg(not(target_arch = "wasm32"))]
-        std::thread::spawn(move || {
-            common::block_on(kickstart_thread_handler(
-                ctx.clone(),
-                swap,
-                maker_coin_ticker,
-                taker_coin_ticker,
-            ))
-        });
-
-        #[cfg(target_arch = "wasm32")]
-        common::executor::spawn(async move {
-            kickstart_thread_handler(ctx, swap, maker_coin_ticker, taker_coin_ticker).await
-        });
+        let fut = kickstart_thread_handler(ctx.clone(), swap, maker_coin_ticker, taker_coin_ticker);
+        ctx.spawner().spawn(fut);
     }
     Ok(coins)
 }
@@ -1236,6 +1289,48 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     Ok(try_s!(Response::builder().body(res)))
 }
 
+enum SecretHashAlgo {
+    /// ripemd160(sha256(secret))
+    DHASH160,
+    /// sha256(secret)
+    SHA256,
+}
+
+impl Default for SecretHashAlgo {
+    fn default() -> Self { SecretHashAlgo::DHASH160 }
+}
+
+impl SecretHashAlgo {
+    fn hash_secret(&self, secret: &[u8]) -> Vec<u8> {
+        match self {
+            SecretHashAlgo::DHASH160 => dhash160(secret).take().into(),
+            SecretHashAlgo::SHA256 => sha256(secret).take().into(),
+        }
+    }
+}
+
+// Todo: Maybe add a secret_hash_algo method to the SwapOps trait instead
+#[cfg(not(target_arch = "wasm32"))]
+fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
+    match (maker_coin, taker_coin) {
+        (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::LightningCoin(_), _) => {
+            SecretHashAlgo::SHA256
+        },
+        // If taker is lightning coin the SHA256 of the secret will be sent as part of the maker signed invoice
+        (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
+        (_, _) => SecretHashAlgo::DHASH160,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
+    match (maker_coin, taker_coin) {
+        (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_), _) => SecretHashAlgo::SHA256,
+        (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
+        (_, _) => SecretHashAlgo::DHASH160,
+    }
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod lp_swap_tests {
     use super::*;
@@ -1246,10 +1341,8 @@ mod lp_swap_tests {
     use coins::MarketCoinOps;
     use coins::PrivKeyActivationPolicy;
     use common::block_on;
-    use crypto::privkey::key_pair_from_seed;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
-    use serialization::{deserialize, serialize};
 
     #[test]
     fn test_dex_fee_amount() {
@@ -1281,14 +1374,6 @@ mod lp_swap_tests {
         let amount: MmNumber = "0.001".parse::<BigDecimal>().unwrap().into();
         let actual_fee = dex_fee_amount(base, rel, &amount, &dex_fee_threshold);
         assert_eq!(dex_fee_threshold, actual_fee);
-    }
-
-    #[test]
-    fn test_serde_swap_negotiation_data() {
-        let data = SwapNegotiationData::default();
-        let bytes = serialize(&data);
-        let deserialized = deserialize(bytes.as_slice()).unwrap();
-        assert_eq!(data, deserialized);
     }
 
     #[test]
@@ -1542,6 +1627,77 @@ mod lp_swap_tests {
         assert_eq!(deserialized, v3);
     }
 
+    #[test]
+    fn check_payment_data_serde() {
+        const MSG_DATA_INSTRUCTIONS: [u8; 300] = [1; 300];
+
+        #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+        enum SwapMsgOld {
+            Negotiation(NegotiationDataMsg),
+            NegotiationReply(NegotiationDataMsg),
+            Negotiated(bool),
+            TakerFee(Vec<u8>),
+            MakerPayment(Vec<u8>),
+            TakerPayment(Vec<u8>),
+        }
+
+        // old message format should be deserialized to PaymentDataMsg::Regular
+        let old = SwapMsgOld::MakerPayment(MSG_DATA_INSTRUCTIONS.to_vec());
+
+        let expected = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
+
+        let serialized = rmp_serde::to_vec(&old).unwrap();
+
+        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, expected);
+
+        // PaymentDataMsg::Regular should be deserialized to old message format
+        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
+
+        let expected = old;
+
+        let serialized = rmp_serde::to_vec(&v1).unwrap();
+
+        let deserialized: SwapMsgOld = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, expected);
+
+        // PaymentDataMsg::Regular should be deserialized to PaymentDataMsg::Regular
+        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
+
+        let serialized = rmp_serde::to_vec(&v1).unwrap();
+
+        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, v1);
+
+        // PaymentDataMsg::WithInstructions should be deserialized to PaymentDataMsg::WithInstructions
+        let v2 = SwapMsg::MakerPayment(SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
+            data: MSG_DATA_INSTRUCTIONS.to_vec(),
+            next_step_instructions: MSG_DATA_INSTRUCTIONS.to_vec(),
+        }));
+
+        let serialized = rmp_serde::to_vec(&v2).unwrap();
+
+        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, v2);
+
+        // PaymentDataMsg::WithInstructions shouldn't be deserialized to old message format, new nodes with payment instructions can't swap with old nodes without it.
+        let v2 = SwapMsg::MakerPayment(SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
+            data: MSG_DATA_INSTRUCTIONS.to_vec(),
+            next_step_instructions: MSG_DATA_INSTRUCTIONS.to_vec(),
+        }));
+
+        let serialized = rmp_serde::to_vec(&v2).unwrap();
+
+        let deserialized: Result<SwapMsgOld, rmp_serde::decode::Error> =
+            rmp_serde::from_read_ref(serialized.as_slice());
+
+        assert!(deserialized.is_err());
+    }
+
     fn utxo_activation_params(electrums: &[&str]) -> UtxoActivationParams {
         UtxoActivationParams {
             mode: UtxoRpcMode::Electrum {
@@ -1561,7 +1717,7 @@ mod lp_swap_tests {
             address_format: None,
             gap_limit: None,
             enable_params: Default::default(),
-            priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
+            priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
             check_utxo_maturity: None,
         }
     }
@@ -1573,6 +1729,10 @@ mod lp_swap_tests {
         let maker_fail_at = std::env::var("MAKER_FAIL_AT").map(maker_swap::FailAt::from).ok();
         let taker_passphrase = std::env::var("ALICE_PASSPHRASE").expect("ALICE_PASSPHRASE env must be set");
         let taker_fail_at = std::env::var("TAKER_FAIL_AT").map(taker_swap::FailAt::from).ok();
+        let lock_duration = match std::env::var("LOCK_DURATION") {
+            Ok(maybe_num) => maybe_num.parse().expect("LOCK_DURATION must be a number of seconds"),
+            Err(_) => 30,
+        };
 
         if maker_fail_at.is_none() && taker_fail_at.is_none() {
             panic!("At least one of MAKER_FAIL_AT/TAKER_FAIL_AT must be provided");
@@ -1585,13 +1745,14 @@ mod lp_swap_tests {
             "i_am_seed": true,
         });
 
-        let maker_key_pair = key_pair_from_seed(&maker_passphrase).unwrap();
-        let maker_ctx = MmCtxBuilder::default()
-            .with_secp256k1_key_pair(maker_key_pair.clone())
-            .with_conf(maker_ctx_conf)
-            .into_mm_arc();
+        let maker_ctx = MmCtxBuilder::default().with_conf(maker_ctx_conf).into_mm_arc();
+        let maker_key_pair = *CryptoCtx::init_with_iguana_passphrase(maker_ctx.clone(), &maker_passphrase)
+            .unwrap()
+            .mm2_internal_key_pair();
+
         fix_directories(&maker_ctx).unwrap();
         block_on(init_p2p(maker_ctx.clone())).unwrap();
+        maker_ctx.init_sqlite_connection().unwrap();
 
         let rick_activation_params = utxo_activation_params(RICK_ELECTRUM_ADDRS);
         let morty_activation_params = utxo_activation_params(MORTY_ELECTRUM_ADDRS);
@@ -1601,7 +1762,7 @@ mod lp_swap_tests {
             "RICK",
             &rick_conf(),
             &rick_activation_params,
-            maker_key_pair.private_ref(),
+            maker_key_pair.private().secret,
         ))
         .unwrap();
 
@@ -1612,30 +1773,31 @@ mod lp_swap_tests {
             "MORTY",
             &morty_conf(),
             &morty_activation_params,
-            maker_key_pair.private_ref(),
+            maker_key_pair.private().secret,
         ))
         .unwrap();
-
-        let taker_key_pair = key_pair_from_seed(&taker_passphrase).unwrap();
 
         let taker_ctx_conf = json!({
             "netid": 1234,
             "p2p_in_memory": true,
             "seednodes": vec!["/memory/777"]
         });
-        let taker_ctx = MmCtxBuilder::default()
-            .with_secp256k1_key_pair(taker_key_pair.clone())
-            .with_conf(taker_ctx_conf)
-            .into_mm_arc();
+
+        let taker_ctx = MmCtxBuilder::default().with_conf(taker_ctx_conf).into_mm_arc();
+        let taker_key_pair = *CryptoCtx::init_with_iguana_passphrase(taker_ctx.clone(), &taker_passphrase)
+            .unwrap()
+            .mm2_internal_key_pair();
+
         fix_directories(&taker_ctx).unwrap();
         block_on(init_p2p(taker_ctx.clone())).unwrap();
+        taker_ctx.init_sqlite_connection().unwrap();
 
         let rick_taker = block_on(utxo_standard_coin_with_priv_key(
             &taker_ctx,
             "RICK",
             &rick_conf(),
             &rick_activation_params,
-            taker_key_pair.private_ref(),
+            taker_key_pair.private().secret,
         ))
         .unwrap();
 
@@ -1644,7 +1806,7 @@ mod lp_swap_tests {
             "MORTY",
             &morty_conf(),
             &morty_activation_params,
-            taker_key_pair.private_ref(),
+            taker_key_pair.private().secret,
         ))
         .unwrap();
 
@@ -1659,7 +1821,6 @@ mod lp_swap_tests {
             taker_coin_confs: 0,
             taker_coin_nota: false,
         };
-        let payment_locktime = 30;
 
         let mut maker_swap = MakerSwap::new(
             maker_ctx.clone(),
@@ -1672,7 +1833,7 @@ mod lp_swap_tests {
             conf_settings,
             rick_maker.into(),
             morty_maker.into(),
-            payment_locktime,
+            lock_duration,
             None,
             Default::default(),
         );
@@ -1690,7 +1851,7 @@ mod lp_swap_tests {
             conf_settings,
             rick_taker.into(),
             morty_taker.into(),
-            payment_locktime,
+            lock_duration,
             None,
         );
 

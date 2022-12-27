@@ -80,9 +80,10 @@ pub async fn init_account_balance(
     req: InitAccountBalanceRequest,
 ) -> MmResult<InitRpcTaskResponse, HDAccountBalanceRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let spawner = coin.spawner();
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitAccountBalanceTask { coin, req };
-    let task_id = AccountBalanceTaskManager::spawn_rpc_task(&coins_ctx.account_balance_task_manager, task)?;
+    let task_id = AccountBalanceTaskManager::spawn_rpc_task(&coins_ctx.account_balance_task_manager, &spawner, task)?;
     Ok(InitRpcTaskResponse { task_id })
 }
 

@@ -22,7 +22,7 @@ crossbeam = "0.7"
 fnv = "1.0.6"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
-futures-cpupool = "0.1"
+futures-timer = "3.0"
 hex = "0.4.2"
 http = "0.2"
 http-body = "0.1"
@@ -37,6 +37,7 @@ serde_derive = "1"
 serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
+sha2 = "0.9"
 shared_ref_counter = { path = "shared_ref_counter", optional = true }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-timer = "0.2.4"

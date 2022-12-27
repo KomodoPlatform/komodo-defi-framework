@@ -14,8 +14,7 @@ use coins::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::{UtxoActivationParams, UtxoSyncStatus};
 use coins::CoinProtocol;
-use crypto::CryptoCtx;
-use futures::{future::AbortHandle, StreamExt};
+use futures::StreamExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -63,8 +62,7 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         _protocol_info: Self::StandaloneProtocol,
         task_handle: &UtxoStandardRpcTaskHandle,
     ) -> MmResult<Self, InitUtxoStandardError> {
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
-        let priv_key_policy = priv_key_build_policy(&crypto_ctx, activation_request.priv_key_policy);
+        let priv_key_policy = priv_key_build_policy(&ctx, activation_request.priv_key_policy)?;
 
         let coin = UtxoArcBuilder::new(
             &ctx,
@@ -127,12 +125,7 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         metrics: MetricsArc,
         storage: impl TxHistoryStorage,
         current_balances: HashMap<String, BigDecimal>,
-    ) -> Option<AbortHandle> {
-        Some(start_history_background_fetching(
-            self.clone(),
-            metrics,
-            storage,
-            current_balances,
-        ))
+    ) {
+        start_history_background_fetching(self.clone(), metrics, storage, current_balances)
     }
 }

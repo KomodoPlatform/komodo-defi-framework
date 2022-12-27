@@ -109,6 +109,9 @@ impl FetchRequest {
             let result = Self::fetch_str(request).await;
             tx.send(result).ok();
         };
+
+        // The spawned future doesn't capture shared pointers,
+        // so we can use `spawn_local` here.
         spawn_local(fut);
     }
 
@@ -117,6 +120,9 @@ impl FetchRequest {
             let result = Self::fetch_array(request).await;
             tx.send(result).ok();
         };
+
+        // The spawned future doesn't capture shared pointers,
+        // so we can use `spawn_local` here.
         spawn_local(fut);
     }
 

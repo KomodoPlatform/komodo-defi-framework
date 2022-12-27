@@ -1,9 +1,8 @@
 use super::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumProtocol};
 use super::*;
 use crate::utxo::rpc_clients::UtxoRpcClientOps;
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
+use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, IndexedDBBlockHeadersStorage};
 use crate::utxo::utxo_common_tests;
-use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
 use common::executor::Timer;
 use serialization::deserialize;
 use wasm_bindgen_test::*;
@@ -16,7 +15,13 @@ pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     let block_headers_storage = BlockHeaderStorage {
         inner: Box::new(IndexedDBBlockHeadersStorage {}),
     };
-    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), block_headers_storage);
+    let abortable_system = AbortableQueue::default();
+    let client = ElectrumClientImpl::new(
+        TEST_COIN_NAME.into(),
+        Default::default(),
+        block_headers_storage,
+        abortable_system,
+    );
     for server in servers {
         client
             .add_server(&ElectrumRpcRequest {

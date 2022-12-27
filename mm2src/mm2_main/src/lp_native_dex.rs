@@ -20,14 +20,16 @@
 
 use bitcrypto::sha256;
 use coins::register_balance_update_handler;
-use common::executor::{spawn, spawn_boxed, Timer};
+use common::executor::{SpawnFuture, Timer};
 use common::log::{info, warn};
 use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
 use enum_from::EnumFromTrait;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
+use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, WssCerts};
+use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime,
+                 WssCerts};
 use mm2_metrics::mm_gauge;
 use rpc_task::RpcTaskError;
 use serde_json::{self as json};
@@ -46,7 +48,6 @@ use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_me
                                 OrdermatchInitError};
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
-use crate::mm2::{MM_DATETIME, MM_VERSION};
 
 cfg_native! {
     use mm2_io::fs::{ensure_dir_is_writable, ensure_file_is_writable};
@@ -56,6 +57,9 @@ cfg_native! {
 
 #[path = "lp_init/init_context.rs"] mod init_context;
 #[path = "lp_init/init_hw.rs"] pub mod init_hw;
+#[cfg(target_arch = "wasm32")]
+#[path = "lp_init/init_metamask.rs"]
+pub mod init_metamask;
 
 const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.defimania.live", "seed2.defimania.live", "seed3.defimania.live"];
 
@@ -104,7 +108,7 @@ impl From<AdexBehaviourError> for P2PInitError {
 #[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MmInitError {
-    Canceled,
+    Cancelled,
     #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "Initialization timeout {:?}", _0)]
     Timeout(Duration),
@@ -116,6 +120,11 @@ pub enum MmInitError {
     #[display(fmt = "The '{}' field not found in the config", field)]
     FieldNotFoundInConfig {
         field: String,
+    },
+    #[display(fmt = "The '{}' field has wrong value in the config: {}", field, error)]
+    FieldWrongValueInConfig {
+        field: String,
+        error: String,
     },
     #[display(fmt = "P2P initializing error: '{}'", _0)]
     P2PError(P2PInitError),
@@ -198,6 +207,10 @@ impl From<CryptoInitError> for MmInitError {
             },
             CryptoInitError::NullStringPassphrase => MmInitError::NullStringPassphrase,
             CryptoInitError::InvalidPassphrase(pass) => MmInitError::InvalidPassphrase(pass.to_string()),
+            CryptoInitError::InvalidHdAccount { error, .. } => MmInitError::FieldWrongValueInConfig {
+                field: "hd_account".to_string(),
+                error,
+            },
             CryptoInitError::Internal(internal) => MmInitError::Internal(internal),
         }
     }
@@ -211,7 +224,7 @@ impl From<RpcTaskError> for MmInitError {
     fn from(e: RpcTaskError) -> Self {
         let error = e.to_string();
         match e {
-            RpcTaskError::Canceled => MmInitError::Canceled,
+            RpcTaskError::Cancelled => MmInitError::Cancelled,
             RpcTaskError::Timeout(timeout) => MmInitError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_)
             | RpcTaskError::UnexpectedTaskStatus { .. }
@@ -228,6 +241,10 @@ impl From<HwProcessingError<RpcTaskError>> for MmInitError {
             HwProcessingError::ProcessorError(rpc_task) => MmInitError::from(rpc_task),
         }
     }
+}
+
+impl From<InternalError> for MmInitError {
+    fn from(e: InternalError) -> Self { MmInitError::Internal(e.take()) }
 }
 
 impl MmInitError {
@@ -254,7 +271,7 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
     if netid == 7777 {
         NETID_7777_SEEDNODES
             .iter()
-            .filter_map(|seed| addr_to_ipv4_string(*seed).ok())
+            .filter_map(|seed| addr_to_ipv4_string(seed).ok())
             .map(RelayAddress::IPv4)
             .collect()
     } else {
@@ -341,7 +358,7 @@ fn migrate_db(ctx: &MmArc) -> MmInitResult<()> {
         migration_1(ctx);
         current_migration = 1;
     }
-    std::fs::write(&migration_num_path, &current_migration.to_le_bytes())
+    std::fs::write(&migration_num_path, current_migration.to_le_bytes())
         .map_to_mm(|e| MmInitError::ErrorDbMigrating(e.to_string()))?;
     Ok(())
 }
@@ -353,7 +370,7 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     init_ordermatch_context(&ctx)?;
     init_p2p(ctx.clone()).await?;
 
-    if ctx.secp256k1_key_pair_as_option().is_none() {
+    if !CryptoCtx::is_init(&ctx)? {
         return Ok(());
     }
 
@@ -377,18 +394,18 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     // an order and start new swap that might get started 2 times because of kick-start
     kick_start(ctx.clone()).await?;
 
-    spawn(lp_ordermatch_loop(ctx.clone()));
+    ctx.spawner().spawn(lp_ordermatch_loop(ctx.clone()));
 
-    spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
+    ctx.spawner().spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
 
-    spawn(clean_memory_loop(ctx.weak()));
+    ctx.spawner().spawn(clean_memory_loop(ctx.weak()));
     Ok(())
 }
 
 #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
-pub async fn lp_init(ctx: MmArc) -> MmInitResult<()> {
-    info!("Version: {} DT {}", MM_VERSION, MM_DATETIME);
+pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitResult<()> {
+    info!("Version: {} DT {}", version, datetime);
 
     if !ctx.conf["passphrase"].is_null() {
         let passphrase: String =
@@ -396,7 +413,11 @@ pub async fn lp_init(ctx: MmArc) -> MmInitResult<()> {
                 field: "passphrase".to_owned(),
                 error: e.to_string(),
             })?;
-        CryptoCtx::init_with_iguana_passphrase(ctx.clone(), &passphrase)?;
+
+        match ctx.conf["hd_account_id"].as_u64() {
+            Some(hd_account_id) => CryptoCtx::init_with_global_hd_account(ctx.clone(), &passphrase, hd_account_id)?,
+            None => CryptoCtx::init_with_iguana_passphrase(ctx.clone(), &passphrase)?,
+        };
     }
 
     lp_init_continue(ctx.clone()).await?;
@@ -405,7 +426,7 @@ pub async fn lp_init(ctx: MmArc) -> MmInitResult<()> {
 
     spawn_rpc(ctx_id);
     let ctx_c = ctx.clone();
-    spawn(async move {
+    ctx.spawner().spawn(async move {
         if let Err(err) = ctx_c.init_metrics() {
             warn!("Couldn't initialize metrics system: {}", err);
         }
@@ -453,7 +474,8 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
 
     let ctx_on_poll = ctx.clone();
     let force_p2p_key = if i_am_seed {
-        let key = sha256(&*ctx.secp256k1_key_pair().private().secret);
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx).mm_err(|e| P2PInitError::Internal(e.to_string()))?;
+        let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
         Some(key.take())
     } else {
         None
@@ -465,7 +487,8 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
         light_node_type(&ctx)?
     };
 
-    let spawn_result = spawn_gossipsub(netid, force_p2p_key, spawn_boxed, seednodes, node_type, move |swarm| {
+    let spawner = SwarmRuntime::new(ctx.spawner());
+    let spawn_result = spawn_gossipsub(netid, force_p2p_key, spawner, seednodes, node_type, move |swarm| {
         let behaviour = swarm.behaviour();
         mm_gauge!(
             ctx_on_poll.metrics,
@@ -495,18 +518,13 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
         );
     })
     .await;
-    let (cmd_tx, event_rx, peer_id, p2p_abort) = spawn_result?;
-    let mut p2p_abort = Some(p2p_abort);
-    ctx.on_stop(Box::new(move || {
-        if let Some(handle) = p2p_abort.take() {
-            handle.abort();
-        }
-        Ok(())
-    }));
+    let (cmd_tx, event_rx, peer_id) = spawn_result?;
     ctx.peer_id.pin(peer_id.to_string()).map_to_mm(P2PInitError::Internal)?;
     let p2p_context = P2PContext::new(cmd_tx);
     p2p_context.store_to_mm_arc(&ctx);
-    spawn(p2p_event_process_loop(ctx.weak(), event_rx, i_am_seed));
+
+    let fut = p2p_event_process_loop(ctx.weak(), event_rx, i_am_seed);
+    ctx.spawner().spawn(fut);
 
     Ok(())
 }

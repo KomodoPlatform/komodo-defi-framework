@@ -1,4 +1,5 @@
 use super::*;
+use crate::IguanaPrivKey;
 use common::block_on;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::for_tests::{ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT};
@@ -12,6 +13,8 @@ const GAS_PRICE_APPROXIMATION_ON_START_SWAP: u64 = 51_500_000_000;
 const GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE: u64 = 52_500_000_000;
 // `GAS_PRICE` increased by 7%
 const GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE: u64 = 53_500_000_000;
+
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);
@@ -30,14 +33,14 @@ fn eth_coin_for_test(
 
     let mut nodes = vec![];
     for url in urls.iter() {
-        nodes.push(Web3TransportNode {
+        nodes.push(HttpTransportNode {
             uri: url.parse().unwrap(),
             gui_auth: false,
         });
     }
     drop_mutability!(nodes);
 
-    let transport = Web3Transport::new(nodes);
+    let transport = Web3Transport::with_nodes(nodes);
     let web3 = Web3::new(transport);
     let conf = json!({
         "coins":[
@@ -60,7 +63,7 @@ fn eth_coin_for_test(
         gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract,
         ticker,
@@ -75,6 +78,7 @@ fn eth_coin_for_test(
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        abortable_system: AbortableQueue::default(),
     }));
     (ctx, eth_coin)
 }
@@ -225,7 +229,7 @@ fn send_and_refund_erc20_payment() {
         },
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![Web3Instance {
@@ -244,36 +248,35 @@ fn send_and_refund_erc20_payment() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        abortable_system: AbortableQueue::default(),
     }));
-
-    let payment = coin
-        .send_maker_payment(
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            "0.001".parse().unwrap(),
-            &coin.swap_contract_address(),
-            &[],
-        )
-        .wait()
-        .unwrap();
-
+    let maker_payment_args = SendMakerPaymentArgs {
+        time_lock_duration: 0,
+        time_lock: (now_ms() / 1000) as u32 - 200,
+        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+        secret_hash: &[1; 20],
+        amount: "0.001".parse().unwrap(),
+        swap_contract_address: &coin.swap_contract_address(),
+        swap_unique_data: &[],
+        payment_instructions: &None,
+    };
+    let payment = coin.send_maker_payment(maker_payment_args).wait().unwrap();
     log!("{:?}", payment);
 
     block_on(Timer::sleep(60.));
 
+    let maker_refunds_payment_args = SendMakerRefundsPaymentArgs {
+        payment_tx: &payment.tx_hex(),
+        time_lock: (now_ms() / 1000) as u32 - 200,
+        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+        secret_hash: &[1; 20],
+        swap_contract_address: &coin.swap_contract_address(),
+        swap_unique_data: &[],
+    };
     let refund = coin
-        .send_maker_refunds_payment(
-            &payment.tx_hex(),
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            &coin.swap_contract_address(),
-            &[],
-        )
+        .send_maker_refunds_payment(maker_refunds_payment_args)
         .wait()
         .unwrap();
-
     log!("{:?}", refund);
 }
 
@@ -293,7 +296,7 @@ fn send_and_refund_eth_payment() {
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![Web3Instance {
@@ -312,33 +315,33 @@ fn send_and_refund_eth_payment() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        abortable_system: AbortableQueue::default(),
     }));
-
-    let payment = coin
-        .send_maker_payment(
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            "0.001".parse().unwrap(),
-            &coin.swap_contract_address(),
-            &[],
-        )
-        .wait()
-        .unwrap();
+    let send_maker_payment_args = SendMakerPaymentArgs {
+        time_lock_duration: 0,
+        time_lock: (now_ms() / 1000) as u32 - 200,
+        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+        secret_hash: &[1; 20],
+        amount: "0.001".parse().unwrap(),
+        swap_contract_address: &coin.swap_contract_address(),
+        swap_unique_data: &[],
+        payment_instructions: &None,
+    };
+    let payment = coin.send_maker_payment(send_maker_payment_args).wait().unwrap();
 
     log!("{:?}", payment);
 
     block_on(Timer::sleep(60.));
-
+    let maker_refunds_payment_args = SendMakerRefundsPaymentArgs {
+        payment_tx: &payment.tx_hex(),
+        time_lock: (now_ms() / 1000) as u32 - 200,
+        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+        secret_hash: &[1; 20],
+        swap_contract_address: &coin.swap_contract_address(),
+        swap_unique_data: &[],
+    };
     let refund = coin
-        .send_maker_refunds_payment(
-            &payment.tx_hex(),
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            &coin.swap_contract_address(),
-            &[],
-        )
+        .send_maker_refunds_payment(maker_refunds_payment_args)
         .wait()
         .unwrap();
 
@@ -368,7 +371,7 @@ fn test_nonce_several_urls() {
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![
@@ -397,6 +400,7 @@ fn test_nonce_several_urls() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        abortable_system: AbortableQueue::default(),
     }));
 
     log!("My address {:?}", coin.my_address);
@@ -432,7 +436,7 @@ fn test_wait_for_payment_spend_timeout() {
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         ticker: "ETH".into(),
@@ -447,6 +451,7 @@ fn test_wait_for_payment_spend_timeout() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        abortable_system: AbortableQueue::default(),
     };
 
     let coin = EthCoin(Arc::new(coin));
@@ -467,12 +472,21 @@ fn test_wait_for_payment_spend_timeout() {
     ];
 
     assert!(coin
-        .wait_for_tx_spend(&tx_bytes, wait_until, from_block, &coin.swap_contract_address())
+        .wait_for_htlc_tx_spend(
+            &tx_bytes,
+            &[],
+            wait_until,
+            from_block,
+            &coin.swap_contract_address(),
+            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL
+        )
         .wait()
         .is_err());
 }
 
 #[test]
+#[ignore]
+/// Ignored temporarily until dev is merged to mm2.1
 fn test_search_for_swap_tx_spend_was_spent() {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
@@ -492,7 +506,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address,
         fallback_swap_contract: None,
         ticker: "ETH".into(),
@@ -507,6 +521,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        abortable_system: AbortableQueue::default(),
     }));
 
     // raw transaction bytes of https://etherscan.io/tx/0x2814718945e90fe4301e2a74eaaa46b4fdbdba1536e1d94e3b0bd665b2dd091d
@@ -538,7 +553,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
     ];
     let spend_tx = FoundSwapTxSpend::Spent(signed_eth_tx_from_bytes(&spend_tx).unwrap().into());
 
-    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, 15643275))
+    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, &[0; 20], 15643279))
         .unwrap()
         .unwrap();
     assert_eq!(spend_tx, found_tx);
@@ -578,6 +593,8 @@ fn test_gas_station() {
 }
 
 #[test]
+#[ignore]
+/// Ignored temporarily until dev is merged to mm2.1
 fn test_search_for_swap_tx_spend_was_refunded() {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
@@ -600,7 +617,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address,
         fallback_swap_contract: None,
         ticker: "BAT".into(),
@@ -615,6 +632,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        abortable_system: AbortableQueue::default(),
     }));
 
     // raw transaction bytes of https://etherscan.io/tx/0x02c261dcb1c8615c029b9abc712712b80ef8c1ef20d2cbcdd9bde859e7913476
@@ -649,7 +667,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
     ];
     let refund_tx = FoundSwapTxSpend::Refunded(signed_eth_tx_from_bytes(&refund_tx).unwrap().into());
 
-    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, 13638713))
+    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, &[0; 20], 13638713))
         .unwrap()
         .unwrap();
     assert_eq!(refund_tx, found_tx);
@@ -675,6 +693,7 @@ fn test_withdraw_impl_manual_fee() {
             gas: 150000,
             gas_price: 1.into(),
         }),
+        memo: None,
     };
     coin.my_balance().wait().unwrap();
 
@@ -718,6 +737,7 @@ fn test_withdraw_impl_fee_details() {
             gas: 150000,
             gas_price: 1.into(),
         }),
+        memo: None,
     };
     coin.my_balance().wait().unwrap();
 
@@ -921,7 +941,7 @@ fn get_receiver_trade_preimage() {
     };
 
     let actual = coin
-        .get_receiver_trade_fee(FeeApproxStage::WithoutApprox)
+        .get_receiver_trade_fee(Default::default(), FeeApproxStage::WithoutApprox)
         .wait()
         .expect("!get_sender_trade_fee");
     assert_eq!(actual, expected_fee);
@@ -1011,17 +1031,15 @@ fn validate_dex_fee_invalid_sender_eth() {
         .unwrap();
     let tx = signed_tx_from_web3_tx(tx).unwrap().into();
     let amount: BigDecimal = "0.000526435076465".parse().unwrap();
-    let validate_err = coin
-        .validate_fee(
-            &tx,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            0,
-            &[],
-        )
-        .wait()
-        .unwrap_err();
+    let validate_fee_args = ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        amount: &amount,
+        min_block_number: 0,
+        uuid: &[],
+    };
+    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
     assert!(validate_err.contains("was sent from wrong address"));
 }
 
@@ -1048,17 +1066,15 @@ fn validate_dex_fee_invalid_sender_erc() {
         .unwrap();
     let tx = signed_tx_from_web3_tx(tx).unwrap().into();
     let amount: BigDecimal = "5.548262548262548262".parse().unwrap();
-    let validate_err = coin
-        .validate_fee(
-            &tx,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            0,
-            &[],
-        )
-        .wait()
-        .unwrap_err();
+    let validate_fee_args = ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        amount: &amount,
+        min_block_number: 0,
+        uuid: &[],
+    };
+    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
     assert!(validate_err.contains("was sent from wrong address"));
 }
 
@@ -1089,17 +1105,15 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
     let compressed_public = sender_compressed_pub(&tx);
     let tx = tx.into();
     let amount: BigDecimal = "0.000526435076465".parse().unwrap();
-    let validate_err = coin
-        .validate_fee(
-            &tx,
-            &compressed_public,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            11784793,
-            &[],
-        )
-        .wait()
-        .unwrap_err();
+    let validate_fee_args = ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &compressed_public,
+        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        amount: &amount,
+        min_block_number: 11784793,
+        uuid: &[],
+    };
+    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
     assert!(validate_err.contains("confirmed before min_block"));
 }
 
@@ -1129,17 +1143,15 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
     let compressed_public = sender_compressed_pub(&tx);
     let tx = tx.into();
     let amount: BigDecimal = "5.548262548262548262".parse().unwrap();
-    let validate_err = coin
-        .validate_fee(
-            &tx,
-            &compressed_public,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            11823975,
-            &[],
-        )
-        .wait()
-        .unwrap_err();
+    let validate_fee_args = ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &compressed_public,
+        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        amount: &amount,
+        min_block_number: 11823975,
+        uuid: &[],
+    };
+    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
     assert!(validate_err.contains("confirmed before min_block"));
 }
 
@@ -1228,14 +1240,14 @@ fn polygon_check_if_my_payment_sent() {
         "swap_contract_address": "0x9130b257d37a52e52f21054c4da3450c72f595ce",
     });
 
-    let priv_key = [1; 32];
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(IguanaPrivKey::from([1; 32]));
     let coin = block_on(eth_coin_from_conf_and_request(
         &ctx,
         "MATIC",
         &conf,
         &request,
-        &priv_key,
         CoinProtocol::ETH,
+        priv_key_policy,
     ))
     .unwrap();
 
@@ -1243,15 +1255,17 @@ fn polygon_check_if_my_payment_sent() {
 
     let secret_hash = hex::decode("fc33114b389f0ee1212abf2867e99e89126f4860").unwrap();
     let swap_contract_address = "9130b257d37a52e52f21054c4da3450c72f595ce".into();
+    let if_my_payment_sent_args = CheckIfMyPaymentSentArgs {
+        time_lock: 1638764369,
+        other_pub: &[],
+        secret_hash: &secret_hash,
+        search_from_block: 22185109,
+        swap_contract_address: &Some(swap_contract_address),
+        swap_unique_data: &[],
+        amount: &BigDecimal::default(),
+    };
     let my_payment = coin
-        .check_if_my_payment_sent(
-            1638764369,
-            &[],
-            &secret_hash,
-            22185109,
-            &Some(swap_contract_address),
-            &[],
-        )
+        .check_if_my_payment_sent(if_my_payment_sent_args)
         .wait()
         .unwrap()
         .unwrap();
@@ -1273,7 +1287,7 @@ fn test_message_hash() {
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![Web3Instance {
@@ -1292,6 +1306,7 @@ fn test_message_hash() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        abortable_system: AbortableQueue::default(),
     }));
 
     let message_hash = coin.sign_message_hash("test").unwrap();
@@ -1316,7 +1331,7 @@ fn test_sign_verify_message() {
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![Web3Instance {
@@ -1335,6 +1350,7 @@ fn test_sign_verify_message() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        abortable_system: AbortableQueue::default(),
     }));
 
     let message = "test";
@@ -1370,7 +1386,7 @@ fn test_eth_extract_secret() {
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address,
         fallback_swap_contract: None,
         ticker: "ETH".into(),
@@ -1385,6 +1401,7 @@ fn test_eth_extract_secret() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        abortable_system: AbortableQueue::default(),
     }));
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xcb7c14d3ff309996d582400369393b6fa42314c52245115d4a3f77f072c36da9
@@ -1401,7 +1418,7 @@ fn test_eth_extract_secret() {
         100, 189, 72, 74, 221, 144, 66, 170, 68, 121, 29, 105, 19, 194, 35, 245, 196, 131, 236, 29, 105, 101, 30,
     ];
 
-    let secret = coin.extract_secret(&[0u8; 20], tx_hex.as_slice());
+    let secret = block_on(coin.extract_secret(&[0u8; 20], tx_hex.as_slice()));
     assert!(secret.is_ok());
     let expect_secret = &[
         168, 151, 11, 232, 224, 253, 63, 180, 26, 114, 23, 184, 27, 10, 161, 80, 178, 251, 73, 204, 80, 174, 97, 118,
@@ -1438,13 +1455,14 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(IguanaPrivKey::from(priv_key));
     let coin = block_on(eth_coin_from_conf_and_request(
         &ctx,
         "MATIC",
         &conf,
         &request,
-        &priv_key,
         CoinProtocol::ETH,
+        priv_key_policy,
     ))
     .unwrap();
     // Test expected to pass at this point as we're using a valid pubkey to validate against a valid pubkey

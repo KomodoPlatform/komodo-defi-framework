@@ -6,14 +6,14 @@ use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, Con
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
-use crate::{MarketCoinOps, MmCoin};
+use crate::{CoinFutSpawner, MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::{deserialize, serialize_hex};
 use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
-use common::executor::{spawn, Timer};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, SpawnFuture, Timer};
 use common::log::{debug, error, info};
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;
@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const TRY_LOOP_INTERVAL: f64 = 60.;
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 #[inline]
 pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
@@ -154,6 +155,8 @@ pub struct Platform {
     pub coin: UtxoStandardCoin,
     /// Main/testnet/signet/regtest Needed for lightning node to know which network to connect to
     pub network: BlockchainNetwork,
+    /// The average time in seconds needed to mine a new block for the blockchain network.
+    pub avg_block_time: u64,
     /// The best block height.
     pub best_block_height: AtomicU64,
     /// Number of blocks for every Confirmation target. This is used in the FeeEstimator.
@@ -166,6 +169,9 @@ pub struct Platform {
     pub registered_outputs: PaMutex<Vec<WatchedOutput>>,
     /// This cache stores transactions to be broadcasted once the other node accepts the channel
     pub unsigned_funding_txs: PaMutex<HashMap<u64, TransactionInputSigner>>,
+    /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
+    /// and on [`MmArc::stop`].
+    pub abortable_system: AbortableQueue,
 }
 
 impl Platform {
@@ -173,11 +179,17 @@ impl Platform {
     pub fn new(
         coin: UtxoStandardCoin,
         network: BlockchainNetwork,
+        avg_block_time: u64,
         confirmations_targets: PlatformCoinConfirmationTargets,
-    ) -> Self {
-        Platform {
+    ) -> EnableLightningResult<Self> {
+        // Create an abortable system linked to the base `coin` so if the base coin is disabled,
+        // all spawned futures related to `LightCoin` will be aborted as well.
+        let abortable_system = coin.as_ref().abortable_system.create_subsystem()?;
+
+        Ok(Platform {
             coin,
             network,
+            avg_block_time,
             best_block_height: AtomicU64::new(0),
             confirmations_targets,
             latest_fees: LatestFees {
@@ -188,11 +200,14 @@ impl Platform {
             registered_txs: PaMutex::new(HashSet::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
-        }
+            abortable_system,
+        })
     }
 
     #[inline]
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+
+    pub fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
 
     pub async fn set_latest_fees(&self) -> UtxoRpcResult<()> {
         let platform_coin = &self.coin;
@@ -333,6 +348,7 @@ impl Platform {
             .map(|transaction| async move {
                 if is_spv_enabled {
                     client
+                        // TODO: Should log the spv error if height > 0
                         .validate_spv_proof(&transaction, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
                         .await
                         .map_err(GetConfirmedTxError::SPVError)
@@ -402,6 +418,7 @@ impl Platform {
             .map(|output| async move {
                 if is_spv_enabled {
                     client
+                        // TODO: Should log the spv error if height > 0
                         .validate_spv_proof(&output.spending_tx, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
                         .await
                         .map_err(GetConfirmedTxError::SPVError)
@@ -503,11 +520,14 @@ impl Platform {
 
         let closing_tx = self
             .coin
-            .wait_for_tx_spend(
+            // TODO add fn with old wait_for_tx_spend name
+            .wait_for_htlc_tx_spend(
                 &funding_tx_bytes.into_vec(),
+                &[],
                 (now_ms() / 1000) + 3600,
                 from_block.try_into()?,
                 &None,
+                TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
             )
             .compat()
             .await
@@ -570,14 +590,17 @@ impl BroadcasterInterface for Platform {
         let txid = tx.txid();
         let tx_hex = serialize_hex(tx);
         debug!("Trying to broadcast transaction: {}", tx_hex);
+
         let fut = self.coin.send_raw_tx(&tx_hex);
-        spawn(async move {
+        let fut = async move {
             match fut.compat().await {
                 Ok(id) => info!("Transaction broadcasted successfully: {:?} ", id),
                 // TODO: broadcast transaction through p2p network in case of error
                 Err(e) => error!("Broadcast transaction {} failed: {}", txid, e),
             }
-        });
+        };
+
+        self.spawner().spawn(fut);
     }
 }
 

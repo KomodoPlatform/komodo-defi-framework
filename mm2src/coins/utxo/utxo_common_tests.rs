@@ -8,6 +8,7 @@ use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
 use crate::utxo::tx_cache::UtxoVerboseCacheOps;
 use crate::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use crate::{compare_transaction_details, UtxoStandardCoin};
+use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::PagingOptionsEnum;
@@ -16,6 +17,7 @@ use itertools::Itertools;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 use std::convert::TryFrom;
 use std::num::NonZeroUsize;
+use std::time::Duration;
 
 pub(super) const TEST_COIN_NAME: &'static str = "RICK";
 // Made-up hrp for rick to test p2wpkh script
@@ -79,7 +81,7 @@ pub(super) fn utxo_coin_fields_for_test(
     let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
 
     let priv_key_policy = PrivKeyPolicy::KeyPair(key_pair);
-    let derivation_method = DerivationMethod::Iguana(my_address);
+    let derivation_method = DerivationMethod::SingleAddress(my_address);
 
     let bech32_hrp = if is_segwit_coin {
         Some(TEST_COIN_HRP.to_string())
@@ -120,6 +122,7 @@ pub(super) fn utxo_coin_fields_for_test(
             trezor_coin: None,
             enable_spv_proof: false,
             block_headers_verification_params: None,
+            derivation_path: None,
         },
         decimals: TEST_COIN_DECIMALS,
         dust_amount: UTXO_DUST_AMOUNT,
@@ -134,6 +137,7 @@ pub(super) fn utxo_coin_fields_for_test(
         check_utxo_maturity: false,
         block_headers_status_notifier: None,
         block_headers_status_watcher: None,
+        abortable_system: AbortableQueue::default(),
     }
 }
 
@@ -152,9 +156,6 @@ pub(super) async fn wait_for_tx_history_finished<Coin>(
 where
     Coin: CoinWithTxHistoryV2 + MmCoin,
 {
-    let started_at = now_ms() / 1000;
-    let wait_until = started_at + timeout_s;
-
     let req = MyTxHistoryRequestV2 {
         coin: coin.ticker().to_owned(),
         limit: u32::MAX as usize,
@@ -162,16 +163,20 @@ where
         target,
     };
 
-    while now_ms() / 1000 < wait_until {
-        Timer::sleep(3.).await;
+    // Let the storage to be initialized for the given coin.
+    Timer::sleep(1.).await;
 
+    repeatable!(async {
         let response = my_tx_history_v2_impl(ctx.clone(), coin, req.clone()).await.unwrap();
         if response.transactions.len() >= expected_txs {
-            return response;
+            return Ready(response);
         }
-    }
-
-    panic!("Waited too long until {} for TX history finishes", wait_until)
+        Retry(())
+    })
+    .repeat_every(Duration::from_secs(3))
+    .with_timeout_ms(timeout_s * 1000)
+    .await
+    .unwrap()
 }
 
 pub(super) fn get_morty_hd_transactions_ordered(tx_hashes: &[&str]) -> Vec<TransactionDetails> {
@@ -241,7 +246,7 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
     let hd_account_for_test = UtxoHDAccount {
         account_id: 0,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ").unwrap(),
-        account_derivation_path: Bip44PathToAccount::from_str("m/44'/141'/0'").unwrap(),
+        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 11,
         internal_addresses_number: 3,
         derived_addresses: HDAddressesCache::default(),
@@ -255,7 +260,7 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
         hd_wallet_rmd160: "6d9d2b554d768232320587df75c4338ecc8bf37d".into(),
         hd_wallet_storage: HDWalletCoinStorage::default(),
         address_format: UtxoAddressFormat::Standard,
-        derivation_path: Bip44PathToCoin::from_str("m/44'/141'").unwrap(),
+        derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
         accounts: HDAccountsMutex::new(hd_accounts),
         gap_limit: 20,
     });

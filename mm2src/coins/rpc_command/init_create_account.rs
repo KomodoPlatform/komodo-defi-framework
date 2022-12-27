@@ -72,7 +72,7 @@ impl From<CoinFindError> for CreateAccountRpcError {
 impl From<UnexpectedDerivationMethod> for CreateAccountRpcError {
     fn from(e: UnexpectedDerivationMethod) -> Self {
         match e {
-            UnexpectedDerivationMethod::HDWalletUnavailable => CreateAccountRpcError::CoinIsActivatedNotWithHDWallet,
+            UnexpectedDerivationMethod::ExpectedHDWallet => CreateAccountRpcError::CoinIsActivatedNotWithHDWallet,
             unexpected_error => CreateAccountRpcError::Internal(unexpected_error.to_string()),
         }
     }
@@ -121,7 +121,7 @@ impl From<RpcTaskError> for CreateAccountRpcError {
     fn from(e: RpcTaskError) -> Self {
         let error = e.to_string();
         match e {
-            RpcTaskError::Canceled => CreateAccountRpcError::Internal("Canceled".to_owned()),
+            RpcTaskError::Cancelled => CreateAccountRpcError::Internal("Cancelled".to_owned()),
             RpcTaskError::Timeout(timeout) => CreateAccountRpcError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => {
                 CreateAccountRpcError::Internal(error)
@@ -238,7 +238,7 @@ impl RpcTask for InitCreateAccountTask {
                 MmCoinEnum::QtumCoin(qtum) => qtum.revert_creating_account(account_id).await,
                 _ => (),
             }
-        }
+        };
     }
 
     async fn run(&mut self, task_handle: &CreateAccountTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
@@ -297,13 +297,14 @@ pub async fn init_create_new_account(
 ) -> MmResult<InitRpcTaskResponse, CreateAccountRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CreateAccountRpcError::Internal)?;
+    let spawner = coin.spawner();
     let task = InitCreateAccountTask {
         ctx,
         coin,
         req,
         task_state: CreateAccountState::default(),
     };
-    let task_id = CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, task)?;
+    let task_id = CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, &spawner, task)?;
     Ok(InitRpcTaskResponse { task_id })
 }
 

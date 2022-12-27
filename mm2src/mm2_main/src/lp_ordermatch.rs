@@ -27,12 +27,13 @@ use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MmCoinEnum};
-use common::executor::{spawn, Timer};
+use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
+                       SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
-use common::{bits256, log, new_uuid, now_ms, spawn_abortable, AbortOnDropHandle};
+use common::{bits256, log, new_uuid, now_ms};
 use crypto::privkey::SerializableSecp256k1Keypair;
-use crypto::CryptoCtx;
+use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, TryFutureExt};
 use hash256_std_hasher::Hash256StdHasher;
@@ -42,7 +43,7 @@ use keys::{AddressFormat, KeyPair};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, TopicPrefix, TOPIC_SEPARATOR};
-use mm2_metrics::{mm_gauge, mm_label};
+use mm2_metrics::mm_gauge;
 use mm2_number::{construct_detailed, BigDecimal, BigRational, Fraction, MmNumber, MmNumberMultiRepr};
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::identities::Zero;
@@ -60,12 +61,12 @@ use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
-use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, Libp2pPeerId,
-                             P2PRequest};
+use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
                           check_other_coin_balance_for_swap, insert_new_swap_to_db, is_pubkey_banned,
-                          lp_atomic_locktime, run_maker_swap, run_taker_swap, AtomicLocktimeVersion, MakerSwap,
-                          RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
+                          lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
+                          p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, AtomicLocktimeVersion,
+                          MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update,
@@ -135,6 +136,10 @@ pub enum OrdermatchInitError {
         error: String,
     },
     Internal(String),
+}
+
+impl From<AbortedError> for OrdermatchInitError {
+    fn from(e: AbortedError) -> Self { OrdermatchInitError::Internal(e.to_string()) }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -314,6 +319,14 @@ fn process_maker_order_updated(ctx: MmArc, from_pubkey: String, updated_msg: new
 //     Ok(())
 // }
 
+// ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
+// So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
+// We can compare pubkeys from maker_orders and from asks or bids, to find our order.
+#[inline(always)]
+fn is_my_order(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
+    my_pub.as_deref() == Some(order_pubkey) || my_orders_pubkeys.contains(order_pubkey)
+}
+
 /// Request best asks and bids for the given `base` and `rel` coins from relays.
 /// Set `asks_num` and/or `bids_num` to get corresponding number of best asks and bids or None to get all of the available orders.
 ///
@@ -342,24 +355,28 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-    let keypair = ctx.secp256k1_key_pair_as_option();
+    let my_pubsecp = match CryptoCtx::from_ctx(ctx).discard_mm_trace() {
+        Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
+        Err(CryptoCtxError::NotInitialized) => None,
+        Err(other) => return ERR!("{}", other),
+    };
+
     let alb_pair = alb_ordered_pair(base, rel);
     for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
         let pubkey_bytes = match hex::decode(&pubkey) {
             Ok(b) => b,
             Err(e) => {
-                log::warn!("Error {} decoding pubkey {}", e, pubkey);
+                warn!("Error {} decoding pubkey {}", e, pubkey);
                 continue;
             },
         };
-        if let Some(keypair) = keypair {
-            if pubkey_bytes.as_slice() == keypair.public().as_ref() {
-                continue;
-            }
+
+        if is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &pubkey) {
+            continue;
         }
 
         if is_pubkey_banned(ctx, &pubkey_bytes[1..].into()) {
-            log::warn!("Pubkey {} is banned", pubkey);
+            warn!("Pubkey {} is banned", pubkey);
             continue;
         }
         let params = ProcessTrieParams {
@@ -387,9 +404,18 @@ fn insert_or_update_order(ctx: &MmArc, item: OrderbookItem) {
     orderbook.insert_or_update_order_update_trie(item)
 }
 
+// use this function when notify maker order created
+fn insert_or_update_my_order(ctx: &MmArc, item: OrderbookItem, my_order: &MakerOrder) {
+    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
+    let mut orderbook = ordermatch_ctx.orderbook.lock();
+    orderbook.insert_or_update_order_update_trie(item);
+    if let Some(key) = my_order.p2p_privkey {
+        orderbook.my_p2p_pubkeys.insert(hex::encode(key.public_slice()));
+    }
+}
+
 fn delete_order(ctx: &MmArc, pubkey: &str, uuid: Uuid) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-
     let mut orderbook = ordermatch_ctx.orderbook.lock();
     if let Some(order) = orderbook.order_set.get(&uuid) {
         if order.pubkey == pubkey {
@@ -398,10 +424,13 @@ fn delete_order(ctx: &MmArc, pubkey: &str, uuid: Uuid) {
     }
 }
 
-fn delete_my_order(ctx: &MmArc, uuid: Uuid) {
+fn delete_my_order(ctx: &MmArc, uuid: Uuid, p2p_privkey: Option<SerializableSecp256k1Keypair>) {
     let ordermatch_ctx: Arc<OrdermatchContext> = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
     let mut orderbook = ordermatch_ctx.orderbook.lock();
     orderbook.remove_order_trie_update(uuid);
+    if let Some(key) = p2p_privkey {
+        orderbook.my_p2p_pubkeys.remove(&hex::encode(key.public_slice()));
+    }
 }
 
 fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: &str) {
@@ -463,7 +492,8 @@ pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, ms
                 new_protocol::OrdermatchMessage::MakerReserved(maker_reserved) => {
                     let msg = MakerReserved::from_new_proto_and_pubkey(maker_reserved, pubkey.unprefixed().into());
                     // spawn because process_maker_reserved may take significant time to run
-                    spawn(process_maker_reserved(ctx, pubkey.unprefixed().into(), msg));
+                    let spawner = ctx.spawner();
+                    spawner.spawn(process_maker_reserved(ctx, pubkey.unprefixed().into(), msg));
                     true
                 },
                 new_protocol::OrdermatchMessage::TakerConnect(taker_connect) => {
@@ -484,7 +514,7 @@ pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, ms
             }
         },
         Err(e) => {
-            log::error!("Error {} while decoding signed message", e);
+            error!("Error {} while decoding signed message", e);
             false
         },
     }
@@ -808,10 +838,7 @@ fn process_sync_pubkey_orderbook_state(
 ) -> Result<Option<SyncPubkeyOrderbookStateRes>, String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let orderbook = ordermatch_ctx.orderbook.lock();
-    let pubkey_state = match orderbook.pubkeys_state.get(&pubkey) {
-        Some(s) => s,
-        None => return Ok(None),
-    };
+    let pubkey_state = some_or_return_ok_none!(orderbook.pubkeys_state.get(&pubkey));
 
     let order_getter = |uuid: &Uuid| orderbook.order_set.get(uuid).cloned();
     let pair_orders_diff: Result<HashMap<_, _>, _> = trie_roots
@@ -824,10 +851,10 @@ fn process_sync_pubkey_orderbook_state(
 
             let delta_result = match pubkey_state.order_pairs_trie_state_history.get(&pair) {
                 Some(history) => {
-                    DeltaOrFullTrie::from_history(history, root, *actual_pair_root, &orderbook.memory_db, &order_getter)
+                    DeltaOrFullTrie::from_history(history, root, *actual_pair_root, &orderbook.memory_db, order_getter)
                 },
                 None => {
-                    get_full_trie(actual_pair_root, &orderbook.memory_db, &order_getter).map(DeltaOrFullTrie::FullTrie)
+                    get_full_trie(actual_pair_root, &orderbook.memory_db, order_getter).map(DeltaOrFullTrie::FullTrie)
                 },
             };
 
@@ -944,14 +971,11 @@ fn maker_order_created_p2p_notify(
     };
 
     let to_broadcast = new_protocol::OrdermatchMessage::MakerOrderCreated(message.clone());
-    let (key_pair, peer_id) = match order.p2p_keypair() {
-        Some(k) => (k, Some(k.libp2p_peer_id())),
-        None => (ctx.secp256k1_key_pair(), None),
-    };
+    let (key_pair, peer_id) = p2p_keypair_and_peer_id_to_broadcast(&ctx, order.p2p_keypair());
 
     let encoded_msg = encode_and_sign(&to_broadcast, key_pair.private_ref()).unwrap();
-    let order: OrderbookItem = (message, hex::encode(key_pair.public_slice())).into();
-    insert_or_update_order(&ctx, order);
+    let item: OrderbookItem = (message, hex::encode(key_pair.public_slice())).into();
+    insert_or_update_my_order(&ctx, item, order);
     broadcast_p2p_msg(&ctx, vec![topic], encoded_msg, peer_id);
 }
 
@@ -973,10 +997,7 @@ fn maker_order_updated_p2p_notify(
     p2p_privkey: Option<&KeyPair>,
 ) {
     let msg: new_protocol::OrdermatchMessage = message.clone().into();
-    let (secret, peer_id) = match p2p_privkey {
-        Some(k) => (k.private_bytes(), Some(k.libp2p_peer_id())),
-        None => (ctx.secp256k1_key_pair().private_bytes(), None),
-    };
+    let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(&ctx, p2p_privkey);
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
     process_my_maker_order_updated(&ctx, &message);
     broadcast_p2p_msg(&ctx, vec![topic], encoded_msg, peer_id);
@@ -988,7 +1009,7 @@ fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
         timestamp: now_ms() / 1000,
         pair_trie_root: H64::default(),
     });
-    delete_my_order(&ctx, order.uuid);
+    delete_my_order(&ctx, order.uuid, order.p2p_privkey);
     log::debug!("maker_order_cancelled_p2p_notify called, message {:?}", message);
     broadcast_ordermatch_message(&ctx, vec![order.orderbook_topic()], message, order.p2p_keypair());
 }
@@ -1341,6 +1362,7 @@ impl<'a> TakerOrderBuilder<'a> {
     }
 
     /// Validate fields and build
+    #[allow(clippy::result_large_err)]
     pub fn build(self) -> Result<TakerOrder, TakerOrderBuildError> {
         let min_base_amount = self.base_coin.min_trading_vol();
         let min_rel_amount = self.rel_coin.min_trading_vol();
@@ -1579,6 +1601,22 @@ impl TakerOrder {
 
     fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.request.rel) }
 
+    /// Returns the orderbook ticker of the taker coin
+    fn taker_orderbook_ticker(&self) -> &str {
+        match self.request.action {
+            TakerAction::Buy => self.rel_orderbook_ticker(),
+            TakerAction::Sell => self.base_orderbook_ticker(),
+        }
+    }
+
+    /// Returns the orderbook ticker of the maker coin
+    fn maker_orderbook_ticker(&self) -> &str {
+        match self.request.action {
+            TakerAction::Buy => self.base_orderbook_ticker(),
+            TakerAction::Sell => self.rel_orderbook_ticker(),
+        }
+    }
+
     fn orderbook_topic(&self) -> String {
         orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
     }
@@ -1697,6 +1735,7 @@ impl fmt::Display for MakerOrderBuildError {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_price(price: MmNumber) -> Result<(), MakerOrderBuildError> {
     let min_price = MmNumber::from(BigRational::new(1.into(), 100_000_000.into()));
 
@@ -1710,6 +1749,7 @@ fn validate_price(price: MmNumber) -> Result<(), MakerOrderBuildError> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_and_get_min_vol(
     min_base_amount: MmNumber,
     min_rel_amount: MmNumber,
@@ -1730,6 +1770,7 @@ fn validate_and_get_min_vol(
     Ok(actual_min_base_vol)
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_max_vol(
     min_base_amount: MmNumber,
     min_rel_amount: MmNumber,
@@ -1812,6 +1853,7 @@ impl<'a> MakerOrderBuilder<'a> {
     }
 
     /// Build MakerOrder
+    #[allow(clippy::result_large_err)]
     pub fn build(self) -> Result<MakerOrder, MakerOrderBuildError> {
         if self.base_coin.ticker() == self.rel_coin.ticker() {
             return Err(MakerOrderBuildError::BaseEqualRel);
@@ -2195,9 +2237,10 @@ fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook
 }
 
 pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
+    // broadcast_maker_orders_keep_alive_loop is spawned only if CryptoCtx is initialized.
     let persistent_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
-        .secp256k1_pubkey_hex();
+        .mm2_internal_pubkey_hex();
 
     while !ctx.is_stopping() {
         Timer::sleep(MIN_ORDER_KEEP_ALIVE_INTERVAL as f64).await;
@@ -2228,10 +2271,7 @@ fn broadcast_ordermatch_message(
     msg: new_protocol::OrdermatchMessage,
     p2p_privkey: Option<&KeyPair>,
 ) {
-    let (secret, peer_id) = match p2p_privkey {
-        Some(k) => (k.private_bytes(), Some(k.libp2p_peer_id())),
-        None => (ctx.secp256k1_key_pair().private_bytes(), None),
-    };
+    let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey);
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
     broadcast_p2p_msg(ctx, topics.into_iter().collect(), encoded_msg, peer_id);
 }
@@ -2373,22 +2413,9 @@ fn collect_orderbook_metrics(_ctx: &MmArc, _orderbook: &Orderbook) {}
 fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
     use parity_util_mem::malloc_size;
 
-    fn history_committed_changes(history: &TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>) -> i64 {
-        let total = history.iter().fold(0usize, |total, (_alb_pair, history)| {
-            total + history.get_element().inner.len()
-        });
-        total as i64
-    }
-
     let memory_db_size = malloc_size(&orderbook.memory_db);
     mm_gauge!(ctx.metrics, "orderbook.len", orderbook.order_set.len() as f64);
     mm_gauge!(ctx.metrics, "orderbook.memory_db", memory_db_size as f64);
-
-    // TODO remove metrics below after testing
-    for (pubkey, pubkey_state) in orderbook.pubkeys_state.iter() {
-        mm_gauge!(ctx.metrics, "orders_uuids", pubkey_state.orders_uuids.len() as f64, "pubkey" => pubkey.clone());
-        mm_gauge!(ctx.metrics, "history.commited_changes", history_committed_changes(&pubkey_state.order_pairs_trie_state_history) as f64, "pubkey" => pubkey.clone());
-    }
 }
 
 #[derive(Default)]
@@ -2407,6 +2434,7 @@ struct Orderbook {
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
+    my_p2p_pubkeys: HashSet<String>,
 }
 
 fn hashed_null_node<T: TrieConfiguration>() -> TrieHash<T> { <T::Codec as NodeCodecT>::hashed_null_node() }
@@ -2445,17 +2473,15 @@ impl Orderbook {
             let mut pair_trie = match get_trie_mut(&mut self.memory_db, pair_root) {
                 Ok(trie) => trie,
                 Err(e) => {
-                    log::error!("Error getting {} trie with root {:?}", e, prev_root);
+                    error!("Error getting {} trie with root {:?}", e, prev_root);
                     return;
                 },
             };
             let order_bytes = order.trie_state_bytes();
             if let Err(e) = pair_trie.insert(order.uuid.as_bytes(), &order_bytes) {
-                log::error!(
+                error!(
                     "Error {:?} on insertion to trie. Key {}, value {:?}",
-                    e,
-                    order.uuid,
-                    order_bytes
+                    e, order.uuid, order_bytes
                 );
                 return;
             };
@@ -2556,7 +2582,7 @@ impl Orderbook {
         )]) {
             Ok(root) => root,
             Err(_) => {
-                log::error!("Failed to get existing trie with root {:?}", pair_state);
+                error!("Failed to get existing trie with root {:?}", pair_state);
                 return Some(order);
             },
         };
@@ -2625,7 +2651,6 @@ impl Orderbook {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), derive(Default))]
 struct OrdermatchContext {
     pub maker_orders_ctx: PaMutex<MakerOrdersContext>,
     pub my_taker_orders: AsyncMutex<HashMap<Uuid, TakerOrder>>,
@@ -2669,7 +2694,7 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
     }
 
     let ordermatch_context = OrdermatchContext {
-        maker_orders_ctx: Default::default(),
+        maker_orders_ctx: PaMutex::new(MakerOrdersContext::new(ctx)?),
         my_taker_orders: Default::default(),
         orderbook: Default::default(),
         pending_maker_reserved: Default::default(),
@@ -2687,34 +2712,28 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
 #[cfg_attr(all(test, not(target_arch = "wasm32")), mockable)]
 impl OrdermatchContext {
     /// Obtains a reference to this crate context, creating it if necessary.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(test))]
     fn from_ctx(ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
         Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || {
-            Ok(OrdermatchContext::default())
+            ERR!("'OrdermatchContext' is not initialized")
         })))
     }
 
     /// Obtains a reference to this crate context, creating it if necessary.
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(test)]
     fn from_ctx(ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
         Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || {
             Ok(OrdermatchContext {
-                maker_orders_ctx: Default::default(),
+                maker_orders_ctx: PaMutex::new(try_s!(MakerOrdersContext::new(ctx))),
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
                 pending_maker_reserved: Default::default(),
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
+                #[cfg(target_arch = "wasm32")]
                 ordermatch_db: ConstructibleDb::new(ctx),
             })
         })))
-    }
-
-    /// Obtains a reference to this crate context, creating it if necessary.
-    #[allow(dead_code)]
-    fn from_ctx_weak(ctx_weak: &MmWeak) -> Result<Arc<OrdermatchContext>, String> {
-        let ctx = try_s!(MmArc::from_weak(ctx_weak).ok_or("Context expired"));
-        Self::from_ctx(&ctx)
     }
 
     fn orderbook_ticker(&self, ticker: &str) -> Option<String> { self.orderbook_tickers.get(ticker).cloned() }
@@ -2736,19 +2755,30 @@ impl OrdermatchContext {
     }
 }
 
-#[derive(Default)]
-struct MakerOrdersContext {
+pub struct MakerOrdersContext {
     orders: HashMap<Uuid, Arc<AsyncMutex<MakerOrder>>>,
     order_tickers: HashMap<Uuid, String>,
     count_by_tickers: HashMap<String, usize>,
-    balance_loops: HashMap<String, AbortOnDropHandle>,
+    /// The `check_balance_update_loop` future abort handles associated stored by corresponding tickers.
+    balance_loops: AbortableSimpleMap<String>,
 }
 
 impl MakerOrdersContext {
+    fn new(ctx: &MmArc) -> OrdermatchInitResult<MakerOrdersContext> {
+        // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
+        // all spawned `check_balance_update_loop` futures will be aborted as well.
+        let balance_loops = ctx.abortable_system.create_subsystem()?;
+
+        Ok(MakerOrdersContext {
+            orders: HashMap::new(),
+            order_tickers: HashMap::new(),
+            count_by_tickers: HashMap::new(),
+            balance_loops,
+        })
+    }
+
     fn add_order(&mut self, ctx: MmWeak, order: MakerOrder, balance: Option<BigDecimal>) {
-        if !self.balance_loop_exists(&order.base) {
-            self.spawn_balance_loop(ctx, order.base.clone(), balance);
-        }
+        self.spawn_balance_loop_if_not_spawned(ctx, order.base.clone(), balance);
 
         self.order_tickers.insert(order.uuid, order.base.clone());
         *self.count_by_tickers.entry(order.base.clone()).or_insert(0) += 1;
@@ -2777,33 +2807,37 @@ impl MakerOrdersContext {
         self.count_by_tickers.get(ticker).copied() > Some(0)
     }
 
-    fn add_balance_loop(&mut self, ticker: &str, handle: AbortOnDropHandle) {
-        self.balance_loops.insert(ticker.to_string(), handle);
-    }
-
-    fn spawn_balance_loop(&mut self, ctx: MmWeak, order_base: String, balance: Option<BigDecimal>) {
+    fn spawn_balance_loop_if_not_spawned(&mut self, ctx: MmWeak, order_base: String, balance: Option<BigDecimal>) {
         let ticker = order_base.clone();
-        let handle = spawn_abortable(async move { check_balance_update_loop(ctx, ticker, balance).await });
-        self.add_balance_loop(&order_base, handle);
+        let mut balance_loops = self.balance_loops.lock();
+
+        let fut = check_balance_update_loop(ctx, ticker, balance);
+        // `SimpleMapImpl::spawn_or_ignore` won't spawn the future
+        // if the `check_balance_update_loop` loop has been spawned already.
+        balance_loops.spawn_or_ignore(order_base, fut).warn_log();
     }
 
-    fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.remove(ticker); }
+    fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.lock().abort_future(ticker).warn_log(); }
 
-    fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.contains_key(ticker) }
+    #[cfg(test)]
+    fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.lock().contains(ticker).unwrap() }
 }
 
 #[cfg_attr(test, mockable)]
 fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerOrder) {
-    spawn(async move {
+    let spawner = ctx.spawner();
+    let uuid = maker_match.request.uuid;
+
+    let fut = async move {
         // aka "maker_loop"
         let taker_coin = match lp_coinfind(&ctx, &maker_order.rel).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", maker_order.rel);
+                error!("Coin {} is not found/enabled", maker_order.rel);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", maker_order.rel, e);
+                error!("!lp_coinfind({}): {}", maker_order.rel, e);
                 return;
             },
         };
@@ -2811,20 +2845,23 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let maker_coin = match lp_coinfind(&ctx, &maker_order.base).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", maker_order.base);
+                error!("Coin {} is not found/enabled", maker_order.base);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", maker_order.base, e);
+                error!("!lp_coinfind({}): {}", maker_order.base, e);
                 return;
             },
         };
         let alice = bits256::from(maker_match.request.sender_pubkey.0);
         let maker_amount = maker_match.reserved.get_base_amount().to_decimal();
         let taker_amount = maker_match.reserved.get_rel_amount().to_decimal();
-        let privkey = &ctx.secp256k1_key_pair().private().secret;
-        let my_persistent_pub = compressed_pub_key_from_priv_raw(&privkey[..], ChecksumType::DSHA256).unwrap();
-        let uuid = maker_match.request.uuid;
+
+        // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
+        let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
+        let my_persistent_pub = compressed_pub_key_from_priv_raw(raw_priv.as_slice(), ChecksumType::DSHA256).unwrap();
+
         let my_conf_settings = choose_maker_confs_and_notas(
             maker_order.conf_settings,
             &maker_match.request,
@@ -2843,7 +2880,11 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
             None => AtomicLocktimeVersion::V1,
         };
-        let lock_time = lp_atomic_locktime(maker_coin.ticker(), taker_coin.ticker(), atomic_locktime_v);
+        let lock_time = lp_atomic_locktime(
+            maker_order.base_orderbook_ticker(),
+            maker_order.rel_orderbook_ticker(),
+            atomic_locktime_v,
+        );
         log_tag!(
             ctx,
             "";
@@ -2873,22 +2914,28 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             MakerSwap::generate_secret().into(),
         );
         run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
-    });
+    };
+
+    let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
+    spawner.spawn_with_settings(fut, settings);
 }
 
 fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch) {
-    spawn(async move {
+    let spawner = ctx.spawner();
+    let uuid = taker_match.reserved.taker_order_uuid;
+
+    let fut = async move {
         // aka "taker_loop"
         let maker = bits256::from(taker_match.reserved.sender_pubkey.0);
         let taker_coin_ticker = taker_order.taker_coin_ticker();
         let taker_coin = match lp_coinfind(&ctx, taker_coin_ticker).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", taker_coin_ticker);
+                error!("Coin {} is not found/enabled", taker_coin_ticker);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", taker_coin_ticker, e);
+                error!("!lp_coinfind({}): {}", taker_coin_ticker, e);
                 return;
             },
         };
@@ -2897,20 +2944,22 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         let maker_coin = match lp_coinfind(&ctx, maker_coin_ticker).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", maker_coin_ticker);
+                error!("Coin {} is not found/enabled", maker_coin_ticker);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", maker_coin_ticker, e);
+                error!("!lp_coinfind({}): {}", maker_coin_ticker, e);
                 return;
             },
         };
 
-        let privkey = &ctx.secp256k1_key_pair().private().secret;
-        let my_persistent_pub = compressed_pub_key_from_priv_raw(&privkey[..], ChecksumType::DSHA256).unwrap();
+        // lp_connected_alice is called only from process_maker_connected, which returns if CryptoCtx is not initialized
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
+        let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
+        let my_persistent_pub = compressed_pub_key_from_priv_raw(raw_priv.as_slice(), ChecksumType::DSHA256).unwrap();
+
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
-        let uuid = taker_match.reserved.taker_order_uuid;
 
         let my_conf_settings =
             choose_taker_confs_and_notas(&taker_order.request, &taker_match.reserved, &maker_coin, &taker_coin);
@@ -2930,7 +2979,11 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             },
             None => AtomicLocktimeVersion::V1,
         };
-        let locktime = lp_atomic_locktime(maker_coin.ticker(), taker_coin.ticker(), atomic_locktime_v);
+        let locktime = lp_atomic_locktime(
+            taker_order.maker_orderbook_ticker(),
+            taker_order.taker_orderbook_ticker(),
+            atomic_locktime_v,
+        );
         log_tag!(
             ctx,
             "";
@@ -2959,13 +3012,17 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
         );
         run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
-    });
+    };
+
+    let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
+    spawner.spawn_with_settings(fut, settings)
 }
 
 pub async fn lp_ordermatch_loop(ctx: MmArc) {
+    // lp_ordermatch_loop is spawned only if CryptoCtx is initialized
     let my_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
-        .secp256k1_pubkey_hex();
+        .mm2_internal_pubkey_hex();
 
     let maker_order_timeout = ctx.conf["maker_order_timeout"].as_u64().unwrap_or(MAKER_ORDER_TIMEOUT);
     loop {
@@ -3232,7 +3289,10 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         }
     }
 
-    let our_public_id = ctx.public_id().unwrap();
+    // Taker order existence is checked previously - it can't be created if CryptoCtx is not initialized
+    let our_public_id = CryptoCtx::from_ctx(&ctx)
+        .expect("'CryptoCtx' must be initialized already")
+        .mm2_internal_public_id();
     if our_public_id.bytes == from_pubkey.0 {
         log::warn!("Skip maker reserved from our pubkey");
         return;
@@ -3306,7 +3366,12 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
 async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: MakerConnected) {
     log::debug!("Processing MakerConnected {:?}", connected);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let our_public_id = ctx.public_id().unwrap();
+
+    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
+        Ok(ctx) => ctx.mm2_internal_public_id(),
+        Err(_) => return,
+    };
+
     if our_public_id.bytes == from_pubkey.0 {
         log::warn!("Skip maker connected from our pubkey");
         return;
@@ -3329,7 +3394,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
     };
 
     if order_match.reserved.sender_pubkey != from_pubkey {
-        log::error!("Connected message sender pubkey != reserved message sender pubkey");
+        error!("Connected message sender pubkey != reserved message sender pubkey");
         return;
     }
     // alice
@@ -3343,7 +3408,11 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
 }
 
 async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
-    let our_public_id: H256Json = ctx.public_id().unwrap().bytes.into();
+    let our_public_id: H256Json = match CryptoCtx::from_ctx(&ctx) {
+        Ok(ctx) => ctx.mm2_internal_public_id().bytes.into(),
+        Err(_) => return,
+    };
+
     if our_public_id == from_pubkey {
         log::warn!("Skip the request originating from our pubkey");
         return;
@@ -3417,7 +3486,12 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
 async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg: TakerConnect) {
     log::debug!("Processing TakerConnect {:?}", connect_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let our_public_id = ctx.public_id().unwrap();
+
+    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
+        Ok(ctx) => ctx.mm2_internal_public_id(),
+        Err(_) => return,
+    };
+
     if our_public_id.bytes == sender_pubkey.0 {
         log::warn!("Skip taker connect from our pubkey");
         return;
@@ -3660,7 +3734,7 @@ pub async fn lp_auto_buy(
     };
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
-    let our_public_id = try_s!(ctx.public_id());
+    let our_public_id = try_s!(CryptoCtx::from_ctx(&ctx)).mm2_internal_public_id();
     let rel_volume = &input.volume * &input.price;
     let conf_settings = OrderConfirmationsSettings {
         base_confs: input.base_confs.unwrap_or_else(|| base_coin.required_confirmations()),
@@ -4336,10 +4410,13 @@ struct CoinVolumeInfo {
 
 async fn get_max_volume(ctx: &MmArc, my_coin: &MmCoinEnum, other_coin: &MmCoinEnum) -> Result<CoinVolumeInfo, String> {
     let my_balance = try_s!(my_coin.my_spendable_balance().compat().await);
-    // first check if `rel_coin` balance is sufficient
+
+    let volume = try_s!(calc_max_maker_vol(ctx, my_coin, &my_balance, FeeApproxStage::OrderIssue).await);
+
+    // check if `rel_coin` balance is sufficient
     let other_coin_trade_fee = try_s!(
         other_coin
-            .get_receiver_trade_fee(FeeApproxStage::OrderIssue)
+            .get_receiver_trade_fee(volume.to_decimal(), FeeApproxStage::OrderIssue)
             .compat()
             .await
     );
@@ -4347,7 +4424,7 @@ async fn get_max_volume(ctx: &MmArc, my_coin: &MmCoinEnum, other_coin: &MmCoinEn
     // calculate max maker volume
     // note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient
     Ok(CoinVolumeInfo {
-        volume: try_s!(calc_max_maker_vol(ctx, my_coin, &my_balance, FeeApproxStage::OrderIssue).await),
+        volume,
         balance: my_balance,
     })
 }
@@ -5162,6 +5239,29 @@ pub enum CancelBy {
     Coin { ticker: String },
 }
 
+pub async fn get_matching_orders(ctx: &MmArc, coins: &HashSet<String>) -> Result<Vec<Uuid>, String> {
+    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
+    let mut matching_orders = vec![];
+
+    let maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
+    let taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
+
+    for (uuid, order) in maker_orders.iter() {
+        let order = order.lock().await.clone();
+        if (coins.contains(&order.base) || coins.contains(&order.rel)) && !order.is_cancellable() {
+            matching_orders.push(*uuid);
+        }
+    }
+
+    taker_orders.iter().for_each(|(uuid, order)| {
+        if (coins.contains(&order.request.base) || coins.contains(&order.request.rel)) && !order.is_cancellable() {
+            matching_orders.push(*uuid);
+        };
+    });
+
+    Ok(matching_orders)
+}
+
 pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<Uuid>, Vec<Uuid>), String> {
     let mut cancelled = vec![];
     let mut cancelled_maker_orders = vec![];
@@ -5542,6 +5642,12 @@ impl From<json::Error> for OrderbookAddrErr {
     fn from(err: json::Error) -> Self { OrderbookAddrErr::DeserializationError(err) }
 }
 
+impl From<coins::tendermint::AccountIdFromPubkeyHexErr> for OrderbookAddrErr {
+    fn from(err: coins::tendermint::AccountIdFromPubkeyHexErr) -> Self {
+        OrderbookAddrErr::AddrFromPubkeyError(err.to_string())
+    }
+}
+
 fn orderbook_address(
     ctx: &MmArc,
     coin: &str,
@@ -5573,12 +5679,40 @@ fn orderbook_address(
                 _ => MmError::err(OrderbookAddrErr::InvalidPlatformCoinProtocol(platform)),
             }
         },
-        CoinProtocol::TENDERMINT(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        CoinProtocol::TENDERMINT(protocol) => Ok(coins::tendermint::account_id_from_pubkey_hex(
+            &protocol.account_prefix,
+            pubkey,
+        )
+        .map(|id| OrderbookAddress::Transparent(id.to_string()))?),
+        CoinProtocol::TENDERMINTTOKEN(proto) => {
+            let platform_conf = coin_conf(ctx, &proto.platform);
+            if platform_conf.is_null() {
+                return MmError::err(OrderbookAddrErr::PlatformCoinConfIsNull(proto.platform));
+            }
+            // TODO is there any way to make it better without duplicating the prefix in the IBC conf?
+            let platform_protocol: CoinProtocol = json::from_value(platform_conf["protocol"].clone())?;
+            match platform_protocol {
+                CoinProtocol::TENDERMINT(platform) => Ok(coins::tendermint::account_id_from_pubkey_hex(
+                    &platform.account_prefix,
+                    pubkey,
+                )
+                .map(|id| OrderbookAddress::Transparent(id.to_string()))?),
+                _ => MmError::err(OrderbookAddrErr::InvalidPlatformCoinProtocol(format!(
+                    "Platform protocol {:?} is not TENDERMINT",
+                    platform_protocol
+                ))),
+            }
+        },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::LIGHTNING { .. } | CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
+        CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
             MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC { .. } => Ok(OrderbookAddress::Shielded),
+        // Todo: Shielded address is used for lightning for now, the lightning node public key can be used for the orderbook entry pubkey
+        // Todo: instead of the platform coin pubkey which is used right now. But lightning payments are supposed to be private,
+        // Todo: so maybe we should hide the node address in the orderbook, only the sending node and the receiving node should know about a payment,
+        // Todo: a routing node will know about a payment it routed but not the sender or the receiver. This will require using a new keypair for every order/swap
+        // Todo: similar to how it's done for zcoin.
+        CoinProtocol::ZHTLC { .. } | CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
     }
 }

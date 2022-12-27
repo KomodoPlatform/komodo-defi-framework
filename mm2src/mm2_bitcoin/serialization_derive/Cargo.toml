@@ -6,6 +6,7 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 [lib]
 name = "serialization_derive"
 proc-macro = true
+doctest = false
 
 [dependencies]
 syn = "0.11.11"

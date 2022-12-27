@@ -98,6 +98,8 @@ impl Script {
 
     pub fn to_bytes(&self) -> Bytes { self.data.clone() }
 
+    pub fn as_slice(&self) -> &[u8] { self.data.as_slice() }
+
     /// Is empty script
     pub fn is_empty(&self) -> bool { self.data.len() == 0 }
 

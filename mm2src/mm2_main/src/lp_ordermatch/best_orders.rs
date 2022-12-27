@@ -65,10 +65,7 @@ pub fn process_best_orders_p2p_request(
         BestOrdersAction::Buy => &orderbook.pairs_existing_for_base,
         BestOrdersAction::Sell => &orderbook.pairs_existing_for_rel,
     };
-    let tickers = match search_pairs_in.get(&coin) {
-        Some(tickers) => tickers,
-        None => return Ok(None),
-    };
+    let tickers = some_or_return_ok_none!(search_pairs_in.get(&coin));
     let mut result = HashMap::new();
     let pairs = tickers.iter().map(|ticker| match action {
         BestOrdersAction::Buy => (coin.clone(), ticker.clone()),
@@ -154,10 +151,7 @@ pub fn process_best_orders_p2p_request_by_number(
         BestOrdersAction::Buy => &orderbook.pairs_existing_for_base,
         BestOrdersAction::Sell => &orderbook.pairs_existing_for_rel,
     };
-    let tickers = match search_pairs_in.get(&coin) {
-        Some(tickers) => tickers,
-        None => return Ok(None),
-    };
+    let tickers = some_or_return_ok_none!(search_pairs_in.get(&coin));
     let mut result = HashMap::new();
     let pairs = tickers.iter().map(|ticker| match action {
         BestOrdersAction::Buy => (coin.clone(), ticker.clone()),

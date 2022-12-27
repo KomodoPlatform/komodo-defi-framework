@@ -11,6 +11,7 @@
 //!                   binary
 
 #![allow(uncommon_codepoints)]
+#![feature(allocator_api)]
 #![feature(integer_atomics, panic_info_message)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
@@ -92,6 +93,19 @@ macro_rules! drop_mutability {
     };
 }
 
+/// Reads inner value of `Option<T>`, returns `Ok(None)` otherwise.
+#[macro_export]
+macro_rules! some_or_return_ok_none {
+    ($val:expr) => {
+        match $val {
+            Some(t) => t,
+            None => {
+                return Ok(None);
+            },
+        }
+    };
+}
+
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]
@@ -102,21 +116,15 @@ pub mod log;
 pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;
+#[path = "executor/mod.rs"] pub mod executor;
+pub mod number_type_casting;
 pub mod seri;
 #[path = "patterns/state_machine.rs"] pub mod state_machine;
 pub mod time_cache;
 
 #[cfg(not(target_arch = "wasm32"))]
-#[path = "executor/native_executor.rs"]
-pub mod executor;
-
-#[cfg(not(target_arch = "wasm32"))]
 #[path = "wio.rs"]
 pub mod wio;
-
-#[cfg(target_arch = "wasm32")]
-#[path = "executor/wasm_executor.rs"]
-pub mod executor;
 
 #[cfg(target_arch = "wasm32")] pub mod wasm;
 
@@ -125,7 +133,6 @@ pub mod executor;
 use backtrace::SymbolName;
 use chrono::Utc;
 pub use futures::compat::Future01CompatExt;
-use futures::future::{abortable, AbortHandle, FutureExt};
 use futures01::{future, Future};
 use http::header::CONTENT_TYPE;
 use http::Response;
@@ -133,20 +140,24 @@ use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
 use serde_json::{self as json, Value as Json};
+use sha2::{Digest, Sha256};
+use std::alloc::Allocator;
 use std::fmt::Write as FmtWrite;
+use std::fs::File;
 use std::future::Future as Future03;
-use std::io::Write;
+use std::io::{BufReader, Read, Write};
 use std::iter::Peekable;
 use std::mem::{forget, zeroed};
 use std::num::NonZeroUsize;
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
+use std::path::PathBuf;
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, SystemTime, SystemTimeError};
 use uuid::Uuid;
 
-use crate::executor::spawn;
 pub use http::StatusCode;
 pub use serde;
 
@@ -155,7 +166,6 @@ cfg_native! {
     #[cfg(not(windows))]
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
     use std::env;
-    use std::path::PathBuf;
     use std::sync::Mutex;
 }
 
@@ -179,7 +189,7 @@ lazy_static! {
 pub auto trait NotSame {}
 impl<X> !NotSame for (X, X) {}
 // Makes the error conversion work for structs/enums containing Box<dyn ...>
-impl<T: ?Sized> NotSame for Box<T> {}
+impl<T: ?Sized, A: Allocator> NotSame for Box<T, A> {}
 
 /// Converts u64 satoshis to f64
 pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }
@@ -477,8 +487,8 @@ pub fn set_panic_hook() {
 
         let mut trace = String::new();
         stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
-        log::info!("{}", info);
-        log::info!("backtrace\n{}", trace);
+        log!("{}", info);
+        log!("backtrace\n{}", trace);
 
         let _ = ENTERED.try_with(|e| e.compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed));
     }))
@@ -639,7 +649,6 @@ pub fn now_ms() -> u64 { js_sys::Date::now() as u64 }
 #[cfg(target_arch = "wasm32")]
 pub fn now_float() -> f64 {
     use gstuff::duration_to_float;
-    use std::time::Duration;
     duration_to_float(Duration::from_millis(now_ms()))
 }
 
@@ -767,6 +776,14 @@ pub const fn ten() -> usize { 10 }
 pub const fn ten_f64() -> f64 { 10. }
 
 pub const fn one_hundred() -> usize { 100 }
+
+pub const fn one_and_half_f64() -> f64 { 1.5 }
+
+pub const fn three_hundred_f64() -> f64 { 300. }
+
+pub const fn one_f64() -> f64 { 1. }
+
+pub const fn sixty_f64() -> f64 { 60. }
 
 pub fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }
 
@@ -944,19 +961,30 @@ impl<Id> Default for PagingOptionsEnum<Id> {
     fn default() -> Self { PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).expect("1 > 0")) }
 }
 
-/// The AbortHandle that aborts on drop
-pub struct AbortOnDropHandle(AbortHandle);
-
-impl Drop for AbortOnDropHandle {
-    #[inline(always)]
-    fn drop(&mut self) { self.0.abort(); }
-}
-
-pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> AbortOnDropHandle {
-    let (abortable, handle) = abortable(fut);
-    spawn(abortable.then(|_| async {}));
-    AbortOnDropHandle(handle)
-}
-
 #[inline(always)]
 pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
+
+#[inline(always)]
+pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
+}
+
+/// open file and calculate its sha256 digest as lowercase hex string
+pub fn sha256_digest(path: &PathBuf) -> Result<String, std::io::Error> {
+    let input = File::open(path)?;
+    let mut reader = BufReader::new(input);
+
+    let digest = {
+        let mut hasher = Sha256::new();
+        let mut buffer = [0; 1024];
+        loop {
+            let count = reader.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
+        }
+        format!("{:x}", hasher.finalize())
+    };
+    Ok(digest)
+}

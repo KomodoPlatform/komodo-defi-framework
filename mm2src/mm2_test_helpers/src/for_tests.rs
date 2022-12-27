@@ -1,24 +1,29 @@
 //! Helpers used in the unit and integration tests.
 
+use crate::electrums::qtum_electrums;
+use common::custom_futures::repeatable::{Ready, Retry};
+use common::executor::Timer;
+use common::log::debug;
+use common::{cfg_native, now_float, now_ms, repeatable, PagingOptionsEnum};
+use common::{get_utc_timestamp, log};
+use crypto::CryptoCtx;
 use gstuff::{try_s, ERR, ERRL};
 use http::{HeaderMap, StatusCode};
 use lazy_static::lazy_static;
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::BigDecimal;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::env;
 use std::net::IpAddr;
 use std::num::NonZeroUsize;
 use std::process::Child;
 use std::sync::Mutex;
 use uuid::Uuid;
-
-use common::executor::Timer;
-use common::log;
-use common::{cfg_native, now_float, now_ms, PagingOptionsEnum};
-use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_metrics::{MetricType, MetricsJson};
 
 cfg_native! {
     use common::block_on;
@@ -33,7 +38,6 @@ cfg_native! {
     use gstuff::ISATTY;
     use http::Request;
     use regex::Regex;
-    use std::env;
     use std::fs;
     use std::net::Ipv4Addr;
     use std::path::{Path, PathBuf};
@@ -118,15 +122,23 @@ pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"]
 pub const PIRATE_ELECTRUMS: &[&str] = &["pirate.sirseven.me:10032"];
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://pirate.sirseven.me:443"];
 const DEFAULT_RPC_PASSWORD: &str = "pass";
+pub const QRC20_ELECTRUMS: &[&str] = &[
+    "electrum1.cipig.net:10071",
+    "electrum2.cipig.net:10071",
+    "electrum3.cipig.net:10071",
+];
 
 pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
+pub const ETH_DEV_NODES: &[&str] = &["http://195.201.0.6:8565"];
+pub const ETH_DEV_SWAP_CONTRACT: &str = "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd";
+
+pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
+
 pub struct Mm2TestConf {
     pub conf: Json,
     pub rpc_password: String,
-    /// This doesn't seem to be really used, so we will possibly remove it soon
-    pub local: Option<LocalStart>,
 }
 
 impl Mm2TestConf {
@@ -141,7 +153,6 @@ impl Mm2TestConf {
                 "i_am_seed": true,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 
@@ -157,7 +168,21 @@ impl Mm2TestConf {
                 "use_watchers": true,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
+        }
+    }
+
+    pub fn seednode_with_hd_account(passphrase: &str, hd_account_id: u32, coins: &Json) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "i_am_seed": true,
+                "hd_account_id": hd_account_id,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
     }
 
@@ -172,11 +197,18 @@ impl Mm2TestConf {
                 "seednodes": seednodes
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 
-    pub fn watcher_light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
+    pub fn watcher_light_node(
+        passphrase: &str,
+        coins: &Json,
+        seednodes: &[&str],
+        wait_maker_payment_spend_factor: f64,
+        refund_start_factor: f64,
+        search_interval: f64,
+        wait_taker_payment: f64,
+    ) -> Self {
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",
@@ -185,10 +217,30 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
-                "is_watcher": true
+                "is_watcher": true,
+                "watcher_conf": {
+                    "wait_maker_payment_spend_factor": wait_maker_payment_spend_factor,
+                    "refund_start_factor": refund_start_factor,
+                    "search_interval": search_interval,
+                    "wait_taker_payment": wait_taker_payment
+                }
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
+        }
+    }
+
+    pub fn light_node_with_hd_account(passphrase: &str, hd_account_id: u32, coins: &Json, seednodes: &[&str]) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "seednodes": seednodes,
+                "hd_account_id": hd_account_id,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
     }
 
@@ -202,9 +254,48 @@ impl Mm2TestConf {
                 "seednodes": seednodes,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
+}
+
+pub struct Mm2TestConfForSwap;
+
+impl Mm2TestConfForSwap {
+    /// TODO consider moving it to read it from a env file.
+    const BOB_HD_PASSPHRASE: &'static str =
+        "involve work eager scene give acoustic tooth mimic dance smoke hold foster";
+    /// TODO consider moving it to read it from a env file.
+    const ALICE_HD_PASSPHRASE: &'static str =
+        "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    pub fn bob_conf_with_policy(priv_key_policy: Mm2InitPrivKeyPolicy, coins: &Json) -> Mm2TestConf {
+        match priv_key_policy {
+            Mm2InitPrivKeyPolicy::Iguana => {
+                let bob_passphrase = crate::get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+                Mm2TestConf::seednode(&bob_passphrase, coins)
+            },
+            Mm2InitPrivKeyPolicy::GlobalHDAccount(hd_account_id) => {
+                Mm2TestConf::seednode_with_hd_account(Self::BOB_HD_PASSPHRASE, hd_account_id, coins)
+            },
+        }
+    }
+
+    pub fn alice_conf_with_policy(priv_key_policy: Mm2InitPrivKeyPolicy, coins: &Json, bob_ip: &str) -> Mm2TestConf {
+        match priv_key_policy {
+            Mm2InitPrivKeyPolicy::Iguana => {
+                let alice_passphrase = crate::get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+                Mm2TestConf::light_node(&alice_passphrase, coins, &[bob_ip])
+            },
+            Mm2InitPrivKeyPolicy::GlobalHDAccount(hd_account_id) => {
+                Mm2TestConf::light_node_with_hd_account(Self::ALICE_HD_PASSPHRASE, hd_account_id, coins, &[bob_ip])
+            },
+        }
+    }
+}
+
+pub enum Mm2InitPrivKeyPolicy {
+    Iguana,
+    GlobalHDAccount(u32),
 }
 
 pub fn zombie_conf() -> Json {
@@ -229,10 +320,18 @@ pub fn zombie_conf() -> Json {
                     "hrp_sapling_payment_address": "zs",
                     "b58_pubkey_address_prefix": [ 28, 184 ],
                     "b58_script_address_prefix": [ 28, 189 ]
-                }
+                },
+                "check_point_block": {
+                    "height": 290000,
+                    "time": 1664200629,
+                    "hash": "106BAA72C53E7FA52E30E6D3D15B37001207E3CF3B9FCE9BAB6C6D4AF9ED9200",
+                    "sapling_tree": "017797D05B070D29A47EFEBE3FAD3F29345D31BE608C46A5131CD55D201A631C13000D000119CE6220D0CB0F82AD6466B677828A0B4C2983662DAB181A86F913F7E9FB9C28000139C4399E4CA741CBABBDDAEB6DCC3541BA902343E394160EEECCDF20C289BA65011823D28B592E9612A6C3CF4778F174E10B1B714B4FF85E6E58EE19DD4A0D5734016FA4682B0007E61B63A0442B85E0B8C0CE2409E665F219013B5E24E385F6066B00000001A325043E11CD6A431A0BD99141C4C6E9632A156185EB9B0DBEF665EEC803DD6F00000103C11FCCC90C2EC1A126635F708311EDEF9B93D3E752E053D3AA9EFA0AF9D526"
+                },
+                "z_derivation_path": "m/32'/133'",
             }
         },
-        "required_confirmations":0
+        "required_confirmations":0,
+        "derivation_path": "m/44'/133'",
     })
 }
 
@@ -278,6 +377,7 @@ pub fn rick_conf() -> Json {
         "required_confirmations":0,
         "txversion":4,
         "overwintered":1,
+        "derivation_path": "m/44'/141'",
         "protocol":{
             "type":"UTXO"
         }
@@ -291,6 +391,45 @@ pub fn morty_conf() -> Json {
         "required_confirmations":0,
         "txversion":4,
         "overwintered":1,
+        "derivation_path": "m/44'/141'",
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
+pub fn kmd_conf(tx_fee: u64) -> Json {
+    json!({
+        "coin":"KMD",
+        "txversion":4,
+        "overwintered":1,
+        "txfee":tx_fee,
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
+pub fn mycoin_conf(tx_fee: u64) -> Json {
+    json!({
+        "coin":"MYCOIN",
+        "asset":"MYCOIN",
+        "txversion":4,
+        "overwintered":1,
+        "txfee":tx_fee,
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
+pub fn mycoin1_conf(tx_fee: u64) -> Json {
+    json!({
+        "coin":"MYCOIN1",
+        "asset":"MYCOIN1",
+        "txversion":4,
+        "overwintered":1,
+        "txfee":tx_fee,
         "protocol":{
             "type":"UTXO"
         }
@@ -300,6 +439,7 @@ pub fn morty_conf() -> Json {
 pub fn atom_testnet_conf() -> Json {
     json!({
         "coin":"ATOM",
+        "avg_blocktime": 5,
         "protocol":{
             "type":"TENDERMINT",
             "protocol_data": {
@@ -308,6 +448,40 @@ pub fn atom_testnet_conf() -> Json {
                 "account_prefix": "cosmos",
                 "chain_id": "theta-testnet-001",
             },
+        }
+    })
+}
+
+pub fn btc_segwit_conf() -> Json {
+    json!({
+        "coin": "BTC-segwit",
+        "name": "bitcoin",
+        "fname": "Bitcoin",
+        "rpcport": 8332,
+        "pubtype": 0,
+        "p2shtype": 5,
+        "wiftype": 128,
+        "segwit": true,
+        "bech32_hrp": "bc",
+        "address_format": {
+            "format": "segwit"
+        },
+        "orderbook_ticker": "BTC",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "mm2": 1,
+        "enable_spv_proof": true,
+        "block_headers_verification_params": {
+            "difficulty_check": true,
+            "constant_difficulty": false,
+            "difficulty_algorithm": "Bitcoin Mainnet",
+            "genesis_block_header": "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299"
+        },
+        "required_confirmations": 1,
+        "avg_blocktime": 10,
+        "derivation_path": "m/84'/0'",
+        "protocol": {
+            "type": "UTXO"
         }
     })
 }
@@ -360,6 +534,157 @@ pub fn tbtc_with_spv_conf() -> Json {
             "genesis_block_header": "0100000043497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000bac8b0fa927c0ac8234287e33c5f74d38d354820e24756ad709d7038fc5f31f020e7494dffff001d03e4b672"
         }
     })
+}
+
+pub fn eth_testnet_conf() -> Json {
+    json!({
+        "coin": "ETH",
+        "name": "ethereum",
+        "derivation_path": "m/44'/60'",
+        "protocol": {
+            "type": "ETH"
+        }
+    })
+}
+
+pub fn eth_jst_testnet_conf() -> Json {
+    json!({
+        "coin": "JST",
+        "name": "jst",
+        "derivation_path": "m/44'/60'",
+        "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+                "platform": "ETH",
+                "contract_address": "0x2b294F029Fde858b2c62184e8390591755521d8E"
+            }
+        }
+    })
+}
+
+pub fn iris_testnet_conf() -> Json {
+    json!({
+        "coin": "IRIS-TEST",
+        "avg_blocktime": 5,
+        "derivation_path": "m/44'/566'",
+        "protocol":{
+            "type":"TENDERMINT",
+            "protocol_data": {
+                "decimals": 6,
+                "denom": "unyan",
+                "account_prefix": "iaa",
+                "chain_id": "nyancat-9",
+            },
+        }
+    })
+}
+
+pub fn iris_nimda_testnet_conf() -> Json {
+    json!({
+        "coin": "IRIS-NIMDA",
+        "derivation_path": "m/44'/566'",
+        "protocol": {
+            "type": "TENDERMINTTOKEN",
+            "protocol_data": {
+                "platform": "IRIS-TEST",
+                "decimals": 6,
+                "denom": "nim",
+            },
+        }
+    })
+}
+
+pub fn usdc_ibc_iris_testnet_conf() -> Json {
+    json!({
+        "coin":"USDC-IBC-IRIS",
+        "protocol":{
+            "type":"TENDERMINTTOKEN",
+            "protocol_data": {
+                "platform": "IRIS-TEST",
+                "decimals": 6,
+                "denom": "ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C",
+            },
+        }
+    })
+}
+
+/// `245` is SLP coin type within the derivation path.
+pub fn tbch_for_slp_conf() -> Json {
+    json!({
+        "coin": "tBCH",
+        "pubtype": 0,
+        "p2shtype": 5,
+        "mm2": 1,
+        "derivation_path": "m/44'/245'",
+        "protocol": {
+            "type": "BCH",
+            "protocol_data": {
+                "slp_prefix": "slptest"
+            }
+        },
+        "address_format": {
+            "format": "cashaddress",
+            "network": "bchtest"
+        }
+    })
+}
+
+pub fn tbch_usdf_conf() -> Json {
+    json!({
+        "coin": "USDF",
+        "protocol": {
+            "type": "SLPTOKEN",
+            "protocol_data": {
+                "decimals": 4,
+                "token_id": "bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7",
+                "platform": "tBCH",
+                "required_confirmations": 1
+            }
+        }
+    })
+}
+
+pub fn tbnb_conf() -> Json {
+    json!({
+        "coin": "tBNB",
+        "name": "binancesmartchaintest",
+        "avg_blocktime": 0.25,
+        "chain_id": 97,
+        "mm2": 1,
+        "required_confirmations": 0,
+        "protocol": {
+            "type": "ETH"
+        }
+    })
+}
+
+pub fn tqrc20_conf() -> Json {
+    json!({
+        "coin": "QRC20",
+        "required_confirmations": 0,
+        "pubtype": 120,
+        "p2shtype": 50,
+        "wiftype": 128,
+        "txfee": 0,
+        "mm2": 1,
+        "mature_confirmations": 2000,
+        "derivation_path": "m/44'/2301'",
+        "protocol": {
+            "type": "QRC20",
+            "protocol_data": {
+                "platform": "QTUM",
+                "contract_address": "0xd362e096e873eb7907e205fadc6175c6fec7bc44"
+            }
+        }
+    })
+}
+
+pub fn mm_ctx_with_iguana(passphrase: Option<&str>) -> MmArc {
+    const DEFAULT_IGUANA_PASSPHRASE: &str = "123";
+
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    CryptoCtx::init_with_iguana_passphrase(ctx.clone(), passphrase.unwrap_or(DEFAULT_IGUANA_PASSPHRASE)).unwrap();
+    ctx
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -563,7 +888,7 @@ impl MarketMakerIt {
             let executable = try_s!(env::args().next().ok_or("No program name"));
             let executable = try_s!(Path::new(&executable).canonicalize());
             let log = try_s!(fs::File::create(&log_path));
-            let child = try_s!(Command::new(&executable)
+            let child = try_s!(Command::new(executable)
                 .arg("test_mm_start")
                 .arg("--nocapture")
                 .current_dir(&folder)
@@ -666,22 +991,27 @@ impl MarketMakerIt {
     /// The difference from standard wait_for_log is this function keeps working
     /// after process is stopped
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn wait_for_log_after_stop<F>(&mut self, timeout_sec: f64, pred: F) -> Result<(), String>
+    pub async fn wait_for_log_after_stop<F>(&self, timeout_sec: f64, pred: F) -> Result<(), String>
     where
         F: Fn(&str) -> bool,
     {
-        let start = now_float();
+        use common::try_or_ready_err;
+
         let ms = 50.min((timeout_sec * 1000.) as u64 / 20 + 10);
-        loop {
-            let mm_log = try_s!(self.log_as_utf8());
+
+        repeatable!(async {
+            let mm_log = try_or_ready_err!(self.log_as_utf8());
             if pred(&mm_log) {
-                return Ok(());
+                return Ready(Ok(()));
             }
-            if now_float() - start > timeout_sec {
-                return ERR!("Timeout expired waiting for a log condition");
-            }
-            Timer::sleep(ms as f64 / 1000.).await
-        }
+            Retry(())
+        })
+        .repeat_every_ms(ms)
+        .with_timeout_secs(timeout_sec)
+        .await
+        .map_err(|e| ERRL!("{:?}", e))
+        // Convert `Result<Result<(), String>, String>` to `Result<(), String>`
+        .flatten()
     }
 
     /// Busy-wait on the instance in-memory log until the `pred` returns `true` or `timeout_sec` expires.
@@ -766,7 +1096,7 @@ impl MarketMakerIt {
 
     /// Send the "stop" request to the locally running MM.
     pub async fn stop(&self) -> Result<(), String> {
-        let (status, body, _headers) = match self.rpc(&json! ({"userpass": self.userpass, "method": "stop"})).await {
+        let (status, body, _headers) = match self.rpc(&json!({"userpass": self.userpass, "method": "stop"})).await {
             Ok(t) => t,
             Err(err) => {
                 // Downgrade the known errors into log warnings,
@@ -783,6 +1113,27 @@ impl MarketMakerIt {
             return ERR!("MM didn't accept a stop. body: {}", body);
         }
         Ok(())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stop_and_wait_for_ctx_is_dropped(self, timeout_ms: u64) -> Result<(), String> {
+        try_s!(self.stop().await);
+        let ctx_weak = self.ctx.weak();
+        drop(self);
+
+        let started_at = now_ms();
+        repeatable!(async {
+            if MmArc::from_weak(&ctx_weak).is_none() {
+                let took_ms = now_ms() - started_at;
+                log!("stop] MmCtx was dropped in {took_ms}ms");
+                return Ready(());
+            }
+            Retry(())
+        })
+        .repeat_every_secs(0.05)
+        .with_timeout_ms(timeout_ms)
+        .await
+        .map_err(|e| ERRL!("{:?}", e))
     }
 
     /// Currently, we cannot wait for the `Completed IAmrelay handling for peer` log entry on WASM node,
@@ -891,7 +1242,7 @@ where
     F: Fn(&str) -> bool,
 {
     let start = now_float();
-    let ms = 50.min((timeout_sec * 1000.) as u32 / 20 + 10);
+    let ms = 50.min((timeout_sec * 1000.) as u64 / 20 + 10);
     let mut buf = String::with_capacity(128);
     let mut found = false;
     loop {
@@ -971,13 +1322,10 @@ pub fn mm_dump(log_path: &Path) -> (RaiiDump, RaiiDump) {
 
 /// A typical MM instance.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn mm_spat(
-    local_start: LocalStart,
-    conf_mod: &dyn Fn(Json) -> Json,
-) -> (&'static str, MarketMakerIt, RaiiDump, RaiiDump) {
+pub fn mm_spat() -> (&'static str, MarketMakerIt, RaiiDump, RaiiDump) {
     let passphrase = "SPATsRps3dhEtXwtnpRCKF";
     let mm = MarketMakerIt::start(
-        conf_mod(json! ({
+        json!({
             "gui": "nogui",
             "passphrase": passphrase,
             "rpccors": "http://localhost:4000",
@@ -987,24 +1335,13 @@ pub fn mm_spat(
             ],
             "i_am_seed": true,
             "rpc_password": "pass",
-        })),
+        }),
         "pass".into(),
-        match common::var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "1" => Some(local_start),
-            _ => None,
-        },
+        None,
     )
     .unwrap();
     let (dump_log, dump_dashboard) = mm_dump(&mm.log_path);
     (passphrase, mm, dump_log, dump_dashboard)
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn mm_spat(
-    _local_start: LocalStart,
-    _conf_mod: &dyn Fn(Json) -> Json,
-) -> (&'static str, MarketMakerIt, RaiiDump, RaiiDump) {
-    unimplemented!()
 }
 
 /// Asks MM to enable the given currency in electrum mode
@@ -1018,7 +1355,7 @@ pub async fn enable_electrum(mm: &MarketMakerIt, coin: &str, tx_history: bool, u
 /// fresh list of servers at https://github.com/jl777/coins/blob/master/electrums/.
 pub async fn enable_electrum_json(mm: &MarketMakerIt, coin: &str, tx_history: bool, servers: Vec<Json>) -> Json {
     let electrum = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "electrum",
             "coin": coin,
@@ -1041,7 +1378,7 @@ pub async fn enable_electrum_json(mm: &MarketMakerIt, coin: &str, tx_history: bo
 pub async fn enable_qrc20(mm: &MarketMakerIt, coin: &str, urls: &[&str], swap_contract_address: &str) -> Json {
     let servers: Vec<_> = urls.iter().map(|url| json!({ "url": url })).collect();
     let electrum = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "electrum",
             "coin": coin,
@@ -1086,7 +1423,9 @@ pub fn from_env_file(env: Vec<u8>) -> (Option<String>, Option<String>) {
 #[cfg(target_arch = "wasm32")]
 macro_rules! get_passphrase {
     ($_env_file:literal, $env:literal) => {
-        option_env!($env).ok_or_else(|| ERRL!("No such '{}' environment variable", $env))
+        option_env!($env)
+            .map(|pass| pass.to_string())
+            .ok_or_else(|| ERRL!("No such '{}' environment variable", $env))
     };
 }
 
@@ -1116,7 +1455,7 @@ pub fn get_passphrase(path: &dyn AsRef<Path>, env: &str) -> Result<String, Strin
 /// Returns the RPC reply containing the corresponding wallet address.
 pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> Json {
     let native = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "enable",
             "coin": coin,
@@ -1129,6 +1468,29 @@ pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> Jso
         .unwrap();
     assert_eq!(native.0, StatusCode::OK, "'enable' failed: {}", native.1);
     json::from_str(&native.1).unwrap()
+}
+
+pub async fn enable_eth_coin(
+    mm: &MarketMakerIt,
+    coin: &str,
+    urls: &[&str],
+    swap_contract_address: &str,
+    fallback_swap_contract: Option<&str>,
+) -> Json {
+    let enable = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "enable",
+            "coin": coin,
+            "urls": urls,
+            "swap_contract_address": swap_contract_address,
+            "fallback_swap_contract": fallback_swap_contract,
+            "mm2": 1,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(enable.0, StatusCode::OK, "'enable' failed: {}", enable.1);
+    json::from_str(&enable.1).unwrap()
 }
 
 pub async fn enable_spl(mm: &MarketMakerIt, coin: &str) -> Json {
@@ -1148,7 +1510,7 @@ pub async fn enable_spl(mm: &MarketMakerIt, coin: &str) -> Json {
 
 pub async fn enable_slp(mm: &MarketMakerIt, coin: &str) -> Json {
     let enable = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "enable_slp",
             "mmrpc": "2.0",
@@ -1230,7 +1592,7 @@ pub async fn enable_bch_with_tokens(
     let slp_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
 
     let enable = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "enable_bch_with_tokens",
             "mmrpc": "2.0",
@@ -1262,7 +1624,7 @@ pub async fn enable_solana_with_tokens(
     tx_history: bool,
 ) -> Json {
     let spl_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
-    let req = json! ({
+    let req = json!({
         "userpass": mm.userpass,
         "method": "enable_solana_with_tokens",
         "mmrpc": "2.0",
@@ -1294,7 +1656,7 @@ pub async fn my_tx_history_v2(
 ) -> Json {
     let paging = paging.unwrap_or(PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap()));
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "my_tx_history",
             "mmrpc": "2.0",
@@ -1318,7 +1680,7 @@ pub async fn z_coin_tx_history(
 ) -> Json {
     let paging = paging.unwrap_or_default();
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "z_coin_tx_history",
             "mmrpc": "2.0",
@@ -1336,7 +1698,7 @@ pub async fn z_coin_tx_history(
 
 pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str]) -> Json {
     let native = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "enable",
             "coin": coin,
@@ -1350,11 +1712,11 @@ pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str
     json::from_str(&native.1).unwrap()
 }
 
-pub async fn enable_lightning(mm: &MarketMakerIt, coin: &str) -> Json {
-    let enable = mm
-        .rpc(&json! ({
+pub async fn init_lightning(mm: &MarketMakerIt, coin: &str) -> Json {
+    let request = mm
+        .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "enable_lightning",
+            "method": "task::enable_lightning::init",
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
@@ -1365,8 +1727,34 @@ pub async fn enable_lightning(mm: &MarketMakerIt, coin: &str) -> Json {
         }))
         .await
         .unwrap();
-    assert_eq!(enable.0, StatusCode::OK, "'enable_lightning' failed: {}", enable.1);
-    json::from_str(&enable.1).unwrap()
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_lightning::init' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn init_lightning_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "task::enable_lightning::status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_lightning::status' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
 }
 
 /// Use a separate (unique) temporary folder for each MM.
@@ -1376,6 +1764,7 @@ pub async fn enable_lightning(mm: &MarketMakerIt, coin: &str) -> Json {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn new_mm2_temp_folder_path(ip: Option<IpAddr>) -> PathBuf {
     let now = common::now_ms();
+    #[allow(deprecated)]
     let now = Local.timestamp((now / 1000) as i64, (now % 1000) as u32 * 1_000_000);
     let folder = match ip {
         Some(ip) => format!("mm2_{}_{}", now.format("%Y-%m-%d_%H-%M-%S-%3f"), ip),
@@ -1414,17 +1803,9 @@ pub fn find_metrics_in_json(
     })
 }
 
-/// Helper function requesting my swap status and checking it's events
-pub async fn check_my_swap_status(
-    mm: &MarketMakerIt,
-    uuid: &str,
-    expected_success_events: &[&str],
-    expected_error_events: &[&str],
-    maker_amount: BigDecimal,
-    taker_amount: BigDecimal,
-) {
+pub async fn my_swap_status(mm: &MarketMakerIt, uuid: &str) -> Json {
     let response = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "my_swap_status",
             "params": {
@@ -1434,7 +1815,63 @@ pub async fn check_my_swap_status(
         .await
         .unwrap();
     assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
-    let status_response: Json = json::from_str(&response.1).unwrap();
+    json::from_str(&response.1).unwrap()
+}
+
+pub async fn wait_for_swap_contract_negotiation(mm: &MarketMakerIt, swap: &str, expected_contract: Json, until: i64) {
+    let events = loop {
+        if get_utc_timestamp() > until {
+            panic!("Timed out");
+        }
+
+        let swap_status = my_swap_status(mm, swap).await;
+        let events = swap_status["result"]["events"].as_array().unwrap();
+        if events.len() < 2 {
+            Timer::sleep(1.).await;
+            continue;
+        }
+
+        break events.clone();
+    };
+    assert_eq!(events[1]["event"]["type"], Json::from("Negotiated"));
+    assert_eq!(
+        events[1]["event"]["data"]["maker_coin_swap_contract_addr"],
+        expected_contract
+    );
+    assert_eq!(
+        events[1]["event"]["data"]["taker_coin_swap_contract_addr"],
+        expected_contract
+    );
+}
+
+pub async fn wait_for_swap_negotiation_failure(mm: &MarketMakerIt, swap: &str, until: i64) {
+    let events = loop {
+        if get_utc_timestamp() > until {
+            panic!("Timed out");
+        }
+
+        let swap_status = my_swap_status(mm, swap).await;
+        let events = swap_status["result"]["events"].as_array().unwrap();
+        if events.len() < 2 {
+            Timer::sleep(1.).await;
+            continue;
+        }
+
+        break events.clone();
+    };
+    assert_eq!(events[1]["event"]["type"], Json::from("NegotiateFailed"));
+}
+
+/// Helper function requesting my swap status and checking it's events
+pub async fn check_my_swap_status(
+    mm: &MarketMakerIt,
+    uuid: &str,
+    expected_success_events: &[&str],
+    expected_error_events: &[&str],
+    maker_amount: BigDecimal,
+    taker_amount: BigDecimal,
+) {
+    let status_response = my_swap_status(mm, uuid).await;
     let success_events: Vec<String> = json::from_value(status_response["result"]["success_events"].clone()).unwrap();
     assert_eq!(expected_success_events, success_events.as_slice());
     let error_events: Vec<String> = json::from_value(status_response["result"]["error_events"].clone()).unwrap();
@@ -1456,18 +1893,7 @@ pub async fn check_my_swap_status_amounts(
     maker_amount: BigDecimal,
     taker_amount: BigDecimal,
 ) {
-    let response = mm
-        .rpc(&json! ({
-            "userpass": mm.userpass,
-            "method": "my_swap_status",
-            "params": {
-                "uuid": uuid,
-            }
-        }))
-        .await
-        .unwrap();
-    assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
-    let status_response: Json = json::from_str(&response.1).unwrap();
+    let status_response = my_swap_status(mm, &uuid.to_string()).await;
 
     let events_array = status_response["result"]["events"].as_array().unwrap();
     let actual_maker_amount = json::from_value(events_array[0]["event"]["data"]["maker_amount"].clone()).unwrap();
@@ -1483,7 +1909,7 @@ pub async fn check_stats_swap_status(
     taker_expected_events: &[&str],
 ) {
     let response = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "method": "stats_swap_status",
             "params": {
                 "uuid": uuid,
@@ -1509,7 +1935,7 @@ pub async fn check_stats_swap_status(
 
 pub async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {
     let response = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "method": "my_recent_swaps",
             "userpass": mm.userpass,
         }))
@@ -1553,9 +1979,23 @@ pub async fn wait_till_history_has_records(mm: &MarketMakerIt, coin: &str, expec
     }
 }
 
+pub async fn orderbook(mm: &MarketMakerIt, base: &str, rel: &str) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "orderbook",
+            "base": base,
+            "rel": rel,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'orderbook' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn orderbook_v2(mm: &MarketMakerIt, base: &str, rel: &str) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "orderbook",
             "mmrpc": "2.0",
@@ -1572,7 +2012,7 @@ pub async fn orderbook_v2(mm: &MarketMakerIt, base: &str, rel: &str) -> Json {
 
 pub async fn best_orders_v2(mm: &MarketMakerIt, coin: &str, action: &str, volume: &str) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "best_orders",
             "mmrpc": "2.0",
@@ -1590,9 +2030,9 @@ pub async fn best_orders_v2(mm: &MarketMakerIt, coin: &str, action: &str, volume
 
 pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "init_withdraw",
+            "method": "task::withdraw::init",
             "mmrpc": "2.0",
             "params": {
                 "coin": coin,
@@ -1602,13 +2042,18 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
         }))
         .await
         .unwrap();
-    assert_eq!(request.0, StatusCode::OK, "'init_withdraw' failed: {}", request.1);
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::withdraw::init' failed: {}",
+        request.1
+    );
     json::from_str(&request.1).unwrap()
 }
 
 pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "withdraw",
             "coin": coin,
@@ -1623,9 +2068,9 @@ pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str)
 
 pub async fn withdraw_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "withdraw_status",
+            "method": "task::withdraw::status",
             "mmrpc": "2.0",
             "params": {
                 "task_id": task_id,
@@ -1633,15 +2078,20 @@ pub async fn withdraw_status(mm: &MarketMakerIt, task_id: u64) -> Json {
         }))
         .await
         .unwrap();
-    assert_eq!(request.0, StatusCode::OK, "'withdraw_status' failed: {}", request.1);
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::withdraw::status' failed: {}",
+        request.1
+    );
     json::from_str(&request.1).unwrap()
 }
 
 pub async fn init_z_coin_native(mm: &MarketMakerIt, coin: &str) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "init_z_coin",
+            "method": "task::enable_z_coin::init",
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
@@ -1654,15 +2104,20 @@ pub async fn init_z_coin_native(mm: &MarketMakerIt, coin: &str) -> Json {
         }))
         .await
         .unwrap();
-    assert_eq!(request.0, StatusCode::OK, "'init_z_coin' failed: {}", request.1);
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_z_coin::init' failed: {}",
+        request.1
+    );
     json::from_str(&request.1).unwrap()
 }
 
 pub async fn init_z_coin_light(mm: &MarketMakerIt, coin: &str, electrums: &[&str], lightwalletd_urls: &[&str]) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "init_z_coin",
+            "method": "task::enable_z_coin::init",
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
@@ -1679,15 +2134,20 @@ pub async fn init_z_coin_light(mm: &MarketMakerIt, coin: &str, electrums: &[&str
         }))
         .await
         .unwrap();
-    assert_eq!(request.0, StatusCode::OK, "'init_z_coin' failed: {}", request.1);
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_z_coin::init' failed: {}",
+        request.1
+    );
     json::from_str(&request.1).unwrap()
 }
 
 pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "init_z_coin_status",
+            "method": "task::enable_z_coin::status",
             "mmrpc": "2.0",
             "params": {
                 "task_id": task_id,
@@ -1695,13 +2155,18 @@ pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
         }))
         .await
         .unwrap();
-    assert_eq!(request.0, StatusCode::OK, "'init_z_coin_status' failed: {}", request.1);
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_z_coin::status' failed: {}",
+        request.1
+    );
     json::from_str(&request.1).unwrap()
 }
 
 pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method":"sign_message",
             "mmrpc":"2.0",
@@ -1719,7 +2184,7 @@ pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
 
 pub async fn verify_message(mm: &MarketMakerIt, coin: &str, signature: &str, address: &str) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method":"verify_message",
             "mmrpc":"2.0",
@@ -1740,7 +2205,7 @@ pub async fn verify_message(mm: &MarketMakerIt, coin: &str, signature: &str, add
 
 pub async fn send_raw_transaction(mm: &MarketMakerIt, coin: &str, tx: &str) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "send_raw_transaction",
             "coin": coin,
@@ -1759,7 +2224,7 @@ pub async fn send_raw_transaction(mm: &MarketMakerIt, coin: &str, tx: &str) -> J
 
 pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "my_balance",
             "coin": coin
@@ -1770,33 +2235,100 @@ pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, rpc_urls: &[&str]) -> Json {
-    let request = mm
-        .rpc(&json! ({
-            "userpass": mm.userpass,
-            "method": "enable_tendermint_with_assets",
-            "mmrpc": "2.0",
-            "params": {
-                "ticker": coin,
-                "rpc_urls": rpc_urls,
-            }
-        }))
-        .await
-        .unwrap();
+pub async fn enable_tendermint(
+    mm: &MarketMakerIt,
+    coin: &str,
+    ibc_assets: &[&str],
+    rpc_urls: &[&str],
+    tx_history: bool,
+) -> Json {
+    let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "enable_tendermint_with_assets",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": coin,
+            "tokens_params": ibc_requests,
+            "rpc_urls": rpc_urls,
+            "tx_history": tx_history
+        }
+    });
+    println!(
+        "enable_tendermint_with_assets request {}",
+        json::to_string(&request).unwrap()
+    );
+
+    let request = mm.rpc(&request).await.unwrap();
     assert_eq!(
         request.0,
         StatusCode::OK,
         "'enable_tendermint_with_assets' failed: {}",
         request.1
     );
+    println!("enable_tendermint_with_assets response {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn get_tendermint_my_tx_history(mm: &MarketMakerIt, coin: &str, limit: usize, page_number: usize) -> Json {
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "my_tx_history",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "limit": limit,
+            "paging_options": {
+                "PageNumber": page_number
+            },
+        }
+    });
+    println!(
+        "tendermint 'my_tx_history' request {}",
+        json::to_string(&request).unwrap()
+    );
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "tendermint 'my_tx_history' failed: {}",
+        request.1
+    );
+
+    println!("tendermint 'my_tx_history' response {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn enable_tendermint_token(mm: &MarketMakerIt, coin: &str) -> Json {
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "enable_tendermint_token",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": coin,
+            "activation_params": {}
+        }
+    });
+    println!("enable_tendermint_token request {}", json::to_string(&request).unwrap());
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'enable_tendermint_token' failed: {}",
+        request.1
+    );
+    println!("enable_tendermint_token response {}", request.1);
     json::from_str(&request.1).unwrap()
 }
 
 pub async fn init_utxo_electrum(mm: &MarketMakerIt, coin: &str, servers: Vec<Json>) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "init_utxo",
+            "method": "task::enable_utxo::init",
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
@@ -1812,15 +2344,20 @@ pub async fn init_utxo_electrum(mm: &MarketMakerIt, coin: &str, servers: Vec<Jso
         }))
         .await
         .unwrap();
-    assert_eq!(request.0, StatusCode::OK, "'init_z_coin' failed: {}", request.1);
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_utxo::init' failed: {}",
+        request.1
+    );
     json::from_str(&request.1).unwrap()
 }
 
 pub async fn init_utxo_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "init_utxo_status",
+            "method": "task::enable_utxo::status",
             "mmrpc": "2.0",
             "params": {
                 "task_id": task_id,
@@ -1828,6 +2365,264 @@ pub async fn init_utxo_status(mm: &MarketMakerIt, task_id: u64) -> Json {
         }))
         .await
         .unwrap();
-    assert_eq!(request.0, StatusCode::OK, "'init_utxo_status' failed: {}", request.1);
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_utxo::status' failed: {}",
+        request.1
+    );
     json::from_str(&request.1).unwrap()
+}
+
+pub async fn set_price(mm: &MarketMakerIt, base: &str, rel: &str, price: &str, vol: &str) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": vol,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'setprice' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn start_swaps(
+    maker: &mut MarketMakerIt,
+    taker: &mut MarketMakerIt,
+    pairs: &[(&'static str, &'static str)],
+    maker_price: f64,
+    taker_price: f64,
+    volume: f64,
+) -> Vec<String> {
+    let mut uuids = vec![];
+
+    // issue sell request on Bob side by setting base/rel price
+    for (base, rel) in pairs.iter() {
+        common::log::info!("Issue maker {}/{} sell request", base, rel);
+        let rc = maker
+            .rpc(&json!({
+                "userpass": maker.userpass,
+                "method": "setprice",
+                "base": base,
+                "rel": rel,
+                "price": maker_price,
+                "volume": volume
+            }))
+            .await
+            .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    }
+
+    for (base, rel) in pairs.iter() {
+        common::log::info!(
+            "Trigger taker subscription to {}/{} orderbook topic first and sleep for 1 second",
+            base,
+            rel
+        );
+        let rc = taker
+            .rpc(&json!({
+                "userpass": taker.userpass,
+                "method": "orderbook",
+                "mmrpc": "2.0",
+                "params": {
+                    "base": base,
+                    "rel": rel,
+                },
+            }))
+            .await
+            .unwrap();
+        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+        Timer::sleep(1.).await;
+        common::log::info!("Issue taker {}/{} buy request", base, rel);
+        let rc = taker
+            .rpc(&json!({
+                "userpass": taker.userpass,
+                "method": "buy",
+                "base": base,
+                "rel": rel,
+                "volume": volume,
+                "price": taker_price
+            }))
+            .await
+            .unwrap();
+        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+        let buy_json: Json = serde_json::from_str(&rc.1).unwrap();
+        uuids.push(buy_json["result"]["uuid"].as_str().unwrap().to_owned());
+    }
+
+    for (base, rel) in pairs.iter() {
+        // ensure the swaps are started
+        let expected_log = format!("Entering the taker_swap_loop {}/{}", base, rel);
+        taker.wait_for_log(5., |log| log.contains(&expected_log)).await.unwrap();
+        let expected_log = format!("Entering the maker_swap_loop {}/{}", base, rel);
+        maker.wait_for_log(5., |log| log.contains(&expected_log)).await.unwrap()
+    }
+
+    uuids
+}
+
+pub async fn wait_for_swaps_finish_and_check_status(
+    maker: &mut MarketMakerIt,
+    taker: &mut MarketMakerIt,
+    uuids: &[impl AsRef<str>],
+    volume: f64,
+) {
+    for uuid in uuids.iter() {
+        maker
+            .wait_for_log(900., |log| {
+                log.contains(&format!("[swap uuid={}] Finished", uuid.as_ref()))
+            })
+            .await
+            .unwrap();
+
+        taker
+            .wait_for_log(900., |log| {
+                log.contains(&format!("[swap uuid={}] Finished", uuid.as_ref()))
+            })
+            .await
+            .unwrap();
+
+        log!("Waiting a few second for the fresh swap status to be saved..");
+        Timer::sleep(3.33).await;
+
+        log!("Checking taker status..");
+        check_my_swap_status(
+            taker,
+            uuid.as_ref(),
+            &TAKER_SUCCESS_EVENTS,
+            &TAKER_ERROR_EVENTS,
+            BigDecimal::try_from(volume).unwrap(),
+            BigDecimal::try_from(volume).unwrap(),
+        )
+        .await;
+
+        log!("Checking maker status..");
+        check_my_swap_status(
+            maker,
+            uuid.as_ref(),
+            &MAKER_SUCCESS_EVENTS,
+            &MAKER_ERROR_EVENTS,
+            BigDecimal::try_from(volume).unwrap(),
+            BigDecimal::try_from(volume).unwrap(),
+        )
+        .await;
+    }
+}
+
+pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
+    let passphrase = "daring blind measure rebuild grab boost fix favorite nurse stereo april rookie";
+    let coins = json!([
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
+         "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
+    ]);
+
+    let mut mm = MarketMakerIt::start_async(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "metrics_interval": 30.,
+        }),
+        "pass".into(),
+        local_start,
+    )
+    .await
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    common::log::info!("log path: {}", mm.log_path.display());
+
+    mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+        .await
+        .unwrap();
+
+    let electrum = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "electrum",
+            "coin": "QRC20",
+            "servers": qtum_electrums(),
+            "mm2": 1,
+            "tx_history": true,
+            "swap_contract_address": "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with status «{}», response «{}»",
+        electrum.0,
+        electrum.1
+    );
+    let electrum_json: Json = json::from_str(&electrum.1).unwrap();
+    assert_eq!(
+        electrum_json["address"].as_str(),
+        Some("qfkXE2cNFEwPFQqvBcqs8m9KrkNa9KV4xi")
+    );
+
+    // Wait till tx_history will not be loaded
+    mm.wait_for_log(22., |log| log.contains("history has been loaded successfully"))
+        .await
+        .unwrap();
+
+    // let the MarketMaker save the history to the file
+    Timer::sleep(1.).await;
+
+    let tx_history = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "my_tx_history",
+            "coin": "QRC20",
+            "limit": 100,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        tx_history.0,
+        StatusCode::OK,
+        "RPC «my_tx_history» failed with status «{}», response «{}»",
+        tx_history.0,
+        tx_history.1
+    );
+    debug!("{:?}", tx_history.1);
+    let tx_history_json: Json = json::from_str(&tx_history.1).unwrap();
+    let tx_history_result = &tx_history_json["result"];
+
+    let mut expected = vec![
+        // https://testnet.qtum.info/tx/45d722e615feb853d608033ffc20fd51c9ee86e2321cfa814ba5961190fb57d2
+        "45d722e615feb853d608033ffc20fd51c9ee86e2321cfa814ba5961190fb57d200000000000000020000000000000000",
+        // https://testnet.qtum.info/tx/45d722e615feb853d608033ffc20fd51c9ee86e2321cfa814ba5961190fb57d2
+        "45d722e615feb853d608033ffc20fd51c9ee86e2321cfa814ba5961190fb57d200000000000000020000000000000001",
+        // https://testnet.qtum.info/tx/abcb51963e720fdfed7b889cea79947ba3cabd7b8b384f6b5adb41a3f4b5d61b
+        "abcb51963e720fdfed7b889cea79947ba3cabd7b8b384f6b5adb41a3f4b5d61b00000000000000020000000000000000",
+        // https://testnet.qtum.info/tx/4ea5392d03a9c35126d2d5a8294c3c3102cfc6d65235897c92ca04c5515f6be5
+        "4ea5392d03a9c35126d2d5a8294c3c3102cfc6d65235897c92ca04c5515f6be500000000000000020000000000000000",
+        // https://testnet.qtum.info/tx/9156f5f1d3652c27dca0216c63177da38de5c9e9f03a5cfa278bf82882d2d3d8
+        "9156f5f1d3652c27dca0216c63177da38de5c9e9f03a5cfa278bf82882d2d3d800000000000000020000000000000000",
+        // https://testnet.qtum.info/tx/35e03bc529528a853ee75dde28f27eec8ed7b152b6af7ab6dfa5d55ea46f25ac
+        "35e03bc529528a853ee75dde28f27eec8ed7b152b6af7ab6dfa5d55ea46f25ac00000000000000010000000000000000",
+        // https://testnet.qtum.info/tx/39104d29d77ba83c5c6c63ab7a0f096301c443b4538dc6b30140453a40caa80a
+        "39104d29d77ba83c5c6c63ab7a0f096301c443b4538dc6b30140453a40caa80a00000000000000000000000000000000",
+        // https://testnet.qtum.info/tx/d9965e3496a8a4af2d462424b989694b3146d78c61654b99bbadba64464f75cb
+        "d9965e3496a8a4af2d462424b989694b3146d78c61654b99bbadba64464f75cb00000000000000000000000000000000",
+        // https://testnet.qtum.info/tx/c2f346d3d2aadc35f5343d0d493a139b2579175496d685ec30734d161e62f7a1
+        "c2f346d3d2aadc35f5343d0d493a139b2579175496d685ec30734d161e62f7a100000000000000000000000000000000",
+    ];
+
+    assert_eq!(tx_history_result["total"].as_u64().unwrap(), expected.len() as u64);
+    for tx in tx_history_result["transactions"].as_array().unwrap() {
+        // pop front item
+        let expected_tx = expected.remove(0);
+        assert_eq!(tx["internal_id"].as_str().unwrap(), expected_tx);
+    }
 }

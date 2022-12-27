@@ -8,14 +8,14 @@ use crate::spl_token_activation::SplActivationRequest;
 use async_trait::async_trait;
 use coins::coin_errors::MyAddressError;
 use coins::my_tx_history_v2::TxHistoryStorage;
+use coins::solana::solana_coin_with_policy;
 use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
-use coins::{solana_coin_from_conf_and_params, BalanceError, CoinBalance, CoinProtocol, MarketCoinOps,
-            SolanaActivationParams, SolanaCoin, SplToken};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, SolanaActivationParams,
+            SolanaCoin, SplToken};
 use common::Future01CompatExt;
-use futures::future::AbortHandle;
+use crypto::CryptoCtxError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -29,12 +29,17 @@ impl TokenOf for SplToken {
     type PlatformCoin = SolanaCoin;
 }
 
+pub struct SplTokenInitializerErr {
+    ticker: String,
+    inner: SplTokenCreationError,
+}
+
 #[async_trait]
 impl TokenInitializer for SplTokenInitializer {
     type Token = SplToken;
     type TokenActivationRequest = SplActivationRequest;
     type TokenProtocol = SplProtocolConf;
-    type InitTokensError = SplTokenCreationError;
+    type InitTokensError = SplTokenInitializerErr;
 
     fn tokens_requests_from_platform_request(
         platform_params: &SolanaWithTokensActivationRequest,
@@ -49,12 +54,14 @@ impl TokenInitializer for SplTokenInitializer {
         let tokens = activation_params
             .into_iter()
             .map(|param| {
+                let ticker = param.ticker.clone();
                 SplToken::new(
                     param.protocol.decimals,
                     param.ticker,
                     param.protocol.token_contract_address,
                     self.platform_coin.clone(),
                 )
+                .mm_err(|inner| SplTokenInitializerErr { ticker, inner })
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(tokens)
@@ -134,6 +141,10 @@ impl From<BalanceError> for SolanaWithTokensActivationError {
     fn from(e: BalanceError) -> Self { SolanaWithTokensActivationError::GetBalanceError(e) }
 }
 
+impl From<CryptoCtxError> for SolanaWithTokensActivationError {
+    fn from(e: CryptoCtxError) -> Self { SolanaWithTokensActivationError::Internal(e.to_string()) }
+}
+
 pub struct SolanaProtocolInfo {}
 
 impl TryFromCoinProtocol for SolanaProtocolInfo {
@@ -148,10 +159,14 @@ impl TryFromCoinProtocol for SolanaProtocolInfo {
     }
 }
 
-impl From<SplTokenCreationError> for InitTokensAsMmCoinsError {
-    fn from(error: SplTokenCreationError) -> Self {
-        match error {
-            SplTokenCreationError::InvalidPubkey(e) => InitTokensAsMmCoinsError::InvalidPubkey(e),
+impl From<SplTokenInitializerErr> for InitTokensAsMmCoinsError {
+    fn from(err: SplTokenInitializerErr) -> Self {
+        match err.inner {
+            SplTokenCreationError::InvalidPubkey(error) => InitTokensAsMmCoinsError::TokenProtocolParseError {
+                ticker: err.ticker,
+                error,
+            },
+            SplTokenCreationError::Internal(internal) => InitTokensAsMmCoinsError::Internal(internal),
         }
     }
 }
@@ -164,18 +179,22 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
     type ActivationError = SolanaWithTokensActivationError;
 
     async fn enable_platform_coin(
-        _ctx: MmArc,
+        ctx: MmArc,
         ticker: String,
         platform_conf: Json,
         activation_request: Self::ActivationRequest,
         _protocol_conf: Self::PlatformProtocolInfo,
-        priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let platform_coin =
-            solana_coin_from_conf_and_params(&ticker, &platform_conf, activation_request.platform_request, priv_key)
-                .await
-                .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })?;
-        Ok(platform_coin)
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx)?;
+        solana_coin_with_policy(
+            &ctx,
+            &ticker,
+            &platform_conf,
+            activation_request.platform_request,
+            priv_key_policy,
+        )
+        .await
+        .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })
     }
 
     fn token_initializers(
@@ -227,10 +246,9 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
 
     fn start_history_background_fetching(
         &self,
-        _metrics: MetricsArc,
+        _ctx: MmArc,
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: BigDecimal,
-    ) -> AbortHandle {
-        todo!()
+    ) {
     }
 }
