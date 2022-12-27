@@ -102,6 +102,8 @@ struct TendermintTxHistoryCtx<Coin: CoinCapabilities, Storage: TxHistoryStorage>
     coin: Coin,
     storage: Storage,
     balances: AllBalancesResult,
+    last_received_page: u32,
+    last_spent_page: u32,
 }
 
 struct TendermintInit<Coin, Storage> {
@@ -551,13 +553,12 @@ where
             storage: &Storage,
             query: String,
             from_height: u64,
+            page: &mut u32,
         ) -> Result<u64, Stopped<Coin, Storage>>
         where
             Coin: CoinCapabilities,
             Storage: TxHistoryStorage,
         {
-            let mut page = 1;
-            let mut iterate_more = true;
             let mut highest_height = from_height;
 
             let client = try_or_return_stopped_as_err!(
@@ -566,13 +567,13 @@ where
                 "could not get rpc client"
             );
 
-            while iterate_more {
+            loop {
                 let response = try_or_return_stopped_as_err!(
                     client
                         .perform(TxSearchRequest::new(
                             query.clone(),
                             false,
-                            page,
+                            *page,
                             TX_PAGE_SIZE,
                             TendermintResultOrder::Ascending.into(),
                         ))
@@ -582,6 +583,7 @@ where
                 );
 
                 let mut tx_details = vec![];
+                let current_page_is_full = response.txs.len() == TX_PAGE_SIZE as usize;
                 for tx in response.txs {
                     if tx.tx_result.code != TxCode::Ok {
                         continue;
@@ -743,20 +745,25 @@ where
                     "add_transactions_to_history failed"
                 );
 
-                iterate_more = (TX_PAGE_SIZE as u32 * page) < response.total_count;
-                page += 1;
+                if (*page * TX_PAGE_SIZE as u32) >= response.total_count {
+                    // if last page is full, we can start with next page on next iteration
+                    if current_page_is_full {
+                        *page += 1;
+                    }
+                    break Ok(highest_height);
+                }
+                *page += 1;
             }
-
-            Ok(highest_height)
         }
 
-        let q = format!("coin_spent.spender = '{}'", self.address.clone(),);
+        let q = format!("coin_spent.spender = '{}'", self.address);
         let highest_send_tx_height = match fetch_and_insert_txs(
             self.address.clone(),
             &ctx.coin,
             &ctx.storage,
             q,
             self.from_block_height,
+            &mut ctx.last_spent_page,
         )
         .await
         {
@@ -771,13 +778,14 @@ where
             },
         };
 
-        let q = format!("coin_received.receiver = '{}'", self.address.clone(),);
+        let q = format!("coin_received.receiver = '{}'", self.address);
         let highest_received_tx_height = match fetch_and_insert_txs(
             self.address.clone(),
             &ctx.coin,
             &ctx.storage,
             q,
             self.from_block_height,
+            &mut ctx.last_received_page,
         )
         .await
         {
@@ -884,6 +892,8 @@ pub async fn tendermint_history_loop(
         coin,
         storage,
         balances,
+        last_received_page: 1,
+        last_spent_page: 1,
     };
 
     let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(ctx);
