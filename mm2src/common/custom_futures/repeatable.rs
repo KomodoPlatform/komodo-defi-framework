@@ -186,7 +186,7 @@ pub struct Repeatable<Factory, F, T, E> {
     exec_fut: F,
     /// A timeout future if we're currently waiting for a timeout.
     timeout_fut: Option<Timer>,
-    until: Option<RepeatUntil>,
+    until: RepeatUntil,
     repeat_every: Duration,
     inspect_err: Option<Box<dyn InspectErrorTrait<E>>>,
     _phantom: PhantomData<(F, T, E)>,
@@ -205,7 +205,7 @@ where
             factory,
             exec_fut,
             timeout_fut: None,
-            until: None,
+            until: RepeatUntil::default(),
             repeat_every: DEFAULT_REPEAT_EVERY,
             inspect_err: None,
             _phantom: PhantomData::default(),
@@ -246,7 +246,7 @@ where
     pub fn attempts(mut self, total_attempts: usize) -> Self {
         assert!(total_attempts > 0, "'total_attempts' cannot be 0");
 
-        self.until = Some(RepeatUntil::AttemptsExceed(AttemptsState::new(total_attempts)));
+        self.until = RepeatUntil::AttemptsExceed(AttemptsState::new(total_attempts));
         self
     }
 
@@ -258,7 +258,7 @@ where
             warn!("Deadline has already passed: now={now:?} until={until_ms:?}")
         }
 
-        self.until = Some(RepeatUntil::TimeoutMsExpired(until_ms));
+        self.until = RepeatUntil::TimeoutMsExpired(until_ms);
         self
     }
 
@@ -306,22 +306,18 @@ where
                     }
 
                     match self.until {
-                        Some(RepeatUntil::TimeoutMsExpired(until_ms)) => {
+                        RepeatUntil::TimeoutMsExpired(until_ms) => {
                             if !self.check_can_retry_after_timeout(until_ms) {
                                 return Poll::Ready(Err(RepeatError::timeout(until_ms, error)));
                             }
                         },
-                        Some(RepeatUntil::AttemptsExceed(ref mut attempts)) => {
+                        RepeatUntil::AttemptsExceed(ref mut attempts) => {
                             // Check if we have one more attempt to retry to execute the future.
                             attempts.current_attempt += 1;
                             if attempts.current_attempt >= attempts.total_attempts {
                                 return Poll::Ready(Err(RepeatError::attempts(attempts.current_attempt, error)));
                             }
                         },
-                        // We should try to execute the future only once
-                        // if neither `Self::attempts` nor `Self::with_timeout` are specified.
-                        // https://github.com/KomodoPlatform/atomicDEX-API/pull/1564#discussion_r1050778208
-                        None => return Poll::Ready(Err(RepeatError::attempts(1, error))),
                     }
 
                     // Create a new future attempt.
@@ -353,6 +349,10 @@ impl AttemptsState {
 enum RepeatUntil {
     TimeoutMsExpired(u64),
     AttemptsExceed(AttemptsState),
+}
+
+impl Default for RepeatUntil {
+    fn default() -> Self { RepeatUntil::AttemptsExceed(AttemptsState::new(1)) }
 }
 
 /// Returns `Poll::Ready(())` if there is no need to wait for the timeout.
