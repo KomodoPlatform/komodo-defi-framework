@@ -358,10 +358,12 @@ pub async fn best_orders_rpc_v2(
                 };
                 if let Some(original_tickers) = ordermatch_ctx.original_tickers.get(&coin) {
                     for ticker in original_tickers.iter() {
+                        let mut original_entry = entry.clone();
+                        original_entry.coin = ticker.to_owned();
                         orders
                             .entry(ticker.to_owned())
                             .or_insert_with(Vec::new)
-                            .push(entry.clone());
+                            .push(original_entry);
                     }
                 }
                 orders.entry(coin.clone()).or_insert_with(Vec::new).push(entry);
