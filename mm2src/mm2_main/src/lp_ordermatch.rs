@@ -5497,7 +5497,7 @@ pub struct RpcOrderbookEntry {
     conf_settings: Option<OrderConfirmationsSettings>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct RpcOrderbookEntryV2 {
     coin: String,
     address: OrderbookAddress,
@@ -5622,7 +5622,7 @@ fn choose_taker_confs_and_notas(
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "address_type", content = "address_data")]
 pub enum OrderbookAddress {
     Transparent(String),

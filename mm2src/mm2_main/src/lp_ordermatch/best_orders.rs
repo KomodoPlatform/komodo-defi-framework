@@ -356,6 +356,14 @@ pub async fn best_orders_rpc_v2(
                     BestOrdersAction::Buy => order.as_rpc_best_orders_buy_v2(address, conf_settings, false),
                     BestOrdersAction::Sell => order.as_rpc_best_orders_sell_v2(address, conf_settings, false),
                 };
+                if let Some(original_tickers) = ordermatch_ctx.original_tickers.get(&coin) {
+                    for ticker in original_tickers.iter() {
+                        orders
+                            .entry(ticker.to_owned())
+                            .or_insert_with(Vec::new)
+                            .push(entry.clone());
+                    }
+                }
                 orders.entry(coin.clone()).or_insert_with(Vec::new).push(entry);
             }
         }
