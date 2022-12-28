@@ -17,9 +17,7 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
-use crate::utxo::rpc_clients::UtxoRpcClientOps;
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
-use crate::utxo::utxo_tests::electrum_client_for_test;
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
@@ -36,8 +34,6 @@ use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
-use serialization::CoinVariant;
-use std::time::Duration;
 use utxo_signer::UtxoSignerOps;
 
 #[derive(Clone)]
@@ -1044,15 +1040,4 @@ impl UtxoTxHistoryOps for UtxoStandardCoin {
     fn set_history_sync_state(&self, new_state: HistorySyncState) {
         *self.as_ref().history_sync_state.lock().unwrap() = new_state;
     }
-}
-
-#[test]
-fn check_ppc_median_time_past() {
-    let electrum = electrum_client_for_test(&["electrum.peercoinexplorer.net:50001"]);
-    let mtp = electrum
-        .get_median_time_past(659052, NonZeroU64::new(11).unwrap(), CoinVariant::Standard)
-        .wait()
-        .unwrap();
-    println!("{}", mtp);
-    std::thread::sleep(Duration::from_secs(1));
 }
