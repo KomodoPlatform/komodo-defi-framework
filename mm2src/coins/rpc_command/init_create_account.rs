@@ -121,7 +121,7 @@ impl From<RpcTaskError> for CreateAccountRpcError {
     fn from(e: RpcTaskError) -> Self {
         let error = e.to_string();
         match e {
-            RpcTaskError::Canceled => CreateAccountRpcError::Internal("Canceled".to_owned()),
+            RpcTaskError::Cancelled => CreateAccountRpcError::Internal("Cancelled".to_owned()),
             RpcTaskError::Timeout(timeout) => CreateAccountRpcError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => {
                 CreateAccountRpcError::Internal(error)

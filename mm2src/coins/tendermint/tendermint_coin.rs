@@ -9,7 +9,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
+            RpcCommonOps, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
@@ -24,7 +24,7 @@ use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::warn;
-use common::{get_utc_timestamp, log, now_ms, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
+use common::{get_utc_timestamp, now_ms, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
@@ -45,6 +45,7 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
+use itertools::Itertools;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -164,9 +165,40 @@ impl TendermintConf {
     }
 }
 
+struct TendermintRpcClient(AsyncMutex<TendermintRpcClientImpl>);
+
+struct TendermintRpcClientImpl {
+    rpc_clients: Vec<HttpClient>,
+}
+
+#[async_trait]
+impl RpcCommonOps for TendermintCoin {
+    type RpcClient = HttpClient;
+    type Error = TendermintCoinRpcError;
+
+    async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
+        let mut client_impl = self.client.0.lock().await;
+        // try to find first live client
+        for (i, client) in client_impl.rpc_clients.clone().into_iter().enumerate() {
+            if client
+                .perform(HealthRequest)
+                .timeout(Duration::from_secs(3))
+                .await
+                .is_ok()
+            {
+                // Bring the live client to the front of rpc_clients
+                client_impl.rpc_clients.rotate_left(i);
+                return Ok(client);
+            }
+        }
+        return Err(TendermintCoinRpcError::RpcClientError(
+            "All the current rpc nodes are unavailable.".to_string(),
+        ));
+    }
+}
+
 pub struct TendermintCoinImpl {
     ticker: String,
-    rpc_clients: Vec<HttpClient>,
     /// As seconds
     avg_blocktime: u8,
     /// My address
@@ -183,6 +215,7 @@ pub struct TendermintCoinImpl {
     /// or on [`MmArc::stop`].
     pub(super) abortable_system: AbortableQueue,
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
+    client: TendermintRpcClient,
 }
 
 #[derive(Clone)]
@@ -226,6 +259,7 @@ pub enum TendermintCoinRpcError {
     Prost(DecodeError),
     InvalidResponse(String),
     PerformError(String),
+    RpcClientError(String),
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
@@ -242,6 +276,7 @@ impl From<TendermintCoinRpcError> for BalanceError {
             TendermintCoinRpcError::InvalidResponse(e) => BalanceError::InvalidResponse(e),
             TendermintCoinRpcError::Prost(e) => BalanceError::InvalidResponse(e.to_string()),
             TendermintCoinRpcError::PerformError(e) => BalanceError::Transport(e),
+            TendermintCoinRpcError::RpcClientError(e) => BalanceError::Transport(e),
         }
     }
 }
@@ -252,6 +287,7 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
             TendermintCoinRpcError::InvalidResponse(e) => ValidatePaymentError::InvalidRpcResponse(e),
             TendermintCoinRpcError::Prost(e) => ValidatePaymentError::InvalidRpcResponse(e.to_string()),
             TendermintCoinRpcError::PerformError(e) => ValidatePaymentError::Transport(e),
+            TendermintCoinRpcError::RpcClientError(e) => ValidatePaymentError::Transport(e),
         }
     }
 }
@@ -381,25 +417,9 @@ impl TendermintCommons for TendermintCoin {
         Ok(result)
     }
 
-    // TODO
-    // Save one working client to the coin context, only try others once it doesn't
-    // work anymore.
-    // Also, try couple times more on health check errors.
+    #[inline(always)]
     async fn rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError> {
-        for rpc_client in self.rpc_clients.iter() {
-            match rpc_client.perform(HealthRequest).timeout(Duration::from_secs(3)).await {
-                Ok(Ok(_)) => return Ok(rpc_client.clone()),
-                Ok(Err(e)) => log::warn!(
-                    "Recieved error from Tendermint rpc node during health check. Error: {:?}",
-                    e
-                ),
-                Err(_) => log::warn!("Tendermint rpc node: {:?} got timeout during health check", rpc_client),
-            };
-        }
-
-        MmError::err(TendermintCoinRpcError::PerformError(
-            "All the current rpc nodes are unavailable.".to_string(),
-        ))
+        self.get_live_client().await.map_to_mm(|e| e)
     }
 }
 
@@ -430,17 +450,12 @@ impl TendermintCoin {
                 }
             })?;
 
-        let rpc_clients: Result<Vec<HttpClient>, _> = rpc_urls
-            .iter()
-            .map(|url| {
-                HttpClient::new(url.as_str()).map_to_mm(|e| TendermintInitError {
-                    ticker: ticker.clone(),
-                    kind: TendermintInitErrorKind::RpcClientInitError(e.to_string()),
-                })
-            })
-            .collect();
+        let rpc_clients = clients_from_urls(rpc_urls.as_ref()).mm_err(|kind| TendermintInitError {
+            ticker: ticker.clone(),
+            kind,
+        })?;
 
-        let rpc_clients = rpc_clients?;
+        let client_impl = TendermintRpcClientImpl { rpc_clients };
 
         let chain_id = ChainId::try_from(protocol_info.chain_id).map_to_mm(|e| TendermintInitError {
             ticker: ticker.clone(),
@@ -470,7 +485,6 @@ impl TendermintCoin {
 
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
             ticker,
-            rpc_clients,
             account_id,
             account_prefix: protocol_info.account_prefix,
             priv_key: priv_key.to_vec(),
@@ -483,6 +497,7 @@ impl TendermintCoin {
             tokens_info: PaMutex::new(HashMap::new()),
             abortable_system,
             history_sync_state: Mutex::new(history_sync_state),
+            client: TendermintRpcClient(AsyncMutex::new(client_impl)),
         })))
     }
 
@@ -1355,6 +1370,29 @@ impl TendermintCoin {
             unexpected_state => MmError::err(SearchForSwapTxSpendErr::UnexpectedHtlcState(unexpected_state)),
         }
     }
+}
+
+fn clients_from_urls(rpc_urls: &[String]) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
+    if rpc_urls.is_empty() {
+        return MmError::err(TendermintInitErrorKind::EmptyRpcUrls);
+    }
+    let mut clients = Vec::new();
+    let mut errors = Vec::new();
+    // check that all urls are valid
+    // keep all invalid urls in one vector to show all of them in error
+    for url in rpc_urls.iter() {
+        match HttpClient::new(url.as_str()) {
+            Ok(client) => clients.push(client),
+            Err(e) => errors.push(format!("Url {} is invalid, got error {}", url, e)),
+        }
+    }
+    drop_mutability!(clients);
+    drop_mutability!(errors);
+    if !errors.is_empty() {
+        let errors: String = errors.into_iter().join(", ");
+        return MmError::err(TendermintInitErrorKind::RpcClientInitError(errors));
+    }
+    Ok(clients)
 }
 
 #[async_trait]

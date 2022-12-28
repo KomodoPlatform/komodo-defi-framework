@@ -1,5 +1,5 @@
-use common::executor::Timer;
-use common::{block_on, log, now_ms};
+use common::custom_futures::repeatable::{Ready, Retry};
+use common::{block_on, log, repeatable};
 use http::StatusCode;
 use itertools::Itertools;
 use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message,
@@ -396,25 +396,18 @@ async fn wait_till_history_has_records(
     paging: Option<common::PagingOptionsEnum<String>>,
     timeout_s: u64,
 ) -> StandardHistoryV2Res {
-    let started_at = now_ms() / 1000;
-    let wait_until = started_at + timeout_s;
-    loop {
+    repeatable!(async {
         let history_json = my_tx_history_v2(mm, for_coin, expected_len, paging.clone()).await;
         let history: RpcV2Response<StandardHistoryV2Res> = json::from_value(history_json).unwrap();
         if history.result.transactions.len() >= expected_len {
-            break history.result;
+            return Ready(history.result);
         }
-
-        let now = now_ms() / 1000;
-        if wait_until < now {
-            panic!(
-                "Waited too long until {} for TX history loads {} transactions",
-                wait_until, expected_len
-            );
-        }
-
-        Timer::sleep(1.).await;
-    }
+        Retry(())
+    })
+    .repeat_every_secs(1.)
+    .with_timeout_ms(timeout_s * 1000)
+    .await
+    .unwrap()
 }
 
 async fn test_bch_and_slp_testnet_history_impl() {

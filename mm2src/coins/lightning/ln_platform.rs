@@ -348,6 +348,7 @@ impl Platform {
             .map(|transaction| async move {
                 if is_spv_enabled {
                     client
+                        // TODO: Should log the spv error if height > 0
                         .validate_spv_proof(&transaction, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
                         .await
                         .map_err(GetConfirmedTxError::SPVError)
@@ -417,6 +418,7 @@ impl Platform {
             .map(|output| async move {
                 if is_spv_enabled {
                     client
+                        // TODO: Should log the spv error if height > 0
                         .validate_spv_proof(&output.spending_tx, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
                         .await
                         .map_err(GetConfirmedTxError::SPVError)

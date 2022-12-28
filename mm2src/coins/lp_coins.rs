@@ -24,6 +24,7 @@
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 #![feature(stmt_expr_attributes)]
+#![feature(result_flattening)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;
@@ -3560,4 +3561,14 @@ where
     } else {
         b.block_height.cmp(&a.block_height)
     }
+}
+
+/// Use trait in the case, when we have to send requests to rpc client.
+#[async_trait]
+pub trait RpcCommonOps {
+    type RpcClient;
+    type Error;
+
+    /// Returns an alive RPC client or returns an error if no RPC endpoint is currently available.
+    async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error>;
 }

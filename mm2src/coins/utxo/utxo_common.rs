@@ -3743,56 +3743,48 @@ pub fn validate_payment<T: UtxoCommonOps>(
 
     let expected_redeem = payment_script(time_lock, priv_bn_hash, first_pub0, second_pub0);
     let fut = async move {
-        let mut attempts = 0;
-        loop {
-            let tx_from_rpc = match coin
-                .as_ref()
-                .rpc_client
-                .get_transaction_bytes(&tx.hash().reversed().into())
-                .compat()
-                .await
-            {
-                Ok(t) => t,
-                Err(e) => {
-                    if attempts > 2 {
-                        return MmError::err(ValidatePaymentError::from(e.into_inner()));
-                    };
-                    attempts += 1;
-                    error!("Error getting tx {:?} from rpc: {:?}", tx.tx_hash(), e);
-                    Timer::sleep(10.).await;
-                    continue;
-                },
-            };
-            if serialize(&tx).take() != tx_from_rpc.0
-                && serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS).take() != tx_from_rpc.0
-            {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Provided payment tx {:?} doesn't match tx data from rpc {:?}",
-                    tx, tx_from_rpc
-                )));
-            }
+        let tx_hash = tx.tx_hash();
 
-            let expected_output = TransactionOutput {
-                value: amount,
-                script_pubkey: Builder::build_p2sh(&dhash160(&expected_redeem).into()).into(),
-            };
+        let tx_from_rpc = retry_on_err!(coin
+            .as_ref()
+            .rpc_client
+            .get_transaction_bytes(&tx.hash().reversed().into())
+            .compat())
+        .repeat_every_secs(10.)
+        .attempts(4)
+        .inspect_err(move |e| error!("Error getting tx {tx_hash:?} from rpc: {e:?}"))
+        .await
+        .map_err(|repeat_err| repeat_err.into_error().map(ValidatePaymentError::from))?;
 
-            let actual_output = tx.outputs.get(output_index);
-            if actual_output != Some(&expected_output) {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Provided payment tx output doesn't match expected {:?} {:?}",
-                    actual_output, expected_output
-                )));
-            }
-
-            if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
-                if coin.as_ref().conf.enable_spv_proof && confirmations != 0 {
-                    client.validate_spv_proof(&tx, try_spv_proof_until).await?;
-                }
-            }
-
-            return Ok(());
+        if serialize(&tx).take() != tx_from_rpc.0
+            && serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS).take() != tx_from_rpc.0
+        {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Provided payment tx {:?} doesn't match tx data from rpc {:?}",
+                tx, tx_from_rpc
+            )));
         }
+
+        let expected_output = TransactionOutput {
+            value: amount,
+            script_pubkey: Builder::build_p2sh(&dhash160(&expected_redeem).into()).into(),
+        };
+
+        let actual_output = tx.outputs.get(output_index);
+        if actual_output != Some(&expected_output) {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Provided payment tx output doesn't match expected {:?} {:?}",
+                actual_output, expected_output
+            )));
+        }
+
+        if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
+            if coin.as_ref().conf.enable_spv_proof && confirmations != 0 {
+                client.validate_spv_proof(&tx, try_spv_proof_until).await?;
+            }
+        }
+
+        Ok(())
     };
     Box::new(fut.boxed().compat())
 }

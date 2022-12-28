@@ -652,9 +652,9 @@ where
 
 mod tests {
     use super::*;
+    use common::custom_futures::timeout::FutureTimerExt;
     use common::executor::abortable_queue::AbortableQueue;
-    use common::log::wasm_log::register_wasm_log;
-    use common::{custom_futures::FutureTimerExt, log::debug};
+    use common::log::{debug, wasm_log::register_wasm_log};
     use common::{WasmUnwrapErrExt, WasmUnwrapExt};
     use lazy_static::lazy_static;
     use serde_json::json;
