@@ -579,7 +579,6 @@ impl LightningCoin {
 }
 
 #[async_trait]
-// Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
 impl SwapOps for LightningCoin {
     // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
     fn send_taker_fee(&self, _fee_addr: &[u8], _amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
@@ -792,9 +791,6 @@ impl SwapOps for LightningCoin {
         let coin = self.clone();
         let payment_hash =
             try_f!(payment_hash_from_slice(other_side_tx).map_err(|e| FailHTLCError::DecodeErr(e.to_string())));
-        // Todo: refund successful should be done for all coins (tendermint) or we should wait for locktime as an alternative but it depends on estimated blocks which is not ideal.
-        // Todo: we need to confirm automatic refunds too for all coins.
-        // Todo: the taker can abuse this by sending another coin big payment to get a big lightning payment from the maker to lock liquidity, that's why trading fees are needed and should always be proportional.
         // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
         coin.channel_manager.fail_htlc_backwards(&payment_hash);
         let fut = async move {
@@ -843,11 +839,9 @@ impl SwapOps for LightningCoin {
                     },
                 }
 
-                // Todo: find best place for this, should I use blocks instead of locktime?? check taker_coin_start_block.
                 let now = now_ms() / 1000;
                 if now > locktime {
                     return Err(TransactionErr::Plain(ERRL!(
-                        // Todo: maybe change this message
                         "Waited too long until {} for payment {} to be refunded!",
                         locktime,
                         payment_hex
@@ -1001,7 +995,7 @@ impl MarketCoinOps for LightningCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { Ok(self.my_node_id()) }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         let mut _message_prefix = self.conf.sign_message_prefix.clone()?;

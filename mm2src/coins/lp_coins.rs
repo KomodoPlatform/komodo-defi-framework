@@ -715,7 +715,6 @@ pub trait SwapOps {
     /// Taker shouldn't fail a swap htlc to the maker/origin until the taker swap payment can be refunded successfully.
     fn fail_htlc_backwards(&self, _other_side_tx: &[u8]) -> FailHTLCFut<()> { Box::new(futures01::future::ok(())) }
 
-    // Todo: check with Onur or Artem if tendermint refunds are implemented or not
     /// Whether the swap payment is refunded automatically or not when the locktime expires, or the other side fails the HTLC.
     fn is_auto_refundable(&self) -> bool { false }
 

@@ -1386,7 +1386,6 @@ impl MakerSwap {
             ),
             Err(e) => ERR!("Error {} when trying to find maker payment spend", e),
             Ok(None) => {
-                // Todo: what about refunding for a closed channel??
                 if self.taker_coin.is_auto_refundable() {
                     ERR!("Taker payment will be refunded automatically!")
                 } else {
