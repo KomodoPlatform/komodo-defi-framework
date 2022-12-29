@@ -1619,7 +1619,7 @@ impl DelegationError {
     }
 }
 
-#[derive(Clone, Debug, Display, EnumFromTrait, EnumFromStringify, Serialize, SerializeErrorType, PartialEq)]
+#[derive(Clone, Debug, Display, EnumFromStringify, EnumFromTrait, Serialize, SerializeErrorType, PartialEq)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum WithdrawError {
     #[display(
@@ -1776,15 +1776,12 @@ impl WithdrawError {
     }
 }
 
-use ethkey::Error as EthKeyError;
-use keys::Error as KeysError;
-
 #[derive(Serialize, Display, Debug, EnumFromStringify, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum SignatureError {
     #[display(fmt = "Invalid request: {}", _0)]
     InvalidRequest(String),
-    #[from_stringify("CoinFindError", "EthKeyError", "KeysError", "PrivKeyPolicyNotAllowed")]
+    #[from_stringify("CoinFindError", "ethkey::Error", "keys::Error", "PrivKeyPolicyNotAllowed")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
     #[display(fmt = "Coin is not found: {}", _0)]

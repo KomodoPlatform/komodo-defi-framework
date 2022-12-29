@@ -3,12 +3,14 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::__private::ext::RepToTokensExt;
 use quote::{quote, ToTokens};
 use syn::__private::TokenStream2;
+use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
+use syn::token::Colon2;
 use syn::NestedMeta::Lit;
-use syn::{NestedMeta, Variant};
+use syn::{NestedMeta, Path, PathSegment, Variant};
 
 impl CompileError {
-    /// This error constructor is involved to be used on `EnumFromTrait` macro.
+    /// This error constructor is involved to be used on `EnumFromStringify` macro.
     fn expected_literal_inner() -> CompileError {
         CompileError(format!(
             "'{}' attribute must consist of string Literal. For example, #[from_stringify(\"String\")]",
@@ -48,13 +50,18 @@ impl TryFrom<NestedMeta> for AttrIdentToken {
     /// Try to get an Ident name from an attribute value.
     fn try_from(attr: NestedMeta) -> Result<Self, Self::Error> {
         match attr {
-            Lit(lit) => Ok(Self(lit.to_token_stream())),
+            Lit(lit) => {
+                //                let basic_path = lit.;
+                //                println!("HELLLLO2 {:?}", basic_path);
+
+                Ok(Self(lit.into_token_stream()))
+            },
             _ => Err(CompileError::expected_literal_inner()),
         }
     }
 }
 
-fn parse_inner_ident(ident: String, span: Span) -> Result<Ident, CompileError> {
+fn parse_inner_path_id(ident: String, span: Span) -> Result<Path, CompileError> {
     let ident = ident
         .strip_suffix('\"')
         .ok_or("")
@@ -64,7 +71,16 @@ fn parse_inner_ident(ident: String, span: Span) -> Result<Ident, CompileError> {
         .ok_or("")
         .map_err(|_| CompileError::expected_string_inner_ident(MacroAttr::FromStringify))?;
 
-    Ok(Ident::new(ident, span))
+    Ok(Path {
+        leading_colon: None,
+        segments: ident
+            .split("::")
+            .map(|s| PathSegment {
+                ident: Ident::new(s, span),
+                arguments: Default::default(),
+            })
+            .collect::<Punctuated<PathSegment, Colon2>>(),
+    })
 }
 
 pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<Option<TokenStream2>, CompileError> {
@@ -80,24 +96,17 @@ pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Resu
     let mut stream = TokenStream::new();
     for meta in maybe_attr {
         let AttrIdentToken(token) = AttrIdentToken::try_from(meta)?;
-        let attr_ident = parse_inner_ident(token.to_string(), token.span())?;
+        let attr_path_id = parse_inner_path_id(token.to_string(), token.span())?;
         check_inner_ident_type(inner_ident.clone())?;
+
         stream.extend(quote! {
-            impl From<#attr_ident> for #enum_name {
-                fn from(err: #attr_ident) -> #enum_name {
+            impl From<#attr_path_id> for #enum_name {
+                fn from(err: #attr_path_id) -> #enum_name {
                     #enum_name::#variant_ident(err.to_string())
                 }
             }
         })
     }
+
     Ok(Some(stream))
-}
-
-#[test]
-fn test_ident() {
-    let span = Span::call_site();
-    let new = parse_inner_ident("\"Sami\"".to_string(), span).ok().unwrap();
-    let expected = Ident::new("Sami", span);
-
-    assert_eq!(new, expected)
 }

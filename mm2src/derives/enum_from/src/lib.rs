@@ -99,19 +99,20 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 /// // E.G, this converts from Bar, Man to FooBar::Bar(String)
 /// #[derive(Debug, EnumFromStringify, PartialEq, Eq)]
 /// pub enum FooBar {
-///     #[from_stringify("u64", "Error")]
+///     #[from_stringify("u64", "std::io::Error")]
 ///     Bar(String),
 /// }
 ///
 /// #[test]
 /// fn test_from_stringify() {
-///     let num = 6500u16;
-///     let expected: FooBar = num.into();
-///     assert_eq!(FooBar::Bar(num.to_string()), expected);
+/// let num = 6500u64;
+/// let expected: FooBar = num.into();
+/// assert_eq!(FooBar::Bar(num.to_string()), expected);
 ///
-///     let err = Error::new(ErrorKind::Other, "oh no!");
-///     let expected: FooBar = err.into();
-///     assert_eq!(FooBar::Bar(num.to_string()), expected);
+/// let err = Error::new(ErrorKind::Other, "oh no!");
+/// let actual = FooBar::Bar(err.to_string());
+/// let expected: FooBar = err.into();
+/// assert_eq!(actual, expected);
 /// }
 ///  ```
 #[proc_macro_derive(EnumFromStringify, attributes(from_stringify))]
