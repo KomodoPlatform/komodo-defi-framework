@@ -50,12 +50,7 @@ impl TryFrom<NestedMeta> for AttrIdentToken {
     /// Try to get an Ident name from an attribute value.
     fn try_from(attr: NestedMeta) -> Result<Self, Self::Error> {
         match attr {
-            Lit(lit) => {
-                //                let basic_path = lit.;
-                //                println!("HELLLLO2 {:?}", basic_path);
-
-                Ok(Self(lit.into_token_stream()))
-            },
+            Lit(lit) => Ok(Self(lit.into_token_stream())),
             _ => Err(CompileError::expected_literal_inner()),
         }
     }
