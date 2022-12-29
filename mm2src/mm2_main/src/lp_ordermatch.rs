@@ -5466,7 +5466,7 @@ construct_detailed!(DetailedBaseMinVolume, base_min_volume);
 construct_detailed!(DetailedRelMaxVolume, rel_max_volume);
 construct_detailed!(DetailedRelMinVolume, rel_min_volume);
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct RpcOrderbookEntry {
     coin: String,
     address: String,
