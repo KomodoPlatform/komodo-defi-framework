@@ -252,6 +252,7 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
             internal_id,
             kmd_rewards: None,
             transaction_type: self.transaction_type,
+            memo: None,
         }
     }
 }

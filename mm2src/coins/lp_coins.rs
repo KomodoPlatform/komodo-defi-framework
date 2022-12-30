@@ -1157,6 +1157,7 @@ pub struct TransactionDetails {
     /// Type of transactions, default is StandardTransfer
     #[serde(default)]
     transaction_type: TransactionType,
+    memo: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug)]

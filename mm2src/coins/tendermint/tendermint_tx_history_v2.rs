@@ -709,6 +709,7 @@ where
                             timestamp,
                             kmd_rewards: None,
                             transaction_type,
+                            memo: Some(deserialized_tx.body.memo.clone()),
                         };
                         tx_details.push(details.clone());
 

@@ -786,6 +786,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         timestamp: now_ms() / 1000,
         kmd_rewards: None,
         transaction_type: Default::default(),
+        memo: None,
     })
 }
 
@@ -2011,6 +2012,7 @@ impl EthCoin {
                     timestamp: block.timestamp.into(),
                     kmd_rewards: None,
                     transaction_type: Default::default(),
+                    memo: None,
                 };
 
                 existing_history.push(details);
@@ -2377,6 +2379,7 @@ impl EthCoin {
                     timestamp: block.timestamp.into(),
                     kmd_rewards: None,
                     transaction_type: Default::default(),
+                    memo: None,
                 };
 
                 existing_history.push(details);

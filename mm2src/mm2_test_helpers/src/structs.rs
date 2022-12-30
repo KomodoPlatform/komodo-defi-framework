@@ -572,6 +572,7 @@ pub struct TransactionDetails {
     pub coin: String,
     pub internal_id: String,
     pub transaction_type: TransactionType,
+    pub memo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -511,7 +511,7 @@ impl MmCoin for TendermintToken {
             let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
 
             let tx_raw = platform
-                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, memo)
+                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -540,6 +540,7 @@ impl MmCoin for TendermintToken {
                 internal_id: hash.to_vec().into(),
                 kmd_rewards: None,
                 transaction_type: TransactionType::default(),
+                memo: Some(memo),
             })
         };
         Box::new(fut.boxed().compat())
