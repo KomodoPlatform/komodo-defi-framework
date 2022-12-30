@@ -1,13 +1,10 @@
 use crate::{get_attr_meta, CompileError, IdentCtx, MacroAttr};
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Ident, TokenStream};
 use quote::__private::ext::RepToTokensExt;
-use quote::{quote, ToTokens};
-use syn::__private::TokenStream2;
-use syn::punctuated::Punctuated;
-use syn::spanned::Spanned;
-use syn::token::Colon2;
+use quote::quote;
 use syn::NestedMeta::Lit;
-use syn::{NestedMeta, Path, PathSegment, Variant};
+use syn::__private::TokenStream2;
+use syn::{ExprPath, NestedMeta, Variant};
 
 impl CompileError {
     /// This error constructor is involved to be used on `EnumFromStringify` macro.
@@ -42,40 +39,24 @@ fn get_variant_unnamed_ident(fields: syn::Fields) -> Option<Ident> {
 }
 
 /// The `#[from_stringify(..)]` attribute value.
-struct AttrIdentToken(TokenStream);
+struct AttrIdentToken(ExprPath);
 
 impl TryFrom<NestedMeta> for AttrIdentToken {
     type Error = CompileError;
 
     /// Try to get an Ident name from an attribute value.
     fn try_from(attr: NestedMeta) -> Result<Self, Self::Error> {
-        match attr {
-            Lit(lit) => Ok(Self(lit.into_token_stream())),
-            _ => Err(CompileError::expected_literal_inner()),
-        }
+        let path_str = match attr {
+            Lit(syn::Lit::Str(lit)) => lit.value(),
+            _ => return Err(CompileError::expected_literal_inner()),
+        };
+        let path_stream = syn::parse_str(&path_str)
+            .map_err(|err| CompileError::parsing_error(MacroAttr::FromStringify, err.to_string()))?;
+        let path = syn::parse2(path_stream)
+            .map_err(|err| CompileError::parsing_error(MacroAttr::FromStringify, err.to_string()))?;
+
+        Ok(AttrIdentToken(path))
     }
-}
-
-fn parse_inner_path_id(ident: String, span: Span) -> Result<Path, CompileError> {
-    let ident = ident
-        .strip_suffix('\"')
-        .ok_or("")
-        .map_err(|_| CompileError::expected_string_inner_ident(MacroAttr::FromStringify))?;
-    let ident = ident
-        .strip_prefix('\"')
-        .ok_or("")
-        .map_err(|_| CompileError::expected_string_inner_ident(MacroAttr::FromStringify))?;
-
-    Ok(Path {
-        leading_colon: None,
-        segments: ident
-            .split("::")
-            .map(|s| PathSegment {
-                ident: Ident::new(s, span),
-                arguments: Default::default(),
-            })
-            .collect::<Punctuated<PathSegment, Colon2>>(),
-    })
 }
 
 pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<Option<TokenStream2>, CompileError> {
@@ -90,8 +71,7 @@ pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Resu
 
     let mut stream = TokenStream::new();
     for meta in maybe_attr {
-        let AttrIdentToken(token) = AttrIdentToken::try_from(meta)?;
-        let attr_path_id = parse_inner_path_id(token.to_string(), token.span())?;
+        let AttrIdentToken(attr_path_id) = AttrIdentToken::try_from(meta)?;
         check_inner_ident_type(inner_ident.clone())?;
 
         stream.extend(quote! {

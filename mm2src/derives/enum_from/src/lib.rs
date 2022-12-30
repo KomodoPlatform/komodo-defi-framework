@@ -170,6 +170,10 @@ impl CompileError {
     fn expected_string_inner_ident(attr: MacroAttr) -> CompileError {
         CompileError(format!("'{attr}' Expected String as inner ident"))
     }
+
+    fn parsing_error(attr: MacroAttr, err: String) -> CompileError {
+        CompileError(format!("'{attr}' Error occured while parsing str. Error: {err}"))
+    }
 }
 
 impl From<CompileError> for TokenStream {
