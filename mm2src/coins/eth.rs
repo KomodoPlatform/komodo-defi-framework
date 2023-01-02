@@ -1143,7 +1143,7 @@ impl SwapOps for EthCoin {
         let contract_call_sig = hex::encode(&unverified.data[0..4]);
         if contract_call_sig != RECEIVERSPEND_BYTES_SIGNATURE {
             return ERR!(
-                "Expected 'receiverSpend' call: ({}) contract but found {}",
+                "Expected 'receiverSpend' contract call signature: ({}) but found {}",
                 RECEIVERSPEND_BYTES_SIGNATURE,
                 contract_call_sig
             );
