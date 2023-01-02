@@ -127,6 +127,10 @@ const GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE: u64 = 7;
 /// Lifetime of generated signed message for gui-auth requests
 const GUI_AUTH_SIGNED_MESSAGE_LIFETIME_SEC: i64 = 90;
 
+/// recieverSpend contract call bytes signature.
+/// https://www.4byte.directory/signatures/?bytes4_signature=02ed292b.
+const RECEIVERSPEND_BYTES_SIGNATURE: &str = "02ed292b";
+
 lazy_static! {
     pub static ref SWAP_CONTRACT: Contract = Contract::load(SWAP_CONTRACT_ABI.as_bytes()).unwrap();
     pub static ref ERC20_CONTRACT: Contract = Contract::load(ERC20_ABI.as_bytes()).unwrap();
@@ -1134,6 +1138,17 @@ impl SwapOps for EthCoin {
 
     async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
+
+        // Contract call expected to be receiverSpend (02ed292b).
+        let contract_call_sig = hex::encode(&unverified.data[0..4]);
+        if contract_call_sig != RECEIVERSPEND_BYTES_SIGNATURE {
+            return ERR!(
+                "Expected 'receiverSpend' call: ({}) contract but found {}",
+                RECEIVERSPEND_BYTES_SIGNATURE,
+                contract_call_sig
+            );
+        }
+
         let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
         let tokens = try_s!(function.decode_input(&unverified.data));
         if tokens.len() < 3 {
