@@ -430,12 +430,12 @@ async fn checks_order_prerequisites(
 }
 
 async fn prepare_order(
-    rates: RateInfos,
+    rates: &RateInfos,
     cfg: &SimpleCoinMarketMakerCfg,
     key_trade_pair: &str,
     ctx: &MmArc,
 ) -> OrderPreparationResult {
-    checks_order_prerequisites(&rates, cfg, key_trade_pair).await?;
+    checks_order_prerequisites(rates, cfg, key_trade_pair).await?;
     let base_coin = lp_coinfind(ctx, cfg.base.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
@@ -446,7 +446,7 @@ async fn prepare_order(
 
     debug!("balance for {} is {}", cfg.base, base_balance);
 
-    let mut calculated_price = rates.price * cfg.spread.clone();
+    let mut calculated_price = &rates.price * &cfg.spread;
     debug!("calculated price is: {}", calculated_price);
     if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
         calculated_price = vwap_calculator(calculated_price.clone(), ctx, cfg).await?;
@@ -495,7 +495,7 @@ async fn prepare_order(
 }
 
 async fn update_single_order(
-    rates: RateInfos,
+    rates: &RateInfos,
     cfg: SimpleCoinMarketMakerCfg,
     uuid: Uuid,
     key_trade_pair: String,
@@ -505,7 +505,7 @@ async fn update_single_order(
 
     let req = MakerOrderUpdateReq {
         uuid,
-        new_price: Some(calculated_price),
+        new_price: Some(calculated_price.clone()),
         max: is_max.into(),
         volume_delta: None,
         min_volume: min_vol,
@@ -518,7 +518,11 @@ async fn update_single_order(
     let resp = update_maker_order(ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
-    info!("Successfully update order for {} - uuid: {}", key_trade_pair, resp.uuid);
+    info!(
+        "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair})",
+        resp.uuid,
+        calculated_price.to_decimal()
+    );
     Ok(true)
 }
 
@@ -528,14 +532,14 @@ async fn execute_update_order(
     cloned_infos: (MmArc, RateInfos, TradingPair, SimpleCoinMarketMakerCfg),
 ) -> bool {
     let (ctx, rates, key_trade_pair, cfg) = cloned_infos;
-    match update_single_order(rates, cfg, uuid, key_trade_pair.as_combination(), &ctx).await {
+    match update_single_order(&rates, cfg.clone(), uuid, key_trade_pair.as_combination(), &ctx).await {
         Ok(resp) => resp,
         Err(err) => {
+            let pair = key_trade_pair.as_combination();
             error!(
-                "Order with uuid: {} for {} cannot be updated - {}",
+                "Order with uuid: {} for {pair} cannot be updated - rate: ({:.} {pair}) - err: {err:?}",
                 order.uuid,
-                key_trade_pair.as_combination(),
-                err
+                rates.price.to_decimal(),
             );
             cancel_single_order(&ctx, order.uuid).await;
             false
@@ -544,7 +548,7 @@ async fn execute_update_order(
 }
 
 async fn create_single_order(
-    rates: RateInfos,
+    rates: &RateInfos,
     cfg: SimpleCoinMarketMakerCfg,
     key_trade_pair: String,
     ctx: MmArc,
@@ -554,7 +558,7 @@ async fn create_single_order(
     let req = SetPriceReq {
         base: cfg.base.clone(),
         rel: cfg.rel.clone(),
-        price: calculated_price,
+        price: calculated_price.clone(),
         max: is_max,
         volume,
         min_volume: min_vol,
@@ -569,7 +573,11 @@ async fn create_single_order(
     let resp = create_maker_order(&ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
-    info!("Successfully placed order for {} - uuid: {}", key_trade_pair, resp.uuid);
+    info!(
+        "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair})",
+        resp.uuid,
+        calculated_price.to_decimal()
+    );
     Ok(true)
 }
 
@@ -579,10 +587,14 @@ async fn execute_create_single_order(
     key_trade_pair: String,
     ctx: &MmArc,
 ) -> bool {
-    match create_single_order(rates, cfg, key_trade_pair.clone(), ctx.clone()).await {
+    match create_single_order(&rates, cfg, key_trade_pair.clone(), ctx.clone()).await {
         Ok(resp) => resp,
         Err(err) => {
-            error!("{} - order cannot be created for: {}", err, key_trade_pair);
+            error!(
+                "{} - order cannot be created for: {key_trade_pair} - rate: ({:.4} {key_trade_pair})",
+                err,
+                rates.price.to_decimal()
+            );
             false
         },
     }
@@ -601,12 +613,12 @@ async fn process_bot_logic(ctx: &MmArc) {
     };
     let rates_registry = match fetch_price_tickers(price_url.as_str()).await {
         Ok(model) => {
-            info!("price successfully fetched");
+            info!("price successfully fetched from {price_url}");
             model
         },
         Err(err) => {
             let nb_orders = cancel_pending_orders(ctx, &cfg).await;
-            error!("error during fetching price: {:?} - cancel {} orders", err, nb_orders);
+            error!("error fetching price: {:?} - cancel {} orders", err, nb_orders);
             return;
         },
     };
