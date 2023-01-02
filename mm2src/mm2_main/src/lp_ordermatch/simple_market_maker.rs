@@ -498,7 +498,6 @@ async fn prepare_order(
         calculated_price = vwap_calculator(calculated_price.clone(), ctx, cfg).await?;
     }
 
-    let is_max = cfg.max.unwrap_or(false);
     let (volume, is_max) = calculate_volume(ctx, cfg, Some(&base_balance), &rates.base_price).await?;
     let is_max = cfg.max.unwrap_or_default() | is_max;
 
