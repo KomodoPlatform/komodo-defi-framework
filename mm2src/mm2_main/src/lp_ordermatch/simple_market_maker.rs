@@ -33,7 +33,8 @@ pub type StartSimpleMakerBotResult = Result<StartSimpleMakerBotRes, MmError<Star
 pub type StopSimpleMakerBotResult = Result<StopSimpleMakerBotRes, MmError<StopSimpleMakerBotError>>;
 pub type OrderProcessingResult = Result<bool, MmError<OrderProcessingError>>;
 pub type VwapProcessingResult = Result<MmNumber, MmError<OrderProcessingError>>;
-pub type OrderPreparationResult = Result<(Option<MmNumber>, MmNumber, MmNumber, bool), MmError<OrderProcessingError>>;
+pub type OrderPreparationResult =
+    Result<(Option<MmNumber>, MmNumber, MmNumber, bool, MmNumber), MmError<OrderProcessingError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -429,6 +430,33 @@ async fn checks_order_prerequisites(
     Ok(true)
 }
 
+fn calculate_max_volume(
+    max_volume: &Option<VolumeSettings>,
+    base_balance: &MmNumber,
+    price: &MmNumber,
+    mut is_max: bool,
+) -> (MmNumber, bool) {
+    match max_volume {
+        Some(VolumeSettings::Percentage(balance_percent)) => {
+            if balance_percent >= &MmNumber::from(1) {
+                is_max = true;
+                (MmNumber::default(), is_max)
+            } else {
+                (balance_percent * base_balance, is_max)
+            }
+        },
+        Some(VolumeSettings::Usd(max_volume_usd)) => {
+            if base_balance * price < *max_volume_usd {
+                is_max = true;
+                (MmNumber::default(), is_max)
+            } else {
+                (max_volume_usd / price, is_max)
+            }
+        },
+        _ => (MmNumber::default(), is_max),
+    }
+}
+
 async fn prepare_order(
     rates: &RateInfos,
     cfg: &SimpleCoinMarketMakerCfg,
@@ -452,27 +480,8 @@ async fn prepare_order(
         calculated_price = vwap_calculator(calculated_price.clone(), ctx, cfg).await?;
     }
 
-    let mut is_max = cfg.max.unwrap_or(false);
-
-    let volume = match &cfg.max_volume {
-        Some(VolumeSettings::Percentage(balance_percent)) => {
-            if *balance_percent >= MmNumber::from(1) {
-                is_max = true;
-                MmNumber::default()
-            } else {
-                balance_percent * &base_balance
-            }
-        },
-        Some(VolumeSettings::Usd(max_volume_usd)) => {
-            if &base_balance * &rates.base_price < *max_volume_usd {
-                is_max = true;
-                MmNumber::default()
-            } else {
-                max_volume_usd / &rates.base_price
-            }
-        },
-        _ => MmNumber::default(),
-    };
+    let is_max = cfg.max.unwrap_or(false);
+    let (volume, is_max) = calculate_max_volume(&cfg.max_volume, &base_balance, &rates.base_price, is_max);
 
     let min_vol = match &cfg.min_volume {
         Some(VolumeSettings::Percentage(min_volume_percentage)) => {
@@ -491,7 +500,7 @@ async fn prepare_order(
         None => None,
     };
 
-    Ok((min_vol, volume, calculated_price, is_max))
+    Ok((min_vol, volume, calculated_price, is_max, base_balance))
 }
 
 async fn update_single_order(
@@ -501,7 +510,7 @@ async fn update_single_order(
     key_trade_pair: String,
     ctx: &MmArc,
 ) -> OrderProcessingResult {
-    let (min_vol, _, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
+    let (min_vol, _, calculated_price, is_max, base_balance) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
 
     let req = MakerOrderUpdateReq {
         uuid,
@@ -518,11 +527,14 @@ async fn update_single_order(
     let resp = update_maker_order(ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
+    let (volume, _) = calculate_max_volume(&cfg.max_volume, &base_balance, &rates.base_price, false);
     info!(
-        "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair})",
+        "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair}) - maxVolume - \
+        {volume}",
         resp.uuid,
         calculated_price.to_decimal()
     );
+
     Ok(true)
 }
 
@@ -553,7 +565,8 @@ async fn create_single_order(
     key_trade_pair: String,
     ctx: MmArc,
 ) -> OrderProcessingResult {
-    let (min_vol, volume, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, &ctx).await?;
+    let (min_vol, volume, calculated_price, is_max, base_balance) =
+        prepare_order(rates, &cfg, &key_trade_pair, &ctx).await?;
 
     let req = SetPriceReq {
         base: cfg.base.clone(),
@@ -573,11 +586,13 @@ async fn create_single_order(
     let resp = create_maker_order(&ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
+    let (volume, _) = calculate_max_volume(&cfg.max_volume, &base_balance, &rates.base_price, is_max);
     info!(
-        "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair})",
+        "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair}) - maxVolume {volume}",
         resp.uuid,
         calculated_price.to_decimal()
     );
+
     Ok(true)
 }
 
@@ -587,13 +602,13 @@ async fn execute_create_single_order(
     key_trade_pair: String,
     ctx: &MmArc,
 ) -> bool {
-    match create_single_order(&rates, cfg, key_trade_pair.clone(), ctx.clone()).await {
+    match create_single_order(&rates, cfg.clone(), key_trade_pair.clone(), ctx.clone()).await {
         Ok(resp) => resp,
         Err(err) => {
             error!(
-                "{} - order cannot be created for: {key_trade_pair} - rate: ({:.4} {key_trade_pair})",
+                "{} - order cannot be created for: {key_trade_pair} - rate: ({:.4} {key_trade_pair}).",
                 err,
-                rates.price.to_decimal()
+                rates.price.to_decimal(),
             );
             false
         },
