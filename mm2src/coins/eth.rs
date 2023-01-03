@@ -39,7 +39,6 @@ use ethkey::{sign, verify_address};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
 use futures01::Future;
-use hex::encode;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
@@ -127,10 +126,6 @@ const GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE: u64 = 7;
 
 /// Lifetime of generated signed message for gui-auth requests
 const GUI_AUTH_SIGNED_MESSAGE_LIFETIME_SEC: i64 = 90;
-
-/// recieverSpend contract call bytes signature.
-/// https://www.4byte.directory/signatures/?bytes4_signature=02ed292b.
-const RECEIVERSPEND_BYTES_SIGNATURE: &str = "02ed292b";
 
 lazy_static! {
     pub static ref SWAP_CONTRACT: Contract = Contract::load(SWAP_CONTRACT_ABI.as_bytes()).unwrap();
@@ -1141,12 +1136,15 @@ impl SwapOps for EthCoin {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
         let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
 
-        // Validate contract call; expected to be receiverSpend (02ed292b).
-        if unverified.data[0..4] != function.short_signature() {
+        // Validate contract call; expected to be receiverSpend.
+        // https://www.4byte.directory/signatures/?bytes4_signature=02ed292b.
+        let expected_signature = function.short_signature();
+        let actual_signature = &unverified.data[0..4];
+        if actual_signature != expected_signature {
             return ERR!(
-                "Expected 'receiverSpend' contract call signature: {}, found {}",
-                RECEIVERSPEND_BYTES_SIGNATURE,
-                encode(&unverified.data[0..4])
+                "Expected 'receiverSpend' contract call signature: {:?}, found {:?}",
+                expected_signature,
+                actual_signature
             );
         };
 
