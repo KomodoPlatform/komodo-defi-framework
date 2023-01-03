@@ -39,6 +39,7 @@ use ethkey::{sign, verify_address};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
 use futures01::Future;
+use hex::encode;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
@@ -1138,18 +1139,17 @@ impl SwapOps for EthCoin {
 
     async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
-
-        // Contract call expected to be receiverSpend (02ed292b).
-        let contract_call_sig = hex::encode(&unverified.data[0..4]);
-        if contract_call_sig != RECEIVERSPEND_BYTES_SIGNATURE {
-            return ERR!(
-                "Expected 'receiverSpend' contract call signature: ({}) but found {}",
-                RECEIVERSPEND_BYTES_SIGNATURE,
-                contract_call_sig
-            );
-        }
-
         let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
+
+        // Validate contract call; expected to be receiverSpend (02ed292b).
+        if unverified.data[0..4] != function.short_signature() {
+            return ERR!(
+                "Expected 'receiverSpend' contract call signature: {}, found {}",
+                RECEIVERSPEND_BYTES_SIGNATURE,
+                encode(&unverified.data[0..4])
+            );
+        };
+
         let tokens = try_s!(function.decode_input(&unverified.data));
         if tokens.len() < 3 {
             return ERR!("Invalid arguments in 'receiverSpend' call: {:?}", tokens);
