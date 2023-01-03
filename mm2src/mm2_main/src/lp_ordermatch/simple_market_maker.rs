@@ -501,7 +501,6 @@ async fn update_single_order(
     ctx: &MmArc,
 ) -> OrderProcessingResult {
     let (min_vol, volume, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
-
     let req = MakerOrderUpdateReq {
         uuid,
         new_price: Some(calculated_price.clone()),
@@ -518,7 +517,7 @@ async fn update_single_order(
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
     info!(
-        "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair}) - volume - \
+        "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume - \
         {volume}",
         resp.uuid,
         calculated_price.to_decimal()
@@ -538,7 +537,7 @@ async fn execute_update_order(
         Err(err) => {
             let pair = key_trade_pair.as_combination();
             error!(
-                "Order with uuid: {} for {pair} cannot be updated - rate: ({:.} {pair}) - err: {err:?}",
+                "Order with uuid: {} for {pair} cannot be updated - rate: ({:.8} {pair}) - err: {err:?}",
                 order.uuid,
                 rates.price.to_decimal(),
             );
@@ -575,7 +574,7 @@ async fn create_single_order(
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
     info!(
-        "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair}) - volume {volume}",
+        "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume {volume}",
         resp.uuid,
         calculated_price.to_decimal()
     );
@@ -593,7 +592,7 @@ async fn execute_create_single_order(
         Ok(resp) => resp,
         Err(err) => {
             error!(
-                "{} - order cannot be created for: {key_trade_pair} - rate: ({:.4} {key_trade_pair}).",
+                "{} - order cannot be created for: {key_trade_pair} - rate: ({:.8} {key_trade_pair}).",
                 err,
                 rates.price.to_decimal(),
             );
