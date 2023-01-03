@@ -33,8 +33,7 @@ pub type StartSimpleMakerBotResult = Result<StartSimpleMakerBotRes, MmError<Star
 pub type StopSimpleMakerBotResult = Result<StopSimpleMakerBotRes, MmError<StopSimpleMakerBotError>>;
 pub type OrderProcessingResult = Result<bool, MmError<OrderProcessingError>>;
 pub type VwapProcessingResult = Result<MmNumber, MmError<OrderProcessingError>>;
-pub type OrderPreparationResult =
-    Result<(Option<MmNumber>, MmNumber, MmNumber, bool, MmNumber), MmError<OrderProcessingError>>;
+pub type OrderPreparationResult = Result<(Option<MmNumber>, MmNumber, MmNumber, bool), MmError<OrderProcessingError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -469,12 +468,6 @@ async fn calculate_volume(
     }
 }
 
-//async fn prepare_order(cfg) {
-//    let mut is_max = cfg.max.unwrap_or(false);
-//    let (vol, is_max) = calculate_volume(ctx, cfg, base_balance, price).await?;
-//    let is_max = cfg.max.unwrap_or_default() | is_max;
-//}
-
 async fn prepare_order(
     rates: &RateInfos,
     cfg: &SimpleCoinMarketMakerCfg,
@@ -498,7 +491,7 @@ async fn prepare_order(
         calculated_price = vwap_calculator(calculated_price.clone(), ctx, cfg).await?;
     }
 
-    let (volume, is_max) = calculate_volume(ctx, cfg, Some(&base_balance), &rates.base_price).await?;
+    let (volume, is_max) = calculate_volume(ctx, cfg, None, &rates.base_price).await?;
     let is_max = cfg.max.unwrap_or_default() | is_max;
 
     let min_vol = match &cfg.min_volume {
@@ -518,7 +511,7 @@ async fn prepare_order(
         None => None,
     };
 
-    Ok((min_vol, volume, calculated_price, is_max, base_balance))
+    Ok((min_vol, volume, calculated_price, is_max))
 }
 
 async fn update_single_order(
@@ -528,7 +521,7 @@ async fn update_single_order(
     key_trade_pair: String,
     ctx: &MmArc,
 ) -> OrderProcessingResult {
-    let (min_vol, _, calculated_price, is_max, base_balance) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
+    let (min_vol, _, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
 
     let req = MakerOrderUpdateReq {
         uuid,
@@ -545,7 +538,7 @@ async fn update_single_order(
     let resp = update_maker_order(ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
-    let (volume, _) = calculate_volume(ctx, &cfg, Some(&base_balance), &rates.base_price).await?;
+    let (volume, _) = calculate_volume(ctx, &cfg, None, &rates.base_price).await?;
     info!(
         "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair}) - maxVolume - \
         {volume}",
@@ -583,8 +576,7 @@ async fn create_single_order(
     key_trade_pair: String,
     ctx: MmArc,
 ) -> OrderProcessingResult {
-    let (min_vol, volume, calculated_price, is_max, base_balance) =
-        prepare_order(rates, &cfg, &key_trade_pair, &ctx).await?;
+    let (min_vol, volume, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, &ctx).await?;
 
     let req = SetPriceReq {
         base: cfg.base.clone(),
@@ -604,7 +596,7 @@ async fn create_single_order(
     let resp = create_maker_order(&ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
-    let (volume, _) = calculate_volume(&ctx, &cfg, Some(&base_balance), &rates.base_price).await?;
+    let (volume, _) = calculate_volume(&ctx, &cfg, None, &rates.base_price).await?;
     info!(
         "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair}) - maxVolume {volume}",
         resp.uuid,
