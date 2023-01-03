@@ -521,7 +521,7 @@ async fn update_single_order(
     key_trade_pair: String,
     ctx: &MmArc,
 ) -> OrderProcessingResult {
-    let (min_vol, _, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
+    let (min_vol, volume, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
 
     let req = MakerOrderUpdateReq {
         uuid,
@@ -538,7 +538,6 @@ async fn update_single_order(
     let resp = update_maker_order(ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
-    let (volume, _) = calculate_volume(ctx, &cfg, None, &rates.base_price).await?;
     info!(
         "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair}) - maxVolume - \
         {volume}",
@@ -583,7 +582,7 @@ async fn create_single_order(
         rel: cfg.rel.clone(),
         price: calculated_price.clone(),
         max: is_max,
-        volume,
+        volume: volume.clone(),
         min_volume: min_vol,
         cancel_previous: true,
         base_confs: cfg.base_confs,
@@ -596,7 +595,6 @@ async fn create_single_order(
     let resp = create_maker_order(&ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
-    let (volume, _) = calculate_volume(&ctx, &cfg, None, &rates.base_price).await?;
     info!(
         "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.4} {key_trade_pair}) - maxVolume {volume}",
         resp.uuid,
