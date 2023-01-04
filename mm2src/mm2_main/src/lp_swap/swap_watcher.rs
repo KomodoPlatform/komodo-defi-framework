@@ -2,8 +2,9 @@ use super::{broadcast_p2p_tx_msg, lp_coinfind, taker_payment_spend_deadline, tx_
             WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
-use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput, SendWatcherRefundsPaymentArgs,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, SendMakerPaymentSpendPreimageInput};
+use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, SendMakerPaymentSpendPreimageInput,
+            SendWatcherRefundsPaymentArgs, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::state_machine::prelude::*;
@@ -11,12 +12,12 @@ use common::{now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
+use rpc::v1::types::Bytes;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use std::cmp::min;
 use std::sync::Arc;
 use uuid::Uuid;
-use rpc::v1::types::Bytes;
 
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;

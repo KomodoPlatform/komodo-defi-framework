@@ -1,14 +1,13 @@
 use crate::integration_tests_common::*;
-use crate::{fill_address, fill_eth, generate_utxo_coin_with_random_privkey,
-            random_secp256k1_secret, rmd160_from_priv, utxo_coin_from_privkey};
+use crate::{fill_address, fill_eth, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
+            utxo_coin_from_privkey};
 use bitcrypto::dhash160;
 use chain::OutPoint;
 use coins::utxo::rpc_clients::UnspentInfo;
 use coins::utxo::{GetUtxoListOps, UtxoCommonOps};
 use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SwapOps, TransactionEnum,
-            WithdrawRequest};
+            SendTakerSpendsMakerPaymentArgs, SwapOps, TransactionEnum, WithdrawRequest};
 use common::{block_on, now_ms};
 use futures01::Future;
 use mm2_number::{BigDecimal, MmNumber};

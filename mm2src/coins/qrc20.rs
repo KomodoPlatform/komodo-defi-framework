@@ -18,15 +18,16 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, AddrFromStrError, Broadca
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendWatcherRefundsPaymentArgs,
-            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
+            SendMakerPaymentSpendPreimageInput, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs,
+            SendTakerPaymentArgs, SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs,
+            SendWatcherRefundsPaymentArgs, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
+            TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;

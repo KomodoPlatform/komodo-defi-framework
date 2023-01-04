@@ -5,11 +5,12 @@ use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
             NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
-            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType, SendMakerPaymentSpendPreimageInput,
+            SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendMakerRefundsPaymentArgs,
+            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
+            SendTakerSpendsMakerPaymentArgs, SendWatcherRefundsPaymentArgs, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
             TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, SendWatcherRefundsPaymentArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
             ValidatePaymentInput, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
