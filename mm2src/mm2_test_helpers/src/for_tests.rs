@@ -133,6 +133,10 @@ pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd80
 pub const ETH_DEV_NODES: &[&str] = &["http://195.201.0.6:8565"];
 pub const ETH_DEV_SWAP_CONTRACT: &str = "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd";
 
+pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc-sepolia.rockx.com/"];
+pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xCCBbC47B4E5CC5B413648EAB21c69789466c06Aa";
+pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x948BF5172383F1Bc0Fdf3aBe0630b855694A5D2c";
+
 pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
 
 pub struct Mm2TestConf {
@@ -556,6 +560,20 @@ pub fn eth_jst_testnet_conf() -> Json {
             "protocol_data": {
                 "platform": "ETH",
                 "contract_address": "0x2b294F029Fde858b2c62184e8390591755521d8E"
+            }
+        }
+    })
+}
+
+pub fn eth_jst_conf(contract_address: &str) -> Json {
+    json!({
+        "coin": "JST",
+        "name": "jst",
+        "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+                "platform": "ETH",
+                "contract_address": contract_address
             }
         }
     })

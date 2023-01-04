@@ -1007,6 +1007,7 @@ impl TakerSwap {
     }
 
     async fn negotiate(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        println!("negotiate_taker");
         const NEGOTIATE_TIMEOUT: u64 = 90;
 
         let recv_fut = recv_swap_msg(
@@ -1193,6 +1194,7 @@ impl TakerSwap {
     }
 
     async fn wait_for_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        println!("**wait_for_maker_payment");
         const MAKER_PAYMENT_WAIT_TIMEOUT: u64 = 600;
 
         let payment_data_msg = match self.get_taker_fee_data().await {
@@ -1232,6 +1234,7 @@ impl TakerSwap {
         drop(abort_send_handle);
         let mut swap_events = vec![];
         if let Some(instructions) = payload.instructions() {
+            // TODO: Niye validate taker payment?
             match self.taker_coin.validate_taker_payment_instructions(
                 instructions,
                 &self.r().secret_hash.0,
@@ -1271,6 +1274,7 @@ impl TakerSwap {
     }
 
     async fn validate_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        println!("**validate_maker_payment");
         info!("Before wait confirm");
         let confirmations = self.r().data.maker_payment_confirmations;
         let f = self.maker_coin.wait_for_confirmations(
@@ -1337,10 +1341,17 @@ impl TakerSwap {
             maker_pub: self.r().other_maker_coin_htlc_pub.to_vec(),
             maker_payment_hash: self.r().maker_payment.as_ref().unwrap().tx_hash.0.clone(),
             maker_coin_start_block: self.r().data.maker_coin_start_block,
+            swap_contract_address: self
+                .r()
+                .data
+                .taker_coin_swap_contract_address
+                .clone()
+                .map(|address| address.into_vec()),
         }
     }
 
     async fn send_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        println!("**send_taker_payment");
         #[cfg(test)]
         if self.fail_at == Some(FailAt::TakerPayment) {
             return Ok((Some(TakerSwapCommand::Finish), vec![
@@ -1374,6 +1385,7 @@ impl TakerSwap {
                         Ok(_) => self.r().data.started_at as u32,
                         Err(_) => self.r().data.taker_payment_lock as u32,
                     };
+
                     let payment_fut = self.taker_coin.send_taker_payment(SendTakerPaymentArgs {
                         time_lock_duration: self.r().data.lock_duration,
                         time_lock,
@@ -1417,6 +1429,7 @@ impl TakerSwap {
             && self.taker_coin.is_supported_by_watchers()
             && self.maker_coin.is_supported_by_watchers()
         {
+            println!("**use_watchers");
             let maker_payment_spend_preimage_fut = self.taker_coin.create_maker_payment_spend_preimage(
                 &self.r().maker_payment.as_ref().unwrap().tx_hex,
                 self.maker_payment_lock.load(Ordering::Relaxed) as u32,
@@ -1429,6 +1442,7 @@ impl TakerSwap {
                 Ok(_) => try_s!(u32::try_from(self.r().data.started_at)),
                 Err(_) => try_s!(u32::try_from(self.r().data.taker_payment_lock)),
             };
+
             let taker_payment_refund_preimage_fut = self.taker_coin.create_taker_payment_refund_preimage(
                 &transaction.tx_hex(),
                 time_lock,
@@ -1475,6 +1489,7 @@ impl TakerSwap {
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        println!("**wait_for_taker_payment_spend");
         const BROADCAST_SWAP_MESSAGE_INTERVAL: f64 = 600.;
 
         let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
@@ -1485,6 +1500,7 @@ impl TakerSwap {
             && self.taker_coin.is_supported_by_watchers()
             && self.maker_coin.is_supported_by_watchers()
         {
+            println!("**usewatchers");
             if let (Some(maker_payment_spend), Some(taker_payment_refund)) = (
                 self.r().maker_payment_spend_preimage.clone(),
                 self.r().taker_payment_refund_preimage.clone(),
@@ -1584,6 +1600,7 @@ impl TakerSwap {
     }
 
     async fn spend_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        println!("**spend_maker_payment");
         #[cfg(test)]
         if self.fail_at == Some(FailAt::MakerPaymentSpend) {
             return Ok((Some(TakerSwapCommand::Finish), vec![
@@ -1637,6 +1654,7 @@ impl TakerSwap {
     }
 
     async fn refund_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        println!("**refund_taker_payment");
         #[cfg(test)]
         if self.fail_at == Some(FailAt::TakerPaymentRefund) {
             return Ok((Some(TakerSwapCommand::Finish), vec![
@@ -2021,6 +2039,7 @@ impl AtomicSwap for TakerSwap {
         // if taker fee is not sent yet it must be virtually locked
         let taker_fee_amount =
             dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &self.taker_amount);
+
         let trade_fee = self.r().data.fee_to_send_taker_fee.clone().map(TradeFee::from);
         if self.r().taker_fee.is_none() {
             result.push(LockedAmount {

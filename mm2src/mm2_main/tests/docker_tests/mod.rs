@@ -5,6 +5,7 @@ mod docker_tests_inner;
 pub mod qrc20_tests;
 mod slp_tests;
 mod solana_tests;
+mod swap_watcher_tests;
 mod swaps_confs_settings_sync_tests;
 mod swaps_file_lock_tests;
 

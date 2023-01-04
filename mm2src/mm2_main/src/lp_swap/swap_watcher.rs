@@ -2,8 +2,9 @@ use super::{broadcast_p2p_tx_msg, lp_coinfind, taker_payment_spend_deadline, tx_
             WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
-use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
+use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, SendMakerPaymentSpendPreimageInput,
+            SendWatcherRefundsPaymentArgs, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::state_machine::prelude::*;
@@ -11,6 +12,7 @@ use common::{now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
+use rpc::v1::types::Bytes;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use std::cmp::min;
@@ -94,6 +96,7 @@ pub struct TakerSwapWatcherData {
     pub maker_pub: Vec<u8>,
     pub maker_payment_hash: Vec<u8>,
     pub maker_coin_start_block: u64,
+    pub swap_contract_address: Option<Vec<u8>>,
 }
 
 struct ValidatePublicKeys {}
@@ -167,6 +170,7 @@ impl State for ValidateTakerFee {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        println!("**ValidateTakerFee");
         let validated_f = watcher_ctx
             .taker_coin
             .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
@@ -194,6 +198,7 @@ impl State for ValidateTakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        println!("**ValidateTakerPayment");
         let taker_payment_spend_deadline =
             taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
 
@@ -240,6 +245,7 @@ impl State for ValidateTakerPayment {
             secret_hash: watcher_ctx.data.secret_hash.clone(),
             try_spv_proof_until: taker_payment_spend_deadline,
             confirmations,
+            swap_contract_address: watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
         };
 
         let validated_f = watcher_ctx
@@ -263,6 +269,7 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        println!("**WaitForTakerPaymentSpend");
         let payment_search_interval = watcher_ctx.conf.search_interval;
         let wait_until = watcher_ctx.refund_start_time();
         let search_input = WatcherSearchForSwapTxSpendInput {
@@ -272,6 +279,7 @@ impl State for WaitForTakerPaymentSpend {
             secret_hash: &watcher_ctx.data.secret_hash,
             tx: &self.taker_payment_hex,
             search_from_block: watcher_ctx.data.taker_coin_start_block,
+            swap_contract_address: &watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
         };
 
         loop {
@@ -366,9 +374,17 @@ impl State for SpendMakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        println!("**SpendMakerPayment");
+
         let spend_fut = watcher_ctx
             .maker_coin
-            .send_maker_payment_spend_preimage(&watcher_ctx.data.maker_payment_spend_preimage, &self.secret.0);
+            .send_maker_payment_spend_preimage(SendMakerPaymentSpendPreimageInput {
+                preimage: &watcher_ctx.data.maker_payment_spend_preimage,
+                secret: &self.secret.0,
+                secret_hash: &watcher_ctx.data.secret_hash,
+                taker_pub: &watcher_ctx.verified_pub,
+                swap_contract_address: &watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
+            });
 
         let transaction = match spend_fut.compat().await {
             Ok(t) => t,
@@ -381,6 +397,7 @@ impl State for SpendMakerPayment {
                         &None,
                     );
                 };
+                println!("**MakerPaymentSpendFailed: {}", err.get_plain_text_format());
                 return Self::change_state(Stopped::from_reason(StopReason::Error(
                     WatcherError::MakerPaymentSpendFailed(err.get_plain_text_format()).into(),
                 )));
@@ -412,6 +429,7 @@ impl State for RefundTakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        println!("**RefundTakerPayment");
         if std::env::var("REFUND_TEST").is_err() {
             loop {
                 match watcher_ctx
@@ -432,7 +450,14 @@ impl State for RefundTakerPayment {
 
         let refund_fut = watcher_ctx
             .taker_coin
-            .send_taker_payment_refund_preimage(&watcher_ctx.data.taker_payment_refund_preimage);
+            .send_taker_payment_refund_preimage(SendWatcherRefundsPaymentArgs {
+                payment_tx: &watcher_ctx.data.taker_payment_refund_preimage,
+                swap_contract_address: &watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
+                secret_hash: &watcher_ctx.data.secret_hash,
+                other_pubkey: &watcher_ctx.verified_pub,
+                time_lock: watcher_ctx.taker_locktime() as u32,
+                swap_unique_data: &[],
+            });
         let transaction = match refund_fut.compat().await {
             Ok(t) => t,
             Err(err) => {
@@ -541,6 +566,7 @@ impl Drop for SwapWatcherLock {
 }
 
 fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, verified_pub: Vec<u8>) {
+    println!("**spawn_taker_swap_watcher");
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid) {
         return;
