@@ -78,7 +78,7 @@ impl From<RpcTaskError> for WithdrawError {
     fn from(e: RpcTaskError) -> Self {
         let error = e.to_string();
         match e {
-            RpcTaskError::Canceled => WithdrawError::InternalError("Canceled".to_owned()),
+            RpcTaskError::Cancelled => WithdrawError::InternalError("Cancelled".to_owned()),
             RpcTaskError::Timeout(timeout) => WithdrawError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => {
                 WithdrawError::InternalError(error)

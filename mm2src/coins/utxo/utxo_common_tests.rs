@@ -8,6 +8,7 @@ use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
 use crate::utxo::tx_cache::UtxoVerboseCacheOps;
 use crate::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use crate::{compare_transaction_details, UtxoStandardCoin};
+use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::PagingOptionsEnum;
@@ -16,6 +17,7 @@ use itertools::Itertools;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 use std::convert::TryFrom;
 use std::num::NonZeroUsize;
+use std::time::Duration;
 
 pub(super) const TEST_COIN_NAME: &'static str = "RICK";
 // Made-up hrp for rick to test p2wpkh script
@@ -154,9 +156,6 @@ pub(super) async fn wait_for_tx_history_finished<Coin>(
 where
     Coin: CoinWithTxHistoryV2 + MmCoin,
 {
-    let started_at = now_ms() / 1000;
-    let wait_until = started_at + timeout_s;
-
     let req = MyTxHistoryRequestV2 {
         coin: coin.ticker().to_owned(),
         limit: u32::MAX as usize,
@@ -164,16 +163,20 @@ where
         target,
     };
 
-    while now_ms() / 1000 < wait_until {
-        Timer::sleep(3.).await;
+    // Let the storage to be initialized for the given coin.
+    Timer::sleep(1.).await;
 
+    repeatable!(async {
         let response = my_tx_history_v2_impl(ctx.clone(), coin, req.clone()).await.unwrap();
         if response.transactions.len() >= expected_txs {
-            return response;
+            return Ready(response);
         }
-    }
-
-    panic!("Waited too long until {} for TX history finishes", wait_until)
+        Retry(())
+    })
+    .repeat_every(Duration::from_secs(3))
+    .with_timeout_ms(timeout_s * 1000)
+    .await
+    .unwrap()
 }
 
 pub(super) fn get_morty_hd_transactions_ordered(tx_hashes: &[&str]) -> Vec<TransactionDetails> {

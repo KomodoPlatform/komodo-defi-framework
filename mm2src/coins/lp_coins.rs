@@ -24,6 +24,7 @@
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 #![feature(stmt_expr_attributes)]
+#![feature(result_flattening)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;
@@ -991,6 +992,26 @@ pub struct VerificationRequest {
 }
 
 impl WithdrawRequest {
+    pub fn new(
+        coin: String,
+        from: Option<WithdrawFrom>,
+        to: String,
+        amount: BigDecimal,
+        max: bool,
+        fee: Option<WithdrawFee>,
+        memo: Option<String>,
+    ) -> WithdrawRequest {
+        WithdrawRequest {
+            coin,
+            from,
+            to,
+            amount,
+            max,
+            fee,
+            memo,
+        }
+    }
+
     pub fn new_max(coin: String, to: String) -> WithdrawRequest {
         WithdrawRequest {
             coin,
@@ -1658,6 +1679,8 @@ pub enum WithdrawError {
     InvalidAddress(String),
     #[display(fmt = "Invalid fee policy: {}", _0)]
     InvalidFeePolicy(String),
+    #[display(fmt = "Invalid memo field: {}", _0)]
+    InvalidMemo(String),
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
     #[from_trait(WithTimeout::timeout)]
@@ -1693,6 +1716,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
             | WithdrawError::InvalidFeePolicy(_)
+            | WithdrawError::InvalidMemo(_)
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
@@ -3532,4 +3556,14 @@ where
     } else {
         b.block_height.cmp(&a.block_height)
     }
+}
+
+/// Use trait in the case, when we have to send requests to rpc client.
+#[async_trait]
+pub trait RpcCommonOps {
+    type RpcClient;
+    type Error;
+
+    /// Returns an alive RPC client or returns an error if no RPC endpoint is currently available.
+    async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error>;
 }

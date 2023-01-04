@@ -43,7 +43,7 @@ use keys::{AddressFormat, KeyPair};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, TopicPrefix, TOPIC_SEPARATOR};
-use mm2_metrics::{mm_gauge, mm_label};
+use mm2_metrics::mm_gauge;
 use mm2_number::{construct_detailed, BigDecimal, BigRational, Fraction, MmNumber, MmNumberMultiRepr};
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::identities::Zero;
@@ -2237,6 +2237,7 @@ fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook
 }
 
 pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
+    // broadcast_maker_orders_keep_alive_loop is spawned only if CryptoCtx is initialized.
     let persistent_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
         .mm2_internal_pubkey_hex();
@@ -2412,22 +2413,9 @@ fn collect_orderbook_metrics(_ctx: &MmArc, _orderbook: &Orderbook) {}
 fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
     use parity_util_mem::malloc_size;
 
-    fn history_committed_changes(history: &TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>) -> i64 {
-        let total = history.iter().fold(0usize, |total, (_alb_pair, history)| {
-            total + history.get_element().inner.len()
-        });
-        total as i64
-    }
-
     let memory_db_size = malloc_size(&orderbook.memory_db);
     mm_gauge!(ctx.metrics, "orderbook.len", orderbook.order_set.len() as f64);
     mm_gauge!(ctx.metrics, "orderbook.memory_db", memory_db_size as f64);
-
-    // TODO remove metrics below after testing
-    for (pubkey, pubkey_state) in orderbook.pubkeys_state.iter() {
-        mm_gauge!(ctx.metrics, "orders_uuids", pubkey_state.orders_uuids.len() as f64, "pubkey" => pubkey.clone());
-        mm_gauge!(ctx.metrics, "history.commited_changes", history_committed_changes(&pubkey_state.order_pairs_trie_state_history) as f64, "pubkey" => pubkey.clone());
-    }
 }
 
 #[derive(Default)]
@@ -2869,6 +2857,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let maker_amount = maker_match.reserved.get_base_amount().to_decimal();
         let taker_amount = maker_match.reserved.get_rel_amount().to_decimal();
 
+        // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
         let my_persistent_pub = compressed_pub_key_from_priv_raw(raw_priv.as_slice(), ChecksumType::DSHA256).unwrap();
@@ -2964,6 +2953,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             },
         };
 
+        // lp_connected_alice is called only from process_maker_connected, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
         let my_persistent_pub = compressed_pub_key_from_priv_raw(raw_priv.as_slice(), ChecksumType::DSHA256).unwrap();
@@ -3029,6 +3019,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
 }
 
 pub async fn lp_ordermatch_loop(ctx: MmArc) {
+    // lp_ordermatch_loop is spawned only if CryptoCtx is initialized
     let my_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
         .mm2_internal_pubkey_hex();
@@ -3298,6 +3289,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         }
     }
 
+    // Taker order existence is checked previously - it can't be created if CryptoCtx is not initialized
     let our_public_id = CryptoCtx::from_ctx(&ctx)
         .expect("'CryptoCtx' must be initialized already")
         .mm2_internal_public_id();
@@ -3375,9 +3367,11 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
     log::debug!("Processing MakerConnected {:?}", connected);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
-    let our_public_id = CryptoCtx::from_ctx(&ctx)
-        .expect("'CryptoCtx' must be initialized already")
-        .mm2_internal_public_id();
+    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
+        Ok(ctx) => ctx.mm2_internal_public_id(),
+        Err(_) => return,
+    };
+
     if our_public_id.bytes == from_pubkey.0 {
         log::warn!("Skip maker connected from our pubkey");
         return;
@@ -3414,11 +3408,10 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
 }
 
 async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
-    let our_public_id: H256Json = CryptoCtx::from_ctx(&ctx)
-        .expect("'CryptoCtx' must be initialized already")
-        .mm2_internal_public_id()
-        .bytes
-        .into();
+    let our_public_id: H256Json = match CryptoCtx::from_ctx(&ctx) {
+        Ok(ctx) => ctx.mm2_internal_public_id().bytes.into(),
+        Err(_) => return,
+    };
 
     if our_public_id == from_pubkey {
         log::warn!("Skip the request originating from our pubkey");
@@ -3494,9 +3487,10 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
     log::debug!("Processing TakerConnect {:?}", connect_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
-    let our_public_id = CryptoCtx::from_ctx(&ctx)
-        .expect("'CryptoCtx' must be initialized already")
-        .mm2_internal_public_id();
+    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
+        Ok(ctx) => ctx.mm2_internal_public_id(),
+        Err(_) => return,
+    };
 
     if our_public_id.bytes == sender_pubkey.0 {
         log::warn!("Skip taker connect from our pubkey");

@@ -56,6 +56,7 @@ pub enum CoinVariant {
     Qtum,
     LBC,
     Standard,
+    PPC,
 }
 
 impl CoinVariant {
@@ -64,6 +65,8 @@ impl CoinVariant {
     pub fn is_qtum(&self) -> bool { matches!(self, CoinVariant::Qtum) }
 
     pub fn is_lbc(&self) -> bool { matches!(self, CoinVariant::LBC) }
+
+    pub fn is_ppc(&self) -> bool { matches!(self, CoinVariant::PPC) }
 }
 
 impl From<&str> for CoinVariant {
@@ -75,6 +78,8 @@ impl From<&str> for CoinVariant {
             t if t == "QTUM" || t.contains("QTUM-") || t.contains("QTUM_") => CoinVariant::Qtum,
             // "LBC", "LBC-segwit", etc..
             t if t == "LBC" || t.contains("LBC-") || t.contains("LBC_") => CoinVariant::LBC,
+            // "PPC", "PPC-segwit", etc..
+            t if t == "PPC" || t.contains("PPC-") || t.contains("PPC_") => CoinVariant::PPC,
             _ => CoinVariant::Standard,
         }
     }

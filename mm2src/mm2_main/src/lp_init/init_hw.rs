@@ -66,7 +66,7 @@ impl From<RpcTaskError> for InitHwError {
     fn from(e: RpcTaskError) -> Self {
         let error = e.to_string();
         match e {
-            RpcTaskError::Canceled => InitHwError::Internal("Canceled".to_owned()),
+            RpcTaskError::Cancelled => InitHwError::Internal("Cancelled".to_owned()),
             RpcTaskError::Timeout(timeout) => InitHwError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => InitHwError::Internal(error),
             RpcTaskError::UnexpectedUserAction { expected } => InitHwError::UnexpectedUserAction { expected },

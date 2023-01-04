@@ -57,7 +57,7 @@ impl From<RpcTaskError> for InitMetamaskError {
     fn from(e: RpcTaskError) -> Self {
         let error = e.to_string();
         match e {
-            RpcTaskError::Canceled => InitMetamaskError::Internal("Canceled".to_owned()),
+            RpcTaskError::Cancelled => InitMetamaskError::Internal("Cancelled".to_owned()),
             RpcTaskError::Timeout(timeout) => InitMetamaskError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => {
                 InitMetamaskError::Internal(error)

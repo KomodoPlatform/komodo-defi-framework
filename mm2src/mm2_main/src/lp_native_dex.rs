@@ -108,7 +108,7 @@ impl From<AdexBehaviourError> for P2PInitError {
 #[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MmInitError {
-    Canceled,
+    Cancelled,
     #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "Initialization timeout {:?}", _0)]
     Timeout(Duration),
@@ -224,7 +224,7 @@ impl From<RpcTaskError> for MmInitError {
     fn from(e: RpcTaskError) -> Self {
         let error = e.to_string();
         match e {
-            RpcTaskError::Canceled => MmInitError::Canceled,
+            RpcTaskError::Cancelled => MmInitError::Cancelled,
             RpcTaskError::Timeout(timeout) => MmInitError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_)
             | RpcTaskError::UnexpectedTaskStatus { .. }
