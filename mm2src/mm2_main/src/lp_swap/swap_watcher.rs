@@ -2,8 +2,8 @@ use super::{broadcast_p2p_tx_msg, lp_coinfind, taker_payment_spend_deadline, tx_
             WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
-use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
+use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput, SendWatcherRefundsPaymentArgs,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, SendMakerPaymentSpendPreimageInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::state_machine::prelude::*;
@@ -16,6 +16,7 @@ use serde_json as json;
 use std::cmp::min;
 use std::sync::Arc;
 use uuid::Uuid;
+use rpc::v1::types::Bytes;
 
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
@@ -94,6 +95,7 @@ pub struct TakerSwapWatcherData {
     pub maker_pub: Vec<u8>,
     pub maker_payment_hash: Vec<u8>,
     pub maker_coin_start_block: u64,
+    pub swap_contract_address: Option<Vec<u8>>,
 }
 
 struct ValidatePublicKeys {}
@@ -240,6 +242,7 @@ impl State for ValidateTakerPayment {
             secret_hash: watcher_ctx.data.secret_hash.clone(),
             try_spv_proof_until: taker_payment_spend_deadline,
             confirmations,
+            swap_contract_address: watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
         };
 
         let validated_f = watcher_ctx
@@ -272,6 +275,7 @@ impl State for WaitForTakerPaymentSpend {
             secret_hash: &watcher_ctx.data.secret_hash,
             tx: &self.taker_payment_hex,
             search_from_block: watcher_ctx.data.taker_coin_start_block,
+            swap_contract_address: &watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
         };
 
         loop {
@@ -368,7 +372,13 @@ impl State for SpendMakerPayment {
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         let spend_fut = watcher_ctx
             .maker_coin
-            .send_maker_payment_spend_preimage(&watcher_ctx.data.maker_payment_spend_preimage, &self.secret.0);
+            .send_maker_payment_spend_preimage(SendMakerPaymentSpendPreimageInput {
+                preimage: &watcher_ctx.data.maker_payment_spend_preimage,
+                secret: &self.secret.0,
+                secret_hash: &watcher_ctx.data.secret_hash,
+                taker_pub: &watcher_ctx.verified_pub,
+                swap_contract_address: &watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
+            });
 
         let transaction = match spend_fut.compat().await {
             Ok(t) => t,
@@ -432,7 +442,14 @@ impl State for RefundTakerPayment {
 
         let refund_fut = watcher_ctx
             .taker_coin
-            .send_taker_payment_refund_preimage(&watcher_ctx.data.taker_payment_refund_preimage);
+            .send_taker_payment_refund_preimage(SendWatcherRefundsPaymentArgs {
+                payment_tx: &watcher_ctx.data.taker_payment_refund_preimage,
+                swap_contract_address: &watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
+                secret_hash: &watcher_ctx.data.secret_hash,
+                other_pubkey: &watcher_ctx.verified_pub,
+                time_lock: watcher_ctx.taker_locktime() as u32,
+                swap_unique_data: &[],
+            });
         let transaction = match refund_fut.compat().await {
             Ok(t) => t,
             Err(err) => {

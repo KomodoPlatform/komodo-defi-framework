@@ -133,7 +133,7 @@ pub struct BchDockerOps {
 // builds the EthCoin using the external dev Parity/OpenEthereum node
 // the address belonging to the default passphrase has million of ETH that it can distribute to
 // random privkeys generated in tests
-fn eth_distributor() -> EthCoin {
+pub fn eth_distributor() -> EthCoin {
     let conf = json!({"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}});
     let req = json!({
         "method": "enable",
@@ -162,6 +162,54 @@ pub fn fill_eth(to_addr: &str) {
         .wait()
         .unwrap();
 }
+
+pub fn generate_eth_coin_with_random_privkey() -> EthCoin {
+    let conf = json!({"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}});
+    let req = json!({
+        "method": "enable",
+        "coin": "ETH",
+        "urls": ["http://195.201.0.6:8565"],
+        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+    });
+    let priv_key = random_secp256k1_secret();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
+    block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "ETH",
+        &conf,
+        &req,
+        CoinProtocol::ETH,
+        priv_key_policy,
+    ))
+    .unwrap()
+}
+
+pub fn generate_erc20_coin() -> EthCoin {
+    let conf = json!({"coin":"JST","name":"jst","rpcport":80,"mm2":1,"protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}});
+    let req = json!({
+        "method": "enable",
+        "coin": "JST",
+        "urls": ["http://195.201.0.6:8565"],
+        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+    });
+    let keypair =
+        key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
+    block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "JST",
+        &conf,
+        &req,
+        CoinProtocol::ERC20 {
+            platform: "ETH".into(),
+            contract_address: String::from("0x2b294F029Fde858b2c62184e8390591755521d8E"),
+        },
+        priv_key_policy,
+    ))
+    .unwrap()
+}
+
+
 
 impl BchDockerOps {
     pub fn from_ticker(ticker: &str) -> BchDockerOps {

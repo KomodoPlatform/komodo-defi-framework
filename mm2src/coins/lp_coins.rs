@@ -280,8 +280,16 @@ pub type SendMakerSpendsTakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
 pub type SendTakerSpendsMakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
 pub type SendTakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
 pub type SendMakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
+pub type SendWatcherRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
+
+// Constants for logs used in tests
+pub const INVALID_SENDER_ERR_LOG: &str = "Invalid sender";
+pub const EARLY_CONFIRMATION_ERR_LOG: &str = "Early confirmation";
+pub const OLD_TRANSACTION_ERR_LOG: &str = "Old transaction";
+pub const INVALID_RECEIVER_ERR_LOG: &str = "Invalid receiver";
+pub const INVALID_CONTRACT_ADDRESS_ERR_LOG: &str = "Invalid contract address";
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -506,6 +514,7 @@ pub struct WatcherValidatePaymentInput {
     pub secret_hash: Vec<u8>,
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
+    pub swap_contract_address: Option<BytesJson>,
 }
 
 #[derive(Clone, Debug)]
@@ -530,6 +539,16 @@ pub struct WatcherSearchForSwapTxSpendInput<'a> {
     pub secret_hash: &'a [u8],
     pub tx: &'a [u8],
     pub search_from_block: u64,
+    pub swap_contract_address: &'a Option<BytesJson>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SendMakerPaymentSpendPreimageInput<'a> {
+    pub preimage: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub secret: &'a [u8],
+    pub taker_pub: &'a [u8],
+    pub swap_contract_address: &'a Option<BytesJson>,
 }
 
 pub struct SearchForSwapTxSpendInput<'a> {
@@ -747,9 +766,12 @@ pub trait SwapOps {
 
 #[async_trait]
 pub trait WatcherOps {
-    fn send_maker_payment_spend_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut;
+    fn send_maker_payment_spend_preimage(&self, input: SendMakerPaymentSpendPreimageInput) -> TransactionFut;
 
-    fn send_taker_payment_refund_preimage(&self, preimage: &[u8]) -> TransactionFut;
+    fn send_taker_payment_refund_preimage(
+        &self,
+        watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
+    ) -> TransactionFut;
 
     fn create_taker_payment_refund_preimage(
         &self,
