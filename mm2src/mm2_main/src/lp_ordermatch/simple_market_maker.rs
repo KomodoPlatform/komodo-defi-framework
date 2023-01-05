@@ -516,12 +516,20 @@ async fn update_single_order(
     let resp = update_maker_order(ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
-    info!(
-        "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume - \
+    if is_max {
+        info!(
+            "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - max volume",
+            resp.uuid,
+            calculated_price.to_decimal()
+        );
+    } else {
+        info!(
+            "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume - \
         {volume}",
-        resp.uuid,
-        calculated_price.to_decimal()
-    );
+            resp.uuid,
+            calculated_price.to_decimal()
+        );
+    }
 
     Ok(true)
 }
@@ -573,11 +581,19 @@ async fn create_single_order(
     let resp = create_maker_order(&ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
-    info!(
+    if is_max {
+        info!(
+            "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - max volume",
+            resp.uuid,
+            calculated_price.to_decimal()
+        );
+    } else {
+        info!(
         "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume {volume}",
         resp.uuid,
         calculated_price.to_decimal()
     );
+    }
 
     Ok(true)
 }
