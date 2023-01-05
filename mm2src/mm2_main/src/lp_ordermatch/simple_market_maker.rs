@@ -524,10 +524,11 @@ async fn update_single_order(
         );
     } else {
         info!(
-            "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume - \
-        {volume}",
+            "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume: {:\
+            .8}",
             resp.uuid,
-            calculated_price.to_decimal()
+            calculated_price.to_decimal(),
+            volume.to_decimal()
         );
     }
 
@@ -589,10 +590,12 @@ async fn create_single_order(
         );
     } else {
         info!(
-        "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume {volume}",
-        resp.uuid,
-        calculated_price.to_decimal()
-    );
+            "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume: {:\
+        .8}",
+            resp.uuid,
+            calculated_price.to_decimal(),
+            volume.to_decimal()
+        );
     }
 
     Ok(true)
