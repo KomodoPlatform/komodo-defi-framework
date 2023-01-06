@@ -378,7 +378,6 @@ impl State for SpendMakerPayment {
                 secret: &self.secret.0,
                 secret_hash: &watcher_ctx.data.secret_hash,
                 taker_pub: &watcher_ctx.verified_pub,
-                swap_contract_address: &watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
             });
 
         let transaction = match spend_fut.compat().await {

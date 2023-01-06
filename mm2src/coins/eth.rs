@@ -20,6 +20,7 @@
 //
 //  Copyright © 2022 AtomicDEX. All rights reserved.
 //
+use super::eth::Action::{Call, Create};
 use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
@@ -1253,17 +1254,10 @@ impl WatcherOps for EthCoin {
     fn send_maker_payment_spend_preimage(&self, input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
         let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(input.preimage));
         let signed = try_tx_fus!(SignedEthTx::new(tx));
-        let swap_contract_address = try_tx_fus!(input.swap_contract_address.try_to_address());
 
         Box::new(
-            self.watcher_spend_hash_time_locked_payment(
-                signed,
-                input.secret_hash,
-                swap_contract_address,
-                input.secret,
-                input.taker_pub,
-            )
-            .map(TransactionEnum::from),
+            self.watcher_spend_hash_time_locked_payment(signed, input.secret_hash, input.secret, input.taker_pub)
+                .map(TransactionEnum::from),
         )
     }
 
@@ -1453,7 +1447,7 @@ impl WatcherOps for EthCoin {
             let tx_from_rpc = match tx_from_rpc {
                 Some(t) => t,
                 None => {
-                    return MmError::err(ValidatePaymentError::InvalidRpcResponse(format!(
+                    return MmError::err(ValidatePaymentError::TxDoesNotExist(format!(
                         "Didn't find provided tx {:?} on ETH node",
                         tx
                     )))
@@ -2823,15 +2817,21 @@ impl EthCoin {
         &self,
         payment: SignedEthTx,
         _secret_hash: &[u8],
-        swap_contract_address: Address,
         secret: &[u8],
         taker_pub: &[u8],
     ) -> EthTxFut {
         let spend_func = try_tx_fus!(SWAP_CONTRACT.function("watcherSpend"));
         let clone = self.clone();
         let secret_vec = secret.to_vec();
-
         let taker_addr = addr_from_raw_pubkey(taker_pub).unwrap();
+        let swap_contract_address = match payment.action.clone() {
+            Call(address) => address,
+            Create => {
+                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                    "Invalid payment action: the payment action cannot be create"
+                ))))
+            },
+        };
 
         match self.coin_type {
             EthCoinType::Eth => {

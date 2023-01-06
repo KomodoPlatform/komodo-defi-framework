@@ -548,7 +548,6 @@ pub struct SendMakerPaymentSpendPreimageInput<'a> {
     pub secret_hash: &'a [u8],
     pub secret: &'a [u8],
     pub taker_pub: &'a [u8],
-    pub swap_contract_address: &'a Option<BytesJson>,
 }
 
 pub struct SearchForSwapTxSpendInput<'a> {
