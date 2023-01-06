@@ -1304,11 +1304,9 @@ impl WatcherOps for EthCoin {
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(watcher_refunds_payment_args.payment_tx));
         let signed = try_tx_fus!(SignedEthTx::new(tx));
-        let swap_contract_address = try_tx_fus!(watcher_refunds_payment_args.swap_contract_address.try_to_address());
 
         Box::new(
             self.watcher_refunds_hash_time_locked_payment(
-                swap_contract_address,
                 signed,
                 watcher_refunds_payment_args.secret_hash,
                 watcher_refunds_payment_args.other_pubkey,
@@ -2913,7 +2911,6 @@ impl EthCoin {
 
     fn watcher_refunds_hash_time_locked_payment(
         &self,
-        swap_contract_address: Address,
         payment: SignedEthTx,
         _secret_hash: &[u8],
         taker_pub: &[u8],
@@ -2921,6 +2918,14 @@ impl EthCoin {
         let refund_func = try_tx_fus!(SWAP_CONTRACT.function("watcherRefund"));
         let clone = self.clone();
         let taker_addr = addr_from_raw_pubkey(taker_pub).unwrap();
+        let swap_contract_address = match payment.action.clone() {
+            Call(address) => address,
+            Create => {
+                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                    "Invalid payment action: the payment action cannot be create"
+                ))))
+            },
+        };
 
         match self.coin_type {
             EthCoinType::Eth => {
