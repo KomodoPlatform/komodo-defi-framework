@@ -516,21 +516,18 @@ async fn update_single_order(
     let resp = update_maker_order(ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
-    if is_max {
-        info!(
-            "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - max volume",
-            resp.uuid,
-            calculated_price.to_decimal()
-        );
+
+    let vol_info = if is_max {
+        "max volume".to_string()
     } else {
-        info!(
-            "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume: {:\
-            .8}",
-            resp.uuid,
-            calculated_price.to_decimal(),
-            volume.to_decimal()
-        );
-    }
+        format!("volume: {:.8}", volume.to_decimal())
+    };
+
+    info!(
+        "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - {vol_info}",
+        resp.uuid,
+        calculated_price.to_decimal()
+    );
 
     Ok(true)
 }
@@ -541,7 +538,7 @@ async fn execute_update_order(
     cloned_infos: (MmArc, RateInfos, TradingPair, SimpleCoinMarketMakerCfg),
 ) -> bool {
     let (ctx, rates, key_trade_pair, cfg) = cloned_infos;
-    match update_single_order(&rates, cfg.clone(), uuid, key_trade_pair.as_combination(), &ctx).await {
+    match update_single_order(&rates, cfg, uuid, key_trade_pair.as_combination(), &ctx).await {
         Ok(resp) => resp,
         Err(err) => {
             let pair = key_trade_pair.as_combination();
@@ -582,21 +579,17 @@ async fn create_single_order(
     let resp = create_maker_order(&ctx, req)
         .await
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
-    if is_max {
-        info!(
-            "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - max volume",
-            resp.uuid,
-            calculated_price.to_decimal()
-        );
+    let vol_info = if is_max {
+        "max volume".to_string()
     } else {
-        info!(
-            "Successfully placed order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - volume: {:\
-        .8}",
-            resp.uuid,
-            calculated_price.to_decimal(),
-            volume.to_decimal()
-        );
-    }
+        format!("volume: {:.8}", volume.to_decimal())
+    };
+
+    info!(
+        "Successfully update order for {key_trade_pair} - uuid: {} - rate: ({:.8} {key_trade_pair}) - {vol_info}",
+        resp.uuid,
+        calculated_price.to_decimal()
+    );
 
     Ok(true)
 }
@@ -607,12 +600,11 @@ async fn execute_create_single_order(
     key_trade_pair: String,
     ctx: &MmArc,
 ) -> bool {
-    match create_single_order(&rates, cfg.clone(), key_trade_pair.clone(), ctx.clone()).await {
+    match create_single_order(&rates, cfg, key_trade_pair.clone(), ctx.clone()).await {
         Ok(resp) => resp,
         Err(err) => {
             error!(
-                "{} - order cannot be created for: {key_trade_pair} - rate: ({:.8} {key_trade_pair}).",
-                err,
+                "{err} - order cannot be created for: {key_trade_pair} - rate: ({:.8} {key_trade_pair}).",
                 rates.price.to_decimal(),
             );
             false
@@ -638,7 +630,7 @@ async fn process_bot_logic(ctx: &MmArc) {
         },
         Err(err) => {
             let nb_orders = cancel_pending_orders(ctx, &cfg).await;
-            error!("error fetching price: {:?} - cancel {} orders", err, nb_orders);
+            error!("error fetching price: {err:?} - cancel {nb_orders} orders");
             return;
         },
     };
