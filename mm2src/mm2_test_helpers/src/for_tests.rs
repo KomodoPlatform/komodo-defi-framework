@@ -24,6 +24,7 @@ use std::num::NonZeroUsize;
 use std::process::Child;
 use std::sync::Mutex;
 use uuid::Uuid;
+pub use crate::structs::WatcherConf;
 
 cfg_native! {
     use common::block_on;
@@ -135,7 +136,7 @@ pub const ETH_DEV_NODES: &[&str] = &["http://195.201.0.6:8565"];
 pub const ETH_DEV_SWAP_CONTRACT: &str = "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd";
 
 pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc-sepolia.rockx.com/"];
-pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xCCBbC47B4E5CC5B413648EAB21c69789466c06Aa";
+pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xA25E0e06fB139CDc2f9f11675877DaD9EdD1C352";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x948BF5172383F1Bc0Fdf3aBe0630b855694A5D2c";
 
 pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
@@ -208,10 +209,7 @@ impl Mm2TestConf {
         passphrase: &str,
         coins: &Json,
         seednodes: &[&str],
-        wait_maker_payment_spend_factor: f64,
-        refund_start_factor: f64,
-        search_interval: f64,
-        wait_taker_payment: f64,
+        conf: WatcherConf
     ) -> Self {
         Mm2TestConf {
             conf: json!({
@@ -222,12 +220,7 @@ impl Mm2TestConf {
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
                 "is_watcher": true,
-                "watcher_conf": {
-                    "wait_maker_payment_spend_factor": wait_maker_payment_spend_factor,
-                    "refund_start_factor": refund_start_factor,
-                    "search_interval": search_interval,
-                    "wait_taker_payment": wait_taker_payment
-                }
+                "watcher_conf": conf
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
