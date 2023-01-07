@@ -13,11 +13,10 @@ use futures01::Future;
 use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
                              MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::MmNumber;
-use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_conf, eth_testnet_conf, mm_dump, mycoin1_conf, mycoin_conf,
-                                  start_swaps, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_NODE,
+use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_conf, eth_testnet_conf, mm_dump, my_balance, mycoin1_conf,
+                                  mycoin_conf, start_swaps, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_NODE,
                                   ETH_SEPOLIA_SWAP_CONTRACT, ETH_SEPOLIA_TOKEN_CONTRACT};
 use num_traits::Pow;
-use serde_json::Value as Json;
 use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
@@ -45,21 +44,9 @@ fn enable_eth_and_jst(mm_node: &MarketMakerIt) {
     )));
 }
 
-fn get_balance(mm_node: &MarketMakerIt, ticker: &str) -> String {
-    let rc = block_on(mm_node.rpc(&json!({
-    "userpass": mm_node.userpass,
-    "method": "my_balance",
-    "coin": ticker
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!my_balance: {}", rc.1);
-
-    let json: Json = serde_json::from_str(&rc.1).unwrap();
-    json["balance"].as_str().unwrap().to_string()
-}
-
 fn get_balance_f64(mm_node: &MarketMakerIt, ticker: &str) -> f64 {
-    get_balance(mm_node, ticker).parse::<f64>().unwrap()
+    let json = block_on(my_balance(&mm_node, ticker));
+    json["balance"].as_str().unwrap().parse::<f64>().unwrap()
 }
 
 #[test]
@@ -132,7 +119,7 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -202,7 +189,7 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_refunds_taker_payment_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -265,7 +252,7 @@ fn test_watcher_refunds_taker_payment_erc20() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_refunds_taker_payment_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -612,17 +599,17 @@ fn test_watcher_spends_maker_payment_spend_utxo() {
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
 
-    let alice_mycoin1_balance = get_balance(&mm_alice, "MYCOIN1");
-    assert_eq!(alice_mycoin1_balance, "49.93562994");
+    let alice_mycoin1_balance = block_on(my_balance(&mm_alice, "MYCOIN1"));
+    assert_eq!(alice_mycoin1_balance["balance"].as_str().unwrap(), "49.93562994");
 
-    let alice_mycoin_balance = get_balance(&mm_alice, "MYCOIN");
-    assert_eq!(alice_mycoin_balance, "101.99999");
+    let alice_mycoin_balance = block_on(my_balance(&mm_alice, "MYCOIN"));
+    assert_eq!(alice_mycoin_balance["balance"].as_str().unwrap(), "101.99999");
 
-    let bob_mycoin1_balance = get_balance(&mm_bob, "MYCOIN1");
-    assert_eq!(bob_mycoin1_balance, "149.99999");
+    let bob_mycoin1_balance = block_on(my_balance(&mm_bob, "MYCOIN1"));
+    assert_eq!(bob_mycoin1_balance["balance"].as_str().unwrap(), "149.99999");
 
-    let bob_mycoin_balance = get_balance(&mm_bob, "MYCOIN");
-    assert_eq!(bob_mycoin_balance, "97.99999");
+    let bob_mycoin_balance = block_on(my_balance(&mm_bob, "MYCOIN"));
+    assert_eq!(bob_mycoin_balance["balance"].as_str().unwrap(), "97.99999");
 }
 
 #[test]
@@ -778,11 +765,11 @@ fn test_watcher_refunds_taker_payment_utxo() {
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
 
-    let alice_mycoin1_balance = get_balance(&mm_alice, "MYCOIN1");
-    assert_eq!(alice_mycoin1_balance, "99.93561994");
+    let alice_mycoin1_balance = block_on(my_balance(&mm_alice, "MYCOIN1"));
+    assert_eq!(alice_mycoin1_balance["balance"].as_str().unwrap(), "99.93561994");
 
-    let alice_mycoin_balance = get_balance(&mm_alice, "MYCOIN");
-    assert_eq!(alice_mycoin_balance, "100");
+    let alice_mycoin_balance = block_on(my_balance(&mm_alice, "MYCOIN"));
+    assert_eq!(alice_mycoin_balance["balance"].as_str().unwrap(), "100");
 }
 
 #[test]
