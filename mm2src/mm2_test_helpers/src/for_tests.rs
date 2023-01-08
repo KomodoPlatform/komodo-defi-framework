@@ -1,6 +1,7 @@
 //! Helpers used in the unit and integration tests.
 
 use crate::electrums::qtum_electrums;
+pub use crate::structs::WatcherConf;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -24,7 +25,6 @@ use std::num::NonZeroUsize;
 use std::process::Child;
 use std::sync::Mutex;
 use uuid::Uuid;
-pub use crate::structs::WatcherConf;
 
 cfg_native! {
     use common::block_on;
@@ -205,12 +205,7 @@ impl Mm2TestConf {
         }
     }
 
-    pub fn watcher_light_node(
-        passphrase: &str,
-        coins: &Json,
-        seednodes: &[&str],
-        conf: WatcherConf
-    ) -> Self {
+    pub fn watcher_light_node(passphrase: &str, coins: &Json, seednodes: &[&str], conf: WatcherConf) -> Self {
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",

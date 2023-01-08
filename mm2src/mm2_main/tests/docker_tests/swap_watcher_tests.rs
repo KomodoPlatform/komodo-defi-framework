@@ -12,19 +12,15 @@ use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures01::Future;
 use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
                              MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
+use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_conf, eth_testnet_conf, mm_dump, my_balance, mycoin1_conf,
-                                  mycoin_conf, start_swaps, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_NODE,
-                                  ETH_SEPOLIA_SWAP_CONTRACT, ETH_SEPOLIA_TOKEN_CONTRACT, WatcherConf};
-use num_traits::Pow;
+                                  mycoin_conf, start_swaps, MarketMakerIt, Mm2TestConf, WatcherConf, ETH_SEPOLIA_NODE,
+                                  ETH_SEPOLIA_SWAP_CONTRACT, ETH_SEPOLIA_TOKEN_CONTRACT};
+use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
-
-fn round(num: f64, digits: u8) -> f64 {
-    let digits: f64 = (10.).pow(digits);
-    (digits * num).round() / digits
-}
 
 fn enable_eth_and_jst(mm_node: &MarketMakerIt) {
     dbg!(block_on(enable_eth_coin(
@@ -44,13 +40,14 @@ fn enable_eth_and_jst(mm_node: &MarketMakerIt) {
     )));
 }
 
-fn get_balance_f64(mm_node: &MarketMakerIt, ticker: &str) -> f64 {
+fn get_balance(mm_node: &MarketMakerIt, ticker: &str) -> BigDecimal {
     let json = block_on(my_balance(&mm_node, ticker));
-    json["balance"].as_str().unwrap().parse::<f64>().unwrap()
+    let number = json["balance"].as_str().unwrap();
+    BigDecimal::from_str(number).unwrap().with_scale(2)
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -69,18 +66,14 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
 
     let watcher_passphrase =
         String::from("also shoot benefit prefer juice shell thank unfair canal monkey style afraid");
-    let watcher_conf = Mm2TestConf::watcher_light_node(
-        &watcher_passphrase,
-        &coins,
-        &[&mm_alice.ip.to_string()],
-        WatcherConf{
+    let watcher_conf =
+        Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
             wait_taker_payment: 0.,
             wait_maker_payment_spend_factor: 1.5,
             refund_start_factor: 1.,
             search_interval: 0.,
-        }
-    )
-    .conf;
+        })
+        .conf;
     let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
 
@@ -88,10 +81,10 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     enable_eth_and_jst(&mm_bob);
     enable_eth_and_jst(&mm_watcher);
 
-    let alice_eth_balance_before = get_balance_f64(&mm_alice, "ETH");
-    let alice_jst_balance_before = get_balance_f64(&mm_alice, "JST");
-    let bob_eth_balance_before = get_balance_f64(&mm_bob, "ETH");
-    let bob_jst_balance_before = get_balance_f64(&mm_bob, "JST");
+    let alice_eth_balance_before = get_balance(&mm_alice, "ETH");
+    let alice_jst_balance_before = get_balance(&mm_alice, "JST");
+    let bob_eth_balance_before = get_balance(&mm_bob, "ETH");
+    let bob_jst_balance_before = get_balance(&mm_bob, "JST");
 
     block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("ETH", "JST")], 1., 1., 0.01));
 
@@ -103,25 +96,20 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
-    let alice_eth_balance_after = get_balance_f64(&mm_alice, "ETH");
-    let alice_jst_balance_after = get_balance_f64(&mm_alice, "JST");
-    let bob_eth_balance_after = get_balance_f64(&mm_bob, "ETH");
-    let bob_jst_balance_after = get_balance_f64(&mm_bob, "JST");
+    let alice_eth_balance_after = get_balance(&mm_alice, "ETH");
+    let alice_jst_balance_after = get_balance(&mm_alice, "JST");
+    let bob_eth_balance_after = get_balance(&mm_bob, "ETH");
+    let bob_jst_balance_after = get_balance(&mm_bob, "JST");
 
-    assert_eq!(
-        round(alice_jst_balance_before - 0.01, 2),
-        round(alice_jst_balance_after, 2)
-    );
-    assert_eq!(round(bob_jst_balance_before + 0.01, 2), round(bob_jst_balance_after, 2));
-    assert_eq!(
-        round(alice_eth_balance_before + 0.01, 2),
-        round(alice_eth_balance_after, 2)
-    );
-    assert_eq!(round(bob_eth_balance_before - 0.01, 2), round(bob_eth_balance_after, 2));
+    let volume = BigDecimal::from_str("0.01").unwrap();
+    assert_eq!(alice_jst_balance_before - volume.clone(), alice_jst_balance_after);
+    assert_eq!(bob_jst_balance_before + volume.clone(), bob_jst_balance_after);
+    assert_eq!(alice_eth_balance_before + volume.clone(), alice_eth_balance_after);
+    assert_eq!(bob_eth_balance_before - volume.clone(), bob_eth_balance_after);
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -140,18 +128,14 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
 
     let watcher_passphrase =
         String::from("also shoot benefit prefer juice shell thank unfair canal monkey style afraid");
-    let watcher_conf = Mm2TestConf::watcher_light_node(
-        &watcher_passphrase,
-        &coins,
-        &[&mm_alice.ip.to_string()],
-        WatcherConf{
+    let watcher_conf =
+        Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
             wait_taker_payment: 0.,
             wait_maker_payment_spend_factor: 1.5,
             refund_start_factor: 1.,
             search_interval: 0.,
-        }
-    )
-    .conf;
+        })
+        .conf;
 
     let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
@@ -160,10 +144,10 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     enable_eth_and_jst(&mm_bob);
     enable_eth_and_jst(&mm_watcher);
 
-    let alice_eth_balance_before = get_balance_f64(&mm_alice, "ETH");
-    let alice_jst_balance_before = get_balance_f64(&mm_alice, "JST");
-    let bob_eth_balance_before = get_balance_f64(&mm_bob, "ETH");
-    let bob_jst_balance_before = get_balance_f64(&mm_bob, "JST");
+    let alice_eth_balance_before = get_balance(&mm_alice, "ETH");
+    let alice_jst_balance_before = get_balance(&mm_alice, "JST");
+    let bob_eth_balance_before = get_balance(&mm_bob, "ETH");
+    let bob_jst_balance_before = get_balance(&mm_bob, "JST");
 
     block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("JST", "ETH")], 1., 1., 0.01));
 
@@ -175,25 +159,21 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
-    let alice_eth_balance_after = get_balance_f64(&mm_alice, "ETH");
-    let alice_jst_balance_after = get_balance_f64(&mm_alice, "JST");
-    let bob_eth_balance_after = get_balance_f64(&mm_bob, "ETH");
-    let bob_jst_balance_after = get_balance_f64(&mm_bob, "JST");
+    let alice_eth_balance_after = get_balance(&mm_alice, "ETH");
+    let alice_jst_balance_after = get_balance(&mm_alice, "JST");
+    let bob_eth_balance_after = get_balance(&mm_bob, "ETH");
+    let bob_jst_balance_after = get_balance(&mm_bob, "JST");
 
-    assert_eq!(
-        round(alice_jst_balance_before + 0.01, 2),
-        round(alice_jst_balance_after, 2)
-    );
-    assert_eq!(round(bob_jst_balance_before - 0.01, 2), round(bob_jst_balance_after, 2));
-    assert_eq!(
-        round(alice_eth_balance_before - 0.01, 2),
-        round(alice_eth_balance_after, 2)
-    );
-    assert_eq!(round(bob_eth_balance_before + 0.01, 2), round(bob_eth_balance_after, 2));
+    let volume = BigDecimal::from_str("0.01").unwrap();
+
+    assert_eq!(alice_jst_balance_before + volume.clone(), alice_jst_balance_after);
+    assert_eq!(bob_jst_balance_before - volume.clone(), bob_jst_balance_after);
+    assert_eq!(alice_eth_balance_before - volume.clone(), alice_eth_balance_after);
+    assert_eq!(bob_eth_balance_before + volume.clone(), bob_eth_balance_after);
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_refunds_taker_payment_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -219,13 +199,13 @@ fn test_watcher_refunds_taker_payment_erc20() {
     let watcher_passphrase =
         String::from("also shoot benefit prefer juice shell thank unfair canal monkey style afraid");
     let watcher_conf =
-        Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()],
-        WatcherConf{
+        Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
             wait_taker_payment: 1.,
             wait_maker_payment_spend_factor: 0.,
             refund_start_factor: 1.,
             search_interval: 0.,
-        }).conf;
+        })
+        .conf;
     let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
         watcher_conf,
         "pass".to_string(),
@@ -239,8 +219,8 @@ fn test_watcher_refunds_taker_payment_erc20() {
     enable_eth_and_jst(&mm_bob);
     enable_eth_and_jst(&mm_watcher);
 
-    let alice_eth_balance_before = get_balance_f64(&mm_alice, "ETH");
-    let alice_jst_balance_before = get_balance_f64(&mm_alice, "JST");
+    let alice_eth_balance_before = get_balance(&mm_alice, "ETH");
+    let alice_jst_balance_before = get_balance(&mm_alice, "JST");
 
     block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("ETH", "JST")], 1., 1., 0.01));
 
@@ -254,15 +234,15 @@ fn test_watcher_refunds_taker_payment_erc20() {
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
-    let alice_eth_balance_after = get_balance_f64(&mm_alice, "ETH");
-    let alice_jst_balance_after = get_balance_f64(&mm_alice, "JST");
+    let alice_eth_balance_after = get_balance(&mm_alice, "ETH");
+    let alice_jst_balance_after = get_balance(&mm_alice, "JST");
 
-    assert_eq!(round(alice_jst_balance_before, 2), round(alice_jst_balance_after, 2));
-    assert_eq!(round(alice_eth_balance_before, 2), round(alice_eth_balance_after, 2));
+    assert_eq!(alice_jst_balance_before, alice_jst_balance_after);
+    assert_eq!(alice_eth_balance_before, alice_eth_balance_after);
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_refunds_taker_payment_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -288,13 +268,13 @@ fn test_watcher_refunds_taker_payment_eth() {
     let watcher_passphrase =
         String::from("also shoot benefit prefer juice shell thank unfair canal monkey style afraid");
     let watcher_conf =
-        Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()],
-        WatcherConf{
+        Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
             wait_taker_payment: 1.,
             wait_maker_payment_spend_factor: 0.,
             refund_start_factor: 1.,
             search_interval: 0.,
-        }).conf;
+        })
+        .conf;
     let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
         watcher_conf,
         "pass".to_string(),
@@ -308,8 +288,8 @@ fn test_watcher_refunds_taker_payment_eth() {
     enable_eth_and_jst(&mm_bob);
     enable_eth_and_jst(&mm_watcher);
 
-    let alice_eth_balance_before = get_balance_f64(&mm_alice, "ETH");
-    let alice_jst_balance_before = get_balance_f64(&mm_alice, "JST");
+    let alice_eth_balance_before = get_balance(&mm_alice, "ETH");
+    let alice_jst_balance_before = get_balance(&mm_alice, "JST");
 
     block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("JST", "ETH")], 1., 1., 0.01));
 
@@ -323,11 +303,11 @@ fn test_watcher_refunds_taker_payment_eth() {
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
-    let alice_eth_balance_after = get_balance_f64(&mm_alice, "ETH");
-    let alice_jst_balance_after = get_balance_f64(&mm_alice, "JST");
+    let alice_eth_balance_after = get_balance(&mm_alice, "ETH");
+    let alice_jst_balance_after = get_balance(&mm_alice, "JST");
 
-    assert_eq!(round(alice_jst_balance_before, 2), round(alice_jst_balance_after, 2));
-    assert_eq!(round(alice_eth_balance_before, 2), round(alice_eth_balance_after, 2));
+    assert_eq!(alice_jst_balance_before, alice_jst_balance_after);
+    assert_eq!(alice_eth_balance_before, alice_eth_balance_after);
 }
 
 #[test]
@@ -566,12 +546,13 @@ fn test_watcher_spends_maker_payment_spend_utxo() {
         &format!("0x{}", hex::encode(watcher_priv_key)),
         &coins,
         &[&mm_alice.ip.to_string()],
-        WatcherConf{
+        WatcherConf {
             wait_taker_payment: 0.,
             wait_maker_payment_spend_factor: 1.5,
             refund_start_factor: 1.,
             search_interval: 0.,
-        })
+        },
+    )
     .conf;
     let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
@@ -654,12 +635,13 @@ fn test_watcher_waits_for_taker_utxo() {
         &format!("0x{}", hex::encode(watcher_priv_key)),
         &coins,
         &[&mm_alice.ip.to_string()],
-        WatcherConf{
+        WatcherConf {
             wait_taker_payment: 1.,
             wait_maker_payment_spend_factor: 1.5,
             refund_start_factor: 1.,
             search_interval: 0.,
-        })
+        },
+    )
     .conf;
     let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
@@ -727,12 +709,13 @@ fn test_watcher_refunds_taker_payment_utxo() {
         &format!("0x{}", hex::encode(watcher_priv_key)),
         &coins,
         &[&mm_alice.ip.to_string()],
-        WatcherConf{
+        WatcherConf {
             wait_taker_payment: 1.,
             wait_maker_payment_spend_factor: 0.,
             refund_start_factor: 1.,
             search_interval: 0.,
-        })
+        },
+    )
     .conf;
     let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
         watcher_conf,

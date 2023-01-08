@@ -1061,4 +1061,3 @@ pub struct WatcherConf {
     #[serde(default = "common::three_hundred_f64")]
     pub search_interval: f64,
 }
-
