@@ -1271,10 +1271,7 @@ impl WatcherOps for EthCoin {
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(maker_payment_tx));
         let signed = try_tx_fus!(SignedEthTx::new(tx));
-        let fut = async move {
-            let tx = TransactionEnum::from(signed);
-            Ok(tx)
-        };
+        let fut = async move { Ok(TransactionEnum::from(signed)) };
 
         Box::new(fut.boxed().compat())
     }
@@ -1290,10 +1287,7 @@ impl WatcherOps for EthCoin {
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(taker_payment_tx));
         let signed = try_tx_fus!(SignedEthTx::new(tx));
-        let fut = async move {
-            let tx = TransactionEnum::from(signed);
-            Ok(tx)
-        };
+        let fut = async move { Ok(TransactionEnum::from(signed)) };
 
         Box::new(fut.boxed().compat())
     }
