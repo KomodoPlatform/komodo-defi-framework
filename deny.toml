@@ -176,6 +176,7 @@ deny = [
 # Certain crates/versions that will be skipped when doing duplicate detection.
 # The goal is to reduce this list as much as possible
 skip = [
+    { name = "adler", version = "*" },
     { name = "aes", version = "*" },
     { name = "ahash", version = "*" },
     { name = "arrayvec", version = "*" },
@@ -213,7 +214,6 @@ skip = [
     { name = "getrandom", version = "*" },
     { name = "group", version = "*" },
     { name = "hashbrown", version = "*" },
-    { name = "hdrhistogram", version = "*" },
     { name = "hex", version = "*" },
     { name = "hmac", version = "*" },
     { name = "http", version = "*" },
@@ -272,6 +272,7 @@ skip = [
     { name = "subtle", version = "*" },
     { name = "syn", version = "*" },
     { name = "time", version = "*" },
+    { name = "time-macros", version = "*" },
     { name = "tiny-keccak", version = "*" },
     { name = "tokio-util", version = "*" },
     { name = "trie-root", version = "*" },
@@ -279,6 +280,7 @@ skip = [
     { name = "unicode-xid", version = "*" },
     { name = "unsigned-varint", version = "*" },
     { name = "url", version = "*" },
+    { name = "uuid", version = "*" },
     { name = "wasi", version = "*" },
     { name = "webpki", version = "*" },
     { name = "wyz", version = "*" },
