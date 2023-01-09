@@ -274,7 +274,7 @@ pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
 pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
-pub type FailHTLCFut<T> = Box<dyn Future<Item = T, Error = MmError<FailHTLCError>> + Send>;
+pub type OnRefundResult<T> = Result<T, MmError<OnRefundError>>;
 pub type SendMakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
 pub type SendTakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
 pub type SendMakerSpendsTakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
@@ -638,8 +638,9 @@ impl From<ParseOrSemanticError> for ValidateInstructionsErr {
 }
 
 #[derive(Display)]
-pub enum FailHTLCError {
+pub enum OnRefundError {
     DecodeErr(String),
+    DbError(String),
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
@@ -706,16 +707,6 @@ pub trait SwapOps {
         Box::new(futures01::future::ok(result))
     }
 
-    /// Whether the receiver of a payment of this coin can fail/rollback/release the payment manually or not.
-    fn can_be_released(&self) -> bool { false }
-
-    /// Fails an HTLC back to its origin to free resources.
-    ///
-    /// # Important
-    ///
-    /// Taker shouldn't fail a swap htlc to the maker/origin until the taker swap payment can be refunded successfully.
-    fn fail_htlc_backwards(&self, _other_side_tx: &[u8]) -> FailHTLCFut<()> { Box::new(futures01::future::ok(())) }
-
     /// Whether the swap payment is refunded automatically or not when the locktime expires, or the other side fails the HTLC.
     fn is_auto_refundable(&self) -> bool { false }
 
@@ -770,6 +761,20 @@ pub trait SwapOps {
     fn is_supported_by_watchers(&self) -> bool;
 
     fn maker_locktime_multiplier(&self) -> f64 { 2.0 }
+}
+
+/// Maker specific swap operations
+#[async_trait]
+pub trait MakerSwapOps {
+    /// Perform an action on maker payment on taker payment refund success if applicable
+    async fn on_taker_payment_refund(&self, maker_payment: &[u8]) -> OnRefundResult<()>;
+}
+
+/// Taker specific swap operations
+#[async_trait]
+pub trait TakerSwapOps {
+    /// Performs an action on taker payment on starting maker payment refund process if applicable
+    async fn on_start_maker_payment_refund(&self, taker_payment: &[u8]) -> OnRefundResult<()>;
 }
 
 #[async_trait]
@@ -1919,7 +1924,7 @@ impl From<CoinFindError> for VerificationError {
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
-pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
+pub trait MmCoin: SwapOps + MakerSwapOps + TakerSwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
     // coin statistics that we might want to share with UI;

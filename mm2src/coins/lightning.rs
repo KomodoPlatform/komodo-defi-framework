@@ -15,25 +15,25 @@ use crate::lightning::ln_utils::{filter_channels, pay_invoice_with_max_total_clt
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
-use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FailHTLCError, FailHTLCFut,
-            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MakerSwapOps, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, OnRefundError,
+            OnRefundResult, PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
             RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendSpendPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr, TransactionFut,
-            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TakerSwapOps, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr,
+            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
-use common::executor::Timer;
-use common::executor::{AbortableSystem, AbortedError};
+use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::{info, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -576,6 +576,16 @@ impl LightningCoin {
         };
         Box::new(fut.boxed().compat())
     }
+
+    async fn on_swap_refund(&self, payment: &[u8]) -> OnRefundResult<()> {
+        let payment_hash = payment_hash_from_slice(payment).map_err(|e| OnRefundError::DecodeErr(e.to_string()))?;
+        // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
+        self.channel_manager.fail_htlc_backwards(&payment_hash);
+        self.db
+            .update_payment_status_in_db(payment_hash, &HTLCStatus::Failed)
+            .await
+            .map_to_mm(|e| OnRefundError::DbError(e.to_string()))
+    }
 }
 
 #[async_trait]
@@ -785,24 +795,6 @@ impl SwapOps for LightningCoin {
         }
     }
 
-    fn can_be_released(&self) -> bool { true }
-
-    fn fail_htlc_backwards(&self, other_side_tx: &[u8]) -> FailHTLCFut<()> {
-        let coin = self.clone();
-        let payment_hash =
-            try_f!(payment_hash_from_slice(other_side_tx).map_err(|e| FailHTLCError::DecodeErr(e.to_string())));
-        // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
-        coin.channel_manager.fail_htlc_backwards(&payment_hash);
-        let fut = async move {
-            coin.db
-                .update_payment_status_in_db(payment_hash, &HTLCStatus::Failed)
-                .await
-                .error_log_with_msg("Unable to update payment status in DB!");
-            Ok(())
-        };
-        Box::new(fut.boxed().compat())
-    }
-
     fn is_auto_refundable(&self) -> bool { true }
 
     fn wait_for_htlc_refund(&self, tx: &[u8], locktime: u64) -> TransactionFut {
@@ -923,6 +915,20 @@ impl SwapOps for LightningCoin {
     fn is_supported_by_watchers(&self) -> bool { false }
 
     fn maker_locktime_multiplier(&self) -> f64 { 1.5 }
+}
+
+#[async_trait]
+impl MakerSwapOps for LightningCoin {
+    async fn on_taker_payment_refund(&self, maker_payment: &[u8]) -> OnRefundResult<()> {
+        self.on_swap_refund(maker_payment).await
+    }
+}
+
+#[async_trait]
+impl TakerSwapOps for LightningCoin {
+    async fn on_start_maker_payment_refund(&self, taker_payment: &[u8]) -> OnRefundResult<()> {
+        self.on_swap_refund(taker_payment).await
+    }
 }
 
 #[derive(Debug, Display)]

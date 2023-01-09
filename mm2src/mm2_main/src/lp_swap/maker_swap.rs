@@ -1086,13 +1086,10 @@ impl MakerSwap {
             ]));
         }
 
-        if self.taker_coin.can_be_released() {
-            let taker_payment = self.r().taker_payment.clone();
-            if let Some(payment) = taker_payment {
-                let fail_htlc_fut = self.taker_coin.fail_htlc_backwards(&payment.tx_hex);
-                if let Err(e) = fail_htlc_fut.compat().await {
-                    error!("Error {} on failing htlc backwards, the htlc will be failed back automatically when locktime expires!", e)
-                }
+        let taker_payment = self.r().taker_payment.clone();
+        if let Some(payment) = taker_payment {
+            if let Err(e) = self.taker_coin.on_start_maker_payment_refund(&payment.tx_hex).await {
+                error!("Error {} on calling on_start_maker_payment_refund!", e)
             }
         }
 

@@ -1710,13 +1710,9 @@ impl TakerSwap {
 
         // Since taker payment is refunded successfully, maker payment can be released for lightning and similar protocols.
         // # Important: New code that leads to refund failure shouldn't be added below this code block.
-        if self.maker_coin.can_be_released() {
-            let fail_htlc_fut = self
-                .maker_coin
-                .fail_htlc_backwards(&self.r().maker_payment.clone().unwrap().tx_hex);
-            if let Err(e) = fail_htlc_fut.compat().await {
-                error!("Error {} on failing htlc backwards, the htlc will be failed back automatically when locktime expires!", e)
-            }
+        let maker_payment = self.r().maker_payment.clone().unwrap().tx_hex.clone();
+        if let Err(e) = self.maker_coin.on_taker_payment_refund(&maker_payment).await {
+            error!("Error {} on calling on_taker_payment_refund!", e)
         }
 
         Ok((Some(TakerSwapCommand::Finish), vec![
