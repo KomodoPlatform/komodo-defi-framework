@@ -1410,6 +1410,7 @@ impl WatcherOps for EthCoin {
             try_f!(SignedEthTx::new(unsigned)
                 .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string())));
         let sender = try_f!(addr_from_raw_pubkey(&input.taker_pub).map_to_mm(ValidatePaymentError::InvalidParameter));
+        let receiver = try_f!(addr_from_raw_pubkey(&input.maker_pub).map_to_mm(ValidatePaymentError::InvalidParameter));
 
         let selfi = self.clone();
         let swap_id = selfi.etomic_swap_id(input.time_lock, &input.secret_hash);
@@ -1497,11 +1498,12 @@ impl WatcherOps for EthCoin {
                             )
                         })?
                         .clone();
-                    if receiver_input != Token::Address(selfi.my_address) {
+
+                    if receiver_input != Token::Address(receiver) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
                             receiver_input,
-                            Token::Address(selfi.my_address)
+                            Token::Address(receiver)
                         )));
                     }
                     let secret_hash_input = decoded
@@ -1554,7 +1556,7 @@ impl WatcherOps for EthCoin {
                         )));
                     }
                     let token_addr_input = decoded
-                        .get(1)
+                        .get(2)
                         .ok_or_else(|| {
                             ValidatePaymentError::TxDeserializationError("No input found for token address".to_string())
                         })?
@@ -1568,7 +1570,7 @@ impl WatcherOps for EthCoin {
                         )));
                     }
                     let receiver_addr_input = decoded
-                        .get(2)
+                        .get(3)
                         .ok_or_else(|| {
                             ValidatePaymentError::TxDeserializationError(
                                 "No input found for receiver address".to_string(),
@@ -1576,15 +1578,15 @@ impl WatcherOps for EthCoin {
                         })?
                         .clone();
 
-                    if receiver_addr_input != Token::Address(selfi.my_address) {
+                    if receiver_addr_input != Token::Address(receiver) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
                             receiver_addr_input,
-                            Token::Address(selfi.my_address),
+                            Token::Address(receiver),
                         )));
                     }
                     let secret_hash_input = decoded
-                        .get(3)
+                        .get(4)
                         .ok_or_else(|| {
                             ValidatePaymentError::TxDeserializationError("No input found for secret hash".to_string())
                         })?
@@ -1597,7 +1599,7 @@ impl WatcherOps for EthCoin {
                         )));
                     }
                     let time_lock_input = decoded
-                        .get(4)
+                        .get(5)
                         .ok_or_else(|| {
                             ValidatePaymentError::TxDeserializationError("No input found for time lock".to_string())
                         })?

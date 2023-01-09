@@ -227,7 +227,7 @@ impl State for ValidateTakerPayment {
             )
             .compat();
         if let Err(err) = wait_fut.await {
-            Self::change_state(Stopped::from_reason(StopReason::Error(
+            return Self::change_state(Stopped::from_reason(StopReason::Error(
                 WatcherError::TakerPaymentNotConfirmed(err).into(),
             )));
         }
@@ -249,7 +249,7 @@ impl State for ValidateTakerPayment {
             .compat();
 
         if let Err(err) = validated_f.await {
-            Self::change_state(Stopped::from_reason(StopReason::Error(
+            return Self::change_state(Stopped::from_reason(StopReason::Error(
                 WatcherError::InvalidTakerPayment(err.to_string()).into(),
             )));
         }
