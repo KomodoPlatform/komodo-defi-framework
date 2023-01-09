@@ -29,7 +29,7 @@ use http::StatusCode;
 use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::enable_native;
+use mm2_test_helpers::for_tests::{enable_native, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::structs::{MyBalanceResponse, TransactionDetails};
 use primitives::hash::{H160, H256};
 use script::Builder;
@@ -138,8 +138,8 @@ pub fn eth_distributor() -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "ETH",
-        "urls": ["http://195.201.0.6:8565"],
-        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
     });
     let keypair =
         key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
@@ -168,8 +168,8 @@ pub fn generate_eth_coin_with_random_privkey() -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "ETH",
-        "urls": ["http://195.201.0.6:8565"],
-        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
     });
     let priv_key = random_secp256k1_secret();
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
@@ -189,8 +189,8 @@ pub fn generate_erc20_coin() -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "JST",
-        "urls": ["http://195.201.0.6:8565"],
-        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
     });
     let keypair =
         key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
