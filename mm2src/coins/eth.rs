@@ -1383,10 +1383,16 @@ impl WatcherOps for EthCoin {
                         .decode_input(&tx_from_rpc.input.0)
                         .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
 
-                    if decoded_input[0] != Token::Address(fee_addr) {
+                    let address = decoded_input
+                        .first()
+                        .ok_or_else(|| {
+                            ValidatePaymentError::TxDeserializationError("No input found for fee address".to_string())
+                        })?
+                        .clone();
+                    if address != Token::Address(fee_addr) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "{}: ERC20 Fee tx was sent to wrong address {:?}, expected {:?}",
-                            INVALID_RECEIVER_ERR_LOG, decoded_input[0], fee_addr
+                            INVALID_RECEIVER_ERR_LOG, address, fee_addr
                         )));
                     }
                 },
@@ -1471,33 +1477,56 @@ impl WatcherOps for EthCoin {
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
                         .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
-                    if decoded[0] != Token::FixedBytes(swap_id.clone()) {
+                    let swap_id_input = decoded
+                        .first()
+                        .ok_or_else(|| {
+                            ValidatePaymentError::TxDeserializationError("No input found for swap id".to_string())
+                        })?
+                        .clone();
+                    if swap_id_input != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Invalid 'swap_id' {:?}, expected {:?}",
                             decoded, swap_id
                         )));
                     }
-
-                    if decoded[1] != Token::Address(selfi.my_address) {
+                    let receiver_input = decoded
+                        .get(1)
+                        .ok_or_else(|| {
+                            ValidatePaymentError::TxDeserializationError(
+                                "No input found for receiver address".to_string(),
+                            )
+                        })?
+                        .clone();
+                    if receiver_input != Token::Address(selfi.my_address) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
-                            decoded[1],
+                            receiver_input,
                             Token::Address(selfi.my_address)
                         )));
                     }
-
-                    if decoded[2] != Token::FixedBytes(secret_hash.to_vec()) {
+                    let secret_hash_input = decoded
+                        .get(2)
+                        .ok_or_else(|| {
+                            ValidatePaymentError::TxDeserializationError("No input found for secret hash".to_string())
+                        })?
+                        .clone();
+                    if secret_hash_input != Token::FixedBytes(secret_hash.to_vec()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
-                            decoded[2],
+                            secret_hash_input,
                             Token::FixedBytes(secret_hash.to_vec()),
                         )));
                     }
-
-                    if decoded[3] != Token::Uint(U256::from(input.time_lock)) {
+                    let time_lock_input = decoded
+                        .get(3)
+                        .ok_or_else(|| {
+                            ValidatePaymentError::TxDeserializationError("No input found for time lock".to_string())
+                        })?
+                        .clone();
+                    if time_lock_input != Token::Uint(U256::from(input.time_lock)) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
-                            decoded[3],
+                            time_lock_input,
                             Token::Uint(U256::from(input.time_lock)),
                         )));
                     }
@@ -1512,41 +1541,71 @@ impl WatcherOps for EthCoin {
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
                         .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
-                    if decoded[0] != Token::FixedBytes(swap_id.clone()) {
+                    let swap_id_input = decoded
+                        .first()
+                        .ok_or_else(|| {
+                            ValidatePaymentError::TxDeserializationError("No input found for swap id".to_string())
+                        })?
+                        .clone();
+                    if swap_id_input != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Invalid 'swap_id' {:?}, expected {:?}",
                             decoded, swap_id
                         )));
                     }
+                    let token_addr_input = decoded
+                        .get(1)
+                        .ok_or_else(|| {
+                            ValidatePaymentError::TxDeserializationError("No input found for token address".to_string())
+                        })?
+                        .clone();
 
-                    if decoded[2] != Token::Address(*token_addr) {
+                    if token_addr_input != Token::Address(*token_addr) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx token_addr arg {:?} is invalid, expected {:?}",
-                            decoded[2],
+                            token_addr_input,
                             Token::Address(*token_addr)
                         )));
                     }
+                    let receiver_addr_input = decoded
+                        .get(2)
+                        .ok_or_else(|| {
+                            ValidatePaymentError::TxDeserializationError(
+                                "No input found for receiver address".to_string(),
+                            )
+                        })?
+                        .clone();
 
-                    if decoded[3] != Token::Address(selfi.my_address) {
+                    if receiver_addr_input != Token::Address(selfi.my_address) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
-                            decoded[3],
+                            receiver_addr_input,
                             Token::Address(selfi.my_address),
                         )));
                     }
-
-                    if decoded[4] != Token::FixedBytes(secret_hash.to_vec()) {
+                    let secret_hash_input = decoded
+                        .get(3)
+                        .ok_or_else(|| {
+                            ValidatePaymentError::TxDeserializationError("No input found for secret hash".to_string())
+                        })?
+                        .clone();
+                    if secret_hash_input != Token::FixedBytes(secret_hash.to_vec()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
-                            decoded[4],
+                            secret_hash_input,
                             Token::FixedBytes(secret_hash.to_vec()),
                         )));
                     }
-
-                    if decoded[5] != Token::Uint(U256::from(input.time_lock)) {
+                    let time_lock_input = decoded
+                        .get(4)
+                        .ok_or_else(|| {
+                            ValidatePaymentError::TxDeserializationError("No input found for time lock".to_string())
+                        })?
+                        .clone();
+                    if time_lock_input != Token::Uint(U256::from(input.time_lock)) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
-                            decoded[5],
+                            time_lock_input,
                             Token::Uint(U256::from(input.time_lock)),
                         )));
                     }
