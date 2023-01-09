@@ -1337,12 +1337,6 @@ impl TakerSwap {
             maker_pub: self.r().other_maker_coin_htlc_pub.to_vec(),
             maker_payment_hash: self.r().maker_payment.as_ref().unwrap().tx_hash.0.clone(),
             maker_coin_start_block: self.r().data.maker_coin_start_block,
-            swap_contract_address: self
-                .r()
-                .data
-                .taker_coin_swap_contract_address
-                .clone()
-                .map(|address| address.into_vec()),
         }
     }
 

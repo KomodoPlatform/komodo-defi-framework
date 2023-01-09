@@ -12,7 +12,6 @@ use common::{now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
-use rpc::v1::types::Bytes;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use std::cmp::min;
@@ -96,7 +95,6 @@ pub struct TakerSwapWatcherData {
     pub maker_pub: Vec<u8>,
     pub maker_payment_hash: Vec<u8>,
     pub maker_coin_start_block: u64,
-    pub swap_contract_address: Option<Vec<u8>>,
 }
 
 struct ValidatePublicKeys {}
@@ -243,7 +241,6 @@ impl State for ValidateTakerPayment {
             secret_hash: watcher_ctx.data.secret_hash.clone(),
             try_spv_proof_until: taker_payment_spend_deadline,
             confirmations,
-            swap_contract_address: watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
         };
 
         let validated_f = watcher_ctx
@@ -276,7 +273,6 @@ impl State for WaitForTakerPaymentSpend {
             secret_hash: &watcher_ctx.data.secret_hash,
             tx: &self.taker_payment_hex,
             search_from_block: watcher_ctx.data.taker_coin_start_block,
-            swap_contract_address: &watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
         };
 
         loop {
@@ -444,7 +440,7 @@ impl State for RefundTakerPayment {
             .taker_coin
             .send_taker_payment_refund_preimage(SendWatcherRefundsPaymentArgs {
                 payment_tx: &watcher_ctx.data.taker_payment_refund_preimage,
-                swap_contract_address: &watcher_ctx.data.swap_contract_address.clone().map(Bytes::new),
+                swap_contract_address: &None,
                 secret_hash: &watcher_ctx.data.secret_hash,
                 other_pubkey: &watcher_ctx.verified_pub,
                 time_lock: watcher_ctx.taker_locktime() as u32,

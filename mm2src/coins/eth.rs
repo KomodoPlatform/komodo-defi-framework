@@ -1405,11 +1405,6 @@ impl WatcherOps for EthCoin {
     }
 
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let expected_swap_contract_address = try_f!(input
-            .swap_contract_address
-            .try_to_address()
-            .map_to_mm(ValidatePaymentError::InvalidParameter));
-
         let unsigned: UnverifiedTransaction = try_f!(rlp::decode(&input.payment_tx));
         let tx =
             try_f!(SignedEthTx::new(unsigned)
@@ -1423,19 +1418,9 @@ impl WatcherOps for EthCoin {
         } else {
             input.secret_hash.to_vec()
         };
+        let mut expected_swap_contract_address = self.swap_contract_address;
+        let fallback_swap_contract = self.fallback_swap_contract;
         let fut = async move {
-            let status = selfi
-                .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
-                .compat()
-                .await
-                .map_to_mm(ValidatePaymentError::Transport)?;
-            if status != PAYMENT_STATE_SENT.into() {
-                return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                    "Payment state is not PAYMENT_STATE_SENT, got {}",
-                    status
-                )));
-            }
-
             let tx_from_rpc = selfi
                 .web3
                 .eth()
@@ -1459,15 +1444,33 @@ impl WatcherOps for EthCoin {
                 )));
             }
 
+            if tx_from_rpc.to != Some(expected_swap_contract_address) {
+                if tx_from_rpc.to == fallback_swap_contract {
+                    expected_swap_contract_address = fallback_swap_contract.ok_or_else(|| {
+                        ValidatePaymentError::InternalError("Fallback swap contract address not found".to_string())
+                    })?;
+                } else {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Payment tx {:?} was sent to wrong address, expected {:?}",
+                        tx_from_rpc, expected_swap_contract_address,
+                    )));
+                }
+            }
+
+            let status = selfi
+                .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
+                .compat()
+                .await
+                .map_to_mm(ValidatePaymentError::Transport)?;
+            if status != PAYMENT_STATE_SENT.into() {
+                return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                    "Payment state is not PAYMENT_STATE_SENT, got {}",
+                    status
+                )));
+            }
+
             match &selfi.coin_type {
                 EthCoinType::Eth => {
-                    if tx_from_rpc.to != Some(expected_swap_contract_address) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Payment tx {:?} was sent to wrong address, expected {:?}",
-                            tx_from_rpc, expected_swap_contract_address,
-                        )));
-                    }
-
                     let function = SWAP_CONTRACT
                         .function("ethPayment")
                         .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
@@ -1509,12 +1512,6 @@ impl WatcherOps for EthCoin {
                     platform: _,
                     token_addr,
                 } => {
-                    if tx_from_rpc.to != Some(expected_swap_contract_address) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Payment tx {:?} was sent to wrong address, expected {:?}",
-                            tx_from_rpc, expected_swap_contract_address,
-                        )));
-                    }
                     let function = SWAP_CONTRACT
                         .function("erc20Payment")
                         .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
@@ -1571,7 +1568,13 @@ impl WatcherOps for EthCoin {
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        let swap_contract_address = try_s!(input.swap_contract_address.try_to_address());
+        let unverified: UnverifiedTransaction = try_s!(rlp::decode(input.tx));
+        let tx = try_s!(SignedEthTx::new(unverified));
+        let swap_contract_address = match tx.action.clone() {
+            Call(address) => address,
+            Create => return Err(ERRL!("Invalid payment action: the payment action cannot be create")),
+        };
+
         self.search_for_swap_tx_spend(
             input.tx,
             swap_contract_address,

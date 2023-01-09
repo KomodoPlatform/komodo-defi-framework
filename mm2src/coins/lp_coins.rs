@@ -514,7 +514,6 @@ pub struct WatcherValidatePaymentInput {
     pub secret_hash: Vec<u8>,
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
-    pub swap_contract_address: Option<BytesJson>,
 }
 
 #[derive(Clone, Debug)]
@@ -539,7 +538,6 @@ pub struct WatcherSearchForSwapTxSpendInput<'a> {
     pub secret_hash: &'a [u8],
     pub tx: &'a [u8],
     pub search_from_block: u64,
-    pub swap_contract_address: &'a Option<BytesJson>,
 }
 
 #[derive(Clone, Debug)]
