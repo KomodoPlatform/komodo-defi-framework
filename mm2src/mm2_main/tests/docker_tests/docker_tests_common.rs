@@ -29,7 +29,8 @@ use http::StatusCode;
 use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{enable_native, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
+use mm2_test_helpers::for_tests::{enable_native, eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES,
+                                  ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::structs::{MyBalanceResponse, TransactionDetails};
 use primitives::hash::{H160, H256};
 use script::Builder;
@@ -134,7 +135,6 @@ pub struct BchDockerOps {
 // the address belonging to the default passphrase has million of ETH that it can distribute to
 // random privkeys generated in tests
 pub fn eth_distributor() -> EthCoin {
-    let conf = json!({"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}});
     let req = json!({
         "method": "enable",
         "coin": "ETH",
@@ -147,7 +147,7 @@ pub fn eth_distributor() -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "ETH",
-        &conf,
+        &eth_testnet_conf(),
         &req,
         CoinProtocol::ETH,
         priv_key_policy,
@@ -164,7 +164,6 @@ pub fn fill_eth(to_addr: &str) {
 }
 
 pub fn generate_eth_coin_with_random_privkey() -> EthCoin {
-    let conf = json!({"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}});
     let req = json!({
         "method": "enable",
         "coin": "ETH",
@@ -176,7 +175,7 @@ pub fn generate_eth_coin_with_random_privkey() -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "ETH",
-        &conf,
+        &eth_testnet_conf(),
         &req,
         CoinProtocol::ETH,
         priv_key_policy,
@@ -185,7 +184,6 @@ pub fn generate_eth_coin_with_random_privkey() -> EthCoin {
 }
 
 pub fn generate_erc20_coin() -> EthCoin {
-    let conf = json!({"coin":"JST","name":"jst","rpcport":80,"mm2":1,"protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}});
     let req = json!({
         "method": "enable",
         "coin": "JST",
@@ -198,7 +196,7 @@ pub fn generate_erc20_coin() -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "JST",
-        &conf,
+        &eth_jst_testnet_conf(),
         &req,
         CoinProtocol::ERC20 {
             platform: "ETH".into(),

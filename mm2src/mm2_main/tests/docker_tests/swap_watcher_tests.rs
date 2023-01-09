@@ -47,7 +47,7 @@ fn get_balance(mm_node: &MarketMakerIt, ticker: &str) -> BigDecimal {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -109,7 +109,7 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -173,7 +173,7 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_refunds_taker_payment_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -242,7 +242,7 @@ fn test_watcher_refunds_taker_payment_erc20() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_refunds_taker_payment_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
