@@ -660,7 +660,7 @@ impl LightningEventHandler {
                         false,
                         is_public,
                     );
-                    if let Err(e) = db.add_channel_to_db(pending_channel_details).await {
+                    if let Err(e) = db.add_channel_to_db(&pending_channel_details).await {
                         error!("Unable to add new inbound channel {} to db: {}", user_channel_id, e);
                     }
 

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use common::{async_blocking, PagingOptionsEnum};
 use db_common::owned_named_params;
 use db_common::sqlite::rusqlite::types::Value;
-use db_common::sqlite::rusqlite::{Error as SqlError, Row, ToSql, NO_PARAMS};
+use db_common::sqlite::rusqlite::{params, Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,
                         sql_text_conversion_err, string_from_row, validate_table_name, AsSqlNamedParams,
@@ -73,9 +73,15 @@ fn create_payments_history_table_sql(for_coin: &str) -> Result<String, SqlError>
     Ok(sql)
 }
 
-fn insert_channel_sql(for_coin: &str) -> Result<String, SqlError> {
+fn insert_channel_sql(
+    for_coin: &str,
+    channel_detail: &DBChannelDetails,
+) -> Result<(String, OwnedSqlNamedParams), SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
+
+    let rpc_id = channel_detail.rpc_id;
+    let created_at = channel_detail.created_at;
 
     let sql = format!(
         "INSERT INTO {} (
@@ -87,12 +93,21 @@ fn insert_channel_sql(for_coin: &str) -> Result<String, SqlError> {
             is_closed,
             created_at
         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, ?7
-        );",
+            :rpc_id, :channel_id, :counterparty_node_id, :is_outbound, :is_public, :is_closed, :created_at
+        )",
         table_name
     );
 
-    Ok(sql)
+    let params = owned_named_params! {
+        ":rpc_id": rpc_id,
+        ":channel_id": channel_detail.channel_id.clone(),
+        ":counterparty_node_id": channel_detail.counterparty_node_id.clone(),
+        ":is_outbound": channel_detail.is_outbound,
+        ":is_public": channel_detail.is_public,
+        ":is_closed": channel_detail.is_closed,
+        ":created_at": created_at,
+    };
+    Ok((sql, params))
 }
 
 fn insert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(String, OwnedSqlNamedParams), SqlError> {
@@ -631,26 +646,14 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn add_channel_to_db(&self, details: DBChannelDetails) -> Result<(), Self::Error> {
+    async fn add_channel_to_db(&self, details: &DBChannelDetails) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
-        let rpc_id = details.rpc_id;
-        let created_at = details.created_at;
+        let (sql, params) = insert_channel_sql(&for_coin, details)?;
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
-            let mut conn = sqlite_connection.lock().unwrap();
-            let sql_transaction = conn.transaction()?;
-            let params = [
-                &rpc_id as &dyn ToSql,
-                &details.channel_id as &dyn ToSql,
-                &details.counterparty_node_id as &dyn ToSql,
-                &details.is_outbound as &dyn ToSql,
-                &details.is_public as &dyn ToSql,
-                &details.is_closed as &dyn ToSql,
-                &created_at as &dyn ToSql,
-            ];
-            sql_transaction.execute(&insert_channel_sql(&for_coin)?, &params)?;
-            sql_transaction.commit()?;
+            let conn = sqlite_connection.lock().unwrap();
+            conn.execute_named(&sql, &params.as_sql_named_params())?;
             Ok(())
         })
         .await
@@ -669,13 +672,8 @@ impl LightningDB for SqliteLightningDB {
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = [
-                &funding_tx as &dyn ToSql,
-                &funding_value as &dyn ToSql,
-                &funding_generated_in_block as &dyn ToSql,
-                &rpc_id as &dyn ToSql,
-            ];
-            sql_transaction.execute(&update_funding_tx_sql(&for_coin)?, &params)?;
+            let params = params!(funding_tx, funding_value, funding_generated_in_block, rpc_id);
+            sql_transaction.execute(&update_funding_tx_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -689,8 +687,8 @@ impl LightningDB for SqliteLightningDB {
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = [&block_height as &dyn ToSql, &funding_tx as &dyn ToSql];
-            sql_transaction.execute(&update_funding_tx_block_height_sql(&for_coin)?, &params)?;
+            let params = params!(block_height, funding_tx);
+            sql_transaction.execute(&update_funding_tx_block_height_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -710,13 +708,8 @@ impl LightningDB for SqliteLightningDB {
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = [
-                &closure_reason as &dyn ToSql,
-                &is_closed as &dyn ToSql,
-                &closed_at as &dyn ToSql,
-                &rpc_id as &dyn ToSql,
-            ];
-            sql_transaction.execute(&update_channel_to_closed_sql(&for_coin)?, &params)?;
+            let params = params!(closure_reason, is_closed, closed_at, rpc_id);
+            sql_transaction.execute(&update_channel_to_closed_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -750,8 +743,8 @@ impl LightningDB for SqliteLightningDB {
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = [&closing_tx as &dyn ToSql, &rpc_id as &dyn ToSql];
-            sql_transaction.execute(&update_closing_tx_sql(&for_coin)?, &params)?;
+            let params = params!(closing_tx, rpc_id);
+            sql_transaction.execute(&update_closing_tx_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -770,12 +763,8 @@ impl LightningDB for SqliteLightningDB {
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = [
-                &claiming_tx as &dyn ToSql,
-                &claimed_balance as &dyn ToSql,
-                &closing_tx as &dyn ToSql,
-            ];
-            sql_transaction.execute(&update_claiming_tx_sql(&for_coin)?, &params)?;
+            let params = params!(claiming_tx, claimed_balance, closing_tx);
+            sql_transaction.execute(&update_claiming_tx_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -878,14 +867,10 @@ impl LightningDB for SqliteLightningDB {
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
-            let params = [
-                &preimage as &dyn ToSql,
-                &last_updated as &dyn ToSql,
-                &payment_hash as &dyn ToSql,
-            ];
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            sql_transaction.execute(&update_payment_preimage_sql(&for_coin)?, &params)?;
+            let params = params!(preimage, last_updated, payment_hash);
+            sql_transaction.execute(&update_payment_preimage_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -900,14 +885,10 @@ impl LightningDB for SqliteLightningDB {
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
-            let params = [
-                &status as &dyn ToSql,
-                &last_updated as &dyn ToSql,
-                &payment_hash as &dyn ToSql,
-            ];
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            sql_transaction.execute(&update_payment_status_sql(&for_coin)?, &params)?;
+            let params = params!(status, last_updated, payment_hash);
+            sql_transaction.execute(&update_payment_status_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -927,15 +908,10 @@ impl LightningDB for SqliteLightningDB {
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
-            let params = [
-                &preimage as &dyn ToSql,
-                &status as &dyn ToSql,
-                &last_updated as &dyn ToSql,
-                &payment_hash as &dyn ToSql,
-            ];
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            sql_transaction.execute(&update_received_payment_sql(&for_coin)?, &params)?;
+            let params = params!(preimage, status, last_updated, payment_hash);
+            sql_transaction.execute(&update_received_payment_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -957,16 +933,10 @@ impl LightningDB for SqliteLightningDB {
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
-            let params = [
-                &preimage as &dyn ToSql,
-                &fee_paid_msat as &dyn ToSql,
-                &status as &dyn ToSql,
-                &last_updated as &dyn ToSql,
-                &payment_hash as &dyn ToSql,
-            ];
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            sql_transaction.execute(&update_sent_payment_sql(&for_coin)?, &params)?;
+            let params = params!(preimage, fee_paid_msat, status, last_updated, payment_hash);
+            sql_transaction.execute(&update_sent_payment_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -1201,7 +1171,7 @@ mod tests {
             true,
             true,
         );
-        block_on(db.add_channel_to_db(expected_channel_details.clone())).unwrap();
+        block_on(db.add_channel_to_db(&expected_channel_details)).unwrap();
         let last_channel_rpc_id = block_on(db.get_last_channel_rpc_id()).unwrap();
         assert_eq!(last_channel_rpc_id, 1);
 
@@ -1209,11 +1179,11 @@ mod tests {
         assert_eq!(expected_channel_details, actual_channel_details);
 
         // must fail because we are adding channel with the same rpc_id
-        block_on(db.add_channel_to_db(expected_channel_details.clone())).unwrap_err();
+        block_on(db.add_channel_to_db(&expected_channel_details)).unwrap_err();
         assert_eq!(last_channel_rpc_id, 1);
 
         expected_channel_details.rpc_id = 2;
-        block_on(db.add_channel_to_db(expected_channel_details.clone())).unwrap();
+        block_on(db.add_channel_to_db(&expected_channel_details)).unwrap();
         let last_channel_rpc_id = block_on(db.get_last_channel_rpc_id()).unwrap();
         assert_eq!(last_channel_rpc_id, 2);
 
@@ -1509,7 +1479,7 @@ mod tests {
         let channels = generate_random_channels(100);
 
         for channel in channels {
-            block_on(db.add_channel_to_db(channel.clone())).unwrap();
+            block_on(db.add_channel_to_db(&channel)).unwrap();
             block_on(db.add_funding_tx_to_db(
                 channel.rpc_id,
                 channel.funding_tx.unwrap(),

@@ -210,7 +210,7 @@ pub trait LightningDB {
 
     /// Inserts a new channel record in the DB. The record's data is completed using add_funding_tx_to_db,
     /// add_closing_tx_to_db, add_claiming_tx_to_db when this information is available.
-    async fn add_channel_to_db(&self, details: DBChannelDetails) -> Result<(), Self::Error>;
+    async fn add_channel_to_db(&self, details: &DBChannelDetails) -> Result<(), Self::Error>;
 
     /// Updates a channel's DB record with the channel's funding transaction information.
     async fn add_funding_tx_to_db(
