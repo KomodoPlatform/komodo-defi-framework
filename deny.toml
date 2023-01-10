@@ -51,10 +51,12 @@ notice = "warn"
 # RUSTSEC-2020-0071 is related to time crate, which is used only by chrono in our deps tree, remove when https://github.com/chronotope/chrono/issues/700 is resolved
 # RUSTSEC-2022-0040 is related to owning-ref, which seems unmaintained. We need to find a way to get rid of it. https://github.com/KomodoPlatform/atomicDEX-API/issues/1429
 # RUSTSEC-2022-0055 is axum/axum-core vulnerability, which seems to be related only to server-side, which we don't utilize.
+# RUSTSEC-2023-0001 is tokio Windows-specific bug in the code that we don't use
 ignore = [
     "RUSTSEC-2020-0071",
     "RUSTSEC-2022-0040",
     "RUSTSEC-2022-0055",
+    "RUSTSEC-2023-0001",
     #"RUSTSEC-0000-0000",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score

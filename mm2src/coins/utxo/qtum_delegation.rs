@@ -337,6 +337,7 @@ impl QtumCoin {
             internal_id: vec![].into(),
             kmd_rewards: None,
             transaction_type,
+            memo: None,
         })
     }
 

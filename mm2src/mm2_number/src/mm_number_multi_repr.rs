@@ -6,7 +6,7 @@ use num_rational::BigRational;
 use serde::Serialize;
 
 /// MmNumber representation in all available forms.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct MmNumberMultiRepr {
     pub decimal: BigDecimal,
     pub rational: BigRational,

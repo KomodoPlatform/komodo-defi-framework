@@ -203,7 +203,7 @@ fn test_tendermint_tx_history() {
     const TEST_SEED: &str = "Vdo8Xt8pTAetRlMq3kV0LzE393eVYbPSn5Mhtw4p";
     const TX_FINISHED_LOG: &str = "Tx history fetching finished for IRIS-TEST.";
     const TX_HISTORY_PAGE_LIMIT: usize = 50;
-    const IRIS_TEST_EXPECTED_TX_COUNT: u64 = 15;
+    const IRIS_TEST_EXPECTED_TX_COUNT: u64 = 16;
     const IRIS_NIMDA_EXPECTED_TX_COUNT: u64 = 10;
 
     let iris_test_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/iris_test_history.json");

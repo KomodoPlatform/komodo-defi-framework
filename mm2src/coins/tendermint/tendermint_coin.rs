@@ -1529,7 +1529,7 @@ impl MmCoin for TendermintCoin {
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_raw = coin
-                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, memo)
+                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -1558,6 +1558,7 @@ impl MmCoin for TendermintCoin {
                 internal_id: hash.to_vec().into(),
                 kmd_rewards: None,
                 transaction_type: TransactionType::default(),
+                memo: Some(memo),
             })
         };
         Box::new(fut.boxed().compat())
