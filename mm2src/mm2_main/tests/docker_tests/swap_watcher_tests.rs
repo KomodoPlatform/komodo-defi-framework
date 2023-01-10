@@ -69,9 +69,9 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     let watcher_conf =
         Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
             wait_taker_payment: 0.,
-            wait_maker_payment_spend_factor: 1.5,
-            refund_start_factor: 1.,
-            search_interval: 0.,
+            wait_maker_payment_spend_factor: 0.,
+            refund_start_factor: 1.5,
+            search_interval: 1.0,
         })
         .conf;
     let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
@@ -131,9 +131,9 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     let watcher_conf =
         Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
             wait_taker_payment: 0.,
-            wait_maker_payment_spend_factor: 1.5,
-            refund_start_factor: 1.,
-            search_interval: 0.,
+            wait_maker_payment_spend_factor: 0.,
+            refund_start_factor: 1.5,
+            search_interval: 1.0,
         })
         .conf;
 
@@ -200,10 +200,10 @@ fn test_watcher_refunds_taker_payment_erc20() {
         String::from("also shoot benefit prefer juice shell thank unfair canal monkey style afraid");
     let watcher_conf =
         Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
-            wait_taker_payment: 1.,
-            wait_maker_payment_spend_factor: 0.,
-            refund_start_factor: 1.,
-            search_interval: 0.,
+            wait_taker_payment: 0.,
+            wait_maker_payment_spend_factor: 1.,
+            refund_start_factor: 0.,
+            search_interval: 1.,
         })
         .conf;
     let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
@@ -269,10 +269,10 @@ fn test_watcher_refunds_taker_payment_eth() {
         String::from("also shoot benefit prefer juice shell thank unfair canal monkey style afraid");
     let watcher_conf =
         Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
-            wait_taker_payment: 1.,
-            wait_maker_payment_spend_factor: 0.,
-            refund_start_factor: 1.,
-            search_interval: 0.,
+            wait_taker_payment: 0.,
+            wait_maker_payment_spend_factor: 1.,
+            refund_start_factor: 0.,
+            search_interval: 1.,
         })
         .conf;
     let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
@@ -548,9 +548,9 @@ fn test_watcher_spends_maker_payment_spend_utxo() {
         &[&mm_alice.ip.to_string()],
         WatcherConf {
             wait_taker_payment: 0.,
-            wait_maker_payment_spend_factor: 1.5,
-            refund_start_factor: 1.,
-            search_interval: 0.,
+            wait_maker_payment_spend_factor: 0.,
+            refund_start_factor: 1.5,
+            search_interval: 1.0,
         },
     )
     .conf;
@@ -636,10 +636,10 @@ fn test_watcher_waits_for_taker_utxo() {
         &coins,
         &[&mm_alice.ip.to_string()],
         WatcherConf {
-            wait_taker_payment: 1.,
-            wait_maker_payment_spend_factor: 1.5,
-            refund_start_factor: 1.,
-            search_interval: 0.,
+            wait_taker_payment: 0.,
+            wait_maker_payment_spend_factor: 1.,
+            refund_start_factor: 1.5,
+            search_interval: 1.,
         },
     )
     .conf;
@@ -710,10 +710,10 @@ fn test_watcher_refunds_taker_payment_utxo() {
         &coins,
         &[&mm_alice.ip.to_string()],
         WatcherConf {
-            wait_taker_payment: 1.,
-            wait_maker_payment_spend_factor: 0.,
-            refund_start_factor: 1.,
-            search_interval: 0.,
+            wait_taker_payment: 0.,
+            wait_maker_payment_spend_factor: 1.,
+            refund_start_factor: 0.,
+            search_interval: 1.,
         },
     )
     .conf;
