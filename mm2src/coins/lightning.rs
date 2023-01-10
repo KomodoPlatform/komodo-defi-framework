@@ -919,16 +919,20 @@ impl SwapOps for LightningCoin {
 
 #[async_trait]
 impl MakerSwapOps for LightningCoin {
-    async fn on_taker_payment_refund(&self, maker_payment: &[u8]) -> OnRefundResult<()> {
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+
+    async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> OnRefundResult<()> {
         self.on_swap_refund(maker_payment).await
     }
 }
 
 #[async_trait]
 impl TakerSwapOps for LightningCoin {
-    async fn on_start_maker_payment_refund(&self, taker_payment: &[u8]) -> OnRefundResult<()> {
+    async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> OnRefundResult<()> {
         self.on_swap_refund(taker_payment).await
     }
+
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
 }
 
 #[derive(Debug, Display)]

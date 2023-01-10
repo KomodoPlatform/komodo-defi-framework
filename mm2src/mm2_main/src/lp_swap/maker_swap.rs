@@ -1087,8 +1087,8 @@ impl MakerSwap {
         }
 
         let taker_payment = self.r().taker_payment.clone();
-        if let Some(payment) = taker_payment {
-            if let Err(e) = self.taker_coin.on_start_maker_payment_refund(&payment.tx_hex).await {
+        if let Some(payment) = &taker_payment {
+            if let Err(e) = self.taker_coin.on_maker_payment_refund_start(&payment.tx_hex).await {
                 error!("Error {} on calling on_start_maker_payment_refund!", e)
             }
         }
@@ -1156,6 +1156,13 @@ impl MakerSwap {
             tx_hex: BytesJson::from(transaction.tx_hex()),
             tx_hash,
         };
+
+        // # Important: New code that leads to refund failure shouldn't be added below this code block.
+        if let Some(payment) = taker_payment {
+            if let Err(e) = self.taker_coin.on_maker_payment_refund_success(&payment.tx_hex).await {
+                error!("Error {} on calling on_maker_payment_refund_success!", e)
+            }
+        }
 
         Ok((Some(MakerSwapCommand::Finish), vec![
             MakerSwapEvent::MakerPaymentRefunded(tx_ident),

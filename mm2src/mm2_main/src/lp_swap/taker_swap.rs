@@ -1650,6 +1650,11 @@ impl TakerSwap {
             ]));
         }
 
+        let maker_payment = self.r().maker_payment.clone().unwrap().tx_hex.clone();
+        if let Err(e) = self.maker_coin.on_taker_payment_refund_start(&maker_payment).await {
+            error!("Error {} on calling on_taker_payment_refund_start!", e)
+        }
+
         let locktime = self.r().data.taker_payment_lock;
         let refund_fut = if self.taker_coin.is_auto_refundable() {
             self.taker_coin
@@ -1710,8 +1715,7 @@ impl TakerSwap {
 
         // Since taker payment is refunded successfully, maker payment can be released for lightning and similar protocols.
         // # Important: New code that leads to refund failure shouldn't be added below this code block.
-        let maker_payment = self.r().maker_payment.clone().unwrap().tx_hex.clone();
-        if let Err(e) = self.maker_coin.on_taker_payment_refund(&maker_payment).await {
+        if let Err(e) = self.maker_coin.on_taker_payment_refund_success(&maker_payment).await {
             error!("Error {} on calling on_taker_payment_refund!", e)
         }
 

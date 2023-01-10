@@ -766,15 +766,19 @@ pub trait SwapOps {
 /// Maker specific swap operations
 #[async_trait]
 pub trait MakerSwapOps {
+    /// Performs an action on maker payment on taker payment refund start if applicable
+    async fn on_taker_payment_refund_start(&self, maker_payment: &[u8]) -> OnRefundResult<()>;
     /// Perform an action on maker payment on taker payment refund success if applicable
-    async fn on_taker_payment_refund(&self, maker_payment: &[u8]) -> OnRefundResult<()>;
+    async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> OnRefundResult<()>;
 }
 
 /// Taker specific swap operations
 #[async_trait]
 pub trait TakerSwapOps {
     /// Performs an action on taker payment on starting maker payment refund process if applicable
-    async fn on_start_maker_payment_refund(&self, taker_payment: &[u8]) -> OnRefundResult<()>;
+    async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> OnRefundResult<()>;
+    /// Perform an action on taker payment on maker payment refund success if applicable
+    async fn on_maker_payment_refund_success(&self, taker_payment: &[u8]) -> OnRefundResult<()>;
 }
 
 #[async_trait]

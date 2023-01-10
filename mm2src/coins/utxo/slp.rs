@@ -1479,12 +1479,16 @@ impl SwapOps for SlpToken {
 
 #[async_trait]
 impl MakerSwapOps for SlpToken {
-    async fn on_taker_payment_refund(&self, _maker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+
+    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
 impl TakerSwapOps for SlpToken {
-    async fn on_start_maker_payment_refund(&self, _taker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
