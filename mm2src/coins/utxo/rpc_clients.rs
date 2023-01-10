@@ -2038,7 +2038,10 @@ impl ElectrumClient {
             .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
             .compat()
             .await
-            .map_to_mm(|e| SPVError::UnableToGetMerkle(format!("{e:?} for {}", self.coin_ticker)))?;
+            .map_to_mm(|err| SPVError::UnableToGetMerkle {
+                err: err.to_string(),
+                coin: self.coin_ticker.clone(),
+            })?;
 
         let header = self.block_header_from_storage(height).await?;
 

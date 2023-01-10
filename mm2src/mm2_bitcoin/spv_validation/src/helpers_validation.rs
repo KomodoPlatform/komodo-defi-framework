@@ -45,8 +45,8 @@ pub enum SPVError {
     InvalidVout,
     #[display(fmt = "merkle proof connecting the `tx_id_le` to the `confirming_header`")]
     BadMerkleProof,
-    #[display(fmt = "Unable to get merkle tree from network or storage: {}", _0)]
-    UnableToGetMerkle(String),
+    #[display(fmt = "Unable to get merkle tree from network or storage: {err} for {coin}")]
+    UnableToGetMerkle { err: String, coin: String },
     #[display(fmt = "Unable to retrieve block height / block height is zero: {}", _0)]
     InvalidHeight(String),
     #[display(fmt = "Raises during validation loop")]
