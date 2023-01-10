@@ -3,11 +3,13 @@ use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilt
                               PaymentInfo, PaymentType};
 use async_trait::async_trait;
 use common::{async_blocking, PagingOptionsEnum};
+use db_common::owned_named_params;
+use db_common::sqlite::rusqlite::types::Value;
 use db_common::sqlite::rusqlite::{Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,
-                        sql_text_conversion_err, string_from_row, validate_table_name, SqlNamedParams,
-                        SqliteConnShared, CHECK_TABLE_EXISTS_SQL};
+                        sql_text_conversion_err, string_from_row, validate_table_name, AsSqlNamedParams,
+                        OwnedSqlNamedParams, SqlNamedParams, SqliteConnShared, CHECK_TABLE_EXISTS_SQL};
 use gstuff::now_ms;
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use secp256k1v22::PublicKey;
@@ -93,9 +95,17 @@ fn insert_channel_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
-fn insert_payment_sql(for_coin: &str) -> Result<String, SqlError> {
+fn insert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(String, OwnedSqlNamedParams), SqlError> {
     let table_name = payments_history_table(for_coin);
     validate_table_name(&table_name)?;
+
+    let payment_hash = hex::encode(payment_info.payment_hash.0);
+    let (is_outbound, destination) = match payment_info.payment_type {
+        PaymentType::OutboundPayment { destination } => (true, Some(destination.to_string())),
+        PaymentType::InboundPayment => (false, None),
+    };
+    let preimage = payment_info.preimage.map(|p| hex::encode(p.0));
+    let status = payment_info.status.to_string();
 
     let sql = format!(
         "INSERT INTO {} (
@@ -110,12 +120,24 @@ fn insert_payment_sql(for_coin: &str) -> Result<String, SqlError> {
             created_at,
             last_updated
         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
-        );",
+            :payment_hash, :destination, :description, :preimage, :amount_msat, :fee_paid_msat, :is_outbound, :status, :created_at, :last_updated
+        )",
         table_name
     );
 
-    Ok(sql)
+    let params = owned_named_params! {
+        ":payment_hash": payment_hash,
+        ":destination": destination,
+        ":description": payment_info.description.clone(),
+        ":preimage": preimage,
+        ":amount_msat": payment_info.amt_msat,
+        ":fee_paid_msat": payment_info.fee_paid_msat,
+        ":is_outbound": is_outbound,
+        ":status": status,
+        ":created_at": payment_info.created_at,
+        ":last_updated": payment_info.last_updated,
+    };
+    Ok((sql, params))
 }
 
 fn update_payment_preimage_sql(for_coin: &str) -> Result<String, SqlError> {
@@ -831,34 +853,14 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn add_payment_to_db(&self, info: PaymentInfo) -> Result<(), Self::Error> {
+    async fn add_payment_to_db(&self, info: &PaymentInfo) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
-        let payment_hash = hex::encode(info.payment_hash.0);
-        let (is_outbound, destination) = match info.payment_type {
-            PaymentType::OutboundPayment { destination } => (true, Some(destination.to_string())),
-            PaymentType::InboundPayment => (false, None),
-        };
-        let preimage = info.preimage.map(|p| hex::encode(p.0));
-        let status = info.status.to_string();
+        let (sql, params) = insert_payment_sql(&for_coin, info)?;
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
-            let params = [
-                &payment_hash as &dyn ToSql,
-                &destination as &dyn ToSql,
-                &info.description as &dyn ToSql,
-                &preimage as &dyn ToSql,
-                &info.amt_msat as &dyn ToSql,
-                &info.fee_paid_msat as &dyn ToSql,
-                &is_outbound as &dyn ToSql,
-                &status as &dyn ToSql,
-                &info.created_at as &dyn ToSql,
-                &info.last_updated as &dyn ToSql,
-            ];
-            let mut conn = sqlite_connection.lock().unwrap();
-            let sql_transaction = conn.transaction()?;
-            sql_transaction.execute(&insert_payment_sql(&for_coin)?, &params)?;
-            sql_transaction.commit()?;
+            let conn = sqlite_connection.lock().unwrap();
+            conn.execute_named(&sql, &params.as_sql_named_params())?;
             Ok(())
         })
         .await
@@ -1318,7 +1320,7 @@ mod tests {
             created_at: (now_ms() / 1000) as i64,
             last_updated: (now_ms() / 1000) as i64,
         };
-        block_on(db.add_payment_to_db(expected_payment_info.clone())).unwrap();
+        block_on(db.add_payment_to_db(&expected_payment_info)).unwrap();
 
         let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([0; 32]))).unwrap().unwrap();
         assert_eq!(expected_payment_info, actual_payment_info);
@@ -1331,7 +1333,7 @@ mod tests {
         expected_payment_info.amt_msat = None;
         expected_payment_info.status = HTLCStatus::Succeeded;
         expected_payment_info.last_updated = (now_ms() / 1000) as i64;
-        block_on(db.add_payment_to_db(expected_payment_info.clone())).unwrap();
+        block_on(db.add_payment_to_db(&expected_payment_info)).unwrap();
 
         let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([1; 32]))).unwrap().unwrap();
         assert_eq!(expected_payment_info, actual_payment_info);
@@ -1387,7 +1389,7 @@ mod tests {
 
         let mut payments = generate_random_payments(100);
 
-        for payment in payments.clone() {
+        for payment in &payments {
             block_on(db.add_payment_to_db(payment)).unwrap();
         }
 

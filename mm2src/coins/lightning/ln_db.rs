@@ -265,7 +265,7 @@ pub trait LightningDB {
     ) -> Result<GetClosedChannelsResult, Self::Error>;
 
     /// Inserts a new payment record in the DB.
-    async fn add_payment_to_db(&self, info: PaymentInfo) -> Result<(), Self::Error>;
+    async fn add_payment_to_db(&self, info: &PaymentInfo) -> Result<(), Self::Error>;
 
     /// Updates a payment's preimage in DB by the payment's hash.
     async fn update_payment_preimage_in_db(

@@ -218,7 +218,7 @@ impl LightningCoin {
         };
 
         let payment_info = PaymentInfo::new(payment_hash, payment_type, description, amt_msat);
-        self.db.add_payment_to_db(payment_info.clone()).await?;
+        self.db.add_payment_to_db(&payment_info).await?;
         Ok(payment_info)
     }
 
@@ -245,7 +245,7 @@ impl LightningCoin {
         let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0).into_inner());
         let payment_type = PaymentType::OutboundPayment { destination };
         let payment_info = PaymentInfo::new(payment_hash, payment_type, "".into(), Some(amount_msat as i64));
-        self.db.add_payment_to_db(payment_info.clone()).await?;
+        self.db.add_payment_to_db(&payment_info).await?;
 
         Ok(payment_info)
     }

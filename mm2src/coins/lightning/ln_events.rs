@@ -369,7 +369,7 @@ impl LightningEventHandler {
                     )
                     .with_status(HTLCStatus::Received);
                     let fut = async move {
-                        db.add_payment_to_db(payment_info)
+                        db.add_payment_to_db(&payment_info)
                             .await
                             .error_log_with_msg("Unable to add payment information to DB!");
                     };
@@ -391,7 +391,7 @@ impl LightningEventHandler {
                         .with_preimage(preimage)
                         .with_status(HTLCStatus::Received);
                 let fut = async move {
-                    db.add_payment_to_db(payment_info)
+                    db.add_payment_to_db(&payment_info)
                         .await
                         .error_log_with_msg("Unable to add payment information to DB!");
                 };

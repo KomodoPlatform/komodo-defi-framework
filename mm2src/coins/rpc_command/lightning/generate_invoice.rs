@@ -117,7 +117,7 @@ pub async fn generate_invoice(
     // Note: Although the preimage can be recreated from the keymanager and the invoice secret, the payment info is added to db at invoice generation stage
     // to save the description. Although it's not ideal to keep track of invoices before they are paid since they may never be paid, but this is the only way
     // to have the invoice description saved in the db.
-    ln_coin.db.add_payment_to_db(payment_info).await?;
+    ln_coin.db.add_payment_to_db(&payment_info).await?;
 
     Ok(GenerateInvoiceResponse {
         payment_hash: payment_hash.into(),

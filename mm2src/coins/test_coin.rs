@@ -169,7 +169,7 @@ impl SwapOps for TestCoin {
 
     async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
 
-    fn is_auto_refundable(&self) -> bool { unimplemented!() }
+    fn is_auto_refundable(&self) -> bool { false }
 
     async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> { unimplemented!() }
 
