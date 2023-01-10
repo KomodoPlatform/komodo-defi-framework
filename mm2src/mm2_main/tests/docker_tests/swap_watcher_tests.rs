@@ -1,5 +1,5 @@
-use crate::docker_tests::docker_tests_common::{eth_distributor, generate_erc20_coin,
-                                               generate_eth_coin_with_random_privkey};
+use crate::docker_tests::docker_tests_common::{eth_distributor, generate_eth_coin_with_random_privkey,
+                                               generate_jst_with_seed};
 use crate::integration_tests_common::*;
 use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret,
             SecretKey};
@@ -419,7 +419,8 @@ fn test_watcher_validate_taker_fee_eth() {
 fn test_watcher_validate_taker_fee_erc20() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
 
-    let taker_coin = generate_erc20_coin();
+    let seed = String::from("spice describe gravity federal blast come thank unfair canal monkey style afraid");
+    let taker_coin = generate_jst_with_seed(&seed);
     let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
     let taker_pubkey = taker_keypair.public();
 

@@ -183,15 +183,15 @@ pub fn generate_eth_coin_with_random_privkey() -> EthCoin {
     .unwrap()
 }
 
-pub fn generate_erc20_coin() -> EthCoin {
+pub fn generate_jst_with_seed(seed: &str) -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "JST",
         "urls": ETH_DEV_NODES,
         "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
     });
-    let keypair =
-        key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
+
+    let keypair = key_pair_from_seed(seed).unwrap();
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
