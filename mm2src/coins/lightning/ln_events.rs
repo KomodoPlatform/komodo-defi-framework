@@ -361,14 +361,13 @@ impl LightningEventHandler {
                             .try_into()
                             .expect("received_amount shouldn't exceed i64::MAX"),
                     );
-                    let mut payment_info = PaymentInfo::new(
+                    let payment_info = PaymentInfo::new(
                         payment_hash,
                         PaymentType::InboundPayment,
                         "Swap Payment".into(),
                         amt_msat,
-                    );
-                    payment_info.status = HTLCStatus::Received;
-                    drop_mutability!(payment_info);
+                    )
+                    .with_status(HTLCStatus::Received);
                     let fut = async move {
                         db.add_payment_to_db(payment_info)
                             .await
@@ -387,11 +386,10 @@ impl LightningEventHandler {
                         .try_into()
                         .expect("received_amount shouldn't exceed i64::MAX"),
                 );
-                let mut payment_info =
-                    PaymentInfo::new(payment_hash, PaymentType::InboundPayment, "keysend".into(), amt_msat);
-                payment_info.preimage = Some(preimage);
-                payment_info.status = HTLCStatus::Received;
-                drop_mutability!(payment_info);
+                let payment_info =
+                    PaymentInfo::new(payment_hash, PaymentType::InboundPayment, "keysend".into(), amt_msat)
+                        .with_preimage(preimage)
+                        .with_status(HTLCStatus::Received);
                 let fut = async move {
                     db.add_payment_to_db(payment_info)
                         .await

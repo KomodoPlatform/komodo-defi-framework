@@ -160,6 +160,18 @@ impl PaymentInfo {
         }
     }
 
+    #[inline]
+    pub fn with_preimage(mut self, preimage: PaymentPreimage) -> Self {
+        self.preimage = Some(preimage);
+        self
+    }
+
+    #[inline]
+    pub fn with_status(mut self, status: HTLCStatus) -> Self {
+        self.status = status;
+        self
+    }
+
     pub(crate) fn is_outbound(&self) -> bool { matches!(self.payment_type, PaymentType::OutboundPayment { .. }) }
 }
 
