@@ -305,7 +305,7 @@ impl MakerSwap {
             MakerSwapEvent::TakerPaymentSpendConfirmed => self.w().taker_payment_spend_confirmed = true,
             MakerSwapEvent::TakerPaymentSpendConfirmFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::MakerPaymentWaitRefundStarted { .. } => (),
-            MakerSwapEvent::MakerPaymentRefunded(tx) => self.w().maker_payment_refund = Some(tx),
+            MakerSwapEvent::MakerPaymentRefunded(tx) => self.w().maker_payment_refund = tx,
             MakerSwapEvent::MakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::Finished => self.finished_at.store(now_ms() / 1000, Ordering::Relaxed),
         }
@@ -1093,33 +1093,42 @@ impl MakerSwap {
             }
         }
 
+        let maker_payment = self.r().maker_payment.clone().unwrap().tx_hex;
         let locktime = self.r().data.maker_payment_lock;
-        let refund_fut = if self.maker_coin.is_auto_refundable() {
-            self.maker_coin
-                .wait_for_htlc_refund(&self.r().maker_payment.clone().unwrap().tx_hex, locktime)
-        } else {
-            loop {
-                match self.maker_coin.can_refund_htlc(locktime).compat().await {
-                    Ok(CanRefundHtlc::CanRefundNow) => break,
-                    Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
-                    Err(e) => {
-                        error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
-                        Timer::sleep(30.).await;
-                    },
-                }
+        if self.maker_coin.is_auto_refundable() {
+            return match self.maker_coin.wait_for_htlc_refund(&maker_payment, locktime).await {
+                Ok(()) => Ok((Some(MakerSwapCommand::Finish), vec![
+                    MakerSwapEvent::MakerPaymentRefunded(None),
+                ])),
+                Err(err) => Ok((Some(MakerSwapCommand::Finish), vec![
+                    MakerSwapEvent::MakerPaymentRefundFailed(
+                        ERRL!("!maker_coin.wait_for_htlc_refund: {}", err.to_string()).into(),
+                    ),
+                ])),
+            };
+        }
+
+        loop {
+            match self.maker_coin.can_refund_htlc(locktime).compat().await {
+                Ok(CanRefundHtlc::CanRefundNow) => break,
+                Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
+                Err(e) => {
+                    error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
+                    Timer::sleep(30.).await;
+                },
             }
+        }
 
-            self.maker_coin.send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
-                payment_tx: &self.r().maker_payment.clone().unwrap().tx_hex,
-                time_lock: locktime as u32,
-                other_pubkey: &*self.r().other_maker_coin_htlc_pub,
-                secret_hash: self.secret_hash().as_slice(),
-                swap_contract_address: &self.r().data.maker_coin_swap_contract_address,
-                swap_unique_data: &self.unique_swap_data(),
-            })
-        };
+        let spend_fut = self.maker_coin.send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
+            payment_tx: &maker_payment,
+            time_lock: locktime as u32,
+            other_pubkey: &*self.r().other_maker_coin_htlc_pub,
+            secret_hash: self.secret_hash().as_slice(),
+            swap_contract_address: &self.r().data.maker_coin_swap_contract_address,
+            swap_unique_data: &self.unique_swap_data(),
+        });
 
-        let transaction = match refund_fut.compat().await {
+        let transaction = match spend_fut.compat().await {
             Ok(t) => t,
             Err(err) => {
                 if let Some(tx) = err.get_tx() {
@@ -1165,7 +1174,7 @@ impl MakerSwap {
         }
 
         Ok((Some(MakerSwapCommand::Finish), vec![
-            MakerSwapEvent::MakerPaymentRefunded(tx_ident),
+            MakerSwapEvent::MakerPaymentRefunded(Some(tx_ident)),
         ]))
     }
 
@@ -1518,7 +1527,7 @@ pub enum MakerSwapEvent {
     TakerPaymentSpendConfirmed,
     TakerPaymentSpendConfirmFailed(SwapError),
     MakerPaymentWaitRefundStarted { wait_until: u64 },
-    MakerPaymentRefunded(TransactionIdentifier),
+    MakerPaymentRefunded(Option<TransactionIdentifier>),
     MakerPaymentRefundFailed(SwapError),
     Finished,
 }

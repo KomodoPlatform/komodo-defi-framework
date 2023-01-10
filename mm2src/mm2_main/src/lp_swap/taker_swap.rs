@@ -597,7 +597,7 @@ pub enum TakerSwapEvent {
     MakerPaymentSpent(TransactionIdentifier),
     MakerPaymentSpendFailed(SwapError),
     TakerPaymentWaitRefundStarted { wait_until: u64 },
-    TakerPaymentRefunded(TransactionIdentifier),
+    TakerPaymentRefunded(Option<TransactionIdentifier>),
     TakerPaymentRefundFailed(SwapError),
     Finished,
 }
@@ -756,7 +756,7 @@ impl TakerSwap {
             TakerSwapEvent::MakerPaymentSpent(tx) => self.w().maker_payment_spend = Some(tx),
             TakerSwapEvent::MakerPaymentSpendFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::TakerPaymentWaitRefundStarted { .. } => (),
-            TakerSwapEvent::TakerPaymentRefunded(tx) => self.w().taker_payment_refund = Some(tx),
+            TakerSwapEvent::TakerPaymentRefunded(tx) => self.w().taker_payment_refund = tx,
             TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::Finished => self.finished_at.store(now_ms() / 1000, Ordering::Relaxed),
         }
@@ -1655,31 +1655,40 @@ impl TakerSwap {
             error!("Error {} on calling on_taker_payment_refund_start!", e)
         }
 
+        let taker_payment = self.r().taker_payment.clone().unwrap().tx_hex;
         let locktime = self.r().data.taker_payment_lock;
-        let refund_fut = if self.taker_coin.is_auto_refundable() {
-            self.taker_coin
-                .wait_for_htlc_refund(&self.r().taker_payment.clone().unwrap().tx_hex, locktime)
-        } else {
-            loop {
-                match self.taker_coin.can_refund_htlc(locktime).compat().await {
-                    Ok(CanRefundHtlc::CanRefundNow) => break,
-                    Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
-                    Err(e) => {
-                        error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
-                        Timer::sleep(30.).await;
-                    },
-                }
-            }
+        if self.taker_coin.is_auto_refundable() {
+            return match self.taker_coin.wait_for_htlc_refund(&taker_payment, locktime).await {
+                Ok(()) => Ok((Some(TakerSwapCommand::Finish), vec![
+                    TakerSwapEvent::TakerPaymentRefunded(None),
+                ])),
+                Err(err) => Ok((Some(TakerSwapCommand::Finish), vec![
+                    TakerSwapEvent::TakerPaymentRefundFailed(
+                        ERRL!("!taker_coin.wait_for_htlc_refund: {}", err.to_string()).into(),
+                    ),
+                ])),
+            };
+        }
 
-            self.taker_coin.send_taker_refunds_payment(SendTakerRefundsPaymentArgs {
-                payment_tx: &self.r().taker_payment.clone().unwrap().tx_hex,
-                time_lock: locktime as u32,
-                other_pubkey: &*self.r().other_taker_coin_htlc_pub,
-                secret_hash: &self.r().secret_hash.0,
-                swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
-                swap_unique_data: &self.unique_swap_data(),
-            })
-        };
+        loop {
+            match self.taker_coin.can_refund_htlc(locktime).compat().await {
+                Ok(CanRefundHtlc::CanRefundNow) => break,
+                Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
+                Err(e) => {
+                    error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
+                    Timer::sleep(30.).await;
+                },
+            }
+        }
+
+        let refund_fut = self.taker_coin.send_taker_refunds_payment(SendTakerRefundsPaymentArgs {
+            payment_tx: &taker_payment,
+            time_lock: locktime as u32,
+            other_pubkey: &*self.r().other_taker_coin_htlc_pub,
+            secret_hash: &self.r().secret_hash.0,
+            swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
+            swap_unique_data: &self.unique_swap_data(),
+        });
 
         let transaction = match refund_fut.compat().await {
             Ok(t) => t,
@@ -1720,7 +1729,7 @@ impl TakerSwap {
         }
 
         Ok((Some(TakerSwapCommand::Finish), vec![
-            TakerSwapEvent::TakerPaymentRefunded(tx_ident),
+            TakerSwapEvent::TakerPaymentRefunded(Some(tx_ident)),
         ]))
     }
 

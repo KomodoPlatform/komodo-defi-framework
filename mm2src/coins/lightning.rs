@@ -16,9 +16,9 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MakerSwapOps, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, OnRefundError,
-            OnRefundResult, PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
+            HistorySyncState, MakerSwapOps, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, RawTransactionError, RawTransactionFut, RawTransactionRequest, RefundError,
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendSpendPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TakerSwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr,
@@ -577,14 +577,14 @@ impl LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    async fn on_swap_refund(&self, payment: &[u8]) -> OnRefundResult<()> {
-        let payment_hash = payment_hash_from_slice(payment).map_err(|e| OnRefundError::DecodeErr(e.to_string()))?;
+    async fn on_swap_refund(&self, payment: &[u8]) -> RefundResult<()> {
+        let payment_hash = payment_hash_from_slice(payment).map_err(|e| RefundError::DecodeErr(e.to_string()))?;
         // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
         self.channel_manager.fail_htlc_backwards(&payment_hash);
         self.db
             .update_payment_status_in_db(payment_hash, &HTLCStatus::Failed)
             .await
-            .map_to_mm(|e| OnRefundError::DbError(e.to_string()))
+            .map_to_mm(|e| RefundError::DbError(e.to_string()))
     }
 }
 
@@ -797,52 +797,47 @@ impl SwapOps for LightningCoin {
 
     fn is_auto_refundable(&self) -> bool { true }
 
-    fn wait_for_htlc_refund(&self, tx: &[u8], locktime: u64) -> TransactionFut {
-        let payment_hash = try_tx_fus!(payment_hash_from_slice(tx).map_err(|e| e.to_string()));
+    async fn wait_for_htlc_refund(&self, tx: &[u8], locktime: u64) -> RefundResult<()> {
+        let payment_hash = payment_hash_from_slice(tx).map_err(|e| RefundError::DecodeErr(e.to_string()))?;
         let payment_hex = hex::encode(payment_hash.0);
-
-        let coin = self.clone();
-        let fut = async move {
-            loop {
-                match coin.db.get_payment_from_db(payment_hash).await {
-                    Ok(Some(payment)) => match payment.status {
-                        HTLCStatus::Failed => return Ok(TransactionEnum::LightningPayment(payment_hash)),
-                        HTLCStatus::Pending => (),
-                        _ => {
-                            return Err(TransactionErr::Plain(ERRL!(
-                                "Payment {} has an invalid status of {} in the db",
-                                payment_hex,
-                                payment.status
-                            )))
-                        },
-                    },
-                    Ok(None) => {
-                        return Err(TransactionErr::Plain(ERRL!(
-                            "Payment {} is not in the database when it should be!",
-                            payment_hex
-                        )))
-                    },
-                    Err(e) => {
-                        return Err(TransactionErr::Plain(ERRL!(
-                            "Error getting payment {} from db: {}",
+        loop {
+            match self.db.get_payment_from_db(payment_hash).await {
+                Ok(Some(payment)) => match payment.status {
+                    HTLCStatus::Failed => return Ok(()),
+                    HTLCStatus::Pending => (),
+                    _ => {
+                        return MmError::err(RefundError::Internal(ERRL!(
+                            "Payment {} has an invalid status of {} in the db",
                             payment_hex,
-                            e
+                            payment.status
                         )))
                     },
-                }
-
-                let now = now_ms() / 1000;
-                if now > locktime {
-                    return Err(TransactionErr::Plain(ERRL!(
-                        "Waited too long until {} for payment {} to be refunded!",
-                        locktime,
+                },
+                Ok(None) => {
+                    return MmError::err(RefundError::Internal(ERRL!(
+                        "Payment {} is not in the database when it should be!",
                         payment_hex
-                    )));
-                }
-                Timer::sleep(WAIT_FOR_REFUND_INTERVAL).await;
+                    )))
+                },
+                Err(e) => {
+                    return MmError::err(RefundError::DbError(ERRL!(
+                        "Error getting payment {} from db: {}",
+                        payment_hex,
+                        e
+                    )))
+                },
             }
-        };
-        Box::new(fut.boxed().compat())
+
+            let now = now_ms() / 1000;
+            if now > locktime {
+                return MmError::err(RefundError::Timeout(ERRL!(
+                    "Waited too long until {} for payment {} to be refunded!",
+                    locktime,
+                    payment_hex
+                )));
+            }
+            Timer::sleep(WAIT_FOR_REFUND_INTERVAL).await;
+        }
     }
 
     fn negotiate_swap_contract_addr(
@@ -919,20 +914,20 @@ impl SwapOps for LightningCoin {
 
 #[async_trait]
 impl MakerSwapOps for LightningCoin {
-    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
-    async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> OnRefundResult<()> {
+    async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> RefundResult<()> {
         self.on_swap_refund(maker_payment).await
     }
 }
 
 #[async_trait]
 impl TakerSwapOps for LightningCoin {
-    async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> OnRefundResult<()> {
+    async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> RefundResult<()> {
         self.on_swap_refund(taker_payment).await
     }
 
-    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[derive(Debug, Display)]

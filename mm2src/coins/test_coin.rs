@@ -3,8 +3,8 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
-            FeeApproxStage, FoundSwapTxSpend, MakerSwapOps, NegotiateSwapContractAddrErr, OnRefundResult,
-            PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
+            FeeApproxStage, FoundSwapTxSpend, MakerSwapOps, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
             SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, TakerSwapOps,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod,
@@ -169,6 +169,10 @@ impl SwapOps for TestCoin {
 
     async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
 
+    fn is_auto_refundable(&self) -> bool { unimplemented!() }
+
+    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> { unimplemented!() }
+
     fn negotiate_swap_contract_addr(
         &self,
         other_side_address: Option<&[u8]>,
@@ -227,16 +231,16 @@ impl SwapOps for TestCoin {
 
 #[async_trait]
 impl MakerSwapOps for TestCoin {
-    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
-    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
 impl TakerSwapOps for TestCoin {
-    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
-    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]

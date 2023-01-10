@@ -15,8 +15,8 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MakerSwapOps, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            NumConversError, OnRefundResult, PaymentInstructions, PaymentInstructionsErr, PrivKeyActivationPolicy,
-            PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest,
+            NumConversError, PaymentInstructions, PaymentInstructionsErr, PrivKeyActivationPolicy, PrivKeyBuildPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RefundError, RefundResult,
             SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TakerSwapOps, TradeFee,
@@ -1413,6 +1413,14 @@ impl SwapOps for ZCoin {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
+    fn is_auto_refundable(&self) -> bool { false }
+
+    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
+        MmError::err(RefundError::Internal(
+            "wait_for_htlc_refund is not supported for this coin!".into(),
+        ))
+    }
+
     #[inline]
     fn negotiate_swap_contract_addr(
         &self,
@@ -1477,16 +1485,16 @@ impl SwapOps for ZCoin {
 
 #[async_trait]
 impl MakerSwapOps for ZCoin {
-    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
-    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
 impl TakerSwapOps for ZCoin {
-    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
-    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> OnRefundResult<()> { Ok(()) }
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]

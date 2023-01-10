@@ -274,7 +274,7 @@ pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
 pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
-pub type OnRefundResult<T> = Result<T, MmError<OnRefundError>>;
+pub type RefundResult<T> = Result<T, MmError<RefundError>>;
 pub type SendMakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
 pub type SendTakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
 pub type SendMakerSpendsTakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
@@ -638,9 +638,11 @@ impl From<ParseOrSemanticError> for ValidateInstructionsErr {
 }
 
 #[derive(Display)]
-pub enum OnRefundError {
+pub enum RefundError {
     DecodeErr(String),
     DbError(String),
+    Timeout(String),
+    Internal(String),
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
@@ -708,14 +710,10 @@ pub trait SwapOps {
     }
 
     /// Whether the swap payment is refunded automatically or not when the locktime expires, or the other side fails the HTLC.
-    fn is_auto_refundable(&self) -> bool { false }
+    fn is_auto_refundable(&self) -> bool;
 
-    /// Waits for an htlc to be refunded automatically and returns the refund transaction.
-    fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> TransactionFut {
-        Box::new(futures01::future::err(TransactionErr::Plain(
-            "wait_for_htlc_refund is not supported for this coin!".into(),
-        )))
-    }
+    /// Waits for an htlc to be refunded automatically.
+    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()>;
 
     fn negotiate_swap_contract_addr(
         &self,
@@ -767,18 +765,18 @@ pub trait SwapOps {
 #[async_trait]
 pub trait MakerSwapOps {
     /// Performs an action on maker payment on taker payment refund start if applicable
-    async fn on_taker_payment_refund_start(&self, maker_payment: &[u8]) -> OnRefundResult<()>;
+    async fn on_taker_payment_refund_start(&self, maker_payment: &[u8]) -> RefundResult<()>;
     /// Perform an action on maker payment on taker payment refund success if applicable
-    async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> OnRefundResult<()>;
+    async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> RefundResult<()>;
 }
 
 /// Taker specific swap operations
 #[async_trait]
 pub trait TakerSwapOps {
     /// Performs an action on taker payment on starting maker payment refund process if applicable
-    async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> OnRefundResult<()>;
+    async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> RefundResult<()>;
     /// Perform an action on taker payment on maker payment refund success if applicable
-    async fn on_maker_payment_refund_success(&self, taker_payment: &[u8]) -> OnRefundResult<()>;
+    async fn on_maker_payment_refund_success(&self, taker_payment: &[u8]) -> RefundResult<()>;
 }
 
 #[async_trait]
