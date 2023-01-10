@@ -260,6 +260,16 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                     BestOrdersAction::Buy => order.as_rpc_best_orders_buy(address, conf_settings, false),
                     BestOrdersAction::Sell => order.as_rpc_best_orders_sell(address, conf_settings, false),
                 };
+                if let Some(original_tickers) = ordermatch_ctx.original_tickers.get(&coin) {
+                    for ticker in original_tickers {
+                        let mut original_entry = entry.clone();
+                        original_entry.coin = ticker.to_owned();
+                        response
+                            .entry(ticker.to_owned())
+                            .or_insert_with(Vec::new)
+                            .push(original_entry);
+                    }
+                }
                 response.entry(coin.clone()).or_insert_with(Vec::new).push(entry);
             }
         }
@@ -356,6 +366,16 @@ pub async fn best_orders_rpc_v2(
                     BestOrdersAction::Buy => order.as_rpc_best_orders_buy_v2(address, conf_settings, false),
                     BestOrdersAction::Sell => order.as_rpc_best_orders_sell_v2(address, conf_settings, false),
                 };
+                if let Some(original_tickers) = ordermatch_ctx.original_tickers.get(&coin) {
+                    for ticker in original_tickers {
+                        let mut original_entry = entry.clone();
+                        original_entry.coin = ticker.to_owned();
+                        orders
+                            .entry(ticker.to_owned())
+                            .or_insert_with(Vec::new)
+                            .push(original_entry);
+                    }
+                }
                 orders.entry(coin.clone()).or_insert_with(Vec::new).push(entry);
             }
         }

@@ -69,6 +69,7 @@ impl SolanaConfirmedTransaction {
                     internal_id: Default::default(),
                     kmd_rewards: None,
                     transaction_type: TransactionType::StandardTransfer,
+                    memo: None,
                 };
                 transactions.push(tx);
             }

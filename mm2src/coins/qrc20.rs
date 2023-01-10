@@ -1558,6 +1558,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         timestamp: now_ms() / 1000,
         kmd_rewards: None,
         transaction_type: TransactionType::StandardTransfer,
+        memo: None,
     })
 }
 

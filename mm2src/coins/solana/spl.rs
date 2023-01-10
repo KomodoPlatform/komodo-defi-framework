@@ -167,6 +167,7 @@ async fn withdraw_spl_token_impl(coin: SplToken, req: WithdrawRequest) -> Withdr
         internal_id: vec![].into(),
         kmd_rewards: None,
         transaction_type: TransactionType::StandardTransfer,
+        memo: None,
     })
 }
 
