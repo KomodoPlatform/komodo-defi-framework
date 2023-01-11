@@ -4365,3 +4365,13 @@ fn test_block_header_utxo_loop() {
         panic!("Loop shouldn't stop")
     };
 }
+
+#[test]
+fn test_electrum_race_condition() {
+    let client = electrum_client_for_test(&["electrum1.cipig.net:10001", "electrum2.cipig.net:10001"]);
+    let result = client
+        .scripthash_get_balance("22ec5b5e5ca59d7329c85df18905d374a1d3fd916cf8c40e3e75502f4f153f2b")
+        .wait()
+        .unwrap();
+    println!("{:?}", result);
+}

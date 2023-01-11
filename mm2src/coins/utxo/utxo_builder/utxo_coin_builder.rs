@@ -488,8 +488,8 @@ pub trait UtxoCoinBuilderCommonOps {
             block_headers_storage.init().await?;
         }
 
-        let mut rng = small_rng();
-        servers.as_mut_slice().shuffle(&mut rng);
+        // let mut rng = small_rng();
+        // servers.as_mut_slice().shuffle(&mut rng);
 
         let client = ElectrumClientImpl::new(ticker, event_handlers, block_headers_storage, abortable_system);
         for server in servers.iter() {
