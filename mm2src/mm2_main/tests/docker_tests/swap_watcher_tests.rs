@@ -15,7 +15,7 @@ use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, MAKER_PAYMENT_SENT_
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_conf, eth_testnet_conf, mm_dump, my_balance, mycoin1_conf,
-                                  mycoin_conf, start_swaps, MarketMakerIt, Mm2TestConf, WatcherConf,
+                                  mycoin_conf, set_price, start_swaps, MarketMakerIt, Mm2TestConf, WatcherConf,
                                   DEFAULT_RPC_PASSWORD, ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT,
                                   ETH_SEPOLIA_TOKEN_CONTRACT};
 use std::str::FromStr;
@@ -572,16 +572,7 @@ fn test_watcher_spends_maker_payment_spend_utxo() {
     log!("{:?}", block_on(enable_native(&mm_watcher, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_watcher, "MYCOIN1", &[])));
 
-    let rc = block_on(mm_bob.rpc(&json!({
-    "userpass": mm_bob.userpass,
-    "method": "setprice",
-    "base": "MYCOIN",
-    "rel": "MYCOIN1",
-    "price": 25,
-    "max": true,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    block_on(set_price(&mm_bob, "MYCOIN", "MYCOIN1", "25", "2"));
 
     let rc = block_on(mm_alice.rpc(&json!({
     "userpass": mm_alice.userpass,
@@ -661,16 +652,7 @@ fn test_watcher_waits_for_taker_utxo() {
     log!("{:?}", block_on(enable_native(&mm_watcher, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_watcher, "MYCOIN1", &[])));
 
-    let rc = block_on(mm_bob.rpc(&json!({
-    "userpass": mm_bob.userpass,
-    "method": "setprice",
-    "base": "MYCOIN",
-    "rel": "MYCOIN1",
-    "price": 25,
-    "max": true,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    block_on(set_price(&mm_bob, "MYCOIN", "MYCOIN1", "25", "2"));
 
     let rc = block_on(mm_alice.rpc(&json!({
     "userpass": mm_alice.userpass,
@@ -741,24 +723,15 @@ fn test_watcher_refunds_taker_payment_utxo() {
     log!("{:?}", block_on(enable_native(&mm_watcher, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_watcher, "MYCOIN1", &[])));
 
-    let rc = block_on(mm_bob.rpc(&json!({
-    "userpass": mm_bob.userpass,
-    "method": "setprice",
-    "base": "MYCOIN",
-    "rel": "MYCOIN1",
-    "price": 25,
-    "max": true,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    block_on(set_price(&mm_bob, "MYCOIN", "MYCOIN1", "25", "2"));
 
     let rc = block_on(mm_alice.rpc(&json!({
-    "userpass": mm_alice.userpass,
-    "method": "buy",
-    "base": "MYCOIN",
-    "rel": "MYCOIN1",
-    "price": 25,
-    "volume": "2",
+        "userpass": mm_alice.userpass,
+        "method": "buy",
+        "base": "MYCOIN",
+        "rel": "MYCOIN1",
+        "price": 25,
+        "volume": "2",
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
