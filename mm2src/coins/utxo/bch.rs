@@ -1065,7 +1065,7 @@ impl WatcherOps for BchCoin {
         swap_unique_data: &[u8],
     ) -> TransactionFut {
         utxo_common::create_maker_payment_spend_preimage(
-            self.clone(),
+            self,
             maker_payment_tx,
             time_lock,
             maker_pub,
@@ -1076,7 +1076,7 @@ impl WatcherOps for BchCoin {
 
     #[inline]
     fn send_maker_payment_spend_preimage(&self, input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
-        utxo_common::send_maker_payment_spend_preimage(self.clone(), input)
+        utxo_common::send_maker_payment_spend_preimage(self, input)
     }
 
     #[inline]
@@ -1090,7 +1090,7 @@ impl WatcherOps for BchCoin {
         swap_unique_data: &[u8],
     ) -> TransactionFut {
         utxo_common::create_taker_payment_refund_preimage(
-            self.clone(),
+            self,
             taker_payment_tx,
             time_lock,
             maker_pub,
@@ -1104,12 +1104,12 @@ impl WatcherOps for BchCoin {
         &self,
         watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
     ) -> TransactionFut {
-        utxo_common::send_taker_payment_refund_preimage(self.clone(), watcher_refunds_payment_args)
+        utxo_common::send_taker_payment_refund_preimage(self, watcher_refunds_payment_args)
     }
 
     #[inline]
     fn watcher_validate_taker_fee(&self, input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
-        utxo_common::watcher_validate_taker_fee(self.clone(), input, utxo_common::DEFAULT_FEE_VOUT)
+        utxo_common::watcher_validate_taker_fee(self, input, utxo_common::DEFAULT_FEE_VOUT)
     }
 
     #[inline]

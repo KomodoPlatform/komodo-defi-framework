@@ -1291,9 +1291,10 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
 }
 
 pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
-    coin: T,
+    coin: &T,
     input: SendMakerPaymentSpendPreimageInput,
 ) -> TransactionFut {
+    let coin = coin.clone();
     let mut transaction: UtxoTx = try_tx_fus!(deserialize(input.preimage).map_err(|e| ERRL!("{:?}", e)));
     if transaction.inputs.is_empty() {
         return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any input"));
@@ -1333,13 +1334,14 @@ pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 }
 
 pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
-    coin: T,
+    coin: &T,
     maker_payment_tx: &[u8],
     time_lock: u32,
     maker_pub: &[u8],
     secret_hash: &[u8],
     swap_unique_data: &[u8],
 ) -> TransactionFut {
+    let coin = coin.clone();
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
     let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
@@ -1394,13 +1396,14 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 }
 
 pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
-    coin: T,
+    coin: &T,
     taker_payment_tx: &[u8],
     time_lock: u32,
     maker_pub: &[u8],
     secret_hash: &[u8],
     swap_unique_data: &[u8],
 ) -> TransactionFut {
+    let coin = coin.clone();
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
     let mut prev_transaction: UtxoTx =
         try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
@@ -1584,9 +1587,10 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
 }
 
 pub fn send_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
-    coin: T,
+    coin: &T,
     watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
 ) -> TransactionFut {
+    let coin = coin.clone();
     let transaction: UtxoTx = try_tx_fus!(
         deserialize(watcher_refunds_payment_args.payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e)))
     );
@@ -1756,10 +1760,11 @@ pub fn check_all_utxo_inputs_signed_by_pub(
 }
 
 pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
-    coin: T,
+    coin: &T,
     input: WatcherValidateTakerFeeInput,
     output_index: usize,
 ) -> ValidatePaymentFut<()> {
+    let coin = coin.clone();
     let sender_pubkey = input.sender_pubkey;
     let taker_fee_hash = input.taker_fee_hash;
     let min_block_number = input.min_block_number;
