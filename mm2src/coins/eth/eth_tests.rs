@@ -690,7 +690,7 @@ fn test_withdraw_impl_manual_fee() {
         coin: "ETH".to_string(),
         max: false,
         fee: Some(WithdrawFee::EthGas {
-            gas: 150000,
+            gas: ETH_GAS,
             gas_price: 1.into(),
         }),
         memo: None,
@@ -702,7 +702,7 @@ fn test_withdraw_impl_manual_fee() {
         EthTxFeeDetails {
             coin: "ETH".into(),
             gas_price: "0.000000001".parse().unwrap(),
-            gas: 150000,
+            gas: ETH_GAS,
             total_fee: "0.00015".parse().unwrap(),
         }
         .into(),
@@ -734,7 +734,7 @@ fn test_withdraw_impl_fee_details() {
         coin: "JST".to_string(),
         max: false,
         fee: Some(WithdrawFee::EthGas {
-            gas: 150000,
+            gas: ETH_GAS,
             gas_price: 1.into(),
         }),
         memo: None,
@@ -746,7 +746,7 @@ fn test_withdraw_impl_fee_details() {
         EthTxFeeDetails {
             coin: "ETH".into(),
             gas_price: "0.000000001".parse().unwrap(),
-            gas: 150000,
+            gas: ETH_GAS,
             total_fee: "0.00015".parse().unwrap(),
         }
         .into(),
@@ -806,7 +806,7 @@ fn test_add_ten_pct_one_gwei() {
 fn get_sender_trade_preimage() {
     /// Trade fee for the ETH coin is `2 * 150_000 * gas_price` always.
     fn expected_fee(gas_price: u64) -> TradeFee {
-        let amount = u256_to_big_decimal((2 * 150_000 * gas_price).into(), 18).expect("!u256_to_big_decimal");
+        let amount = u256_to_big_decimal((2 * ETH_GAS * gas_price).into(), 18).expect("!u256_to_big_decimal");
         TradeFee {
             coin: "ETH".to_owned(),
             amount: amount.into(),
@@ -933,7 +933,7 @@ fn get_receiver_trade_preimage() {
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
 
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec!["http://dummy.dummy".into()], None);
-    let amount = u256_to_big_decimal((150_000 * GAS_PRICE).into(), 18).expect("!u256_to_big_decimal");
+    let amount = u256_to_big_decimal((ETH_GAS * GAS_PRICE).into(), 18).expect("!u256_to_big_decimal");
     let expected_fee = TradeFee {
         coin: "ETH".to_owned(),
         amount: amount.into(),
