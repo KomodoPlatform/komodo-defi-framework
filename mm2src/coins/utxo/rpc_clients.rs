@@ -2039,8 +2039,8 @@ impl ElectrumClient {
             .compat()
             .await
             .map_to_mm(|err| SPVError::UnableToGetMerkle {
-                err: err.to_string(),
                 coin: self.coin_ticker.clone(),
+                err: err.to_string(),
             })?;
 
         let header = self.block_header_from_storage(height).await?;
