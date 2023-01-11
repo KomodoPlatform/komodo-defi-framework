@@ -305,14 +305,12 @@ where
                 amount.clone()
             };
 
-            let spent_by_me = if sent_by_me
-                && !is_self_transfer
-                && !matches!(transfer_details.transfer_event_type, TransferEventType::ClaimHtlc)
-            {
-                amount.clone()
-            } else {
-                BigDecimal::default()
-            };
+            let spent_by_me =
+                if sent_by_me && !matches!(transfer_details.transfer_event_type, TransferEventType::ClaimHtlc) {
+                    amount.clone()
+                } else {
+                    BigDecimal::default()
+                };
 
             let received_by_me = if !sent_by_me || is_self_transfer {
                 amount
@@ -711,6 +709,7 @@ where
                             timestamp,
                             kmd_rewards: None,
                             transaction_type,
+                            memo: Some(deserialized_tx.body.memo.clone()),
                         };
                         tx_details.push(details.clone());
 

@@ -786,6 +786,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         timestamp: now_ms() / 1000,
         kmd_rewards: None,
         transaction_type: Default::default(),
+        memo: None,
     })
 }
 
@@ -1135,6 +1136,19 @@ impl SwapOps for EthCoin {
     async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
         let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
+
+        // Validate contract call; expected to be receiverSpend.
+        // https://www.4byte.directory/signatures/?bytes4_signature=02ed292b.
+        let expected_signature = function.short_signature();
+        let actual_signature = &unverified.data[0..4];
+        if actual_signature != expected_signature {
+            return ERR!(
+                "Expected 'receiverSpend' contract call signature: {:?}, found {:?}",
+                expected_signature,
+                actual_signature
+            );
+        };
+
         let tokens = try_s!(function.decode_input(&unverified.data));
         if tokens.len() < 3 {
             return ERR!("Invalid arguments in 'receiverSpend' call: {:?}", tokens);
@@ -2011,6 +2025,7 @@ impl EthCoin {
                     timestamp: block.timestamp.into(),
                     kmd_rewards: None,
                     transaction_type: Default::default(),
+                    memo: None,
                 };
 
                 existing_history.push(details);
@@ -2377,6 +2392,7 @@ impl EthCoin {
                     timestamp: block.timestamp.into(),
                     kmd_rewards: None,
                     transaction_type: Default::default(),
+                    memo: None,
                 };
 
                 existing_history.push(details);

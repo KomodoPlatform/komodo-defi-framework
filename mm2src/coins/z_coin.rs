@@ -1819,7 +1819,7 @@ impl InitWithdrawCoin for ZCoin {
         task_handle.update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)?;
         let satoshi = sat_from_big_decimal(&amount, self.decimals())?;
 
-        let memo = req.memo.map(|memo| interpret_memo_string(&memo)).transpose()?;
+        let memo = req.memo.as_deref().map(interpret_memo_string).transpose()?;
         let z_output = ZOutput {
             to_addr,
             amount: Amount::from_u64(satoshi)
@@ -1858,6 +1858,7 @@ impl InitWithdrawCoin for ZCoin {
             internal_id: tx_hash.into(),
             kmd_rewards: None,
             transaction_type: Default::default(),
+            memo: req.memo,
         })
     }
 }

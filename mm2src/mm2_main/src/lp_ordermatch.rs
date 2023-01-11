@@ -5466,7 +5466,7 @@ construct_detailed!(DetailedBaseMinVolume, base_min_volume);
 construct_detailed!(DetailedRelMaxVolume, rel_max_volume);
 construct_detailed!(DetailedRelMinVolume, rel_min_volume);
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct RpcOrderbookEntry {
     coin: String,
     address: String,
@@ -5497,7 +5497,7 @@ pub struct RpcOrderbookEntry {
     conf_settings: Option<OrderConfirmationsSettings>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct RpcOrderbookEntryV2 {
     coin: String,
     address: OrderbookAddress,
@@ -5622,7 +5622,7 @@ fn choose_taker_confs_and_notas(
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "address_type", content = "address_data")]
 pub enum OrderbookAddress {
     Transparent(String),

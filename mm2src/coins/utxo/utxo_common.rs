@@ -3142,6 +3142,7 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
         timestamp: verbose_tx.time.into(),
         kmd_rewards,
         transaction_type: Default::default(),
+        memo: None,
     })
 }
 

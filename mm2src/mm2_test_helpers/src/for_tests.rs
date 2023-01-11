@@ -127,6 +127,11 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum2.cipig.net:10071",
     "electrum3.cipig.net:10071",
 ];
+pub const TBTC_ELECTRUMS: &[&str] = &[
+    "electrum1.cipig.net:10068",
+    "electrum2.cipig.net:10068",
+    "electrum3.cipig.net:10068",
+];
 
 pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
@@ -511,13 +516,53 @@ pub fn btc_with_spv_conf() -> Json {
     })
 }
 
+pub fn tbtc_conf() -> Json {
+    json!({
+        "coin": "tBTC",
+        "asset":"tBTC",
+        "pubtype": 111,
+        "p2shtype": 196,
+        "wiftype": 239,
+        "segwit": true,
+        "bech32_hrp": "tb",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "required_confirmations": 0,
+        "protocol": {
+            "type": "UTXO"
+        }
+    })
+}
+
+pub fn tbtc_segwit_conf() -> Json {
+    json!({
+        "coin": "tBTC-Segwit",
+        "asset":"tBTC-Segwit",
+        "pubtype": 111,
+        "p2shtype": 196,
+        "wiftype": 239,
+        "segwit": true,
+        "bech32_hrp": "tb",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "required_confirmations": 0,
+        "address_format": {
+            "format": "segwit"
+        },
+        "protocol": {
+            "type": "UTXO"
+        },
+        "orderbook_ticker": "tBTC",
+    })
+}
+
 pub fn tbtc_with_spv_conf() -> Json {
     json!({
         "coin": "tBTC-TEST",
         "asset":"tBTC-TEST",
-        "pubtype": 0,
-        "p2shtype": 5,
-        "wiftype": 128,
+        "pubtype": 111,
+        "p2shtype": 196,
+        "wiftype": 239,
         "segwit": true,
         "bech32_hrp": "tb",
         "txfee": 0,
@@ -2019,7 +2064,31 @@ pub async fn best_orders_v2(mm: &MarketMakerIt, coin: &str, action: &str, volume
             "params": {
                 "coin": coin,
                 "action": action,
-                "volume": volume,
+                "request_by": {
+                    "type": "volume",
+                    "value": volume,
+                }
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'best_orders' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn best_orders_v2_by_number(mm: &MarketMakerIt, coin: &str, action: &str, number: usize) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "best_orders",
+            "mmrpc": "2.0",
+            "params": {
+                "coin": coin,
+                "action": action,
+                "request_by": {
+                    "type": "number",
+                    "value": number,
+                }
             }
         }))
         .await
