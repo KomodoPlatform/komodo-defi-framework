@@ -829,6 +829,8 @@ impl SwapOps for EthCoin {
     }
 
     fn send_taker_payment(&self, taker_payment: SendTakerPaymentArgs) -> TransactionFut {
+        println!("**send_taker_payment");
+        println!("**time_lock: {}", taker_payment.time_lock);
         let maker_addr = try_tx_fus!(addr_from_raw_pubkey(taker_payment.other_pubkey));
         let swap_contract_address = try_tx_fus!(taker_payment.swap_contract_address.try_to_address());
 
@@ -1406,6 +1408,7 @@ impl WatcherOps for EthCoin {
     }
 
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        println!("**watcher_validate_taker_payment");
         let unsigned: UnverifiedTransaction = try_f!(rlp::decode(&input.payment_tx));
         let tx =
             try_f!(SignedEthTx::new(unsigned)
@@ -1459,6 +1462,7 @@ impl WatcherOps for EthCoin {
                 }
             }
 
+            println!("**payment_status swap_id: {}", Token::FixedBytes(swap_id.clone()));
             let status = selfi
                 .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
                 .compat()
@@ -1753,6 +1757,7 @@ impl MarketCoinOps for EthCoin {
         wait_until: u64,
         check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        println!("**wait_for_confirmations");
         let ctx = try_fus!(MmArc::from_weak(&self.ctx).ok_or("No context"));
         let mut status = ctx.log.status_handle();
         status.status(&[&self.ticker], "Waiting for confirmations…");
@@ -1765,6 +1770,7 @@ impl MarketCoinOps for EthCoin {
         let selfi = self.clone();
         let fut = async move {
             loop {
+                println!("**loop");
                 if status.ms2deadline().unwrap() < 0 {
                     status.append(" Timed out.");
                     return ERR!(
@@ -1788,6 +1794,7 @@ impl MarketCoinOps for EthCoin {
                     },
                 };
                 if let Some(receipt) = web3_receipt {
+                    println!("**receipt");
                     if receipt.status != Some(1.into()) {
                         status.append(" Failed.");
                         return ERR!(
@@ -1799,6 +1806,7 @@ impl MarketCoinOps for EthCoin {
                     }
 
                     if let Some(confirmed_at) = receipt.block_number {
+                        println!("**confirmedat = block_number");
                         let current_block = match selfi.web3.eth().block_number().compat().await {
                             Ok(b) => b,
                             Err(e) => {
@@ -1814,6 +1822,7 @@ impl MarketCoinOps for EthCoin {
                         // checking if the current block is above the confirmed_at block prediction for pos chain to prevent overflow
                         if current_block >= confirmed_at && current_block - confirmed_at + 1 >= required_confirms {
                             status.append(" Confirmed.");
+                            println!("**confirmed");
                             return Ok(());
                         }
                     }
@@ -2815,6 +2824,7 @@ impl EthCoin {
             secret_hash.to_vec()
         };
 
+        println!("**swap_id: {}", Token::FixedBytes(id.clone()));
         match &self.coin_type {
             EthCoinType::Eth => {
                 let function = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
@@ -2897,7 +2907,16 @@ impl EthCoin {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
 
-                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
+                let swap_id_input = match decoded.first() {
+                    Some(id) => id.clone(),
+                    None => {
+                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                            "Missing input: No input found for swap id"
+                        ))))
+                    },
+                };
+
+                let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
                 Box::new(
                     state_f
                         .map_err(TransactionErr::Plain)
@@ -2912,7 +2931,7 @@ impl EthCoin {
 
                             let value = payment.value;
                             let data = try_tx_fus!(spend_func.encode_input(&[
-                                decoded[0].clone(),
+                                swap_id_input,
                                 Token::Uint(value),
                                 Token::FixedBytes(secret_vec.clone()),
                                 Token::Address(Address::default()),
@@ -2936,7 +2955,23 @@ impl EthCoin {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"));
 
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
-                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
+                let swap_id_input = match decoded.first() {
+                    Some(id) => id.clone(),
+                    None => {
+                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                            "Missing input: No input found for swap id"
+                        ))))
+                    },
+                };
+                let amount_input = match decoded.get(1) {
+                    Some(amount) => amount.clone(),
+                    None => {
+                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                            "Missing input: No input found for amount"
+                        ))))
+                    },
+                };
+                let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
 
                 Box::new(
                     state_f
@@ -2950,8 +2985,8 @@ impl EthCoin {
                                 ))));
                             }
                             let data = try_tx_fus!(spend_func.encode_input(&[
-                                decoded[0].clone(),
-                                decoded[1].clone(),
+                                swap_id_input.clone(),
+                                amount_input,
                                 Token::FixedBytes(secret_vec.clone()),
                                 Token::Address(token_addr),
                                 Token::Address(payment.sender()),
@@ -2992,8 +3027,32 @@ impl EthCoin {
             EthCoinType::Eth => {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
+                let swap_id_input = match decoded.first() {
+                    Some(id) => id.clone(),
+                    None => {
+                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                            "Missing input: No input found for swap id"
+                        ))))
+                    },
+                };
+                let amount_input = match decoded.get(1) {
+                    Some(amount) => amount.clone(),
+                    None => {
+                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                            "Missing input: No input found for amount"
+                        ))))
+                    },
+                };
+                let hash_input = match decoded.get(2) {
+                    Some(hash) => hash.clone(),
+                    None => {
+                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                            "Missing input: No input found for payment hash"
+                        ))))
+                    },
+                };
 
-                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
+                let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
                 Box::new(
                     state_f
                         .map_err(TransactionErr::Plain)
@@ -3008,12 +3067,12 @@ impl EthCoin {
 
                             let value = payment.value;
                             let data = try_tx_fus!(refund_func.encode_input(&[
-                                decoded[0].clone(),
+                                swap_id_input.clone(),
                                 Token::Uint(value),
-                                decoded[2].clone(),
+                                hash_input.clone(),
                                 Token::Address(Address::default()),
                                 Token::Address(taker_addr),
-                                decoded[1].clone(),
+                                amount_input.clone(),
                             ]));
 
                             clone.sign_and_send_transaction(
@@ -3031,7 +3090,39 @@ impl EthCoin {
             } => {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
-                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
+                let swap_id_input = match decoded.first() {
+                    Some(id) => id.clone(),
+                    None => {
+                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                            "Missing input: No input found for swap id"
+                        ))))
+                    },
+                };
+                let amount_input = match decoded.get(1) {
+                    Some(amount) => amount.clone(),
+                    None => {
+                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                            "Missing input: No input found for amount"
+                        ))))
+                    },
+                };
+                let token_addr_input = match decoded.get(3) {
+                    Some(addr) => addr.clone(),
+                    None => {
+                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                            "Missing input: No input found for token address"
+                        ))))
+                    },
+                };
+                let sender_input = match decoded.get(4) {
+                    Some(sender) => sender.clone(),
+                    None => {
+                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                            "Missing input: No input found for sender address"
+                        ))))
+                    },
+                };
+                let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
                 Box::new(
                     state_f
                         .map_err(TransactionErr::Plain)
@@ -3045,12 +3136,12 @@ impl EthCoin {
                             }
 
                             let data = try_tx_fus!(refund_func.encode_input(&[
-                                decoded[0].clone(),
-                                decoded[1].clone(),
-                                decoded[4].clone(),
+                                swap_id_input.clone(),
+                                amount_input.clone(),
+                                sender_input.clone(),
                                 Token::Address(token_addr),
                                 Token::Address(taker_addr),
-                                decoded[3].clone(),
+                                token_addr_input.clone(),
                             ]));
 
                             clone.sign_and_send_transaction(
