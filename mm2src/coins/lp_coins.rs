@@ -2473,7 +2473,6 @@ pub enum CoinProtocol {
     LIGHTNING {
         platform: String,
         network: BlockchainNetwork,
-        avg_block_time: u64,
         confirmation_targets: PlatformCoinConfirmationTargets,
     },
     #[cfg(not(target_arch = "wasm32"))]

@@ -83,12 +83,10 @@ impl TryFromCoinProtocol for LightningProtocolConf {
             CoinProtocol::LIGHTNING {
                 platform,
                 network,
-                avg_block_time,
                 confirmation_targets,
             } => Ok(LightningProtocolConf {
                 platform_coin_ticker: platform,
                 network,
-                avg_block_time,
                 confirmation_targets,
             }),
             proto => MmError::err(proto),
@@ -153,8 +151,15 @@ pub struct LightningActivationResult {
 #[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum LightningInitError {
-    CoinIsAlreadyActivated { ticker: String },
+    CoinIsAlreadyActivated {
+        ticker: String,
+    },
     InvalidConfiguration(String),
+    #[display(fmt = "Error while validating {} configuration: {}", platform_coin_ticker, err)]
+    InvalidPlatformConfiguration {
+        platform_coin_ticker: String,
+        err: String,
+    },
     EnableLightningError(EnableLightningError),
     LightningValidationErr(LightningValidationErr),
     MyBalanceError(BalanceError),
@@ -171,6 +176,13 @@ impl From<LightningInitError> for InitL2Error {
         match err {
             LightningInitError::CoinIsAlreadyActivated { ticker } => InitL2Error::L2IsAlreadyActivated(ticker),
             LightningInitError::InvalidConfiguration(err) => InitL2Error::L2ConfigParseError(err),
+            LightningInitError::InvalidPlatformConfiguration {
+                platform_coin_ticker,
+                err,
+            } => InitL2Error::InvalidPlatformConfiguration {
+                platform_coin_ticker,
+                err,
+            },
             LightningInitError::EnableLightningError(enable_err) => match enable_err {
                 EnableLightningError::RpcError(rpc_err) => InitL2Error::Transport(rpc_err),
                 enable_error => InitL2Error::Internal(enable_error.to_string()),
@@ -237,6 +249,12 @@ impl InitL2ActivationOps for LightningCoin {
             return MmError::err(
                 LightningValidationErr::UnsupportedMode("Lightning network".into(), "segwit".into()).into(),
             );
+        }
+        if platform_coin.as_ref().conf.avg_blocktime.is_none() {
+            return MmError::err(LightningInitError::InvalidPlatformConfiguration {
+                platform_coin_ticker: platform_coin.ticker().to_string(),
+                err: "'avg_blocktime' field is not found in platform coin config".into(),
+            });
         }
         Ok(())
     }
@@ -323,7 +341,6 @@ async fn start_lightning(
     let platform = Arc::new(Platform::new(
         platform_coin.clone(),
         protocol_conf.network.clone(),
-        protocol_conf.avg_block_time,
         protocol_conf.confirmation_targets,
     )?);
     task_handle.update_in_progress_status(LightningInProgressStatus::GettingFeesFromRPC)?;

@@ -154,6 +154,9 @@ impl LightningCoin {
     pub fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform.coin }
 
     #[inline]
+    fn avg_blocktime(&self) -> u64 { self.platform.avg_blocktime }
+
+    #[inline]
     fn my_node_id(&self) -> String { self.channel_manager.get_our_node_id().to_string() }
 
     pub(crate) async fn list_channels(&self) -> Vec<ChannelDetails> {
@@ -479,7 +482,7 @@ impl LightningCoin {
         }
     }
 
-    fn estimate_blocks_from_duration(&self, duration: u64) -> u64 { duration / self.platform.avg_block_time }
+    fn estimate_blocks_from_duration(&self, duration: u64) -> u64 { duration / self.avg_blocktime() }
 
     async fn swap_payment_instructions(
         &self,
