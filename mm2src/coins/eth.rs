@@ -829,8 +829,6 @@ impl SwapOps for EthCoin {
     }
 
     fn send_taker_payment(&self, taker_payment: SendTakerPaymentArgs) -> TransactionFut {
-        println!("**send_taker_payment");
-        println!("**time_lock: {}", taker_payment.time_lock);
         let maker_addr = try_tx_fus!(addr_from_raw_pubkey(taker_payment.other_pubkey));
         let swap_contract_address = try_tx_fus!(taker_payment.swap_contract_address.try_to_address());
 
@@ -1331,15 +1329,12 @@ impl WatcherOps for EthCoin {
                 .await
                 .map_to_mm(|e| ValidatePaymentError::InvalidRpcResponse(e.to_string()))?;
 
-            let tx_from_rpc = match tx_from_rpc {
-                Some(t) => t,
-                None => {
-                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                        "Didn't find provided tx {:?} on ETH node",
-                        tx_from_rpc
-                    )))
-                },
-            };
+            let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
+                ValidatePaymentError::TxDoesNotExist(format!(
+                    "Didn't find provided tx {:?} on ETH node",
+                    H256::from(taker_fee_hash.as_slice())
+                ))
+            })?;
 
             if tx_from_rpc.from != sender_addr {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -1408,7 +1403,6 @@ impl WatcherOps for EthCoin {
     }
 
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
-        println!("**watcher_validate_taker_payment");
         let unsigned: UnverifiedTransaction = try_f!(rlp::decode(&input.payment_tx));
         let tx =
             try_f!(SignedEthTx::new(unsigned)
@@ -1432,15 +1426,10 @@ impl WatcherOps for EthCoin {
                 .transaction(TransactionId::Hash(tx.hash))
                 .compat()
                 .await?;
-            let tx_from_rpc = match tx_from_rpc {
-                Some(t) => t,
-                None => {
-                    return MmError::err(ValidatePaymentError::TxDoesNotExist(format!(
-                        "Didn't find provided tx {:?} on ETH node",
-                        tx
-                    )))
-                },
-            };
+
+            let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
+                ValidatePaymentError::TxDoesNotExist(format!("Didn't find provided tx {:?} on ETH node", tx))
+            })?;
 
             if tx_from_rpc.from != sender {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -1462,7 +1451,6 @@ impl WatcherOps for EthCoin {
                 }
             }
 
-            println!("**payment_status swap_id: {}", Token::FixedBytes(swap_id.clone()));
             let status = selfi
                 .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
                 .compat()
@@ -1757,7 +1745,6 @@ impl MarketCoinOps for EthCoin {
         wait_until: u64,
         check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        println!("**wait_for_confirmations");
         let ctx = try_fus!(MmArc::from_weak(&self.ctx).ok_or("No context"));
         let mut status = ctx.log.status_handle();
         status.status(&[&self.ticker], "Waiting for confirmations…");
@@ -1770,7 +1757,6 @@ impl MarketCoinOps for EthCoin {
         let selfi = self.clone();
         let fut = async move {
             loop {
-                println!("**loop");
                 if status.ms2deadline().unwrap() < 0 {
                     status.append(" Timed out.");
                     return ERR!(
@@ -1794,7 +1780,6 @@ impl MarketCoinOps for EthCoin {
                     },
                 };
                 if let Some(receipt) = web3_receipt {
-                    println!("**receipt");
                     if receipt.status != Some(1.into()) {
                         status.append(" Failed.");
                         return ERR!(
@@ -1806,7 +1791,6 @@ impl MarketCoinOps for EthCoin {
                     }
 
                     if let Some(confirmed_at) = receipt.block_number {
-                        println!("**confirmedat = block_number");
                         let current_block = match selfi.web3.eth().block_number().compat().await {
                             Ok(b) => b,
                             Err(e) => {
@@ -1822,7 +1806,6 @@ impl MarketCoinOps for EthCoin {
                         // checking if the current block is above the confirmed_at block prediction for pos chain to prevent overflow
                         if current_block >= confirmed_at && current_block - confirmed_at + 1 >= required_confirms {
                             status.append(" Confirmed.");
-                            println!("**confirmed");
                             return Ok(());
                         }
                     }
@@ -2824,7 +2807,6 @@ impl EthCoin {
             secret_hash.to_vec()
         };
 
-        println!("**swap_id: {}", Token::FixedBytes(id.clone()));
         match &self.coin_type {
             EthCoinType::Eth => {
                 let function = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
@@ -3555,15 +3537,10 @@ impl EthCoin {
                 .transaction(TransactionId::Hash(tx.hash))
                 .compat()
                 .await?;
-            let tx_from_rpc = match tx_from_rpc {
-                Some(t) => t,
-                None => {
-                    return MmError::err(ValidatePaymentError::InvalidRpcResponse(format!(
-                        "Didn't find provided tx {:?} on ETH node",
-                        tx
-                    )))
-                },
-            };
+
+            let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
+                ValidatePaymentError::TxDoesNotExist(format!("Didn't find provided tx {:?} on ETH node", tx.hash))
+            })?;
 
             if tx_from_rpc.from != sender {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
