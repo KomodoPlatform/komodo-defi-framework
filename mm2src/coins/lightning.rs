@@ -33,6 +33,7 @@ use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
+use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::{info, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
@@ -800,44 +801,32 @@ impl SwapOps for LightningCoin {
     async fn wait_for_htlc_refund(&self, tx: &[u8], locktime: u64) -> RefundResult<()> {
         let payment_hash = payment_hash_from_slice(tx).map_err(|e| RefundError::DecodeErr(e.to_string()))?;
         let payment_hex = hex::encode(payment_hash.0);
-        loop {
+        repeatable!(async {
             match self.db.get_payment_from_db(payment_hash).await {
                 Ok(Some(payment)) => match payment.status {
-                    HTLCStatus::Failed => return Ok(()),
-                    HTLCStatus::Pending => (),
-                    _ => {
-                        return MmError::err(RefundError::Internal(ERRL!(
-                            "Payment {} has an invalid status of {} in the db",
-                            payment_hex,
-                            payment.status
-                        )))
-                    },
-                },
-                Ok(None) => {
-                    return MmError::err(RefundError::Internal(ERRL!(
-                        "Payment {} is not in the database when it should be!",
-                        payment_hex
-                    )))
-                },
-                Err(e) => {
-                    return MmError::err(RefundError::DbError(ERRL!(
-                        "Error getting payment {} from db: {}",
+                    HTLCStatus::Failed => Ready(Ok(())),
+                    HTLCStatus::Pending => Retry(()),
+                    _ => Ready(MmError::err(RefundError::Internal(ERRL!(
+                        "Payment {} has an invalid status of {} in the db",
                         payment_hex,
-                        e
-                    )))
+                        payment.status
+                    )))),
                 },
-            }
-
-            let now = now_ms() / 1000;
-            if now > locktime {
-                return MmError::err(RefundError::Timeout(ERRL!(
-                    "Waited too long until {} for payment {} to be refunded!",
-                    locktime,
+                Ok(None) => Ready(MmError::err(RefundError::Internal(ERRL!(
+                    "Payment {} is not in the database when it should be!",
                     payment_hex
-                )));
+                )))),
+                Err(e) => Ready(MmError::err(RefundError::DbError(ERRL!(
+                    "Error getting payment {} from db: {}",
+                    payment_hex,
+                    e
+                )))),
             }
-            Timer::sleep(WAIT_FOR_REFUND_INTERVAL).await;
-        }
+        })
+        .repeat_every_secs(WAIT_FOR_REFUND_INTERVAL)
+        .until_ms(locktime)
+        .await
+        .map_err(|e| RefundError::Timeout(format!("{:?}", e)))?
     }
 
     fn negotiate_swap_contract_addr(
