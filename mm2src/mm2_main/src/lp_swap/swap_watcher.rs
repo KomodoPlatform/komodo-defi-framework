@@ -235,7 +235,10 @@ impl State for ValidateTakerPayment {
         let validate_input = WatcherValidatePaymentInput {
             payment_tx: taker_payment_hex.clone(),
             taker_payment_refund_preimage: watcher_ctx.data.taker_payment_refund_preimage.clone(),
-            time_lock: watcher_ctx.taker_locktime() as u32,
+            time_lock: match std::env::var("REFUND_TEST") {
+                Ok(_) => watcher_ctx.data.swap_started_at as u32,
+                Err(_) => watcher_ctx.taker_locktime() as u32,
+            },
             taker_pub: watcher_ctx.verified_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
             secret_hash: watcher_ctx.data.secret_hash.clone(),
