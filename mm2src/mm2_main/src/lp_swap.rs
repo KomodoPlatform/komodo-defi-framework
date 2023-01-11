@@ -59,13 +59,13 @@
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use bitcrypto::{dhash160, sha256};
-use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
              executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
              log::{error, info},
-             now_ms, var, PagingOptions};
+             now_ms, var, HttpStatusCode, PagingOptions, StatusCode};
 use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
@@ -441,6 +441,51 @@ impl SwapsContext {
 
     #[cfg(target_arch = "wasm32")]
     pub async fn swap_db(&self) -> InitDbResult<SwapDbLocked<'_>> { Ok(self.swap_db.get_or_initialize().await?) }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetLockedAmountReq {
+    coin: String,
+}
+
+#[derive(Serialize)]
+pub struct GetLockedAmountResp {
+    locked_amount: BigDecimal,
+}
+
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum GetLockedAmountRpcError {
+    #[display(fmt = "No such coin: {}", coin)]
+    NoSuchCoin { coin: String },
+}
+
+impl HttpStatusCode for GetLockedAmountRpcError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            GetLockedAmountRpcError::NoSuchCoin { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<CoinFindError> for GetLockedAmountRpcError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => GetLockedAmountRpcError::NoSuchCoin { coin },
+        }
+    }
+}
+
+pub async fn get_locked_amount_rpc(
+    ctx: MmArc,
+    req: GetLockedAmountReq,
+) -> Result<GetLockedAmountResp, MmError<GetLockedAmountRpcError>> {
+    let _coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let locked_amount = get_locked_amount(&ctx, &req.coin);
+
+    Ok(GetLockedAmountResp {
+        locked_amount: locked_amount.into(),
+    })
 }
 
 /// Get total amount of selected coin locked by all currently ongoing swaps
