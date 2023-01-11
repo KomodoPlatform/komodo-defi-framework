@@ -122,7 +122,7 @@ pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
 pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
 pub const PIRATE_ELECTRUMS: &[&str] = &["pirate.sirseven.me:10032"];
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://pirate.sirseven.me:443"];
-const DEFAULT_RPC_PASSWORD: &str = "pass";
+pub const DEFAULT_RPC_PASSWORD: &str = "pass";
 pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10071",
     "electrum2.cipig.net:10071",

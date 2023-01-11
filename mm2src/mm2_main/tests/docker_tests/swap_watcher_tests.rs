@@ -15,8 +15,9 @@ use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, MAKER_PAYMENT_SENT_
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_conf, eth_testnet_conf, mm_dump, my_balance, mycoin1_conf,
-                                  mycoin_conf, start_swaps, MarketMakerIt, Mm2TestConf, WatcherConf, ETH_SEPOLIA_NODE,
-                                  ETH_SEPOLIA_SWAP_CONTRACT, ETH_SEPOLIA_TOKEN_CONTRACT};
+                                  mycoin_conf, start_swaps, MarketMakerIt, Mm2TestConf, WatcherConf,
+                                  DEFAULT_RPC_PASSWORD, ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT,
+                                  ETH_SEPOLIA_TOKEN_CONTRACT};
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
@@ -47,7 +48,7 @@ fn get_balance(mm_node: &MarketMakerIt, ticker: &str) -> BigDecimal {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -74,7 +75,7 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
             search_interval: 1.0,
         })
         .conf;
-    let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
+    let mut mm_watcher = MarketMakerIt::start(watcher_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
 
     enable_eth_and_jst(&mm_alice);
@@ -109,7 +110,7 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -137,7 +138,7 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
         })
         .conf;
 
-    let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
+    let mut mm_watcher = MarketMakerIt::start(watcher_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
 
     enable_eth_and_jst(&mm_alice);
@@ -173,7 +174,7 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_refunds_taker_payment_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -208,7 +209,7 @@ fn test_watcher_refunds_taker_payment_erc20() {
         .conf;
     let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
         watcher_conf,
-        "pass".to_string(),
+        DEFAULT_RPC_PASSWORD.to_string(),
         None,
         &[("REFUND_TEST", "")],
     ))
@@ -242,7 +243,7 @@ fn test_watcher_refunds_taker_payment_erc20() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_refunds_taker_payment_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -277,7 +278,7 @@ fn test_watcher_refunds_taker_payment_eth() {
         .conf;
     let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
         watcher_conf,
-        "pass".to_string(),
+        DEFAULT_RPC_PASSWORD.to_string(),
         None,
         &[("REFUND_TEST", "")],
     ))
@@ -533,14 +534,14 @@ fn test_watcher_spends_maker_payment_spend_utxo() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
     let alice_conf = Mm2TestConf::seednode_using_watchers(&format!("0x{}", hex::encode(alice_priv_key)), &coins).conf;
-    let mut mm_alice = MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None).unwrap();
+    let mut mm_alice = MarketMakerIt::start(alice_conf.clone(), DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
     let bob_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(bob_priv_key)), &coins, &[&mm_alice
         .ip
         .to_string()])
     .conf;
-    let mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
     let watcher_conf = Mm2TestConf::watcher_light_node(
@@ -555,7 +556,7 @@ fn test_watcher_spends_maker_payment_spend_utxo() {
         },
     )
     .conf;
-    let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
+    let mut mm_watcher = MarketMakerIt::start(watcher_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
@@ -592,7 +593,7 @@ fn test_watcher_spends_maker_payment_spend_utxo() {
     block_on(mm_watcher.wait_for_log(60., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
     thread::sleep(Duration::from_secs(5));
 
-    let mm_alice = MarketMakerIt::start(alice_conf, "pass".to_string(), None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
@@ -622,14 +623,14 @@ fn test_watcher_waits_for_taker_utxo() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
     let alice_conf = Mm2TestConf::seednode_using_watchers(&format!("0x{}", hex::encode(alice_priv_key)), &coins).conf;
-    let mm_alice = MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.clone(), DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
     let bob_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(bob_priv_key)), &coins, &[&mm_alice
         .ip
         .to_string()])
     .conf;
-    let mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
     let watcher_conf = Mm2TestConf::watcher_light_node(
@@ -644,7 +645,7 @@ fn test_watcher_waits_for_taker_utxo() {
         },
     )
     .conf;
-    let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
+    let mut mm_watcher = MarketMakerIt::start(watcher_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
@@ -692,7 +693,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
     let alice_conf = Mm2TestConf::seednode_using_watchers(&format!("0x{}", hex::encode(alice_priv_key)), &coins).conf;
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
         alice_conf.clone(),
-        "pass".to_string(),
+        DEFAULT_RPC_PASSWORD.to_string(),
         None,
         &[("USE_TEST_LOCKTIME", "")],
     ))
@@ -703,7 +704,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
         .ip
         .to_string()])
     .conf;
-    let mut mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
+    let mut mm_bob = MarketMakerIt::start(bob_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
     let watcher_conf = Mm2TestConf::watcher_light_node(
@@ -720,7 +721,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
     .conf;
     let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
         watcher_conf,
-        "pass".to_string(),
+        DEFAULT_RPC_PASSWORD.to_string(),
         None,
         &[("REFUND_TEST", "")],
     ))
@@ -763,7 +764,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
     block_on(mm_watcher.wait_for_log(160., |log| log.contains(TAKER_PAYMENT_REFUND_SENT_LOG))).unwrap();
     thread::sleep(Duration::from_secs(5));
 
-    let mm_alice = MarketMakerIt::start(alice_conf, "pass".to_string(), None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
