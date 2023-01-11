@@ -48,7 +48,7 @@ fn get_balance(mm_node: &MarketMakerIt, ticker: &str) -> BigDecimal {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -110,7 +110,7 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -174,7 +174,7 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_refunds_taker_payment_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -243,7 +243,7 @@ fn test_watcher_refunds_taker_payment_erc20() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_refunds_taker_payment_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
@@ -329,9 +329,12 @@ fn test_watcher_validate_taker_fee_eth() {
         maker_coin.ticker(),
         &taker_amount,
     );
-    let uuid = Uuid::parse_str("936DA01F-9ABD-4D9D-80C7-02AF85C822A8").unwrap();
     let taker_fee = taker_coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.clone().into(), uuid.as_bytes())
+        .send_taker_fee(
+            &DEX_FEE_ADDR_RAW_PUBKEY,
+            fee_amount.clone().into(),
+            Uuid::new_v4().as_bytes(),
+        )
         .wait()
         .unwrap();
 
@@ -435,9 +438,12 @@ fn test_watcher_validate_taker_fee_erc20() {
         maker_coin.ticker(),
         &taker_amount,
     );
-    let uuid = Uuid::parse_str("936DA01F-9ABD-4D9D-80C7-02AF85C822A8").unwrap();
     let taker_fee = taker_coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.clone().into(), uuid.as_bytes())
+        .send_taker_fee(
+            &DEX_FEE_ADDR_RAW_PUBKEY,
+            fee_amount.clone().into(),
+            Uuid::new_v4().as_bytes(),
+        )
         .wait()
         .unwrap();
 
@@ -789,10 +795,13 @@ fn test_watcher_validate_taker_fee_utxo() {
         maker_coin.ticker(),
         &taker_amount,
     );
-    let uuid = Uuid::parse_str("936DA01F-9ABD-4D9D-80C7-02AF85C822A8").unwrap();
 
     let taker_fee = taker_coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.clone().into(), uuid.as_bytes())
+        .send_taker_fee(
+            &DEX_FEE_ADDR_RAW_PUBKEY,
+            fee_amount.clone().into(),
+            Uuid::new_v4().as_bytes(),
+        )
         .wait()
         .unwrap();
 
