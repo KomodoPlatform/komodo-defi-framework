@@ -126,7 +126,7 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
         // We could parse the `TakerSwapEvent::TakerPaymentSpent` event.
         // As for now, don't try to find the secret in the events since we can refund without it.
         secret: H256Json::default(),
-        secret_hash: Some(negotiated_event.secret_hash.0[..].into()),
+        secret_hash: Some(negotiated_event.secret_hash),
         my_persistent_pub: negotiated_event.maker_pubkey,
         lock_duration: started_event.lock_duration,
         maker_amount: started_event.maker_amount,
