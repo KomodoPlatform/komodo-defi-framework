@@ -89,7 +89,7 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Finished",
 ];
 
-pub const TAKER_ERROR_EVENTS: [&str; 13] = [
+pub const TAKER_ERROR_EVENTS: [&str; 15] = [
     "StartFailed",
     "NegotiateFailed",
     "TakerFeeSendFailed",
@@ -101,8 +101,10 @@ pub const TAKER_ERROR_EVENTS: [&str; 13] = [
     "TakerPaymentWaitForSpendFailed",
     "MakerPaymentSpendFailed",
     "TakerPaymentWaitRefundStarted",
+    "TakerPaymentRefundStarted",
     "TakerPaymentRefunded",
     "TakerPaymentRefundFailed",
+    "TakerPaymentRefundFinished",
 ];
 
 pub const RICK: &str = "RICK";

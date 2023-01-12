@@ -70,7 +70,7 @@ pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 12] = [
     "Finished",
 ];
 
-pub const TAKER_ERROR_EVENTS: [&str; 13] = [
+pub const TAKER_ERROR_EVENTS: [&str; 15] = [
     "StartFailed",
     "NegotiateFailed",
     "TakerFeeSendFailed",
@@ -82,8 +82,10 @@ pub const TAKER_ERROR_EVENTS: [&str; 13] = [
     "TakerPaymentWaitForSpendFailed",
     "MakerPaymentSpendFailed",
     "TakerPaymentWaitRefundStarted",
+    "TakerPaymentRefundStarted",
     "TakerPaymentRefunded",
     "TakerPaymentRefundFailed",
+    "TakerPaymentRefundFinished",
 ];
 
 pub const WATCHER_MESSAGE_SENT_LOG: &str = "Watcher message sent...";
@@ -159,15 +161,19 @@ impl TakerSavedEvent {
             TakerSwapEvent::TakerPaymentSent(_) => Some(TakerSwapCommand::WaitForTakerPaymentSpend),
             TakerSwapEvent::WatcherMessageSent(_, _) => Some(TakerSwapCommand::WaitForTakerPaymentSpend),
             TakerSwapEvent::TakerPaymentTransactionFailed(_) => Some(TakerSwapCommand::Finish),
-            TakerSwapEvent::TakerPaymentDataSendFailed(_) => Some(TakerSwapCommand::RefundTakerPayment),
+            TakerSwapEvent::TakerPaymentDataSendFailed(_) => Some(TakerSwapCommand::PrepareForTakerPaymentRefund),
             TakerSwapEvent::TakerPaymentSpent(_) => Some(TakerSwapCommand::SpendMakerPayment),
-            TakerSwapEvent::TakerPaymentWaitForSpendFailed(_) => Some(TakerSwapCommand::RefundTakerPayment),
-            TakerSwapEvent::TakerPaymentWaitConfirmFailed(_) => Some(TakerSwapCommand::RefundTakerPayment),
+            TakerSwapEvent::TakerPaymentWaitForSpendFailed(_) => Some(TakerSwapCommand::PrepareForTakerPaymentRefund),
+            TakerSwapEvent::TakerPaymentWaitConfirmFailed(_) => Some(TakerSwapCommand::PrepareForTakerPaymentRefund),
             TakerSwapEvent::MakerPaymentSpent(_) => Some(TakerSwapCommand::Finish),
-            TakerSwapEvent::MakerPaymentSpendFailed(_) => Some(TakerSwapCommand::RefundTakerPayment),
-            TakerSwapEvent::TakerPaymentWaitRefundStarted { .. } => Some(TakerSwapCommand::RefundTakerPayment),
-            TakerSwapEvent::TakerPaymentRefunded(_) => Some(TakerSwapCommand::Finish),
+            TakerSwapEvent::MakerPaymentSpendFailed(_) => Some(TakerSwapCommand::PrepareForTakerPaymentRefund),
+            TakerSwapEvent::TakerPaymentWaitRefundStarted { .. } => {
+                Some(TakerSwapCommand::PrepareForTakerPaymentRefund)
+            },
+            TakerSwapEvent::TakerPaymentRefundStarted => Some(TakerSwapCommand::RefundTakerPayment),
+            TakerSwapEvent::TakerPaymentRefunded(_) => Some(TakerSwapCommand::FinalizeTakerPaymentRefund),
             TakerSwapEvent::TakerPaymentRefundFailed(_) => Some(TakerSwapCommand::Finish),
+            TakerSwapEvent::TakerPaymentRefundFinished => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::Finished => None,
         }
     }
@@ -597,8 +603,10 @@ pub enum TakerSwapEvent {
     MakerPaymentSpent(TransactionIdentifier),
     MakerPaymentSpendFailed(SwapError),
     TakerPaymentWaitRefundStarted { wait_until: u64 },
+    TakerPaymentRefundStarted,
     TakerPaymentRefunded(Option<TransactionIdentifier>),
     TakerPaymentRefundFailed(SwapError),
+    TakerPaymentRefundFinished,
     Finished,
 }
 
@@ -633,8 +641,10 @@ impl TakerSwapEvent {
             TakerSwapEvent::TakerPaymentWaitRefundStarted { wait_until } => {
                 format!("Taker payment wait refund till {} started...", wait_until)
             },
+            TakerSwapEvent::TakerPaymentRefundStarted => "Taker payment refund started...".to_owned(),
             TakerSwapEvent::TakerPaymentRefunded(_) => "Taker payment refunded...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundFailed(_) => "Taker payment refund failed...".to_owned(),
+            TakerSwapEvent::TakerPaymentRefundFinished => "Taker payment refund finished...".to_owned(),
             TakerSwapEvent::Finished => "Finished".to_owned(),
         }
     }
@@ -676,7 +686,9 @@ pub enum TakerSwapCommand {
     SendTakerPayment,
     WaitForTakerPaymentSpend,
     SpendMakerPayment,
+    PrepareForTakerPaymentRefund,
     RefundTakerPayment,
+    FinalizeTakerPaymentRefund,
     Finish,
 }
 
@@ -756,8 +768,10 @@ impl TakerSwap {
             TakerSwapEvent::MakerPaymentSpent(tx) => self.w().maker_payment_spend = Some(tx),
             TakerSwapEvent::MakerPaymentSpendFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::TakerPaymentWaitRefundStarted { .. } => (),
+            TakerSwapEvent::TakerPaymentRefundStarted => (),
             TakerSwapEvent::TakerPaymentRefunded(tx) => self.w().taker_payment_refund = tx,
             TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.lock().push(err),
+            TakerSwapEvent::TakerPaymentRefundFinished => (),
             TakerSwapEvent::Finished => self.finished_at.store(now_ms() / 1000, Ordering::Relaxed),
         }
     }
@@ -775,7 +789,9 @@ impl TakerSwap {
             TakerSwapCommand::SendTakerPayment => self.send_taker_payment().await,
             TakerSwapCommand::WaitForTakerPaymentSpend => self.wait_for_taker_payment_spend().await,
             TakerSwapCommand::SpendMakerPayment => self.spend_maker_payment().await,
+            TakerSwapCommand::PrepareForTakerPaymentRefund => self.prepare_for_taker_payment_refund().await,
             TakerSwapCommand::RefundTakerPayment => self.refund_taker_payment().await,
+            TakerSwapCommand::FinalizeTakerPaymentRefund => self.finalize_taker_payment_refund().await,
             TakerSwapCommand::Finish => Ok((None, vec![TakerSwapEvent::Finished])),
         }
     }
@@ -1533,7 +1549,7 @@ impl TakerSwap {
             )
             .compat();
         if let Err(err) = wait_f.await {
-            return Ok((Some(TakerSwapCommand::RefundTakerPayment), vec![
+            return Ok((Some(TakerSwapCommand::PrepareForTakerPaymentRefund), vec![
                 TakerSwapEvent::TakerPaymentWaitConfirmFailed(
                     ERRL!("!taker_coin.wait_for_confirmations: {}", err).into(),
                 ),
@@ -1554,7 +1570,7 @@ impl TakerSwap {
         let tx = match f.compat().await {
             Ok(t) => t,
             Err(err) => {
-                return Ok((Some(TakerSwapCommand::RefundTakerPayment), vec![
+                return Ok((Some(TakerSwapCommand::PrepareForTakerPaymentRefund), vec![
                     TakerSwapEvent::TakerPaymentWaitForSpendFailed(err.get_plain_text_format().into()),
                     TakerSwapEvent::TakerPaymentWaitRefundStarted {
                         wait_until: self.wait_refund_until(),
@@ -1642,6 +1658,19 @@ impl TakerSwap {
         )]))
     }
 
+    async fn prepare_for_taker_payment_refund(
+        &self,
+    ) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        let maker_payment = self.r().maker_payment.clone().unwrap().tx_hex;
+        if let Err(e) = self.maker_coin.on_taker_payment_refund_start(&maker_payment).await {
+            error!("Error {} on calling on_taker_payment_refund_start!", e)
+        }
+
+        Ok((Some(TakerSwapCommand::RefundTakerPayment), vec![
+            TakerSwapEvent::TakerPaymentRefundStarted,
+        ]))
+    }
+
     async fn refund_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         #[cfg(test)]
         if self.fail_at == Some(FailAt::TakerPaymentRefund) {
@@ -1650,16 +1679,11 @@ impl TakerSwap {
             ]));
         }
 
-        let maker_payment = self.r().maker_payment.clone().unwrap().tx_hex.clone();
-        if let Err(e) = self.maker_coin.on_taker_payment_refund_start(&maker_payment).await {
-            error!("Error {} on calling on_taker_payment_refund_start!", e)
-        }
-
         let taker_payment = self.r().taker_payment.clone().unwrap().tx_hex;
         let locktime = self.r().data.taker_payment_lock;
         if self.taker_coin.is_auto_refundable() {
             return match self.taker_coin.wait_for_htlc_refund(&taker_payment, locktime).await {
-                Ok(()) => Ok((Some(TakerSwapCommand::Finish), vec![
+                Ok(()) => Ok((Some(TakerSwapCommand::FinalizeTakerPaymentRefund), vec![
                     TakerSwapEvent::TakerPaymentRefunded(None),
                 ])),
                 Err(err) => Ok((Some(TakerSwapCommand::Finish), vec![
@@ -1722,14 +1746,19 @@ impl TakerSwap {
             tx_hash,
         };
 
-        // Since taker payment is refunded successfully, maker payment can be released for lightning and similar protocols.
-        // # Important: New code that leads to refund failure shouldn't be added below this code block.
+        Ok((Some(TakerSwapCommand::FinalizeTakerPaymentRefund), vec![
+            TakerSwapEvent::TakerPaymentRefunded(Some(tx_ident)),
+        ]))
+    }
+
+    async fn finalize_taker_payment_refund(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        let maker_payment = self.r().maker_payment.clone().unwrap().tx_hex;
         if let Err(e) = self.maker_coin.on_taker_payment_refund_success(&maker_payment).await {
-            error!("Error {} on calling on_taker_payment_refund!", e)
+            error!("Error {} on calling on_taker_payment_refund_success!", e)
         }
 
         Ok((Some(TakerSwapCommand::Finish), vec![
-            TakerSwapEvent::TakerPaymentRefunded(Some(tx_ident)),
+            TakerSwapEvent::TakerPaymentRefundFinished,
         ]))
     }
 
