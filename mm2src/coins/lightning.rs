@@ -16,16 +16,16 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MakerSwapOps, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
-            PaymentInstructionsErr, RawTransactionError, RawTransactionFut, RawTransactionRequest, RefundError,
-            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
-            SendMakerSpendsTakerPaymentArgs, SendSpendPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TakerSwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr,
-            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
-            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, RefundError, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
+            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendSpendPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps,
+            TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
+            TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
+            UtxoStandardCoin, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
             WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
@@ -905,7 +905,7 @@ impl SwapOps for LightningCoin {
 }
 
 #[async_trait]
-impl MakerSwapOps for LightningCoin {
+impl TakerSwapMakerCoin for LightningCoin {
     async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> RefundResult<()> {
@@ -914,7 +914,7 @@ impl MakerSwapOps for LightningCoin {
 }
 
 #[async_trait]
-impl TakerSwapOps for LightningCoin {
+impl MakerSwapTakerCoin for LightningCoin {
     async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> RefundResult<()> {
         self.on_swap_refund(taker_payment).await
     }

@@ -21,14 +21,15 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            IguanaPrivKey, MakerSwapOps, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyBuildPolicy, RefundError, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
-            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
-            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TakerSwapOps,
-            TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
+            IguanaPrivKey, MakerSwapTakerCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundResult, SearchForSwapTxSpendInput,
+            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps,
+            TakerSwapMakerCoin, TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
+            WithdrawSenderAddress};
 use common::executor::{AbortableSystem, AbortedError};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
@@ -515,14 +516,14 @@ impl SwapOps for UtxoStandardCoin {
 }
 
 #[async_trait]
-impl MakerSwapOps for UtxoStandardCoin {
+impl TakerSwapMakerCoin for UtxoStandardCoin {
     async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
-impl TakerSwapOps for UtxoStandardCoin {
+impl MakerSwapTakerCoin for UtxoStandardCoin {
     async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }

@@ -761,21 +761,21 @@ pub trait SwapOps {
     fn maker_locktime_multiplier(&self) -> f64 { 2.0 }
 }
 
-/// Maker specific swap operations
+/// Operations on maker coin from taker swap side
 #[async_trait]
-pub trait MakerSwapOps {
-    /// Performs an action on maker payment on taker payment refund start if applicable
+pub trait TakerSwapMakerCoin {
+    /// Performs an action on maker coin payment on taker swap payment refund start if applicable
     async fn on_taker_payment_refund_start(&self, maker_payment: &[u8]) -> RefundResult<()>;
-    /// Perform an action on maker payment on taker payment refund success if applicable
+    /// Perform an action on maker coin payment on taker swap payment refund success if applicable
     async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> RefundResult<()>;
 }
 
-/// Taker specific swap operations
+/// Operations on taker coin from maker swap side
 #[async_trait]
-pub trait TakerSwapOps {
-    /// Performs an action on taker payment on starting maker payment refund process if applicable
+pub trait MakerSwapTakerCoin {
+    /// Performs an action on taker coin payment on starting maker swap payment refund process if applicable
     async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> RefundResult<()>;
-    /// Perform an action on taker payment on maker payment refund success if applicable
+    /// Perform an action on taker coin payment on maker swap payment refund success if applicable
     async fn on_maker_payment_refund_success(&self, taker_payment: &[u8]) -> RefundResult<()>;
 }
 
@@ -1927,7 +1927,9 @@ impl From<CoinFindError> for VerificationError {
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
-pub trait MmCoin: SwapOps + MakerSwapOps + TakerSwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
+pub trait MmCoin:
+    SwapOps + TakerSwapMakerCoin + MakerSwapTakerCoin + WatcherOps + MarketCoinOps + Send + Sync + 'static
+{
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
     // coin statistics that we might want to share with UI;

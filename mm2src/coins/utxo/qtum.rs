@@ -23,11 +23,11 @@ use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoin
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, DelegationError,
-            DelegationFut, GetWithdrawSenderAddress, IguanaPrivKey, MakerSwapOps, NegotiateSwapContractAddrErr,
+            DelegationFut, GetWithdrawSenderAddress, IguanaPrivKey, MakerSwapTakerCoin, NegotiateSwapContractAddrErr,
             PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundResult,
             SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureResult, StakingInfosFut, SwapOps, TakerSwapOps,
+            SendTakerSpendsMakerPaymentArgs, SignatureResult, StakingInfosFut, SwapOps, TakerSwapMakerCoin,
             TradePreimageValue, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
             ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
@@ -753,14 +753,14 @@ impl SwapOps for QtumCoin {
 }
 
 #[async_trait]
-impl MakerSwapOps for QtumCoin {
+impl TakerSwapMakerCoin for QtumCoin {
     async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
-impl TakerSwapOps for QtumCoin {
+impl MakerSwapTakerCoin for QtumCoin {
     async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }

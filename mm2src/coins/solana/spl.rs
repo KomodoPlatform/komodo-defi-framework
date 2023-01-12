@@ -2,16 +2,17 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::coin_errors::MyAddressError;
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
-use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, MakerSwapOps,
-            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, RawTransactionFut,
-            RawTransactionRequest, RefundError, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
-            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
-            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, SolanaCoin, TakerSwapOps,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut,
-            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
+            MakerSwapTakerCoin, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
+            RawTransactionFut, RawTransactionRequest, RefundError, RefundResult, SearchForSwapTxSpendInput,
+            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, SolanaCoin,
+            TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 use async_trait::async_trait;
 use bincode::serialize;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
@@ -429,14 +430,14 @@ impl SwapOps for SplToken {
 }
 
 #[async_trait]
-impl MakerSwapOps for SplToken {
+impl TakerSwapMakerCoin for SplToken {
     async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
-impl TakerSwapOps for SplToken {
+impl MakerSwapTakerCoin for SplToken {
     async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }

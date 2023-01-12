@@ -4,11 +4,11 @@ use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATO
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
             CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MakerSwapOps, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, PaymentInstructions,
-            PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, RefundError, RefundResult,
-            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
+            MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr,
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, RefundError,
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TakerSwapOps, TradeFee, TradePreimageFut,
+            SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
             TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
@@ -281,14 +281,14 @@ impl SwapOps for TendermintToken {
 }
 
 #[async_trait]
-impl MakerSwapOps for TendermintToken {
+impl TakerSwapMakerCoin for TendermintToken {
     async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
-impl TakerSwapOps for TendermintToken {
+impl MakerSwapTakerCoin for TendermintToken {
     async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }

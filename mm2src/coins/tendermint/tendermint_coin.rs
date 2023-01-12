@@ -6,13 +6,13 @@ use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapOps,
+            CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin,
             MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
             PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut,
             RawTransactionRequest, RawTransactionRes, RefundError, RefundResult, RpcCommonOps,
             SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TakerSwapOps, TradeFee,
+            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
@@ -2164,14 +2164,14 @@ impl SwapOps for TendermintCoin {
 }
 
 #[async_trait]
-impl MakerSwapOps for TendermintCoin {
+impl TakerSwapMakerCoin for TendermintCoin {
     async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
-impl TakerSwapOps for TendermintCoin {
+impl MakerSwapTakerCoin for TendermintCoin {
     async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }

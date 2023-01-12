@@ -16,16 +16,16 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, AddrFromStrError, Broadca
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapOps, MarketCoinOps, MmCoin,
+            FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RefundError, RefundResult,
             SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TakerSwapOps, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
+            SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
             WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
@@ -1084,14 +1084,14 @@ impl SwapOps for Qrc20Coin {
 }
 
 #[async_trait]
-impl MakerSwapOps for Qrc20Coin {
+impl TakerSwapMakerCoin for Qrc20Coin {
     async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
-impl TakerSwapOps for Qrc20Coin {
+impl MakerSwapTakerCoin for Qrc20Coin {
     async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }

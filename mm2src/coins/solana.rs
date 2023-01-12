@@ -3,15 +3,15 @@ use crate::coin_errors::MyAddressError;
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
-            MakerSwapOps, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
+            MakerSwapTakerCoin, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
             PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RefundError,
             RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureResult, TakerSwapOps, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionFut, TransactionType, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            SendTakerSpendsMakerPaymentArgs, SignatureResult, TakerSwapMakerCoin, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
@@ -606,14 +606,14 @@ impl SwapOps for SolanaCoin {
 }
 
 #[async_trait]
-impl MakerSwapOps for SolanaCoin {
+impl TakerSwapMakerCoin for SolanaCoin {
     async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
-impl TakerSwapOps for SolanaCoin {
+impl MakerSwapTakerCoin for SolanaCoin {
     async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }

@@ -65,19 +65,20 @@ use web3_transport::{http_transport::HttpTransportNode, EthFeeHistoryNamespace, 
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
             CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            IguanaPrivKey, MakerSwapOps, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr,
+            IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr,
             NumConversError, NumConversResult, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
             RawTransactionResult, RefundError, RefundResult, RpcClientType, RpcTransportEventHandler,
             RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
             SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps,
-            TakerSwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            Transaction, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -1256,14 +1257,14 @@ impl SwapOps for EthCoin {
 }
 
 #[async_trait]
-impl MakerSwapOps for EthCoin {
+impl TakerSwapMakerCoin for EthCoin {
     async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
-impl TakerSwapOps for EthCoin {
+impl MakerSwapTakerCoin for EthCoin {
     async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
     async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
