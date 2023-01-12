@@ -31,7 +31,7 @@ use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
 #[cfg(target_arch = "wasm32")]
 use crypto::{MetamaskArc, MetamaskWeak};
 use derive_more::Display;
-use ethabi::{Contract, Token};
+use ethabi::{Contract, Function, Token};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
 use ethereum_types::{Address, H160, H256, U256};
@@ -1382,17 +1382,12 @@ impl WatcherOps for EthCoin {
                     let decoded_input = function
                         .decode_input(&tx_from_rpc.input.0)
                         .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-
-                    let address = decoded_input
-                        .first()
-                        .ok_or_else(|| {
-                            ValidatePaymentError::TxDeserializationError("No input found for fee address".to_string())
-                        })?
-                        .clone();
-                    if address != Token::Address(fee_addr) {
+                    let address_input = get_function_input_data(&decoded_input, function, 0)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+                    if address_input != Token::Address(fee_addr) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "{}: ERC20 Fee tx was sent to wrong address {:?}, expected {:?}",
-                            INVALID_RECEIVER_ERR_LOG, address, fee_addr
+                            INVALID_RECEIVER_ERR_LOG, address_input, fee_addr
                         )));
                     }
                 },
@@ -1473,27 +1468,18 @@ impl WatcherOps for EthCoin {
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
                         .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
-                    let swap_id_input = decoded
-                        .first()
-                        .ok_or_else(|| {
-                            ValidatePaymentError::TxDeserializationError("No input found for swap id".to_string())
-                        })?
-                        .clone();
+
+                    let swap_id_input = get_function_input_data(&decoded, function, 0)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if swap_id_input != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Invalid 'swap_id' {:?}, expected {:?}",
                             decoded, swap_id
                         )));
                     }
-                    let receiver_input = decoded
-                        .get(1)
-                        .ok_or_else(|| {
-                            ValidatePaymentError::TxDeserializationError(
-                                "No input found for receiver address".to_string(),
-                            )
-                        })?
-                        .clone();
 
+                    let receiver_input = get_function_input_data(&decoded, function, 1)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if receiver_input != Token::Address(receiver) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
@@ -1501,12 +1487,9 @@ impl WatcherOps for EthCoin {
                             Token::Address(receiver)
                         )));
                     }
-                    let secret_hash_input = decoded
-                        .get(2)
-                        .ok_or_else(|| {
-                            ValidatePaymentError::TxDeserializationError("No input found for secret hash".to_string())
-                        })?
-                        .clone();
+
+                    let secret_hash_input = get_function_input_data(&decoded, function, 2)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if secret_hash_input != Token::FixedBytes(secret_hash.to_vec()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
@@ -1514,12 +1497,9 @@ impl WatcherOps for EthCoin {
                             Token::FixedBytes(secret_hash.to_vec()),
                         )));
                     }
-                    let time_lock_input = decoded
-                        .get(3)
-                        .ok_or_else(|| {
-                            ValidatePaymentError::TxDeserializationError("No input found for time lock".to_string())
-                        })?
-                        .clone();
+
+                    let time_lock_input = get_function_input_data(&decoded, function, 3)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if time_lock_input != Token::Uint(U256::from(input.time_lock)) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
@@ -1538,25 +1518,18 @@ impl WatcherOps for EthCoin {
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
                         .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
-                    let swap_id_input = decoded
-                        .first()
-                        .ok_or_else(|| {
-                            ValidatePaymentError::TxDeserializationError("No input found for swap id".to_string())
-                        })?
-                        .clone();
+
+                    let swap_id_input = get_function_input_data(&decoded, function, 0)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if swap_id_input != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Invalid 'swap_id' {:?}, expected {:?}",
                             decoded, swap_id
                         )));
                     }
-                    let token_addr_input = decoded
-                        .get(2)
-                        .ok_or_else(|| {
-                            ValidatePaymentError::TxDeserializationError("No input found for token address".to_string())
-                        })?
-                        .clone();
 
+                    let token_addr_input = get_function_input_data(&decoded, function, 2)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if token_addr_input != Token::Address(*token_addr) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx token_addr arg {:?} is invalid, expected {:?}",
@@ -1564,15 +1537,9 @@ impl WatcherOps for EthCoin {
                             Token::Address(*token_addr)
                         )));
                     }
-                    let receiver_addr_input = decoded
-                        .get(3)
-                        .ok_or_else(|| {
-                            ValidatePaymentError::TxDeserializationError(
-                                "No input found for receiver address".to_string(),
-                            )
-                        })?
-                        .clone();
 
+                    let receiver_addr_input = get_function_input_data(&decoded, function, 3)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if receiver_addr_input != Token::Address(receiver) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
@@ -1580,12 +1547,9 @@ impl WatcherOps for EthCoin {
                             Token::Address(receiver),
                         )));
                     }
-                    let secret_hash_input = decoded
-                        .get(4)
-                        .ok_or_else(|| {
-                            ValidatePaymentError::TxDeserializationError("No input found for secret hash".to_string())
-                        })?
-                        .clone();
+
+                    let secret_hash_input = get_function_input_data(&decoded, function, 4)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if secret_hash_input != Token::FixedBytes(secret_hash.to_vec()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
@@ -1593,12 +1557,9 @@ impl WatcherOps for EthCoin {
                             Token::FixedBytes(secret_hash.to_vec()),
                         )));
                     }
-                    let time_lock_input = decoded
-                        .get(5)
-                        .ok_or_else(|| {
-                            ValidatePaymentError::TxDeserializationError("No input found for time lock".to_string())
-                        })?
-                        .clone();
+
+                    let time_lock_input = get_function_input_data(&decoded, function, 5)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if time_lock_input != Token::Uint(U256::from(input.time_lock)) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
@@ -2890,11 +2851,7 @@ impl EthCoin {
             EthCoinType::Eth => {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
-
-                let swap_id_input = try_tx_fus!(decoded
-                    .first()
-                    .cloned()
-                    .ok_or("Missing input: No input found for swap id"));
+                let swap_id_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 0));
 
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
                 Box::new(
@@ -2935,14 +2892,8 @@ impl EthCoin {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"));
 
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
-                let swap_id_input = try_tx_fus!(decoded
-                    .first()
-                    .cloned()
-                    .ok_or("Missing input: No input found for swap id"));
-                let amount_input = try_tx_fus!(decoded
-                    .get(1)
-                    .cloned()
-                    .ok_or("Missing input: No input found for amount"));
+                let swap_id_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 0));
+                let amount_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 1));
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
 
                 Box::new(
@@ -2999,18 +2950,9 @@ impl EthCoin {
             EthCoinType::Eth => {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
-                let swap_id_input = try_tx_fus!(decoded
-                    .first()
-                    .cloned()
-                    .ok_or("Missing input: No input found for swap id"));
-                let amount_input = try_tx_fus!(decoded
-                    .get(1)
-                    .cloned()
-                    .ok_or("Missing input: No input found for amount"));
-                let hash_input = try_tx_fus!(decoded
-                    .get(2)
-                    .cloned()
-                    .ok_or("Missing input: No input found for payment hash"));
+                let swap_id_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 0));
+                let amount_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 1));
+                let hash_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 2));
 
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
                 Box::new(
@@ -3050,22 +2992,10 @@ impl EthCoin {
             } => {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
-                let swap_id_input = try_tx_fus!(decoded
-                    .first()
-                    .cloned()
-                    .ok_or("Missing input: No input found for swap id"));
-                let amount_input = try_tx_fus!(decoded
-                    .get(1)
-                    .cloned()
-                    .ok_or("Missing input: No input found for amount"));
-                let token_addr_input = try_tx_fus!(decoded
-                    .get(3)
-                    .cloned()
-                    .ok_or("Missing input: No input found for token address"));
-                let sender_input = try_tx_fus!(decoded
-                    .get(4)
-                    .cloned()
-                    .ok_or("Missing input: No input found for sender address"));
+                let swap_id_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 0));
+                let amount_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 1));
+                let token_addr_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 3));
+                let sender_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 4));
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
                 Box::new(
                     state_f
@@ -4129,6 +4059,14 @@ impl GuiAuthMessages for EthCoin {
             signature: format!("0x{}", signature),
         })
     }
+}
+
+fn get_function_input_data(decoded: &[Token], func: &Function, index: usize) -> Result<Token, String> {
+    decoded.get(index).cloned().ok_or(format!(
+        "Missing input in function {}: No input found at index {}",
+        func.name.clone(),
+        index
+    ))
 }
 
 pub fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
