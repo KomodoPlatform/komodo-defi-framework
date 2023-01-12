@@ -13,6 +13,7 @@ use serde_json::{self as json, json, Value as Json};
 use std::env;
 use std::str::FromStr;
 
+const BTC_AVG_BLOCKTIME: u64 = 600;
 const T_BTC_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10068",
     "electrum2.cipig.net:10068",
@@ -61,6 +62,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
             "estimate_fee_mode": "ECONOMICAL",
             "mm2": 1,
             "required_confirmations": 0,
+            "avg_blocktime": BTC_AVG_BLOCKTIME,
             "protocol": {
               "type": "UTXO"
             }
@@ -84,7 +86,6 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
               "protocol_data":{
                 "platform": "tBTC-TEST-segwit",
                 "network": "testnet",
-                "avg_block_time": 600,
                 "confirmation_targets": {
                   "background": 12,
                   "normal": 6,
@@ -170,6 +171,7 @@ fn test_enable_lightning() {
             "estimate_fee_mode": "ECONOMICAL",
             "mm2": 1,
             "required_confirmations": 0,
+            "avg_blocktime": BTC_AVG_BLOCKTIME,
             "protocol": {
               "type": "UTXO"
             }
@@ -183,7 +185,6 @@ fn test_enable_lightning() {
               "protocol_data":{
                 "platform": "tBTC-TEST-segwit",
                 "network": "testnet",
-                "avg_block_time": 600,
                 "confirmation_targets": {
                   "background": 12,
                   "normal": 6,
@@ -744,6 +745,7 @@ fn test_sign_verify_message_lightning() {
         "estimate_fee_mode": "ECONOMICAL",
         "mm2": 1,
         "required_confirmations": 0,
+        "avg_blocktime": BTC_AVG_BLOCKTIME,
         "protocol": {
           "type": "UTXO"
         }
@@ -758,7 +760,6 @@ fn test_sign_verify_message_lightning() {
           "protocol_data":{
             "platform": "tBTC-TEST-segwit",
             "network": "testnet",
-            "avg_block_time": 600,
             "confirmation_targets": {
               "background": 12,
               "normal": 6,

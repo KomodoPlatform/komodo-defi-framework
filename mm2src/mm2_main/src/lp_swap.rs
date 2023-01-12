@@ -1875,4 +1875,10 @@ mod lp_swap_tests {
                 .display()
         );
     }
+
+    #[test]
+    fn test_deserialize_iris_swap_status() {
+        let _: SavedSwap = json::from_str(include_str!("for_tests/iris_nimda_rick_taker_swap.json")).unwrap();
+        let _: SavedSwap = json::from_str(include_str!("for_tests/iris_nimda_rick_maker_swap.json")).unwrap();
+    }
 }

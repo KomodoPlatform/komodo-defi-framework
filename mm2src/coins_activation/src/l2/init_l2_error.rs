@@ -36,6 +36,11 @@ pub enum InitL2Error {
         platform_coin_ticker: String,
         l2_ticker: String,
     },
+    #[display(fmt = "Invalid config for platform coin: {}, error: {}", platform_coin_ticker, err)]
+    InvalidPlatformConfiguration {
+        platform_coin_ticker: String,
+        err: String,
+    },
     #[display(fmt = "Layer 2 configuration parsing failed: {}", _0)]
     L2ConfigParseError(String),
     #[display(fmt = "Initialization task has timed out {:?}", duration)]
@@ -80,6 +85,7 @@ impl HttpStatusCode for InitL2Error {
             InitL2Error::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
             InitL2Error::L2ProtocolParseError { .. }
             | InitL2Error::UnsupportedPlatformCoin { .. }
+            | InitL2Error::InvalidPlatformConfiguration { .. }
             | InitL2Error::L2ConfigParseError(_)
             | InitL2Error::Transport(_)
             | InitL2Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,

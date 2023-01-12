@@ -156,7 +156,7 @@ pub struct Platform {
     /// Main/testnet/signet/regtest Needed for lightning node to know which network to connect to
     pub network: BlockchainNetwork,
     /// The average time in seconds needed to mine a new block for the blockchain network.
-    pub avg_block_time: u64,
+    pub avg_blocktime: u64,
     /// The best block height.
     pub best_block_height: AtomicU64,
     /// Number of blocks for every Confirmation target. This is used in the FeeEstimator.
@@ -179,9 +179,16 @@ impl Platform {
     pub fn new(
         coin: UtxoStandardCoin,
         network: BlockchainNetwork,
-        avg_block_time: u64,
         confirmations_targets: PlatformCoinConfirmationTargets,
     ) -> EnableLightningResult<Self> {
+        // This should never return an error since it's validated that avg_blocktime is in platform coin config in a previous step of lightning activation.
+        // But an error is returned here just in case.
+        let avg_blocktime = coin
+            .as_ref()
+            .conf
+            .avg_blocktime
+            .ok_or_else(|| EnableLightningError::Internal("`avg_blocktime` can't be None!".into()))?;
+
         // Create an abortable system linked to the base `coin` so if the base coin is disabled,
         // all spawned futures related to `LightCoin` will be aborted as well.
         let abortable_system = coin.as_ref().abortable_system.create_subsystem()?;
@@ -189,7 +196,7 @@ impl Platform {
         Ok(Platform {
             coin,
             network,
-            avg_block_time,
+            avg_blocktime,
             best_block_height: AtomicU64::new(0),
             confirmations_targets,
             latest_fees: LatestFees {

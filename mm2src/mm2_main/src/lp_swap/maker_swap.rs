@@ -383,7 +383,7 @@ impl MakerSwap {
 
     fn get_my_negotiation_data(&self) -> NegotiationDataMsg {
         let r = self.r();
-        let secret_hash = self.secret_hash().to_vec();
+        let secret_hash = self.secret_hash();
         let maker_coin_swap_contract = self
             .maker_coin
             .swap_contract_address()
@@ -944,7 +944,7 @@ impl MakerSwap {
             time_lock_duration: self.r().data.lock_duration,
             other_pub: self.r().other_taker_coin_htlc_pub.to_vec(),
             unique_swap_data: self.unique_swap_data(),
-            secret_hash: self.secret_hash().to_vec(),
+            secret_hash: self.secret_hash(),
             amount: self.taker_amount.clone(),
             swap_contract_address: self.r().data.taker_coin_swap_contract_address.clone(),
             try_spv_proof_until: wait_taker_payment,
@@ -1443,7 +1443,7 @@ impl AtomicSwap for MakerSwap {
     fn taker_coin(&self) -> &str { self.taker_coin.ticker() }
 
     #[inline]
-    fn unique_swap_data(&self) -> Vec<u8> { self.secret_hash().to_vec() }
+    fn unique_swap_data(&self) -> Vec<u8> { self.secret_hash() }
 }
 
 #[derive(Debug)]
