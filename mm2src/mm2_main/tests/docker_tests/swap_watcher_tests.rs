@@ -10,8 +10,9 @@ use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoinEnum, SearchForSwapTxSpendInp
             EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures01::Future;
-use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
-                             MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
+use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, get_payment_locktime, MAKER_PAYMENT_SENT_LOG,
+                             MAKER_PAYMENT_SPEND_FOUND_LOG, MAKER_PAYMENT_SPEND_SENT_LOG,
+                             TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_conf, eth_testnet_conf, mm_dump, my_balance, mycoin1_conf,
@@ -314,6 +315,7 @@ fn test_watcher_refunds_taker_payment_eth() {
 #[test]
 fn test_watcher_validate_taker_fee_eth() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let lock_duration = get_payment_locktime();
 
     let taker_coin = eth_distributor();
     let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
@@ -349,7 +351,7 @@ fn test_watcher_validate_taker_fee_eth() {
             sender_pubkey: taker_pubkey.to_vec(),
             min_block_number: 0,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait();
     assert!(validate_taker_fee_res.is_ok());
@@ -360,7 +362,7 @@ fn test_watcher_validate_taker_fee_eth() {
             sender_pubkey: maker_pubkey.to_vec(),
             min_block_number: 0,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait()
         .unwrap_err()
@@ -380,7 +382,7 @@ fn test_watcher_validate_taker_fee_eth() {
             sender_pubkey: taker_pubkey.to_vec(),
             min_block_number: std::u64::MAX,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait()
         .unwrap_err()
@@ -402,7 +404,7 @@ fn test_watcher_validate_taker_fee_eth() {
             sender_pubkey: taker_pubkey.to_vec(),
             min_block_number: 0,
             fee_addr: taker_pubkey.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait()
         .unwrap_err()
@@ -422,6 +424,7 @@ fn test_watcher_validate_taker_fee_eth() {
 #[test]
 fn test_watcher_validate_taker_fee_erc20() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let lock_duration = get_payment_locktime();
 
     let seed = String::from("spice describe gravity federal blast come thank unfair canal monkey style afraid");
     let taker_coin = generate_jst_with_seed(&seed);
@@ -458,7 +461,7 @@ fn test_watcher_validate_taker_fee_erc20() {
             sender_pubkey: taker_pubkey.to_vec(),
             min_block_number: 0,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait();
     assert!(validate_taker_fee_res.is_ok());
@@ -469,7 +472,7 @@ fn test_watcher_validate_taker_fee_erc20() {
             sender_pubkey: maker_pubkey.to_vec(),
             min_block_number: 0,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait()
         .unwrap_err()
@@ -489,7 +492,7 @@ fn test_watcher_validate_taker_fee_erc20() {
             sender_pubkey: taker_pubkey.to_vec(),
             min_block_number: std::u64::MAX,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait()
         .unwrap_err()
@@ -511,7 +514,7 @@ fn test_watcher_validate_taker_fee_erc20() {
             sender_pubkey: taker_pubkey.to_vec(),
             min_block_number: 0,
             fee_addr: taker_pubkey.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait()
         .unwrap_err()
@@ -743,6 +746,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
 #[test]
 fn test_watcher_validate_taker_fee_utxo() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let lock_duration = get_payment_locktime();
     let (_ctx, taker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let (_ctx, maker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let taker_pubkey = taker_coin.my_public_key().unwrap();
@@ -774,7 +778,7 @@ fn test_watcher_validate_taker_fee_utxo() {
             sender_pubkey: taker_pubkey.to_vec(),
             min_block_number: 0,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait();
     assert!(validate_taker_fee_res.is_ok());
@@ -785,7 +789,7 @@ fn test_watcher_validate_taker_fee_utxo() {
             sender_pubkey: maker_coin.my_public_key().unwrap().to_vec(),
             min_block_number: 0,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait()
         .unwrap_err()
@@ -805,7 +809,7 @@ fn test_watcher_validate_taker_fee_utxo() {
             sender_pubkey: taker_pubkey.to_vec(),
             min_block_number: std::u64::MAX,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait()
         .unwrap_err()
@@ -846,7 +850,7 @@ fn test_watcher_validate_taker_fee_utxo() {
             sender_pubkey: taker_pubkey.to_vec(),
             min_block_number: 0,
             fee_addr: taker_pubkey.to_vec(),
-            lock_duration: 7800,
+            lock_duration,
         })
         .wait()
         .unwrap_err()
