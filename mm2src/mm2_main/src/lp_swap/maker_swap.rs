@@ -26,9 +26,9 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
-use primitives::hash::{H160, H256, H264};
+use primitives::hash::{H256, H264};
 use rand::Rng;
-use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use std::any::TypeId;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -129,7 +129,7 @@ pub struct MakerSwapData {
     pub maker_coin: String,
     pub taker: H256Json,
     pub secret: H256Json,
-    pub secret_hash: Option<H160Json>,
+    pub secret_hash: Option<BytesJson>,
     pub my_persistent_pub: H264Json,
     pub lock_duration: u64,
     pub maker_amount: BigDecimal,
@@ -208,12 +208,13 @@ impl MakerSwap {
     pub fn generate_secret() -> [u8; 32] { rand::thread_rng().gen() }
 
     #[inline]
-    fn secret_hash(&self) -> H160 {
+    fn secret_hash(&self) -> Vec<u8> {
         self.r()
             .data
             .secret_hash
-            .map(H160Json::into)
-            .unwrap_or_else(|| dhash160(self.secret.as_slice()))
+            .as_ref()
+            .map(|bytes| bytes.0.clone())
+            .unwrap_or_else(|| dhash160(self.secret.as_slice()).as_slice().to_vec())
     }
 
     #[inline]
@@ -347,7 +348,7 @@ impl MakerSwap {
 
     fn get_my_negotiation_data(&self) -> NegotiationDataMsg {
         let r = self.r();
-        let secret_hash = self.secret_hash().to_vec();
+        let secret_hash = self.secret_hash();
         let maker_coin_swap_contract = self
             .maker_coin
             .swap_contract_address()
@@ -820,7 +821,7 @@ impl MakerSwap {
             time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
             other_pub: self.r().other_taker_coin_htlc_pub.to_vec(),
             unique_swap_data: self.unique_swap_data(),
-            secret_hash: self.secret_hash().to_vec(),
+            secret_hash: self.secret_hash(),
             amount: self.taker_amount.clone(),
             swap_contract_address: self.r().data.taker_coin_swap_contract_address.clone(),
             try_spv_proof_until: wait_taker_payment,
@@ -1298,7 +1299,7 @@ impl AtomicSwap for MakerSwap {
     fn taker_coin(&self) -> &str { self.taker_coin.ticker() }
 
     #[inline]
-    fn unique_swap_data(&self) -> Vec<u8> { self.secret_hash().to_vec() }
+    fn unique_swap_data(&self) -> Vec<u8> { self.secret_hash() }
 }
 
 #[derive(Debug)]
