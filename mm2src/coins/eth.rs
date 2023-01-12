@@ -2891,14 +2891,10 @@ impl EthCoin {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
 
-                let swap_id_input = match decoded.first() {
-                    Some(id) => id.clone(),
-                    None => {
-                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                            "Missing input: No input found for swap id"
-                        ))))
-                    },
-                };
+                let swap_id_input = try_tx_fus!(decoded
+                    .first()
+                    .cloned()
+                    .ok_or("Missing input: No input found for swap id"));
 
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
                 Box::new(
@@ -2939,22 +2935,14 @@ impl EthCoin {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"));
 
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
-                let swap_id_input = match decoded.first() {
-                    Some(id) => id.clone(),
-                    None => {
-                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                            "Missing input: No input found for swap id"
-                        ))))
-                    },
-                };
-                let amount_input = match decoded.get(1) {
-                    Some(amount) => amount.clone(),
-                    None => {
-                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                            "Missing input: No input found for amount"
-                        ))))
-                    },
-                };
+                let swap_id_input = try_tx_fus!(decoded
+                    .first()
+                    .cloned()
+                    .ok_or("Missing input: No input found for swap id"));
+                let amount_input = try_tx_fus!(decoded
+                    .get(1)
+                    .cloned()
+                    .ok_or("Missing input: No input found for amount"));
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
 
                 Box::new(
@@ -3011,30 +2999,18 @@ impl EthCoin {
             EthCoinType::Eth => {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
-                let swap_id_input = match decoded.first() {
-                    Some(id) => id.clone(),
-                    None => {
-                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                            "Missing input: No input found for swap id"
-                        ))))
-                    },
-                };
-                let amount_input = match decoded.get(1) {
-                    Some(amount) => amount.clone(),
-                    None => {
-                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                            "Missing input: No input found for amount"
-                        ))))
-                    },
-                };
-                let hash_input = match decoded.get(2) {
-                    Some(hash) => hash.clone(),
-                    None => {
-                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                            "Missing input: No input found for payment hash"
-                        ))))
-                    },
-                };
+                let swap_id_input = try_tx_fus!(decoded
+                    .first()
+                    .cloned()
+                    .ok_or("Missing input: No input found for swap id"));
+                let amount_input = try_tx_fus!(decoded
+                    .get(1)
+                    .cloned()
+                    .ok_or("Missing input: No input found for amount"));
+                let hash_input = try_tx_fus!(decoded
+                    .get(2)
+                    .cloned()
+                    .ok_or("Missing input: No input found for payment hash"));
 
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
                 Box::new(
@@ -3074,38 +3050,22 @@ impl EthCoin {
             } => {
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
-                let swap_id_input = match decoded.first() {
-                    Some(id) => id.clone(),
-                    None => {
-                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                            "Missing input: No input found for swap id"
-                        ))))
-                    },
-                };
-                let amount_input = match decoded.get(1) {
-                    Some(amount) => amount.clone(),
-                    None => {
-                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                            "Missing input: No input found for amount"
-                        ))))
-                    },
-                };
-                let token_addr_input = match decoded.get(3) {
-                    Some(addr) => addr.clone(),
-                    None => {
-                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                            "Missing input: No input found for token address"
-                        ))))
-                    },
-                };
-                let sender_input = match decoded.get(4) {
-                    Some(sender) => sender.clone(),
-                    None => {
-                        return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                            "Missing input: No input found for sender address"
-                        ))))
-                    },
-                };
+                let swap_id_input = try_tx_fus!(decoded
+                    .first()
+                    .cloned()
+                    .ok_or("Missing input: No input found for swap id"));
+                let amount_input = try_tx_fus!(decoded
+                    .get(1)
+                    .cloned()
+                    .ok_or("Missing input: No input found for amount"));
+                let token_addr_input = try_tx_fus!(decoded
+                    .get(3)
+                    .cloned()
+                    .ok_or("Missing input: No input found for token address"));
+                let sender_input = try_tx_fus!(decoded
+                    .get(4)
+                    .cloned()
+                    .ok_or("Missing input: No input found for sender address"));
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
                 Box::new(
                     state_f
