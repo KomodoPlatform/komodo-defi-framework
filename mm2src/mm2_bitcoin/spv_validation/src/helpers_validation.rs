@@ -27,8 +27,8 @@ pub enum SPVError {
     InsufficientWork,
     #[display(fmt = "Couldn't calculate the required difficulty for the block: {}", _0)]
     DifficultyCalculationError(NextBlockBitsError),
-    #[display(fmt = "Header {} in chain does not correctly reference parent header", _0)]
-    InvalidChain(u64),
+    #[display(fmt = "Header {height} in chain does not correctly reference parent header, coin: {coin}")]
+    InvalidChain { coin: String, height: u64 },
     #[display(fmt = "When validating a `BitcoinHeader`, the `hash` field is not the digest of the raw header")]
     WrongDigest,
     #[display(
@@ -45,8 +45,8 @@ pub enum SPVError {
     InvalidVout,
     #[display(fmt = "merkle proof connecting the `tx_id_le` to the `confirming_header`")]
     BadMerkleProof,
-    #[display(fmt = "Unable to get merkle tree from network or storage: {}", _0)]
-    UnableToGetMerkle(String),
+    #[display(fmt = "Unable to get merkle tree from network or storage for {coin}: {err}")]
+    UnableToGetMerkle { coin: String, err: String },
     #[display(fmt = "Unable to retrieve block height / block height is zero: {}", _0)]
     InvalidHeight(String),
     #[display(fmt = "Raises during validation loop")]
@@ -357,7 +357,10 @@ pub async fn validate_headers(
         if previous_height == 0 {
             // previous_header is genesis header in this case, checking that the first header hash is the same as the genesis header hash is enough
             if header.hash() != previous_hash {
-                return Err(SPVError::InvalidChain(previous_height + 1));
+                return Err(SPVError::InvalidChain {
+                    coin: coin.to_string(),
+                    height: previous_height + 1,
+                });
             }
             previous_height += 1;
             continue;
@@ -367,7 +370,10 @@ pub async fn validate_headers(
             return Err(SPVError::UnexpectedDifficultyChange);
         }
         if !validate_header_prev_hash(&header.previous_header_hash, &previous_hash) {
-            return Err(SPVError::InvalidChain(previous_height + 1));
+            return Err(SPVError::InvalidChain {
+                coin: coin.to_string(),
+                height: previous_height + 1,
+            });
         }
         if let Some(algorithm) = &params.difficulty_algorithm {
             if !params.constant_difficulty

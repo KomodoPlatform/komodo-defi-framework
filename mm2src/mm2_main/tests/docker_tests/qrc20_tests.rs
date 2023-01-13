@@ -506,6 +506,7 @@ fn test_check_if_my_payment_sent() {
         swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
         amount: &amount,
+        payment_instructions: &None,
     };
     let found = coin.check_if_my_payment_sent(if_my_payment_sent_args).wait().unwrap();
     assert_eq!(found, Some(payment));

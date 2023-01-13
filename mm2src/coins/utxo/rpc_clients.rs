@@ -1960,7 +1960,12 @@ impl ElectrumClient {
             .block_headers_storage()
             .get_block_height_by_hash(blockhash.into())
             .await?
-            .ok_or_else(|| GetTxHeightError::HeightNotFound("Transaction block header is not found in storage".into()))?
+            .ok_or_else(|| {
+                GetTxHeightError::HeightNotFound(format!(
+                    "Transaction block header is not found in storage for {}",
+                    self.0.coin_ticker
+                ))
+            })?
             .try_into()?)
     }
 
@@ -1978,16 +1983,19 @@ impl ElectrumClient {
                 }
             }
         }
-        Err(GetTxHeightError::HeightNotFound(
-            "Couldn't find height through electrum!".into(),
-        ))
+        Err(GetTxHeightError::HeightNotFound(format!(
+            "Couldn't find height through electrum for {}",
+            self.coin_ticker
+        )))
     }
 
     async fn block_header_from_storage(&self, height: u64) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
         self.block_headers_storage()
             .get_block_header(height)
             .await?
-            .ok_or_else(|| GetBlockHeaderError::Internal("Header not in storage!".into()).into())
+            .ok_or_else(|| {
+                GetBlockHeaderError::Internal(format!("Header not found in storage for {}", self.coin_ticker)).into()
+            })
     }
 
     async fn block_header_from_storage_or_rpc(&self, height: u64) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
@@ -2030,7 +2038,10 @@ impl ElectrumClient {
             .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
             .compat()
             .await
-            .map_to_mm(|e| SPVError::UnableToGetMerkle(e.to_string()))?;
+            .map_to_mm(|err| SPVError::UnableToGetMerkle {
+                coin: self.coin_ticker.clone(),
+                err: err.to_string(),
+            })?;
 
         let header = self.block_header_from_storage(height).await?;
 

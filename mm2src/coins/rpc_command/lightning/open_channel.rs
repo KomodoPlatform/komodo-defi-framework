@@ -226,7 +226,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         .save_nodes_addresses(ln_coin.open_channels_nodes)
         .await?;
 
-    if let Err(e) = ln_coin.db.add_channel_to_db(pending_channel_details).await {
+    if let Err(e) = ln_coin.db.add_channel_to_db(&pending_channel_details).await {
         error!("Unable to add new outbound channel {} to db: {}", rpc_channel_id, e);
     }
 

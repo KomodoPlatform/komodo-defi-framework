@@ -832,7 +832,7 @@ async fn trade_base_rel_electrum(
             .unwrap()
     }
 
-    wait_for_swaps_finish_and_check_status(&mut mm_bob, &mut mm_alice, &uuids, volume).await;
+    wait_for_swaps_finish_and_check_status(&mut mm_bob, &mut mm_alice, &uuids, volume, maker_price).await;
 
     log!("Waiting 3 seconds for nodes to broadcast their swaps data..");
     Timer::sleep(3.).await;
