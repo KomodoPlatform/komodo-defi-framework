@@ -1437,7 +1437,7 @@ impl WatcherOps for EthCoin {
         } else {
             input.secret_hash.to_vec()
         };
-        let mut expected_swap_contract_address = self.swap_contract_address;
+        let expected_swap_contract_address = self.swap_contract_address;
         let fallback_swap_contract = self.fallback_swap_contract;
         let fut = async move {
             let tx_from_rpc = selfi
@@ -1458,21 +1458,19 @@ impl WatcherOps for EthCoin {
                 )));
             }
 
-            if tx_from_rpc.to != Some(expected_swap_contract_address) {
-                if tx_from_rpc.to == fallback_swap_contract {
-                    expected_swap_contract_address = fallback_swap_contract.ok_or_else(|| {
-                        ValidatePaymentError::InternalError("Fallback swap contract address not found".to_string())
-                    })?;
-                } else {
-                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                        "Payment tx {:?} was sent to wrong address, expected {:?}",
-                        tx_from_rpc, expected_swap_contract_address,
-                    )));
-                }
+            if tx_from_rpc.to != Some(expected_swap_contract_address) && tx_from_rpc.to != fallback_swap_contract {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                                      "Payment tx {tx_from_rpc:?} was sent to wrong address, expected either {expected_swap_contract_address:?} or the fallback {fallback_swap_contract:?}"
+                                  )));
             }
+            let swap_contract_address = tx_from_rpc.to.ok_or_else(|| {
+                ValidatePaymentError::TxDeserializationError(format!(
+                    "Swap contract address not found in payment Tx {tx_from_rpc:?}"
+                ))
+            })?;
 
             let status = selfi
-                .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
+                .payment_status(swap_contract_address, Token::FixedBytes(swap_id.clone()))
                 .compat()
                 .await
                 .map_to_mm(ValidatePaymentError::Transport)?;
