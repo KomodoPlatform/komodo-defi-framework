@@ -1294,7 +1294,6 @@ pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: SendMakerPaymentSpendPreimageInput,
 ) -> TransactionFut {
-    let coin = coin.clone();
     let mut transaction: UtxoTx = try_tx_fus!(deserialize(input.preimage).map_err(|e| ERRL!("{:?}", e)));
     if transaction.inputs.is_empty() {
         return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any input"));
@@ -1323,6 +1322,7 @@ pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 
     transaction.inputs[DEFAULT_SWAP_VIN].script_sig = resulting_script;
 
+    let coin = coin.clone();
     let fut = async move {
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         try_tx_s!(tx_fut.await, transaction);
@@ -1341,7 +1341,6 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     secret_hash: &[u8],
     swap_unique_data: &[u8],
 ) -> TransactionFut {
-    let coin = coin.clone();
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
     let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
@@ -1360,6 +1359,7 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
         key_pair.public(),
     )
     .into();
+    let coin = coin.clone();
     let fut = async move {
         let fee = try_tx_s!(
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WatcherPreimage)
