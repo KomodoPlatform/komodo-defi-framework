@@ -827,7 +827,7 @@ impl SwapOps for LightningCoin {
             }
         })
         .repeat_every_secs(WAIT_FOR_REFUND_INTERVAL)
-        .until_ms(locktime)
+        .until_s(locktime)
         .await
         .map_err(|e| RefundError::Timeout(format!("{:?}", e)))?
     }

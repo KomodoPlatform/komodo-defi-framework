@@ -262,6 +262,13 @@ where
         self
     }
 
+    /// Specifies a deadline in seconds before that we may try to repeat the future.
+    #[inline]
+    pub fn until_s(self, until_s: u64) -> Self {
+        let until_ms = until_s * 1000;
+        self.until_ms(until_ms)
+    }
+
     /// Specifies a timeout in milliseconds before that we may try to repeat the future.
     /// Note this method name should differ from [`FutureTimerExt::timeout_ms`].
     #[inline]

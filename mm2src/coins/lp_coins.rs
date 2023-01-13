@@ -764,18 +764,18 @@ pub trait SwapOps {
 /// Operations on maker coin from taker swap side
 #[async_trait]
 pub trait TakerSwapMakerCoin {
-    /// Performs an action on maker coin payment on taker swap payment refund start if applicable
+    /// Performs an action on Maker coin payment just before the Taker Swap payment refund begins
     async fn on_taker_payment_refund_start(&self, maker_payment: &[u8]) -> RefundResult<()>;
-    /// Perform an action on maker coin payment on taker swap payment refund success if applicable
+    /// Performs an action on Maker coin payment after the Taker Swap payment is refunded successfully
     async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> RefundResult<()>;
 }
 
 /// Operations on taker coin from maker swap side
 #[async_trait]
 pub trait MakerSwapTakerCoin {
-    /// Performs an action on taker coin payment on starting maker swap payment refund process if applicable
+    /// Performs an action on Taker coin payment just before the Maker Swap payment refund begins
     async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> RefundResult<()>;
-    /// Perform an action on taker coin payment on maker swap payment refund success if applicable
+    /// Performs an action on Taker coin payment after the Maker Swap payment is refunded successfully
     async fn on_maker_payment_refund_success(&self, taker_payment: &[u8]) -> RefundResult<()>;
 }
 
