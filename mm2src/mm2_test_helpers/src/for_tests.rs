@@ -1,7 +1,7 @@
 //! Helpers used in the unit and integration tests.
 
 use crate::electrums::qtum_electrums;
-pub use crate::structs::WatcherConf;
+pub use crate::structs::{MyBalanceResponse, WatcherConf};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -2303,15 +2303,13 @@ pub async fn send_raw_transaction(mm: &MarketMakerIt, coin: &str, tx: &str) -> J
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
-    let request = mm
-        .rpc(&json!({
-            "userpass": mm.userpass,
-            "method": "my_balance",
-            "coin": coin
-        }))
-        .await
-        .unwrap();
+pub fn my_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
+    let request = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "my_balance",
+        "coin": coin
+    })))
+    .unwrap();
     assert_eq!(request.0, StatusCode::OK, "'my_balance' failed: {}", request.1);
     json::from_str(&request.1).unwrap()
 }

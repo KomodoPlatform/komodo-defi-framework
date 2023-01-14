@@ -42,12 +42,6 @@ fn enable_eth_and_jst(mm_node: &MarketMakerIt) {
     )));
 }
 
-fn get_balance(mm_node: &MarketMakerIt, ticker: &str) -> BigDecimal {
-    let json = block_on(my_balance(&mm_node, ticker));
-    let number = json["balance"].as_str().unwrap();
-    BigDecimal::from_str(number).unwrap().with_scale(2)
-}
-
 #[test]
 #[ignore]
 fn test_watcher_spends_maker_payment_spend_eth_erc20() {
@@ -83,10 +77,10 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     enable_eth_and_jst(&mm_bob);
     enable_eth_and_jst(&mm_watcher);
 
-    let alice_eth_balance_before = get_balance(&mm_alice, "ETH");
-    let alice_jst_balance_before = get_balance(&mm_alice, "JST");
-    let bob_eth_balance_before = get_balance(&mm_bob, "ETH");
-    let bob_jst_balance_before = get_balance(&mm_bob, "JST");
+    let alice_eth_balance_before = my_balance(&mm_alice, "ETH").balance.with_scale(2);
+    let alice_jst_balance_before = my_balance(&mm_alice, "JST").balance.with_scale(2);
+    let bob_eth_balance_before = my_balance(&mm_bob, "ETH").balance.with_scale(2);
+    let bob_jst_balance_before = my_balance(&mm_bob, "JST").balance.with_scale(2);
 
     block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("ETH", "JST")], 1., 1., 0.01));
 
@@ -98,10 +92,10 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
-    let alice_eth_balance_after = get_balance(&mm_alice, "ETH");
-    let alice_jst_balance_after = get_balance(&mm_alice, "JST");
-    let bob_eth_balance_after = get_balance(&mm_bob, "ETH");
-    let bob_jst_balance_after = get_balance(&mm_bob, "JST");
+    let alice_eth_balance_after = my_balance(&mm_alice, "ETH").balance.with_scale(2);
+    let alice_jst_balance_after = my_balance(&mm_alice, "JST").balance.with_scale(2);
+    let bob_eth_balance_after = my_balance(&mm_bob, "ETH").balance.with_scale(2);
+    let bob_jst_balance_after = my_balance(&mm_bob, "JST").balance.with_scale(2);
 
     let volume = BigDecimal::from_str("0.01").unwrap();
     assert_eq!(alice_jst_balance_before - volume.clone(), alice_jst_balance_after);
@@ -146,10 +140,10 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     enable_eth_and_jst(&mm_bob);
     enable_eth_and_jst(&mm_watcher);
 
-    let alice_eth_balance_before = get_balance(&mm_alice, "ETH");
-    let alice_jst_balance_before = get_balance(&mm_alice, "JST");
-    let bob_eth_balance_before = get_balance(&mm_bob, "ETH");
-    let bob_jst_balance_before = get_balance(&mm_bob, "JST");
+    let alice_eth_balance_before = my_balance(&mm_alice, "ETH").balance.with_scale(2);
+    let alice_jst_balance_before = my_balance(&mm_alice, "JST").balance.with_scale(2);
+    let bob_eth_balance_before = my_balance(&mm_bob, "ETH").balance.with_scale(2);
+    let bob_jst_balance_before = my_balance(&mm_bob, "JST").balance.with_scale(2);
 
     block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("JST", "ETH")], 1., 1., 0.01));
 
@@ -161,10 +155,10 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
-    let alice_eth_balance_after = get_balance(&mm_alice, "ETH");
-    let alice_jst_balance_after = get_balance(&mm_alice, "JST");
-    let bob_eth_balance_after = get_balance(&mm_bob, "ETH");
-    let bob_jst_balance_after = get_balance(&mm_bob, "JST");
+    let alice_eth_balance_after = my_balance(&mm_alice, "ETH").balance.with_scale(2);
+    let alice_jst_balance_after = my_balance(&mm_alice, "JST").balance.with_scale(2);
+    let bob_eth_balance_after = my_balance(&mm_bob, "ETH").balance.with_scale(2);
+    let bob_jst_balance_after = my_balance(&mm_bob, "JST").balance.with_scale(2);
 
     let volume = BigDecimal::from_str("0.01").unwrap();
 
@@ -221,8 +215,8 @@ fn test_watcher_refunds_taker_payment_erc20() {
     enable_eth_and_jst(&mm_bob);
     enable_eth_and_jst(&mm_watcher);
 
-    let alice_eth_balance_before = get_balance(&mm_alice, "ETH");
-    let alice_jst_balance_before = get_balance(&mm_alice, "JST");
+    let alice_eth_balance_before = my_balance(&mm_alice, "ETH").balance.with_scale(2);
+    let alice_jst_balance_before = my_balance(&mm_alice, "JST").balance.with_scale(2);
 
     block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("ETH", "JST")], 1., 1., 0.01));
 
@@ -236,8 +230,8 @@ fn test_watcher_refunds_taker_payment_erc20() {
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
-    let alice_eth_balance_after = get_balance(&mm_alice, "ETH");
-    let alice_jst_balance_after = get_balance(&mm_alice, "JST");
+    let alice_eth_balance_after = my_balance(&mm_alice, "ETH").balance.with_scale(2);
+    let alice_jst_balance_after = my_balance(&mm_alice, "JST").balance.with_scale(2);
 
     assert_eq!(alice_jst_balance_before, alice_jst_balance_after);
     assert_eq!(alice_eth_balance_before, alice_eth_balance_after);
@@ -290,8 +284,8 @@ fn test_watcher_refunds_taker_payment_eth() {
     enable_eth_and_jst(&mm_bob);
     enable_eth_and_jst(&mm_watcher);
 
-    let alice_eth_balance_before = get_balance(&mm_alice, "ETH");
-    let alice_jst_balance_before = get_balance(&mm_alice, "JST");
+    let alice_eth_balance_before = my_balance(&mm_alice, "ETH").balance.with_scale(2);
+    let alice_jst_balance_before = my_balance(&mm_alice, "JST").balance.with_scale(2);
 
     block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("JST", "ETH")], 1., 1., 0.01));
 
@@ -305,8 +299,8 @@ fn test_watcher_refunds_taker_payment_eth() {
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
-    let alice_eth_balance_after = get_balance(&mm_alice, "ETH");
-    let alice_jst_balance_after = get_balance(&mm_alice, "JST");
+    let alice_eth_balance_after = my_balance(&mm_alice, "ETH").balance.with_scale(2);
+    let alice_jst_balance_after = my_balance(&mm_alice, "JST").balance.with_scale(2);
 
     assert_eq!(alice_jst_balance_before, alice_jst_balance_after);
     assert_eq!(alice_eth_balance_before, alice_eth_balance_after);
@@ -594,17 +588,22 @@ fn test_watcher_spends_maker_payment_spend_utxo() {
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
 
-    let alice_mycoin1_balance = block_on(my_balance(&mm_alice, "MYCOIN1"));
-    assert_eq!(alice_mycoin1_balance["balance"].as_str().unwrap(), "49.93562994");
-
-    let alice_mycoin_balance = block_on(my_balance(&mm_alice, "MYCOIN"));
-    assert_eq!(alice_mycoin_balance["balance"].as_str().unwrap(), "101.99999");
-
-    let bob_mycoin1_balance = block_on(my_balance(&mm_bob, "MYCOIN1"));
-    assert_eq!(bob_mycoin1_balance["balance"].as_str().unwrap(), "149.99999");
-
-    let bob_mycoin_balance = block_on(my_balance(&mm_bob, "MYCOIN"));
-    assert_eq!(bob_mycoin_balance["balance"].as_str().unwrap(), "97.99999");
+    assert_eq!(
+        my_balance(&mm_alice, "MYCOIN1").balance,
+        BigDecimal::from_str("49.93562994").unwrap()
+    );
+    assert_eq!(
+        my_balance(&mm_alice, "MYCOIN").balance,
+        BigDecimal::from_str("101.99999").unwrap()
+    );
+    assert_eq!(
+        my_balance(&mm_bob, "MYCOIN1").balance,
+        BigDecimal::from_str("149.99999").unwrap()
+    );
+    assert_eq!(
+        my_balance(&mm_bob, "MYCOIN").balance,
+        BigDecimal::from_str("97.99999").unwrap()
+    );
 }
 
 #[test]
@@ -736,11 +735,14 @@ fn test_watcher_refunds_taker_payment_utxo() {
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
 
-    let alice_mycoin1_balance = block_on(my_balance(&mm_alice, "MYCOIN1"));
-    assert_eq!(alice_mycoin1_balance["balance"].as_str().unwrap(), "99.93561994");
-
-    let alice_mycoin_balance = block_on(my_balance(&mm_alice, "MYCOIN"));
-    assert_eq!(alice_mycoin_balance["balance"].as_str().unwrap(), "100");
+    assert_eq!(
+        my_balance(&mm_alice, "MYCOIN1").balance,
+        BigDecimal::from_str("99.93561994").unwrap()
+    );
+    assert_eq!(
+        my_balance(&mm_alice, "MYCOIN").balance,
+        BigDecimal::from_str("100").unwrap()
+    );
 }
 
 #[test]
