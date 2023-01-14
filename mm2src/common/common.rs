@@ -777,6 +777,8 @@ pub const fn ten_f64() -> f64 { 10. }
 
 pub const fn one_hundred() -> usize { 100 }
 
+pub const fn one_thousand_u32() -> u32 { 1000 }
+
 pub const fn one_and_half_f64() -> f64 { 1.5 }
 
 pub const fn three_hundred_f64() -> f64 { 300. }
