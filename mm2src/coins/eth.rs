@@ -1602,7 +1602,7 @@ impl WatcherOps for EthCoin {
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(input.tx));
         let tx = try_s!(SignedEthTx::new(unverified));
-        let swap_contract_address = match tx.action.clone() {
+        let swap_contract_address = match tx.action {
             Call(address) => address,
             Create => return Err(ERRL!("Invalid payment action: the payment action cannot be create")),
         };
@@ -2859,7 +2859,7 @@ impl EthCoin {
         let clone = self.clone();
         let secret_vec = secret.to_vec();
         let taker_addr = addr_from_raw_pubkey(taker_pub).unwrap();
-        let swap_contract_address = match payment.action.clone() {
+        let swap_contract_address = match payment.action {
             Call(address) => address,
             Create => {
                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
@@ -2958,7 +2958,7 @@ impl EthCoin {
         let refund_func = try_tx_fus!(SWAP_CONTRACT.function("watcherRefund"));
         let clone = self.clone();
         let taker_addr = addr_from_raw_pubkey(taker_pub).unwrap();
-        let swap_contract_address = match payment.action.clone() {
+        let swap_contract_address = match payment.action {
             Call(address) => address,
             Create => {
                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
