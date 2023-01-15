@@ -1,6 +1,7 @@
 use crate::eth::{web3_transport::Web3SendOut, EthCoin, GuiAuthMessages, RpcTransportEventHandler,
                  RpcTransportEventHandlerShared, Web3RpcError};
 use common::APPLICATION_JSON;
+use futures::lock::Mutex as AsyncMutex;
 #[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
 use futures::TryFutureExt;
 use http::header::CONTENT_TYPE;
@@ -13,6 +14,7 @@ use std::sync::Arc;
 use web3::error::{Error, ErrorKind};
 use web3::helpers::{build_request, to_result_from_output, to_string};
 use web3::{RequestId, Transport};
+use crate::RpcCommonOps;
 
 #[derive(Serialize, Clone)]
 pub struct AuthPayload<'a> {
@@ -33,11 +35,27 @@ fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Resul
         _ => Err(ErrorKind::InvalidResponse("Expected single, got batch.".into()).into()),
     }
 }
+#[derive(Debug)]
+struct HttpTransportRpcClient(AsyncMutex<HttpTransportRpcClientImpl>);
+
+#[derive(Debug)]
+struct HttpTransportRpcClientImpl {
+    nodes: Vec<HttpTransportNode>,
+}
+
+impl RpcCommonOps for HttpTransport {
+    type RpcClient = ();
+    type Error = ();
+
+    async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
+        todo!()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct HttpTransport {
     id: Arc<AtomicUsize>,
-    nodes: Vec<HttpTransportNode>,
+    client: Arc<HttpTransportRpcClient>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 }
@@ -52,9 +70,12 @@ impl HttpTransport {
     #[cfg(test)]
     #[inline]
     pub fn new(nodes: Vec<HttpTransportNode>) -> Self {
+        let client_impl = HttpTransportRpcClientImpl {
+            nodes,
+        };
         HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
-            nodes,
+            client: Arc::new(HttpTransportRpcClient(AsyncMutex::new(client_impl))),
             event_handlers: Default::default(),
             gui_auth_validation_generator: None,
         }
@@ -65,9 +86,12 @@ impl HttpTransport {
         nodes: Vec<HttpTransportNode>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Self {
+        let client_impl = HttpTransportRpcClientImpl {
+            nodes,
+        };
         HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
-            nodes,
+            client: Arc::new(HttpTransportRpcClient(AsyncMutex::new(client_impl))),
             event_handlers,
             gui_auth_validation_generator: None,
         }
@@ -79,10 +103,13 @@ impl HttpTransport {
             uri: url.parse().unwrap(),
             gui_auth,
         }];
+        let client_impl = HttpTransportRpcClientImpl {
+            nodes,
+        };
 
         HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
-            nodes,
+            client: Arc::new(HttpTransportRpcClient(AsyncMutex::new(client_impl))),
             event_handlers: Default::default(),
             gui_auth_validation_generator: None,
         }
@@ -102,6 +129,8 @@ impl Transport for HttpTransport {
     #[cfg(not(target_arch = "wasm32"))]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
         Box::new(
+            // todo HttpTransport doesnt have request in fields to use it in get_live_client.
+            // should create additional structure with clients and request to impl trait?
             send_request(
                 request,
                 self.nodes.clone(),
@@ -167,7 +196,7 @@ fn handle_gui_auth_payload_if_activated(
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_request(
     request: Call,
-    nodes: Vec<HttpTransportNode>,
+    client: Arc<HttpTransportRpcClient>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {
