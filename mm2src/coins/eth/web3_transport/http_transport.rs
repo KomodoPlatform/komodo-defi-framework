@@ -14,7 +14,6 @@ use std::sync::Arc;
 use web3::error::{Error, ErrorKind};
 use web3::helpers::{build_request, to_result_from_output, to_string};
 use web3::{RequestId, Transport};
-use crate::RpcCommonOps;
 
 #[derive(Serialize, Clone)]
 pub struct AuthPayload<'a> {
@@ -43,15 +42,6 @@ struct HttpTransportRpcClientImpl {
     nodes: Vec<HttpTransportNode>,
 }
 
-impl RpcCommonOps for HttpTransport {
-    type RpcClient = ();
-    type Error = ();
-
-    async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
-        todo!()
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct HttpTransport {
     id: Arc<AtomicUsize>,
@@ -70,9 +60,7 @@ impl HttpTransport {
     #[cfg(test)]
     #[inline]
     pub fn new(nodes: Vec<HttpTransportNode>) -> Self {
-        let client_impl = HttpTransportRpcClientImpl {
-            nodes,
-        };
+        let client_impl = HttpTransportRpcClientImpl { nodes };
         HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
             client: Arc::new(HttpTransportRpcClient(AsyncMutex::new(client_impl))),
@@ -86,9 +74,7 @@ impl HttpTransport {
         nodes: Vec<HttpTransportNode>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Self {
-        let client_impl = HttpTransportRpcClientImpl {
-            nodes,
-        };
+        let client_impl = HttpTransportRpcClientImpl { nodes };
         HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
             client: Arc::new(HttpTransportRpcClient(AsyncMutex::new(client_impl))),
@@ -103,9 +89,7 @@ impl HttpTransport {
             uri: url.parse().unwrap(),
             gui_auth,
         }];
-        let client_impl = HttpTransportRpcClientImpl {
-            nodes,
-        };
+        let client_impl = HttpTransportRpcClientImpl { nodes };
 
         HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
@@ -130,10 +114,10 @@ impl Transport for HttpTransport {
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
         Box::new(
             // todo HttpTransport doesnt have request in fields to use it in get_live_client.
-            // should create additional structure with clients and request to impl trait?
+            // dont impl trait and just rotate_left vector immediately in send_request func?
             send_request(
                 request,
-                self.nodes.clone(),
+                self.client.clone(),
                 self.event_handlers.clone(),
                 self.gui_auth_validation_generator.clone(),
             )
@@ -213,7 +197,9 @@ async fn send_request(
 
     let serialized_request = to_string(&request);
 
-    for node in nodes.iter() {
+    let mut client_impl = client.0.lock().await;
+
+    for (i, node) in client_impl.nodes.clone().iter().enumerate() {
         let serialized_request =
             match handle_gui_auth_payload_if_activated(&gui_auth_validation_generator, node, &request) {
                 Ok(Some(r)) => r,
@@ -266,6 +252,8 @@ async fn send_request(
             )));
             continue;
         }
+
+        client_impl.nodes.rotate_left(i);
 
         return single_response(body, &node.uri.to_string());
     }
