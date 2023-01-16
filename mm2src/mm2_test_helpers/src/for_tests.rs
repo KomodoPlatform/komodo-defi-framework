@@ -2,6 +2,7 @@
 
 use crate::electrums::qtum_electrums;
 pub use crate::structs::{MyBalanceResponse, WatcherConf};
+use common::block_on;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -27,7 +28,6 @@ use std::sync::Mutex;
 use uuid::Uuid;
 
 cfg_native! {
-    use common::block_on;
     use common::log::dashboard_path;
     use mm2_io::fs::slurp;
     use mm2_net::transport::slurp_req;
