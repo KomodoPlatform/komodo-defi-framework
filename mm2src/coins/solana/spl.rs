@@ -426,8 +426,6 @@ impl SwapOps for SplToken {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }
-
-    fn is_supported_by_watchers(&self) -> bool { unimplemented!() }
 }
 
 #[async_trait]

@@ -897,11 +897,6 @@ impl SwapOps for LightningCoin {
         self.validate_swap_instructions(instructions, secret_hash, amount, MIN_FINAL_CLTV_EXPIRY as u64)
     }
 
-    // Watchers cannot be used for lightning swaps for now
-    // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, the watcher will not be able to retrieve the preimage since it's retrieved through the lightning network
-    // Todo: The watcher can retrieve the preimage only if he is running a lightning node and is part of the nodes that routed the taker payment which is a very low probability event that shouldn't be considered
-    fn is_supported_by_watchers(&self) -> bool { false }
-
     fn maker_locktime_multiplier(&self) -> f64 { 1.5 }
 }
 
