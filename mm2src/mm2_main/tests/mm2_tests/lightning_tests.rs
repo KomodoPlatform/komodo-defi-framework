@@ -703,12 +703,10 @@ fn test_lightning_swaps() {
     ));
 
     // Check node 1 lightning balance after swap
+    let node_1_lightning_balance = block_on(my_balance(&mm_node_1, "tBTC-TEST-lightning")).balance;
     // Channel reserve balance, which is non-spendable, is 1000 sats or 0.00001 BTC.
     // Note: A channel reserve balance is the amount that is set aside by each channel participant which ensures neither have 'nothing at stake' if a cheating attempt occurs.
-    assert_eq!(
-        my_balance(&mm_node_1, "tBTC-TEST-lightning").balance,
-        BigDecimal::from_str("0.00004").unwrap()
-    );
+    assert_eq!(node_1_lightning_balance, BigDecimal::from_str("0.00004").unwrap());
 
     // -------------------- Test Lightning Maker Swap --------------------
     let price = 10.;

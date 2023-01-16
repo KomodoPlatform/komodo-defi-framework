@@ -2,7 +2,6 @@
 
 use crate::electrums::qtum_electrums;
 pub use crate::structs::{MyBalanceResponse, WatcherConf};
-use common::block_on;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -28,6 +27,7 @@ use std::sync::Mutex;
 use uuid::Uuid;
 
 cfg_native! {
+    use common::block_on;
     use common::log::dashboard_path;
     use mm2_io::fs::slurp;
     use mm2_net::transport::slurp_req;
@@ -2303,13 +2303,15 @@ pub async fn send_raw_transaction(mm: &MarketMakerIt, coin: &str, tx: &str) -> J
     json::from_str(&request.1).unwrap()
 }
 
-pub fn my_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
-    let request = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "my_balance",
-        "coin": coin
-    })))
-    .unwrap();
+pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "my_balance",
+            "coin": coin
+        }))
+        .await
+        .unwrap();
     assert_eq!(request.0, StatusCode::OK, "'my_balance' failed: {}", request.1);
     json::from_str(&request.1).unwrap()
 }

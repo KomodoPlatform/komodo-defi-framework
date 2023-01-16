@@ -35,7 +35,7 @@ fn test_tendermint_activation_and_balance() {
     let expected_balance: BigDecimal = "0.0959".parse().unwrap();
     assert_eq!(result.result.balance.spendable, expected_balance);
 
-    let my_balance = my_balance(&mm, ATOM_TICKER);
+    let my_balance = block_on(my_balance(&mm, ATOM_TICKER));
     assert_eq!(my_balance.balance, expected_balance);
     assert_eq!(my_balance.unspendable_balance, BigDecimal::default());
     assert_eq!(my_balance.address, expected_address);

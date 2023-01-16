@@ -39,7 +39,8 @@ fn test_iris_with_usdc_activation_balance_orderbook() {
     let actual_usdc_balance = response.result.tokens_balances.get(USDC_IBC_TICKER).unwrap();
     assert_eq!(actual_usdc_balance.spendable, expected_usdc_balance);
 
-    assert_eq!(my_balance(&mm, USDC_IBC_TICKER).balance, expected_usdc_balance);
+    let actual_usdc_balance = block_on(my_balance(&mm, USDC_IBC_TICKER)).balance;
+    assert_eq!(actual_usdc_balance, expected_usdc_balance);
 
     let set_price_res = block_on(set_price(&mm, USDC_IBC_TICKER, IRIS_TICKER, "1", "0.1"));
     let set_price_res: SetPriceResponse = serde_json::from_value(set_price_res).unwrap();
