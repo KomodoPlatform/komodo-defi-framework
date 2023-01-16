@@ -1458,16 +1458,19 @@ impl WatcherOps for EthCoin {
                 )));
             }
 
-            if tx_from_rpc.to != Some(expected_swap_contract_address) && tx_from_rpc.to != fallback_swap_contract {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Payment tx {tx_from_rpc:?} was sent to wrong address, expected either {expected_swap_contract_address:?} or the fallback {fallback_swap_contract:?}"
-                )));
-            }
             let swap_contract_address = tx_from_rpc.to.ok_or_else(|| {
                 ValidatePaymentError::TxDeserializationError(format!(
                     "Swap contract address not found in payment Tx {tx_from_rpc:?}"
                 ))
             })?;
+
+            if swap_contract_address != expected_swap_contract_address
+                && Some(swap_contract_address) != fallback_swap_contract
+            {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Payment tx {tx_from_rpc:?} was sent to wrong address, expected either {expected_swap_contract_address:?} or the fallback {fallback_swap_contract:?}"
+                )));
+            }
 
             let status = selfi
                 .payment_status(swap_contract_address, Token::FixedBytes(swap_id.clone()))
