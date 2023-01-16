@@ -264,14 +264,16 @@ async fn send_request(
 #[cfg(target_arch = "wasm32")]
 async fn send_request(
     request: Call,
-    nodes: Vec<HttpTransportNode>,
+    client: Arc<HttpTransportRpcClient>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {
     let serialized_request = to_string(&request);
 
     let mut transport_errors = Vec::new();
-    for node in nodes.iter() {
+    let mut client_impl = client.0.lock().await;
+
+    for (i, node) in client_impl.nodes.clone().iter().enumerate() {
         let serialized_request =
             match handle_gui_auth_payload_if_activated(&gui_auth_validation_generator, node, &request) {
                 Ok(Some(r)) => r,
@@ -283,7 +285,10 @@ async fn send_request(
             };
 
         match send_request_once(serialized_request.clone(), &node.uri, &event_handlers).await {
-            Ok(response_json) => return Ok(response_json),
+            Ok(response_json) => {
+                client_impl.nodes.rotate_left(i);
+                return Ok(response_json);
+            },
             Err(Error(ErrorKind::Transport(e), _)) => {
                 transport_errors.push(Web3RpcError::Transport(e));
             },
