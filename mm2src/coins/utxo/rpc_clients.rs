@@ -2605,12 +2605,12 @@ async fn connect_loop<Spawner: SpawnFuture>(
         let stream = try_loop!(connect_f.await, addr, delay);
         try_loop!(stream.as_ref().set_nodelay(true), addr, delay);
         info!("Electrum client connected to {}", addr);
+        try_loop!(event_handlers.on_connected(addr.clone()), addr, delay);
         let last_chunk = Arc::new(AtomicU64::new(now_ms()));
         let mut last_chunk_f = electrum_last_chunk_loop(last_chunk.clone()).boxed().fuse();
 
         let (tx, rx) = mpsc::channel(0);
         *connection_tx.lock().await = Some(tx);
-        try_loop!(event_handlers.on_connected(addr.clone()), addr, delay);
         let rx = rx_to_stream(rx).inspect(|data| {
             // measure the length of each sent packet
             event_handlers.on_outgoing_request(data);

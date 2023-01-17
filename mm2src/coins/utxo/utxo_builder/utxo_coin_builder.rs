@@ -16,7 +16,7 @@ use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        Timer};
 use common::log::{error, info, LogOnError};
-// use common::small_rng;
+use common::small_rng;
 use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, Secp256k1Secret,
              StandardHDPathError, StandardHDPathToCoin};
 use derive_more::Display;
@@ -30,7 +30,7 @@ pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Key
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
-// use rand::seq::SliceRandom;
+use rand::seq::SliceRandom;
 use serde_json::{self as json, Value as Json};
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::sync::{Arc, Mutex, Weak};
@@ -465,7 +465,7 @@ pub trait UtxoCoinBuilderCommonOps {
         &self,
         abortable_system: AbortableQueue,
         args: ElectrumBuilderArgs,
-        servers: Vec<ElectrumRpcRequest>,
+        mut servers: Vec<ElectrumRpcRequest>,
     ) -> UtxoCoinBuildResult<ElectrumClient> {
         let (on_event_tx, on_event_rx) = unbounded();
         let ticker = self.ticker().to_owned();
@@ -488,8 +488,8 @@ pub trait UtxoCoinBuilderCommonOps {
             block_headers_storage.init().await?;
         }
 
-        // let mut rng = small_rng();
-        // servers.as_mut_slice().shuffle(&mut rng);
+        let mut rng = small_rng();
+        servers.as_mut_slice().shuffle(&mut rng);
 
         let client = ElectrumClientImpl::new(
             ticker,
