@@ -7,7 +7,7 @@ use crate::mm2::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simp
 use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
                             stop_version_stat_collection, update_version_stat_collection},
-            mm2::lp_swap::{recreate_swap_data, trade_preimage_rpc},
+            mm2::lp_swap::{max_maker_vol, recreate_swap_data, trade_preimage_rpc},
             mm2::rpc::lp_commands::{get_public_key, get_public_key_hash}};
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
@@ -162,6 +162,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_public_key_hash" => handle_mmrpc(ctx, request, get_public_key_hash).await,
         "get_raw_transaction" => handle_mmrpc(ctx, request, get_raw_transaction).await,
         "get_staking_infos" => handle_mmrpc(ctx, request, get_staking_infos).await,
+        "max_maker_vol" => handle_mmrpc(ctx, request, max_maker_vol).await,
         "my_tx_history" => handle_mmrpc(ctx, request, my_tx_history_v2_rpc).await,
         "orderbook" => handle_mmrpc(ctx, request, orderbook_rpc_v2).await,
         "recreate_swap_data" => handle_mmrpc(ctx, request, recreate_swap_data).await,

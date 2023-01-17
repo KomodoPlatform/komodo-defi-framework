@@ -2088,7 +2088,24 @@ pub async fn maker_swap_trade_preimage(
     })
 }
 
-/// Calculate max Maker volume.
+pub struct CoinVolumeInfo {
+    pub volume: MmNumber,
+    pub balance: BigDecimal,
+}
+
+/// Requests the `coin` balance and calculates max Maker volume.
+/// Returns [`CheckBalanceError::NotSufficientBalance`] if the balance is not sufficient.
+/// Note the function checks base coin balance if the trade fee should be paid in base coin.
+pub async fn get_max_maker_vol(ctx: &MmArc, my_coin: &MmCoinEnum) -> CheckBalanceResult<CoinVolumeInfo> {
+    let my_balance = my_coin.my_spendable_balance().compat().await?;
+    let volume = calc_max_maker_vol(ctx, my_coin, &my_balance, FeeApproxStage::OrderIssue).await?;
+    Ok(CoinVolumeInfo {
+        volume,
+        balance: my_balance,
+    })
+}
+
+/// Calculates max Maker volume.
 /// Returns [`CheckBalanceError::NotSufficientBalance`] if the balance is not sufficient.
 /// Note the function checks base coin balance if the trade fee should be paid in base coin.
 pub async fn calc_max_maker_vol(

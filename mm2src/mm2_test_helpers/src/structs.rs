@@ -520,6 +520,26 @@ pub struct MaxTakerVolResponse {
     pub coin: String,
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MaxMakerVolResponse {
+    pub coin: String,
+    pub volume: MmNumberMultiRepr,
+}
+
+pub mod max_maker_vol_error {
+    use mm2_number::BigDecimal;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct NotSufficientBalance {
+        pub coin: String,
+        pub available: BigDecimal,
+        pub required: BigDecimal,
+        pub locked_by_swaps: Option<BigDecimal>,
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawTransactionResult {
@@ -952,12 +972,26 @@ pub struct AggregatedOrderbookEntryV2 {
     pub rel_max_volume_aggr: MmNumberMultiRepr,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct MmNumberMultiRepr {
     pub decimal: BigDecimal,
     pub rational: BigRational,
     pub fraction: Fraction,
+}
+
+impl<T> From<T> for MmNumberMultiRepr
+where
+    MmNumber: From<T>,
+{
+    fn from(number: T) -> Self {
+        let mm_number = MmNumber::from(number);
+        MmNumberMultiRepr {
+            decimal: mm_number.to_decimal(),
+            rational: mm_number.to_ratio(),
+            fraction: mm_number.to_fraction(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
