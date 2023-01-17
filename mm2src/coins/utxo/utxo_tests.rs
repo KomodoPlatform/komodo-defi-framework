@@ -437,6 +437,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
         Default::default(),
         block_headers_storage,
         abortable_system,
+        true,
     );
     let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
     let coin = utxo_coin_for_test(client, None, false);
@@ -1468,15 +1469,17 @@ fn test_network_info_negative_time_offset() {
 
 #[test]
 fn test_unavailable_electrum_proto_version() {
-    ElectrumClientImpl::new.mock_safe(|coin_ticker, event_handlers, block_headers_storage, abortable_system| {
-        MockResult::Return(ElectrumClientImpl::with_protocol_version(
-            coin_ticker,
-            event_handlers,
-            OrdRange::new(1.8, 1.9).unwrap(),
-            block_headers_storage,
-            abortable_system,
-        ))
-    });
+    ElectrumClientImpl::new.mock_safe(
+        |coin_ticker, event_handlers, block_headers_storage, abortable_system, _| {
+            MockResult::Return(ElectrumClientImpl::with_protocol_version(
+                coin_ticker,
+                event_handlers,
+                OrdRange::new(1.8, 1.9).unwrap(),
+                block_headers_storage,
+                abortable_system,
+            ))
+        },
+    );
 
     let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923});
     let req = json!({
@@ -4364,14 +4367,4 @@ fn test_block_header_utxo_loop() {
     if let Either::Left(_) = block_on(futures::future::select(loop_fut.boxed(), test_fut.boxed())) {
         panic!("Loop shouldn't stop")
     };
-}
-
-#[test]
-fn test_electrum_race_condition() {
-    let client = electrum_client_for_test(&["electrum1.cipig.net:10001", "electrum2.cipig.net:10001"]);
-    let result = client
-        .scripthash_get_balance("22ec5b5e5ca59d7329c85df18905d374a1d3fd916cf8c40e3e75502f4f153f2b")
-        .wait()
-        .unwrap();
-    println!("{:?}", result);
 }
