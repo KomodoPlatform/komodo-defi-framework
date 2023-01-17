@@ -21,6 +21,7 @@ pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
         Default::default(),
         block_headers_storage,
         abortable_system,
+        false,
     );
     for server in servers {
         client
