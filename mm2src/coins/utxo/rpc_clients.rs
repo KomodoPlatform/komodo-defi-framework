@@ -13,6 +13,7 @@ use common::executor::{abortable_queue, abortable_queue::AbortableQueue, Abortab
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
                              JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
+use common::log::LogOnError;
 use common::log::{error, info, warn};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -1553,6 +1554,8 @@ impl ElectrumConnection {
     async fn is_connected(&self) -> bool { self.tx.lock().await.is_some() }
 
     async fn set_protocol_version(&self, version: f32) { self.protocol_version.lock().await.replace(version); }
+
+    async fn reset_protocol_version(&self) { *self.protocol_version.lock().await = None; }
 }
 
 #[derive(Debug)]
@@ -1629,6 +1632,7 @@ pub struct ElectrumClientImpl {
     ///
     /// Please also note that this abortable system is a subsystem of [`UtxoCoinFields::abortable_system`].
     abortable_system: AbortableQueue,
+    negotiate_version: bool,
 }
 
 async fn electrum_request_multi(
@@ -1638,6 +1642,10 @@ async fn electrum_request_multi(
     let mut futures = vec![];
     let connections = client.connections.lock().await;
     for (i, connection) in connections.iter().enumerate() {
+        if client.negotiate_version && connection.protocol_version.lock().await.is_none() {
+            continue;
+        }
+
         let connection_addr = connection.addr.clone();
         let json = json::to_string(&request).map_err(|e| JsonRpcErrorType::InvalidRequest(e.to_string()))?;
         if let Some(tx) = &*connection.tx.lock().await {
@@ -1768,6 +1776,17 @@ impl ElectrumClientImpl {
             .find(|con| con.addr == server_addr)
             .ok_or(ERRL!("Unknown electrum address {}", server_addr))?;
         con.set_protocol_version(version).await;
+        Ok(())
+    }
+
+    /// Reset the protocol version for the specified server.
+    pub async fn reset_protocol_version(&self, server_addr: &str) -> Result<(), String> {
+        let connections = self.connections.lock().await;
+        let con = connections
+            .iter()
+            .find(|con| con.addr == server_addr)
+            .ok_or(ERRL!("Unknown electrum address {}", server_addr))?;
+        con.reset_protocol_version().await;
         Ok(())
     }
 
@@ -2326,6 +2345,7 @@ impl ElectrumClientImpl {
         event_handlers: Vec<RpcTransportEventHandlerShared>,
         block_headers_storage: BlockHeaderStorage,
         abortable_system: AbortableQueue,
+        negotiate_version: bool,
     ) -> ElectrumClientImpl {
         let protocol_version = OrdRange::new(1.2, 1.4).unwrap();
         ElectrumClientImpl {
@@ -2338,6 +2358,7 @@ impl ElectrumClientImpl {
             list_unspent_concurrent_map: ConcurrentRequestMap::new(),
             block_headers_storage,
             abortable_system,
+            negotiate_version,
         }
     }
 
@@ -2351,7 +2372,13 @@ impl ElectrumClientImpl {
     ) -> ElectrumClientImpl {
         ElectrumClientImpl {
             protocol_version,
-            ..ElectrumClientImpl::new(coin_ticker, event_handlers, block_headers_storage, abortable_system)
+            ..ElectrumClientImpl::new(
+                coin_ticker,
+                event_handlers,
+                block_headers_storage,
+                abortable_system,
+                false,
+            )
         }
     }
 }
@@ -2650,6 +2677,7 @@ async fn connect_loop<Spawner: SpawnFuture>(
         macro_rules! reset_tx_and_continue {
             () => {
                 info!("{} connection dropped", addr);
+                event_handlers.on_disconnected(addr.clone()).error_log();
                 *connection_tx.lock().await = None;
                 increase_delay(&delay);
                 continue;
@@ -2756,6 +2784,7 @@ async fn connect_loop<Spawner: SpawnFuture>(
             () => {
                 info!("{} connection dropped", addr);
                 *connection_tx.lock().await = None;
+                event_handlers.on_disconnected(addr.clone()).error_log();
                 increase_delay(&delay);
                 continue;
             };

@@ -6,7 +6,7 @@ use gstuff::now_ms;
 use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{init_lightning, init_lightning_status, my_balance, sign_message, start_swaps,
-                                  verify_message, MarketMakerIt};
+                                  verify_message, wait_for_swaps_finish_and_check_status, MarketMakerIt};
 use mm2_test_helpers::structs::{InitLightningStatus, InitTaskResult, LightningActivationResult, MyBalanceResponse,
                                 RpcV2Response, SignatureResponse, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
@@ -684,17 +684,23 @@ fn test_lightning_swaps() {
     );
 
     // -------------------- Test Lightning Taker Swap --------------------
+    let price = 0.0005;
+    let volume = 0.1;
     let uuids = block_on(start_swaps(
         &mut mm_node_1,
         &mut mm_node_2,
         &[("RICK", "tBTC-TEST-lightning")],
-        0.0005,
-        0.0005,
-        0.1,
+        price,
+        price,
+        volume,
     ));
-    // Todo: use wait_for_swaps_finish_and_check_status instead after fixing lightning swap events
-    block_on(mm_node_1.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
-    block_on(mm_node_2.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
+    block_on(wait_for_swaps_finish_and_check_status(
+        &mut mm_node_1,
+        &mut mm_node_2,
+        &uuids,
+        volume,
+        price,
+    ));
 
     // Check node 1 lightning balance after swap
     let node_1_lightning_balance = block_on(my_balance(&mm_node_1, "tBTC-TEST-lightning"));
@@ -707,17 +713,23 @@ fn test_lightning_swaps() {
     );
 
     // -------------------- Test Lightning Maker Swap --------------------
+    let price = 10.;
+    let volume = 0.00004;
     let uuids = block_on(start_swaps(
         &mut mm_node_1,
         &mut mm_node_2,
         &[("tBTC-TEST-lightning", "RICK")],
-        10.,
-        10.,
-        0.00004,
+        price,
+        price,
+        volume,
     ));
-    // Todo: use wait_for_swaps_finish_and_check_status instead after fixing lightning swap events
-    block_on(mm_node_1.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
-    block_on(mm_node_2.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
+    block_on(wait_for_swaps_finish_and_check_status(
+        &mut mm_node_1,
+        &mut mm_node_2,
+        &uuids,
+        volume,
+        price,
+    ));
 
     block_on(mm_node_1.stop()).unwrap();
     block_on(mm_node_2.stop()).unwrap();

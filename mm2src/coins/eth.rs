@@ -65,19 +65,20 @@ use web3_transport::{http_transport::HttpTransportNode, EthFeeHistoryNamespace, 
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
             CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            IguanaPrivKey, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError,
-            NumConversResult, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr,
+            NumConversError, NumConversResult, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
-            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
-            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            RawTransactionResult, RefundError, RefundResult, RpcClientType, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
+            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps,
+            TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -1037,12 +1038,12 @@ impl SwapOps for EthCoin {
 
     fn check_if_my_payment_sent(
         &self,
-        if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let id = self.etomic_swap_id(if_my_payment_spent_args.time_lock, if_my_payment_spent_args.secret_hash);
-        let swap_contract_address = try_fus!(if_my_payment_spent_args.swap_contract_address.try_to_address());
+        let id = self.etomic_swap_id(if_my_payment_sent_args.time_lock, if_my_payment_sent_args.secret_hash);
+        let swap_contract_address = try_fus!(if_my_payment_sent_args.swap_contract_address.try_to_address());
         let selfi = self.clone();
-        let from_block = if_my_payment_spent_args.search_from_block;
+        let from_block = if_my_payment_sent_args.search_from_block;
         let fut = async move {
             let status = try_s!(
                 selfi
@@ -1162,6 +1163,14 @@ impl SwapOps for EthCoin {
         }
     }
 
+    fn is_auto_refundable(&self) -> bool { false }
+
+    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
+        MmError::err(RefundError::Internal(
+            "wait_for_htlc_refund is not supported for this coin!".into(),
+        ))
+    }
+
     fn negotiate_swap_contract_addr(
         &self,
         other_side_address: Option<&[u8]>,
@@ -1245,6 +1254,20 @@ impl SwapOps for EthCoin {
     }
 
     fn is_supported_by_watchers(&self) -> bool { false }
+}
+
+#[async_trait]
+impl TakerSwapMakerCoin for EthCoin {
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
+    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+}
+
+#[async_trait]
+impl MakerSwapTakerCoin for EthCoin {
+    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]

@@ -21,12 +21,13 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            IguanaPrivKey, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
-            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
-            TxMarshalingErr, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
+            IguanaPrivKey, MakerSwapTakerCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundResult, SearchForSwapTxSpendInput,
+            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps,
+            TakerSwapMakerCoin, TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
             WithdrawSenderAddress};
 use common::executor::{AbortableSystem, AbortedError};
@@ -400,14 +401,14 @@ impl SwapOps for UtxoStandardCoin {
     #[inline]
     fn check_if_my_payment_sent(
         &self,
-        if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(
             self.clone(),
-            if_my_payment_spent_args.time_lock,
-            if_my_payment_spent_args.other_pub,
-            if_my_payment_spent_args.secret_hash,
-            if_my_payment_spent_args.swap_unique_data,
+            if_my_payment_sent_args.time_lock,
+            if_my_payment_sent_args.other_pub,
+            if_my_payment_sent_args.secret_hash,
+            if_my_payment_sent_args.swap_unique_data,
         )
     }
 
@@ -445,6 +446,14 @@ impl SwapOps for UtxoStandardCoin {
                 .map_err(|e| ERRL!("{}", e))
                 .compat(),
         )
+    }
+
+    fn is_auto_refundable(&self) -> bool { false }
+
+    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
+        MmError::err(RefundError::Internal(
+            "wait_for_htlc_refund is not supported for this coin!".into(),
+        ))
     }
 
     #[inline]
@@ -504,6 +513,20 @@ impl SwapOps for UtxoStandardCoin {
     }
 
     fn is_supported_by_watchers(&self) -> bool { true }
+}
+
+#[async_trait]
+impl TakerSwapMakerCoin for UtxoStandardCoin {
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
+    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+}
+
+#[async_trait]
+impl MakerSwapTakerCoin for UtxoStandardCoin {
+    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]

@@ -16,24 +16,25 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
-            PaymentInstructionsErr, RawTransactionError, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
-            SendMakerSpendsTakerPaymentArgs, SendSpendPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr, TransactionFut,
-            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, RefundError, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
+            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendSpendPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps,
+            TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
+            TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
+            UtxoStandardCoin, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
-use common::executor::Timer;
-use common::executor::{AbortableSystem, AbortedError};
+use common::custom_futures::repeatable::{Ready, Retry};
+use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::{info, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -75,6 +76,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 
+const WAIT_FOR_REFUND_INTERVAL: f64 = 60.;
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
 pub type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
@@ -200,7 +202,6 @@ impl LightningCoin {
             InvoiceDescription::Direct(d) => d.to_string(),
             InvoiceDescription::Hash(h) => hex::encode(h.0.into_inner()),
         };
-        let payment_secret = Some(*invoice.payment_secret());
         let amt_msat = invoice.amount_milli_satoshis().map(|a| a as i64);
 
         let selfi = self.clone();
@@ -220,19 +221,8 @@ impl LightningCoin {
             None => async_blocking(move || selfi.invoice_payer.pay_invoice(&invoice)).await?,
         };
 
-        let payment_info = PaymentInfo {
-            payment_hash,
-            payment_type,
-            description,
-            preimage: None,
-            secret: payment_secret,
-            amt_msat,
-            fee_paid_msat: None,
-            status: HTLCStatus::Pending,
-            created_at: (now_ms() / 1000) as i64,
-            last_updated: (now_ms() / 1000) as i64,
-        };
-        self.db.add_or_update_payment_in_db(payment_info.clone()).await?;
+        let payment_info = PaymentInfo::new(payment_hash, payment_type, description, amt_msat);
+        self.db.add_payment_to_db(&payment_info).await?;
         Ok(payment_info)
     }
 
@@ -258,19 +248,8 @@ impl LightningCoin {
 
         let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0).into_inner());
         let payment_type = PaymentType::OutboundPayment { destination };
-        let payment_info = PaymentInfo {
-            payment_hash,
-            payment_type,
-            description: "".into(),
-            preimage: Some(payment_preimage),
-            secret: None,
-            amt_msat: Some(amount_msat as i64),
-            fee_paid_msat: None,
-            status: HTLCStatus::Pending,
-            created_at: (now_ms() / 1000) as i64,
-            last_updated: (now_ms() / 1000) as i64,
-        };
-        self.db.add_or_update_payment_in_db(payment_info.clone()).await?;
+        let payment_info = PaymentInfo::new(payment_hash, payment_type, "".into(), Some(amount_msat as i64));
+        self.db.add_payment_to_db(&payment_info).await?;
 
         Ok(payment_info)
     }
@@ -575,21 +554,13 @@ impl LightningCoin {
         let coin = self.clone();
         let fut = async move {
             match coin.db.get_payment_from_db(payment_hash).await {
-                Ok(Some(mut payment)) => {
+                Ok(Some(payment)) => {
                     let amount_received = payment.amt_msat;
                     // Note: locktime doesn't need to be validated since min_final_cltv_expiry should be validated in rust-lightning after fixing the below issue
                     // https://github.com/lightningdevkit/rust-lightning/issues/1850
                     // Also, PaymentReceived won't be fired if amount_received < the amount requested in the invoice, this check is probably not needed.
                     // But keeping it just in case any changes happen in rust-lightning
                     if amount_received != Some(amt_msat as i64) {
-                        // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
-                        coin.channel_manager.fail_htlc_backwards(&payment_hash);
-                        payment.status = HTLCStatus::Failed;
-                        drop_mutability!(payment);
-                        coin.db
-                            .add_or_update_payment_in_db(payment)
-                            .await
-                            .error_log_with_msg("Unable to update payment information in DB!");
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Provided payment {} amount {:?} doesn't match required amount {}",
                             payment_hex, amount_received, amt_msat
@@ -609,10 +580,19 @@ impl LightningCoin {
         };
         Box::new(fut.boxed().compat())
     }
+
+    async fn on_swap_refund(&self, payment: &[u8]) -> RefundResult<()> {
+        let payment_hash = payment_hash_from_slice(payment).map_err(|e| RefundError::DecodeErr(e.to_string()))?;
+        // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
+        self.channel_manager.fail_htlc_backwards(&payment_hash);
+        self.db
+            .update_payment_status_in_db(payment_hash, &HTLCStatus::Failed)
+            .await
+            .map_to_mm(|e| RefundError::DbError(e.to_string()))
+    }
 }
 
 #[async_trait]
-// Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
 impl SwapOps for LightningCoin {
     // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
     fn send_taker_fee(&self, _fee_addr: &[u8], _amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
@@ -672,14 +652,18 @@ impl SwapOps for LightningCoin {
         &self,
         _taker_refunds_payment_args: SendTakerRefundsPaymentArgs<'_>,
     ) -> TransactionFut {
-        unimplemented!()
+        Box::new(futures01::future::err(TransactionErr::Plain(
+            "Doesn't need transaction broadcast to refund lightning HTLC".into(),
+        )))
     }
 
     fn send_maker_refunds_payment(
         &self,
         _maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>,
     ) -> TransactionFut {
-        unimplemented!()
+        Box::new(futures01::future::err(TransactionErr::Plain(
+            "Doesn't need transaction broadcast to refund lightning HTLC".into(),
+        )))
     }
 
     // Todo: This validates the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
@@ -700,26 +684,97 @@ impl SwapOps for LightningCoin {
         self.validate_swap_payment(input)
     }
 
-    // Todo: This is None for now for the sake of swap P.O.C., this should be implemented probably in next PRs and should be tested across restarts
     fn check_if_my_payment_sent(
         &self,
-        _if_my_payment_spent_args: CheckIfMyPaymentSentArgs<'_>,
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        Box::new(futures01::future::ok(None))
+        let PaymentInstructions::Lightning(invoice) = try_f!(if_my_payment_sent_args
+            .payment_instructions
+            .clone()
+            .ok_or("payment_instructions can't be None"));
+        let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
+        let payment_hex = hex::encode(payment_hash.0);
+        let coin = self.clone();
+        let fut = async move {
+            match coin.db.get_payment_from_db(payment_hash).await {
+                Ok(maybe_payment) => Ok(maybe_payment.map(|p| p.payment_hash.into())),
+                Err(e) => ERR!(
+                    "Unable to check if payment {} is in db or not error: {}",
+                    payment_hex,
+                    e
+                ),
+            }
+        };
+        Box::new(fut.boxed().compat())
     }
 
+    // Todo: need to also check on-chain spending
     async fn search_for_swap_tx_spend_my(
         &self,
-        _: SearchForSwapTxSpendInput<'_>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        unimplemented!()
+        let payment_hash = payment_hash_from_slice(input.tx).map_err(|e| e.to_string())?;
+        let payment_hex = hex::encode(payment_hash.0);
+        match self.db.get_payment_from_db(payment_hash).await {
+            Ok(Some(payment)) => {
+                if !payment.is_outbound() {
+                    return ERR!("Payment {} should be an outbound payment!", payment_hex);
+                }
+                match payment.status {
+                    HTLCStatus::Pending => Ok(None),
+                    HTLCStatus::Succeeded => Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::LightningPayment(
+                        payment_hash,
+                    )))),
+                    HTLCStatus::Received => {
+                        ERR!(
+                            "Payment {} has an invalid status of {} in the db",
+                            payment_hex,
+                            payment.status
+                        )
+                    },
+                    HTLCStatus::Failed => Ok(Some(FoundSwapTxSpend::Refunded(TransactionEnum::LightningPayment(
+                        payment_hash,
+                    )))),
+                }
+            },
+            Ok(None) => ERR!("Payment {} is not in the database when it should be!", payment_hex),
+            Err(e) => ERR!(
+                "Unable to retrieve payment {} from the database error: {}",
+                payment_hex,
+                e
+            ),
+        }
     }
 
+    // Todo: need to also check on-chain spending
     async fn search_for_swap_tx_spend_other(
         &self,
-        _: SearchForSwapTxSpendInput<'_>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        unimplemented!()
+        let payment_hash = payment_hash_from_slice(input.tx).map_err(|e| e.to_string())?;
+        let payment_hex = hex::encode(payment_hash.0);
+        match self.db.get_payment_from_db(payment_hash).await {
+            Ok(Some(payment)) => {
+                if payment.is_outbound() {
+                    return ERR!("Payment {} should be an inbound payment!", payment_hex);
+                }
+                match payment.status {
+                    HTLCStatus::Pending | HTLCStatus::Received => Ok(None),
+                    HTLCStatus::Succeeded => Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::LightningPayment(
+                        payment_hash,
+                    )))),
+                    HTLCStatus::Failed => Ok(Some(FoundSwapTxSpend::Refunded(TransactionEnum::LightningPayment(
+                        payment_hash,
+                    )))),
+                }
+            },
+            Ok(None) => ERR!("Payment {} is not in the database when it should be!", payment_hex),
+            Err(e) => ERR!(
+                "Unable to retrieve payment {} from the database error: {}",
+                payment_hex,
+                e
+            ),
+        }
     }
 
     fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
@@ -742,6 +797,39 @@ impl SwapOps for LightningCoin {
                 e
             ),
         }
+    }
+
+    fn is_auto_refundable(&self) -> bool { true }
+
+    async fn wait_for_htlc_refund(&self, tx: &[u8], locktime: u64) -> RefundResult<()> {
+        let payment_hash = payment_hash_from_slice(tx).map_err(|e| RefundError::DecodeErr(e.to_string()))?;
+        let payment_hex = hex::encode(payment_hash.0);
+        repeatable!(async {
+            match self.db.get_payment_from_db(payment_hash).await {
+                Ok(Some(payment)) => match payment.status {
+                    HTLCStatus::Failed => Ready(Ok(())),
+                    HTLCStatus::Pending => Retry(()),
+                    _ => Ready(MmError::err(RefundError::Internal(ERRL!(
+                        "Payment {} has an invalid status of {} in the db",
+                        payment_hex,
+                        payment.status
+                    )))),
+                },
+                Ok(None) => Ready(MmError::err(RefundError::Internal(ERRL!(
+                    "Payment {} is not in the database when it should be!",
+                    payment_hex
+                )))),
+                Err(e) => Ready(MmError::err(RefundError::DbError(ERRL!(
+                    "Error getting payment {} from db: {}",
+                    payment_hex,
+                    e
+                )))),
+            }
+        })
+        .repeat_every_secs(WAIT_FOR_REFUND_INTERVAL)
+        .until_s(locktime)
+        .await
+        .map_err(|e| RefundError::Timeout(format!("{:?}", e)))?
     }
 
     fn negotiate_swap_contract_addr(
@@ -816,6 +904,24 @@ impl SwapOps for LightningCoin {
     fn maker_locktime_multiplier(&self) -> f64 { 1.5 }
 }
 
+#[async_trait]
+impl TakerSwapMakerCoin for LightningCoin {
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
+    async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> RefundResult<()> {
+        self.on_swap_refund(maker_payment).await
+    }
+}
+
+#[async_trait]
+impl MakerSwapTakerCoin for LightningCoin {
+    async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> RefundResult<()> {
+        self.on_swap_refund(taker_payment).await
+    }
+
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+}
+
 #[derive(Debug, Display)]
 pub enum PaymentHashFromSliceErr {
     #[display(fmt = "Invalid data length of {}", _0)]
@@ -886,7 +992,7 @@ impl MarketCoinOps for LightningCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { Ok(self.my_node_id()) }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         let mut _message_prefix = self.conf.sign_message_prefix.clone()?;
@@ -1037,9 +1143,10 @@ impl MarketCoinOps for LightningCoin {
         let fut = async move {
             loop {
                 if now_ms() / 1000 > wait_until {
-                    return Err(TransactionErr::Plain(format!(
+                    return Err(TransactionErr::Plain(ERRL!(
                         "Waited too long until {} for payment {} to be spent",
-                        wait_until, payment_hex
+                        wait_until,
+                        payment_hex
                     )));
                 }
 
@@ -1047,29 +1154,26 @@ impl MarketCoinOps for LightningCoin {
                     Ok(Some(payment)) => match payment.status {
                         HTLCStatus::Pending => (),
                         HTLCStatus::Received => {
-                            return Err(TransactionErr::Plain(format!(
+                            return Err(TransactionErr::Plain(ERRL!(
                                 "Payment {} has an invalid status of {} in the db",
-                                payment_hex, payment.status
+                                payment_hex,
+                                payment.status
                             )))
                         },
                         HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
                         HTLCStatus::Failed => {
-                            return Err(TransactionErr::Plain(format!(
+                            return Err(TransactionErr::Plain(ERRL!(
                                 "Lightning swap payment {} failed",
                                 payment_hex
                             )))
                         },
                     },
-                    Ok(None) => {
-                        return Err(TransactionErr::Plain(format!(
-                            "Payment {} not found in DB",
-                            payment_hex
-                        )))
-                    },
+                    Ok(None) => return Err(TransactionErr::Plain(ERRL!("Payment {} not found in DB", payment_hex))),
                     Err(e) => {
-                        return Err(TransactionErr::Plain(format!(
+                        return Err(TransactionErr::Plain(ERRL!(
                             "Error getting payment {} from db: {}",
-                            payment_hex, e
+                            payment_hex,
+                            e
                         )))
                     },
                 }
