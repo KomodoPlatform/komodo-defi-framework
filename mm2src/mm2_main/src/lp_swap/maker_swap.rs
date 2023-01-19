@@ -2165,8 +2165,7 @@ pub struct CoinVolumeInfo {
 }
 
 /// Requests the `coin` balance and calculates max Maker volume.
-/// Returns [`CheckBalanceError::NotSufficientBalance`] if the balance is not sufficient.
-/// Note the function checks base coin balance if the trade fee should be paid in base coin.
+/// Returns [`CheckBalanceError::NotSufficientBalance`] if the balance is insufficient.
 pub async fn get_max_maker_vol(ctx: &MmArc, my_coin: &MmCoinEnum) -> CheckBalanceResult<CoinVolumeInfo> {
     let my_balance = my_coin.my_spendable_balance().compat().await?;
     let volume = calc_max_maker_vol(ctx, my_coin, &my_balance, FeeApproxStage::OrderIssue).await?;
