@@ -1,5 +1,5 @@
 use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum};
-use coins::lightning::ln_events::{SUCCESSFUL_CLAIM_LOG, SUCCESSFUL_SEND_LOG};
+use coins::lightning::ln_events::{PAYMENT_RECEIVED_LOG, SUCCESSFUL_CLAIM_LOG, SUCCESSFUL_SEND_LOG};
 use common::executor::Timer;
 use common::{block_on, log};
 use gstuff::now_ms;
@@ -147,6 +147,32 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
     let node_2_address = enable_lightning_2.address;
 
     (mm_node_1, mm_node_2, node_1_address, node_2_address)
+}
+
+async fn open_channel(mm: &MarketMakerIt, coin: &str, address: &str, amount: f64) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "mmrpc": "2.0",
+            "method": "lightning::channels::open_channel",
+            "params": {
+                "coin": coin,
+                "node_address": address,
+                "amount": {
+                    "type": "Exact",
+                    "value": amount,
+                },
+            },
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'lightning::channels::open_channel' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
 }
 
 #[test]
@@ -315,26 +341,7 @@ fn test_open_channel() {
     let (mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(false);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
-    let open_channel = block_on(mm_node_2.rpc(&json!({
-        "userpass": mm_node_2.userpass,
-        "mmrpc": "2.0",
-        "method": "lightning::channels::open_channel",
-        "params": {
-            "coin": "tBTC-TEST-lightning",
-            "node_address": node_1_address,
-            "amount": {
-                "type": "Exact",
-                "value": 0.0002,
-            },
-        },
-    })))
-    .unwrap();
-    assert!(
-        open_channel.0.is_success(),
-        "!lightning::channels::open_channel: {}",
-        open_channel.1
-    );
-
+    block_on(open_channel(&mm_node_2, "tBTC-TEST-lightning", &node_1_address, 0.0002));
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Transaction broadcasted successfully"))).unwrap();
 
     let list_channels_node_1 = block_on(mm_node_1.rpc(&json!({
@@ -423,26 +430,7 @@ fn test_send_payment() {
         add_trusted_node.1
     );
 
-    let open_channel = block_on(mm_node_2.rpc(&json!({
-        "userpass": mm_node_2.userpass,
-        "mmrpc": "2.0",
-        "method": "lightning::channels::open_channel",
-        "params": {
-            "coin": "tBTC-TEST-lightning",
-            "node_address": node_1_address,
-            "amount": {
-                "type": "Exact",
-                "value": 0.0002,
-            },
-        },
-    })))
-    .unwrap();
-    assert!(
-        open_channel.0.is_success(),
-        "!lightning::channels::open_channel: {}",
-        open_channel.1
-    );
-
+    block_on(open_channel(&mm_node_2, "tBTC-TEST-lightning", &node_1_address, 0.0002));
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Received message ChannelReady"))).unwrap();
 
     let send_payment = block_on(mm_node_2.rpc(&json!({
@@ -649,26 +637,7 @@ fn test_lightning_swaps() {
         add_trusted_node.1
     );
 
-    let open_channel = block_on(mm_node_2.rpc(&json!({
-        "userpass": mm_node_2.userpass,
-        "mmrpc": "2.0",
-        "method": "lightning::channels::open_channel",
-        "params": {
-            "coin": "tBTC-TEST-lightning",
-            "node_address": node_1_address,
-            "amount": {
-                "type": "Exact",
-                "value": 0.0002,
-            },
-        },
-    })))
-    .unwrap();
-    assert!(
-        open_channel.0.is_success(),
-        "!lightning::channels::open_channel: {}",
-        open_channel.1
-    );
-
+    block_on(open_channel(&mm_node_2, "tBTC-TEST-lightning", &node_1_address, 0.0002));
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Received message ChannelReady"))).unwrap();
 
     // Enable coins on mm_node_1 side. Print the replies in case we need the "address".
@@ -730,6 +699,75 @@ fn test_lightning_swaps() {
         volume,
         price,
     ));
+
+    block_on(mm_node_1.stop()).unwrap();
+    block_on(mm_node_2.stop()).unwrap();
+}
+
+// Todo: This test fails for now, will update rust-lightning to latest release first before trying again.
+// Todo: add another test for multipath swap payment, where 1 channel is closed and the other not.
+#[test]
+// This test is ignored because it requires refilling the tBTC and RICK addresses with test coins periodically.
+// This test also takes a lot of time so it should always be ignored.
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_lightning_taker_gets_swap_preimage_onchain() {
+    let (mut mm_node_1, mut mm_node_2, node_1_id, _) = start_lightning_nodes(false);
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+
+    let open_channel = block_on(open_channel(&mm_node_2, "tBTC-TEST-lightning", &node_1_address, 0.0002));
+    log!("open_channel {:?}", open_channel);
+    let rpc_channel_id = open_channel["result"]["rpc_channel_id"].as_u64().unwrap();
+
+    block_on(mm_node_2.wait_for_log(3600., |log| log.contains("Received message ChannelReady"))).unwrap();
+
+    // Enable coins on mm_node_1 side. Print the replies in case we need the "address".
+    log!(
+        "enable_coins (mm_node_1): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_node_1))
+    );
+
+    // Enable coins on mm_node_2 side. Print the replies in case we need the "address".
+    log!(
+        "enable_coins (mm_node_2): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_node_2))
+    );
+
+    // Todo: maybe send a payment first before doing the swap to see 3 outputs in the block explorer
+    let price = 0.0005;
+    let volume = 0.1;
+    let uuids = block_on(start_swaps(
+        &mut mm_node_1,
+        &mut mm_node_2,
+        &[("RICK", "tBTC-TEST-lightning")],
+        price,
+        price,
+        volume,
+    ));
+    block_on(mm_node_1.wait_for_log(60., |log| log.contains(PAYMENT_RECEIVED_LOG))).unwrap();
+
+    // Taker node force closes the channel after the maker receives the payment but before the maker claims the payment and releases the preimage
+    let close_channel = block_on(mm_node_2.rpc(&json!({
+        "userpass": mm_node_2.userpass,
+        "mmrpc": "2.0",
+        "method": "lightning::channels::close_channel",
+        "params": {
+            "coin": "tBTC-TEST-lightning",
+            "rpc_channel_id": rpc_channel_id,
+            "force_close": true,
+        },
+    })))
+    .unwrap();
+    assert!(
+        close_channel.0.is_success(),
+        "!lightning::channels::close_channel: {}",
+        close_channel.1
+    );
+
+    block_on(mm_node_1.wait_for_log(7200., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
+    block_on(mm_node_2.wait_for_log(7200., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
+
+    // Todo: If the test passes the payment will be added to the tBTC balance, add a check here, find a way to inform the user of this.
 
     block_on(mm_node_1.stop()).unwrap();
     block_on(mm_node_2.stop()).unwrap();

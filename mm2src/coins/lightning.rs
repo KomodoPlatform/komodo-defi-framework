@@ -1068,6 +1068,7 @@ impl MarketCoinOps for LightningCoin {
     }
 
     // Todo: Add waiting for confirmations logic for the case of if the channel is closed and the htlc can be claimed on-chain
+    // Todo: need to split this still, because of HTLCStatus::Received | HTLCStatus::Succeeded => return Ok(()), claim_funds doesn't always work when channel is closed
     fn wait_for_confirmations(
         &self,
         tx: &[u8],

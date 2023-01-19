@@ -23,6 +23,7 @@ use utxo_signer::with_key_pair::sign_tx;
 const TRY_LOOP_INTERVAL: f64 = 60.;
 /// 1 second.
 const CRITICAL_FUTURE_TIMEOUT: f64 = 1.0;
+pub const PAYMENT_RECEIVED_LOG: &str = "Handling PaymentReceived event";
 pub const SUCCESSFUL_CLAIM_LOG: &str = "Successfully claimed payment";
 pub const SUCCESSFUL_SEND_LOG: &str = "Successfully sent payment";
 
@@ -337,7 +338,8 @@ impl LightningEventHandler {
 
     fn handle_payment_received(&self, payment_hash: PaymentHash, received_amount: u64, purpose: PaymentPurpose) {
         info!(
-            "Handling PaymentReceived event for payment_hash: {} with amount {}",
+            "{} for payment_hash: {} with amount {}",
+            PAYMENT_RECEIVED_LOG,
             hex::encode(payment_hash.0),
             received_amount
         );
@@ -549,6 +551,8 @@ impl LightningEventHandler {
             let claiming_txid = claiming_tx.txid();
             let tx_hex = serialize_hex(&claiming_tx);
 
+            // Todo: should retry this somehow????
+            // ERROR Broadcasting of the claiming transaction 3fb8a34d7385caf518b04c9238a1372bb02162ce336c1d6083da0da8a5663df2 failed: utxo_common:2291] rpc_clients:2185] JsonRpcError { client_info: "coin: tBTC-TEST-segwit", request: JsonRpcRequest { jsonrpc: "2.0", id: "886", method: "blockchain.transaction.broadcast", params: [String("02000000000101a258e51bea794dd218f6c58c83f0e301e7057043bb9103fa1e2ec46e07301793000000000000000000017b03000000000000160014d1f7e225a9b8e07c94cb0457280adcd6d9d8ceb9024730440220587827926766a460623eb0f4d8558570f1c66549806d96ee54cefbacaed7366102206215794fcf0f184a637e631129cd20842286acfc58e2eabaf35de08a02c7ac2201210385601d04300278422e14f3ba2f42046f63b0cfb291d2438d937a8db715b8243b00000000")] }, error: Response(electrum2.cipig.net:10068, Object({"code": Number(1), "message": String("the transaction was rejected by network rules.\n\nmin relay fee not met, 109 < 110\n[02000000000101a258e51bea794dd218f6c58c83f0e301e7057043bb9103fa1e2ec46e07301793000000000000000000017b03000000000000160014d1f7e225a9b8e07c94cb0457280adcd6d9d8ceb9024730440220587827926766a460623eb0f4d8558570f1c66549806d96ee54cefbacaed7366102206215794fcf0f184a637e631129cd20842286acfc58e2eabaf35de08a02c7ac2201210385601d04300278422e14f3ba2f42046f63b0cfb291d2438d937a8db715b8243b00000000]")})) }
             if let Err(e) = platform.coin.send_raw_tx(&tx_hex).compat().await {
                 // TODO: broadcast transaction through p2p network in this case, we have to check that the transactions is confirmed on-chain after this.
                 error!(
