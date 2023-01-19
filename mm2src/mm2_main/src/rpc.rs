@@ -398,10 +398,16 @@ pub fn spawn_rpc(ctx_h: u32) {
                 None => break,
             };
 
-            let response = process_json_request(ctx, request_json, client).await;
-            if let Err(e) = response_tx.send(response) {
-                error!("Response is not processed: {:?}", e);
-            }
+            let spawner = ctx.spawner();
+            let request_fut = async move {
+                let response = process_json_request(ctx, request_json, client).await;
+                if let Err(e) = response_tx.send(response) {
+                    error!("Response is not processed: {:?}", e);
+                }
+            };
+            // Spawn the `request_fut` so the requests can be processed asynchronously.
+            // Fixes: https://github.com/KomodoPlatform/atomicDEX-API/issues/1616
+            spawner.spawn(request_fut);
         }
     };
     ctx.spawner().spawn(fut);
