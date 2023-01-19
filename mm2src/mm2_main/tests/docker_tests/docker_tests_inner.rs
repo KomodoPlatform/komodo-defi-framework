@@ -17,8 +17,8 @@ use futures01::Future;
 use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
                              MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::{BigDecimal, MmNumber};
-use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf, kmd_conf, mm_dump, mycoin1_conf,
-                                  mycoin_conf, MarketMakerIt, Mm2TestConf};
+use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf, kmd_conf, max_maker_vol, mm_dump,
+                                  mycoin1_conf, mycoin_conf, set_price, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::*;
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -2602,34 +2602,12 @@ fn test_get_max_taker_vol_with_kmd() {
 fn test_get_max_maker_vol() {
     let (_ctx, _, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let mm = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(priv_key)),
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".to_string(),
-        None,
-    )
-    .unwrap();
+    let conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(priv_key)), &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
 
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[])));
-    let rc = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "max_maker_vol",
-        "params": {
-            "coin": "MYCOIN1",
-        }
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
 
     // 1 - tx_fee
     let expected_volume = MmNumber::from("0.99999");
@@ -2637,20 +2615,10 @@ fn test_get_max_maker_vol() {
         coin: "MYCOIN1".to_string(),
         volume: MmNumberMultiRepr::from(expected_volume.clone()),
     };
-    let actual: RpcSuccessResponse<MaxMakerVolResponse> = serde_json::from_str(&rc.1).unwrap();
-    assert_eq!(actual.result, expected);
+    let actual = block_on(max_maker_vol(&mm, "MYCOIN1")).unwrap::<MaxMakerVolResponse>();
+    assert_eq!(actual, expected);
 
-    let rc = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "setprice",
-        "base": "MYCOIN1",
-        "rel": "MYCOIN",
-        "price": 1,
-        "max": true,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let res: SetPriceResponse = serde_json::from_str(&rc.1).unwrap();
+    let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true));
     assert_eq!(res.result.max_base_vol, expected_volume.to_decimal());
 }
 
@@ -2658,36 +2626,13 @@ fn test_get_max_maker_vol() {
 fn test_get_max_maker_vol_error() {
     let priv_key = random_secp256k1_secret();
     let coins = json!([mycoin_conf(1000)]);
-    let mm = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(priv_key)),
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".to_string(),
-        None,
-    )
-    .unwrap();
+    let conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(priv_key)), &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
 
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
 
-    let rc = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "max_maker_vol",
-        "params": {
-            "coin": "MYCOIN",
-        }
-    })))
-    .unwrap();
-    assert!(rc.0.is_client_error(), "!max_taker_vol: {}", rc.1);
-    let actual_error: RpcErrorResponse<max_maker_vol_error::NotSufficientBalance> =
-        serde_json::from_str(&rc.1).unwrap();
+    let actual_error = block_on(max_maker_vol(&mm, "MYCOIN")).unwrap_err::<max_maker_vol_error::NotSufficientBalance>();
     let expected_error = max_maker_vol_error::NotSufficientBalance {
         coin: "MYCOIN".to_owned(),
         available: 0.into(),

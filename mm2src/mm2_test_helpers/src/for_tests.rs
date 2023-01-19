@@ -1,6 +1,7 @@
 //! Helpers used in the unit and integration tests.
 
 use crate::electrums::qtum_electrums;
+use crate::structs::{RpcResponse, SetPriceResponse};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -2310,6 +2311,21 @@ pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
+    let rc = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "mmrpc": "2.0",
+            "method": "max_maker_vol",
+            "params": {
+                "coin": coin,
+            }
+        }))
+        .await
+        .unwrap();
+    RpcResponse::new("max_maker_vol", rc)
+}
+
 pub async fn enable_tendermint(
     mm: &MarketMakerIt,
     coin: &str,
@@ -2449,7 +2465,15 @@ pub async fn init_utxo_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn set_price(mm: &MarketMakerIt, base: &str, rel: &str, price: &str, vol: &str) -> Json {
+/// Note that mm2 ignores `volume` if `max` is true.
+pub async fn set_price(
+    mm: &MarketMakerIt,
+    base: &str,
+    rel: &str,
+    price: &str,
+    vol: &str,
+    max: bool,
+) -> SetPriceResponse {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2458,6 +2482,7 @@ pub async fn set_price(mm: &MarketMakerIt, base: &str, rel: &str, price: &str, v
             "rel": rel,
             "price": price,
             "volume": vol,
+            "max": max,
         }))
         .await
         .unwrap();
