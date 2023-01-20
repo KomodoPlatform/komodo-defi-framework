@@ -7,12 +7,13 @@ use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetC
 use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use async_trait::async_trait;
 use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
-use common::custom_futures::{select_ok_sequential, FutureTimerExt};
+use common::custom_futures::{select_ok_sequential, timeout::FutureTimerExt};
 use common::custom_iter::{CollectInto, TryIntoGroupMap};
 use common::executor::{abortable_queue, abortable_queue::AbortableQueue, AbortableSystem, SpawnFuture, Timer};
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
                              JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
+use common::log::LogOnError;
 use common::log::{error, info, warn};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -1553,6 +1554,8 @@ impl ElectrumConnection {
     async fn is_connected(&self) -> bool { self.tx.lock().await.is_some() }
 
     async fn set_protocol_version(&self, version: f32) { self.protocol_version.lock().await.replace(version); }
+
+    async fn reset_protocol_version(&self) { *self.protocol_version.lock().await = None; }
 }
 
 #[derive(Debug)]
@@ -1629,6 +1632,7 @@ pub struct ElectrumClientImpl {
     ///
     /// Please also note that this abortable system is a subsystem of [`UtxoCoinFields::abortable_system`].
     abortable_system: AbortableQueue,
+    negotiate_version: bool,
 }
 
 async fn electrum_request_multi(
@@ -1638,6 +1642,10 @@ async fn electrum_request_multi(
     let mut futures = vec![];
     let connections = client.connections.lock().await;
     for (i, connection) in connections.iter().enumerate() {
+        if client.negotiate_version && connection.protocol_version.lock().await.is_none() {
+            continue;
+        }
+
         let connection_addr = connection.addr.clone();
         let json = json::to_string(&request).map_err(|e| JsonRpcErrorType::InvalidRequest(e.to_string()))?;
         if let Some(tx) = &*connection.tx.lock().await {
@@ -1768,6 +1776,17 @@ impl ElectrumClientImpl {
             .find(|con| con.addr == server_addr)
             .ok_or(ERRL!("Unknown electrum address {}", server_addr))?;
         con.set_protocol_version(version).await;
+        Ok(())
+    }
+
+    /// Reset the protocol version for the specified server.
+    pub async fn reset_protocol_version(&self, server_addr: &str) -> Result<(), String> {
+        let connections = self.connections.lock().await;
+        let con = connections
+            .iter()
+            .find(|con| con.addr == server_addr)
+            .ok_or(ERRL!("Unknown electrum address {}", server_addr))?;
+        con.reset_protocol_version().await;
         Ok(())
     }
 
@@ -1960,7 +1979,12 @@ impl ElectrumClient {
             .block_headers_storage()
             .get_block_height_by_hash(blockhash.into())
             .await?
-            .ok_or_else(|| GetTxHeightError::HeightNotFound("Transaction block header is not found in storage".into()))?
+            .ok_or_else(|| {
+                GetTxHeightError::HeightNotFound(format!(
+                    "Transaction block header is not found in storage for {}",
+                    self.0.coin_ticker
+                ))
+            })?
             .try_into()?)
     }
 
@@ -1978,16 +2002,19 @@ impl ElectrumClient {
                 }
             }
         }
-        Err(GetTxHeightError::HeightNotFound(
-            "Couldn't find height through electrum!".into(),
-        ))
+        Err(GetTxHeightError::HeightNotFound(format!(
+            "Couldn't find height through electrum for {}",
+            self.coin_ticker
+        )))
     }
 
     async fn block_header_from_storage(&self, height: u64) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
         self.block_headers_storage()
             .get_block_header(height)
             .await?
-            .ok_or_else(|| GetBlockHeaderError::Internal("Header not in storage!".into()).into())
+            .ok_or_else(|| {
+                GetBlockHeaderError::Internal(format!("Header not found in storage for {}", self.coin_ticker)).into()
+            })
     }
 
     async fn block_header_from_storage_or_rpc(&self, height: u64) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
@@ -2030,7 +2057,10 @@ impl ElectrumClient {
             .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
             .compat()
             .await
-            .map_to_mm(|e| SPVError::UnableToGetMerkle(e.to_string()))?;
+            .map_to_mm(|err| SPVError::UnableToGetMerkle {
+                coin: self.coin_ticker.clone(),
+                err: err.to_string(),
+            })?;
 
         let header = self.block_header_from_storage(height).await?;
 
@@ -2315,6 +2345,7 @@ impl ElectrumClientImpl {
         event_handlers: Vec<RpcTransportEventHandlerShared>,
         block_headers_storage: BlockHeaderStorage,
         abortable_system: AbortableQueue,
+        negotiate_version: bool,
     ) -> ElectrumClientImpl {
         let protocol_version = OrdRange::new(1.2, 1.4).unwrap();
         ElectrumClientImpl {
@@ -2327,6 +2358,7 @@ impl ElectrumClientImpl {
             list_unspent_concurrent_map: ConcurrentRequestMap::new(),
             block_headers_storage,
             abortable_system,
+            negotiate_version,
         }
     }
 
@@ -2340,7 +2372,13 @@ impl ElectrumClientImpl {
     ) -> ElectrumClientImpl {
         ElectrumClientImpl {
             protocol_version,
-            ..ElectrumClientImpl::new(coin_ticker, event_handlers, block_headers_storage, abortable_system)
+            ..ElectrumClientImpl::new(
+                coin_ticker,
+                event_handlers,
+                block_headers_storage,
+                abortable_system,
+                false,
+            )
         }
     }
 }
@@ -2639,6 +2677,7 @@ async fn connect_loop<Spawner: SpawnFuture>(
         macro_rules! reset_tx_and_continue {
             () => {
                 info!("{} connection dropped", addr);
+                event_handlers.on_disconnected(addr.clone()).error_log();
                 *connection_tx.lock().await = None;
                 increase_delay(&delay);
                 continue;
@@ -2745,6 +2784,7 @@ async fn connect_loop<Spawner: SpawnFuture>(
             () => {
                 info!("{} connection dropped", addr);
                 *connection_tx.lock().await = None;
+                event_handlers.on_disconnected(addr.clone()).error_log();
                 increase_delay(&delay);
                 continue;
             };

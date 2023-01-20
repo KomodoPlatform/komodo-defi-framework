@@ -1,9 +1,10 @@
 //! Helpers used in the unit and integration tests.
 
 use crate::electrums::qtum_electrums;
+use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
-use common::{cfg_native, now_float, now_ms, PagingOptionsEnum};
+use common::{cfg_native, now_float, now_ms, repeatable, PagingOptionsEnum};
 use common::{get_utc_timestamp, log};
 use crypto::CryptoCtx;
 use gstuff::{try_s, ERR, ERRL};
@@ -43,9 +44,10 @@ cfg_native! {
     use std::process::Command;
 }
 
-pub const MAKER_SUCCESS_EVENTS: [&str; 11] = [
+pub const MAKER_SUCCESS_EVENTS: [&str; 12] = [
     "Started",
     "Negotiated",
+    "MakerPaymentInstructionsReceived",
     "TakerFeeValidated",
     "MakerPaymentSent",
     "TakerPaymentReceived",
@@ -57,7 +59,7 @@ pub const MAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Finished",
 ];
 
-pub const MAKER_ERROR_EVENTS: [&str; 13] = [
+pub const MAKER_ERROR_EVENTS: [&str; 15] = [
     "StartFailed",
     "NegotiateFailed",
     "TakerFeeValidateFailed",
@@ -69,14 +71,17 @@ pub const MAKER_ERROR_EVENTS: [&str; 13] = [
     "TakerPaymentSpendFailed",
     "TakerPaymentSpendConfirmFailed",
     "MakerPaymentWaitRefundStarted",
+    "MakerPaymentRefundStarted",
     "MakerPaymentRefunded",
     "MakerPaymentRefundFailed",
+    "MakerPaymentRefundFinished",
 ];
 
-pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
+pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
+    "TakerPaymentInstructionsReceived",
     "MakerPaymentReceived",
     "MakerPaymentWaitConfirmStarted",
     "MakerPaymentValidatedAndConfirmed",
@@ -86,7 +91,7 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
     "Finished",
 ];
 
-pub const TAKER_ERROR_EVENTS: [&str; 13] = [
+pub const TAKER_ERROR_EVENTS: [&str; 15] = [
     "StartFailed",
     "NegotiateFailed",
     "TakerFeeSendFailed",
@@ -98,8 +103,10 @@ pub const TAKER_ERROR_EVENTS: [&str; 13] = [
     "TakerPaymentWaitForSpendFailed",
     "MakerPaymentSpendFailed",
     "TakerPaymentWaitRefundStarted",
+    "TakerPaymentRefundStarted",
     "TakerPaymentRefunded",
     "TakerPaymentRefundFailed",
+    "TakerPaymentRefundFinished",
 ];
 
 pub const RICK: &str = "RICK";
@@ -125,6 +132,11 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10071",
     "electrum2.cipig.net:10071",
     "electrum3.cipig.net:10071",
+];
+pub const TBTC_ELECTRUMS: &[&str] = &[
+    "electrum1.cipig.net:10068",
+    "electrum2.cipig.net:10068",
+    "electrum3.cipig.net:10068",
 ];
 
 pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
@@ -510,13 +522,53 @@ pub fn btc_with_spv_conf() -> Json {
     })
 }
 
+pub fn tbtc_conf() -> Json {
+    json!({
+        "coin": "tBTC",
+        "asset":"tBTC",
+        "pubtype": 111,
+        "p2shtype": 196,
+        "wiftype": 239,
+        "segwit": true,
+        "bech32_hrp": "tb",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "required_confirmations": 0,
+        "protocol": {
+            "type": "UTXO"
+        }
+    })
+}
+
+pub fn tbtc_segwit_conf() -> Json {
+    json!({
+        "coin": "tBTC-Segwit",
+        "asset":"tBTC-Segwit",
+        "pubtype": 111,
+        "p2shtype": 196,
+        "wiftype": 239,
+        "segwit": true,
+        "bech32_hrp": "tb",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "required_confirmations": 0,
+        "address_format": {
+            "format": "segwit"
+        },
+        "protocol": {
+            "type": "UTXO"
+        },
+        "orderbook_ticker": "tBTC",
+    })
+}
+
 pub fn tbtc_with_spv_conf() -> Json {
     json!({
         "coin": "tBTC-TEST",
         "asset":"tBTC-TEST",
-        "pubtype": 0,
-        "p2shtype": 5,
-        "wiftype": 128,
+        "pubtype": 111,
+        "p2shtype": 196,
+        "wiftype": 239,
         "segwit": true,
         "bech32_hrp": "tb",
         "txfee": 0,
@@ -990,22 +1042,27 @@ impl MarketMakerIt {
     /// The difference from standard wait_for_log is this function keeps working
     /// after process is stopped
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn wait_for_log_after_stop<F>(&mut self, timeout_sec: f64, pred: F) -> Result<(), String>
+    pub async fn wait_for_log_after_stop<F>(&self, timeout_sec: f64, pred: F) -> Result<(), String>
     where
         F: Fn(&str) -> bool,
     {
-        let start = now_float();
+        use common::try_or_ready_err;
+
         let ms = 50.min((timeout_sec * 1000.) as u64 / 20 + 10);
-        loop {
-            let mm_log = try_s!(self.log_as_utf8());
+
+        repeatable!(async {
+            let mm_log = try_or_ready_err!(self.log_as_utf8());
             if pred(&mm_log) {
-                return Ok(());
+                return Ready(Ok(()));
             }
-            if now_float() - start > timeout_sec {
-                return ERR!("Timeout expired waiting for a log condition");
-            }
-            Timer::sleep(ms as f64 / 1000.).await
-        }
+            Retry(())
+        })
+        .repeat_every_ms(ms)
+        .with_timeout_secs(timeout_sec)
+        .await
+        .map_err(|e| ERRL!("{:?}", e))
+        // Convert `Result<Result<(), String>, String>` to `Result<(), String>`
+        .flatten()
     }
 
     /// Busy-wait on the instance in-memory log until the `pred` returns `true` or `timeout_sec` expires.
@@ -1116,21 +1173,18 @@ impl MarketMakerIt {
         drop(self);
 
         let started_at = now_ms();
-        let wait_until = started_at + timeout_ms;
-        while now_ms() < wait_until {
+        repeatable!(async {
             if MmArc::from_weak(&ctx_weak).is_none() {
                 let took_ms = now_ms() - started_at;
                 log!("stop] MmCtx was dropped in {took_ms}ms");
-                return Ok(());
+                return Ready(());
             }
-            Timer::sleep(0.05).await;
-        }
-
-        ERR!(
-            "Waited too long (more than '{}ms') for `MmArc` {:?} to be dropped",
-            timeout_ms,
-            ctx_weak
-        )
+            Retry(())
+        })
+        .repeat_every_secs(0.05)
+        .with_timeout_ms(timeout_ms)
+        .await
+        .map_err(|e| ERRL!("{:?}", e))
     }
 
     /// Currently, we cannot wait for the `Completed IAmrelay handling for peer` log entry on WASM node,
@@ -2016,7 +2070,31 @@ pub async fn best_orders_v2(mm: &MarketMakerIt, coin: &str, action: &str, volume
             "params": {
                 "coin": coin,
                 "action": action,
-                "volume": volume,
+                "request_by": {
+                    "type": "volume",
+                    "value": volume,
+                }
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'best_orders' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn best_orders_v2_by_number(mm: &MarketMakerIt, coin: &str, action: &str, number: usize) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "best_orders",
+            "mmrpc": "2.0",
+            "params": {
+                "coin": coin,
+                "action": action,
+                "request_by": {
+                    "type": "number",
+                    "value": number,
+                }
             }
         }))
         .await
@@ -2467,6 +2545,7 @@ pub async fn wait_for_swaps_finish_and_check_status(
     taker: &mut MarketMakerIt,
     uuids: &[impl AsRef<str>],
     volume: f64,
+    maker_price: f64,
 ) {
     for uuid in uuids.iter() {
         maker
@@ -2493,7 +2572,7 @@ pub async fn wait_for_swaps_finish_and_check_status(
             &TAKER_SUCCESS_EVENTS,
             &TAKER_ERROR_EVENTS,
             BigDecimal::try_from(volume).unwrap(),
-            BigDecimal::try_from(volume).unwrap(),
+            BigDecimal::try_from(volume * maker_price).unwrap(),
         )
         .await;
 
@@ -2504,7 +2583,7 @@ pub async fn wait_for_swaps_finish_and_check_status(
             &MAKER_SUCCESS_EVENTS,
             &MAKER_ERROR_EVENTS,
             BigDecimal::try_from(volume).unwrap(),
-            BigDecimal::try_from(volume).unwrap(),
+            BigDecimal::try_from(volume * maker_price).unwrap(),
         )
         .await;
     }

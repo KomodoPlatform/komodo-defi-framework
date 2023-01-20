@@ -2,7 +2,7 @@ use crate::task::RpcTaskTypes;
 use crate::{AtomicTaskId, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus, RpcTaskStatusAlias,
             TaskAbortHandle, TaskAbortHandler, TaskId, TaskStatus, TaskStatusError, UserActionSender};
 use common::executor::SpawnFuture;
-use common::log::{debug, info, warn};
+use common::log::{debug, info};
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use mm2_err_handle::prelude::*;
@@ -10,6 +10,16 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, Weak};
+
+macro_rules! unexpected_task_status {
+    ($task_id:expr, actual = $actual:ident, expected = $expected:ident) => {
+        MmError::err(RpcTaskError::UnexpectedTaskStatus {
+            task_id: $task_id,
+            actual: TaskStatusError::$actual,
+            expected: TaskStatusError::$expected,
+        })
+    };
+}
 
 pub type RpcTaskManagerShared<Task> = Arc<Mutex<RpcTaskManager<Task>>>;
 pub(crate) type RpcTaskManagerWeak<Task> = Weak<Mutex<RpcTaskManager<Task>>>;
@@ -64,6 +74,7 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                 None => {
                     info!("RPC task '{}' has been aborted", task_id);
                     task.cancel().await;
+                    task_handle.on_cancelled();
                 },
             }
         };
@@ -80,6 +91,9 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
         let rpc_status = match entry.get() {
             TaskStatusExt::InProgress { status, .. } => RpcTaskStatus::InProgress(status.clone()),
             TaskStatusExt::Awaiting { status, .. } => RpcTaskStatus::UserActionRequired(status.clone()),
+            // Don't return an `RpcTaskStatus::Cancelled` status,
+            // instead return `None` as there is no such task for the user already.
+            TaskStatusExt::Cancelling { .. } => return None,
             TaskStatusExt::Ok(result) => RpcTaskStatus::Ok(result.clone()),
             TaskStatusExt::Error(error) => RpcTaskStatus::Error(error.clone()),
         };
@@ -95,22 +109,33 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
 
     /// Cancel task if it's in progress.
     pub fn cancel_task(&mut self, task_id: TaskId) -> RpcTaskResult<()> {
-        let task_status = match self.tasks.entry(task_id) {
-            Entry::Occupied(task_status) => task_status,
-            Entry::Vacant(_) => return MmError::err(RpcTaskError::NoSuchTask(task_id)),
-        };
+        let task = self.tasks.remove(&task_id);
 
-        if task_status.get().is_ready() {
-            return MmError::err(RpcTaskError::UnexpectedTaskStatus {
-                task_id,
-                actual: TaskStatusError::Finished,
-                expected: TaskStatusError::InProgress,
-            });
+        match task {
+            Some(finished_task @ TaskStatusExt::Ok(_) | finished_task @ TaskStatusExt::Error(_)) => {
+                // Return the task result to the `tasks` container.
+                self.tasks.insert(task_id, finished_task);
+                unexpected_task_status!(task_id, actual = Finished, expected = InProgress)
+            },
+            Some(TaskStatusExt::InProgress { .. }) => {
+                let new_task = TaskStatusExt::Cancelling { _action_sender: None };
+                self.tasks.insert(task_id, new_task);
+                Ok(())
+            },
+            Some(TaskStatusExt::Awaiting { action_sender, .. }) => {
+                let new_task = TaskStatusExt::Cancelling {
+                    _action_sender: Some(action_sender),
+                };
+                self.tasks.insert(task_id, new_task);
+                Ok(())
+            },
+            Some(cancelling_task @ TaskStatusExt::Cancelling { .. }) => {
+                // Return the task result to the `tasks` container.
+                self.tasks.insert(task_id, cancelling_task);
+                unexpected_task_status!(task_id, actual = Cancelled, expected = InProgress)
+            },
+            None => MmError::err(RpcTaskError::NoSuchTask(task_id)),
         }
-
-        // The task will be aborted when the `TaskAbortHandle` is dropped.
-        task_status.remove();
-        Ok(())
     }
 
     pub(crate) fn register_task(
@@ -120,11 +145,7 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
         let task_id = next_rpc_task_id();
         let (abort_handle, abort_handler) = oneshot::channel();
         match self.tasks.entry(task_id) {
-            Entry::Occupied(_entry) => MmError::err(RpcTaskError::UnexpectedTaskStatus {
-                task_id,
-                actual: TaskStatusError::InProgress,
-                expected: TaskStatusError::Idle,
-            }),
+            Entry::Occupied(_entry) => unexpected_task_status!(task_id, actual = InProgress, expected = Idle),
             Entry::Vacant(entry) => {
                 entry.insert(TaskStatusExt::InProgress {
                     status: task_initial_in_progress_status,
@@ -147,6 +168,16 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
         }
     }
 
+    pub(crate) fn on_task_cancelling_finished(&mut self, task_id: TaskId) -> RpcTaskResult<()> {
+        match self.tasks.remove(&task_id) {
+            Some(TaskStatusExt::Cancelling { .. }) => Ok(()),
+            _ => {
+                let error = format!("Cancelled task '{task_id}' was not in `Cancelling` status");
+                MmError::err(RpcTaskError::Internal(error))
+            },
+        }
+    }
+
     fn on_task_finished(
         &mut self,
         task_id: TaskId,
@@ -157,7 +188,8 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
             Err(error) => TaskStatusExt::Error(error),
         };
         if self.tasks.insert(task_id, task_status).is_none() {
-            warn!("Finished task '{}' was not ongoing", task_id);
+            let error = format!("Finished task '{task_id}' was not ongoing");
+            return MmError::err(RpcTaskError::Internal(error));
         }
         Ok(())
     }
@@ -171,14 +203,15 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                     .insert(task_id, TaskStatusExt::InProgress { status, abort_handle });
                 Ok(())
             },
+            Some(cancelling @ TaskStatusExt::Cancelling { .. }) => {
+                // Return the task result to the tasks container.
+                self.tasks.insert(task_id, cancelling);
+                unexpected_task_status!(task_id, actual = Cancelled, expected = InProgress)
+            },
             Some(ready @ TaskStatusExt::Ok(_) | ready @ TaskStatusExt::Error(_)) => {
                 // Return the task result to the tasks container.
                 self.tasks.insert(task_id, ready);
-                MmError::err(RpcTaskError::UnexpectedTaskStatus {
-                    task_id,
-                    actual: TaskStatusError::Finished,
-                    expected: TaskStatusError::InProgress,
-                })
+                unexpected_task_status!(task_id, actual = Finished, expected = InProgress)
             },
             None => MmError::err(RpcTaskError::NoSuchTask(task_id)),
         }
@@ -233,7 +266,7 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                 let result = action_sender
                     .send(user_action)
                     // The task seems to be canceled/aborted for some reason.
-                    .map_to_mm(|_user_action| RpcTaskError::Canceled);
+                    .map_to_mm(|_user_action| RpcTaskError::Cancelled);
                 // Insert new in-progress status to the tasks container.
                 self.tasks
                     .insert(task_id, TaskStatusExt::InProgress { status, abort_handle });
@@ -272,16 +305,21 @@ enum TaskStatusExt<Task: RpcTaskTypes> {
         abort_handle: TaskAbortHandle,
         next_in_progress_status: Task::InProgressStatus,
     },
+    /// `Cancelling` status is set on [`RpcTaskManager::cancel_task`].
+    /// This status is used to save the task state before it's actually canceled on [`RpcTaskHandle::on_canceled`],
+    /// in particular, to fix https://github.com/KomodoPlatform/atomicDEX-API/issues/1580.
+    Cancelling {
+        _action_sender: Option<UserActionSender<Task::UserAction>>,
+    },
 }
 
 impl<Task: RpcTaskTypes> TaskStatusExt<Task> {
-    fn is_ready(&self) -> bool { matches!(self, TaskStatusExt::Ok(_) | TaskStatusExt::Error(_)) }
-
     fn task_status_err(&self) -> TaskStatusError {
         match self {
             TaskStatusExt::Ok(_) | TaskStatusExt::Error(_) => TaskStatusError::Finished,
             TaskStatusExt::InProgress { .. } => TaskStatusError::InProgress,
             TaskStatusExt::Awaiting { .. } => TaskStatusError::AwaitingUserAction,
+            TaskStatusExt::Cancelling { .. } => TaskStatusError::Cancelled,
         }
     }
 }

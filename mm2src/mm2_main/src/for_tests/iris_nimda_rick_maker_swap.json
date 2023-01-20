@@ -1,0 +1,166 @@
+{
+  "type": "Maker",
+  "uuid": "aa2e902d-a810-4d81-aecb-202c8b037216",
+  "my_order_uuid": "7c9d71bd-6162-4637-bc83-d2a0bc7ec1fe",
+  "events": [
+    {
+      "timestamp": 1673517077094,
+      "event": {
+        "type": "Started",
+        "data": {
+          "taker_coin": "RICK",
+          "maker_coin": "IRIS-NIMDA",
+          "taker": "5a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511",
+          "secret": "cdb95a058d5c6e9d5781be69af10884a7c812ab59885656c4a0dc373a71b737a",
+          "secret_hash": "019c4f058c23a54d9bad8727edc6287c3bb1e3cf367297745db0db9a15099d02",
+          "my_persistent_pub": "02238527725c96affccb7c55f3900b345b80ec5268d483284f162807775d32b32b",
+          "lock_duration": 7800,
+          "maker_amount": "0.01",
+          "taker_amount": "0.01",
+          "maker_payment_confirmations": 0,
+          "maker_payment_requires_nota": false,
+          "taker_payment_confirmations": 0,
+          "taker_payment_requires_nota": false,
+          "maker_payment_lock": 1673532676,
+          "uuid": "aa2e902d-a810-4d81-aecb-202c8b037216",
+          "started_at": 1673517076,
+          "maker_coin_start_block": 6859160,
+          "taker_coin_start_block": 1779275,
+          "maker_payment_trade_fee": {
+            "coin": "IRIS-NIMDA",
+            "amount": "0.028504",
+            "paid_from_trading_vol": false
+          },
+          "taker_payment_spend_trade_fee": {
+            "coin": "RICK",
+            "amount": "0.00001",
+            "paid_from_trading_vol": true
+          },
+          "maker_coin_htlc_pubkey": "02238527725c96affccb7c55f3900b345b80ec5268d483284f162807775d32b32b",
+          "taker_coin_htlc_pubkey": "02238527725c96affccb7c55f3900b345b80ec5268d483284f162807775d32b32b",
+          "p2p_privkey": null
+        }
+      }
+    },
+    {
+      "timestamp": 1673517079103,
+      "event": {
+        "type": "Negotiated",
+        "data": {
+          "taker_payment_locktime": 1673524876,
+          "taker_pubkey": "000000000000000000000000000000000000000000000000000000000000000000",
+          "maker_coin_swap_contract_addr": null,
+          "taker_coin_swap_contract_addr": null,
+          "maker_coin_htlc_pubkey": "025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511",
+          "taker_coin_htlc_pubkey": "025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511"
+        }
+      }
+    },
+    {
+      "timestamp": 1673517080149,
+      "event": {
+        "type": "TakerFeeValidated",
+        "data": {
+          "tx_hex": "0400008085202f89012f6914ba8f5466a10c924569ada3106be0bbb54aa96af23e5e9a4d334f60cce8000000006a4730440220190f35d3f6e664f167d6ced080d96f488c7ca87e5956ae291bbe1b3c2fffcab10220113a5c5002c78aa07b73a8e8e94e3af19f527988134ad16c914a30c05819aad50121025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511ffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac60130f00000000001976a914c8d33b4a1befece5b255a82691a9a3489abaccbf88ac17d8bf63000000000000000000000000000000",
+          "tx_hash": "b7a27d49fa53f7de987400441461b67a1d47bd3b176a2ca46d2e6765bdd6f5cc"
+        }
+      }
+    },
+    {
+      "timestamp": 1673517085445,
+      "event": {
+        "type": "MakerPaymentSent",
+        "data": {
+          "tx_hex": "0ad3010acb010a1b2f697269736d6f642e68746c632e4d736743726561746548544c4312ab010a2a696161316530727838376d646a37397a656a65777563346a6737716c3975643232383667327573386632122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a762a0c0a036e696d1205313030303032403031396334663035386332336135346439626164383732376564633632383763336262316533636633363732393737343564623064623961313530393964303240980c18fdd3a20312690a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2102238527725c96affccb7c55f3900b345b80ec5268d483284f162807775d32b32b12040a02080118e32d12140a0e0a05756e79616e1205323835303410a08d061a409816f4c02da7b409361f8dc6ef7ea2e223634f9d8cebabdc87b74fa2f539b6e365d2ddcd2b8a285fc24fc1e40721177f5eea6cdb26e3c96cee903a25ae3e7405",
+          "tx_hash": "3fffa52206a49b8f5937b0fc652f8a6ffbc60607322e837c4df92d6d5edc41a5"
+        }
+      }
+    },
+    {
+      "timestamp": 1673517089022,
+      "event": {
+        "type": "TakerPaymentReceived",
+        "data": {
+          "tx_hex": "0400008085202f8902ccf5d6bd65672e6da42c6a173bbd471d7ab6611444007498def753fa497da2b7010000006b483045022100ccb093f598729f09aac2801dbaed4c86b009c2c03d3d37174ab6d8fc4e7c1558022007c9229fa25d0ef70fbebb243f1f18b5e823ed32c4ef2cd308da7461323010dd0121025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511ffffffffc856777d8552dc4eaf39ae05db84aa32f38ea053af57ad810e9559b149e4507d020000006a47304402203a894893b09925b24894c4f18a0d3e80b2505179d6c7ccf104cfb44128b53b0002201cb7e7e6f63f6bdf307bd448be032ce8c320232abc9317642dec518ca65cf31b0121025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511ffffffff0340420f000000000017a914c42764abb1af13092ddcfb22059c52e2f46889f0870000000000000000226a20019c4f058c23a54d9bad8727edc6287c3bb1e3cf367297745db0db9a15099d0238b8ff0a000000001976a914c8d33b4a1befece5b255a82691a9a3489abaccbf88ac20d8bf63000000000000000000000000000000",
+          "tx_hash": "0beb3f4ef6e67cabaa62fdf46817daabfddc200aff8a587429a3a79c9412dbca"
+        }
+      }
+    },
+    {
+      "timestamp": 1673517089024,
+      "event": {
+        "type": "TakerPaymentWaitConfirmStarted"
+      }
+    },
+    {
+      "timestamp": 1673517089086,
+      "event": {
+        "type": "TakerPaymentValidatedAndConfirmed"
+      }
+    },
+    {
+      "timestamp": 1673517089207,
+      "event": {
+        "type": "TakerPaymentSpent",
+        "data": {
+          "tx_hex": "0400008085202f8901cadb12949ca7a32974588aff0a20dcfdabda1768f4fd62aaab7ce6f64e3feb0b00000000d7473044022066a81d1717be3dd77df0884b22fdcaceee0eb43a2fd179f0a807c68e8d667be50220516525c36d9672d7cc0ce08639dcf08350f0f3a1eda22b23f8f46c1d922d02370120cdb95a058d5c6e9d5781be69af10884a7c812ab59885656c4a0dc373a71b737a004c6b63048cf6bf63b17521025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511ac6782012088a914284032676d1ba5cba15a77ff74ab10525590435f882102238527725c96affccb7c55f3900b345b80ec5268d483284f162807775d32b32bac68ffffffff01583e0f00000000001976a914cbc663fb6d978a2ccb2ee62b24781f2f1aa51f4888ac8cf6bf63000000000000000000000000000000",
+          "tx_hash": "631042d948dc4e68ffccda82913381145e19a26d2dbc75a645595f6e3fc6185c"
+        }
+      }
+    },
+    {
+      "timestamp": 1673517089209,
+      "event": {
+        "type": "TakerPaymentSpendConfirmStarted"
+      }
+    },
+    {
+      "timestamp": 1673517089239,
+      "event": {
+        "type": "TakerPaymentSpendConfirmed"
+      }
+    },
+    {
+      "timestamp": 1673517089241,
+      "event": {
+        "type": "Finished"
+      }
+    }
+  ],
+  "maker_amount": "0.01",
+  "maker_coin": "IRIS-NIMDA",
+  "maker_coin_usd_price": null,
+  "taker_amount": "0.01",
+  "taker_coin": "RICK",
+  "taker_coin_usd_price": null,
+  "gui": "nogui",
+  "mm_version": "TEST",
+  "success_events": [
+    "Started",
+    "Negotiated",
+    "TakerFeeValidated",
+    "MakerPaymentSent",
+    "TakerPaymentReceived",
+    "TakerPaymentWaitConfirmStarted",
+    "TakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSpent",
+    "TakerPaymentSpendConfirmStarted",
+    "TakerPaymentSpendConfirmed",
+    "Finished"
+  ],
+  "error_events": [
+    "StartFailed",
+    "NegotiateFailed",
+    "TakerFeeValidateFailed",
+    "MakerPaymentTransactionFailed",
+    "MakerPaymentDataSendFailed",
+    "MakerPaymentWaitConfirmFailed",
+    "TakerPaymentValidateFailed",
+    "TakerPaymentWaitConfirmFailed",
+    "TakerPaymentSpendFailed",
+    "TakerPaymentSpendConfirmFailed",
+    "MakerPaymentWaitRefundStarted",
+    "MakerPaymentRefunded",
+    "MakerPaymentRefundFailed"
+  ]
+}

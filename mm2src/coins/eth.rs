@@ -23,7 +23,7 @@
 use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
-use common::log::{error, info, warn};
+use common::log::{debug, error, info, warn};
 use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
@@ -65,19 +65,20 @@ use web3_transport::{http_transport::HttpTransportNode, EthFeeHistoryNamespace, 
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
             CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            IguanaPrivKey, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError,
-            NumConversResult, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr,
+            NumConversError, NumConversResult, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
-            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
-            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            RawTransactionResult, RefundError, RefundResult, RpcClientType, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
+            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps,
+            TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -786,6 +787,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         timestamp: now_ms() / 1000,
         kmd_rewards: None,
         transaction_type: Default::default(),
+        memo: None,
     })
 }
 
@@ -1036,12 +1038,12 @@ impl SwapOps for EthCoin {
 
     fn check_if_my_payment_sent(
         &self,
-        if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let id = self.etomic_swap_id(if_my_payment_spent_args.time_lock, if_my_payment_spent_args.secret_hash);
-        let swap_contract_address = try_fus!(if_my_payment_spent_args.swap_contract_address.try_to_address());
+        let id = self.etomic_swap_id(if_my_payment_sent_args.time_lock, if_my_payment_sent_args.secret_hash);
+        let swap_contract_address = try_fus!(if_my_payment_sent_args.swap_contract_address.try_to_address());
         let selfi = self.clone();
-        let from_block = if_my_payment_spent_args.search_from_block;
+        let from_block = if_my_payment_sent_args.search_from_block;
         let fut = async move {
             let status = try_s!(
                 selfi
@@ -1135,6 +1137,19 @@ impl SwapOps for EthCoin {
     async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
         let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
+
+        // Validate contract call; expected to be receiverSpend.
+        // https://www.4byte.directory/signatures/?bytes4_signature=02ed292b.
+        let expected_signature = function.short_signature();
+        let actual_signature = &unverified.data[0..4];
+        if actual_signature != expected_signature {
+            return ERR!(
+                "Expected 'receiverSpend' contract call signature: {:?}, found {:?}",
+                expected_signature,
+                actual_signature
+            );
+        };
+
         let tokens = try_s!(function.decode_input(&unverified.data));
         if tokens.len() < 3 {
             return ERR!("Invalid arguments in 'receiverSpend' call: {:?}", tokens);
@@ -1146,6 +1161,14 @@ impl SwapOps for EthCoin {
                 tokens
             ),
         }
+    }
+
+    fn is_auto_refundable(&self) -> bool { false }
+
+    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
+        MmError::err(RefundError::Internal(
+            "wait_for_htlc_refund is not supported for this coin!".into(),
+        ))
     }
 
     fn negotiate_swap_contract_addr(
@@ -1231,6 +1254,20 @@ impl SwapOps for EthCoin {
     }
 
     fn is_supported_by_watchers(&self) -> bool { false }
+}
+
+#[async_trait]
+impl TakerSwapMakerCoin for EthCoin {
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
+    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+}
+
+#[async_trait]
+impl MakerSwapTakerCoin for EthCoin {
+    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
@@ -2011,6 +2048,7 @@ impl EthCoin {
                     timestamp: block.timestamp.into(),
                     kmd_rewards: None,
                     transaction_type: Default::default(),
+                    memo: None,
                 };
 
                 existing_history.push(details);
@@ -2377,6 +2415,7 @@ impl EthCoin {
                     timestamp: block.timestamp.into(),
                     kmd_rewards: None,
                     transaction_type: Default::default(),
+                    memo: None,
                 };
 
                 existing_history.push(details);
@@ -3210,14 +3249,14 @@ impl EthCoin {
                     .first()
                     .map(|val| increase_by_percent_one_gwei(*val, BASE_BLOCK_FEE_DIFF_PCT)),
                 Err(e) => {
-                    error!("Error {} on eth_feeHistory request", e);
+                    debug!("Error {} on eth_feeHistory request", e);
                     None
                 },
             };
 
-            let all_prices = vec![gas_station_price, eth_gas_price, eth_fee_history_price];
-            all_prices
-                .into_iter()
+            // on editions < 2021 the compiler will resolve array.into_iter() as (&array).into_iter()
+            // https://doc.rust-lang.org/edition-guide/rust-2021/IntoIterator-for-arrays.html#details
+            IntoIterator::into_iter([gas_station_price, eth_gas_price, eth_fee_history_price])
                 .flatten()
                 .max()
                 .or_mm_err(|| Web3RpcError::Internal("All requests failed".into()))

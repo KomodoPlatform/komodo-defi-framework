@@ -10,14 +10,14 @@ use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinProtocol,
-            CoinWithDerivationMethod, IguanaPrivKey, NegotiateSwapContractAddrErr, PaymentInstructions,
-            PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
+            CoinWithDerivationMethod, IguanaPrivKey, MakerSwapTakerCoin, NegotiateSwapContractAddrErr,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
+            RefundError, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
-            TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
+            SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TakerSwapMakerCoin, TradePreimageValue,
+            TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
@@ -942,14 +942,14 @@ impl SwapOps for BchCoin {
     #[inline]
     fn check_if_my_payment_sent(
         &self,
-        if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(
             self.clone(),
-            if_my_payment_spent_args.time_lock,
-            if_my_payment_spent_args.other_pub,
-            if_my_payment_spent_args.secret_hash,
-            if_my_payment_spent_args.swap_unique_data,
+            if_my_payment_sent_args.time_lock,
+            if_my_payment_sent_args.other_pub,
+            if_my_payment_sent_args.secret_hash,
+            if_my_payment_sent_args.swap_unique_data,
         )
     }
 
@@ -977,6 +977,14 @@ impl SwapOps for BchCoin {
     #[inline]
     async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
+    }
+
+    fn is_auto_refundable(&self) -> bool { false }
+
+    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
+        MmError::err(RefundError::Internal(
+            "wait_for_htlc_refund is not supported for this coin!".into(),
+        ))
     }
 
     #[inline]
@@ -1046,6 +1054,20 @@ impl SwapOps for BchCoin {
     }
 
     fn is_supported_by_watchers(&self) -> bool { true }
+}
+
+#[async_trait]
+impl TakerSwapMakerCoin for BchCoin {
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
+    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+}
+
+#[async_trait]
+impl MakerSwapTakerCoin for BchCoin {
+    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) -> u64 {

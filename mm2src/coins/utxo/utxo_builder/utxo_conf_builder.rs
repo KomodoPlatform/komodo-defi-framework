@@ -89,6 +89,7 @@ impl<'a> UtxoConfBuilder<'a> {
         let enable_spv_proof = self.enable_spv_proof();
         let block_headers_verification_params = self.block_headers_verification_params();
         let derivation_path = self.derivation_path()?;
+        let avg_blocktime = self.avg_blocktime();
 
         Ok(UtxoCoinConf {
             ticker: self.ticker.to_owned(),
@@ -123,6 +124,7 @@ impl<'a> UtxoConfBuilder<'a> {
             enable_spv_proof,
             block_headers_verification_params,
             derivation_path,
+            avg_blocktime,
         })
     }
 
@@ -293,4 +295,6 @@ impl<'a> UtxoConfBuilder<'a> {
         json::from_value(self.conf["derivation_path"].clone())
             .map_to_mm(|e| UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()))
     }
+
+    fn avg_blocktime(&self) -> Option<u64> { self.conf["avg_blocktime"].as_u64() }
 }
