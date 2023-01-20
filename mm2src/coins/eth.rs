@@ -45,6 +45,8 @@ use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
+use nft::nft_errors::WithdrawNFTError;
+use nft::nft_transfer::{TransactionNFTDetails, WithdrawErc1155Request, WithdrawErc721Request};
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
@@ -83,6 +85,7 @@ pub use rlp;
 
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
+mod nft;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
@@ -136,6 +139,7 @@ lazy_static! {
 pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>> + Send>;
 pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
 pub type GasStationResult = Result<GasStationData, MmError<GasStationReqErr>>;
+type WithdrawNFTResult = Result<TransactionNFTDetails, MmError<WithdrawNFTError>>;
 
 #[derive(Debug, Display)]
 pub enum GasStationReqErr {
@@ -790,6 +794,10 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         memo: None,
     })
 }
+
+pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721Request) -> WithdrawNFTResult { todo!() }
+
+pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155Request) -> WithdrawNFTResult { todo!() }
 
 #[derive(Clone)]
 pub struct EthCoin(Arc<EthCoinImpl>);
