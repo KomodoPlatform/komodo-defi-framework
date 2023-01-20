@@ -132,6 +132,8 @@ pub struct MaxMakerVolRequest {
 pub struct MaxMakerVolResponse {
     coin: String,
     volume: MmNumberMultiRepr,
+    balance: MmNumberMultiRepr,
+    locked_by_swaps: MmNumberMultiRepr,
 }
 
 pub async fn max_maker_vol(ctx: MmArc, req: MaxMakerVolRequest) -> MmResult<MaxMakerVolResponse, MaxMakerVolRpcError> {
@@ -139,9 +141,15 @@ pub async fn max_maker_vol(ctx: MmArc, req: MaxMakerVolRequest) -> MmResult<MaxM
     if coin.wallet_only(&ctx) {
         return MmError::err(MaxMakerVolRpcError::CoinIsWalletOnly { coin: req.coin });
     }
-    let CoinVolumeInfo { volume, .. } = get_max_maker_vol(&ctx, &coin).await?;
+    let CoinVolumeInfo {
+        volume,
+        balance,
+        locked_by_swaps,
+    } = get_max_maker_vol(&ctx, &coin).await?;
     Ok(MaxMakerVolResponse {
         coin: req.coin,
         volume: MmNumberMultiRepr::from(volume),
+        balance: MmNumberMultiRepr::from(balance),
+        locked_by_swaps: MmNumberMultiRepr::from(locked_by_swaps),
     })
 }

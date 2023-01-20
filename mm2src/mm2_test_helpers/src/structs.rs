@@ -571,6 +571,8 @@ pub struct MaxTakerVolResponse {
 pub struct MaxMakerVolResponse {
     pub coin: String,
     pub volume: MmNumberMultiRepr,
+    pub balance: MmNumberMultiRepr,
+    pub locked_by_swaps: MmNumberMultiRepr,
 }
 
 pub mod max_maker_vol_error {

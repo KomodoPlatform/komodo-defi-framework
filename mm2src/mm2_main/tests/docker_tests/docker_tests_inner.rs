@@ -2614,6 +2614,8 @@ fn test_get_max_maker_vol() {
     let expected = MaxMakerVolResponse {
         coin: "MYCOIN1".to_string(),
         volume: MmNumberMultiRepr::from(expected_volume.clone()),
+        balance: MmNumberMultiRepr::from(1),
+        locked_by_swaps: MmNumberMultiRepr::from(0),
     };
     let actual = block_on(max_maker_vol(&mm, "MYCOIN1")).unwrap::<MaxMakerVolResponse>();
     assert_eq!(actual, expected);

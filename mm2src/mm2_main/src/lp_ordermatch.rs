@@ -1040,7 +1040,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
         // Get the max maker available volume to check if the wallet balances are sufficient for the issued maker orders.
         // Note although the maker orders are issued already, but they are not matched yet, so pass the `OrderIssue` stage.
         let new_volume = match calc_max_maker_vol(&ctx, coin, new_balance, FeeApproxStage::OrderIssue).await {
-            Ok(v) => v,
+            Ok(vol_info) => vol_info.volume,
             Err(e) if e.get_inner().not_sufficient_balance() => MmNumber::from(0),
             Err(e) => {
                 log::warn!("Couldn't handle the 'balance_updated' event: {}", e);
@@ -3094,7 +3094,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 };
                 let max_vol = match calc_max_maker_vol(&ctx, &base, &current_balance, FeeApproxStage::OrderIssue).await
                 {
-                    Ok(max) => max,
+                    Ok(vol_info) => vol_info.volume,
                     Err(e) => {
                         log::info!("Error {} on balance check to kickstart order {}, cancelling", e, uuid);
                         to_cancel.push(uuid);
@@ -4458,14 +4458,14 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         return ERR!("Rel coin {} is wallet only", req.rel);
     }
 
-    let CoinVolumeInfo { volume, balance } = if req.max {
-        let max_vol = try_s!(
+    let (volume, balance) = if req.max {
+        let CoinVolumeInfo { volume, balance, .. } = try_s!(
             get_max_maker_vol(ctx, &base_coin)
                 .or_else(|e| cancel_orders_on_error(ctx, &req, e))
                 .await
         );
-        try_s!(check_other_coin_balance_for_order_issue(ctx, &rel_coin, max_vol.volume.to_decimal()).await);
-        max_vol
+        try_s!(check_other_coin_balance_for_order_issue(ctx, &rel_coin, volume.to_decimal()).await);
+        (volume, balance.to_decimal())
     } else {
         let balance = try_s!(
             check_balance_for_maker_swap(
@@ -4480,10 +4480,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
             .or_else(|e| cancel_orders_on_error(ctx, &req, e))
             .await
         );
-        CoinVolumeInfo {
-            volume: req.volume.clone(),
-            balance,
-        }
+        (req.volume.clone(), balance)
     };
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
