@@ -71,7 +71,7 @@ use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPrefix};
-use mm2_number::{BigDecimal, BigRational, MmNumber};
+use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::Serialize;
@@ -450,7 +450,8 @@ pub struct GetLockedAmountReq {
 
 #[derive(Serialize)]
 pub struct GetLockedAmountResp {
-    locked_amount: BigDecimal,
+    coin: String,
+    locked_amount: MmNumberMultiRepr,
 }
 
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
@@ -484,6 +485,7 @@ pub async fn get_locked_amount_rpc(
     let locked_amount = get_locked_amount(&ctx, &req.coin);
 
     Ok(GetLockedAmountResp {
+        coin: req.coin,
         locked_amount: locked_amount.into(),
     })
 }

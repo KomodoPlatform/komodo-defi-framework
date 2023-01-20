@@ -1,6 +1,8 @@
 //! Helpers used in the unit and integration tests.
 
 use crate::electrums::qtum_electrums;
+use crate::structs::*;
+
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -2701,4 +2703,22 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
         let expected_tx = expected.remove(0);
         assert_eq!(tx["internal_id"].as_str().unwrap(), expected_tx);
     }
+}
+
+pub async fn get_locked_amount(mm: &MarketMakerIt, coin: &str) -> GetLockedAmountResponse {
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "get_locked_amount",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin
+        }
+    });
+    println!("get_locked_amount request {}", json::to_string(&request).unwrap());
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'get_locked_amount' failed: {}", request.1);
+    println!("get_locked_amount response {}", request.1);
+    let response: RpcV2Response<GetLockedAmountResponse> = json::from_str(&request.1).unwrap();
+    response.result
 }

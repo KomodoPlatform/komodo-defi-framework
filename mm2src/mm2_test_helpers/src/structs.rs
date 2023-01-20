@@ -952,7 +952,7 @@ pub struct AggregatedOrderbookEntryV2 {
     pub rel_max_volume_aggr: MmNumberMultiRepr,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct MmNumberMultiRepr {
     pub decimal: BigDecimal,
@@ -1008,6 +1008,13 @@ pub struct TendermintActivationResult {
     pub balance: CoinBalance,
     pub tokens_balances: HashMap<String, CoinBalance>,
     pub ticker: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GetLockedAmountResponse {
+    pub coin: String,
+    pub amount: MmNumberMultiRepr,
 }
 
 pub mod gui_storage {
