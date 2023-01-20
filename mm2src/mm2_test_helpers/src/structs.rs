@@ -1014,7 +1014,7 @@ pub struct TendermintActivationResult {
 #[serde(deny_unknown_fields)]
 pub struct GetLockedAmountResponse {
     pub coin: String,
-    pub amount: MmNumberMultiRepr,
+    pub locked_amount: MmNumberMultiRepr,
 }
 
 pub mod gui_storage {
