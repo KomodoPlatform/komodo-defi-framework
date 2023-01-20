@@ -16,7 +16,7 @@ use coins::lightning::{InvoicePayer, LightningCoin};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
 use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, RegisterCoinError};
-use common::executor::SpawnFuture;
+use common::executor::{SpawnFuture, Timer};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
@@ -306,6 +306,7 @@ impl InitL2ActivationOps for LightningCoin {
             task_handle,
         )
         .await?;
+        Timer::sleep(10.).await;
 
         let address = lightning_coin.my_address()?;
         let balance = lightning_coin

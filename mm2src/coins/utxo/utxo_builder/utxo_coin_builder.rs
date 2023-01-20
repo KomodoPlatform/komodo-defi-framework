@@ -5,9 +5,9 @@ use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRe
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
-use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
-                  TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus,
-                  UtxoSyncStatusLoopHandle, DEFAULT_GAP_LIMIT, UTXO_DUST_AMOUNT};
+use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, ElectrumProtoVerifierEvent,
+                  RecentlySpentOutPoints, TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet,
+                  UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, DEFAULT_GAP_LIMIT, UTXO_DUST_AMOUNT};
 use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
             PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
@@ -15,7 +15,7 @@ use chain::TxHashAlgo;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        Timer};
-use common::log::{error, info};
+use common::log::{error, info, LogOnError};
 use common::small_rng;
 use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, Secp256k1Secret,
              StandardHDPathError, StandardHDPathToCoin};
@@ -467,7 +467,7 @@ pub trait UtxoCoinBuilderCommonOps {
         args: ElectrumBuilderArgs,
         mut servers: Vec<ElectrumRpcRequest>,
     ) -> UtxoCoinBuildResult<ElectrumClient> {
-        let (on_connect_tx, on_connect_rx) = unbounded();
+        let (on_event_tx, on_event_rx) = unbounded();
         let ticker = self.ticker().to_owned();
         let ctx = self.ctx();
         let mut event_handlers = vec![];
@@ -478,7 +478,7 @@ pub trait UtxoCoinBuilderCommonOps {
         }
 
         if args.negotiate_version {
-            event_handlers.push(ElectrumProtoVerifier { on_connect_tx }.into_shared());
+            event_handlers.push(ElectrumProtoVerifier { on_event_tx }.into_shared());
         }
 
         let storage_ticker = self.ticker().replace('-', "_");
@@ -491,7 +491,13 @@ pub trait UtxoCoinBuilderCommonOps {
         let mut rng = small_rng();
         servers.as_mut_slice().shuffle(&mut rng);
 
-        let client = ElectrumClientImpl::new(ticker, event_handlers, block_headers_storage, abortable_system);
+        let client = ElectrumClientImpl::new(
+            ticker,
+            event_handlers,
+            block_headers_storage,
+            abortable_system,
+            args.negotiate_version,
+        );
         for server in servers.iter() {
             match client.add_server(server).await {
                 Ok(_) => (),
@@ -518,7 +524,7 @@ pub trait UtxoCoinBuilderCommonOps {
         if args.negotiate_version {
             let weak_client = Arc::downgrade(&client);
             let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());
-            spawn_electrum_version_loop(&spawner, weak_client, on_connect_rx, client_name);
+            spawn_electrum_version_loop(&spawner, weak_client, on_event_rx, client_name);
 
             wait_for_protocol_version_checked(&client)
                 .await
@@ -736,8 +742,8 @@ fn spawn_electrum_ping_loop<Spawner: SpawnAbortable>(
         }
     };
 
-    let settigns = AbortSettings::info_on_any_stop(msg_on_stopped);
-    spawner.spawn_with_settings(fut, settigns);
+    let settings = AbortSettings::info_on_any_stop(msg_on_stopped);
+    spawner.spawn_with_settings(fut, settings);
 }
 
 /// Follow the `on_connect_rx` stream and verify the protocol version of each connected electrum server.
@@ -746,12 +752,21 @@ fn spawn_electrum_ping_loop<Spawner: SpawnAbortable>(
 fn spawn_electrum_version_loop<Spawner: SpawnAbortable>(
     spawner: &Spawner,
     weak_client: Weak<ElectrumClientImpl>,
-    mut on_connect_rx: UnboundedReceiver<String>,
+    mut on_event_rx: UnboundedReceiver<ElectrumProtoVerifierEvent>,
     client_name: String,
 ) {
     let fut = async move {
-        while let Some(electrum_addr) = on_connect_rx.next().await {
-            check_electrum_server_version(weak_client.clone(), client_name.clone(), electrum_addr).await;
+        while let Some(event) = on_event_rx.next().await {
+            match event {
+                ElectrumProtoVerifierEvent::Connected(electrum_addr) => {
+                    check_electrum_server_version(weak_client.clone(), client_name.clone(), electrum_addr).await
+                },
+                ElectrumProtoVerifierEvent::Disconnected(electrum_addr) => {
+                    if let Some(client) = weak_client.upgrade() {
+                        client.reset_protocol_version(&electrum_addr).await.error_log();
+                    }
+                },
+            }
         }
     };
     let settings = AbortSettings::info_on_any_stop("Electrum server.version loop stopped".to_string());

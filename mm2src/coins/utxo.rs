@@ -1306,10 +1306,15 @@ pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
     data_dir
 }
 
+enum ElectrumProtoVerifierEvent {
+    Connected(String),
+    Disconnected(String),
+}
+
 /// Electrum protocol version verifier.
 /// The structure is used to handle the `on_connected` event and notify `electrum_version_loop`.
 struct ElectrumProtoVerifier {
-    on_connect_tx: UnboundedSender<String>,
+    on_event_tx: UnboundedSender<ElectrumProtoVerifierEvent>,
 }
 
 impl ElectrumProtoVerifier {
@@ -1324,7 +1329,16 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
     fn on_incoming_response(&self, _data: &[u8]) {}
 
     fn on_connected(&self, address: String) -> Result<(), String> {
-        try_s!(self.on_connect_tx.unbounded_send(address));
+        try_s!(self
+            .on_event_tx
+            .unbounded_send(ElectrumProtoVerifierEvent::Connected(address)));
+        Ok(())
+    }
+
+    fn on_disconnected(&self, address: String) -> Result<(), String> {
+        try_s!(self
+            .on_event_tx
+            .unbounded_send(ElectrumProtoVerifierEvent::Disconnected(address)));
         Ok(())
     }
 }

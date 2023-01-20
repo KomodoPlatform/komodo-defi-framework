@@ -2,10 +2,12 @@ use proc_macro::{self, TokenStream};
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::quote;
 use std::fmt;
-use syn::Variant;
+use syn::Meta::List;
 use syn::{parse_macro_input, Data, DeriveInput, Error, Field, Fields, ImplGenerics, Type, TypeGenerics, WhereClause};
+use syn::{Attribute, NestedMeta, Variant};
 
 mod from_inner;
+mod from_stringify;
 mod from_trait;
 
 const MACRO_IDENT: &str = "EnumFromInner";
@@ -84,12 +86,53 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
     }
 }
 
+/// `EnumFromStringify` is very useful for generating `From<T>` trait from one enum to another enum,
+/// this procedural macro is used to convert any type that implements `Display` trait to a enum variant with the `String` inner type only.
+///
+/// ### USAGE:
+///
+/// ```rust
+/// use enum_from::EnumFromStringify;
+/// use std::fmt::{Display, Formatter};
+/// use std::io::{Error, ErrorKind};
+///
+/// // E.G, this converts from Bar, Man to FooBar::Bar(String)
+/// #[derive(Debug, EnumFromStringify, PartialEq, Eq)]
+/// pub enum FooBar {
+///     #[from_stringify("u64", "std::io::Error")]
+///     Bar(String),
+/// }
+///
+/// #[test]
+/// fn test_from_stringify() {
+/// let num = 6500u64;
+/// let expected: FooBar = num.into();
+/// assert_eq!(FooBar::Bar(num.to_string()), expected);
+///
+/// let err = Error::new(ErrorKind::Other, "oh no!");
+/// let actual = FooBar::Bar(err.to_string());
+/// let expected: FooBar = err.into();
+/// assert_eq!(actual, expected);
+/// }
+///  ```
+#[proc_macro_derive(EnumFromStringify, attributes(from_stringify))]
+pub fn derive(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
+    match derive_enum_from_macro(ast, MacroAttr::FromStringify) {
+        Ok(output) => output,
+        Err(e) => e.into(),
+    }
+}
+
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy)]
 enum MacroAttr {
     /// `from_inner` attribute of the `EnumFromInner` derive macro.
     FromInner,
     /// `from_trait` attribute of the `EnumFromTrait` derive macro.
     FromTrait,
+    /// `from_stringify` attribute of the `EnumFromStringify` derive macro.
+    FromStringify,
 }
 
 impl fmt::Display for MacroAttr {
@@ -97,6 +140,7 @@ impl fmt::Display for MacroAttr {
         match self {
             MacroAttr::FromInner => write!(f, "from_inner"),
             MacroAttr::FromTrait => write!(f, "from_trait"),
+            MacroAttr::FromStringify => write!(f, "from_stringify"),
         }
     }
 }
@@ -121,6 +165,14 @@ impl CompileError {
 
     fn attr_must_be_used(attr: MacroAttr) -> CompileError {
         CompileError(format!("'{}' must be used at least once", attr))
+    }
+
+    fn expected_string_inner_ident(attr: MacroAttr) -> CompileError {
+        CompileError(format!("'{attr}' Expected String as inner ident"))
+    }
+
+    fn parsing_error(attr: MacroAttr, err: String) -> CompileError {
+        CompileError(format!("'{attr}' Error occured while parsing str. Error: {err}"))
     }
 }
 
@@ -188,6 +240,7 @@ fn derive_enum_from_macro(input: DeriveInput, attr: MacroAttr) -> Result<TokenSt
         let maybe_impl = match attr {
             MacroAttr::FromInner => from_inner::impl_from_inner(&ctx, variant)?,
             MacroAttr::FromTrait => from_trait::impl_from_trait(&ctx, variant)?,
+            MacroAttr::FromStringify => from_stringify::impl_from_stringify(&ctx, variant)?,
         };
         if let Some(variant_impl) = maybe_impl {
             impls.push(variant_impl);
@@ -212,4 +265,18 @@ fn wrap_const(code: TokenStream2) -> TokenStream {
         };
     };
     output.into()
+}
+
+/// Get the meta information about the given `attr`.
+pub(crate) fn get_attr_meta(attr: &Attribute, attr_ident: MacroAttr) -> Vec<NestedMeta> {
+    if !attr.path.is_ident(&attr_ident.to_string()) {
+        return Vec::new();
+    }
+
+    match attr.parse_meta() {
+        // A meta list is like the `serde(tag = "...")` in `#[serde(tag = "...")]`
+        // or `serde(untagged)` in `#[serde(untagged)]`
+        Ok(List(meta)) => meta.nested.into_iter().collect(),
+        _ => Vec::new(),
+    }
 }

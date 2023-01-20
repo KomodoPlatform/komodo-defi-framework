@@ -122,7 +122,7 @@ async fn trade_base_rel_electrum(
 
     let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
 
-    wait_for_swaps_finish_and_check_status(&mut mm_bob, &mut mm_alice, &uuids, volume).await;
+    wait_for_swaps_finish_and_check_status(&mut mm_bob, &mut mm_alice, &uuids, volume, maker_price).await;
 
     log!("Checking alice recent swaps..");
     check_recent_swaps(&mm_alice, uuids.len()).await;
