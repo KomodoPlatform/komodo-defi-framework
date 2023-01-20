@@ -2,8 +2,8 @@ use common::block_on;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{enable_tendermint, iris_testnet_conf, my_balance, orderbook, orderbook_v2,
                                   set_price, usdc_ibc_iris_testnet_conf, MarketMakerIt, Mm2TestConf};
-use mm2_test_helpers::structs::{MyBalanceResponse, OrderbookAddress, OrderbookResponse, OrderbookV2Response,
-                                RpcV2Response, SetPriceResponse, TendermintActivationResult};
+use mm2_test_helpers::structs::{OrderbookAddress, OrderbookResponse, OrderbookV2Response, RpcV2Response,
+                                TendermintActivationResult};
 use serde_json::{self, json};
 
 const IRIS_TESTNET_RPCS: &[&str] = &["http://34.80.202.172:26657"];

@@ -1,7 +1,7 @@
 //! Helpers used in the unit and integration tests.
 
 use crate::electrums::qtum_electrums;
-pub use crate::structs::{MyBalanceResponse, RpcResponse, SetPriceResponse, WatcherConf};
+use crate::structs::{MyBalanceResponse, RpcResponse, SetPriceResponse, WatcherConf};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
