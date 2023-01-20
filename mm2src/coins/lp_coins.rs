@@ -291,6 +291,10 @@ pub const EARLY_CONFIRMATION_ERR_LOG: &str = "Early confirmation";
 pub const OLD_TRANSACTION_ERR_LOG: &str = "Old transaction";
 pub const INVALID_RECEIVER_ERR_LOG: &str = "Invalid receiver";
 pub const INVALID_CONTRACT_ADDRESS_ERR_LOG: &str = "Invalid contract address";
+pub const INVALID_PAYMENT_STATE_ERR_LOG: &str = "Invalid payment state";
+pub const INVALID_SWAP_ID_ERR_LOG: &str = "Invalid swap id";
+pub const INVALID_SCRIPT_ERR_LOG: &str = "Invalid script";
+pub const INVALID_REFUND_TX_ERR_LOG: &str = "Invalid refund transaction";
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

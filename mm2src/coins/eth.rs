@@ -80,8 +80,8 @@ use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSen
             ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
             VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult,
-            EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_SENDER_ERR_LOG};
+            EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
+            INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -1453,8 +1453,7 @@ impl WatcherOps for EthCoin {
 
             if tx_from_rpc.from != sender {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Payment tx {:?} was sent from wrong address, expected {:?}",
-                    tx_from_rpc, sender
+                    "{INVALID_SENDER_ERR_LOG}: Payment tx {tx_from_rpc:?} was sent from wrong address, expected {sender:?}"
                 )));
             }
 
@@ -1468,7 +1467,7 @@ impl WatcherOps for EthCoin {
                 && Some(swap_contract_address) != fallback_swap_contract
             {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Payment tx {tx_from_rpc:?} was sent to wrong address, expected either {expected_swap_contract_address:?} or the fallback {fallback_swap_contract:?}"
+                    "{INVALID_CONTRACT_ADDRESS_ERR_LOG}: Payment tx {tx_from_rpc:?} was sent to wrong address, expected either {expected_swap_contract_address:?} or the fallback {fallback_swap_contract:?}"
                 )));
             }
 
@@ -1479,8 +1478,7 @@ impl WatcherOps for EthCoin {
                 .map_to_mm(ValidatePaymentError::Transport)?;
             if status != PAYMENT_STATE_SENT.into() {
                 return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                    "Payment state is not PAYMENT_STATE_SENT, got {}",
-                    status
+                    "{INVALID_PAYMENT_STATE_ERR_LOG}: Payment state is not PAYMENT_STATE_SENT, got {status}"
                 )));
             }
 
@@ -1497,8 +1495,7 @@ impl WatcherOps for EthCoin {
                         .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if swap_id_input != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Invalid 'swap_id' {:?}, expected {:?}",
-                            decoded, swap_id
+                            "{INVALID_SWAP_ID_ERR_LOG}: Invalid 'swap_id' {decoded:?}, expected {swap_id:?}"
                         )));
                     }
 
@@ -1506,9 +1503,7 @@ impl WatcherOps for EthCoin {
                         .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if receiver_input != Token::Address(receiver) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Payment tx receiver arg {:?} is invalid, expected {:?}",
-                            receiver_input,
-                            Token::Address(receiver)
+                            "{INVALID_RECEIVER_ERR_LOG}: Payment tx receiver arg {receiver_input:?} is invalid, expected {:?}", Token::Address(receiver)
                         )));
                     }
 
@@ -1547,8 +1542,7 @@ impl WatcherOps for EthCoin {
                         .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if swap_id_input != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Invalid 'swap_id' {:?}, expected {:?}",
-                            decoded, swap_id
+                            "{INVALID_SWAP_ID_ERR_LOG}: Invalid 'swap_id' {decoded:?}, expected {swap_id:?}"
                         )));
                     }
 
@@ -1566,9 +1560,7 @@ impl WatcherOps for EthCoin {
                         .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     if receiver_addr_input != Token::Address(receiver) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Payment tx receiver arg {:?} is invalid, expected {:?}",
-                            receiver_addr_input,
-                            Token::Address(receiver),
+                            "{INVALID_RECEIVER_ERR_LOG}: Payment tx receiver arg {receiver_addr_input:?} is invalid, expected {:?}", Token::Address(receiver),
                         )));
                     }
 

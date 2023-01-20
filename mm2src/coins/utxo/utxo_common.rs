@@ -18,7 +18,7 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
             ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
             WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
 use chain::constants::SEQUENCE_FINAL;
@@ -1972,9 +1972,9 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     let fut = async move {
         let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_payment_tx, &input.taker_pub)?;
         if !inputs_signed_by_pub {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                "Taker payment does not belong to the verified public key".to_string(),
-            ));
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "{INVALID_SENDER_ERR_LOG}: Taker payment does not belong to the verified public key"
+            )));
         }
 
         let taker_payment_locking_script = match taker_payment_tx.outputs.get(DEFAULT_SWAP_VOUT) {
@@ -1988,8 +1988,7 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
 
         if taker_payment_locking_script != Builder::build_p2sh(&dhash160(&expected_redeem).into()).to_bytes() {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Payment tx locking script {:?} doesn't match expected",
-                taker_payment_locking_script
+                "{INVALID_SCRIPT_ERR_LOG}: Payment tx locking script {taker_payment_locking_script:?} doesn't match expected"
             )));
         }
 
@@ -2014,7 +2013,7 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
 
         if expected_redeem.as_slice() != redeem_script {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                "Taker payment tx locking script doesn't match with taker payment refund redeem script".to_string(),
+                format!("{INVALID_REFUND_TX_ERR_LOG}: Taker payment tx locking script doesn't match with taker payment refund redeem script")
             ));
         }
 

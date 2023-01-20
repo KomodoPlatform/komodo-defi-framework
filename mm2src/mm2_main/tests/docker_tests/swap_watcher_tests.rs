@@ -4,13 +4,15 @@ use crate::integration_tests_common::*;
 use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret,
             SecretKey};
 use coins::coin_errors::ValidatePaymentError;
-use coins::utxo::UtxoCommonOps;
-use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoinEnum, SearchForSwapTxSpendInput, SendTakerPaymentArgs,
-            SendWatcherRefundsPaymentArgs, SwapOps, WatcherOps, WatcherValidateTakerFeeInput,
-            EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+use coins::utxo::{dhash160, UtxoCommonOps};
+use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, SearchForSwapTxSpendInput, SendTakerPaymentArgs,
+            SendWatcherRefundsPaymentArgs, SwapOps, WatcherOps, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
+            INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
+            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures01::Future;
-use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, get_payment_locktime, MAKER_PAYMENT_SENT_LOG,
+use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, get_payment_locktime, MakerSwap, MAKER_PAYMENT_SENT_LOG,
                              MAKER_PAYMENT_SPEND_FOUND_LOG, MAKER_PAYMENT_SPEND_SENT_LOG,
                              TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
@@ -526,6 +528,429 @@ fn test_watcher_validate_taker_fee_erc20() {
 }
 
 #[test]
+fn test_watcher_validate_taker_payment_eth() {
+    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+
+    let taker_coin = eth_distributor();
+    let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
+    let taker_pub = taker_keypair.public();
+
+    let maker_coin = generate_eth_coin_with_random_privkey();
+    let maker_keypair = maker_coin.derive_htlc_key_pair(&[]);
+    let maker_pub = maker_keypair.public();
+
+    let time_lock_duration = get_payment_locktime();
+    let time_lock = (now_ms() / 1000 + time_lock_duration) as u32;
+
+    let secret_hash = dhash160(&MakerSwap::generate_secret());
+
+    let taker_payment = taker_coin
+        .send_taker_payment(SendTakerPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: maker_pub,
+            secret_hash: secret_hash.as_slice(),
+            amount: BigDecimal::from(10),
+            swap_contract_address: &taker_coin.swap_contract_address(),
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        })
+        .wait()
+        .unwrap();
+
+    taker_coin
+        .wait_for_confirmations(&taker_payment.tx_hex(), 1, false, timeout, 1)
+        .wait()
+        .unwrap();
+
+    let validate_taker_payment_res = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: taker_pub.to_vec(),
+            maker_pub: maker_pub.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait();
+    assert!(validate_taker_payment_res.is_ok());
+
+    let error = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: maker_pub.to_vec(),
+            maker_pub: maker_pub.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_SENDER_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_SENDER_ERR_LOG, error
+        ),
+    }
+
+    let taker_payment_wrong_contract = taker_coin
+        .send_taker_payment(SendTakerPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: maker_pub,
+            secret_hash: secret_hash.as_slice(),
+            amount: BigDecimal::from(10),
+            swap_contract_address: &Some("9130b257d37a52e52f21054c4da3450c72f595ce".into()),
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        })
+        .wait()
+        .unwrap();
+
+    let error = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment_wrong_contract.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: taker_pub.to_vec(),
+            maker_pub: maker_pub.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_CONTRACT_ADDRESS_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_CONTRACT_ADDRESS_ERR_LOG, error
+        ),
+    }
+
+    // Used to get wrong swap id
+    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret());
+    let error = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: taker_pub.to_vec(),
+            maker_pub: maker_pub.to_vec(),
+            secret_hash: wrong_secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::UnexpectedPaymentState(err) => {
+            assert!(err.contains(INVALID_PAYMENT_STATE_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `UnexpectedPaymentState` {}, found {:?}",
+            INVALID_PAYMENT_STATE_ERR_LOG, error
+        ),
+    }
+
+    let taker_payment_wrong_secret = taker_coin
+        .send_taker_payment(SendTakerPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: maker_pub,
+            secret_hash: wrong_secret_hash.as_slice(),
+            amount: BigDecimal::from(10),
+            swap_contract_address: &taker_coin.swap_contract_address(),
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        })
+        .wait()
+        .unwrap();
+
+    taker_coin
+        .wait_for_confirmations(&taker_payment_wrong_secret.tx_hex(), 1, false, timeout, 1)
+        .wait()
+        .unwrap();
+
+    let error = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: taker_pub.to_vec(),
+            maker_pub: maker_pub.to_vec(),
+            secret_hash: wrong_secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_SWAP_ID_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_SWAP_ID_ERR_LOG, error
+        ),
+    }
+
+    let error = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: taker_pub.to_vec(),
+            maker_pub: taker_pub.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_RECEIVER_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_RECEIVER_ERR_LOG, error
+        ),
+    }
+}
+
+#[test]
+fn test_watcher_validate_taker_payment_erc20() {
+    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+
+    let seed = String::from("spice describe gravity federal blast come thank unfair canal monkey style afraid");
+    let taker_coin = generate_jst_with_seed(&seed);
+    let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
+    let taker_pub = taker_keypair.public();
+
+    let maker_coin = generate_eth_coin_with_random_privkey();
+    let maker_keypair = maker_coin.derive_htlc_key_pair(&[]);
+    let maker_pub = maker_keypair.public();
+
+    let time_lock_duration = get_payment_locktime();
+    let time_lock = (now_ms() / 1000 + time_lock_duration) as u32;
+
+    let secret_hash = dhash160(&MakerSwap::generate_secret());
+
+    let taker_payment = taker_coin
+        .send_taker_payment(SendTakerPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: maker_pub,
+            secret_hash: secret_hash.as_slice(),
+            amount: BigDecimal::from(10),
+            swap_contract_address: &taker_coin.swap_contract_address(),
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        })
+        .wait()
+        .unwrap();
+
+    taker_coin
+        .wait_for_confirmations(&taker_payment.tx_hex(), 1, false, timeout, 1)
+        .wait()
+        .unwrap();
+
+    let validate_taker_payment_res = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: taker_pub.to_vec(),
+            maker_pub: maker_pub.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait();
+    assert!(validate_taker_payment_res.is_ok());
+
+    let error = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: maker_pub.to_vec(),
+            maker_pub: maker_pub.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_SENDER_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_SENDER_ERR_LOG, error
+        ),
+    }
+
+    let taker_payment_wrong_contract = taker_coin
+        .send_taker_payment(SendTakerPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: maker_pub,
+            secret_hash: secret_hash.as_slice(),
+            amount: BigDecimal::from(10),
+            swap_contract_address: &Some("9130b257d37a52e52f21054c4da3450c72f595ce".into()),
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        })
+        .wait()
+        .unwrap();
+
+    let error = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment_wrong_contract.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: taker_pub.to_vec(),
+            maker_pub: maker_pub.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_CONTRACT_ADDRESS_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_CONTRACT_ADDRESS_ERR_LOG, error
+        ),
+    }
+
+    // // Used to get wrong swap id
+    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret());
+    let error = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: taker_pub.to_vec(),
+            maker_pub: maker_pub.to_vec(),
+            secret_hash: wrong_secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::UnexpectedPaymentState(err) => {
+            assert!(err.contains(INVALID_PAYMENT_STATE_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `UnexpectedPaymentState` {}, found {:?}",
+            INVALID_PAYMENT_STATE_ERR_LOG, error
+        ),
+    }
+
+    let taker_payment_wrong_secret = taker_coin
+        .send_taker_payment(SendTakerPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: maker_pub,
+            secret_hash: wrong_secret_hash.as_slice(),
+            amount: BigDecimal::from(10),
+            swap_contract_address: &taker_coin.swap_contract_address(),
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        })
+        .wait()
+        .unwrap();
+
+    taker_coin
+        .wait_for_confirmations(&taker_payment_wrong_secret.tx_hex(), 1, false, timeout, 1)
+        .wait()
+        .unwrap();
+
+    let error = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: taker_pub.to_vec(),
+            maker_pub: maker_pub.to_vec(),
+            secret_hash: wrong_secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_SWAP_ID_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_SWAP_ID_ERR_LOG, error
+        ),
+    }
+
+    let error = taker_coin
+        .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: Vec::new(),
+            time_lock,
+            taker_pub: taker_pub.to_vec(),
+            maker_pub: taker_pub.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_RECEIVER_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_RECEIVER_ERR_LOG, error
+        ),
+    }
+}
+
+#[test]
 fn test_watcher_spends_maker_payment_spend_utxo() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 100.into());
     generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), bob_priv_key);
@@ -865,6 +1290,180 @@ fn test_watcher_validate_taker_fee_utxo() {
         _ => panic!(
             "Expected `WrongPaymentTx` tx output script_pubkey doesn't match expected, found {:?}",
             error
+        ),
+    }
+}
+
+#[test]
+fn test_watcher_validate_taker_payment_utxo() {
+    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let time_lock_duration = get_payment_locktime();
+    let time_lock = (now_ms() / 1000 + time_lock_duration) as u32;
+
+    let (_ctx, taker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+    let taker_pubkey = taker_coin.my_public_key().unwrap();
+
+    let (_ctx, maker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+    let maker_pubkey = maker_coin.my_public_key().unwrap();
+
+    let secret_hash = dhash160(&MakerSwap::generate_secret());
+
+    let taker_payment = taker_coin
+        .send_taker_payment(SendTakerPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: maker_pubkey,
+            secret_hash: secret_hash.as_slice(),
+            amount: BigDecimal::from(10),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        })
+        .wait()
+        .unwrap();
+
+    taker_coin
+        .wait_for_confirmations(&taker_payment.tx_hex(), 1, false, timeout, 1)
+        .wait()
+        .unwrap();
+
+    let taker_payment_refund_preimage = taker_coin
+        .create_taker_payment_refund_preimage(
+            &taker_payment.tx_hex(),
+            time_lock,
+            maker_pubkey,
+            secret_hash.as_slice(),
+            &None,
+            &[],
+        )
+        .wait()
+        .unwrap();
+    let validate_taker_payment_res = taker_coin
+        .watcher_validate_taker_payment(WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: taker_payment_refund_preimage.tx_hex(),
+            time_lock,
+            taker_pub: taker_pubkey.to_vec(),
+            maker_pub: maker_pubkey.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait();
+    assert!(validate_taker_payment_res.is_ok());
+
+    let error = taker_coin
+        .watcher_validate_taker_payment(WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: taker_payment_refund_preimage.tx_hex(),
+            time_lock,
+            taker_pub: maker_pubkey.to_vec(),
+            maker_pub: maker_pubkey.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_SENDER_ERR_LOG))
+        },
+        _ => panic!("Expected `WrongPaymentTx` {INVALID_SENDER_ERR_LOG}, found {:?}", error),
+    }
+
+    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret());
+    let error = taker_coin
+        .watcher_validate_taker_payment(WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: taker_payment_refund_preimage.tx_hex(),
+            time_lock,
+            taker_pub: taker_pubkey.to_vec(),
+            maker_pub: maker_pubkey.to_vec(),
+            secret_hash: wrong_secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_SCRIPT_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_SCRIPT_ERR_LOG, error
+        ),
+    }
+
+    // Wrong time lock
+    let error = taker_coin
+        .watcher_validate_taker_payment(WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: taker_payment_refund_preimage.tx_hex(),
+            time_lock: 500,
+            taker_pub: taker_pubkey.to_vec(),
+            maker_pub: maker_pubkey.to_vec(),
+            secret_hash: wrong_secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_SCRIPT_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_SCRIPT_ERR_LOG, error
+        ),
+    }
+
+    let wrong_taker_payment_refund_preimage = taker_coin
+        .create_taker_payment_refund_preimage(
+            &taker_payment.tx_hex(),
+            time_lock,
+            maker_pubkey,
+            wrong_secret_hash.as_slice(),
+            &None,
+            &[],
+        )
+        .wait()
+        .unwrap();
+
+    let error = taker_coin
+        .watcher_validate_taker_payment(WatcherValidatePaymentInput {
+            payment_tx: taker_payment.tx_hex(),
+            taker_payment_refund_preimage: wrong_taker_payment_refund_preimage.tx_hex(),
+            time_lock,
+            taker_pub: taker_pubkey.to_vec(),
+            maker_pub: maker_pubkey.to_vec(),
+            secret_hash: secret_hash.to_vec(),
+            try_spv_proof_until: timeout,
+            confirmations: 1,
+        })
+        .wait()
+        .unwrap_err()
+        .into_inner();
+
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains(INVALID_REFUND_TX_ERR_LOG))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            INVALID_REFUND_TX_ERR_LOG, error
         ),
     }
 }
