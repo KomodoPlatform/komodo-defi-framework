@@ -5,14 +5,15 @@ use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
             MakerSwapTakerCoin, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
             PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RefundError,
-            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
-            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureResult, TakerSwapMakerCoin, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
+            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SendWatcherRefundsPaymentArgs,
+            SignatureResult, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
@@ -601,8 +602,6 @@ impl SwapOps for SolanaCoin {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }
-
-    fn is_supported_by_watchers(&self) -> bool { unimplemented!() }
 }
 
 #[async_trait]
@@ -632,7 +631,7 @@ impl WatcherOps for SolanaCoin {
         unimplemented!();
     }
 
-    fn send_maker_payment_spend_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+    fn send_maker_payment_spend_preimage(&self, _input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
         unimplemented!();
     }
 
@@ -648,7 +647,10 @@ impl WatcherOps for SolanaCoin {
         unimplemented!();
     }
 
-    fn send_taker_payment_refund_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(
+        &self,
+        _watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
+    ) -> TransactionFut {
         unimplemented!();
     }
 

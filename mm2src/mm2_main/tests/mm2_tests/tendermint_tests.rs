@@ -4,7 +4,7 @@ use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{atom_testnet_conf, enable_tendermint, enable_tendermint_token,
                                   get_tendermint_my_tx_history, iris_nimda_testnet_conf, iris_testnet_conf,
                                   my_balance, send_raw_transaction, withdraw_v1, MarketMakerIt, Mm2TestConf};
-use mm2_test_helpers::structs::{MyBalanceResponse, RpcV2Response, TendermintActivationResult, TransactionDetails};
+use mm2_test_helpers::structs::{RpcV2Response, TendermintActivationResult, TransactionDetails};
 use serde_json::{self as json, json};
 
 const ATOM_TEST_BALANCE_SEED: &str = "atom test seed";
@@ -35,9 +35,7 @@ fn test_tendermint_activation_and_balance() {
     let expected_balance: BigDecimal = "0.0959".parse().unwrap();
     assert_eq!(result.result.balance.spendable, expected_balance);
 
-    let my_balance_result = block_on(my_balance(&mm, ATOM_TICKER));
-    let my_balance: MyBalanceResponse = json::from_value(my_balance_result).unwrap();
-
+    let my_balance = block_on(my_balance(&mm, ATOM_TICKER));
     assert_eq!(my_balance.balance, expected_balance);
     assert_eq!(my_balance.unspendable_balance, BigDecimal::default());
     assert_eq!(my_balance.address, expected_address);

@@ -1,6 +1,7 @@
 //! Helpers used in the unit and integration tests.
 
 use crate::electrums::qtum_electrums;
+pub use crate::structs::{MyBalanceResponse, WatcherConf};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -127,7 +128,7 @@ pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
 pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
 pub const PIRATE_ELECTRUMS: &[&str] = &["pirate.sirseven.me:10032"];
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://pirate.sirseven.me:443"];
-const DEFAULT_RPC_PASSWORD: &str = "pass";
+pub const DEFAULT_RPC_PASSWORD: &str = "pass";
 pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10071",
     "electrum2.cipig.net:10071",
@@ -144,6 +145,10 @@ pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd80
 
 pub const ETH_DEV_NODES: &[&str] = &["http://195.201.0.6:8565"];
 pub const ETH_DEV_SWAP_CONTRACT: &str = "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd";
+
+pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc-sepolia.rockx.com/"];
+pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xA25E0e06fB139CDc2f9f11675877DaD9EdD1C352";
+pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x948BF5172383F1Bc0Fdf3aBe0630b855694A5D2c";
 
 pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
 
@@ -211,15 +216,7 @@ impl Mm2TestConf {
         }
     }
 
-    pub fn watcher_light_node(
-        passphrase: &str,
-        coins: &Json,
-        seednodes: &[&str],
-        wait_maker_payment_spend_factor: f64,
-        refund_start_factor: f64,
-        search_interval: f64,
-        wait_taker_payment: f64,
-    ) -> Self {
+    pub fn watcher_light_node(passphrase: &str, coins: &Json, seednodes: &[&str], conf: WatcherConf) -> Self {
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",
@@ -229,12 +226,7 @@ impl Mm2TestConf {
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
                 "is_watcher": true,
-                "watcher_conf": {
-                    "wait_maker_payment_spend_factor": wait_maker_payment_spend_factor,
-                    "refund_start_factor": refund_start_factor,
-                    "search_interval": search_interval,
-                    "wait_taker_payment": wait_taker_payment
-                }
+                "watcher_conf": conf
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -608,6 +600,20 @@ pub fn eth_jst_testnet_conf() -> Json {
             "protocol_data": {
                 "platform": "ETH",
                 "contract_address": "0x2b294F029Fde858b2c62184e8390591755521d8E"
+            }
+        }
+    })
+}
+
+pub fn eth_jst_conf(contract_address: &str) -> Json {
+    json!({
+        "coin": "JST",
+        "name": "jst",
+        "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+                "platform": "ETH",
+                "contract_address": contract_address
             }
         }
     })
@@ -2297,7 +2303,7 @@ pub async fn send_raw_transaction(mm: &MarketMakerIt, coin: &str, tx: &str) -> J
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
+pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
