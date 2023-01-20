@@ -1,9 +1,10 @@
-use super::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumProtocol};
+use super::rpc_clients::{ElectrumClient, UtxoRpcClientOps};
+use super::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
+use super::utxo_standard::UtxoStandardCoin;
 use super::*;
-use crate::utxo::rpc_clients::UtxoRpcClientOps;
-use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, IndexedDBBlockHeadersStorage};
 use crate::utxo::utxo_common_tests;
-use common::executor::Timer;
+use crate::{IguanaPrivKey, PrivKeyBuildPolicy};
+use mm2_core::mm_ctx::MmCtxBuilder;
 use serialization::deserialize;
 use wasm_bindgen_test::*;
 
@@ -12,38 +13,34 @@ wasm_bindgen_test_configure!(run_in_browser);
 const TEST_COIN_NAME: &'static str = "RICK";
 
 pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
-    let block_headers_storage = BlockHeaderStorage {
-        inner: Box::new(IndexedDBBlockHeadersStorage {}),
-    };
-    let abortable_system = AbortableQueue::default();
-    let client = ElectrumClientImpl::new(
-        TEST_COIN_NAME.into(),
-        Default::default(),
-        block_headers_storage,
-        abortable_system,
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    let servers: Vec<_> = servers
+        .iter()
+        .map(|server| json!({ "url": server, "protocol": "WSS" }))
+        .collect();
+    let req = json!({
+        "method": "electrum",
+        "servers": servers,
+    });
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(IguanaPrivKey::default());
+    let builder = UtxoArcBuilder::new(
+        &ctx,
+        TEST_COIN_NAME,
+        &Json::Null,
+        &params,
+        priv_key_policy,
+        UtxoStandardCoin::from,
     );
-    for server in servers {
-        client
-            .add_server(&ElectrumRpcRequest {
-                url: server.to_string(),
-                protocol: ElectrumProtocol::WSS,
-                disable_cert_verification: false,
-            })
-            .await
-            .expect("!add_server");
-    }
+    let args = ElectrumBuilderArgs {
+        spawn_ping: false,
+        negotiate_version: true,
+        collect_metrics: false,
+    };
 
-    let mut attempts = 0;
-    while !client.is_connected().await {
-        if attempts >= 10 {
-            panic!("Failed to connect to at least 1 of {:?} in 5 seconds.", servers);
-        }
-
-        Timer::sleep(0.5).await;
-        attempts += 1;
-    }
-
-    ElectrumClient(Arc::new(client))
+    let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
+    let abortable_system = AbortableQueue::default();
+    builder.electrum_client(abortable_system, args, servers).await.unwrap()
 }
 
 #[wasm_bindgen_test]

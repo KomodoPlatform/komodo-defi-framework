@@ -1,14 +1,13 @@
-use crate::{CompileError, IdentCtx, MacroAttr, UnnamedInnerField};
+use crate::{get_attr_meta, CompileError, IdentCtx, MacroAttr, UnnamedInnerField};
 use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::quote;
-use syn::Attribute;
-use syn::Meta::{List, Path};
+use syn::Meta::Path;
 use syn::{NestedMeta, Variant};
 
 impl CompileError {
     /// This error constructor is involved to be used on `EnumFromTrait` macro.
-    fn expected_trait_method_path() -> CompileError {
+    pub(crate) fn expected_trait_method_path() -> CompileError {
         CompileError(format!(
             "'{}' attribute must consist of two parts: 'Trait::method'. For example, #[{}(Default::default)]",
             MacroAttr::FromTrait,
@@ -77,19 +76,5 @@ impl<'a> TryFrom<&'a NestedMeta> for TraitIdentMethod<'a> {
             }),
             _ => Err(CompileError::expected_trait_method_path()),
         }
-    }
-}
-
-/// Get the meta information about the given `attr`.
-fn get_attr_meta(attr: &Attribute, attr_ident: MacroAttr) -> Vec<NestedMeta> {
-    if !attr.path.is_ident(&attr_ident.to_string()) {
-        return Vec::new();
-    }
-
-    match attr.parse_meta() {
-        // A meta list is like the `serde(tag = "...")` in `#[serde(tag = "...")]`
-        // or `serde(untagged)` in `#[serde(untagged)]`
-        Ok(List(meta)) => meta.nested.into_iter().collect(),
-        _ => Vec::new(),
     }
 }

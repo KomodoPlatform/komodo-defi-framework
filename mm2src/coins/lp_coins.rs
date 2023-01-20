@@ -43,7 +43,7 @@ use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy,
              Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
-use enum_from::EnumFromTrait;
+use enum_from::{EnumFromStringify, EnumFromTrait};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -1654,7 +1654,7 @@ impl DelegationError {
     }
 }
 
-#[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType, PartialEq)]
+#[derive(Clone, Debug, Display, EnumFromStringify, EnumFromTrait, Serialize, SerializeErrorType, PartialEq)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum WithdrawError {
     #[display(
@@ -1713,6 +1713,7 @@ pub enum WithdrawError {
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[from_trait(WithInternal::internal)]
+    #[from_stringify("NumConversError", "UnexpectedDerivationMethod", "PrivKeyPolicyNotAllowed")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }
@@ -1740,10 +1741,6 @@ impl HttpStatusCode for WithdrawError {
     }
 }
 
-impl From<NumConversError> for WithdrawError {
-    fn from(e: NumConversError) -> Self { WithdrawError::InternalError(e.to_string()) }
-}
-
 impl From<BalanceError> for WithdrawError {
     fn from(e: BalanceError) -> Self {
         match e {
@@ -1768,14 +1765,6 @@ impl From<UtxoSignWithKeyPairError> for WithdrawError {
         let error = format!("Error signing: {}", e);
         WithdrawError::InternalError(error)
     }
-}
-
-impl From<UnexpectedDerivationMethod> for WithdrawError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { WithdrawError::InternalError(e.to_string()) }
-}
-
-impl From<PrivKeyPolicyNotAllowed> for WithdrawError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { WithdrawError::InternalError(e.to_string()) }
 }
 
 impl WithdrawError {
@@ -1822,11 +1811,12 @@ impl WithdrawError {
     }
 }
 
-#[derive(Serialize, Display, Debug, SerializeErrorType)]
+#[derive(Serialize, Display, Debug, EnumFromStringify, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum SignatureError {
     #[display(fmt = "Invalid request: {}", _0)]
     InvalidRequest(String),
+    #[from_stringify("CoinFindError", "ethkey::Error", "keys::Error", "PrivKeyPolicyNotAllowed")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
     #[display(fmt = "Coin is not found: {}", _0)]
@@ -1844,22 +1834,6 @@ impl HttpStatusCode for SignatureError {
             SignatureError::PrefixNotFound => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
-}
-
-impl From<keys::Error> for SignatureError {
-    fn from(e: keys::Error) -> Self { SignatureError::InternalError(e.to_string()) }
-}
-
-impl From<ethkey::Error> for SignatureError {
-    fn from(e: ethkey::Error) -> Self { SignatureError::InternalError(e.to_string()) }
-}
-
-impl From<PrivKeyPolicyNotAllowed> for SignatureError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { SignatureError::InternalError(e.to_string()) }
-}
-
-impl From<CoinFindError> for SignatureError {
-    fn from(e: CoinFindError) -> Self { SignatureError::CoinIsNotFound(e.to_string()) }
 }
 
 #[derive(Serialize, Display, Debug, SerializeErrorType)]
@@ -2534,6 +2508,8 @@ pub trait RpcTransportEventHandler {
     fn on_incoming_response(&self, data: &[u8]);
 
     fn on_connected(&self, address: String) -> Result<(), String>;
+
+    fn on_disconnected(&self, address: String) -> Result<(), String>;
 }
 
 impl fmt::Debug for dyn RpcTransportEventHandler + Send + Sync {
@@ -2548,6 +2524,8 @@ impl RpcTransportEventHandler for RpcTransportEventHandlerShared {
     fn on_incoming_response(&self, data: &[u8]) { self.as_ref().on_incoming_response(data) }
 
     fn on_connected(&self, address: String) -> Result<(), String> { self.as_ref().on_connected(address) }
+
+    fn on_disconnected(&self, address: String) -> Result<(), String> { self.as_ref().on_disconnected(address) }
 }
 
 impl<T: RpcTransportEventHandler> RpcTransportEventHandler for Vec<T> {
@@ -2571,6 +2549,13 @@ impl<T: RpcTransportEventHandler> RpcTransportEventHandler for Vec<T> {
     fn on_connected(&self, address: String) -> Result<(), String> {
         for handler in self {
             try_s!(handler.on_connected(address.clone()))
+        }
+        Ok(())
+    }
+
+    fn on_disconnected(&self, address: String) -> Result<(), String> {
+        for handler in self {
+            try_s!(handler.on_disconnected(address.clone()))
         }
         Ok(())
     }
@@ -2633,6 +2618,12 @@ impl RpcTransportEventHandler for CoinTransportMetrics {
 
     fn on_connected(&self, _address: String) -> Result<(), String> {
         // Handle a new connected endpoint if necessary.
+        // Now just return the Ok
+        Ok(())
+    }
+
+    fn on_disconnected(&self, _address: String) -> Result<(), String> {
+        // Handle disconnected endpoint if necessary.
         // Now just return the Ok
         Ok(())
     }
