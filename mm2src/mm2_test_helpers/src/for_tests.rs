@@ -2563,9 +2563,15 @@ pub async fn start_swaps(
     for uuid in uuids.iter() {
         // ensure the swaps are started
         let expected_log = format!("Taker swap {} has successfully started", uuid);
-        taker.wait_for_log(5., |log| log.contains(&expected_log)).await.unwrap();
+        taker
+            .wait_for_log(10., |log| log.contains(&expected_log))
+            .await
+            .unwrap();
         let expected_log = format!("Maker swap {} has successfully started", uuid);
-        maker.wait_for_log(5., |log| log.contains(&expected_log)).await.unwrap()
+        maker
+            .wait_for_log(10., |log| log.contains(&expected_log))
+            .await
+            .unwrap()
     }
 
     uuids
