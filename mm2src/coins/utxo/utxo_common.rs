@@ -12,11 +12,13 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAccountAddressId,
-            RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
-            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
-            ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput,
+            SendMakerPaymentSpendPreimageInput, SendWatcherRefundsPaymentArgs, SignatureError, SignatureResult,
+            SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr, ValidateAddressResult,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
+            WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
+            INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
 use chain::constants::SEQUENCE_FINAL;
@@ -59,11 +61,6 @@ pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
 pub const DEFAULT_SWAP_VOUT: usize = 0;
 pub const DEFAULT_SWAP_VIN: usize = 0;
 const MIN_BTC_TRADING_VOL: &str = "0.00777";
-
-pub const INVALID_PUBKEY_ERR_LOG: &str = "Invalid public key";
-pub const EARLY_CONFIRMATION_ERR_LOG: &str = "Early confirmation";
-pub const OLD_TRANSACTION_ERR_LOG: &str = "Old transaction";
-pub const INVALID_SCRIPT_PUBKEY_ERR_LOG: &str = "Invalid script pubkey";
 
 macro_rules! true_or {
     ($cond: expr, $etype: expr) => {
@@ -1294,11 +1291,10 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
 }
 
 pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
-    coin: T,
-    preimage: &[u8],
-    secret: &[u8],
+    coin: &T,
+    input: SendMakerPaymentSpendPreimageInput,
 ) -> TransactionFut {
-    let mut transaction: UtxoTx = try_tx_fus!(deserialize(preimage).map_err(|e| ERRL!("{:?}", e)));
+    let mut transaction: UtxoTx = try_tx_fus!(deserialize(input.preimage).map_err(|e| ERRL!("{:?}", e)));
     if transaction.inputs.is_empty() {
         return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any input"));
     }
@@ -1315,7 +1311,7 @@ pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
         .data
         .ok_or("No redeem script in the taker spends maker payment preimage"));
     let script_data = Builder::default()
-        .push_data(secret)
+        .push_data(input.secret)
         .push_opcode(Opcode::OP_0)
         .into_script();
 
@@ -1326,6 +1322,7 @@ pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 
     transaction.inputs[DEFAULT_SWAP_VIN].script_sig = resulting_script;
 
+    let coin = coin.clone();
     let fut = async move {
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         try_tx_s!(tx_fut.await, transaction);
@@ -1337,7 +1334,7 @@ pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 }
 
 pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
-    coin: T,
+    coin: &T,
     maker_payment_tx: &[u8],
     time_lock: u32,
     maker_pub: &[u8],
@@ -1362,6 +1359,7 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
         key_pair.public(),
     )
     .into();
+    let coin = coin.clone();
     let fut = async move {
         let fee = try_tx_s!(
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WatcherPreimage)
@@ -1398,13 +1396,14 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 }
 
 pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
-    coin: T,
+    coin: &T,
     taker_payment_tx: &[u8],
     time_lock: u32,
     maker_pub: &[u8],
     secret_hash: &[u8],
     swap_unique_data: &[u8],
 ) -> TransactionFut {
+    let coin = coin.clone();
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
     let mut prev_transaction: UtxoTx =
         try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
@@ -1588,11 +1587,13 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
 }
 
 pub fn send_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
-    coin: T,
-    taker_payment_refund_preimage: &[u8],
+    coin: &T,
+    watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
 ) -> TransactionFut {
-    let transaction: UtxoTx =
-        try_tx_fus!(deserialize(taker_payment_refund_preimage).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
+    let coin = coin.clone();
+    let transaction: UtxoTx = try_tx_fus!(
+        deserialize(watcher_refunds_payment_args.payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e)))
+    );
 
     let fut = async move {
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
@@ -1759,10 +1760,11 @@ pub fn check_all_utxo_inputs_signed_by_pub(
 }
 
 pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
-    coin: T,
+    coin: &T,
     input: WatcherValidateTakerFeeInput,
     output_index: usize,
 ) -> ValidatePaymentFut<()> {
+    let coin = coin.clone();
     let sender_pubkey = input.sender_pubkey;
     let taker_fee_hash = input.taker_fee_hash;
     let min_block_number = input.min_block_number;
@@ -1796,7 +1798,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             if !inputs_signed_by_pub {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "{}: Taker fee does not belong to the verified public key",
-                    INVALID_PUBKEY_ERR_LOG
+                    INVALID_SENDER_ERR_LOG
                 )));
             }
 
@@ -1833,7 +1835,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                     if out.script_pubkey != expected_script_pubkey {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "{}: Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
-                            INVALID_SCRIPT_PUBKEY_ERR_LOG, out.script_pubkey, expected_script_pubkey
+                            INVALID_RECEIVER_ERR_LOG, out.script_pubkey, expected_script_pubkey
                         )));
                     }
                 },

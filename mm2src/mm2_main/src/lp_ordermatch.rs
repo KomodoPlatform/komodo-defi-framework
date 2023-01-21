@@ -63,10 +63,11 @@ use uuid::Uuid;
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                          check_other_coin_balance_for_swap, insert_new_swap_to_db, is_pubkey_banned,
-                          lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
+                          check_other_coin_balance_for_swap, get_max_maker_vol, insert_new_swap_to_db,
+                          is_pubkey_banned, lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
                           p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, AtomicLocktimeVersion,
-                          MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
+                          CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap, RunMakerSwapInput,
+                          RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update,
@@ -1039,7 +1040,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
         // Get the max maker available volume to check if the wallet balances are sufficient for the issued maker orders.
         // Note although the maker orders are issued already, but they are not matched yet, so pass the `OrderIssue` stage.
         let new_volume = match calc_max_maker_vol(&ctx, coin, new_balance, FeeApproxStage::OrderIssue).await {
-            Ok(v) => v,
+            Ok(vol_info) => vol_info.volume,
             Err(e) if e.get_inner().not_sufficient_balance() => MmNumber::from(0),
             Err(e) => {
                 log::warn!("Couldn't handle the 'balance_updated' event: {}", e);
@@ -3093,7 +3094,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 };
                 let max_vol = match calc_max_maker_vol(&ctx, &base, &current_balance, FeeApproxStage::OrderIssue).await
                 {
-                    Ok(max) => max,
+                    Ok(vol_info) => vol_info.volume,
                     Err(e) => {
                         log::info!("Error {} on balance check to kickstart order {}, cancelling", e, uuid);
                         to_cancel.push(uuid);
@@ -4403,30 +4404,17 @@ async fn cancel_orders_on_error<T, E>(ctx: &MmArc, req: &SetPriceReq, error: E) 
     Err(error)
 }
 
-struct CoinVolumeInfo {
-    volume: MmNumber,
-    balance: BigDecimal,
-}
-
-async fn get_max_volume(ctx: &MmArc, my_coin: &MmCoinEnum, other_coin: &MmCoinEnum) -> Result<CoinVolumeInfo, String> {
-    let my_balance = try_s!(my_coin.my_spendable_balance().compat().await);
-
-    let volume = try_s!(calc_max_maker_vol(ctx, my_coin, &my_balance, FeeApproxStage::OrderIssue).await);
-
-    // check if `rel_coin` balance is sufficient
-    let other_coin_trade_fee = try_s!(
-        other_coin
-            .get_receiver_trade_fee(volume.to_decimal(), FeeApproxStage::OrderIssue)
-            .compat()
-            .await
-    );
-    try_s!(check_other_coin_balance_for_swap(ctx, other_coin, None, other_coin_trade_fee).await);
-    // calculate max maker volume
-    // note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient
-    Ok(CoinVolumeInfo {
-        volume,
-        balance: my_balance,
-    })
+pub async fn check_other_coin_balance_for_order_issue(
+    ctx: &MmArc,
+    other_coin: &MmCoinEnum,
+    my_coin_volume: BigDecimal,
+) -> CheckBalanceResult<()> {
+    let trade_fee = other_coin
+        .get_receiver_trade_fee(my_coin_volume, FeeApproxStage::OrderIssue)
+        .compat()
+        .await
+        .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
+    check_other_coin_balance_for_swap(ctx, other_coin, None, trade_fee).await
 }
 
 pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String, balance: Option<BigDecimal>) {
@@ -4470,12 +4458,14 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         return ERR!("Rel coin {} is wallet only", req.rel);
     }
 
-    let CoinVolumeInfo { volume, balance } = if req.max {
-        try_s!(
-            get_max_volume(ctx, &base_coin, &rel_coin)
+    let (volume, balance) = if req.max {
+        let CoinVolumeInfo { volume, balance, .. } = try_s!(
+            get_max_maker_vol(ctx, &base_coin)
                 .or_else(|e| cancel_orders_on_error(ctx, &req, e))
                 .await
-        )
+        );
+        try_s!(check_other_coin_balance_for_order_issue(ctx, &rel_coin, volume.to_decimal()).await);
+        (volume, balance.to_decimal())
     } else {
         let balance = try_s!(
             check_balance_for_maker_swap(
@@ -4490,10 +4480,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
             .or_else(|e| cancel_orders_on_error(ctx, &req, e))
             .await
         );
-        CoinVolumeInfo {
-            volume: req.volume.clone(),
-            balance,
-        }
+        (req.volume.clone(), balance)
     };
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
@@ -4649,7 +4636,8 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
 
     // Calculate order volume and add to update_msg if new_volume is found in the request
     let new_volume = if req.max.unwrap_or(false) {
-        let max_volume = try_s!(get_max_volume(ctx, &base_coin, &rel_coin).await).volume + reserved_amount.clone();
+        let max_volume = try_s!(get_max_maker_vol(ctx, &base_coin).await).volume + reserved_amount.clone();
+        try_s!(check_other_coin_balance_for_order_issue(ctx, &rel_coin, max_volume.to_decimal()).await);
         update_msg.with_new_max_volume(max_volume.clone().into());
         max_volume
     } else if Option::is_some(&req.volume_delta) {

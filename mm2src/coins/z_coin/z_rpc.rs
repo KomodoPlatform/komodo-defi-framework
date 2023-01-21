@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::task::block_in_place;
 use tonic::transport::{Channel, ClientTlsConfig};
 use zcash_client_backend::data_api::chain::{scan_cached_blocks, validate_chain};
@@ -376,10 +377,13 @@ pub async fn create_wallet_db(
 }
 
 pub(super) async fn init_light_client(
+    coin: String,
     lightwalletd_urls: Vec<String>,
     blocks_db: BlockDb,
     wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
+    scan_blocks_per_iteration: u32,
+    scan_interval_ms: u64,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
@@ -419,6 +423,7 @@ pub(super) async fn init_light_client(
     }
 
     let sync_handle = SaplingSyncLoopHandle {
+        coin,
         current_block: BlockHeight::from_u32(0),
         blocks_db,
         wallet_db: wallet_db.clone(),
@@ -426,6 +431,8 @@ pub(super) async fn init_light_client(
         sync_status_notifier,
         on_tx_gen_watcher,
         watch_for_tx: None,
+        scan_blocks_per_iteration,
+        scan_interval_ms,
     };
 
     drop_mutability!(rpc_clients);
@@ -438,15 +445,19 @@ pub(super) async fn init_light_client(
 }
 
 pub(super) async fn init_native_client(
+    coin: String,
     native_client: NativeClient,
     blocks_db: BlockDb,
     wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
+    scan_blocks_per_iteration: u32,
+    scan_interval_ms: u64,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
 
     let sync_handle = SaplingSyncLoopHandle {
+        coin,
         current_block: BlockHeight::from_u32(0),
         blocks_db,
         wallet_db: wallet_db.clone(),
@@ -454,6 +465,8 @@ pub(super) async fn init_native_client(
         sync_status_notifier,
         on_tx_gen_watcher,
         watch_for_tx: None,
+        scan_blocks_per_iteration,
+        scan_interval_ms,
     };
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(native_client)));
 
@@ -513,6 +526,7 @@ pub enum SyncStatus {
 }
 
 pub struct SaplingSyncLoopHandle {
+    coin: String,
     current_block: BlockHeight,
     blocks_db: BlockDb,
     wallet_db: WalletDbShared,
@@ -523,6 +537,8 @@ pub struct SaplingSyncLoopHandle {
     /// This watcher waits for such notification
     on_tx_gen_watcher: AsyncReceiver<OneshotSender<(Self, Box<dyn ZRpcOps + Send>)>>,
     watch_for_tx: Option<TxId>,
+    scan_blocks_per_iteration: u32,
+    scan_interval_ms: u64,
 }
 
 impl SaplingSyncLoopHandle {
@@ -624,7 +640,16 @@ impl SaplingSyncLoopHandle {
                 },
                 None => self.notify_building_wallet_db(0, current_block.into()),
             }
-            scan_cached_blocks(&self.consensus_params, &self.blocks_db, &mut wallet_ops, Some(1000))?;
+
+            scan_cached_blocks(
+                &self.consensus_params,
+                &self.blocks_db,
+                &mut wallet_ops,
+                Some(self.scan_blocks_per_iteration),
+            )?;
+            if self.scan_interval_ms > 0 {
+                std::thread::sleep(Duration::from_millis(self.scan_interval_ms));
+            }
         }
         Ok(())
     }
@@ -660,6 +685,10 @@ impl SaplingSyncLoopHandle {
 /// 7. Once the loop is respawned, it will check that broadcast tx is imported (or not available anymore) before stopping in favor of
 ///     next wait_for_gen_tx_blockchain_sync call.
 async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut client: Box<dyn ZRpcOps + Send>) {
+    info!(
+        "(Re)starting light_wallet_db_sync_loop for {}, blocks per iteration {}, interval in ms {}",
+        sync_handle.coin, sync_handle.scan_blocks_per_iteration, sync_handle.scan_interval_ms
+    );
     // this loop is spawned as standalone task so it's safe to use block_in_place here
     loop {
         if let Err(e) = sync_handle.update_blocks_cache(client.as_mut()).await {

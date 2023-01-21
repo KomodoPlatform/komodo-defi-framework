@@ -2,8 +2,8 @@ use common::block_on;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{enable_tendermint, iris_testnet_conf, my_balance, orderbook, orderbook_v2,
                                   set_price, usdc_ibc_iris_testnet_conf, MarketMakerIt, Mm2TestConf};
-use mm2_test_helpers::structs::{MyBalanceResponse, OrderbookAddress, OrderbookResponse, OrderbookV2Response,
-                                RpcV2Response, SetPriceResponse, TendermintActivationResult};
+use mm2_test_helpers::structs::{OrderbookAddress, OrderbookResponse, OrderbookV2Response, RpcV2Response,
+                                TendermintActivationResult};
 use serde_json::{self, json};
 
 const IRIS_TESTNET_RPCS: &[&str] = &["http://34.80.202.172:26657"];
@@ -39,16 +39,13 @@ fn test_iris_with_usdc_activation_balance_orderbook() {
     let actual_usdc_balance = response.result.tokens_balances.get(USDC_IBC_TICKER).unwrap();
     assert_eq!(actual_usdc_balance.spendable, expected_usdc_balance);
 
-    let usdc_balance_response = block_on(my_balance(&mm, USDC_IBC_TICKER));
-    let actual_usdc_balance: MyBalanceResponse = serde_json::from_value(usdc_balance_response).unwrap();
-    assert_eq!(actual_usdc_balance.balance, expected_usdc_balance);
+    let actual_usdc_balance = block_on(my_balance(&mm, USDC_IBC_TICKER)).balance;
+    assert_eq!(actual_usdc_balance, expected_usdc_balance);
 
-    let set_price_res = block_on(set_price(&mm, USDC_IBC_TICKER, IRIS_TICKER, "1", "0.1"));
-    let set_price_res: SetPriceResponse = serde_json::from_value(set_price_res).unwrap();
+    let set_price_res = block_on(set_price(&mm, USDC_IBC_TICKER, IRIS_TICKER, "1", "0.1", false));
     println!("{:?}", set_price_res);
 
-    let set_price_res = block_on(set_price(&mm, IRIS_TICKER, USDC_IBC_TICKER, "1", "0.1"));
-    let set_price_res: SetPriceResponse = serde_json::from_value(set_price_res).unwrap();
+    let set_price_res = block_on(set_price(&mm, IRIS_TICKER, USDC_IBC_TICKER, "1", "0.1", false));
     println!("{:?}", set_price_res);
 
     let orderbook = block_on(orderbook(&mm, USDC_IBC_TICKER, IRIS_TICKER));
