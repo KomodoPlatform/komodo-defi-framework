@@ -3922,4 +3922,15 @@ fn test_locked_amount() {
         rational: expected_num.into(),
     };
     assert_eq!(expected_result, locked_bob.locked_amount);
+
+    let locked_alice = block_on(get_locked_amount(&mm_alice, "MYCOIN1"));
+    assert_eq!(locked_alice.coin, "MYCOIN1");
+
+    let expected_num = MmNumber::from("778.00002");
+    let expected_result = MmNumberMultiRepr {
+        decimal: expected_num.to_decimal(),
+        fraction: expected_num.to_fraction(),
+        rational: expected_num.into(),
+    };
+    assert_eq!(expected_result, locked_alice.locked_amount);
 }

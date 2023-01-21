@@ -555,7 +555,7 @@ pub enum TransactionType {
     },
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransactionDetails {
     pub tx_hex: String,

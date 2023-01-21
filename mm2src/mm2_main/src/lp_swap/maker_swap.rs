@@ -269,6 +269,7 @@ impl MakerSwap {
         match event {
             MakerSwapEvent::Started(data) => {
                 self.w().data = data;
+                info!("Maker swap {} has successfully started", self.uuid);
             },
             MakerSwapEvent::StartFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::Negotiated(data) => {

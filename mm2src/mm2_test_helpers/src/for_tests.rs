@@ -2128,7 +2128,7 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
+pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> TransactionDetails {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2531,11 +2531,11 @@ pub async fn start_swaps(
         uuids.push(buy_json["result"]["uuid"].as_str().unwrap().to_owned());
     }
 
-    for (base, rel) in pairs.iter() {
+    for uuid in uuids.iter() {
         // ensure the swaps are started
-        let expected_log = format!("Entering the taker_swap_loop {}/{}", base, rel);
+        let expected_log = format!("Taker swap {} has successfully started", uuid);
         taker.wait_for_log(5., |log| log.contains(&expected_log)).await.unwrap();
-        let expected_log = format!("Entering the maker_swap_loop {}/{}", base, rel);
+        let expected_log = format!("Maker swap {} has successfully started", uuid);
         maker.wait_for_log(5., |log| log.contains(&expected_log)).await.unwrap()
     }
 
