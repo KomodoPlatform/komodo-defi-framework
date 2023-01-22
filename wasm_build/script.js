@@ -10,11 +10,12 @@ import init, {
     mm2_main_status,
     mm2_rpc,
     mm2_version,
+    mm2_stop,
     LogLevel,
     Mm2MainErr,
     MainStatus,
     Mm2RpcErr
-} from "./deps/pkg/mm2.js";
+} from "./deps/pkg/mm2lib.js";
 
 const LOG_LEVEL = LogLevel.Debug;
 
@@ -104,18 +105,25 @@ function handle_log(level, line) {
 function spawn_mm2_status_checking() {
     setInterval(function () {
         const run_button = document.getElementById("wid_run_mm2_button");
+        const stop_button = document.getElementById("wid_stop_mm2_button");
         const rpc_button = document.getElementById("wid_mm2_rpc_button");
 
         const status = mm2_main_status();
         switch (status) {
             case MainStatus.NotRunning:
+                rpc_button.disabled = true;
+                stop_button.disabled = true;
+                run_button.disabled = false;
+                break;
             case MainStatus.NoContext:
             case MainStatus.NoRpc:
                 rpc_button.disabled = true;
-                run_button.disabled = false;
+                stop_button.disabled = false;
+                run_button.disabled = true;
                 break;
             case MainStatus.RpcIsUp:
                 rpc_button.disabled = false;
+                stop_button.disabled = false;
                 run_button.disabled = true;
                 break;
             default:
@@ -144,6 +152,15 @@ init_wasm().then(function () {
         }
 
         await run_mm2(params);
+    });
+
+    const stop_mm2_button = document.getElementById("wid_stop_mm2_button");
+    stop_mm2_button.addEventListener('click', async () => {
+        try {
+            await mm2_stop();
+        } catch (e) {
+            alert(`Error on 'mm2_stop': ${e}`);
+        }
     });
 
     const rpc_request_button = document.getElementById("wid_mm2_rpc_button");
