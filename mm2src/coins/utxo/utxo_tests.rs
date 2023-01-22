@@ -1,5 +1,6 @@
 use super::*;
 use crate::coin_balance::HDAddressBalance;
+use crate::coin_errors::ValidatePaymentError;
 use crate::hd_wallet::HDAccountsMap;
 use crate::hd_wallet_storage::{HDWalletMockStorage, HDWalletStorageInternalOps};
 use crate::my_tx_history_v2::for_tests::init_storage_for;
@@ -21,6 +22,7 @@ use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
+use crate::INVALID_SENDER_ERR_LOG;
 use crate::{BlockHeightAndTime, CoinBalance, IguanaPrivKey, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SendMakerSpendsTakerPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails,
             TxMarshalingErr, ValidateFeeArgs};
@@ -2524,8 +2526,12 @@ fn test_validate_fee_wrong_sender() {
         min_block_number: 0,
         uuid: &[],
     };
-    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
-    assert!(validate_err.contains("was sent from wrong address"));
+    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains(INVALID_SENDER_ERR_LOG)),
+        _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", error),
+    }
 }
 
 #[test]
@@ -2549,8 +2555,11 @@ fn test_validate_fee_min_block() {
         min_block_number: 810329,
         uuid: &[],
     };
-    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
-    assert!(validate_err.contains("confirmed before min_block"));
+    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
+        _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", error),
+    }
 }
 
 #[test]

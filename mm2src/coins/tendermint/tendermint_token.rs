@@ -157,7 +157,7 @@ impl SwapOps for TendermintToken {
         )))
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
         self.platform_coin.validate_fee_for_denom(
             validate_fee_args.fee_tx,
             validate_fee_args.expected_sender,

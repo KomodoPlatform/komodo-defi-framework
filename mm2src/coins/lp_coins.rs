@@ -44,6 +44,7 @@ use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAcco
              Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_from::{EnumFromStringify, EnumFromTrait};
+use ethereum_types::H256;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -630,6 +631,16 @@ pub struct ValidateFeeArgs<'a> {
     pub uuid: &'a [u8],
 }
 
+#[derive(Clone, Debug)]
+pub struct EthValidateFeeArgs<'a> {
+    pub fee_tx_hash: &'a H256,
+    pub expected_sender: &'a [u8],
+    pub fee_addr: &'a [u8],
+    pub amount: &'a BigDecimal,
+    pub min_block_number: u64,
+    pub uuid: &'a [u8],
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PaymentInstructions {
     #[cfg(not(target_arch = "wasm32"))]
@@ -690,8 +701,7 @@ pub trait SwapOps {
     fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>)
         -> TransactionFut;
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>)
-        -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()>;
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 

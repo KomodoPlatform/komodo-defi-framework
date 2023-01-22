@@ -1861,67 +1861,77 @@ pub fn validate_fee<T: UtxoCommonOps>(
     amount: &BigDecimal,
     min_block_number: u64,
     fee_addr: &[u8],
-) -> Box<dyn Future<Item = (), Error = String> + Send> {
+) -> ValidatePaymentFut<()> {
     let amount = amount.clone();
-    let address = try_fus!(address_from_raw_pubkey(
+    let address = try_f!(address_from_raw_pubkey(
         fee_addr,
         coin.as_ref().conf.pub_addr_prefix,
         coin.as_ref().conf.pub_t_addr_prefix,
         coin.as_ref().conf.checksum_type,
         coin.as_ref().conf.bech32_hrp.clone(),
         coin.addr_format().clone(),
-    ));
+    )
+    .map_to_mm(ValidatePaymentError::TxDeserializationError));
 
-    if !try_fus!(check_all_utxo_inputs_signed_by_pub(&tx, sender_pubkey)) {
-        return Box::new(futures01::future::err(ERRL!("The dex fee was sent from wrong address")));
+    let inputs_signed_by_pub = try_f!(check_all_utxo_inputs_signed_by_pub(&tx, sender_pubkey));
+    if !inputs_signed_by_pub {
+        return Box::new(futures01::future::err(
+            ValidatePaymentError::WrongPaymentTx(format!(
+                "{INVALID_SENDER_ERR_LOG}: Taker payment does not belong to the verified public key"
+            ))
+            .into(),
+        ));
     }
-    let fut = async move {
-        let amount = try_s!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
-        let tx_from_rpc = try_s!(
-            coin.as_ref()
-                .rpc_client
-                .get_verbose_transaction(&tx.hash().reversed().into())
-                .compat()
-                .await
-        );
 
-        if try_s!(is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number).await) {
-            return ERR!(
-                "Fee tx {:?} confirmed before min_block {}",
-                tx_from_rpc,
-                min_block_number,
-            );
+    let fut = async move {
+        let amount = sat_from_big_decimal(&amount, coin.as_ref().decimals)?;
+        let tx_from_rpc = coin
+            .as_ref()
+            .rpc_client
+            .get_verbose_transaction(&tx.hash().reversed().into())
+            .compat()
+            .await?;
+
+        let tx_confirmed_before_block = is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number)
+            .await
+            .map_to_mm(ValidatePaymentError::InternalError)?;
+
+        if tx_confirmed_before_block {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "{}: Fee tx {:?} confirmed before min_block {}",
+                EARLY_CONFIRMATION_ERR_LOG, tx_from_rpc, min_block_number
+            )));
         }
         if tx_from_rpc.hex.0 != serialize(&tx).take()
             && tx_from_rpc.hex.0 != serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS).take()
         {
-            return ERR!(
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Provided dex fee tx {:?} doesn't match tx data from rpc {:?}",
-                tx,
-                tx_from_rpc
-            );
+                tx, tx_from_rpc
+            )));
         }
 
         match tx.outputs.get(output_index) {
             Some(out) => {
                 let expected_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
                 if out.script_pubkey != expected_script_pubkey {
-                    return ERR!(
-                        "Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
-                        out.script_pubkey,
-                        expected_script_pubkey
-                    );
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "{}: Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
+                        INVALID_RECEIVER_ERR_LOG, out.script_pubkey, expected_script_pubkey
+                    )));
                 }
                 if out.value < amount {
-                    return ERR!(
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                         "Provided dex fee tx output value is less than expected {:?} {:?}",
-                        out.value,
-                        amount
-                    );
+                        out.value, amount
+                    )));
                 }
             },
             None => {
-                return ERR!("Provided dex fee tx {:?} does not have output {}", tx, output_index);
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Provided dex fee tx {:?} does not have output {}",
+                    tx, output_index
+                )))
             },
         }
         Ok(())

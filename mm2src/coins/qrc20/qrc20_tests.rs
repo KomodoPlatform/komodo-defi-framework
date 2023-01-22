@@ -314,7 +314,7 @@ fn test_send_taker_fee() {
             uuid: &[],
         })
         .wait();
-    assert_eq!(result, Ok(()));
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -342,7 +342,7 @@ fn test_validate_fee() {
             uuid: &[],
         })
         .wait();
-    assert_eq!(result, Ok(()));
+    assert!(result.is_ok());
 
     let fee_addr_dif = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
     let err = coin
@@ -356,9 +356,13 @@ fn test_validate_fee() {
         })
         .wait()
         .err()
-        .expect("Expected an error");
+        .expect("Expected an error")
+        .into_inner();
     log!("error: {:?}", err);
-    assert!(err.contains("QRC20 Fee tx was sent to wrong address"));
+    match err {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("QRC20 Fee tx was sent to wrong address")),
+        _ => panic!("Expected `WrongPaymentTx` wrong receiver address, found {:?}", err),
+    }
 
     let err = coin
         .validate_fee(ValidateFeeArgs {
@@ -371,9 +375,13 @@ fn test_validate_fee() {
         })
         .wait()
         .err()
-        .expect("Expected an error");
+        .expect("Expected an error")
+        .into_inner();
     log!("error: {:?}", err);
-    assert!(err.contains("was sent from wrong address"));
+    match err {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("was sent from wrong address")),
+        _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", err),
+    }
 
     let err = coin
         .validate_fee(ValidateFeeArgs {
@@ -386,9 +394,13 @@ fn test_validate_fee() {
         })
         .wait()
         .err()
-        .expect("Expected an error");
+        .expect("Expected an error")
+        .into_inner();
     log!("error: {:?}", err);
-    assert!(err.contains("confirmed before min_block"));
+    match err {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
+        _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", err),
+    }
 
     let amount_dif = BigDecimal::from_str("0.02").unwrap();
     let err = coin
@@ -402,9 +414,15 @@ fn test_validate_fee() {
         })
         .wait()
         .err()
-        .expect("Expected an error");
+        .expect("Expected an error")
+        .into_inner();
     log!("error: {:?}", err);
-    assert!(err.contains("QRC20 Fee tx value 1000000 is less than expected 2000000"));
+    match err {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("QRC20 Fee tx value 1000000 is less than expected 2000000"))
+        },
+        _ => panic!("Expected `WrongPaymentTx` invalid fee value, found {:?}", err),
+    }
 
     // QTUM tx "8a51f0ffd45f34974de50f07c5bf2f0949da4e88433f8f75191953a442cf9310"
     let tx = TransactionEnum::UtxoTx("020000000113640281c9332caeddd02a8dd0d784809e1ad87bda3c972d89d5ae41f5494b85010000006a47304402207c5c904a93310b8672f4ecdbab356b65dd869a426e92f1064a567be7ccfc61ff02203e4173b9467127f7de4682513a21efb5980e66dbed4da91dff46534b8e77c7ef012102baefe72b3591de2070c0da3853226b00f082d72daa417688b61cb18c1d543d1afeffffff020001b2c4000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acbc4dd20c2f0000001976a9144208fa7be80dcf972f767194ad365950495064a488ac76e70800".into());
@@ -420,9 +438,13 @@ fn test_validate_fee() {
         })
         .wait()
         .err()
-        .expect("Expected an error");
+        .expect("Expected an error")
+        .into_inner();
     log!("error: {:?}", err);
-    assert!(err.contains("Expected 'transfer' contract call"));
+    match err {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Expected 'transfer' contract call")),
+        _ => panic!("Expected `WrongPaymentTx` invalid contract call, found {:?}", err),
+    }
 }
 
 #[test]

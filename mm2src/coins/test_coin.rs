@@ -134,9 +134,7 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        unimplemented!()
-    }
+    fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> { unimplemented!() }
 
     fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 

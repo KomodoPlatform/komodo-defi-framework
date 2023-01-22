@@ -65,23 +65,24 @@ use web3::{self, Web3};
 use web3_transport::{http_transport::HttpTransportNode, EthFeeHistoryNamespace, Web3Transport};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
-            CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr,
-            NumConversError, NumConversResult, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundError, RefundResult, RpcClientType, RpcTransportEventHandler,
-            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
-            SendMakerPaymentSpendPreimageInput, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs,
-            SendTakerPaymentArgs, SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs,
-            SendWatcherRefundsPaymentArgs, SignatureError, SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult,
-            EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
-            INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
+            CoinProtocol, CoinTransportMetrics, CoinsContext, EthValidateFeeArgs, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError,
+            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, PaymentInstructions,
+            PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError,
+            RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundError,
+            RefundResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
+            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
+            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SendWatcherRefundsPaymentArgs,
+            SignatureError, SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG,
+            INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
+            INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -908,109 +909,20 @@ impl SwapOps for EthCoin {
         )
     }
 
-    fn validate_fee(
-        &self,
-        validate_fee_args: ValidateFeeArgs<'_>,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let selfi = self.clone();
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::SignedEthTx(t) => t.clone(),
             _ => panic!(),
         };
-        let sender_addr = try_fus!(addr_from_raw_pubkey(validate_fee_args.expected_sender));
-        let fee_addr = try_fus!(addr_from_raw_pubkey(validate_fee_args.fee_addr));
-        let amount = validate_fee_args.amount.clone();
-        let min_block_number = validate_fee_args.min_block_number;
-
-        let fut = async move {
-            let expected_value = try_s!(wei_from_big_decimal(&amount, selfi.decimals));
-            let tx_from_rpc = try_s!(
-                selfi
-                    .web3
-                    .eth()
-                    .transaction(TransactionId::Hash(tx.hash))
-                    .compat()
-                    .await
-            );
-            let tx_from_rpc = match tx_from_rpc {
-                Some(t) => t,
-                None => return ERR!("Didn't find provided tx {:?} on ETH node", tx),
-            };
-
-            if tx_from_rpc.from != sender_addr {
-                return ERR!(
-                    "Fee tx {:?} was sent from wrong address, expected {:?}",
-                    tx_from_rpc,
-                    sender_addr
-                );
-            }
-
-            if let Some(block_number) = tx_from_rpc.block_number {
-                if block_number <= min_block_number.into() {
-                    return ERR!(
-                        "Fee tx {:?} confirmed before min_block {}",
-                        tx_from_rpc,
-                        min_block_number,
-                    );
-                }
-            }
-            match &selfi.coin_type {
-                EthCoinType::Eth => {
-                    if tx_from_rpc.to != Some(fee_addr) {
-                        return ERR!(
-                            "Fee tx {:?} was sent to wrong address, expected {:?}",
-                            tx_from_rpc,
-                            fee_addr
-                        );
-                    }
-
-                    if tx_from_rpc.value < expected_value {
-                        return ERR!(
-                            "Fee tx {:?} value is less than expected {:?}",
-                            tx_from_rpc,
-                            expected_value
-                        );
-                    }
-                },
-                EthCoinType::Erc20 {
-                    platform: _,
-                    token_addr,
-                } => {
-                    if tx_from_rpc.to != Some(*token_addr) {
-                        return ERR!(
-                            "ERC20 Fee tx {:?} called wrong smart contract, expected {:?}",
-                            tx_from_rpc,
-                            token_addr
-                        );
-                    }
-
-                    let function = try_s!(ERC20_CONTRACT.function("transfer"));
-                    let decoded_input = try_s!(function.decode_input(&tx_from_rpc.input.0));
-
-                    if decoded_input[0] != Token::Address(fee_addr) {
-                        return ERR!(
-                            "ERC20 Fee tx was sent to wrong address {:?}, expected {:?}",
-                            decoded_input[0],
-                            fee_addr
-                        );
-                    }
-
-                    match decoded_input[1] {
-                        Token::Uint(value) => {
-                            if value < expected_value {
-                                return ERR!("ERC20 Fee tx value {} is less than expected {}", value, expected_value);
-                            }
-                        },
-                        _ => return ERR!("Should have got uint token but got {:?}", decoded_input[1]),
-                    }
-                },
-            }
-
-            Ok(())
-        };
-        Box::new(fut.boxed().compat())
+        validate_fee_impl(self.clone(), EthValidateFeeArgs {
+            fee_tx_hash: &tx.hash,
+            expected_sender: validate_fee_args.expected_sender,
+            fee_addr: validate_fee_args.fee_addr,
+            amount: validate_fee_args.amount,
+            min_block_number: validate_fee_args.min_block_number,
+            uuid: validate_fee_args.uuid,
+        })
     }
-
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let swap_contract_address = try_f!(input
             .swap_contract_address
@@ -1336,90 +1248,17 @@ impl WatcherOps for EthCoin {
     }
 
     fn watcher_validate_taker_fee(&self, validate_fee_args: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
-        let selfi = self.clone();
-        let sender_addr =
-            try_f!(addr_from_raw_pubkey(&validate_fee_args.sender_pubkey)
-                .map_to_mm(ValidatePaymentError::InvalidParameter));
-        let fee_addr =
-            try_f!(addr_from_raw_pubkey(&validate_fee_args.fee_addr).map_to_mm(ValidatePaymentError::InvalidParameter));
-        let min_block_number = validate_fee_args.min_block_number;
-        let taker_fee_hash = validate_fee_args.taker_fee_hash;
+        validate_fee_impl(self.clone(), EthValidateFeeArgs {
+            fee_tx_hash: &H256::from(validate_fee_args.taker_fee_hash.as_slice()),
+            expected_sender: &validate_fee_args.sender_pubkey,
+            fee_addr: &validate_fee_args.fee_addr,
+            amount: &BigDecimal::from(0),
+            min_block_number: validate_fee_args.min_block_number,
+            uuid: &[],
+        })
 
-        let fut = async move {
-            let tx_from_rpc = selfi
-                .web3
-                .eth()
-                .transaction(TransactionId::Hash(H256::from(taker_fee_hash.as_slice())))
-                .compat()
-                .await
-                .map_to_mm(|e| ValidatePaymentError::InvalidRpcResponse(e.to_string()))?;
-
-            let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
-                ValidatePaymentError::TxDoesNotExist(format!(
-                    "Didn't find provided tx {:?} on ETH node",
-                    H256::from(taker_fee_hash.as_slice())
-                ))
-            })?;
-
-            if tx_from_rpc.from != sender_addr {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "{}: Fee tx {:?} was sent from wrong address, expected {:?}",
-                    INVALID_SENDER_ERR_LOG, tx_from_rpc, sender_addr
-                )));
-            }
-
-            if let Some(block_number) = tx_from_rpc.block_number {
-                if block_number <= min_block_number.into() {
-                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                        "{}: Fee tx {:?} confirmed before min_block {}",
-                        EARLY_CONFIRMATION_ERR_LOG, tx_from_rpc, min_block_number
-                    )));
-                }
-            }
-
-            //TODO: Validate if taker fee is old
-
-            match &selfi.coin_type {
-                EthCoinType::Eth => {
-                    if tx_from_rpc.to != Some(fee_addr) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "{}: Fee tx {:?} was sent to wrong address, expected {:?}",
-                            INVALID_RECEIVER_ERR_LOG, tx_from_rpc, fee_addr
-                        )));
-                    }
-                },
-                EthCoinType::Erc20 {
-                    platform: _,
-                    token_addr,
-                } => {
-                    if tx_from_rpc.to != Some(*token_addr) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "{}: ERC20 Fee tx {:?} called wrong smart contract, expected {:?}",
-                            INVALID_CONTRACT_ADDRESS_ERR_LOG, tx_from_rpc, token_addr
-                        )));
-                    }
-
-                    let function = ERC20_CONTRACT
-                        .function("transfer")
-                        .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
-                    let decoded_input = function
-                        .decode_input(&tx_from_rpc.input.0)
-                        .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-                    let address_input = get_function_input_data(&decoded_input, function, 0)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
-                    if address_input != Token::Address(fee_addr) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "{}: ERC20 Fee tx was sent to wrong address {:?}, expected {:?}",
-                            INVALID_RECEIVER_ERR_LOG, address_input, fee_addr
-                        )));
-                    }
-                },
-            }
-
-            Ok(())
-        };
-
-        Box::new(fut.boxed().compat())
+        // TODO: Add validations specific for watchers
+        // 1.Validate if taker fee is old
     }
 
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
@@ -4075,6 +3914,113 @@ impl GuiAuthMessages for EthCoin {
             signature: format!("0x{}", signature),
         })
     }
+}
+
+fn validate_fee_impl(coin: EthCoin, validate_fee_args: EthValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
+    let fee_tx_hash = validate_fee_args.fee_tx_hash.to_owned();
+    let sender_addr = try_f!(
+        addr_from_raw_pubkey(validate_fee_args.expected_sender).map_to_mm(ValidatePaymentError::InvalidParameter)
+    );
+    let fee_addr =
+        try_f!(addr_from_raw_pubkey(validate_fee_args.fee_addr).map_to_mm(ValidatePaymentError::InvalidParameter));
+    let amount = validate_fee_args.amount.clone();
+    let min_block_number = validate_fee_args.min_block_number;
+
+    let fut = async move {
+        let expected_value = wei_from_big_decimal(&amount, coin.decimals)?;
+        let tx_from_rpc = coin
+            .web3
+            .eth()
+            .transaction(TransactionId::Hash(fee_tx_hash))
+            .compat()
+            .await
+            .map_to_mm(|e| ValidatePaymentError::InvalidRpcResponse(e.to_string()))?;
+
+        let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
+            ValidatePaymentError::TxDoesNotExist(format!("Didn't find provided tx {:?} on ETH node", fee_tx_hash))
+        })?;
+
+        if tx_from_rpc.from != sender_addr {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "{}: Fee tx {:?} was sent from wrong address, expected {:?}",
+                INVALID_SENDER_ERR_LOG, tx_from_rpc, sender_addr
+            )));
+        }
+
+        if let Some(block_number) = tx_from_rpc.block_number {
+            if block_number <= min_block_number.into() {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "{}: Fee tx {:?} confirmed before min_block {}",
+                    EARLY_CONFIRMATION_ERR_LOG, tx_from_rpc, min_block_number
+                )));
+            }
+        }
+        match &coin.coin_type {
+            EthCoinType::Eth => {
+                if tx_from_rpc.to != Some(fee_addr) {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "{}: Fee tx {:?} was sent to wrong address, expected {:?}",
+                        INVALID_RECEIVER_ERR_LOG, tx_from_rpc, fee_addr
+                    )));
+                }
+
+                if tx_from_rpc.value < expected_value {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Fee tx {:?} value is less than expected {:?}",
+                        tx_from_rpc, expected_value
+                    )));
+                }
+            },
+            EthCoinType::Erc20 {
+                platform: _,
+                token_addr,
+            } => {
+                if tx_from_rpc.to != Some(*token_addr) {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "{}: ERC20 Fee tx {:?} called wrong smart contract, expected {:?}",
+                        INVALID_CONTRACT_ADDRESS_ERR_LOG, tx_from_rpc, token_addr
+                    )));
+                }
+
+                let function = ERC20_CONTRACT
+                    .function("transfer")
+                    .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
+                let decoded_input = function
+                    .decode_input(&tx_from_rpc.input.0)
+                    .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+                let address_input = get_function_input_data(&decoded_input, function, 0)
+                    .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+                let value_input = get_function_input_data(&decoded_input, function, 1)
+                    .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+                if tx_from_rpc.to != Some(*token_addr) {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "{}: ERC20 Fee tx was sent to wrong address {:?}, expected {:?}",
+                        INVALID_RECEIVER_ERR_LOG, address_input, fee_addr
+                    )));
+                }
+
+                match value_input {
+                    Token::Uint(value) => {
+                        if value < expected_value {
+                            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                                "ERC20 Fee tx value {} is less than expected {}",
+                                value, expected_value
+                            )));
+                        }
+                    },
+                    _ => {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Should have got uint token but got {:?}",
+                            value_input
+                        )))
+                    },
+                }
+            },
+        }
+
+        Ok(())
+    };
+    Box::new(fut.boxed().compat())
 }
 
 fn get_function_input_data(decoded: &[Token], func: &Function, index: usize) -> Result<Token, String> {

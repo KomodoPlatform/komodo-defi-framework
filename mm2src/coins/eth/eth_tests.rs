@@ -1039,8 +1039,11 @@ fn validate_dex_fee_invalid_sender_eth() {
         min_block_number: 0,
         uuid: &[],
     };
-    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
-    assert!(validate_err.contains("was sent from wrong address"));
+    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("was sent from wrong address")),
+        _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", error),
+    }
 }
 
 #[test]
@@ -1074,8 +1077,11 @@ fn validate_dex_fee_invalid_sender_erc() {
         min_block_number: 0,
         uuid: &[],
     };
-    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
-    assert!(validate_err.contains("was sent from wrong address"));
+    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("was sent from wrong address")),
+        _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", error),
+    }
 }
 
 fn sender_compressed_pub(tx: &SignedEthTx) -> [u8; 33] {
@@ -1113,8 +1119,11 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
         min_block_number: 11784793,
         uuid: &[],
     };
-    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
-    assert!(validate_err.contains("confirmed before min_block"));
+    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
+        _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", error),
+    }
 }
 
 #[test]
@@ -1151,8 +1160,11 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
         min_block_number: 11823975,
         uuid: &[],
     };
-    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
-    assert!(validate_err.contains("confirmed before min_block"));
+    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
+        _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", error),
+    }
 }
 
 #[test]

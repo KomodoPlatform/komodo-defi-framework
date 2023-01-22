@@ -752,7 +752,7 @@ impl SlpToken {
         validate_fut
             .compat()
             .await
-            .map_to_mm(ValidateDexFeeError::ValidatePaymentError)?;
+            .map_err(|e| MmError::new(ValidateDexFeeError::ValidatePaymentError(e.into_inner().to_string())))?;
 
         Ok(())
     }
@@ -1341,7 +1341,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             _ => panic!(),
@@ -1353,10 +1353,9 @@ impl SwapOps for SlpToken {
         let min_block_number = validate_fee_args.min_block_number;
 
         let fut = async move {
-            try_s!(
-                coin.validate_dex_fee(tx, &expected_sender, &fee_addr, amount, min_block_number)
-                    .await
-            );
+            coin.validate_dex_fee(tx, &expected_sender, &fee_addr, amount, min_block_number)
+                .await
+                .map_err(|e| MmError::new(ValidatePaymentError::WrongPaymentTx(e.into_inner().to_string())))?;
             Ok(())
         };
         Box::new(fut.boxed().compat())

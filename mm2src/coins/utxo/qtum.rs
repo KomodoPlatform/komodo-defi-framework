@@ -609,7 +609,7 @@ impl SwapOps for QtumCoin {
         )
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             _ => panic!(),
