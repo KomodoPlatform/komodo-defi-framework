@@ -54,9 +54,6 @@ impl PrevTxOutput {
 }
 
 /// Missing fields:
-/// * extra_data_len - only for Dash, Zcash
-/// * expiry - only for Decred and Zcash
-/// * optional uint32 version_group_id = 12;  // only for Zcash, nVersionGroupId
 /// * timestamp - only for Peercoin
 pub struct PrevTx {
     /// Transaction inputs.
@@ -67,6 +64,8 @@ pub struct PrevTx {
     pub version: u32,
     /// Transaction lock_time.
     pub lock_time: u32,
+    /// Expiry height. Only for Decred and Zcash.
+    pub expiry: Option<u32>,
     /// only for Zcash, nVersionGroupId.
     pub version_group_id: Option<u32>,
     /// only for Zcash, BRANCH_ID.
@@ -89,7 +88,7 @@ impl PrevTx {
             inputs_count: self.inputs.len() as u32,
             outputs_count: self.outputs.len() as u32,
             extra_data_len,
-            expiry: None,
+            expiry: self.expiry,
             version_group_id: self.version_group_id,
             timestamp: None,
             branch_id: self.branch_id,

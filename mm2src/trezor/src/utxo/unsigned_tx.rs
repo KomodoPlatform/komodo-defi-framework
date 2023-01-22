@@ -146,7 +146,6 @@ impl TxOutput {
 }
 
 /// Missing fields:
-/// * expiry_height - only for Decred and Zcash
 /// * overwintered - deprecated in 2.3.2, the field is not needed as it can be derived from `version`.
 ///                  The main reason why it's ignored is that this can be requested asa extra data:
 ///                  https://docs.trezor.io/trezor-firmware/common/communication/bitcoin-signing.html#extra-data
@@ -160,6 +159,8 @@ pub struct UnsignedUtxoTx {
     pub version: u32,
     /// Transaction lock_time.
     pub lock_time: u32,
+    /// Expiry height. Only for Decred and Zcash.
+    pub expiry: Option<u32>,
     /// only for Zcash, nVersionGroupId.
     pub version_group_id: Option<u32>,
     /// only for Zcash, BRANCH_ID.
@@ -175,7 +176,7 @@ impl UnsignedUtxoTx {
             coin_name: Some(self.coin.clone()),
             version: Some(self.version),
             lock_time: Some(self.lock_time),
-            expiry: None,
+            expiry: self.expiry,
             overwintered: None,
             version_group_id: self.version_group_id,
             timestamp: None,

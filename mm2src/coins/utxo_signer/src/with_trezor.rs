@@ -74,6 +74,7 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<TxP> {
             outputs,
             version: self.params.unsigned_tx.version as u32,
             lock_time: self.params.unsigned_tx.lock_time,
+            expiry: self.expiry_if_required(self.params.unsigned_tx.expiry_height),
             version_group_id: self.version_group_id(),
             branch_id: self.branch_id(),
         })
@@ -149,6 +150,7 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<TxP> {
             outputs: prev_tx_outputs,
             version: prev_utxo.version as u32,
             lock_time: prev_utxo.lock_time,
+            expiry: self.expiry_if_required(prev_utxo.expiry_height),
             version_group_id: self.version_group_id(),
             branch_id: self.branch_id(),
             extra_data: self.extra_data(),
@@ -168,6 +170,16 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<TxP> {
     fn branch_id(&self) -> Option<u32> {
         if self.is_overwinter_compatible() {
             Some(self.branch_id)
+        } else {
+            None
+        }
+    }
+
+    /// `expiry` must be set for Decred and Zcash coins *only*.
+    /// This fixes : https://github.com/KomodoPlatform/atomicDEX-API/issues/1626
+    fn expiry_if_required(&self, tx_expiry: u32) -> Option<u32> {
+        if self.is_overwinter_compatible() {
+            Some(tx_expiry)
         } else {
             None
         }
