@@ -196,5 +196,8 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<TxP> {
     }
 
     /// https://github.com/trezor/trezor-utxo-lib/blob/trezor/src/transaction.js#L405
-    fn is_overwinter_compatible(&self) -> bool { self.params.unsigned_tx.version > 3 }
+    fn is_overwinter_compatible(&self) -> bool { self.is_zcash_type() && self.params.unsigned_tx.version > 3 }
+
+    /// https://github.com/trezor/trezor-utxo-lib/blob/trezor/src/coins.js#L55
+    fn is_zcash_type(&self) -> bool { matches!(self.trezor_coin.as_str(), "Komodo" | "Zcash" | "Zcash Testnet") }
 }
