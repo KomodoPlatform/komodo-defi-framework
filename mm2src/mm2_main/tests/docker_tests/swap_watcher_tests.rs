@@ -16,9 +16,9 @@ use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, get_payment_locktim
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_conf, eth_testnet_conf, mm_dump, my_balance, mycoin1_conf,
-                                  mycoin_conf, start_swaps, MarketMakerIt, Mm2TestConf, WatcherConf,
-                                  DEFAULT_RPC_PASSWORD, ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT,
-                                  ETH_SEPOLIA_TOKEN_CONTRACT};
+                                  mycoin_conf, start_swaps, MarketMakerIt, Mm2TestConf, DEFAULT_RPC_PASSWORD,
+                                  ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT, ETH_SEPOLIA_TOKEN_CONTRACT};
+use mm2_test_helpers::structs::WatcherConf;
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;

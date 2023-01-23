@@ -33,8 +33,7 @@ use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::executor::{AbortableSystem, AbortedError};
-use common::sha256_digest;
-use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
+use common::{async_blocking, calc_total_pages, log, one_thousand_u32, sha256_digest, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc, StandardHDPathToCoin};
 use db_common::sqlite::offset_by_id;
@@ -717,6 +716,10 @@ pub struct ZcoinActivationParams {
     pub required_confirmations: Option<u64>,
     pub requires_notarization: Option<bool>,
     pub zcash_params_path: Option<String>,
+    #[serde(default = "one_thousand_u32")]
+    pub scan_blocks_per_iteration: u32,
+    #[serde(default)]
+    pub scan_interval_ms: u64,
 }
 
 pub async fn z_coin_from_conf_and_params(
@@ -858,10 +861,13 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
             ZcoinRpcMode::Native => {
                 let native_client = self.native_client()?;
                 init_native_client(
+                    self.ticker.into(),
                     native_client,
                     blocks_db,
                     wallet_db,
                     self.protocol_info.consensus_params.clone(),
+                    self.z_coin_params.scan_blocks_per_iteration,
+                    self.z_coin_params.scan_interval_ms,
                 )
                 .await?
             },
@@ -869,10 +875,13 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                 light_wallet_d_servers, ..
             } => {
                 init_light_client(
+                    self.ticker.into(),
                     light_wallet_d_servers.clone(),
                     blocks_db,
                     wallet_db,
                     self.protocol_info.consensus_params.clone(),
+                    self.z_coin_params.scan_blocks_per_iteration,
+                    self.z_coin_params.scan_interval_ms,
                 )
                 .await?
             },

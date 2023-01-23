@@ -2091,7 +2091,9 @@ pub async fn maker_swap_trade_preimage(
     let rel_coin_ticker = rel_coin.ticker();
     let volume = if req.max {
         let balance = base_coin.my_spendable_balance().compat().await?;
-        calc_max_maker_vol(ctx, &base_coin, &balance, FeeApproxStage::TradePreimage).await?
+        calc_max_maker_vol(ctx, &base_coin, &balance, FeeApproxStage::TradePreimage)
+            .await?
+            .volume
     } else {
         let threshold = base_coin.min_trading_vol().to_decimal();
         if req.volume.is_zero() {
@@ -2159,7 +2161,20 @@ pub async fn maker_swap_trade_preimage(
     })
 }
 
-/// Calculate max Maker volume.
+pub struct CoinVolumeInfo {
+    pub volume: MmNumber,
+    pub balance: MmNumber,
+    pub locked_by_swaps: MmNumber,
+}
+
+/// Requests the `coin` balance and calculates max Maker volume.
+/// Returns [`CheckBalanceError::NotSufficientBalance`] if the balance is insufficient.
+pub async fn get_max_maker_vol(ctx: &MmArc, my_coin: &MmCoinEnum) -> CheckBalanceResult<CoinVolumeInfo> {
+    let my_balance = my_coin.my_spendable_balance().compat().await?;
+    calc_max_maker_vol(ctx, my_coin, &my_balance, FeeApproxStage::OrderIssue).await
+}
+
+/// Calculates max Maker volume.
 /// Returns [`CheckBalanceError::NotSufficientBalance`] if the balance is not sufficient.
 /// Note the function checks base coin balance if the trade fee should be paid in base coin.
 pub async fn calc_max_maker_vol(
@@ -2167,13 +2182,13 @@ pub async fn calc_max_maker_vol(
     coin: &MmCoinEnum,
     balance: &BigDecimal,
     stage: FeeApproxStage,
-) -> CheckBalanceResult<MmNumber> {
+) -> CheckBalanceResult<CoinVolumeInfo> {
     let ticker = coin.ticker();
-    let locked = get_locked_amount(ctx, ticker);
-    let available = &MmNumber::from(balance.clone()) - &locked;
-    let mut vol = available.clone();
+    let locked_by_swaps = get_locked_amount(ctx, ticker);
+    let available = &MmNumber::from(balance.clone()) - &locked_by_swaps;
+    let mut volume = available.clone();
 
-    let preimage_value = TradePreimageValue::UpperBound(vol.to_decimal());
+    let preimage_value = TradePreimageValue::UpperBound(volume.to_decimal());
     let trade_fee = coin
         .get_sender_trade_fee(preimage_value, stage)
         .await
@@ -2182,23 +2197,27 @@ pub async fn calc_max_maker_vol(
     debug!("{} trade fee {}", trade_fee.coin, trade_fee.amount.to_decimal());
     let mut required_to_pay_fee = MmNumber::from(0);
     if trade_fee.coin == ticker {
-        vol = &vol - &trade_fee.amount;
+        volume = &volume - &trade_fee.amount;
         required_to_pay_fee = trade_fee.amount;
     } else {
         let base_coin_balance = coin.base_coin_balance().compat().await?;
         check_base_coin_balance_for_swap(ctx, &MmNumber::from(base_coin_balance), trade_fee.clone(), None).await?;
     }
     let min_tx_amount = MmNumber::from(coin.min_tx_amount());
-    if vol < min_tx_amount {
+    if volume < min_tx_amount {
         let required = min_tx_amount + required_to_pay_fee;
         return MmError::err(CheckBalanceError::NotSufficientBalance {
             coin: ticker.to_owned(),
             available: available.to_decimal(),
             required: required.to_decimal(),
-            locked_by_swaps: Some(locked.to_decimal()),
+            locked_by_swaps: Some(locked_by_swaps.to_decimal()),
         });
     }
-    Ok(vol)
+    Ok(CoinVolumeInfo {
+        volume,
+        balance: MmNumber::from(balance.clone()),
+        locked_by_swaps,
+    })
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
