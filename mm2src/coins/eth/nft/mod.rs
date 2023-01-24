@@ -1,2 +1,2 @@
 pub(crate) mod nft_errors;
-pub(crate) mod nft_transfer;
+pub(crate) mod nft_structs;
