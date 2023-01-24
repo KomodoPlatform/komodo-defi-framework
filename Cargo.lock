@@ -457,6 +457,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf9ff0bbfd639f15c74af777d81383cf53efb7c93613f6cab67c6c11e05bbf8b"
 
 [[package]]
+name = "bech32"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d86b93f97252c47b41663388e6d155714a9d0c398b99f1005cbc5f978b29f445"
+
+[[package]]
 name = "bellman"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -515,20 +521,20 @@ dependencies = [
 
 [[package]]
 name = "bitcoin"
-version = "0.28.1"
+version = "0.29.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05bba324e6baf655b882df672453dbbc527bc938cadd27750ae510aaccc3a66a"
+checksum = "0694ea59225b0c5f3cb405ff3f670e4828358ed26aec49dc352f730f0cb1a8a3"
 dependencies = [
- "bech32",
+ "bech32 0.9.1",
  "bitcoin_hashes",
- "secp256k1 0.22.1",
+ "secp256k1 0.24.3",
 ]
 
 [[package]]
 name = "bitcoin_hashes"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "006cc91e1a1d99819bc5b8214be3555c1f0611b169f527a1fdc54ed1f2b745b0"
+checksum = "90064b8dee6815a6470d60bad07bbbaee885c0e12d04177138fa3291a01b7bc4"
 
 [[package]]
 name = "bitcrypto"
@@ -1080,7 +1086,6 @@ dependencies = [
  "lightning-background-processor",
  "lightning-invoice",
  "lightning-net-tokio",
- "lightning-rapid-gossip-sync",
  "mm2_core",
  "mm2_db",
  "mm2_err_handle",
@@ -1105,7 +1110,7 @@ dependencies = [
  "rustls 0.20.4",
  "script",
  "secp256k1 0.20.3",
- "secp256k1 0.22.1",
+ "secp256k1 0.24.3",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -3415,7 +3420,7 @@ name = "keys"
 version = "0.1.0"
 dependencies = [
  "base58",
- "bech32",
+ "bech32 0.8.1",
  "bitcrypto",
  "derive_more",
  "lazy_static",
@@ -3897,18 +3902,18 @@ dependencies = [
 
 [[package]]
 name = "lightning"
-version = "0.0.110"
+version = "0.0.111"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2dce6da860338d5a9ddc3fd42432465310cfab93b342bbd23b41b7c1f7c509d3"
+checksum = "d86c207bcbca1c9dfb3668b81e2ad35b81370e583f2f8c5ee642a9f07925b05e"
 dependencies = [
  "bitcoin",
 ]
 
 [[package]]
 name = "lightning-background-processor"
-version = "0.0.110"
+version = "0.0.111"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8de9d0de42bb933ffb8d33c6b0a75302f08b35126bfc74398ba01ad0c201f8d"
+checksum = "0dfef23242b3656fa54a050b5cc4f1f7938d27cbf940c6c9e5b9a08f198f8d86"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -3917,23 +3922,23 @@ dependencies = [
 
 [[package]]
 name = "lightning-invoice"
-version = "0.18.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32aa02b7fd0bd95e40b6ca8d9d9232b162d5e23b41bd2bc42abe9e9c78d34d72"
+checksum = "023d5bd83191e13281b877526efb503a96aaae7ef97c7ba6359ba73f9c1bee11"
 dependencies = [
- "bech32",
+ "bech32 0.9.1",
  "bitcoin_hashes",
  "lightning",
  "num-traits",
- "secp256k1 0.22.1",
+ "secp256k1 0.24.3",
  "serde",
 ]
 
 [[package]]
 name = "lightning-net-tokio"
-version = "0.0.110"
+version = "0.0.111"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce57d093fbc643835bc64c0501b52a3531d2511dcb1237d0495d68fea3adc47d"
+checksum = "1ce3c24e8e3d2c34ec503d3a0f76c07b0f4815705737a6a739058638c774580a"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -3942,9 +3947,9 @@ dependencies = [
 
 [[package]]
 name = "lightning-rapid-gossip-sync"
-version = "0.0.110"
+version = "0.0.111"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "391732631b14f7a1d9dc84dc3f644484d9b73190a31087b3856505cf0525bea0"
+checksum = "ff55ab0918a12e5eecf511a0ae924340361dd64213139af689da51c0759f59b8"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -6383,11 +6388,12 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
-version = "0.22.1"
+version = "0.24.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26947345339603ae8395f68e2f3d85a6b0a8ddfe6315818e80b8504415099db0"
+checksum = "6b1629c9c557ef9b293568b338dddfc8208c98a18c59d722a9d53f859d9c9b62"
 dependencies = [
- "secp256k1-sys 0.5.2",
+ "bitcoin_hashes",
+ "secp256k1-sys 0.6.1",
 ]
 
 [[package]]
@@ -6401,9 +6407,9 @@ dependencies = [
 
 [[package]]
 name = "secp256k1-sys"
-version = "0.5.2"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "152e20a0fd0519390fc43ab404663af8a0b794273d2a91d60ad4a39f13ffe110"
+checksum = "83080e2c2fc1006e625be82e5d1eb6a43b7fd9578b617fcc55814daf286bba4b"
 dependencies = [
  "cc",
 ]
@@ -9206,7 +9212,7 @@ version = "0.5.0"
 source = "git+https://github.com/KomodoPlatform/librustzcash.git#95fa5110b4b3ec105ae5fed1aba3847f656ec9b7"
 dependencies = [
  "base64 0.13.0",
- "bech32",
+ "bech32 0.8.1",
  "bls12_381",
  "bs58",
  "ff 0.8.0",
@@ -9229,7 +9235,7 @@ name = "zcash_client_sqlite"
 version = "0.3.0"
 source = "git+https://github.com/KomodoPlatform/librustzcash.git#95fa5110b4b3ec105ae5fed1aba3847f656ec9b7"
 dependencies = [
- "bech32",
+ "bech32 0.8.1",
  "bs58",
  "ff 0.8.0",
  "group 0.8.0",

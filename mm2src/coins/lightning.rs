@@ -66,7 +66,7 @@ use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::TransactionInputSigner;
-use secp256k1v22::PublicKey;
+use secp256k1v24::PublicKey;
 use serde::Deserialize;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};

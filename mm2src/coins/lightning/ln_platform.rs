@@ -22,7 +22,7 @@ use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget
                        Confirm, Filter, WatchedOutput};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
@@ -617,33 +617,5 @@ impl Filter for Platform {
     fn register_tx(&self, txid: &Txid, _script_pubkey: &Script) { self.add_tx(*txid); }
 
     // Watches for any transactions that spend this output on-chain
-    fn register_output(&self, output: WatchedOutput) -> Option<(usize, Transaction)> {
-        self.add_output(output.clone());
-        let block_hash = match output.block_hash {
-            Some(h) => H256Json::from(h.as_hash().into_inner()),
-            None => return None,
-        };
-
-        // Although this works for both native and electrum clients as the block hash is available,
-        // the filter interface which includes register_output and register_tx should be used for electrum clients only,
-        // this is the reason for initializing the filter as an option in the start_lightning function as it will be None
-        // when implementing lightning for native clients
-        let output_spend_fut = self.rpc_client().find_output_spend(
-            h256_from_txid(output.outpoint.txid),
-            output.script_pubkey.as_ref(),
-            output.outpoint.index.into(),
-            BlockHashOrHeight::Hash(block_hash),
-        );
-        let maybe_output_spend_res =
-            tokio::task::block_in_place(move || output_spend_fut.wait()).error_log_passthrough();
-
-        if let Ok(Some(spent_output_info)) = maybe_output_spend_res {
-            match Transaction::try_from(spent_output_info.spending_tx) {
-                Ok(spending_tx) => return Some((spent_output_info.input_index, spending_tx)),
-                Err(e) => error!("Can't convert transaction error: {}", e.to_string()),
-            }
-        }
-
-        None
-    }
+    fn register_output(&self, output: WatchedOutput) { self.add_output(output); }
 }

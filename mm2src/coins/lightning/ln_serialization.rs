@@ -3,7 +3,7 @@ use crate::lightning::ln_platform::h256_json_from_txid;
 use crate::H256Json;
 use lightning::chain::channelmonitor::Balance;
 use lightning::ln::channelmanager::ChannelDetails;
-use secp256k1v22::PublicKey;
+use secp256k1v24::PublicKey;
 use serde::{de, Serialize, Serializer};
 use std::fmt;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -279,13 +279,36 @@ pub enum ClaimableBalance {
     /// HTLCs which we sent to our counterparty which are claimable after a timeout (less on-chain
     /// fees) if the counterparty does not know the preimage for the HTLCs. These are somewhat
     /// likely to be claimed by our counterparty before we do.
-    MaybeClaimableHTLCAwaitingTimeout {
+    MaybeTimeoutClaimableHTLC {
         /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
         /// required to do so.
         claimable_amount_satoshis: u64,
         /// The height at which we will be able to claim the balance if our counterparty has not
         /// done so.
         claimable_height: u32,
+    },
+    /// HTLCs which we received from our counterparty which are claimable with a preimage which we
+    /// do not currently have. This will only be claimable if we receive the preimage from the node
+    /// to which we forwarded this HTLC before the timeout.
+    MaybePreimageClaimableHTLC {
+        /// The amount potentially available to claim, in satoshis, excluding the on-chain fees
+        /// which will be required to do so.
+        claimable_amount_satoshis: u64,
+        /// The height at which our counterparty will be able to claim the balance if we have not
+        /// yet received the preimage and claimed it ourselves.
+        expiry_height: u32,
+    },
+    /// The channel has been closed, and our counterparty broadcasted a revoked commitment
+    /// transaction.
+    ///
+    /// Thus, we're able to claim all outputs in the commitment transaction, one of which has the
+    /// following amount.
+    CounterpartyRevokedOutputClaimable {
+        /// The amount, in satoshis, of the output which we can claim.
+        ///
+        /// Note that for outputs from HTLC balances this may be excluding some on-chain fees that
+        /// were already spent.
+        claimable_amount_satoshis: u64,
     },
 }
 
@@ -311,12 +334,24 @@ impl From<Balance> for ClaimableBalance {
                 claimable_amount_satoshis,
                 timeout_height,
             },
-            Balance::MaybeClaimableHTLCAwaitingTimeout {
+            Balance::MaybeTimeoutClaimableHTLC {
                 claimable_amount_satoshis,
                 claimable_height,
-            } => ClaimableBalance::MaybeClaimableHTLCAwaitingTimeout {
+            } => ClaimableBalance::MaybeTimeoutClaimableHTLC {
                 claimable_amount_satoshis,
                 claimable_height,
+            },
+            Balance::MaybePreimageClaimableHTLC {
+                claimable_amount_satoshis,
+                expiry_height,
+            } => ClaimableBalance::MaybePreimageClaimableHTLC {
+                claimable_amount_satoshis,
+                expiry_height,
+            },
+            Balance::CounterpartyRevokedOutputClaimable {
+                claimable_amount_satoshis,
+            } => ClaimableBalance::CounterpartyRevokedOutputClaimable {
+                claimable_amount_satoshis,
             },
         }
     }

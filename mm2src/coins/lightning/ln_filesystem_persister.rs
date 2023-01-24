@@ -12,7 +12,7 @@ use lightning::routing::scoring::{ProbabilisticScorer, ProbabilisticScoringParam
 use lightning::util::persist::KVStorePersister;
 use lightning::util::ser::{ReadableArgs, Writeable};
 use mm2_io::fs::{check_dir_operations, invalid_data_err, read_json, write_json};
-use secp256k1v22::PublicKey;
+use secp256k1v24::PublicKey;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufReader, BufWriter, Cursor};

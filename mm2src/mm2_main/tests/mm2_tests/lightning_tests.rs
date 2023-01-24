@@ -554,10 +554,7 @@ fn test_send_payment() {
 
     block_on(mm_node_1.wait_for_log(60., |log| log.contains(SUCCESSFUL_CLAIM_LOG))).unwrap();
     block_on(mm_node_2.wait_for_log(60., |log| {
-        log.contains(&format!(
-            "{} of 10000 millisatoshis with payment hash {}",
-            SUCCESSFUL_SEND_LOG, payment_hash
-        ))
+        log.contains(&format!("{} with payment hash {}", SUCCESSFUL_SEND_LOG, payment_hash))
     }))
     .unwrap();
 

@@ -15,7 +15,7 @@ use lightning::chain::keysinterface::SpendableOutputDescriptor;
 use lightning::util::events::{Event, EventHandler, PaymentPurpose};
 use rand::Rng;
 use script::{Builder, SignatureVersion};
-use secp256k1v22::Secp256k1;
+use secp256k1v24::Secp256k1;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use utxo_signer::with_key_pair::sign_tx;
@@ -114,15 +114,15 @@ impl EventHandler for LightningEventHandler {
             // Todo: Add information to db about why a payment failed using this event
             Event::PaymentPathFailed {
                 payment_hash,
-                rejected_by_dest,
+                payment_failed_permanently,
                 all_paths_failed,
                 path,
                 ..
             } => info!(
-                "Payment path: {:?}, failed for payment hash: {}, Was rejected by destination?: {}, All paths failed?: {}",
+                "Payment path: {:?}, failed for payment hash: {}, permanent failure?: {}, All paths failed?: {}",
                 path.iter().map(|hop| hop.pubkey.to_string()).collect::<Vec<_>>(),
                 hex::encode(payment_hash.0),
-                rejected_by_dest,
+                payment_failed_permanently,
                 all_paths_failed,
             ),
 

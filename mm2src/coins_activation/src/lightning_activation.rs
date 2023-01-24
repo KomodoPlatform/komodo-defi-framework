@@ -20,7 +20,7 @@ use common::executor::{SpawnFuture, Timer};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use lightning::chain::keysinterface::{KeysInterface, Recipient};
+use lightning::chain::keysinterface::KeysInterface;
 use lightning::chain::Access;
 use lightning::routing::gossip;
 use lightning_background_processor::{BackgroundProcessor, GossipSync};
@@ -392,10 +392,8 @@ async fn start_lightning(
         &platform,
         params.listening_port,
         channel_manager.clone(),
+        keys_manager.clone(),
         gossip_sync.clone(),
-        keys_manager
-            .get_node_secret(Recipient::Node)
-            .map_to_mm(|_| EnableLightningError::UnsupportedMode("'start_lightning'".into(), "local node".into()))?,
         logger.clone(),
     )
     .await?;
@@ -468,7 +466,7 @@ async fn start_lightning(
 
     // Broadcast Node Announcement
     platform.spawner().spawn(ln_node_announcement_loop(
-        channel_manager.clone(),
+        peer_manager.clone(),
         params.node_name,
         params.node_color,
         params.listening_port,
