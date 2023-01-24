@@ -722,6 +722,12 @@ impl TakerSwap {
         match event {
             TakerSwapEvent::Started(data) => {
                 self.w().data = data;
+                log_tag!(
+                    self.ctx,
+                    "";
+                    fmt = "Taker swap {} has successfully started",
+                    self.uuid
+                );
             },
             TakerSwapEvent::StartFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::Negotiated(data) => {

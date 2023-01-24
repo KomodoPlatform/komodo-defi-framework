@@ -170,7 +170,8 @@ pub struct TakerFeeAdditionalInfo {
     pub fee_to_send_dex_fee: TradeFee,
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum CheckBalanceError {
     #[display(
         fmt = "Not enough {} for swap: available {}, required at least {}, locked by swaps {:?}",

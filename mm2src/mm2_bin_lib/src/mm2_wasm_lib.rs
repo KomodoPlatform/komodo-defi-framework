@@ -44,7 +44,7 @@ impl From<MainParams> for LpMainParams {
     fn from(orig: MainParams) -> Self { LpMainParams::with_conf(orig.conf).log_filter(Some(orig.log_level)) }
 }
 
-/// Run the MarketMaker2.
+/// Runs a MarketMaker2 instance.
 ///
 /// # Parameters
 ///
@@ -126,7 +126,7 @@ pub fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<(), JsValue
     Ok(())
 }
 
-/// Get the MarketMaker2 status.
+/// Returns the MarketMaker2 instance status.
 #[wasm_bindgen]
 pub fn mm2_main_status() -> MainStatus { mm2_status() }
 
@@ -159,7 +159,7 @@ impl From<Mm2RpcErr> for JsValue {
     fn from(e: Mm2RpcErr) -> Self { JsValue::from(e as i32) }
 }
 
-/// Invoke an RPC request.
+/// Invokes an RPC request.
 ///
 /// # Parameters
 ///
@@ -176,7 +176,7 @@ impl From<Mm2RpcErr> for JsValue {
 ///             "userpass": "test123",
 ///             "method": "version",
 ///         };
-///         const response = mm2_rpc(payload).await;
+///         const response = await mm2_rpc(payload);
 ///         return response.result;
 ///     } catch (e) {
 ///         switch (e) {
@@ -242,4 +242,39 @@ pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
 pub fn mm2_version() -> JsValue {
     serialize_to_js(&MmVersionResult::new(MM_VERSION.into(), MM_DATETIME.into()))
         .expect("expected serialization to succeed")
+}
+
+/// Stops the MarketMaker2 instance.
+///
+/// # Usage
+///
+/// ```javascript
+/// import init, {mm2_stop} from "./path/to/mm2.js";
+///
+/// async function stop () {
+///     try {
+///         await mm2_stop();
+///     } catch (e) {
+///         switch (e) {
+///             case Mm2RpcErr.NotRunning:
+///                 alert("MarketMaker2 not running yet...");
+///                 break;
+///             // handle other errors...
+///             default:
+///                 alert(`Unexpected error: ${e}`);
+///                 break;
+///         }
+///     }
+/// }
+/// ```
+#[wasm_bindgen]
+pub async fn mm2_stop() -> Result<(), JsValue> {
+    let ctx = match prepare_for_mm2_stop() {
+        PrepareForStopResult::CanBeStopped(ctx) => ctx,
+        PrepareForStopResult::ReadyStopStatus(StopStatus::Ok) => return Ok(()),
+        PrepareForStopResult::ReadyStopStatus(err) => return Err(JsValue::from(err as i32)),
+    };
+
+    finalize_mm2_stop(ctx).await;
+    Ok(())
 }

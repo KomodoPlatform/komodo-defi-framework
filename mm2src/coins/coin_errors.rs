@@ -13,6 +13,7 @@ pub enum ValidatePaymentError {
     TxDeserializationError(String),
     InvalidParameter(String),
     InvalidRpcResponse(String),
+    TxDoesNotExist(String),
     SPVError(SPVError),
     UnexpectedPaymentState(String),
     Transport(String),
