@@ -1,7 +1,8 @@
 //! Helpers used in the unit and integration tests.
 
 use crate::electrums::qtum_electrums;
-use crate::structs::{MyBalanceResponse, RpcResponse, SetPriceResponse, WatcherConf};
+use crate::structs::*;
+
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -2132,7 +2133,7 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
+pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> TransactionDetails {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2559,12 +2560,18 @@ pub async fn start_swaps(
         uuids.push(buy_json["result"]["uuid"].as_str().unwrap().to_owned());
     }
 
-    for (base, rel) in pairs.iter() {
+    for uuid in uuids.iter() {
         // ensure the swaps are started
-        let expected_log = format!("Entering the taker_swap_loop {}/{}", base, rel);
-        taker.wait_for_log(5., |log| log.contains(&expected_log)).await.unwrap();
-        let expected_log = format!("Entering the maker_swap_loop {}/{}", base, rel);
-        maker.wait_for_log(5., |log| log.contains(&expected_log)).await.unwrap()
+        let expected_log = format!("Taker swap {} has successfully started", uuid);
+        taker
+            .wait_for_log(10., |log| log.contains(&expected_log))
+            .await
+            .unwrap();
+        let expected_log = format!("Maker swap {} has successfully started", uuid);
+        maker
+            .wait_for_log(10., |log| log.contains(&expected_log))
+            .await
+            .unwrap()
     }
 
     uuids
@@ -2731,4 +2738,22 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
         let expected_tx = expected.remove(0);
         assert_eq!(tx["internal_id"].as_str().unwrap(), expected_tx);
     }
+}
+
+pub async fn get_locked_amount(mm: &MarketMakerIt, coin: &str) -> GetLockedAmountResponse {
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "get_locked_amount",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin
+        }
+    });
+    println!("get_locked_amount request {}", json::to_string(&request).unwrap());
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'get_locked_amount' failed: {}", request.1);
+    println!("get_locked_amount response {}", request.1);
+    let response: RpcV2Response<GetLockedAmountResponse> = json::from_str(&request.1).unwrap();
+    response.result
 }

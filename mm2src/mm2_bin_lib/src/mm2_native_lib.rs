@@ -7,8 +7,6 @@ use enum_primitive_derive::Primitive;
 use gstuff::any_to_str;
 use libc::c_char;
 use mm2_core::mm_ctx::MmArc;
-use mm2_main::mm2::lp_dispatcher::dispatch_lp_event;
-use mm2_main::mm2::lp_dispatcher::StopCtxEvent;
 use num_traits::FromPrimitive;
 use serde_json::{self as json};
 use std::ffi::{CStr, CString};
@@ -223,38 +221,14 @@ enum StopErr {
 /// Stop an MM2 instance or reset the static variables.
 #[no_mangle]
 pub extern "C" fn mm2_stop() -> i8 {
-    // The log callback might be initialized already, so try to use the common logs.
-    use common::log::warn;
-
-    if !LP_MAIN_RUNNING.load(Ordering::Relaxed) {
-        return StopErr::NotRunning as i8;
-    }
-
-    let ctx = CTX.load(Ordering::Relaxed);
-    if ctx == 0 {
-        warn!("mm2_stop] lp_main is running without ctx");
-        LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
-        return StopErr::Ok as i8;
-    }
-
-    let ctx = match MmArc::from_ffi_handle(ctx) {
-        Ok(ctx) => ctx,
-        Err(_) => {
-            warn!("mm2_stop] lp_main is still running, although ctx has already been dropped");
-            LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
-            // there is no need to rewrite the `CTX`, because it will be removed on `mm2_main`
-            return StopErr::Ok as i8;
-        },
+    let ctx = match prepare_for_mm2_stop() {
+        PrepareForStopResult::CanBeStopped(ctx) => ctx,
+        PrepareForStopResult::ReadyStopStatus(res) => return res as i8,
     };
 
-    if ctx.is_stopping() {
-        return StopErr::StoppingAlready as i8;
-    }
-
     let spawner = ctx.spawner();
-    spawner.spawn(async move {
-        dispatch_lp_event(ctx, StopCtxEvent.into()).await;
-    });
+    let fut = finalize_mm2_stop(ctx);
+    spawner.spawn(fut);
 
     StopErr::Ok as i8
 }
