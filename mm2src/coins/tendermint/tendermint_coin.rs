@@ -1,3 +1,4 @@
+use super::ibc::transfer_v1::MsgTransfer;
 use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
                         HTLC_STATE_REFUNDED};
 use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
@@ -26,6 +27,7 @@ use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::warn;
+use common::number_type_casting::SafeTypeCastingNumbers;
 use common::{get_utc_timestamp, now_ms, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
@@ -85,7 +87,7 @@ const ABCI_REQUEST_PROVE: bool = false;
 /// 0.25 is good average gas price on atom and iris
 const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
-pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
+pub const GAS_LIMIT_DEFAULT: u64 = 150_000;
 pub(crate) const TX_DEFAULT_MEMO: &str = "";
 
 // https://github.com/irisnet/irismod/blob/5016c1be6fdbcffc319943f33713f4a057622f0a/modules/htlc/types/validation.go#L19-L22
@@ -501,6 +503,26 @@ impl TendermintCoin {
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
         })))
+    }
+
+    // TODO
+    fn create_ibc_withdraw_msg(
+        &self,
+        denom: Denom,
+        to: &AccountId,
+        amount: cosmrs::Decimal,
+    ) -> MmResult<MsgTransfer, TxMarshalingErr> {
+        let x = common::get_local_duration_since_epoch().unwrap().as_nanos() + 20000000000;
+        Ok(MsgTransfer {
+            source_port: String::from("transfer"),
+            source_channel: String::from("channel-81"),
+            sender: self.account_id.clone(),
+            receiver: to.clone(),
+            token: Coin { denom, amount },
+            timeout_height: None,
+            timeout_timestamp: x.into_or_max(),
+            memo: None,
+        })
     }
 
     #[inline(always)]
@@ -2336,6 +2358,79 @@ pub mod tendermint_coin_tests {
         let tx_bytes = hex::decode(tx_hex).unwrap();
         let hash = sha256(&tx_bytes);
         assert_eq!(hex::encode_upper(hash.as_slice()), expected_hash);
+    }
+
+    // TODO
+    #[test]
+    fn test_ibc_withdraw() {
+        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+
+        let protocol_conf = get_iris_usdc_ibc_protocol();
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-NIMDA".to_string(),
+            conf,
+            protocol_conf,
+            rpc_urls,
+            false,
+            priv_key_policy,
+        ))
+        .unwrap();
+
+        let base_denom: Denom = "unyan".parse().unwrap();
+        let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
+        const UAMOUNT: u64 = 1;
+        let amount: cosmrs::Decimal = UAMOUNT.into();
+
+        let ibc_tx = coin.create_ibc_withdraw_msg(coin.denom.clone(), &to, amount).unwrap();
+
+        let current_block_fut = coin.current_block().compat();
+        let current_block = block_on(async { current_block_fut.await.unwrap() });
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+        let account_info_fut = coin.my_account_info();
+        let account_info = block_on(async { account_info_fut.await.unwrap() });
+
+        let simulated_tx = coin
+            .gen_simulated_tx(
+                account_info.clone(),
+                ibc_tx.to_any().unwrap(),
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+            )
+            .unwrap();
+
+        let fee = block_on(async { coin.calculate_fee(base_denom.clone(), simulated_tx).await.unwrap() });
+
+        let raw_tx = block_on(async {
+            coin.any_to_signed_raw_tx(
+                account_info.clone(),
+                ibc_tx.to_any().unwrap(),
+                fee,
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+            )
+            .unwrap()
+        });
+        let tx_bytes = raw_tx.to_bytes().unwrap();
+
+        let send_tx_fut = coin.send_raw_tx_bytes(&tx_bytes).compat();
+        block_on(async {
+            send_tx_fut.await.unwrap();
+        });
+
+        assert!(false, "intentionally panicked");
     }
 
     #[test]

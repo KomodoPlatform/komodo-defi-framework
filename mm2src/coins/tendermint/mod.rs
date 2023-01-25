@@ -2,6 +2,7 @@
 // Useful resources
 // https://docs.cosmos.network/
 
+mod ibc;
 mod iris;
 mod rpc;
 mod tendermint_coin;
@@ -25,6 +26,8 @@ pub(crate) const TENDERMINT_COIN_PROTOCOL_TYPE: &str = "TENDERMINT";
 pub(crate) const TENDERMINT_ASSET_PROTOCOL_TYPE: &str = "TENDERMINTTOKEN";
 
 pub(crate) mod type_urls {
+    pub(crate) const IBC_TRANSFER_TYPE_URL: &str = "/ibc.applications.transfer.v1.MsgTransfer";
+
     pub(crate) const CREATE_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgCreateHTLC";
     pub(crate) const CLAIM_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgClaimHTLC";
 }
