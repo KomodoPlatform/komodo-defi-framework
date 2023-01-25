@@ -221,8 +221,8 @@ use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalan
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{CosmosTransaction, CustomTendermintMsgType, TendermintCoin, TendermintFeeDetails,
-                 TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo};
+use tendermint::{rpc::IBCWithdrawRequest, CosmosTransaction, CustomTendermintMsgType, TendermintCoin,
+                 TendermintFeeDetails, TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -2966,6 +2966,20 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     coin.withdraw(req).compat().await
+}
+
+pub async fn ibc_withdraw(ctx: MmArc, req: IBCWithdrawRequest) -> WithdrawResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    match coin {
+        MmCoinEnum::Tendermint(coin) => coin.ibc_withdraw(req).compat().await,
+        MmCoinEnum::TendermintToken(token) => token.ibc_withdraw(req).compat().await,
+        coin => MmError::err(WithdrawError::UnexpectedUserAction {
+            expected: format!(
+                "Only tendermint based coins are allowed for `ibc_withdraw` operation. Current coin: {}",
+                coin.platform_ticker()
+            ),
+        }),
+    }
 }
 
 pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {

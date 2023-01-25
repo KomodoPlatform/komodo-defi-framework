@@ -1,6 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))] mod tendermint_native_rpc;
+use mm2_number::BigDecimal;
 #[cfg(not(target_arch = "wasm32"))]
-pub use tendermint_native_rpc::*;
+pub(crate) use tendermint_native_rpc::*;
 
 #[cfg(target_arch = "wasm32")] mod tendermint_wasm_rpc;
 #[cfg(target_arch = "wasm32")] pub use tendermint_wasm_rpc::*;
@@ -20,4 +21,16 @@ impl From<TendermintResultOrder> for Order {
             TendermintResultOrder::Descending => Self::Descending,
         }
     }
+}
+
+#[derive(Clone, Deserialize)]
+pub struct IBCWithdrawRequest {
+    pub(crate) ibc_source_channel: String,
+    pub(crate) coin: String,
+    pub(crate) to: String,
+    #[serde(default)]
+    pub(crate) amount: BigDecimal,
+    #[serde(default)]
+    pub(crate) max: bool,
+    pub(crate) memo: Option<String>,
 }

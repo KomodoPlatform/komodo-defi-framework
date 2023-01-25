@@ -22,8 +22,8 @@ pub(crate) struct MsgTransfer {
     /// Timeout timestamp in absolute nanoseconds since unix epoch.
     /// The timeout is disabled when set to 0.
     pub(crate) timeout_timestamp: u64,
-    /// Optional memo
-    pub(crate) memo: Option<String>,
+    // Not supported by some of the cosmos chains like IRIS
+    // pub(crate) memo: Option<String>,
 }
 
 impl Msg for MsgTransfer {
@@ -52,7 +52,7 @@ impl TryFrom<&IBCTransferV1Proto> for MsgTransfer {
             receiver: proto.receiver.parse()?,
             timeout_height: None,
             timeout_timestamp: proto.timeout_timestamp,
-            memo: proto.memo.to_owned(),
+            // memo: proto.memo.to_owned(),
         })
     }
 }
@@ -71,7 +71,7 @@ impl From<&MsgTransfer> for IBCTransferV1Proto {
             receiver: msg.receiver.to_string(),
             timeout_height: None,
             timeout_timestamp: msg.timeout_timestamp,
-            memo: msg.memo.to_owned(),
+            // memo: msg.memo.to_owned(),
         }
     }
 }

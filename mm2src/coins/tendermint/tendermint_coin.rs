@@ -1,4 +1,5 @@
 use super::ibc::transfer_v1::MsgTransfer;
+use super::ibc::{IBC_OUT_SOURCE_PORT, IBC_OUT_TIMEOUT_IN_NANOS};
 use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
                         HTLC_STATE_REFUNDED};
 use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
@@ -505,24 +506,162 @@ impl TendermintCoin {
         })))
     }
 
-    // TODO
-    fn create_ibc_withdraw_msg(
-        &self,
-        denom: Denom,
-        to: &AccountId,
-        amount: cosmrs::Decimal,
-    ) -> MmResult<MsgTransfer, TxMarshalingErr> {
-        let x = common::get_local_duration_since_epoch().unwrap().as_nanos() + 20000000000;
-        Ok(MsgTransfer {
-            source_port: String::from("transfer"),
-            source_channel: String::from("channel-81"),
-            sender: self.account_id.clone(),
-            receiver: to.clone(),
-            token: Coin { denom, amount },
-            timeout_height: None,
-            timeout_timestamp: x.into_or_max(),
-            memo: None,
-        })
+    pub fn ibc_withdraw(&self, req: IBCWithdrawRequest) -> WithdrawFut {
+        let coin = self.clone();
+        let fut = async move {
+            let to_address =
+                AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
+            let balance_denom = coin.balance_for_denom(coin.denom.to_string()).await?;
+            let balance_dec = big_decimal_from_sat_unsigned(balance_denom, coin.decimals);
+
+            // << BEGIN TX SIMULATION FOR FEE CALCULATION
+            let (amount_denom, amount_dec) = if req.max {
+                let amount_denom = balance_denom;
+                (amount_denom, big_decimal_from_sat_unsigned(amount_denom, coin.decimals))
+            } else {
+                (sat_from_big_decimal(&req.amount, coin.decimals)?, req.amount.clone())
+            };
+
+            if !coin.is_tx_amount_enough(coin.decimals, &amount_dec) {
+                return MmError::err(WithdrawError::AmountTooLow {
+                    amount: amount_dec,
+                    threshold: coin.min_tx_amount(),
+                });
+            }
+
+            let received_by_me = if to_address == coin.account_id {
+                amount_dec
+            } else {
+                BigDecimal::default()
+            };
+
+            let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
+
+            let timestamp_as_nanos: u64 = common::get_local_duration_since_epoch()
+                .expect("get_local_duration_since_epoch shouldn't fail")
+                .as_nanos()
+                .into_or_max();
+
+            let msg_transfer = MsgTransfer {
+                source_port: IBC_OUT_SOURCE_PORT.to_owned(),
+                source_channel: req.ibc_source_channel.clone(),
+                sender: coin.account_id.clone(),
+                receiver: to_address.clone(),
+                token: Coin {
+                    denom: coin.denom.clone(),
+                    amount: amount_denom.into(),
+                },
+                timeout_height: None,
+                timeout_timestamp: timestamp_as_nanos + IBC_OUT_TIMEOUT_IN_NANOS,
+                // memo: Some(memo.clone()),
+            }
+            .to_any()
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let current_block = coin
+                .current_block()
+                .compat()
+                .await
+                .map_to_mm(WithdrawError::Transport)?;
+
+            let _sequence_lock = coin.sequence_lock.lock().await;
+            let account_info = coin.my_account_info().await?;
+
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let simulated_tx = coin
+                .gen_simulated_tx(account_info.clone(), msg_transfer.clone(), timeout_height, memo.clone())
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            // >> END TX SIMULATION FOR FEE CALCULATION
+
+            let fee_amount_u64 = coin.calculate_fee_amount_as_u64(simulated_tx).await?;
+            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
+
+            let fee_amount = Coin {
+                denom: coin.denom.clone(),
+                amount: fee_amount_u64.into(),
+            };
+
+            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+
+            let (amount_denom, total_amount) = if req.max {
+                if balance_denom < fee_amount_u64 {
+                    return MmError::err(WithdrawError::NotSufficientBalance {
+                        coin: coin.ticker.clone(),
+                        available: balance_dec,
+                        required: fee_amount_dec,
+                    });
+                }
+                let amount_denom = balance_denom - fee_amount_u64;
+                (amount_denom, balance_dec)
+            } else {
+                let total = &req.amount + &fee_amount_dec;
+                if balance_dec < total {
+                    return MmError::err(WithdrawError::NotSufficientBalance {
+                        coin: coin.ticker.clone(),
+                        available: balance_dec,
+                        required: total,
+                    });
+                }
+
+                (sat_from_big_decimal(&req.amount, coin.decimals)?, total)
+            };
+
+            let timestamp_as_nanos: u64 = common::get_local_duration_since_epoch()
+                .expect("get_local_duration_since_epoch shouldn't fail")
+                .as_nanos()
+                .into_or_max();
+
+            let msg_transfer = MsgTransfer {
+                source_port: IBC_OUT_SOURCE_PORT.to_owned(),
+                source_channel: req.ibc_source_channel,
+                sender: coin.account_id.clone(),
+                receiver: to_address,
+                token: Coin {
+                    denom: coin.denom.clone(),
+                    amount: amount_denom.into(),
+                },
+                timeout_height: None,
+                timeout_timestamp: timestamp_as_nanos + IBC_OUT_TIMEOUT_IN_NANOS,
+                // memo: Some(memo.clone()),
+            }
+            .to_any()
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let tx_raw = coin
+                .any_to_signed_raw_tx(account_info, msg_transfer, fee, timeout_height, memo.clone())
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let tx_bytes = tx_raw
+                .to_bytes()
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let hash = sha256(&tx_bytes);
+            Ok(TransactionDetails {
+                tx_hash: hex::encode_upper(hash.as_slice()),
+                tx_hex: tx_bytes.into(),
+                from: vec![coin.account_id.to_string()],
+                to: vec![req.to],
+                my_balance_change: &received_by_me - &total_amount,
+                spent_by_me: total_amount.clone(),
+                total_amount,
+                received_by_me,
+                block_height: 0,
+                timestamp: 0,
+                fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                    coin: coin.ticker.clone(),
+                    amount: fee_amount_dec,
+                    uamount: fee_amount_u64,
+                    gas_limit: GAS_LIMIT_DEFAULT,
+                })),
+                coin: coin.ticker.to_string(),
+                internal_id: hash.to_vec().into(),
+                kmd_rewards: None,
+                transaction_type: TransactionType::default(),
+                memo: Some(memo),
+            })
+        };
+        Box::new(fut.boxed().compat())
     }
 
     #[inline(always)]
@@ -1441,21 +1580,13 @@ impl MmCoin for TendermintCoin {
             let balance_dec = big_decimal_from_sat_unsigned(balance_denom, coin.decimals);
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
-            let (amount_denom, amount_dec, total_amount) = if req.max {
+            let (amount_denom, amount_dec) = if req.max {
                 let amount_denom = balance_denom;
-                (
-                    amount_denom,
-                    big_decimal_from_sat_unsigned(amount_denom, coin.decimals),
-                    balance_dec.clone(),
-                )
+                (amount_denom, big_decimal_from_sat_unsigned(amount_denom, coin.decimals))
             } else {
                 let total = req.amount.clone();
 
-                (
-                    sat_from_big_decimal(&req.amount, coin.decimals)?,
-                    req.amount.clone(),
-                    total,
-                )
+                (sat_from_big_decimal(&req.amount, coin.decimals)?, req.amount.clone())
             };
 
             if !coin.is_tx_amount_enough(coin.decimals, &amount_dec) {
@@ -1509,7 +1640,7 @@ impl MmCoin for TendermintCoin {
 
             let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
 
-            let (amount_denom, amount_dec, total_amount) = if req.max {
+            let (amount_denom, total_amount) = if req.max {
                 if balance_denom < fee_amount_u64 {
                     return MmError::err(WithdrawError::NotSufficientBalance {
                         coin: coin.ticker.clone(),
@@ -1518,11 +1649,7 @@ impl MmCoin for TendermintCoin {
                     });
                 }
                 let amount_denom = balance_denom - fee_amount_u64;
-                (
-                    amount_denom,
-                    big_decimal_from_sat_unsigned(amount_denom, coin.decimals),
-                    balance_dec,
-                )
+                (amount_denom, balance_dec)
             } else {
                 let total = &req.amount + &fee_amount_dec;
                 if balance_dec < total {
@@ -1533,11 +1660,7 @@ impl MmCoin for TendermintCoin {
                     });
                 }
 
-                (
-                    sat_from_big_decimal(&req.amount, coin.decimals)?,
-                    req.amount.clone(),
-                    total,
-                )
+                (sat_from_big_decimal(&req.amount, coin.decimals)?, total)
             };
 
             let msg_send = MsgSend {
@@ -2358,79 +2481,6 @@ pub mod tendermint_coin_tests {
         let tx_bytes = hex::decode(tx_hex).unwrap();
         let hash = sha256(&tx_bytes);
         assert_eq!(hex::encode_upper(hash.as_slice()), expected_hash);
-    }
-
-    // TODO
-    #[test]
-    fn test_ibc_withdraw() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
-
-        let protocol_conf = get_iris_usdc_ibc_protocol();
-
-        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
-
-        let conf = TendermintConf {
-            avg_blocktime: AVG_BLOCKTIME,
-            derivation_path: None,
-        };
-
-        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
-
-        let coin = block_on(TendermintCoin::init(
-            &ctx,
-            "IRIS-NIMDA".to_string(),
-            conf,
-            protocol_conf,
-            rpc_urls,
-            false,
-            priv_key_policy,
-        ))
-        .unwrap();
-
-        let base_denom: Denom = "unyan".parse().unwrap();
-        let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
-        const UAMOUNT: u64 = 1;
-        let amount: cosmrs::Decimal = UAMOUNT.into();
-
-        let ibc_tx = coin.create_ibc_withdraw_msg(coin.denom.clone(), &to, amount).unwrap();
-
-        let current_block_fut = coin.current_block().compat();
-        let current_block = block_on(async { current_block_fut.await.unwrap() });
-        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-
-        let account_info_fut = coin.my_account_info();
-        let account_info = block_on(async { account_info_fut.await.unwrap() });
-
-        let simulated_tx = coin
-            .gen_simulated_tx(
-                account_info.clone(),
-                ibc_tx.to_any().unwrap(),
-                timeout_height,
-                TX_DEFAULT_MEMO.into(),
-            )
-            .unwrap();
-
-        let fee = block_on(async { coin.calculate_fee(base_denom.clone(), simulated_tx).await.unwrap() });
-
-        let raw_tx = block_on(async {
-            coin.any_to_signed_raw_tx(
-                account_info.clone(),
-                ibc_tx.to_any().unwrap(),
-                fee,
-                timeout_height,
-                TX_DEFAULT_MEMO.into(),
-            )
-            .unwrap()
-        });
-        let tx_bytes = raw_tx.to_bytes().unwrap();
-
-        let send_tx_fut = coin.send_raw_tx_bytes(&tx_bytes).compat();
-        block_on(async {
-            send_tx_fut.await.unwrap();
-        });
-
-        assert!(false, "intentionally panicked");
     }
 
     #[test]
