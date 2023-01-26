@@ -3,21 +3,21 @@ use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 enum Chain {
     Eth,
     Bnb,
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 enum ContractType {
     Erc721,
     Erc1155,
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Nft {
     token_address: String,
     token_id: BigDecimal,
@@ -37,15 +37,15 @@ struct Nft {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
-struct Nfts {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Nfts {
     chain: Chain,
     count: i64,
     nfts: Vec<Nft>,
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Clone, Deserialize)]
 pub struct WithdrawErc721Request {
     coin: String,
     to: String,
@@ -54,7 +54,7 @@ pub struct WithdrawErc721Request {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct WithdrawErc1155Request {
     coin: String,
     to: String,
@@ -90,13 +90,13 @@ pub struct TransactionNftDetails {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 enum NftTxType {
     Single,
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 struct NftTransferHistory {
     block_number: u64,
     block_timestamp: u64,
@@ -118,8 +118,8 @@ struct NftTransferHistory {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
-struct NftTransferHistoryByChain {
+#[derive(Debug, Deserialize)]
+struct NftsTransferHistoryByChain {
     chain: Chain,
     count: i64,
     transfer_history: Vec<NftTransferHistory>,
