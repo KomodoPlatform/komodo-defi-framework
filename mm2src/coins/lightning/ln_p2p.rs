@@ -197,7 +197,11 @@ pub async fn init_peer_manager(
     // ephemeral_random_data is used to derive per-connection ephemeral keys
     let mut ephemeral_bytes = [0; 32];
     rand::thread_rng().fill_bytes(&mut ephemeral_bytes);
-    let onion_message_handler = Arc::new(OnionMessenger::new(keys_manager.clone(), logger.clone()));
+    let onion_message_handler = Arc::new(OnionMessenger::new(
+        keys_manager.clone(),
+        logger.clone(),
+        IgnoringMessageHandler {},
+    ));
     let lightning_msg_handler = MessageHandler {
         chan_handler: channel_manager,
         route_handler: gossip_sync,
@@ -214,7 +218,8 @@ pub async fn init_peer_manager(
     let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(
         lightning_msg_handler,
         node_secret,
-        current_time,
+        // todo: remove unwrap
+        current_time.try_into().unwrap(),
         &ephemeral_bytes,
         logger,
         IgnoringMessageHandler {},

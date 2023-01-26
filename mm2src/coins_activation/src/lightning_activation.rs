@@ -23,9 +23,9 @@ use futures::compat::Future01CompatExt;
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::chain::Access;
 use lightning::routing::gossip;
+use lightning::routing::router::DefaultRouter;
 use lightning_background_processor::{BackgroundProcessor, GossipSync};
 use lightning_invoice::payment;
-use lightning_invoice::utils::DefaultRouter;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
@@ -426,11 +426,15 @@ async fn start_lightning(
     // https://github.com/lightningdevkit/rust-lightning/pull/1286
     // https://github.com/lightningdevkit/rust-lightning/pull/1359
     let router_random_seed_bytes = keys_manager.get_secure_random_bytes();
-    let router = DefaultRouter::new(network_graph.clone(), logger.clone(), router_random_seed_bytes);
+    let router = DefaultRouter::new(
+        network_graph.clone(),
+        logger.clone(),
+        router_random_seed_bytes,
+        scorer.clone(),
+    );
     let invoice_payer = Arc::new(InvoicePayer::new(
         channel_manager.clone(),
         router,
-        scorer.clone(),
         logger.clone(),
         event_handler,
         // Todo: Add option for choosing payment::Retry::Timeout instead of Attempts in LightningParams
@@ -485,7 +489,12 @@ async fn start_lightning(
         db,
         open_channels_nodes,
         trusted_nodes,
-        router: Arc::new(DefaultRouter::new(network_graph, logger, router_random_seed_bytes)),
-        scorer,
+        router: Arc::new(DefaultRouter::new(
+            network_graph,
+            logger.clone(),
+            router_random_seed_bytes,
+            scorer,
+        )),
+        logger,
     })
 }

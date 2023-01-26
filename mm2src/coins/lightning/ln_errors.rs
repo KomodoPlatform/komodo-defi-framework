@@ -91,7 +91,7 @@ pub enum SaveChannelClosingError {
     #[display(fmt = "DB error: {}", _0)]
     DbError(String),
     #[display(fmt = "Channel with rpc id {} not found in DB", _0)]
-    ChannelNotFound(u64),
+    ChannelNotFound(u128),
     #[display(fmt = "funding_generated_in_block is Null in DB")]
     BlockHeightNull,
     #[display(fmt = "Funding transaction hash is Null in DB")]

@@ -895,6 +895,7 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
+    // Todo: rename to update_payment_to_claimable_in_db like the event name
     async fn update_payment_to_received_in_db(
         &self,
         hash: PaymentHash,

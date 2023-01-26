@@ -101,6 +101,7 @@ pub struct GetClosedChannelsResult {
 #[serde(rename_all = "lowercase")]
 pub enum HTLCStatus {
     Pending,
+    // Todo: change name to claimable like the event
     Received,
     Succeeded,
     Failed,

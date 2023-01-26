@@ -168,7 +168,7 @@ pub struct Platform {
     /// This cache stores the outputs that the LN node has interest in.
     pub registered_outputs: PaMutex<Vec<WatchedOutput>>,
     /// This cache stores transactions to be broadcasted once the other node accepts the channel
-    pub unsigned_funding_txs: PaMutex<HashMap<u64, TransactionInputSigner>>,
+    pub unsigned_funding_txs: PaMutex<HashMap<u128, TransactionInputSigner>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
@@ -313,14 +313,16 @@ impl Platform {
     ) {
         // Retrieve channel manager transaction IDs to check the chain for un-confirmations
         let channel_manager_relevant_txids = channel_manager.get_relevant_txids();
-        for txid in channel_manager_relevant_txids {
+        // Todo: check how to best use the returned BlockHash
+        for (txid, _) in channel_manager_relevant_txids {
             self.process_tx_for_unconfirmation(txid, Arc::clone(&channel_manager))
                 .await;
         }
 
         // Retrieve chain monitor transaction IDs to check the chain for un-confirmations
         let chain_monitor_relevant_txids = chain_monitor.get_relevant_txids();
-        for txid in chain_monitor_relevant_txids {
+        // Todo: check how to best use the returned BlockHash
+        for (txid, _) in chain_monitor_relevant_txids {
             self.process_tx_for_unconfirmation(txid, Arc::clone(&chain_monitor))
                 .await;
         }

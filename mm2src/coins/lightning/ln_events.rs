@@ -23,7 +23,7 @@ use utxo_signer::with_key_pair::sign_tx;
 const TRY_LOOP_INTERVAL: f64 = 60.;
 /// 1 second.
 const CRITICAL_FUTURE_TIMEOUT: f64 = 1.0;
-pub const PAYMENT_RECEIVED_LOG: &str = "Handling PaymentReceived event";
+pub const PAYMENT_CLAIMABLE_LOG: &str = "Handling PaymentClaimable event";
 pub const SUCCESSFUL_CLAIM_LOG: &str = "Successfully claimed payment";
 pub const SUCCESSFUL_SEND_LOG: &str = "Successfully sent payment";
 
@@ -36,7 +36,7 @@ pub struct LightningEventHandler {
 }
 
 impl EventHandler for LightningEventHandler {
-    fn handle_event(&self, event: &Event) {
+    fn handle_event(&self, event: Event) {
         match event {
             Event::FundingGenerationReady {
                 temporary_channel_id,
@@ -45,33 +45,35 @@ impl EventHandler for LightningEventHandler {
                 user_channel_id,
                 counterparty_node_id,
             } => self.handle_funding_generation_ready(
-                *temporary_channel_id,
-                *channel_value_satoshis,
+                temporary_channel_id,
+                channel_value_satoshis,
                 output_script,
-                *user_channel_id,
+                user_channel_id,
                 counterparty_node_id,
             ),
 
-            Event::PaymentReceived {
+            // Todo: check how the new fields can be used
+            Event::PaymentClaimable {
                 payment_hash,
                 amount_msat,
                 purpose,
-            } => self.handle_payment_received(*payment_hash, *amount_msat, purpose.clone()),
+                ..
+            } => self.handle_payment_claimable(payment_hash, amount_msat, purpose),
 
             Event::PaymentSent {
                 payment_preimage,
                 payment_hash,
                 fee_paid_msat,
                 ..
-            } => self.handle_payment_sent(*payment_preimage, *payment_hash, *fee_paid_msat),
+            } => self.handle_payment_sent(payment_preimage, payment_hash, fee_paid_msat),
 
-            Event::PaymentClaimed { payment_hash, amount_msat, .. } => self.handle_payment_claimed(*payment_hash, *amount_msat),
+            Event::PaymentClaimed { payment_hash, amount_msat, .. } => self.handle_payment_claimed(payment_hash, amount_msat),
 
-            Event::PaymentFailed { payment_hash, .. } => self.handle_payment_failed(*payment_hash),
+            Event::PaymentFailed { payment_hash, .. } => self.handle_payment_failed(payment_hash),
 
-            Event::PendingHTLCsForwardable { time_forwardable } => self.handle_pending_htlcs_forwards(*time_forwardable),
+            Event::PendingHTLCsForwardable { time_forwardable } => self.handle_pending_htlcs_forwards(time_forwardable),
 
-            Event::SpendableOutputs { outputs } => self.handle_spendable_outputs(outputs.clone()),
+            Event::SpendableOutputs { outputs } => self.handle_spendable_outputs(outputs),
 
             // Todo: an RPC for total amount earned
             Event::PaymentForwarded { fee_earned_msat, claim_from_onchain_tx,  prev_channel_id, next_channel_id} => info!(
@@ -87,7 +89,7 @@ impl EventHandler for LightningEventHandler {
                 channel_id,
                 user_channel_id,
                 reason,
-            } => self.handle_channel_closed(*channel_id, *user_channel_id, reason.to_string()),
+            } => self.handle_channel_closed(channel_id, user_channel_id, reason.to_string()),
 
             // Todo: Add spent UTXOs to RecentlySpentOutPoints if it's not discarded
             Event::DiscardFunding { channel_id, transaction } => info!(
@@ -132,7 +134,7 @@ impl EventHandler for LightningEventHandler {
                 funding_satoshis,
                 push_msat,
                 channel_type: _,
-            } => self.handle_open_channel_request(*temporary_channel_id, *counterparty_node_id, *funding_satoshis, *push_msat),
+            } => self.handle_open_channel_request(temporary_channel_id, counterparty_node_id, funding_satoshis, push_msat),
 
             // Just log an error for now, but this event can be used along PaymentForwarded for a new RPC that shows stats about how a node
             // forward payments over it's outbound channels which can be useful for a user that wants to run a forwarding node for some profits.
@@ -148,6 +150,10 @@ impl EventHandler for LightningEventHandler {
             // send_probe is not used for now but may be used in order matching in the future to check if a swap can happen or not.
             Event::ProbeSuccessful { .. } => (),
             Event::ProbeFailed { .. } => (),
+            // Todo
+            Event::HTLCIntercepted { .. } => (),
+            // Todo
+            Event::ChannelReady { .. } => (),
         }
     }
 }
@@ -189,7 +195,7 @@ pub enum SignFundingTransactionError {
 
 // Generates the raw funding transaction with one output equal to the channel value.
 fn sign_funding_transaction(
-    user_channel_id: u64,
+    user_channel_id: u128,
     output_script: &Script,
     platform: Arc<Platform>,
 ) -> Result<Transaction, SignFundingTransactionError> {
@@ -235,14 +241,16 @@ fn sign_funding_transaction(
 async fn save_channel_closing_details(
     db: SqliteLightningDB,
     platform: Arc<Platform>,
-    user_channel_id: u64,
+    user_channel_id: u128,
     reason: String,
 ) -> SaveChannelClosingResult<()> {
+    // Todo: use u128 by using bytes
     db.update_channel_to_closed(user_channel_id as i64, reason, (now_ms() / 1000) as i64)
         .await?;
 
+    // Todo: use u128 by using bytes
     let channel_details = db
-        .get_channel_from_db(user_channel_id)
+        .get_channel_from_db(user_channel_id as u64)
         .await?
         .ok_or_else(|| MmError::new(SaveChannelClosingError::ChannelNotFound(user_channel_id)))?;
 
@@ -289,15 +297,15 @@ impl LightningEventHandler {
         &self,
         temporary_channel_id: [u8; 32],
         channel_value_satoshis: u64,
-        output_script: &Script,
-        user_channel_id: u64,
-        counterparty_node_id: &PublicKey,
+        output_script: Script,
+        user_channel_id: u128,
+        counterparty_node_id: PublicKey,
     ) {
         info!(
             "Handling FundingGenerationReady event for internal channel id: {} with: {}",
             user_channel_id, counterparty_node_id
         );
-        let funding_tx = match sign_funding_transaction(user_channel_id, output_script, self.platform.clone()) {
+        let funding_tx = match sign_funding_transaction(user_channel_id, &output_script, self.platform.clone()) {
             Ok(tx) => tx,
             Err(e) => {
                 error!(
@@ -312,7 +320,7 @@ impl LightningEventHandler {
         // Give the funding transaction back to LDK for opening the channel.
         if let Err(e) =
             self.channel_manager
-                .funding_transaction_generated(&temporary_channel_id, counterparty_node_id, funding_tx)
+                .funding_transaction_generated(&temporary_channel_id, &counterparty_node_id, funding_tx)
         {
             error!("{:?}", e);
             return;
@@ -336,10 +344,10 @@ impl LightningEventHandler {
         self.platform.spawner().spawn_with_settings(fut, settings);
     }
 
-    fn handle_payment_received(&self, payment_hash: PaymentHash, received_amount: u64, purpose: PaymentPurpose) {
+    fn handle_payment_claimable(&self, payment_hash: PaymentHash, received_amount: u64, purpose: PaymentPurpose) {
         info!(
             "{} for payment_hash: {} with amount {}",
-            PAYMENT_RECEIVED_LOG,
+            PAYMENT_CLAIMABLE_LOG,
             hex::encode(payment_hash.0),
             received_amount
         );
@@ -459,7 +467,7 @@ impl LightningEventHandler {
         self.platform.spawner().spawn_with_settings(fut, settings);
     }
 
-    fn handle_channel_closed(&self, channel_id: [u8; 32], user_channel_id: u64, reason: String) {
+    fn handle_channel_closed(&self, channel_id: [u8; 32], user_channel_id: u128, reason: String) {
         info!(
             "Channel: {} closed for the following reason: {}",
             hex::encode(channel_id),
@@ -624,6 +632,7 @@ impl LightningEventHandler {
         let channel_manager = self.channel_manager.clone();
         let platform = self.platform.clone();
         let fut = async move {
+            // Todo: get_last_channel_rpc_id should return u128
             if let Ok(last_channel_rpc_id) = db.get_last_channel_rpc_id().await.error_log_passthrough() {
                 let user_channel_id = last_channel_rpc_id as u64 + 1;
 
@@ -633,19 +642,19 @@ impl LightningEventHandler {
                         .accept_inbound_channel_from_trusted_peer_0conf(
                             &temporary_channel_id,
                             &counterparty_node_id,
-                            user_channel_id,
+                            user_channel_id as u128,
                         )
                         .is_ok();
 
                 if accepted_inbound_channel_with_0conf
                     || channel_manager
-                        .accept_inbound_channel(&temporary_channel_id, &counterparty_node_id, user_channel_id)
+                        .accept_inbound_channel(&temporary_channel_id, &counterparty_node_id, user_channel_id as u128)
                         .is_ok()
                 {
                     let is_public = match channel_manager
                         .list_channels()
                         .into_iter()
-                        .find(|chan| chan.user_channel_id == user_channel_id)
+                        .find(|chan| chan.user_channel_id == user_channel_id as u128)
                     {
                         Some(details) => details.is_public,
                         None => {
@@ -671,7 +680,7 @@ impl LightningEventHandler {
                     while let Some(details) = channel_manager
                         .list_channels()
                         .into_iter()
-                        .find(|chan| chan.user_channel_id == user_channel_id)
+                        .find(|chan| chan.user_channel_id == user_channel_id as u128)
                     {
                         if let Some(funding_tx) = details.funding_txo {
                             let best_block_height = platform.best_block_height();

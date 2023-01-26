@@ -101,7 +101,7 @@ impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
 
 #[derive(Clone, Serialize)]
 pub struct ChannelDetailsForRPC {
-    pub rpc_channel_id: u64,
+    pub rpc_channel_id: u128,
     pub channel_id: H256Json,
     pub counterparty_node_id: PublicKeyForRPC,
     pub funding_tx: Option<H256Json>,

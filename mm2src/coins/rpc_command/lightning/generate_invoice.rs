@@ -92,6 +92,7 @@ pub async fn generate_invoice(
     let network = ln_coin.platform.network.clone().into();
     let channel_manager = ln_coin.channel_manager.clone();
     let keys_manager = ln_coin.keys_manager.clone();
+    let logger = ln_coin.logger.clone();
     let amount_in_msat = req.amount_in_msat;
     let description = req.description.clone();
     let expiry = req.expiry.unwrap_or(DEFAULT_INVOICE_EXPIRY);
@@ -99,6 +100,7 @@ pub async fn generate_invoice(
         create_invoice_from_channelmanager(
             &channel_manager,
             keys_manager,
+            logger,
             network,
             amount_in_msat,
             description,

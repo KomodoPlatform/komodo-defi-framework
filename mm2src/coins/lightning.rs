@@ -44,8 +44,8 @@ use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
+use lightning::routing::router::DefaultRouter;
 use lightning_background_processor::BackgroundProcessor;
-use lightning_invoice::utils::DefaultRouter;
 use lightning_invoice::{payment, CreationError, InvoiceBuilder, SignOrCreationError};
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, PlatformCoinConfirmationTargets};
@@ -79,7 +79,7 @@ use std::sync::Arc;
 const WAIT_FOR_REFUND_INTERVAL: f64 = 60.;
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
-pub type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
+pub type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<LogState>, E>;
 
 #[derive(Clone)]
 pub struct LightningCoin {
@@ -111,10 +111,8 @@ pub struct LightningCoin {
     /// The lightning node router that takes care of finding routes for payments.
     // Todo: this should be removed once pay_invoice_with_max_total_cltv_expiry_delta similar functionality is implemented in rust-lightning
     pub router: Arc<Router>,
-    /// The lightning node scorer that takes care of scoring routes. Given the uncertainty of channel liquidity balances,
-    /// the scorer stores the probabilities that a route is successful based on knowledge learned from successful and unsuccessful attempts.
-    // Todo: this should be removed once pay_invoice_with_max_total_cltv_expiry_delta similar functionality is implemented in rust-lightning
-    pub scorer: Arc<Scorer>,
+    /// The lightning node logger, this is required to be passed to some function so that logs from these functions are displayed in mm2 logs.
+    pub logger: Arc<LogState>,
 }
 
 impl fmt::Debug for LightningCoin {
@@ -186,7 +184,8 @@ impl LightningCoin {
         self.list_channels()
             .await
             .into_iter()
-            .find(|chan| chan.user_channel_id == rpc_id)
+            // Todo: Make rpc_id u128
+            .find(|chan| chan.user_channel_id == rpc_id.into())
     }
 
     pub(crate) async fn pay_invoice(
@@ -211,7 +210,6 @@ impl LightningCoin {
                     pay_invoice_with_max_total_cltv_expiry_delta(
                         selfi.channel_manager,
                         selfi.router,
-                        selfi.scorer,
                         &invoice,
                         total_cltv,
                     )
@@ -376,7 +374,8 @@ impl LightningCoin {
             PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
             PagingOptionsEnum::FromId(rpc_id) => open_channels_filtered
                 .iter()
-                .position(|x| x.rpc_channel_id == rpc_id)
+                // Todo: Make rpc_id u128
+                .position(|x| x.rpc_channel_id == rpc_id as u128)
                 .map(|pos| pos + 1)
                 .unwrap_or_default(),
         };

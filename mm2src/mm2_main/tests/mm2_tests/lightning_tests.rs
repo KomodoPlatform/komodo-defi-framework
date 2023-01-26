@@ -1,5 +1,5 @@
 use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum};
-use coins::lightning::ln_events::{PAYMENT_RECEIVED_LOG, SUCCESSFUL_CLAIM_LOG, SUCCESSFUL_SEND_LOG};
+use coins::lightning::ln_events::{PAYMENT_CLAIMABLE_LOG, SUCCESSFUL_CLAIM_LOG, SUCCESSFUL_SEND_LOG};
 use common::executor::Timer;
 use common::{block_on, log};
 use gstuff::now_ms;
@@ -431,7 +431,10 @@ fn test_send_payment() {
     );
 
     block_on(open_channel(&mm_node_2, "tBTC-TEST-lightning", &node_1_address, 0.0002));
-    block_on(mm_node_2.wait_for_log(60., |log| log.contains("Received message ChannelReady"))).unwrap();
+    block_on(mm_node_2.wait_for_log(60., |log| {
+        log.contains("Sending private initial channel_update for our counterparty")
+    }))
+    .unwrap();
 
     let send_payment = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
@@ -635,7 +638,10 @@ fn test_lightning_swaps() {
     );
 
     block_on(open_channel(&mm_node_2, "tBTC-TEST-lightning", &node_1_address, 0.0002));
-    block_on(mm_node_2.wait_for_log(60., |log| log.contains("Received message ChannelReady"))).unwrap();
+    block_on(mm_node_2.wait_for_log(60., |log| {
+        log.contains("Sending private initial channel_update for our counterparty")
+    }))
+    .unwrap();
 
     // Enable coins on mm_node_1 side. Print the replies in case we need the "address".
     log!(
@@ -703,6 +709,7 @@ fn test_lightning_swaps() {
 
 // Todo: This test fails for now, will update rust-lightning to latest release first before trying again.
 // Todo: add another test for multipath swap payment, where 1 channel is closed and the other not.
+// Todo: watchtowers implementation is needed for such cases, if taker is offline
 #[test]
 // This test is ignored because it requires refilling the tBTC and RICK addresses with test coins periodically.
 // This test also takes a lot of time so it should always be ignored.
@@ -716,7 +723,10 @@ fn test_lightning_taker_gets_swap_preimage_onchain() {
     log!("open_channel {:?}", open_channel);
     let rpc_channel_id = open_channel["result"]["rpc_channel_id"].as_u64().unwrap();
 
-    block_on(mm_node_2.wait_for_log(3600., |log| log.contains("Received message ChannelReady"))).unwrap();
+    block_on(mm_node_2.wait_for_log(3600., |log| {
+        log.contains("Sending private initial channel_update for our counterparty")
+    }))
+    .unwrap();
 
     // Enable coins on mm_node_1 side. Print the replies in case we need the "address".
     log!(
@@ -741,7 +751,7 @@ fn test_lightning_taker_gets_swap_preimage_onchain() {
         price,
         volume,
     ));
-    block_on(mm_node_1.wait_for_log(60., |log| log.contains(PAYMENT_RECEIVED_LOG))).unwrap();
+    block_on(mm_node_1.wait_for_log(60., |log| log.contains(PAYMENT_CLAIMABLE_LOG))).unwrap();
 
     // Taker node force closes the channel after the maker receives the payment but before the maker claims the payment and releases the preimage
     let close_channel = block_on(mm_node_2.rpc(&json!({

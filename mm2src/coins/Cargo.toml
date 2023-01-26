@@ -113,10 +113,10 @@ hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
-lightning = "0.0.111"
-lightning-background-processor = "0.0.111"
-lightning-invoice = { version = "0.19.0", features = ["serde"] }
-lightning-net-tokio = "0.0.111"
+lightning = "0.0.113"
+lightning-background-processor = "0.0.113"
+lightning-invoice = { version = "0.21.0", features = ["serde"] }
+lightning-net-tokio = "0.0.113"
 rust-ini = { version = "0.13" }
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
 secp256k1v24 = { version = "0.24", package = "secp256k1" }

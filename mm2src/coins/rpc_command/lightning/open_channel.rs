@@ -197,18 +197,25 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
     drop_mutability!(conf);
     let user_config: UserConfig = conf.into();
 
+    // Todo: should save u128 as bytes in DB, or find a different solution
     let rpc_channel_id = ln_coin.db.get_last_channel_rpc_id().await? as u64 + 1;
 
     let temp_channel_id = async_blocking(move || {
         channel_manager
-            .create_channel(node_pubkey, amount_in_sat, push_msat, rpc_channel_id, Some(user_config))
+            .create_channel(
+                node_pubkey,
+                amount_in_sat,
+                push_msat,
+                rpc_channel_id.into(),
+                Some(user_config),
+            )
             .map_to_mm(|e| OpenChannelError::FailureToOpenChannel(node_pubkey.to_string(), format!("{:?}", e)))
     })
     .await?;
 
     {
         let mut unsigned_funding_txs = ln_coin.platform.unsigned_funding_txs.lock();
-        unsigned_funding_txs.insert(rpc_channel_id, unsigned);
+        unsigned_funding_txs.insert(rpc_channel_id.into(), unsigned);
     }
 
     let pending_channel_details = DBChannelDetails::new(
