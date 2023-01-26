@@ -39,9 +39,9 @@ impl BlockHeaderStorage {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub(crate) fn new_from_ctx(_ctx: MmArc, _ticker: String) -> Result<Self, BlockHeaderStorageError> {
+    pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
         Ok(BlockHeaderStorage {
-            inner: Box::new(IndexedDBBlockHeadersStorage {}),
+            inner: Box::new(IndexedDBBlockHeadersStorage::new(&ctx, ticker)),
         })
     }
 

@@ -1,11 +1,76 @@
 use async_trait::async_trait;
 use chain::BlockHeader;
+use mm2_core::mm_ctx::MmArc;
+use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder,
+                         InitDbResult, OnUpgradeResult, SharedDb, TableSignature};
 use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 
-#[derive(Debug)]
-pub struct IndexedDBBlockHeadersStorage {}
+const DB_NAME: &str = "block_headers_cache";
+const DB_VERSION: u32 = 1;
+
+pub type IndexedDBBlockHeadersStorageInnerLocked<'a> = DbLocked<'a, IndexedDBBlockHeadersStorageInner>;
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct BlockHeaderStorageTable {
+    pub block_height: u64,
+    pub block_bits: u64,
+    pub block_hash: String,
+    pub hex: String,
+}
+
+impl TableSignature for BlockHeaderStorageTable {
+    fn table_name() -> &'static str { "block_headers_cache" }
+
+    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        match (old_version, new_version) {
+            (0, 1) => {
+                let table = upgrader.create_table(Self::table_name())?;
+                table.create_index("block_height", true)?;
+            },
+            _ => (),
+        }
+        Ok(())
+    }
+}
+
+pub struct IndexedDBBlockHeadersStorageInner {
+    pub inner: IndexedDb,
+}
+
+#[async_trait]
+impl DbInstance for IndexedDBBlockHeadersStorageInner {
+    fn db_name() -> &'static str { DB_NAME }
+
+    async fn init(db_id: DbIdentifier) -> InitDbResult<Self> {
+        let inner = IndexedDbBuilder::new(db_id)
+            .with_version(DB_VERSION)
+            .with_table::<BlockHeaderStorageTable>()
+            .build()
+            .await?;
+
+        Ok(Self { inner })
+    }
+}
+
+impl IndexedDBBlockHeadersStorageInner {
+    pub fn get_inner(&self) -> &IndexedDb { &self.inner }
+}
+
+pub struct IndexedDBBlockHeadersStorage {
+    pub ticker: String,
+    pub db: SharedDb<IndexedDBBlockHeadersStorageInner>,
+}
+
+impl IndexedDBBlockHeadersStorage {
+    pub fn new(ctx: &MmArc, ticker: String) -> Self {
+        Self {
+            db: ConstructibleDb::new_shared(ctx),
+            ticker,
+        }
+    }
+}
 
 #[async_trait]
 impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
