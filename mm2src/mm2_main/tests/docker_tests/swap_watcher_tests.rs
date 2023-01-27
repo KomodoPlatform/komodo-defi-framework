@@ -32,7 +32,8 @@ fn enable_eth_and_jst(mm_node: &MarketMakerIt) {
         "ETH",
         ETH_SEPOLIA_NODE,
         ETH_SEPOLIA_SWAP_CONTRACT,
-        Some(ETH_SEPOLIA_SWAP_CONTRACT)
+        Some(ETH_SEPOLIA_SWAP_CONTRACT),
+        true
     )));
 
     dbg!(block_on(enable_eth_coin(
@@ -40,7 +41,8 @@ fn enable_eth_and_jst(mm_node: &MarketMakerIt) {
         "JST",
         ETH_SEPOLIA_NODE,
         ETH_SEPOLIA_SWAP_CONTRACT,
-        Some(ETH_SEPOLIA_SWAP_CONTRACT)
+        Some(ETH_SEPOLIA_SWAP_CONTRACT),
+        true
     )));
 }
 

@@ -7384,7 +7384,8 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         ETH_DEV_NODES,
         // using arbitrary address
         "0x2b294F029Fde858b2c62184e8390591755521d8E",
-        Some(ETH_DEV_SWAP_CONTRACT)
+        Some(ETH_DEV_SWAP_CONTRACT),
+        false
     )));
 
     dbg!(block_on(enable_eth_coin(
@@ -7393,7 +7394,8 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         ETH_DEV_NODES,
         // using arbitrary address
         "0x2b294F029Fde858b2c62184e8390591755521d8E",
-        Some(ETH_DEV_SWAP_CONTRACT)
+        Some(ETH_DEV_SWAP_CONTRACT),
+        false
     )));
 
     dbg!(block_on(enable_eth_coin(
@@ -7402,7 +7404,8 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         ETH_DEV_NODES,
         // using arbitrary address
         ETH_MAINNET_SWAP_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT)
+        Some(ETH_DEV_SWAP_CONTRACT),
+        false
     )));
 
     dbg!(block_on(enable_eth_coin(
@@ -7411,7 +7414,8 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         ETH_DEV_NODES,
         // using arbitrary address
         ETH_MAINNET_SWAP_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT)
+        Some(ETH_DEV_SWAP_CONTRACT),
+        false
     )));
 
     let uuids = block_on(start_swaps(
@@ -7472,6 +7476,7 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         // using arbitrary address
         "0x2b294F029Fde858b2c62184e8390591755521d8E",
         None,
+        false
     )));
 
     dbg!(block_on(enable_eth_coin(
@@ -7481,6 +7486,7 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         // using arbitrary address
         "0x2b294F029Fde858b2c62184e8390591755521d8E",
         None,
+        false
     )));
 
     dbg!(block_on(enable_eth_coin(
@@ -7489,7 +7495,8 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         ETH_DEV_NODES,
         // using arbitrary address
         ETH_MAINNET_SWAP_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT)
+        Some(ETH_DEV_SWAP_CONTRACT),
+        false
     )));
 
     dbg!(block_on(enable_eth_coin(
@@ -7498,7 +7505,8 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         ETH_DEV_NODES,
         // using arbitrary address
         ETH_MAINNET_SWAP_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT)
+        Some(ETH_DEV_SWAP_CONTRACT),
+        false
     )));
 
     let uuids = block_on(start_swaps(

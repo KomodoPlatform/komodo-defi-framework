@@ -66,6 +66,7 @@ fn eth_coin_for_test(
         priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract,
+        contract_supports_watchers: false,
         ticker,
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
@@ -232,6 +233,7 @@ fn send_and_refund_erc20_payment() {
         priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
+        contract_supports_watchers: false,
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
             is_parity: true,
@@ -299,6 +301,7 @@ fn send_and_refund_eth_payment() {
         priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
+        contract_supports_watchers: false,
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
             is_parity: true,
@@ -374,6 +377,7 @@ fn test_nonce_several_urls() {
         priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
+        contract_supports_watchers: false,
         web3_instances: vec![
             Web3Instance {
                 web3: web3_infura.clone(),
@@ -439,6 +443,7 @@ fn test_wait_for_payment_spend_timeout() {
         priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
+        contract_supports_watchers: false,
         ticker: "ETH".into(),
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
@@ -509,6 +514,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         priv_key_policy: key_pair.into(),
         swap_contract_address,
         fallback_swap_contract: None,
+        contract_supports_watchers: false,
         ticker: "ETH".into(),
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
@@ -620,6 +626,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         priv_key_policy: key_pair.into(),
         swap_contract_address,
         fallback_swap_contract: None,
+        contract_supports_watchers: false,
         ticker: "BAT".into(),
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
@@ -1303,6 +1310,7 @@ fn test_message_hash() {
         priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
+        contract_supports_watchers: false,
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
             is_parity: true,
@@ -1347,6 +1355,7 @@ fn test_sign_verify_message() {
         priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
+        contract_supports_watchers: false,
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
             is_parity: true,
@@ -1402,6 +1411,7 @@ fn test_eth_extract_secret() {
         priv_key_policy: key_pair.into(),
         swap_contract_address,
         fallback_swap_contract: None,
+        contract_supports_watchers: false,
         ticker: "ETH".into(),
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),

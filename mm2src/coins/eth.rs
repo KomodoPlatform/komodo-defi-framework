@@ -374,6 +374,7 @@ pub struct EthCoinImpl {
     sign_message_prefix: Option<String>,
     swap_contract_address: Address,
     fallback_swap_contract: Option<Address>,
+    contract_supports_watchers: bool,
     web3: Web3<Web3Transport>,
     /// The separate web3 instances kept to get nonce, will replace the web3 completely soon
     web3_instances: Vec<Web3Instance>,
@@ -1171,6 +1172,8 @@ impl SwapOps for EthCoin {
     }
 
     fn is_supported_by_watchers(&self) -> bool { true }
+
+    fn contract_supports_watchers(&self) -> bool { self.contract_supports_watchers }
 }
 
 #[async_trait]
@@ -4232,13 +4235,13 @@ pub async fn eth_coin_from_conf_and_request(
     if swap_contract_address == Address::default() {
         return ERR!("swap_contract_address can't be zero address");
     }
-
     let fallback_swap_contract: Option<Address> = try_s!(json::from_value(req["fallback_swap_contract"].clone()));
     if let Some(fallback) = fallback_swap_contract {
         if fallback == Address::default() {
             return ERR!("fallback_swap_contract can't be zero address");
         }
     }
+    let contract_supports_watchers = req["contract_supports_watchers"].as_bool().unwrap_or_default();
 
     let (my_address, key_pair) = try_s!(build_address_and_priv_key_policy(conf, priv_key_policy));
 
@@ -4329,6 +4332,7 @@ pub async fn eth_coin_from_conf_and_request(
         sign_message_prefix,
         swap_contract_address,
         fallback_swap_contract,
+        contract_supports_watchers,
         decimals,
         ticker: ticker.into(),
         gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),

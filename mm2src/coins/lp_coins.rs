@@ -788,6 +788,9 @@ pub trait SwapOps {
 
     fn is_supported_by_watchers(&self) -> bool { false }
 
+    // Do we also need a method for the fallback contract?
+    fn contract_supports_watchers(&self) -> bool { true }
+
     fn maker_locktime_multiplier(&self) -> f64 { 2.0 }
 }
 
