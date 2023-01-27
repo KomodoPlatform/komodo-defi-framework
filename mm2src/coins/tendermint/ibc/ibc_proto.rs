@@ -14,7 +14,7 @@ pub(crate) struct IBCTransferV1Proto {
     pub(crate) timeout_height: Option<cosmrs::proto::ibc::core::client::v1::Height>,
     #[prost(uint64, tag = "7")]
     pub(crate) timeout_timestamp: u64,
-    //  Not supported by some of the cosmos chains like IRIS
+    // Not supported by some of the cosmos chains like IRIS
     // #[prost(string, optional, tag = "8")]
     // pub(crate) memo: Option<String>,
 }

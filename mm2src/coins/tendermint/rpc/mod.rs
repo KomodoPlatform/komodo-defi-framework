@@ -4,7 +4,8 @@ use mm2_number::BigDecimal;
 pub(crate) use tendermint_native_rpc::*;
 
 #[cfg(target_arch = "wasm32")] mod tendermint_wasm_rpc;
-#[cfg(target_arch = "wasm32")] pub use tendermint_wasm_rpc::*;
+#[cfg(target_arch = "wasm32")]
+pub(crate) use tendermint_wasm_rpc::*;
 
 pub(crate) const TX_SUCCESS_CODE: u32 = 0;
 
