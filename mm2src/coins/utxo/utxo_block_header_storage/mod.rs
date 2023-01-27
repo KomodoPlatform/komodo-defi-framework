@@ -1,10 +1,10 @@
-#[cfg(target_arch = "wasm32")] mod indexedb_block_header_storage;
-#[cfg(target_arch = "wasm32")]
-pub use indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
-
 #[cfg(not(target_arch = "wasm32"))] mod sql_block_header_storage;
 #[cfg(not(target_arch = "wasm32"))]
 pub use sql_block_header_storage::SqliteBlockHeadersStorage;
+
+#[cfg(target_arch = "wasm32")] mod wasm;
+#[cfg(target_arch = "wasm32")]
+pub use wasm::IDBBlockHeadersStorage;
 
 use async_trait::async_trait;
 use chain::BlockHeader;
@@ -41,7 +41,7 @@ impl BlockHeaderStorage {
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
         Ok(BlockHeaderStorage {
-            inner: Box::new(IndexedDBBlockHeadersStorage::new(&ctx, ticker)),
+            inner: Box::new(IDBBlockHeadersStorage::new(&ctx, ticker)),
         })
     }
 

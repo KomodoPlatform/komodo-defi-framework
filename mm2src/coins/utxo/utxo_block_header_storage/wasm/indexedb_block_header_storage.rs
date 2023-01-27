@@ -1,8 +1,10 @@
+use super::{BlockHeaderStorageTable, IDBBlockHeadersInnerLocked};
 use async_trait::async_trait;
 use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, OnUpgradeResult, SharedDb, TableSignature};
+use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder,
+                         InitDbResult, SharedDb};
+use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
@@ -10,37 +12,15 @@ use std::collections::HashMap;
 const DB_NAME: &str = "block_headers_cache";
 const DB_VERSION: u32 = 1;
 
-pub type IndexedDBBlockHeadersStorageInnerLocked<'a> = DbLocked<'a, IndexedDBBlockHeadersStorageInner>;
+pub type IDBBlockHeadersStorageRes<T> = MmResult<T, BlockHeaderStorageError>;
+pub type IDBBlockHeadersInnerLocked<'a> = DbLocked<'a, IDBBlockHeadersInner>;
 
-#[derive(Clone, Deserialize, Serialize)]
-pub struct BlockHeaderStorageTable {
-    pub block_height: u64,
-    pub block_bits: u64,
-    pub block_hash: String,
-    pub hex: String,
-}
-
-impl TableSignature for BlockHeaderStorageTable {
-    fn table_name() -> &'static str { "block_headers_cache" }
-
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        match (old_version, new_version) {
-            (0, 1) => {
-                let table = upgrader.create_table(Self::table_name())?;
-                table.create_index("block_height", true)?;
-            },
-            _ => (),
-        }
-        Ok(())
-    }
-}
-
-pub struct IndexedDBBlockHeadersStorageInner {
+pub struct IDBBlockHeadersInner {
     pub inner: IndexedDb,
 }
 
 #[async_trait]
-impl DbInstance for IndexedDBBlockHeadersStorageInner {
+impl DbInstance for IDBBlockHeadersInner {
     fn db_name() -> &'static str { DB_NAME }
 
     async fn init(db_id: DbIdentifier) -> InitDbResult<Self> {
@@ -54,34 +34,60 @@ impl DbInstance for IndexedDBBlockHeadersStorageInner {
     }
 }
 
-impl IndexedDBBlockHeadersStorageInner {
+impl IDBBlockHeadersInner {
     pub fn get_inner(&self) -> &IndexedDb { &self.inner }
 }
 
-pub struct IndexedDBBlockHeadersStorage {
+pub struct IDBBlockHeadersStorage {
     pub ticker: String,
-    pub db: SharedDb<IndexedDBBlockHeadersStorageInner>,
+    pub db: SharedDb<IDBBlockHeadersInner>,
 }
 
-impl IndexedDBBlockHeadersStorage {
+impl IDBBlockHeadersStorage {
     pub fn new(ctx: &MmArc, ticker: String) -> Self {
         Self {
             db: ConstructibleDb::new_shared(ctx),
             ticker,
         }
     }
+
+    async fn lock_db(&self) -> IDBBlockHeadersStorageRes<IDBBlockHeadersInnerLocked<'_>> {
+        self.db
+            .get_or_initialize()
+            .await
+            .mm_err(WasmBlockHeadersStorageError::from)
+    }
 }
 
 #[async_trait]
-impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
+impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
     async fn init(&self) -> Result<(), BlockHeaderStorageError> { Ok(()) }
 
     async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> { Ok(true) }
 
     async fn add_block_headers_to_storage(
         &self,
-        _headers: HashMap<u64, BlockHeader>,
+        headers: HashMap<u64, BlockHeader>,
     ) -> Result<(), BlockHeaderStorageError> {
+        let ticker = self.ticker.clone();
+        let locked_db = self.lock_db().await?;
+        let db_transaction = locked_db.get_inner().transaction().await?;
+        let block_headers_db = db_transaction.table::<BlockHeaderStorageTable>().await?;
+
+        for (height, header) in headers {
+            let hash = header.hash().reversed().to_string();
+            let raw_header = hex::encode(header.raw());
+            let bits: u32 = header.bits.into();
+            let headers_to_store = BlockHeaderStorageTable {
+                ticker,
+                height,
+                bits,
+                hash,
+                raw_header,
+            };
+
+            block_headers_db.add_item(&headers_to_store);
+        }
         Ok(())
     }
 
@@ -99,3 +105,6 @@ impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
 
     async fn get_block_height_by_hash(&self, _hash: H256) -> Result<Option<i64>, BlockHeaderStorageError> { Ok(None) }
 }
+
+#[test]
+fn test_wasm_block_header_storage() { println!("HELLO INDEXEDDB") }
