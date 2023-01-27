@@ -12,3 +12,13 @@ pub enum GetNftInfoError {
 impl HttpStatusCode for GetNftInfoError {
     fn status_code(&self) -> StatusCode { todo!() }
 }
+
+#[derive(Clone, Debug, Display, Serialize, SerializeErrorType, Deserialize)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum GetMyAddressError {
+    // todo
+}
+
+impl HttpStatusCode for GetMyAddressError {
+    fn status_code(&self) -> StatusCode { todo!() }
+}

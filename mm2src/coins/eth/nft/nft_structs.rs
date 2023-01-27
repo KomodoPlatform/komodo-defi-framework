@@ -2,6 +2,24 @@ use crate::TxFeeDetails;
 use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct NftListReq {
+    chains: Vec<String>,
+    api_key: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct MyAddressReq {
+    chain: String,
+    api_key: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct NftMetadataReq {
+    chain: String,
+    api_key: String,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize)]
 enum Chain {
@@ -51,6 +69,7 @@ pub struct WithdrawErc721Request {
     to: String,
     token_address: String,
     token_id: BigDecimal,
+    api_key: String,
 }
 
 #[allow(dead_code)]
@@ -63,6 +82,7 @@ pub struct WithdrawErc1155Request {
     amount: BigDecimal,
     #[serde(default)]
     max: bool,
+    api_key: String,
 }
 
 #[allow(dead_code)]
