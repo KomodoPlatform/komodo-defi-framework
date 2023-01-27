@@ -47,7 +47,8 @@ use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerato
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use nft::nft_errors::{GetMyAddressError, GetNftInfoError};
-use nft::nft_structs::{MyAddressReq, NftListReq, NftMetadataReq, Nfts, TransactionNftDetails, WithdrawErc1155Request,
+use nft::nft_structs::{MyAddressReq, MyAddressRes, Nft, NftListReq, NftMetadataReq, NftTransfersReq, Nfts,
+                       NftsTransferHistoryByChain, TransactionNftDetails, WithdrawErc1155Request,
                        WithdrawErc721Request};
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
@@ -803,9 +804,16 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 
 pub async fn get_nft_list(_ctx: MmArc, _req: NftListReq) -> MmResult<Vec<Nfts>, GetNftInfoError> { todo!() }
 
-pub async fn get_my_address(_ctx: MmArc, _req: MyAddressReq) -> MmResult<String, GetMyAddressError> { todo!() }
+pub async fn get_my_address(_ctx: MmArc, _req: MyAddressReq) -> MmResult<MyAddressRes, GetMyAddressError> { todo!() }
 
-pub async fn get_nft_metadata(_ctx: MmArc, _req: NftMetadataReq) -> MmResult<Vec<Nfts>, GetNftInfoError> { todo!() }
+pub async fn get_nft_metadata(_ctx: MmArc, _req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> { todo!() }
+
+pub async fn get_nft_transfers(
+    _ctx: MmArc,
+    _req: NftTransfersReq,
+) -> MmResult<Vec<NftsTransferHistoryByChain>, GetNftInfoError> {
+    todo!()
+}
 
 pub async fn withdraw_erc721(_ctx: MmArc, _req: WithdrawErc721Request) -> WithdrawNftResult { todo!() }
 
