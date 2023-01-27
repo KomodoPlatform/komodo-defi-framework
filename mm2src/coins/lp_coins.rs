@@ -328,6 +328,16 @@ impl From<CoinFindError> for RawTransactionError {
     }
 }
 
+#[derive(Clone, Debug, Display, Serialize, SerializeErrorType, Deserialize)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum GetMyAddressError {
+    // todo
+}
+
+impl HttpStatusCode for GetMyAddressError {
+    fn status_code(&self) -> StatusCode { todo!() }
+}
+
 #[derive(Deserialize)]
 pub struct RawTransactionRequest {
     pub coin: String,
@@ -338,6 +348,18 @@ pub struct RawTransactionRequest {
 pub struct RawTransactionRes {
     /// Raw bytes of signed transaction in hexadecimal string, this should be return hexadecimal encoded signed transaction for get_raw_transaction
     pub tx_hex: BytesJson,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct MyAddressReq {
+    coin: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct MyAddressRes {
+    wallet_address: String,
 }
 
 pub type SignatureResult<T> = Result<T, MmError<SignatureError>>;
@@ -3370,6 +3392,8 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::ZHTLC { .. } => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
     }
 }
+
+pub async fn get_my_address(_ctx: MmArc, _req: MyAddressReq) -> MmResult<MyAddressRes, GetMyAddressError> { todo!() }
 
 #[cfg(target_arch = "wasm32")]
 fn load_history_from_file_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>>

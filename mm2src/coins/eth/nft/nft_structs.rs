@@ -11,18 +11,6 @@ pub struct NftListReq {
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
-pub struct MyAddressReq {
-    chain: String,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Serialize)]
-pub struct MyAddressRes {
-    wallet_address: String,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
 pub struct NftMetadataReq {
     chain: String,
     api_key: String,
