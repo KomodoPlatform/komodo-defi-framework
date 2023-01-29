@@ -39,7 +39,7 @@ use zcash_primitives::zip32::ExtendedFullViewingKey;
 mod z_coin_grpc {
     tonic::include_proto!("cash.z.wallet.sdk.rpc");
 }
-use crate::ZTransaction;
+use crate::{RpcCommonOps, ZTransaction};
 use rpc::v1::types::H256 as H256Json;
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{BlockId, BlockRange, ChainSpec, CompactBlock as TonicCompactBlock,
@@ -67,6 +67,29 @@ pub trait ZRpcOps {
     ) -> Result<(), MmError<UpdateBlocksCacheErr>>;
 
     async fn check_tx_existence(&mut self, tx_id: TxId) -> bool;
+}
+
+struct LightRpcClient {
+    rpc_clients: AsyncMutex<Vec<CompactTxStreamerClient<Channel>>>,
+}
+
+#[async_trait]
+impl RpcCommonOps for LightRpcClient {
+    type RpcClient = CompactTxStreamerClient<Channel>;
+    type Error = MmError<UpdateBlocksCacheErr>;
+
+    async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
+        let mut clients = self.rpc_clients.lock().await;
+        for (i, mut client) in clients.clone().into_iter().enumerate() {
+            let request = tonic::Request::new(ChainSpec {});
+            // use get_latest_block method as a health check
+            if client.get_latest_block(request).await.is_ok() {
+                clients.rotate_left(i);
+                return Ok(client);
+            }
+        }
+        return Err(MmError::new(UpdateBlocksCacheErr::GetLiveLightClientError));
+    }
 }
 
 #[async_trait]

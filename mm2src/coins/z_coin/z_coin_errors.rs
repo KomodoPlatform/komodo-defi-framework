@@ -25,6 +25,7 @@ pub enum UpdateBlocksCacheErr {
     UtxoRpcError(UtxoRpcError),
     InternalError(String),
     JsonRpcError(JsonRpcError),
+    GetLiveLightClientError,
 }
 
 impl From<tonic::Status> for UpdateBlocksCacheErr {
