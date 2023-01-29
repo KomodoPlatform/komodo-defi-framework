@@ -1049,19 +1049,20 @@ impl TakerSwap {
         };
 
         debug!("Received maker negotiation data {:?}", maker_data);
-        let time_dif = (self.r().data.started_at as i64 - maker_data.started_at() as i64).abs();
+        let time_dif = self.r().data.started_at.abs_diff(maker_data.started_at());
         if time_dif > 60 {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                 ERRL!("Started_at time_dif over 60 {}", time_dif).into(),
             )]));
         }
 
-        let expected_lock_time = maker_data.started_at()
-            + (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
-        if maker_data.payment_locktime() != expected_lock_time {
+        let customized_lock_duration =
+            (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
+        let expected_lock_time = maker_data.started_at().checked_add(customized_lock_duration);
+        if Some(maker_data.payment_locktime()) != expected_lock_time {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                 ERRL!(
-                    "maker_data.payment_locktime {} not equal to expected {}",
+                    "maker_data.payment_locktime {:?} not equal to expected {:?}",
                     maker_data.payment_locktime(),
                     expected_lock_time
                 )

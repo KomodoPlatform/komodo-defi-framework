@@ -593,7 +593,7 @@ impl MakerSwap {
             },
         };
         drop(send_abort_handle);
-        let time_dif = (self.r().data.started_at as i64 - taker_data.started_at() as i64).abs();
+        let time_dif = self.r().data.started_at.abs_diff(taker_data.started_at());
         if time_dif > 60 {
             self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
@@ -601,12 +601,12 @@ impl MakerSwap {
             )]));
         }
 
-        let expected_lock_time = taker_data.started_at() + self.r().data.lock_duration;
-        if taker_data.payment_locktime() != expected_lock_time {
+        let expected_lock_time = taker_data.started_at().checked_add(self.r().data.lock_duration);
+        if Some(taker_data.payment_locktime()) != expected_lock_time {
             self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                 ERRL!(
-                    "taker_data.payment_locktime {} not equal to expected {}",
+                    "taker_data.payment_locktime {:?} not equal to expected {:?}",
                     taker_data.payment_locktime(),
                     expected_lock_time
                 )
