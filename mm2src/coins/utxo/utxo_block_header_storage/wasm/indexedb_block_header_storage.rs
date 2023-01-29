@@ -1,4 +1,4 @@
-use super::{BlockHeaderStorageTable, IDBBlockHeadersInnerLocked};
+use super::BlockHeaderStorageTable;
 use async_trait::async_trait;
 use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
@@ -55,7 +55,10 @@ impl IDBBlockHeadersStorage {
         self.db
             .get_or_initialize()
             .await
-            .mm_err(WasmBlockHeadersStorageError::from)
+            .mm_err(|err| BlockHeaderStorageError::InitializationError {
+                coin: self.ticker.to_string(),
+                reason: err.to_string(),
+            })
     }
 }
 
@@ -70,23 +73,47 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         headers: HashMap<u64, BlockHeader>,
     ) -> Result<(), BlockHeaderStorageError> {
         let ticker = self.ticker.clone();
-        let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let block_headers_db = db_transaction.table::<BlockHeaderStorageTable>().await?;
+        let locked_db = self
+            .lock_db()
+            .await
+            .map_err(|err| BlockHeaderStorageError::InitializationError {
+                coin: ticker.to_string(),
+                reason: err.to_string(),
+            })?;
+        let db_transaction =
+            locked_db
+                .get_inner()
+                .transaction()
+                .await
+                .map_err(|err| BlockHeaderStorageError::InitializationError {
+                    coin: ticker.to_string(),
+                    reason: err.to_string(),
+                })?;
+        let block_headers_db = db_transaction.table::<BlockHeaderStorageTable>().await.map_err(|err| {
+            BlockHeaderStorageError::InitializationError {
+                coin: ticker.to_string(),
+                reason: err.to_string(),
+            }
+        })?;
 
         for (height, header) in headers {
             let hash = header.hash().reversed().to_string();
             let raw_header = hex::encode(header.raw());
             let bits: u32 = header.bits.into();
             let headers_to_store = BlockHeaderStorageTable {
-                ticker,
+                ticker: ticker.clone(),
                 height,
                 bits,
                 hash,
                 raw_header,
             };
 
-            block_headers_db.add_item(&headers_to_store);
+            block_headers_db.add_item(&headers_to_store).await.map_err(|err| {
+                BlockHeaderStorageError::InitializationError {
+                    coin: ticker.clone(),
+                    reason: err.to_string(),
+                }
+            })?;
         }
         Ok(())
     }

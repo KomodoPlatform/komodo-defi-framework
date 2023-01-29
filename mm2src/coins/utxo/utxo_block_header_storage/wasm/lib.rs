@@ -9,10 +9,6 @@ pub struct BlockHeaderStorageTable {
     pub raw_header: String,
 }
 
-impl BlockHeaderStorageTable {
-    fn ticker(ticker: String) -> String { ticker }
-}
-
 impl TableSignature for BlockHeaderStorageTable {
     fn table_name() -> &'static str { "block_header_storage_table" }
 
