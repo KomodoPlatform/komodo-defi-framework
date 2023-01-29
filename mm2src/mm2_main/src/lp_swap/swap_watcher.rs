@@ -1,5 +1,5 @@
-use super::{broadcast_p2p_tx_msg, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic, H256Json, SwapsContext,
-            WAIT_CONFIRM_INTERVAL};
+use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
+            H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, SendMakerPaymentSpendPreimageInput,
@@ -557,6 +557,15 @@ impl Drop for SwapWatcherLock {
 }
 
 fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, verified_pub: Vec<u8>) {
+    // TODO: See if more data validations can be added here
+    if watcher_data.lock_duration != get_payment_locktime()
+        && watcher_data.lock_duration != get_payment_locktime() * 4
+        && watcher_data.lock_duration != get_payment_locktime() * 10
+    {
+        error!("Invalid lock duration");
+        return;
+    }
+
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid) {
         return;
@@ -595,8 +604,11 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
             },
         };
 
-        if !taker_coin.is_supported_by_watchers() || !maker_coin.is_supported_by_watchers()
-                || !taker_coin.contract_supports_watchers() || !maker_coin.contract_supports_watchers() {
+        if !taker_coin.is_supported_by_watchers()
+            || !maker_coin.is_supported_by_watchers()
+            || !taker_coin.contract_supports_watchers()
+            || !maker_coin.contract_supports_watchers()
+        {
             log!("One of the coins or their contracts does not support watchers");
             return;
         }

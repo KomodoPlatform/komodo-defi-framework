@@ -1533,7 +1533,7 @@ pub async fn enable_eth_coin(
     urls: &[&str],
     swap_contract_address: &str,
     fallback_swap_contract: Option<&str>,
-    contract_supports_watcher: bool
+    contract_supports_watcher: bool,
 ) -> Json {
     let enable = mm
         .rpc(&json!({
