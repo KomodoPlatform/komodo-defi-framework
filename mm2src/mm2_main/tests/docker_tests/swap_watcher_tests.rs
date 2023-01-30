@@ -174,6 +174,47 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
 
 #[test]
 #[ignore]
+fn test_watcher_waits_for_taker_eth() {
+    let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
+
+    let alice_passphrase =
+        String::from("spice describe gravity federal blast come thank unfair canal monkey style afraid");
+    let alice_conf = Mm2TestConf::seednode_using_watchers(&alice_passphrase, &coins);
+    let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {}", mm_alice.log_path.display());
+
+    let bob_passphrase = String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney");
+    let bob_conf = Mm2TestConf::light_node(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+
+    let watcher_passphrase =
+        String::from("also shoot benefit prefer juice shell thank unfair canal monkey style afraid");
+    let watcher_conf =
+        Mm2TestConf::watcher_light_node(&watcher_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
+            wait_taker_payment: 0.,
+            wait_maker_payment_spend_factor: 1.,
+            refund_start_factor: 1.5,
+            search_interval: 1.,
+        })
+        .conf;
+
+    let mut mm_watcher = MarketMakerIt::start(watcher_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
+    let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
+
+    enable_eth_and_jst(&mm_alice);
+    enable_eth_and_jst(&mm_bob);
+    enable_eth_and_jst(&mm_watcher);
+
+    block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("ETH", "JST")], 1., 1., 0.01));
+
+    block_on(mm_watcher.wait_for_log(160., |log| log.contains(MAKER_PAYMENT_SPEND_FOUND_LOG))).unwrap();
+}
+
+#[test]
+#[ignore]
 fn test_watcher_refunds_taker_payment_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 

@@ -1648,7 +1648,18 @@ impl MarketCoinOps for EthCoin {
     ) -> TransactionFut {
         let unverified: UnverifiedTransaction = try_tx_fus!(rlp::decode(tx_bytes));
         let tx = try_tx_fus!(SignedEthTx::new(unverified));
-        let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
+
+        let swap_contract_address = match swap_contract_address {
+            Some(addr) => try_tx_fus!(addr.try_to_address()),
+            None => match tx.action {
+                Call(address) => address,
+                Create => {
+                    return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                        "Invalid payment action: the payment action cannot be create"
+                    ))))
+                },
+            },
+        };
 
         let func_name = match self.coin_type {
             EthCoinType::Eth => "ethPayment",
