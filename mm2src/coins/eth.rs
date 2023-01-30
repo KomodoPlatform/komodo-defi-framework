@@ -2692,7 +2692,7 @@ impl EthCoin {
         secret: &[u8],
         taker_pub: &[u8],
     ) -> EthTxFut {
-        let spend_func = try_tx_fus!(SWAP_CONTRACT.function("watcherSpend"));
+        let spend_func = try_tx_fus!(SWAP_CONTRACT.function("receiverSpendV2"));
         let clone = self.clone();
         let secret_vec = secret.to_vec();
         let taker_addr = addr_from_raw_pubkey(taker_pub).unwrap();
@@ -2792,7 +2792,7 @@ impl EthCoin {
         _secret_hash: &[u8],
         taker_pub: &[u8],
     ) -> EthTxFut {
-        let refund_func = try_tx_fus!(SWAP_CONTRACT.function("watcherRefund"));
+        let refund_func = try_tx_fus!(SWAP_CONTRACT.function("senderRefundV2"));
         let clone = self.clone();
         let taker_addr = addr_from_raw_pubkey(taker_pub).unwrap();
         let swap_contract_address = match payment.action {
