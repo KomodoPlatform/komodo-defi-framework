@@ -584,7 +584,9 @@ async fn test_get_history_for_addresses_impl() {
 
 #[cfg(test)]
 mod native_tests {
+
     use super::wallet_id_for_test;
+
     use crate::my_tx_history_v2::TxHistoryStorage;
     use crate::tx_history_storage::sql_tx_history_storage_v2::SqliteTxHistoryStorage;
     use common::block_on;
