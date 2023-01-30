@@ -1,5 +1,6 @@
-use super::ibc_proto::IBCTransferV1Proto;
+use super::{ibc_proto::IBCTransferV1Proto, IBC_OUT_SOURCE_PORT, IBC_OUT_TIMEOUT_IN_NANOS};
 use crate::tendermint::type_urls::IBC_TRANSFER_TYPE_URL;
+use common::number_type_casting::SafeTypeCastingNumbers;
 use cosmrs::{tx::{Msg, MsgProto},
              AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
@@ -24,6 +25,31 @@ pub(crate) struct MsgTransfer {
     pub(crate) timeout_timestamp: u64,
     // Not supported by some of the cosmos chains like IRIS
     // pub(crate) memo: Option<String>,
+}
+
+impl MsgTransfer {
+    pub(crate) fn new_with_default_timeout(
+        source_channel: String,
+        sender: AccountId,
+        receiver: AccountId,
+        token: Coin,
+    ) -> Self {
+        let timestamp_as_nanos: u64 = common::get_local_duration_since_epoch()
+            .expect("get_local_duration_since_epoch shouldn't fail")
+            .as_nanos()
+            .into_or_max();
+
+        Self {
+            source_port: IBC_OUT_SOURCE_PORT.to_owned(),
+            source_channel,
+            sender,
+            receiver,
+            token,
+            timeout_height: None,
+            timeout_timestamp: timestamp_as_nanos + IBC_OUT_TIMEOUT_IN_NANOS,
+            // memo: Some(memo.clone()),
+        }
+    }
 }
 
 impl Msg for MsgTransfer {

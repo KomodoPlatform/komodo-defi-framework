@@ -1,5 +1,4 @@
 use super::ibc::transfer_v1::MsgTransfer;
-use super::ibc::{IBC_OUT_SOURCE_PORT, IBC_OUT_TIMEOUT_IN_NANOS};
 use super::rpc::IBCWithdrawRequest;
 /// Module containing implementation for Tendermint Tokens. They include native assets + IBC
 use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
@@ -23,7 +22,6 @@ use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
-use common::number_type_casting::SafeTypeCastingNumbers;
 use common::Future01CompatExt;
 use cosmrs::{bank::MsgSend,
              tx::{Fee, Msg},
@@ -109,11 +107,13 @@ impl TendermintToken {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
-            let base_denom_balance = platform.balance_for_denom(platform.denom.to_string()).await?;
-            let base_denom_balance_dec = big_decimal_from_sat_unsigned(base_denom_balance, token.decimals());
+            let (base_denom_balance, base_denom_balance_dec) = platform
+                .get_balance_as_unsigned_and_decimal(&platform.denom, token.decimals())
+                .await?;
 
-            let balance_denom = platform.balance_for_denom(token.denom.to_string()).await?;
-            let balance_dec = big_decimal_from_sat_unsigned(balance_denom, token.decimals());
+            let (balance_denom, balance_dec) = platform
+                .get_balance_as_unsigned_and_decimal(&token.denom, token.decimals())
+                .await?;
 
             let (amount_denom, amount_dec, total_amount) = if req.max {
                 (
@@ -152,24 +152,15 @@ impl TendermintToken {
 
             let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
 
-            let timestamp_as_nanos: u64 = common::get_local_duration_since_epoch()
-                .expect("get_local_duration_since_epoch shouldn't fail")
-                .as_nanos()
-                .into_or_max();
-
-            let msg_transfer = MsgTransfer {
-                source_port: IBC_OUT_SOURCE_PORT.to_owned(),
-                source_channel: req.ibc_source_channel.clone(),
-                sender: platform.account_id.clone(),
-                receiver: to_address.clone(),
-                token: Coin {
+            let msg_transfer = MsgTransfer::new_with_default_timeout(
+                req.ibc_source_channel.clone(),
+                platform.account_id.clone(),
+                to_address.clone(),
+                Coin {
                     denom: token.denom.clone(),
                     amount: amount_denom.into(),
                 },
-                timeout_height: None,
-                timeout_timestamp: timestamp_as_nanos + IBC_OUT_TIMEOUT_IN_NANOS,
-                // memo: Some(memo.clone()),
-            }
+            )
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
@@ -188,8 +179,9 @@ impl TendermintToken {
                 .gen_simulated_tx(account_info.clone(), msg_transfer.clone(), timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let fee_amount_u64 = platform.calculate_fee_amount_as_u64(simulated_tx).await?;
-            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
+            let (fee_amount_u64, fee_amount_dec) = platform
+                .calculate_fee_as_unsigned_and_decimal(simulated_tx, platform.decimals())
+                .await?;
 
             if base_denom_balance < fee_amount_u64 {
                 return MmError::err(WithdrawError::NotSufficientPlatformBalanceForFee {
@@ -594,11 +586,13 @@ impl MmCoin for TendermintToken {
                 )));
             }
 
-            let base_denom_balance = platform.balance_for_denom(platform.denom.to_string()).await?;
-            let base_denom_balance_dec = big_decimal_from_sat_unsigned(base_denom_balance, token.decimals());
+            let (base_denom_balance, base_denom_balance_dec) = platform
+                .get_balance_as_unsigned_and_decimal(&platform.denom, token.decimals())
+                .await?;
 
-            let balance_denom = platform.balance_for_denom(token.denom.to_string()).await?;
-            let balance_dec = big_decimal_from_sat_unsigned(balance_denom, token.decimals());
+            let (balance_denom, balance_dec) = platform
+                .get_balance_as_unsigned_and_decimal(&token.denom, token.decimals())
+                .await?;
 
             let (amount_denom, amount_dec, total_amount) = if req.max {
                 (
@@ -662,8 +656,9 @@ impl MmCoin for TendermintToken {
                 .gen_simulated_tx(account_info.clone(), msg_send.clone(), timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let fee_amount_u64 = platform.calculate_fee_amount_as_u64(simulated_tx).await?;
-            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
+            let (fee_amount_u64, fee_amount_dec) = platform
+                .calculate_fee_as_unsigned_and_decimal(simulated_tx, platform.decimals())
+                .await?;
 
             if base_denom_balance < fee_amount_u64 {
                 return MmError::err(WithdrawError::NotSufficientPlatformBalanceForFee {

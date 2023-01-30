@@ -1,5 +1,4 @@
 use super::ibc::transfer_v1::MsgTransfer;
-use super::ibc::{IBC_OUT_SOURCE_PORT, IBC_OUT_TIMEOUT_IN_NANOS};
 use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
                         HTLC_STATE_REFUNDED};
 use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
@@ -28,7 +27,6 @@ use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::warn;
-use common::number_type_casting::SafeTypeCastingNumbers;
 use common::{get_utc_timestamp, now_ms, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
@@ -511,8 +509,10 @@ impl TendermintCoin {
         let fut = async move {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
-            let balance_denom = coin.balance_for_denom(coin.denom.to_string()).await?;
-            let balance_dec = big_decimal_from_sat_unsigned(balance_denom, coin.decimals);
+
+            let (balance_denom, balance_dec) = coin
+                .get_balance_as_unsigned_and_decimal(&coin.denom, coin.decimals())
+                .await?;
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
             let (amount_denom, amount_dec) = if req.max {
@@ -537,24 +537,15 @@ impl TendermintCoin {
 
             let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
 
-            let timestamp_as_nanos: u64 = common::get_local_duration_since_epoch()
-                .expect("get_local_duration_since_epoch shouldn't fail")
-                .as_nanos()
-                .into_or_max();
-
-            let msg_transfer = MsgTransfer {
-                source_port: IBC_OUT_SOURCE_PORT.to_owned(),
-                source_channel: req.ibc_source_channel.clone(),
-                sender: coin.account_id.clone(),
-                receiver: to_address.clone(),
-                token: Coin {
+            let msg_transfer = MsgTransfer::new_with_default_timeout(
+                req.ibc_source_channel.clone(),
+                coin.account_id.clone(),
+                to_address.clone(),
+                Coin {
                     denom: coin.denom.clone(),
                     amount: amount_denom.into(),
                 },
-                timeout_height: None,
-                timeout_timestamp: timestamp_as_nanos + IBC_OUT_TIMEOUT_IN_NANOS,
-                // memo: Some(memo.clone()),
-            }
+            )
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
@@ -574,8 +565,9 @@ impl TendermintCoin {
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
             // >> END TX SIMULATION FOR FEE CALCULATION
 
-            let fee_amount_u64 = coin.calculate_fee_amount_as_u64(simulated_tx).await?;
-            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
+            let (fee_amount_u64, fee_amount_dec) = coin
+                .calculate_fee_as_unsigned_and_decimal(simulated_tx, coin.decimals())
+                .await?;
 
             let fee_amount = Coin {
                 denom: coin.denom.clone(),
@@ -607,24 +599,15 @@ impl TendermintCoin {
                 (sat_from_big_decimal(&req.amount, coin.decimals)?, total)
             };
 
-            let timestamp_as_nanos: u64 = common::get_local_duration_since_epoch()
-                .expect("get_local_duration_since_epoch shouldn't fail")
-                .as_nanos()
-                .into_or_max();
-
-            let msg_transfer = MsgTransfer {
-                source_port: IBC_OUT_SOURCE_PORT.to_owned(),
-                source_channel: req.ibc_source_channel,
-                sender: coin.account_id.clone(),
-                receiver: to_address,
-                token: Coin {
+            let msg_transfer = MsgTransfer::new_with_default_timeout(
+                req.ibc_source_channel.clone(),
+                coin.account_id.clone(),
+                to_address.clone(),
+                Coin {
                     denom: coin.denom.clone(),
                     amount: amount_denom.into(),
                 },
-                timeout_height: None,
-                timeout_timestamp: timestamp_as_nanos + IBC_OUT_TIMEOUT_IN_NANOS,
-                // memo: Some(memo.clone()),
-            }
+            )
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
@@ -1391,6 +1374,28 @@ impl TendermintCoin {
         })
     }
 
+    pub(super) async fn calculate_fee_as_unsigned_and_decimal(
+        &self,
+        tx: Vec<u8>,
+        decimals: u8,
+    ) -> MmResult<(u64, BigDecimal), TendermintCoinRpcError> {
+        let fee_amount_u64 = self.calculate_fee_amount_as_u64(tx).await?;
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, decimals);
+
+        Ok((fee_amount_u64, fee_amount_dec))
+    }
+
+    pub(super) async fn get_balance_as_unsigned_and_decimal(
+        &self,
+        denom: &Denom,
+        decimals: u8,
+    ) -> MmResult<(u64, BigDecimal), TendermintCoinRpcError> {
+        let denom_ubalance = self.balance_for_denom(denom.to_string()).await?;
+        let denom_balance_dec = big_decimal_from_sat_unsigned(denom_ubalance, decimals);
+
+        Ok((denom_ubalance, denom_balance_dec))
+    }
+
     async fn request_tx(&self, hash: String) -> MmResult<Tx, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_GET_TX_PATH).expect("valid path");
         let request = GetTxRequest { hash };
@@ -1576,8 +1581,10 @@ impl MmCoin for TendermintCoin {
                     coin.account_prefix
                 )));
             }
-            let balance_denom = coin.balance_for_denom(coin.denom.to_string()).await?;
-            let balance_dec = big_decimal_from_sat_unsigned(balance_denom, coin.decimals);
+
+            let (balance_denom, balance_dec) = coin
+                .get_balance_as_unsigned_and_decimal(&coin.denom, coin.decimals())
+                .await?;
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
             let (amount_denom, amount_dec) = if req.max {
@@ -1630,8 +1637,9 @@ impl MmCoin for TendermintCoin {
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
             // >> END TX SIMULATION FOR FEE CALCULATION
 
-            let fee_amount_u64 = coin.calculate_fee_amount_as_u64(simulated_tx).await?;
-            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
+            let (fee_amount_u64, fee_amount_dec) = coin
+                .calculate_fee_as_unsigned_and_decimal(simulated_tx, coin.decimals())
+                .await?;
 
             let fee_amount = Coin {
                 denom: coin.denom.clone(),
