@@ -8,6 +8,7 @@ use serde::{de, Serialize, Serializer};
 use std::fmt;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::str::FromStr;
+use uuid::Uuid;
 
 // TODO: support connection to onion addresses
 #[derive(Debug, PartialEq)]
@@ -101,7 +102,7 @@ impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
 
 #[derive(Clone, Serialize)]
 pub struct ChannelDetailsForRPC {
-    pub rpc_channel_id: u128,
+    pub uuid: Uuid,
     pub channel_id: H256Json,
     pub counterparty_node_id: PublicKeyForRPC,
     pub funding_tx: Option<H256Json>,
@@ -125,7 +126,7 @@ pub struct ChannelDetailsForRPC {
 impl From<ChannelDetails> for ChannelDetailsForRPC {
     fn from(details: ChannelDetails) -> ChannelDetailsForRPC {
         ChannelDetailsForRPC {
-            rpc_channel_id: details.user_channel_id,
+            uuid: Uuid::from_u128(details.user_channel_id),
             channel_id: details.channel_id.into(),
             counterparty_node_id: PublicKeyForRPC(details.counterparty.node_id),
             funding_tx: details.funding_txo.map(|tx| h256_json_from_txid(tx.txid)),

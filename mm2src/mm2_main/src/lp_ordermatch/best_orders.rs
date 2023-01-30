@@ -392,6 +392,7 @@ mod best_orders_test {
     use super::*;
     use crate::mm2::lp_ordermatch::ordermatch_tests::make_random_orders;
     use crate::mm2::lp_ordermatch::{OrderbookItem, TrieProof};
+    use common::new_uuid;
     use std::iter::FromIterator;
 
     #[test]
@@ -456,12 +457,11 @@ mod best_orders_test {
         let v1_serialized = rmp_serde::to_vec(&v1).unwrap();
 
         let mut new: BestOrdersP2PRes = rmp_serde::from_read_ref(&v1_serialized).unwrap();
-        new.protocol_infos.insert(Uuid::new_v4(), BaseRelProtocolInfo {
+        new.protocol_infos.insert(new_uuid(), BaseRelProtocolInfo {
             base: vec![1],
             rel: vec![2],
         });
-        new.conf_infos
-            .insert(Uuid::new_v4(), OrderConfirmationsSettings::default());
+        new.conf_infos.insert(new_uuid(), OrderConfirmationsSettings::default());
 
         let new_serialized = rmp_serde::to_vec(&new).unwrap();
 
@@ -485,7 +485,7 @@ mod best_orders_test {
 
         let v2 = BestOrdersResV2 {
             orders: HashMap::from_iter(std::iter::once(("RICK".into(), v2_orders))),
-            protocol_infos: HashMap::from_iter(std::iter::once((Uuid::new_v4(), BaseRelProtocolInfo {
+            protocol_infos: HashMap::from_iter(std::iter::once((new_uuid(), BaseRelProtocolInfo {
                 base: vec![1],
                 rel: vec![2],
             }))),
@@ -494,8 +494,7 @@ mod best_orders_test {
         let v2_serialized = rmp_serde::to_vec(&v2).unwrap();
 
         let mut new: BestOrdersP2PRes = rmp_serde::from_read_ref(&v2_serialized).unwrap();
-        new.conf_infos
-            .insert(Uuid::new_v4(), OrderConfirmationsSettings::default());
+        new.conf_infos.insert(new_uuid(), OrderConfirmationsSettings::default());
 
         let new_serialized = rmp_serde::to_vec(&new).unwrap();
 

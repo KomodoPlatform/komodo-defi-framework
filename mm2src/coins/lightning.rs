@@ -75,6 +75,7 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use uuid::Uuid;
 
 const WAIT_FOR_REFUND_INTERVAL: f64 = 60.;
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
@@ -180,12 +181,11 @@ impl LightningCoin {
             })
     }
 
-    pub(crate) async fn get_channel_by_rpc_id(&self, rpc_id: u64) -> Option<ChannelDetails> {
+    pub(crate) async fn get_channel_by_uuid(&self, uuid: Uuid) -> Option<ChannelDetails> {
         self.list_channels()
             .await
             .into_iter()
-            // Todo: Make rpc_id u128
-            .find(|chan| chan.user_channel_id == rpc_id.into())
+            .find(|chan| chan.user_channel_id == uuid.as_u128())
     }
 
     pub(crate) async fn pay_invoice(
@@ -255,7 +255,7 @@ impl LightningCoin {
     pub(crate) async fn get_open_channels_by_filter(
         &self,
         filter: Option<OpenChannelsFilter>,
-        paging: PagingOptionsEnum<u64>,
+        paging: PagingOptionsEnum<Uuid>,
         limit: usize,
     ) -> GetOpenChannelsResult {
         fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &OpenChannelsFilter) -> bool {
@@ -358,7 +358,7 @@ impl LightningCoin {
         let mut total_open_channels: Vec<ChannelDetailsForRPC> =
             self.list_channels().await.into_iter().map(From::from).collect();
 
-        total_open_channels.sort_by(|a, b| a.rpc_channel_id.cmp(&b.rpc_channel_id));
+        total_open_channels.sort_by(|a, b| a.uuid.cmp(&b.uuid));
         drop_mutability!(total_open_channels);
 
         let open_channels_filtered = if let Some(ref f) = filter {
@@ -372,10 +372,9 @@ impl LightningCoin {
 
         let offset = match paging {
             PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
-            PagingOptionsEnum::FromId(rpc_id) => open_channels_filtered
+            PagingOptionsEnum::FromId(uuid) => open_channels_filtered
                 .iter()
-                // Todo: Make rpc_id u128
-                .position(|x| x.rpc_channel_id == rpc_id as u128)
+                .position(|x| x.uuid == uuid)
                 .map(|pos| pos + 1)
                 .unwrap_or_default(),
         };

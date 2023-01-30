@@ -1,23 +1,9 @@
 use crate::filename;
-use rand::RngCore;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_wasm_bindgen::Serializer;
 use std::fmt;
-use uuid::{Builder, Uuid, Variant, Version};
 use wasm_bindgen::prelude::*;
-
-pub fn new_uuid() -> Uuid {
-    let mut rng = rand::thread_rng();
-    let mut bytes = [0; 16];
-
-    rng.fill_bytes(&mut bytes);
-
-    Builder::from_bytes(bytes)
-        .set_variant(Variant::RFC4122)
-        .set_version(Version::Random)
-        .build()
-}
 
 /// Get only the first line of the error.
 /// Generally, the `JsValue` error contains the stack trace of an error.

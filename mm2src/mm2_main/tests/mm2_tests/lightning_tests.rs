@@ -721,7 +721,7 @@ fn test_lightning_taker_gets_swap_preimage_onchain() {
 
     let open_channel = block_on(open_channel(&mm_node_2, "tBTC-TEST-lightning", &node_1_address, 0.0002));
     log!("open_channel {:?}", open_channel);
-    let rpc_channel_id = open_channel["result"]["rpc_channel_id"].as_u64().unwrap();
+    let uuid = open_channel["result"]["uuid"].as_u64().unwrap();
 
     block_on(mm_node_2.wait_for_log(3600., |log| {
         log.contains("Sending private initial channel_update for our counterparty")
@@ -760,7 +760,7 @@ fn test_lightning_taker_gets_swap_preimage_onchain() {
         "method": "lightning::channels::close_channel",
         "params": {
             "coin": "tBTC-TEST-lightning",
-            "rpc_channel_id": rpc_channel_id,
+            "uuid": uuid,
             "force_close": true,
         },
     })))

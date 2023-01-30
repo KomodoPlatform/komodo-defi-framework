@@ -7,7 +7,7 @@ use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::serialize_hex;
 use common::executor::{AbortSettings, SpawnAbortable, SpawnFuture, Timer};
 use common::log::{error, info};
-use common::now_ms;
+use common::{new_uuid, now_ms};
 use core::time::Duration;
 use futures::compat::Future01CompatExt;
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
@@ -163,19 +163,15 @@ pub async fn init_abortable_events(platform: Arc<Platform>, db: SqliteLightningD
     for channel_details in closed_channels_without_closing_tx {
         let platform_c = platform.clone();
         let db = db.clone();
-        let user_channel_id = channel_details.rpc_id;
+        let uuid = channel_details.uuid;
         platform.spawner().spawn(async move {
             if let Ok(closing_tx_hash) = platform_c
                 .get_channel_closing_tx(channel_details)
                 .await
                 .error_log_passthrough()
             {
-                if let Err(e) = db.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await {
-                    log::error!(
-                        "Unable to update channel {} closing details in DB: {}",
-                        user_channel_id,
-                        e
-                    );
+                if let Err(e) = db.add_closing_tx_to_db(uuid, closing_tx_hash).await {
+                    log::error!("Unable to update channel {} closing details in DB: {}", uuid, e);
                 }
             }
         });
@@ -195,7 +191,7 @@ pub enum SignFundingTransactionError {
 
 // Generates the raw funding transaction with one output equal to the channel value.
 fn sign_funding_transaction(
-    user_channel_id: u128,
+    uuid: Uuid,
     output_script: &Script,
     platform: Arc<Platform>,
 ) -> Result<Transaction, SignFundingTransactionError> {
@@ -203,11 +199,11 @@ fn sign_funding_transaction(
     let mut unsigned = {
         let unsigned_funding_txs = platform.unsigned_funding_txs.lock();
         unsigned_funding_txs
-            .get(&user_channel_id)
+            .get(&uuid)
             .ok_or_else(|| {
                 SignFundingTransactionError::Internal(format!(
-                    "Unsigned funding tx not found for internal channel id: {}",
-                    user_channel_id
+                    "Unsigned funding tx not found for channel with uuid: {}",
+                    uuid
                 ))
             })?
             .clone()
@@ -241,22 +237,20 @@ fn sign_funding_transaction(
 async fn save_channel_closing_details(
     db: SqliteLightningDB,
     platform: Arc<Platform>,
-    user_channel_id: u128,
+    uuid: Uuid,
     reason: String,
 ) -> SaveChannelClosingResult<()> {
-    // Todo: use u128 by using bytes
-    db.update_channel_to_closed(user_channel_id as i64, reason, (now_ms() / 1000) as i64)
+    db.update_channel_to_closed(uuid, reason, (now_ms() / 1000) as i64)
         .await?;
 
-    // Todo: use u128 by using bytes
     let channel_details = db
-        .get_channel_from_db(user_channel_id as u64)
+        .get_channel_from_db(uuid)
         .await?
-        .ok_or_else(|| MmError::new(SaveChannelClosingError::ChannelNotFound(user_channel_id)))?;
+        .ok_or_else(|| MmError::new(SaveChannelClosingError::ChannelNotFound(uuid)))?;
 
     let closing_tx_hash = platform.get_channel_closing_tx(channel_details).await?;
 
-    db.add_closing_tx_to_db(user_channel_id as i64, closing_tx_hash).await?;
+    db.add_closing_tx_to_db(uuid, closing_tx_hash).await?;
 
     Ok(())
 }
@@ -301,16 +295,17 @@ impl LightningEventHandler {
         user_channel_id: u128,
         counterparty_node_id: PublicKey,
     ) {
+        let uuid = Uuid::from_u128(user_channel_id);
         info!(
-            "Handling FundingGenerationReady event for internal channel id: {} with: {}",
-            user_channel_id, counterparty_node_id
+            "Handling FundingGenerationReady event for channel with uuid: {} with: {}",
+            uuid, counterparty_node_id
         );
-        let funding_tx = match sign_funding_transaction(user_channel_id, &output_script, self.platform.clone()) {
+        let funding_tx = match sign_funding_transaction(uuid, &output_script, self.platform.clone()) {
             Ok(tx) => tx,
             Err(e) => {
                 error!(
-                    "Error generating funding transaction for internal channel id {}: {}",
-                    user_channel_id,
+                    "Error generating funding transaction for channel with uuid {}: {}",
+                    uuid,
                     e.to_string()
                 );
                 return;
@@ -331,7 +326,7 @@ impl LightningEventHandler {
         let fut = async move {
             let best_block_height = platform.best_block_height();
             db.add_funding_tx_to_db(
-                user_channel_id as i64,
+                uuid,
                 funding_txid.to_string(),
                 channel_value_satoshis as i64,
                 best_block_height as i64,
@@ -473,17 +468,15 @@ impl LightningEventHandler {
             hex::encode(channel_id),
             reason
         );
+        let uuid = Uuid::from_u128(user_channel_id);
         let db = self.db.clone();
         let platform = self.platform.clone();
 
         let fut = async move {
-            if let Err(e) = save_channel_closing_details(db, platform, user_channel_id, reason).await {
+            if let Err(e) = save_channel_closing_details(db, platform, uuid, reason).await {
                 // This is the case when a channel is closed before funding is broadcasted due to the counterparty disconnecting or other incompatibility issue.
                 if e != SaveChannelClosingError::FundingTxNull.into() {
-                    error!(
-                        "Unable to update channel {} closing details in DB: {}",
-                        user_channel_id, e
-                    );
+                    error!("Unable to update channel {} closing details in DB: {}", uuid, e);
                 }
             }
         };
@@ -632,71 +625,60 @@ impl LightningEventHandler {
         let channel_manager = self.channel_manager.clone();
         let platform = self.platform.clone();
         let fut = async move {
-            // Todo: get_last_channel_rpc_id should return u128
-            if let Ok(last_channel_rpc_id) = db.get_last_channel_rpc_id().await.error_log_passthrough() {
-                let user_channel_id = last_channel_rpc_id as u64 + 1;
+            let uuid = new_uuid();
+            let uuid_u128 = uuid.as_u128();
+            let trusted_nodes = trusted_nodes.lock().clone();
+            let accepted_inbound_channel_with_0conf = trusted_nodes.contains(&counterparty_node_id)
+                && channel_manager
+                    .accept_inbound_channel_from_trusted_peer_0conf(
+                        &temporary_channel_id,
+                        &counterparty_node_id,
+                        uuid_u128,
+                    )
+                    .is_ok();
 
-                let trusted_nodes = trusted_nodes.lock().clone();
-                let accepted_inbound_channel_with_0conf = trusted_nodes.contains(&counterparty_node_id)
-                    && channel_manager
-                        .accept_inbound_channel_from_trusted_peer_0conf(
-                            &temporary_channel_id,
-                            &counterparty_node_id,
-                            user_channel_id as u128,
-                        )
-                        .is_ok();
-
-                if accepted_inbound_channel_with_0conf
-                    || channel_manager
-                        .accept_inbound_channel(&temporary_channel_id, &counterparty_node_id, user_channel_id as u128)
-                        .is_ok()
+            if accepted_inbound_channel_with_0conf
+                || channel_manager
+                    .accept_inbound_channel(&temporary_channel_id, &counterparty_node_id, uuid_u128)
+                    .is_ok()
+            {
+                let is_public = match channel_manager
+                    .list_channels()
+                    .into_iter()
+                    .find(|chan| chan.user_channel_id == uuid_u128)
                 {
-                    let is_public = match channel_manager
-                        .list_channels()
-                        .into_iter()
-                        .find(|chan| chan.user_channel_id == user_channel_id as u128)
-                    {
-                        Some(details) => details.is_public,
-                        None => {
-                            error!(
-                                "Inbound channel {} details should be found by list_channels!",
-                                user_channel_id
-                            );
-                            return;
-                        },
-                    };
+                    Some(details) => details.is_public,
+                    None => {
+                        error!("Inbound channel {} details should be found by list_channels!", uuid);
+                        return;
+                    },
+                };
 
-                    let pending_channel_details = DBChannelDetails::new(
-                        user_channel_id,
-                        temporary_channel_id,
-                        counterparty_node_id,
-                        false,
-                        is_public,
-                    );
-                    if let Err(e) = db.add_channel_to_db(&pending_channel_details).await {
-                        error!("Unable to add new inbound channel {} to db: {}", user_channel_id, e);
+                let pending_channel_details =
+                    DBChannelDetails::new(uuid, temporary_channel_id, counterparty_node_id, false, is_public);
+                if let Err(e) = db.add_channel_to_db(&pending_channel_details).await {
+                    error!("Unable to add new inbound channel {} to db: {}", uuid, e);
+                }
+
+                while let Some(details) = channel_manager
+                    .list_channels()
+                    .into_iter()
+                    .find(|chan| chan.user_channel_id == uuid_u128)
+                {
+                    if let Some(funding_tx) = details.funding_txo {
+                        let best_block_height = platform.best_block_height();
+                        db.add_funding_tx_to_db(
+                            uuid,
+                            funding_tx.txid.to_string(),
+                            funding_satoshis as i64,
+                            best_block_height as i64,
+                        )
+                        .await
+                        .error_log();
+                        break;
                     }
 
-                    while let Some(details) = channel_manager
-                        .list_channels()
-                        .into_iter()
-                        .find(|chan| chan.user_channel_id == user_channel_id as u128)
-                    {
-                        if let Some(funding_tx) = details.funding_txo {
-                            let best_block_height = platform.best_block_height();
-                            db.add_funding_tx_to_db(
-                                user_channel_id as i64,
-                                funding_tx.txid.to_string(),
-                                funding_satoshis as i64,
-                                best_block_height as i64,
-                            )
-                            .await
-                            .error_log();
-                            break;
-                        }
-
-                        Timer::sleep(TRY_LOOP_INTERVAL).await;
-                    }
+                    Timer::sleep(TRY_LOOP_INTERVAL).await;
                 }
             }
         };

@@ -57,7 +57,7 @@ fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)>
 #[derive(Debug)]
 pub enum SelectRecentSwapsUuidsErr {
     Sql(SqlError),
-    Parse(uuid::parser::ParseError),
+    Parse(uuid::Error),
 }
 
 impl std::fmt::Display for SelectRecentSwapsUuidsErr {
@@ -68,8 +68,8 @@ impl From<SqlError> for SelectRecentSwapsUuidsErr {
     fn from(err: SqlError) -> Self { SelectRecentSwapsUuidsErr::Sql(err) }
 }
 
-impl From<uuid::parser::ParseError> for SelectRecentSwapsUuidsErr {
-    fn from(err: uuid::parser::ParseError) -> Self { SelectRecentSwapsUuidsErr::Parse(err) }
+impl From<uuid::Error> for SelectRecentSwapsUuidsErr {
+    fn from(err: uuid::Error) -> Self { SelectRecentSwapsUuidsErr::Parse(err) }
 }
 
 /// Adds where clauses determined by MySwapsFilter

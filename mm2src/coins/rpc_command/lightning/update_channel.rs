@@ -4,6 +4,7 @@ use common::{async_blocking, HttpStatusCode};
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use uuid::Uuid;
 
 type UpdateChannelResult<T> = Result<T, MmError<UpdateChannelError>>;
 
@@ -14,10 +15,10 @@ pub enum UpdateChannelError {
     UnsupportedCoin(String),
     #[display(fmt = "No such coin {}", _0)]
     NoSuchCoin(String),
-    #[display(fmt = "No such channel with rpc_channel_id {}", _0)]
-    NoSuchChannel(u64),
+    #[display(fmt = "No such channel with uuid {}", _0)]
+    NoSuchChannel(Uuid),
     #[display(fmt = "Failure to channel {}: {}", _0, _1)]
-    FailureToUpdateChannel(u64, String),
+    FailureToUpdateChannel(Uuid, String),
 }
 
 impl HttpStatusCode for UpdateChannelError {
@@ -41,7 +42,7 @@ impl From<CoinFindError> for UpdateChannelError {
 #[derive(Deserialize)]
 pub struct UpdateChannelReq {
     pub coin: String,
-    pub rpc_channel_id: u64,
+    pub uuid: Uuid,
     pub channel_options: ChannelOptions,
 }
 
@@ -58,9 +59,9 @@ pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelR
     };
 
     let channel_details = ln_coin
-        .get_channel_by_rpc_id(req.rpc_channel_id)
+        .get_channel_by_uuid(req.uuid)
         .await
-        .ok_or(UpdateChannelError::NoSuchChannel(req.rpc_channel_id))?;
+        .ok_or(UpdateChannelError::NoSuchChannel(req.uuid))?;
 
     async_blocking(move || {
         let mut channel_options = ln_coin
@@ -76,7 +77,7 @@ pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelR
         ln_coin
             .channel_manager
             .update_channel_config(&counterparty_node_id, channel_ids, &channel_options.clone().into())
-            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.rpc_channel_id, format!("{:?}", e)))?;
+            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.uuid, format!("{:?}", e)))?;
         Ok(UpdateChannelResponse { channel_options })
     })
     .await

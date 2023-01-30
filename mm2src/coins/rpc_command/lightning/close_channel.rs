@@ -3,6 +3,7 @@ use common::{async_blocking, HttpStatusCode};
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use uuid::Uuid;
 
 type CloseChannelResult<T> = Result<T, MmError<CloseChannelError>>;
 
@@ -13,8 +14,8 @@ pub enum CloseChannelError {
     UnsupportedCoin(String),
     #[display(fmt = "No such coin {}", _0)]
     NoSuchCoin(String),
-    #[display(fmt = "No such channel with rpc_channel_id {}", _0)]
-    NoSuchChannel(u64),
+    #[display(fmt = "No such channel with uuid {}", _0)]
+    NoSuchChannel(Uuid),
     #[display(fmt = "Closing channel error: {}", _0)]
     CloseChannelError(String),
 }
@@ -40,7 +41,7 @@ impl From<CoinFindError> for CloseChannelError {
 #[derive(Deserialize)]
 pub struct CloseChannelReq {
     pub coin: String,
-    pub rpc_channel_id: u64,
+    pub uuid: Uuid,
     #[serde(default)]
     pub force_close: bool,
 }
@@ -52,9 +53,9 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
     };
 
     let channel_details = ln_coin
-        .get_channel_by_rpc_id(req.rpc_channel_id)
+        .get_channel_by_uuid(req.uuid)
         .await
-        .ok_or(CloseChannelError::NoSuchChannel(req.rpc_channel_id))?;
+        .ok_or(CloseChannelError::NoSuchChannel(req.uuid))?;
     let channel_id = channel_details.channel_id;
     let counterparty_node_id = channel_details.counterparty.node_id;
 
@@ -76,8 +77,5 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
         .await?;
     }
 
-    Ok(format!(
-        "Initiated closing of channel with rpc_channel_id: {}",
-        req.rpc_channel_id
-    ))
+    Ok(format!("Initiated closing of channel with uuid: {}", req.uuid))
 }

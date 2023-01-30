@@ -78,7 +78,7 @@ mod compact_uuid {
     }
 
     impl FromStr for CompactUuid {
-        type Err = uuid::parser::ParseError;
+        type Err = uuid::Error;
 
         fn from_str(str: &str) -> Result<Self, Self::Err> {
             let uuid = Uuid::parse_str(str)?;
@@ -399,7 +399,7 @@ mod new_protocol_tests {
         }
 
         let old_msg = MakerOrderCreatedV1 {
-            uuid: Uuid::new_v4().into(),
+            uuid: new_uuid().into(),
             base: "RICK".to_string(),
             rel: "MORTY".to_string(),
             price: BigRational::from_integer(1.into()),

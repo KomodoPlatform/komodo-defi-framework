@@ -1134,7 +1134,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "utxo_signer",
- "uuid 0.7.4",
+ "uuid 1.2.2",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -1224,7 +1224,7 @@ dependencies = [
  "sha2 0.9.9",
  "shared_ref_counter",
  "tokio",
- "uuid 0.7.4",
+ "uuid 1.2.2",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -1772,7 +1772,7 @@ dependencies = [
  "log 0.4.14",
  "rusqlite",
  "sql-builder",
- "uuid 0.7.4",
+ "uuid 1.2.2",
 ]
 
 [[package]]
@@ -4328,7 +4328,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared_ref_counter",
- "uuid 0.7.4",
+ "uuid 1.2.2",
 ]
 
 [[package]]
@@ -4488,7 +4488,7 @@ dependencies = [
  "tokio",
  "trie-db",
  "trie-root 0.16.0",
- "uuid 0.7.4",
+ "uuid 1.2.2",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -4620,7 +4620,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "uuid 0.7.4",
+ "uuid 1.2.2",
 ]
 
 [[package]]
@@ -8775,19 +8775,20 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90dbc611eb48397705a6b0f6e917da23ae517e4d127123d2cf7674206627d32a"
-dependencies = [
- "rand 0.6.5",
- "serde",
-]
-
-[[package]]
-name = "uuid"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+
+[[package]]
+name = "uuid"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "422ee0de9031b5b948b97a8fc04e3aa35230001a722ddd27943e0be31564ce4c"
+dependencies = [
+ "getrandom 0.2.6",
+ "rand 0.8.4",
+ "serde",
+]
 
 [[package]]
 name = "value-bag"
