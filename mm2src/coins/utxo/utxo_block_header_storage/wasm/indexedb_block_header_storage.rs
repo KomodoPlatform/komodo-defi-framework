@@ -1,12 +1,12 @@
 use super::BlockHeaderStorageTable;
 use async_trait::async_trait;
 use chain::BlockHeader;
-use common::log::info;
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder,
                          InitDbResult, SharedDb};
 use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
+use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 
@@ -120,7 +120,27 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         Ok(())
     }
 
-    async fn get_block_header(&self, _height: u64) -> Result<Option<BlockHeader>, BlockHeaderStorageError> { Ok(None) }
+    async fn get_block_header(&self, height: u64) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+        let ticker = self.ticker.clone();
+        if let Some(raw_header) = self.get_block_header_raw(height).await? {
+            let serialized = &hex::decode(raw_header).map_err(|e| BlockHeaderStorageError::DecodeError {
+                coin: ticker.clone(),
+                reason: e.to_string(),
+            })?;
+            let mut reader = Reader::new_with_coin_variant(serialized, ticker.as_str().into());
+            let header: BlockHeader =
+                reader
+                    .read()
+                    .map_err(|e: serialization::Error| BlockHeaderStorageError::DecodeError {
+                        coin: ticker,
+                        reason: e.to_string(),
+                    })?;
+
+            return Ok(Some(header));
+        };
+
+        Ok(None)
+    }
 
     async fn get_block_header_raw(&self, height: u64) -> Result<Option<String>, BlockHeaderStorageError> {
         let ticker = self.ticker.clone();
@@ -147,16 +167,14 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             }
         })?;
 
-        let raw = block_headers_db
+        Ok(block_headers_db
             .get_item_by_unique_index("height", height)
             .await
             .map_err(|err| BlockHeaderStorageError::InitializationError {
                 coin: ticker.to_string(),
                 reason: err.to_string(),
-            })?;
-        info!("BLOCKS {raw:?}");
-
-        Ok(None)
+            })?
+            .map(|raw| raw.1.raw_header))
     }
 
     async fn get_last_block_height(&self) -> Result<u64, BlockHeaderStorageError> {
@@ -174,6 +192,8 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
 mod tests {
     use super::IDBBlockHeadersStorage;
     use super::*;
+    use chain::BlockHeaderBits::Compact;
+    use chain::BlockHeaderNonce::U32;
     use common::log::info;
     use common::log::wasm_log::register_wasm_log;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
@@ -182,12 +202,14 @@ mod tests {
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
+    async fn hello_world() { register_wasm_log(); }
+
+    #[wasm_bindgen_test]
     async fn test_add_block_headers() {
         let ctx = mm_ctx_with_custom_db();
         let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
         register_wasm_log();
-        // Please note this is the `IndexedDbTxHistoryStorage` specific:
-        // [`IndexedDbTxHistoryStorage::is_initialized_for`] always returns `true`.
+
         let initialized = storage.is_initialized_for().await.unwrap();
         assert!(initialized);
 
@@ -201,10 +223,83 @@ mod tests {
         let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
         headers.insert(520481, block_header);
         let add_header = storage.add_block_headers_to_storage(headers).await;
+
+        assert!(add_header.is_ok());
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_get_block_header() {
+        let ctx = mm_ctx_with_custom_db();
+        let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
+        register_wasm_log();
+
+        let initialized = storage.is_initialized_for().await.unwrap();
+        assert!(initialized);
+
+        // repetitive init must not fail
+        storage.init().await.unwrap();
+
+        let initialized = storage.is_initialized_for().await.unwrap();
+        assert!(initialized);
+
+        let mut headers = HashMap::with_capacity(1);
+        let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
+        headers.insert(520481, block_header);
+        let add_header = storage.add_block_headers_to_storage(headers).await;
+
         assert!(add_header.is_ok());
 
-        let header = storage.get_block_header_raw(520481).await.unwrap();
-        info!("BLOCKS {:?}", header);
-        //        assert_eq!(rick_block_headers.len(), 3)
+        let expected_header = BlockHeader {
+            version: 536870912,
+            previous_header_hash: "76d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000".into(),
+            merkle_root_hash: "b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94".into(),
+            claim_trie_root: None,
+            hash_final_sapling_root: None,
+            time: 1525038267,
+            bits: Compact(390462291.into()),
+            nonce: U32(473005695),
+            solution: None,
+            aux_pow: None,
+            prog_pow: None,
+            mtp_pow: None,
+            is_verus: false,
+            hash_state_root: None,
+            hash_utxo_root: None,
+            prevout_stake: None,
+            vch_block_sig_dlgt: None,
+            n_height: None,
+            n_nonce_u64: None,
+            mix_hash: None,
+        };
+        let block_header = storage.get_block_header(520481).await.unwrap();
+
+        assert_eq!(expected_header, block_header.unwrap());
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_get_raw_block_header() {
+        let ctx = mm_ctx_with_custom_db();
+        let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
+        register_wasm_log();
+
+        let initialized = storage.is_initialized_for().await.unwrap();
+        assert!(initialized);
+
+        // repetitive init must not fail
+        storage.init().await.unwrap();
+
+        let initialized = storage.is_initialized_for().await.unwrap();
+        assert!(initialized);
+
+        let mut headers = HashMap::with_capacity(1);
+        let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
+        headers.insert(520481, block_header);
+        let add_header = storage.add_block_headers_to_storage(headers).await;
+
+        assert!(add_header.is_ok());
+
+        let raw_header = storage.get_block_header_raw(520481).await.unwrap();
+
+        assert_eq!(raw_header.unwrap(),"0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c")
     }
 }
