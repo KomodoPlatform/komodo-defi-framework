@@ -253,6 +253,7 @@ use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
+use crate::eth::{get_eth_address, GetEthAddressError};
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -328,10 +329,25 @@ impl From<CoinFindError> for RawTransactionError {
     }
 }
 
-#[derive(Clone, Debug, Display, Serialize, SerializeErrorType, Deserialize)]
+#[derive(Debug, Display, Serialize, SerializeErrorType, Deserialize)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetMyAddressError {
-    // todo
+    CoinIsNotSupported(String),
+    Internal(String),
+    InvalidRequest(String),
+    GetEthAddressError(GetEthAddressError),
+}
+
+impl From<CryptoCtxError> for GetMyAddressError {
+    fn from(e: CryptoCtxError) -> Self { GetMyAddressError::Internal(e.to_string()) }
+}
+
+impl From<serde_json::Error> for GetMyAddressError {
+    fn from(e: serde_json::Error) -> Self { GetMyAddressError::InvalidRequest(e.to_string()) }
+}
+
+impl From<GetEthAddressError> for GetMyAddressError {
+    fn from(e: GetEthAddressError) -> Self { GetMyAddressError::GetEthAddressError(e) }
 }
 
 impl HttpStatusCode for GetMyAddressError {
@@ -358,7 +374,7 @@ pub struct MyAddressReq {
 
 #[allow(dead_code)]
 #[derive(Debug, Serialize)]
-pub struct MyAddressRes {
+pub struct MyWalletAddress {
     wallet_address: String,
 }
 
@@ -3393,7 +3409,101 @@ pub fn address_by_coin_conf_and_pubkey_str(
     }
 }
 
-pub async fn get_my_address(_ctx: MmArc, _req: MyAddressReq) -> MmResult<MyAddressRes, GetMyAddressError> { todo!() }
+pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletAddress, GetMyAddressError> {
+    let coins_en = coin_conf(&ctx, req.coin.as_str());
+
+    if coins_en.is_null() {
+        let warning = format!(
+            "Warning, coin {} is used without a corresponding configuration.",
+            req.coin
+        );
+        ctx.log.log(
+            "😅",
+            #[allow(clippy::unnecessary_cast)]
+            &[&("coin" as &str), &req.coin, &("no-conf" as &str)],
+            &warning,
+        );
+    }
+
+    if coins_en["mm2"].is_null() {
+        return MmError::err(GetMyAddressError::CoinIsNotSupported(
+            "mm2 param is not set in coins config, assuming that coin is not supported".to_owned(),
+        ));
+    }
+
+    let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx)?;
+    let protocol: CoinProtocol = json::from_value(coins_en["protocol"].clone())?;
+
+    let my_address = match protocol {
+        CoinProtocol::ETH => get_eth_address(&ctx, &req.coin, &coins_en, protocol, priv_key_policy).await?,
+        CoinProtocol::UTXO => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "UTXO protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        CoinProtocol::QTUM => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "QTUM protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        CoinProtocol::QRC20 { .. } => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "QRC20 protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        CoinProtocol::ERC20 { .. } => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "ERC20 protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        CoinProtocol::SLPTOKEN { .. } => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "SlpToken protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        CoinProtocol::BCH { .. } => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "BCH protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        CoinProtocol::TENDERMINT(_) => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "TENDERMINT protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        CoinProtocol::TENDERMINTTOKEN(_) => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "TENDERMINTTOKEN protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::LIGHTNING { .. } => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "LIGHTNING protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::SOLANA => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "SOLANA protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::SPLTOKEN { .. } => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "SplToken protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::ZHTLC(_) => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(
+                "ZHTLC protocol is not supported by get_my_address".to_owned(),
+            ))
+        },
+    };
+
+    Ok(my_address)
+}
 
 #[cfg(target_arch = "wasm32")]
 fn load_history_from_file_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>>

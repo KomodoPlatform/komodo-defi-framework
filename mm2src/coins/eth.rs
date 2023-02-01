@@ -93,6 +93,7 @@ mod nft;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
+use crate::MyWalletAddress;
 use v2_activation::build_address_and_priv_key_policy;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -4545,4 +4546,19 @@ fn increase_gas_price_by_stage(gas_price: U256, level: &FeeApproxStage) -> U256 
             increase_by_percent_one_gwei(gas_price, GAS_PRICE_APPROXIMATION_PERCENT_ON_WATCHER_PREIMAGE)
         },
     }
+}
+
+#[derive(Debug, Deserialize, Serialize, Display)]
+pub enum GetEthAddressError {
+    // todo
+}
+
+pub async fn get_eth_address(
+    ctx: &MmArc,
+    ticker: &str,
+    conf: &Json,
+    protocol: CoinProtocol,
+    priv_key_policy: PrivKeyBuildPolicy,
+) -> Result<MyWalletAddress, GetEthAddressError> {
+    todo!()
 }
