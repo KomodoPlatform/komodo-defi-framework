@@ -185,8 +185,42 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         Ok(None)
     }
 
-    async fn get_block_height_by_hash(&self, _hash: H256) -> Result<Option<i64>, BlockHeaderStorageError> { Ok(None) }
+    async fn get_block_height_by_hash(&self, hash: H256) -> Result<Option<i64>, BlockHeaderStorageError> {
+        let ticker = self.ticker.clone();
+        let locked_db = self
+            .lock_db()
+            .await
+            .map_err(|err| BlockHeaderStorageError::InitializationError {
+                coin: ticker.to_string(),
+                reason: err.to_string(),
+            })?;
+        let db_transaction =
+            locked_db
+                .get_inner()
+                .transaction()
+                .await
+                .map_err(|err| BlockHeaderStorageError::InitializationError {
+                    coin: ticker.to_string(),
+                    reason: err.to_string(),
+                })?;
+        let block_headers_db = db_transaction.table::<BlockHeaderStorageTable>().await.map_err(|err| {
+            BlockHeaderStorageError::InitializationError {
+                coin: ticker.to_string(),
+                reason: err.to_string(),
+            }
+        })?;
+
+        Ok(block_headers_db
+            .get_item_by_unique_index("hash", hash.to_string())
+            .await
+            .map_err(|err| BlockHeaderStorageError::InitializationError {
+                coin: ticker.to_string(),
+                reason: err.to_string(),
+            })?
+            .map(|raw| raw.1.height as i64))
+    }
 }
+// cargo test --package coins --lib utxo::utxo_wasm_tests::test_electrum_rpc_client
 
 #[cfg(target_arch = "wasm32")]
 mod tests {
@@ -194,7 +228,7 @@ mod tests {
     use super::*;
     use chain::BlockHeaderBits::Compact;
     use chain::BlockHeaderNonce::U32;
-    use common::log::info;
+    // use common::log::info;
     use common::log::wasm_log::register_wasm_log;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
     use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
@@ -220,8 +254,8 @@ mod tests {
         assert!(initialized);
 
         let mut headers = HashMap::with_capacity(1);
-        let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
-        headers.insert(520481, block_header);
+        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        headers.insert(201595, block_header);
         let add_header = storage.add_block_headers_to_storage(headers).await;
 
         assert!(add_header.is_ok());
@@ -243,21 +277,21 @@ mod tests {
         assert!(initialized);
 
         let mut headers = HashMap::with_capacity(1);
-        let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
-        headers.insert(520481, block_header);
+        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        headers.insert(201595, block_header);
         let add_header = storage.add_block_headers_to_storage(headers).await;
 
         assert!(add_header.is_ok());
 
         let expected_header = BlockHeader {
-            version: 536870912,
-            previous_header_hash: "76d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000".into(),
-            merkle_root_hash: "b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94".into(),
+            version: 2,
+            previous_header_hash: "ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000".into(),
+            merkle_root_hash: "c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b".into(),
             claim_trie_root: None,
             hash_final_sapling_root: None,
-            time: 1525038267,
-            bits: Compact(390462291.into()),
-            nonce: U32(473005695),
+            time: 1393813280,
+            bits: Compact(486604799.into()),
+            nonce: U32(3764355072),
             solution: None,
             aux_pow: None,
             prog_pow: None,
@@ -271,13 +305,13 @@ mod tests {
             n_nonce_u64: None,
             mix_hash: None,
         };
-        let block_header = storage.get_block_header(520481).await.unwrap();
+        let block_header = storage.get_block_header(201595).await.unwrap();
 
         assert_eq!(expected_header, block_header.unwrap());
     }
 
     #[wasm_bindgen_test]
-    async fn test_get_raw_block_header() {
+    async fn test_get_block_height_by_hash() {
         let ctx = mm_ctx_with_custom_db();
         let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
         register_wasm_log();
@@ -292,14 +326,15 @@ mod tests {
         assert!(initialized);
 
         let mut headers = HashMap::with_capacity(1);
-        let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
-        headers.insert(520481, block_header);
+        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        headers.insert(201595, block_header.clone());
         let add_header = storage.add_block_headers_to_storage(headers).await;
-
         assert!(add_header.is_ok());
 
-        let raw_header = storage.get_block_header_raw(520481).await.unwrap();
-
-        assert_eq!(raw_header.unwrap(),"0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c")
+        let raw_header = storage
+            .get_block_height_by_hash("00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530".into())
+            .await
+            .unwrap();
+        assert_eq!(201595, raw_header.unwrap())
     }
 }
