@@ -2,7 +2,7 @@ use super::*;
 use common::executor::AbortedError;
 use crypto::{CryptoCtxError, StandardHDPathToCoin};
 
-#[derive(Display, Serialize, SerializeErrorType)]
+#[derive(Display, Serialize, SerializeErrorType, Debug, Deserialize)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EthActivationV2Error {
     InvalidPayload(String),

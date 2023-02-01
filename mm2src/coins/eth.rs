@@ -93,6 +93,7 @@ mod nft;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
+use crate::eth::v2_activation::EthActivationV2Error;
 use crate::MyWalletAddress;
 use v2_activation::build_address_and_priv_key_policy;
 
@@ -4550,15 +4551,30 @@ fn increase_gas_price_by_stage(gas_price: U256, level: &FeeApproxStage) -> U256 
 
 #[derive(Debug, Deserialize, Serialize, Display)]
 pub enum GetEthAddressError {
-    // todo
+    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    EthActivationV2Error(EthActivationV2Error),
+}
+
+impl From<PrivKeyPolicyNotAllowed> for GetEthAddressError {
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self { GetEthAddressError::PrivKeyPolicyNotAllowed(e) }
+}
+impl From<EthActivationV2Error> for GetEthAddressError {
+    fn from(e: EthActivationV2Error) -> Self { GetEthAddressError::EthActivationV2Error(e) }
 }
 
 pub async fn get_eth_address(
-    ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    protocol: CoinProtocol,
     priv_key_policy: PrivKeyBuildPolicy,
-) -> Result<MyWalletAddress, GetEthAddressError> {
-    todo!()
+) -> MmResult<MyWalletAddress, GetEthAddressError> {
+    // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
+    let priv_key_policy = EthPrivKeyBuildPolicy::try_from(priv_key_policy)?;
+
+    let (my_address, ..) = build_address_and_priv_key_policy(conf, priv_key_policy)?;
+    let wallet_address = checksum_address(&format!("{:#02x}", my_address));
+
+    Ok(MyWalletAddress {
+        coin: ticker.to_owned(),
+        wallet_address,
+    })
 }

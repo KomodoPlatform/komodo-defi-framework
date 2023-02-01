@@ -333,8 +333,11 @@ impl From<CoinFindError> for RawTransactionError {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetMyAddressError {
     CoinIsNotSupported(String),
+    #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+    #[display(fmt = "Invalid request error error: {}", _0)]
     InvalidRequest(String),
+    #[display(fmt = "Get Eth address error: {}", _0)]
     GetEthAddressError(GetEthAddressError),
 }
 
@@ -351,7 +354,14 @@ impl From<GetEthAddressError> for GetMyAddressError {
 }
 
 impl HttpStatusCode for GetMyAddressError {
-    fn status_code(&self) -> StatusCode { todo!() }
+    fn status_code(&self) -> StatusCode {
+        match self {
+            GetMyAddressError::CoinIsNotSupported(_) | GetMyAddressError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            GetMyAddressError::Internal(_) | GetMyAddressError::GetEthAddressError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -375,6 +385,7 @@ pub struct MyAddressReq {
 #[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct MyWalletAddress {
+    coin: String,
     wallet_address: String,
 }
 
@@ -396,7 +407,7 @@ pub enum TxHistoryError {
     InternalError(String),
 }
 
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Display, Deserialize)]
 pub enum PrivKeyPolicyNotAllowed {
     #[display(fmt = "Hardware Wallet is not supported")]
     HardwareWalletNotSupported,
@@ -3435,7 +3446,7 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
     let protocol: CoinProtocol = json::from_value(coins_en["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&ctx, &req.coin, &coins_en, protocol, priv_key_policy).await?,
+        CoinProtocol::ETH => get_eth_address(&req.coin, &coins_en, priv_key_policy).await?,
         CoinProtocol::UTXO => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(
                 "UTXO protocol is not supported by get_my_address".to_owned(),
