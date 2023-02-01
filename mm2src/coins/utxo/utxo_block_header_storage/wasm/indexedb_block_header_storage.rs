@@ -311,6 +311,31 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
+    async fn test_get_block_header_raw() {
+        let ctx = mm_ctx_with_custom_db();
+        let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
+        register_wasm_log();
+
+        let initialized = storage.is_initialized_for().await.unwrap();
+        assert!(initialized);
+
+        // repetitive init must not fail
+        storage.init().await.unwrap();
+
+        let initialized = storage.is_initialized_for().await.unwrap();
+        assert!(initialized);
+
+        let mut headers = HashMap::with_capacity(1);
+        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        headers.insert(201595, block_header.clone());
+        let add_header = storage.add_block_headers_to_storage(headers).await;
+        assert!(add_header.is_ok());
+
+        let raw_header = storage.get_block_header_raw(201595).await.unwrap();
+        assert_eq!("02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0", raw_header.unwrap())
+    }
+
+    #[wasm_bindgen_test]
     async fn test_get_block_height_by_hash() {
         let ctx = mm_ctx_with_custom_db();
         let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
