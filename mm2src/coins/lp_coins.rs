@@ -3420,6 +3420,8 @@ pub fn address_by_coin_conf_and_pubkey_str(
     }
 }
 
+/// `get_my_address` function returns wallet address for necessary coin without its activation.
+/// Currently supports only coins with `ETH` protocol type.
 pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletAddress, GetMyAddressError> {
     let coins_en = coin_conf(&ctx, req.coin.as_str());
 

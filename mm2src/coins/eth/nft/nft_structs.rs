@@ -1,19 +1,17 @@
-use crate::TxFeeDetails;
+use crate::{TxFeeDetails, WithdrawFee};
 use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct NftListReq {
-    chains: Vec<String>,
-    api_key: String,
+    pub(crate) chains: Vec<Chain>,
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct NftMetadataReq {
     chain: String,
-    api_key: String,
 }
 
 #[allow(dead_code)]
@@ -65,7 +63,7 @@ pub struct WithdrawErc721Request {
     to: String,
     token_address: String,
     token_id: BigDecimal,
-    api_key: String,
+    fee: Option<WithdrawFee>,
 }
 
 #[allow(dead_code)]
@@ -78,7 +76,7 @@ pub struct WithdrawErc1155Request {
     amount: BigDecimal,
     #[serde(default)]
     max: bool,
-    api_key: String,
+    fee: Option<WithdrawFee>,
 }
 
 #[allow(dead_code)]
@@ -109,7 +107,6 @@ pub struct TransactionNftDetails {
 #[derive(Clone, Deserialize)]
 pub struct NftTransfersReq {
     chains: Vec<String>,
-    api_key: String,
 }
 
 #[allow(dead_code)]

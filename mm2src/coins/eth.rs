@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
 use common::log::{debug, error, info, warn};
-use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{get_utc_timestamp, now_ms, small_rng, APPLICATION_JSON, DEX_FEE_ADDR_RAW_PUBKEY, X_API_KEY};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
 #[cfg(target_arch = "wasm32")]
@@ -40,10 +40,11 @@ use ethkey::{sign, verify_address};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
 use futures01::Future;
-use http::StatusCode;
+use gstuff::binprint;
+use http::{Request, StatusCode};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
+use mm2_net::transport::{slurp_req, slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use nft::nft_errors::GetNftInfoError;
@@ -93,7 +94,9 @@ mod nft;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
+use crate::eth::nft::nft_structs::Chain;
 use crate::eth::v2_activation::EthActivationV2Error;
+use crate::eth::web3_transport::http_transport::single_response;
 use crate::MyWalletAddress;
 use v2_activation::build_address_and_priv_key_policy;
 
@@ -138,6 +141,11 @@ const ETH_GAS: u64 = 150_000;
 
 /// Lifetime of generated signed message for gui-auth requests
 const GUI_AUTH_SIGNED_MESSAGE_LIFETIME_SEC: i64 = 90;
+
+#[allow(dead_code)]
+const URL_MORALIS: &str = "https://deep-index.moralis.io/api/v2/";
+#[allow(dead_code)]
+const FORMAT_DECIMAL: &str = "format=decimal";
 
 lazy_static! {
     pub static ref SWAP_CONTRACT: Contract = Contract::load(SWAP_CONTRACT_ABI.as_bytes()).unwrap();
@@ -803,7 +811,37 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     })
 }
 
-pub async fn get_nft_list(_ctx: MmArc, _req: NftListReq) -> MmResult<Vec<Nfts>, GetNftInfoError> { todo!() }
+#[allow(dead_code)]
+async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, GetNftInfoError> {
+    let request = Request::builder()
+        .method("GET")
+        .uri(uri.clone())
+        .header(X_API_KEY, api_key)
+        .header("accept", APPLICATION_JSON)
+        .body(Vec::from(""))?;
+
+    let (status, _headers, body) = slurp_req(request).await?;
+    if !status.is_success() {
+        return Err(MmError::new(GetNftInfoError::Transport(format!(
+            "Response !200 from {}: {}, {}",
+            uri,
+            status,
+            binprint(&body, b'.')
+        ))));
+    }
+    let res = single_response(body, &uri)?;
+    Ok(res)
+}
+
+pub async fn get_nft_list(_ctx: MmArc, req: NftListReq) -> MmResult<Vec<Nfts>, GetNftInfoError> {
+    for chain in req.chains {
+        match chain {
+            Chain::Eth => {},
+            Chain::Bnb => {},
+        }
+    }
+    todo!()
+}
 
 pub async fn get_nft_metadata(_ctx: MmArc, _req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> { todo!() }
 
@@ -4562,6 +4600,7 @@ impl From<EthActivationV2Error> for GetEthAddressError {
     fn from(e: EthActivationV2Error) -> Self { GetEthAddressError::EthActivationV2Error(e) }
 }
 
+/// `get_eth_address` returns wallet address for coin with `ETH` protocol type.
 pub async fn get_eth_address(
     ticker: &str,
     conf: &Json,
