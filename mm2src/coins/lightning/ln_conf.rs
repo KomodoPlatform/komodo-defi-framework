@@ -110,6 +110,12 @@ pub struct OurChannelsConfigs {
     pub announced_channel: Option<bool>,
     /// When set, we commit to an upfront shutdown_pubkey at channel open.
     pub commit_upfront_shutdown_pubkey: Option<bool>,
+    /// The minimum balance that the other node has to maintain on their side, at all times.
+    /// This ensures that if our counterparty broadcasts a revoked state, we can punish them by claiming
+    /// at least this value on chain.
+    /// Default value: 1% of channel value.
+    /// Minimum value: 1000 sats
+    pub their_channel_reserve_sats: Option<u32>,
 }
 
 impl OurChannelsConfigs {
@@ -140,6 +146,10 @@ impl OurChannelsConfigs {
 
         if let Some(commit) = config.commit_upfront_shutdown_pubkey {
             self.commit_upfront_shutdown_pubkey = Some(commit);
+        }
+
+        if let Some(reserve) = config.their_channel_reserve_sats {
+            self.their_channel_reserve_sats = Some(reserve);
         }
     }
 }
@@ -174,6 +184,10 @@ impl From<OurChannelsConfigs> for ChannelHandshakeConfig {
 
         if let Some(commit) = config.commit_upfront_shutdown_pubkey {
             channel_handshake_config.commit_upfront_shutdown_pubkey = commit;
+        }
+
+        if let Some(reserve) = config.their_channel_reserve_sats {
+            channel_handshake_config.their_channel_reserve_proportional_millionths = reserve;
         }
 
         channel_handshake_config

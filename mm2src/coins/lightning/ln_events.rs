@@ -23,6 +23,7 @@ use utxo_signer::with_key_pair::sign_tx;
 const TRY_LOOP_INTERVAL: f64 = 60.;
 /// 1 second.
 const CRITICAL_FUTURE_TIMEOUT: f64 = 1.0;
+pub const CHANNEL_READY_LOG: &str = "Handling ChannelReady event for channel with uuid";
 pub const PAYMENT_CLAIMABLE_LOG: &str = "Handling PaymentClaimable event";
 pub const SUCCESSFUL_CLAIM_LOG: &str = "Successfully claimed payment";
 pub const SUCCESSFUL_SEND_LOG: &str = "Successfully sent payment";
@@ -153,7 +154,7 @@ impl EventHandler for LightningEventHandler {
             // Todo
             Event::HTLCIntercepted { .. } => (),
             // Todo
-            Event::ChannelReady { .. } => (),
+            Event::ChannelReady { user_channel_id, .. } => info!("{}: {}", CHANNEL_READY_LOG, Uuid::from_u128(user_channel_id)),
         }
     }
 }
@@ -171,6 +172,8 @@ pub async fn init_abortable_events(platform: Arc<Platform>, db: SqliteLightningD
                 .error_log_passthrough()
             {
                 if let Err(e) = db.add_closing_tx_to_db(uuid, closing_tx_hash).await {
+                    // Todo: Fix the below error that appears for 0 conf channel if it's closed before confirmation.
+                    // todo: coins:ln_events:479] ERROR Unable to update channel f6f35870-8822-46dc-9338-ef064744e89d closing details in DB: ln_platform:520] funding_generated_in_block is Null in DB
                     log::error!("Unable to update channel {} closing details in DB: {}", uuid, e);
                 }
             }
@@ -476,6 +479,8 @@ impl LightningEventHandler {
             if let Err(e) = save_channel_closing_details(db, platform, uuid, reason).await {
                 // This is the case when a channel is closed before funding is broadcasted due to the counterparty disconnecting or other incompatibility issue.
                 if e != SaveChannelClosingError::FundingTxNull.into() {
+                    // Todo: Fix the below error that appears for 0 conf channel if it's closed before confirmation.
+                    // todo: coins:ln_events:479] ERROR Unable to update channel f6f35870-8822-46dc-9338-ef064744e89d closing details in DB: ln_platform:520] funding_generated_in_block is Null in DB
                     error!("Unable to update channel {} closing details in DB: {}", uuid, e);
                 }
             }
@@ -625,6 +630,7 @@ impl LightningEventHandler {
         let channel_manager = self.channel_manager.clone();
         let platform = self.platform.clone();
         let fut = async move {
+            // Todo: should check if uuid exists or not before opening channel to avoid collisions
             let uuid = new_uuid();
             let uuid_u128 = uuid.as_u128();
             let trusted_nodes = trusted_nodes.lock().clone();
