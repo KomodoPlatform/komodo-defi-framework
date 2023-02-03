@@ -1,5 +1,7 @@
-mod indexedb_block_header_storage;
-mod lib;
+mod block_header_table;
+mod indexeddb_block_header_storage;
 
-pub use indexedb_block_header_storage::IDBBlockHeadersStorage;
-pub use lib::BlockHeaderStorageTable;
+#[cfg(target_arch = "wasm32")]
+pub use block_header_table::BlockHeaderStorageTable;
+#[cfg(target_arch = "wasm32")]
+pub use indexeddb_block_header_storage::IDBBlockHeadersStorage;
