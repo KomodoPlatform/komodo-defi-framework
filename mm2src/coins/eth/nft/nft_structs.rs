@@ -11,6 +11,8 @@ pub struct NftListReq {
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct NftMetadataReq {
+    token_address: String,
+    token_id: BigDecimal,
     chain: String,
 }
 
@@ -31,6 +33,7 @@ pub enum ContractType {
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Nft {
+    chain: Chain,
     token_address: String,
     token_id: BigDecimal,
     amount: BigDecimal,
@@ -50,8 +53,7 @@ pub struct Nft {
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Nfts {
-    chain: Chain,
+pub struct NftList {
     count: i64,
     nfts: Vec<Nft>,
 }
@@ -59,7 +61,7 @@ pub struct Nfts {
 #[allow(dead_code)]
 #[derive(Clone, Deserialize)]
 pub struct WithdrawErc721Request {
-    coin: String,
+    pub coin: String,
     to: String,
     token_address: String,
     token_id: BigDecimal,
@@ -69,7 +71,7 @@ pub struct WithdrawErc721Request {
 #[allow(dead_code)]
 #[derive(Clone, Deserialize)]
 pub struct WithdrawErc1155Request {
-    coin: String,
+    pub coin: String,
     to: String,
     token_address: String,
     token_id: BigDecimal,

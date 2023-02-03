@@ -1,3 +1,4 @@
+use crate::eth::GetEthAddressError;
 use common::HttpStatusCode;
 use derive_more::Display;
 use http::StatusCode;
@@ -16,6 +17,7 @@ pub enum GetNftInfoError {
     InvalidResponse(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
+    GetEthAddressError(GetEthAddressError),
 }
 
 /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
@@ -48,13 +50,18 @@ impl From<web3::Error> for GetNftInfoError {
     }
 }
 
+impl From<GetEthAddressError> for GetNftInfoError {
+    fn from(e: GetEthAddressError) -> Self { GetNftInfoError::GetEthAddressError(e) }
+}
+
 impl HttpStatusCode for GetNftInfoError {
     fn status_code(&self) -> StatusCode {
         match self {
             GetNftInfoError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-            GetNftInfoError::Transport(_) | GetNftInfoError::InvalidResponse(_) | GetNftInfoError::Internal(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            GetNftInfoError::Transport(_)
+            | GetNftInfoError::InvalidResponse(_)
+            | GetNftInfoError::Internal(_)
+            | GetNftInfoError::GetEthAddressError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

@@ -48,7 +48,7 @@ use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerato
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use nft::nft_errors::GetNftInfoError;
-use nft::nft_structs::{Nft, NftListReq, NftMetadataReq, NftTransfersReq, Nfts, NftsTransferHistoryByChain,
+use nft::nft_structs::{Nft, NftList, NftListReq, NftMetadataReq, NftTransfersReq, NftsTransferHistoryByChain,
                        TransactionNftDetails, WithdrawErc1155Request, WithdrawErc721Request};
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
@@ -97,7 +97,7 @@ mod web3_transport;
 use crate::eth::nft::nft_structs::Chain;
 use crate::eth::v2_activation::EthActivationV2Error;
 use crate::eth::web3_transport::http_transport::single_response;
-use crate::MyWalletAddress;
+use crate::{lp_coinfind_or_err, MyWalletAddress};
 use v2_activation::build_address_and_priv_key_policy;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -811,80 +811,13 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     })
 }
 
-#[allow(dead_code)]
-#[cfg(not(target_arch = "wasm32"))]
-async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, GetNftInfoError> {
-    use gstuff::binprint;
-    use mm2_net::transport::slurp_req;
-
-    let request = Request::builder()
-        .method("GET")
-        .uri(uri.clone())
-        .header(X_API_KEY, api_key)
-        .header(ACCEPT, HeaderValue::from_static(APPLICATION_JSON))
-        .body(Vec::from(""))?;
-
-    let (status, _headers, body) = slurp_req(request).await?;
-    if !status.is_success() {
-        return Err(MmError::new(GetNftInfoError::Transport(format!(
-            "Response !200 from {}: {}, {}",
-            uri,
-            status,
-            binprint(&body, b'.')
-        ))));
-    }
-    let res = single_response(body, &uri)?;
-    Ok(res)
-}
-
-#[cfg(target_arch = "wasm32")]
-async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, GetNftInfoError> {
-    use mm2_net::wasm_http::FetchRequest;
-    use web3::helpers::to_result_from_output;
-
-    macro_rules! try_or {
-        ($exp:expr, $errtype:ident) => {
-            match $exp {
-                Ok(x) => x,
-                Err(e) => return Err(MmError::new(GetNftInfoError::$errtype(ERRL!("{:?}", e)))),
-            }
-        };
-    }
-
-    let result = FetchRequest::get(uri.as_str())
-        .cors()
-        .body_utf8("")
-        .header(X_API_KEY, api_key)
-        .header(ACCEPT, APPLICATION_JSON)
-        .request_str()
-        .await;
-    let (status_code, response_str) = try_or!(result, Transport);
-    if !status_code.is_success() {
-        return Err(MmError::new(GetNftInfoError::Transport(ERRL!(
-            "!200: {}, {}",
-            status_code,
-            response_str
-        ))));
-    }
-
-    let response: Response = try_or!(serde_json::from_str(&response_str), InvalidResponse);
-    match response {
-        Response::Single(output) => {
-            let res = to_result_from_output(output)?;
-            Ok(res)
-        },
-        Response::Batch(_) => Err(MmError::new(GetNftInfoError::InvalidResponse(
-            "Expected single, got batch.".to_owned(),
-        ))),
-    }
-}
-
-pub async fn get_nft_list(_ctx: MmArc, req: NftListReq) -> MmResult<Vec<Nfts>, GetNftInfoError> {
+pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetNftInfoError> {
     for chain in req.chains {
-        match chain {
-            Chain::Eth => {},
-            Chain::Bnb => {},
-        }
+        let (coin, _chain) = match chain {
+            Chain::Eth => ("ETH", "eth"),
+            Chain::Bnb => ("BNB", "bsc"),
+        };
+        let _my_address = get_eth_address(coin, &ctx).await?;
     }
     todo!()
 }
@@ -898,9 +831,15 @@ pub async fn get_nft_transfers(
     todo!()
 }
 
-pub async fn withdraw_erc721(_ctx: MmArc, _req: WithdrawErc721Request) -> WithdrawNftResult { todo!() }
+pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721Request) -> WithdrawNftResult {
+    let _coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    todo!()
+}
 
-pub async fn withdraw_erc1155(_ctx: MmArc, _req: WithdrawErc1155Request) -> WithdrawNftResult { todo!() }
+pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155Request) -> WithdrawNftResult {
+    let _coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    todo!()
+}
 
 #[derive(Clone)]
 pub struct EthCoin(Arc<EthCoinImpl>);
@@ -4637,6 +4576,7 @@ fn increase_gas_price_by_stage(gas_price: U256, level: &FeeApproxStage) -> U256 
 pub enum GetEthAddressError {
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     EthActivationV2Error(EthActivationV2Error),
+    Internal(String),
 }
 
 impl From<PrivKeyPolicyNotAllowed> for GetEthAddressError {
@@ -4646,20 +4586,89 @@ impl From<EthActivationV2Error> for GetEthAddressError {
     fn from(e: EthActivationV2Error) -> Self { GetEthAddressError::EthActivationV2Error(e) }
 }
 
+impl From<CryptoCtxError> for GetEthAddressError {
+    fn from(e: CryptoCtxError) -> Self { GetEthAddressError::Internal(e.to_string()) }
+}
+
 /// `get_eth_address` returns wallet address for coin with `ETH` protocol type.
-pub async fn get_eth_address(
-    ticker: &str,
-    conf: &Json,
-    priv_key_policy: PrivKeyBuildPolicy,
-) -> MmResult<MyWalletAddress, GetEthAddressError> {
+pub async fn get_eth_address(ticker: &str, ctx: &MmArc) -> MmResult<MyWalletAddress, GetEthAddressError> {
+    let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(ctx)?;
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
     let priv_key_policy = EthPrivKeyBuildPolicy::try_from(priv_key_policy)?;
 
-    let (my_address, ..) = build_address_and_priv_key_policy(conf, priv_key_policy)?;
+    let (my_address, ..) = build_address_and_priv_key_policy(&ctx.conf, priv_key_policy)?;
     let wallet_address = checksum_address(&format!("{:#02x}", my_address));
 
     Ok(MyWalletAddress {
         coin: ticker.to_owned(),
         wallet_address,
     })
+}
+
+#[allow(dead_code)]
+#[cfg(not(target_arch = "wasm32"))]
+async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, GetNftInfoError> {
+    use gstuff::binprint;
+    use mm2_net::transport::slurp_req;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(uri.clone())
+        .header(X_API_KEY, api_key)
+        .header(ACCEPT, HeaderValue::from_static(APPLICATION_JSON))
+        .body(Vec::from(""))?;
+
+    let (status, _headers, body) = slurp_req(request).await?;
+    if !status.is_success() {
+        return Err(MmError::new(GetNftInfoError::Transport(format!(
+            "Response !200 from {}: {}, {}",
+            uri,
+            status,
+            binprint(&body, b'.')
+        ))));
+    }
+    let res = single_response(body, &uri)?;
+    Ok(res)
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, GetNftInfoError> {
+    use mm2_net::wasm_http::FetchRequest;
+    use web3::helpers::to_result_from_output;
+
+    macro_rules! try_or {
+        ($exp:expr, $errtype:ident) => {
+            match $exp {
+                Ok(x) => x,
+                Err(e) => return Err(MmError::new(GetNftInfoError::$errtype(ERRL!("{:?}", e)))),
+            }
+        };
+    }
+
+    let result = FetchRequest::get(uri.as_str())
+        .cors()
+        .body_utf8("")
+        .header(X_API_KEY, api_key)
+        .header(ACCEPT, APPLICATION_JSON)
+        .request_str()
+        .await;
+    let (status_code, response_str) = try_or!(result, Transport);
+    if !status_code.is_success() {
+        return Err(MmError::new(GetNftInfoError::Transport(ERRL!(
+            "!200: {}, {}",
+            status_code,
+            response_str
+        ))));
+    }
+
+    let response: Response = try_or!(serde_json::from_str(&response_str), InvalidResponse);
+    match response {
+        Response::Single(output) => {
+            let res = to_result_from_output(output)?;
+            Ok(res)
+        },
+        Response::Batch(_) => Err(MmError::new(GetNftInfoError::InvalidResponse(
+            "Expected single, got batch.".to_owned(),
+        ))),
+    }
 }

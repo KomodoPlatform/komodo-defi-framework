@@ -3443,12 +3443,10 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
             "mm2 param is not set in coins config, assuming that coin is not supported".to_owned(),
         ));
     }
-
-    let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx)?;
     let protocol: CoinProtocol = json::from_value(coins_en["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&req.coin, &coins_en, priv_key_policy).await?,
+        CoinProtocol::ETH => get_eth_address(&req.coin, &ctx).await?,
         CoinProtocol::UTXO => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(
                 "UTXO protocol is not supported by get_my_address".to_owned(),
