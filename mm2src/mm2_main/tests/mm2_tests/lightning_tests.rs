@@ -790,7 +790,7 @@ fn test_lightning_swaps() {
 // This test also takes a lot of time so it should always be ignored.
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_lightning_swap_mpp() {
+fn test_lightning_taker_swap_mpp() {
     let (mut mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(true);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
@@ -840,7 +840,65 @@ fn test_lightning_swap_mpp() {
         volume,
         price,
     ));
+    block_on(mm_node_1.stop()).unwrap();
+    block_on(mm_node_2.stop()).unwrap();
+}
 
+#[test]
+// This test is ignored because it requires refilling the tBTC and RICK addresses with test coins periodically.
+// This test also takes a lot of time so it should always be ignored.
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_lightning_maker_swap_mpp() {
+    let (mut mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(true);
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+
+    block_on(add_trusted_node(&mm_node_1, &node_2_id));
+
+    block_on(open_channel(
+        &mut mm_node_2,
+        "tBTC-TEST-lightning",
+        &node_1_address,
+        0.0002,
+        true,
+    ));
+    block_on(open_channel(
+        &mut mm_node_2,
+        "tBTC-TEST-lightning",
+        &node_1_address,
+        0.0002,
+        true,
+    ));
+
+    // Enable coins on mm_node_1 side. Print the replies in case we need the "address".
+    log!(
+        "enable_coins (mm_node_1): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_node_1))
+    );
+
+    // Enable coins on mm_node_2 side. Print the replies in case we need the "address".
+    log!(
+        "enable_coins (mm_node_2): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_node_2))
+    );
+
+    let price = 10.;
+    let volume = 0.00025;
+    let uuids = block_on(start_swaps(
+        &mut mm_node_2,
+        &mut mm_node_1,
+        &[("tBTC-TEST-lightning", "RICK")],
+        price,
+        price,
+        volume,
+    ));
+    block_on(wait_for_swaps_finish_and_check_status(
+        &mut mm_node_2,
+        &mut mm_node_1,
+        &uuids,
+        volume,
+        price,
+    ));
     block_on(mm_node_1.stop()).unwrap();
     block_on(mm_node_2.stop()).unwrap();
 }
