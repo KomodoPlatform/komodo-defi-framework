@@ -96,7 +96,6 @@ mod web3_transport;
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
 use crate::eth::nft::nft_structs::Chain;
 use crate::eth::v2_activation::EthActivationV2Error;
-use crate::eth::web3_transport::http_transport::single_response;
 use crate::{lp_coinfind_or_err, MyWalletAddress};
 use v2_activation::build_address_and_priv_key_policy;
 
@@ -4621,27 +4620,23 @@ pub async fn get_eth_address(ticker: &str, ctx: &MmArc) -> MmResult<MyWalletAddr
 #[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_moralis_request(uri: String, api_key: &str) -> MmResult<Json, GetNftInfoError> {
-    use gstuff::binprint;
-    use mm2_net::transport::slurp_req;
+    use mm2_net::transport::slurp_req_body;
 
     let request = Request::builder()
         .method("GET")
         .uri(uri.clone())
         .header(X_API_KEY, api_key)
         .header(ACCEPT, HeaderValue::from_static(APPLICATION_JSON))
-        .body(Vec::from(""))?;
+        .body(hyper::Body::from(""))?;
 
-    let (status, _headers, body) = slurp_req(request).await?;
+    let (status, _header, body) = slurp_req_body(request).await?;
     if !status.is_success() {
         return Err(MmError::new(GetNftInfoError::Transport(format!(
             "Response !200 from {}: {}, {}",
-            uri,
-            status,
-            binprint(&body, b'.')
+            uri, status, body
         ))));
     }
-    let res = single_response(body, &uri)?;
-    Ok(res)
+    Ok(body)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -4674,14 +4669,6 @@ async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, Ge
         ))));
     }
 
-    let response: Response = try_or!(serde_json::from_str(&response_str), InvalidResponse);
-    match response {
-        Response::Single(output) => {
-            let res = to_result_from_output(output)?;
-            Ok(res)
-        },
-        Response::Batch(_) => Err(MmError::new(GetNftInfoError::InvalidResponse(
-            "Expected single, got batch.".to_owned(),
-        ))),
-    }
+    let response: Value = try_or!(serde_json::from_str(&response_str), InvalidResponse);
+    Ok(response)
 }
