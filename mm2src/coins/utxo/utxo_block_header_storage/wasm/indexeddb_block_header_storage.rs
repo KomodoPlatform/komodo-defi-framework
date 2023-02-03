@@ -1,9 +1,9 @@
 use super::BlockHeaderStorageTable;
+
 use async_trait::async_trait;
 use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::cursor_prelude::CollectCursor;
-use mm2_db::indexed_db::cursor_prelude::WithOnly;
+use mm2_db::indexed_db::cursor_prelude::{CollectCursor, WithOnly};
 use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder,
                          InitDbResult, SharedDb};
 use mm2_err_handle::prelude::*;
