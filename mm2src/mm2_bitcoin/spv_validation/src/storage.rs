@@ -21,6 +21,11 @@ pub enum BlockHeaderStorageError {
         coin: String,
         reason: String,
     },
+    #[display(fmt = "Can't init from the storage - coin: {} - reason: {}", coin, reason)]
+    InitializationError {
+        coin: String,
+        reason: String,
+    },
     #[display(fmt = "Can't query from the storage - query: {} - reason: {}", query, reason)]
     QueryError {
         query: String,
@@ -38,11 +43,6 @@ pub enum BlockHeaderStorageError {
         reason
     )]
     CursorError {
-        coin: String,
-        reason: String,
-    },
-    #[display(fmt = "Initialization Error {} - reason: {}", coin, reason)]
-    InitializationError {
         coin: String,
         reason: String,
     },

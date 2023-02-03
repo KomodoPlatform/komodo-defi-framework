@@ -4122,7 +4122,6 @@ fn test_native_display_balances() {
         },
     ];
 
-    #[cfg(not(target_arch = "wasm32"))]
     NativeClient::list_unspent_impl
         .mock_safe(move |_, _, _, _| MockResult::Return(Box::new(futures01::future::ok(unspents.clone()))));
 
