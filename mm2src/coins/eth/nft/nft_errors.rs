@@ -25,17 +25,27 @@ impl From<http::Error> for GetNftInfoError {
 
 impl From<SlurpError> for GetNftInfoError {
     fn from(e: SlurpError) -> Self {
-        let error = e.to_string();
+        let error_str = e.to_string();
         match e {
-            SlurpError::ErrorDeserializing { .. } => GetNftInfoError::InvalidResponse(error),
-            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => GetNftInfoError::Transport(error),
-            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => GetNftInfoError::Internal(error),
+            SlurpError::ErrorDeserializing { .. } => GetNftInfoError::InvalidResponse(error_str),
+            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => GetNftInfoError::Transport(error_str),
+            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => GetNftInfoError::Internal(error_str),
         }
     }
 }
 
 impl From<web3::Error> for GetNftInfoError {
-    fn from(e: Error) -> Self { GetNftInfoError::Transport(e.to_string()) }
+    fn from(e: Error) -> Self {
+        let error_str = e.to_string();
+        match e.kind() {
+            web3::ErrorKind::InvalidResponse(_)
+            | web3::ErrorKind::Decoder(_)
+            | web3::ErrorKind::Msg(_)
+            | web3::ErrorKind::Rpc(_) => GetNftInfoError::InvalidResponse(error_str),
+            web3::ErrorKind::Transport(_) | web3::ErrorKind::Io(_) => GetNftInfoError::Transport(error_str),
+            _ => GetNftInfoError::Internal(error_str),
+        }
+    }
 }
 
 impl HttpStatusCode for GetNftInfoError {

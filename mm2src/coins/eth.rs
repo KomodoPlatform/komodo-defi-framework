@@ -40,11 +40,11 @@ use ethkey::{sign, verify_address};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
 use futures01::Future;
-use gstuff::binprint;
-use http::{Request, StatusCode};
+use http::header::ACCEPT;
+use http::{HeaderValue, Request, StatusCode};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_net::transport::{slurp_req, slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
+use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use nft::nft_errors::GetNftInfoError;
@@ -145,7 +145,7 @@ const GUI_AUTH_SIGNED_MESSAGE_LIFETIME_SEC: i64 = 90;
 #[allow(dead_code)]
 const URL_MORALIS: &str = "https://deep-index.moralis.io/api/v2/";
 #[allow(dead_code)]
-const FORMAT_DECIMAL: &str = "format=decimal";
+const FORMAT_DECIMAL_MORALIS: &str = "format=decimal";
 
 lazy_static! {
     pub static ref SWAP_CONTRACT: Contract = Contract::load(SWAP_CONTRACT_ABI.as_bytes()).unwrap();
@@ -812,12 +812,16 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 }
 
 #[allow(dead_code)]
+#[cfg(not(target_arch = "wasm32"))]
 async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, GetNftInfoError> {
+    use gstuff::binprint;
+    use mm2_net::transport::slurp_req;
+
     let request = Request::builder()
         .method("GET")
         .uri(uri.clone())
         .header(X_API_KEY, api_key)
-        .header("accept", APPLICATION_JSON)
+        .header(ACCEPT, HeaderValue::from_static(APPLICATION_JSON))
         .body(Vec::from(""))?;
 
     let (status, _headers, body) = slurp_req(request).await?;
@@ -831,6 +835,48 @@ async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, Ge
     }
     let res = single_response(body, &uri)?;
     Ok(res)
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, GetNftInfoError> {
+    use mm2_net::wasm_http::FetchRequest;
+    use web3::helpers::to_result_from_output;
+
+    macro_rules! try_or {
+        ($exp:expr, $errtype:ident) => {
+            match $exp {
+                Ok(x) => x,
+                Err(e) => return Err(MmError::new(GetNftInfoError::$errtype(ERRL!("{:?}", e)))),
+            }
+        };
+    }
+
+    let result = FetchRequest::get(uri.as_str())
+        .cors()
+        .body_utf8("")
+        .header(X_API_KEY, api_key)
+        .header(ACCEPT, APPLICATION_JSON)
+        .request_str()
+        .await;
+    let (status_code, response_str) = try_or!(result, Transport);
+    if !status_code.is_success() {
+        return Err(MmError::new(GetNftInfoError::Transport(ERRL!(
+            "!200: {}, {}",
+            status_code,
+            response_str
+        ))));
+    }
+
+    let response: Response = try_or!(serde_json::from_str(&response_str), InvalidResponse);
+    match response {
+        Response::Single(output) => {
+            let res = to_result_from_output(output)?;
+            Ok(res)
+        },
+        Response::Batch(_) => Err(MmError::new(GetNftInfoError::InvalidResponse(
+            "Expected single, got batch.".to_owned(),
+        ))),
+    }
 }
 
 pub async fn get_nft_list(_ctx: MmArc, req: NftListReq) -> MmResult<Vec<Nfts>, GetNftInfoError> {
