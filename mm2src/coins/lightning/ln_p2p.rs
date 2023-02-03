@@ -211,15 +211,17 @@ pub async fn init_peer_manager(
     let node_secret = keys_manager
         .get_node_secret(Recipient::Node)
         .map_to_mm(|_| EnableLightningError::UnsupportedMode("'start_lightning'".into(), "local node".into()))?;
-    let current_time = get_local_duration_since_epoch()
-        .expect("for the foreseeable future this shouldn't happen")
-        .as_secs();
+    let expect_msg = "for the foreseeable future this shouldn't happen";
+    let current_time: u32 = get_local_duration_since_epoch()
+        .expect(expect_msg)
+        .as_secs()
+        .try_into()
+        .expect(expect_msg);
     // IgnoringMessageHandler is used as custom message types (experimental and application-specific messages) is not needed
     let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(
         lightning_msg_handler,
         node_secret,
-        // todo: remove unwrap
-        current_time.try_into().unwrap(),
+        current_time,
         &ephemeral_bytes,
         logger,
         IgnoringMessageHandler {},

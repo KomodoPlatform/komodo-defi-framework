@@ -113,6 +113,8 @@ pub struct ChannelDetailsForRPC {
     pub balance_msat: u64,
     pub outbound_capacity_msat: u64,
     pub inbound_capacity_msat: u64,
+    pub current_confirmations: Option<u32>,
+    pub required_confirmations: Option<u32>,
     // Channel is confirmed onchain, this means that funding_locked messages have been exchanged,
     // the channel is not currently being shut down, and the required confirmation count has been reached.
     pub is_ready: bool,
@@ -136,6 +138,8 @@ impl From<ChannelDetails> for ChannelDetailsForRPC {
             balance_msat: details.balance_msat,
             outbound_capacity_msat: details.outbound_capacity_msat,
             inbound_capacity_msat: details.inbound_capacity_msat,
+            current_confirmations: details.confirmations,
+            required_confirmations: details.confirmations_required,
             is_ready: details.is_channel_ready,
             is_usable: details.is_usable,
             is_public: details.is_public,

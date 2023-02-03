@@ -186,7 +186,7 @@ fn update_payment_status_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
-fn update_received_payment_sql(for_coin: &str) -> Result<String, SqlError> {
+fn update_claimable_payment_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = payments_history_table(for_coin);
     validate_table_name(&table_name)?;
 
@@ -874,15 +874,14 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    // Todo: rename to update_payment_to_claimable_in_db like the event name
-    async fn update_payment_to_received_in_db(
+    async fn update_payment_to_claimable_in_db(
         &self,
         hash: PaymentHash,
         preimage: PaymentPreimage,
     ) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
         let preimage = hex::encode(preimage.0);
-        let status = HTLCStatus::Received.to_string();
+        let status = HTLCStatus::Claimable.to_string();
         let last_updated = (now_ms() / 1000) as i64;
         let payment_hash = hex::encode(hash.0);
 
@@ -891,7 +890,7 @@ impl LightningDB for SqliteLightningDB {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
             let params = params!(preimage, status, last_updated, payment_hash);
-            sql_transaction.execute(&update_received_payment_sql(&for_coin)?, params)?;
+            sql_transaction.execute(&update_claimable_payment_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -1303,9 +1302,9 @@ mod tests {
 
         // Test update_payment_to_received_in_db
         let expected_preimage = PaymentPreimage([5; 32]);
-        block_on(db.update_payment_to_received_in_db(PaymentHash([1; 32]), expected_preimage)).unwrap();
+        block_on(db.update_payment_to_claimable_in_db(PaymentHash([1; 32]), expected_preimage)).unwrap();
         let payment_after_update = block_on(db.get_payment_from_db(PaymentHash([1; 32]))).unwrap().unwrap();
-        assert_eq!(payment_after_update.status, HTLCStatus::Received);
+        assert_eq!(payment_after_update.status, HTLCStatus::Claimable);
         assert_eq!(payment_after_update.preimage.unwrap(), expected_preimage);
 
         // Test update_payment_to_sent_in_db

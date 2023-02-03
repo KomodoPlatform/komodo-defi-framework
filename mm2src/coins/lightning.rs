@@ -429,7 +429,7 @@ impl LightningCoin {
             .payment_hash(Hash::from_inner(payment_hash.0))
             .payment_secret(payment_secret)
             .basic_mpp()
-            // Todo: This should be validated by the other side, right now this is not validated by rust-lightning and the PaymentReceived event doesn't include the final cltv of the payment for us to validate it
+            // Todo: This should be validated by the other side, right now this is not validated by rust-lightning and the PaymentClaimable event doesn't include the final cltv of the payment for us to validate it
             // Todo: This needs a PR opened to rust-lightning, I already contacted them about it and there is an issue opened for it https://github.com/lightningdevkit/rust-lightning/issues/1850
             .min_final_cltv_expiry(min_final_cltv_expiry)
             .expiry_time(core::time::Duration::from_secs(invoice_expiry_delta_secs.into()));
@@ -553,15 +553,15 @@ impl LightningCoin {
         let fut = async move {
             match coin.db.get_payment_from_db(payment_hash).await {
                 Ok(Some(payment)) => {
-                    let amount_received = payment.amt_msat;
+                    let amount_claimable = payment.amt_msat;
                     // Note: locktime doesn't need to be validated since min_final_cltv_expiry should be validated in rust-lightning after fixing the below issue
                     // https://github.com/lightningdevkit/rust-lightning/issues/1850
-                    // Also, PaymentReceived won't be fired if amount_received < the amount requested in the invoice, this check is probably not needed.
+                    // Also, PaymentClaimable won't be fired if amount_claimable < the amount requested in the invoice, this check is probably not needed.
                     // But keeping it just in case any changes happen in rust-lightning
-                    if amount_received != Some(amt_msat as i64) {
+                    if amount_claimable != Some(amt_msat as i64) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Provided payment {} amount {:?} doesn't match required amount {}",
-                            payment_hex, amount_received, amt_msat
+                            payment_hex, amount_claimable, amt_msat
                         )));
                     }
                     Ok(())
@@ -723,7 +723,7 @@ impl SwapOps for LightningCoin {
                     HTLCStatus::Succeeded => Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::LightningPayment(
                         payment_hash,
                     )))),
-                    HTLCStatus::Received => {
+                    HTLCStatus::Claimable => {
                         ERR!(
                             "Payment {} has an invalid status of {} in the db",
                             payment_hex,
@@ -757,7 +757,7 @@ impl SwapOps for LightningCoin {
                     return ERR!("Payment {} should be an inbound payment!", payment_hex);
                 }
                 match payment.status {
-                    HTLCStatus::Pending | HTLCStatus::Received => Ok(None),
+                    HTLCStatus::Pending | HTLCStatus::Claimable => Ok(None),
                     HTLCStatus::Succeeded => Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::LightningPayment(
                         payment_hash,
                     )))),
@@ -1094,7 +1094,7 @@ impl MarketCoinOps for LightningCoin {
                         match payment.payment_type {
                             PaymentType::OutboundPayment { .. } => match payment.status {
                                 HTLCStatus::Pending | HTLCStatus::Succeeded => return Ok(()),
-                                HTLCStatus::Received => {
+                                HTLCStatus::Claimable => {
                                     return ERR!(
                                         "Payment {} has an invalid status of {} in the db",
                                         payment_hex,
@@ -1107,7 +1107,7 @@ impl MarketCoinOps for LightningCoin {
                                 HTLCStatus::Failed => return ERR!("Lightning swap payment {} failed", payment_hex),
                             },
                             PaymentType::InboundPayment => match payment.status {
-                                HTLCStatus::Received | HTLCStatus::Succeeded => return Ok(()),
+                                HTLCStatus::Claimable | HTLCStatus::Succeeded => return Ok(()),
                                 HTLCStatus::Pending => info!("Payment {} not received yet!", payment_hex),
                                 HTLCStatus::Failed => return ERR!("Lightning swap payment {} failed", payment_hex),
                             },
@@ -1152,7 +1152,7 @@ impl MarketCoinOps for LightningCoin {
                 match coin.db.get_payment_from_db(payment_hash).await {
                     Ok(Some(payment)) => match payment.status {
                         HTLCStatus::Pending => (),
-                        HTLCStatus::Received => {
+                        HTLCStatus::Claimable => {
                             return Err(TransactionErr::Plain(ERRL!(
                                 "Payment {} has an invalid status of {} in the db",
                                 payment_hex,

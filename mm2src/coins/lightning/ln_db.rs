@@ -102,8 +102,7 @@ pub struct GetClosedChannelsResult {
 #[serde(rename_all = "lowercase")]
 pub enum HTLCStatus {
     Pending,
-    // Todo: change name to claimable like the event
-    Received,
+    Claimable,
     Succeeded,
     Failed,
 }
@@ -114,7 +113,7 @@ impl FromStr for HTLCStatus {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "Pending" => Ok(HTLCStatus::Pending),
-            "Received" => Ok(HTLCStatus::Received),
+            "Claimable" => Ok(HTLCStatus::Claimable),
             "Succeeded" => Ok(HTLCStatus::Succeeded),
             "Failed" => Ok(HTLCStatus::Failed),
             _ => Err(FromSqlError::InvalidType),
@@ -276,8 +275,8 @@ pub trait LightningDB {
     /// Updates a payment's status in DB by the payment's hash.
     async fn update_payment_status_in_db(&self, hash: PaymentHash, status: &HTLCStatus) -> Result<(), Self::Error>;
 
-    /// Updates a payment's status to received in DB by the payment's hash. Also, adds the payment preimage to the db.
-    async fn update_payment_to_received_in_db(
+    /// Updates a payment's status to claimable in DB by the payment's hash. Also, adds the payment preimage to the db.
+    async fn update_payment_to_claimable_in_db(
         &self,
         hash: PaymentHash,
         preimage: PaymentPreimage,

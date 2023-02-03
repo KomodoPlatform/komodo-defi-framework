@@ -53,7 +53,6 @@ impl EventHandler for LightningEventHandler {
                 counterparty_node_id,
             ),
 
-            // Todo: check how the new fields can be used
             Event::PaymentClaimable {
                 payment_hash,
                 amount_msat,
@@ -151,9 +150,7 @@ impl EventHandler for LightningEventHandler {
             // send_probe is not used for now but may be used in order matching in the future to check if a swap can happen or not.
             Event::ProbeSuccessful { .. } => (),
             Event::ProbeFailed { .. } => (),
-            // Todo
             Event::HTLCIntercepted { .. } => (),
-            // Todo
             Event::ChannelReady { user_channel_id, .. } => info!("{}: {}", CHANNEL_READY_LOG, Uuid::from_u128(user_channel_id)),
         }
     }
@@ -342,21 +339,21 @@ impl LightningEventHandler {
         self.platform.spawner().spawn_with_settings(fut, settings);
     }
 
-    fn handle_payment_claimable(&self, payment_hash: PaymentHash, received_amount: u64, purpose: PaymentPurpose) {
+    fn handle_payment_claimable(&self, payment_hash: PaymentHash, claimable_amount: u64, purpose: PaymentPurpose) {
         info!(
             "{} for payment_hash: {} with amount {}",
             PAYMENT_CLAIMABLE_LOG,
             hex::encode(payment_hash.0),
-            received_amount
+            claimable_amount
         );
         let db = self.db.clone();
         let payment_preimage = match purpose {
             PaymentPurpose::InvoicePayment { payment_preimage, .. } => match payment_preimage {
                 Some(preimage) => {
                     let fut = async move {
-                        db.update_payment_to_received_in_db(payment_hash, preimage)
+                        db.update_payment_to_claimable_in_db(payment_hash, preimage)
                             .await
-                            .error_log_with_msg("Unable to update received payment info in DB!");
+                            .error_log_with_msg("Unable to update claimable payment info in DB!");
                     };
                     let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
                     self.platform.spawner().spawn_with_settings(fut, settings);
@@ -365,9 +362,9 @@ impl LightningEventHandler {
                 // This is a swap related payment since we don't have the preimage yet
                 None => {
                     let amt_msat = Some(
-                        received_amount
+                        claimable_amount
                             .try_into()
-                            .expect("received_amount shouldn't exceed i64::MAX"),
+                            .expect("claimable_amount shouldn't exceed i64::MAX"),
                     );
                     let payment_info = PaymentInfo::new(
                         payment_hash,
@@ -375,7 +372,7 @@ impl LightningEventHandler {
                         "Swap Payment".into(),
                         amt_msat,
                     )
-                    .with_status(HTLCStatus::Received);
+                    .with_status(HTLCStatus::Claimable);
                     let fut = async move {
                         db.add_payment_to_db(&payment_info)
                             .await
@@ -390,14 +387,14 @@ impl LightningEventHandler {
             },
             PaymentPurpose::SpontaneousPayment(preimage) => {
                 let amt_msat = Some(
-                    received_amount
+                    claimable_amount
                         .try_into()
-                        .expect("received_amount shouldn't exceed i64::MAX"),
+                        .expect("claimable_amount shouldn't exceed i64::MAX"),
                 );
                 let payment_info =
                     PaymentInfo::new(payment_hash, PaymentType::InboundPayment, "keysend".into(), amt_msat)
                         .with_preimage(preimage)
-                        .with_status(HTLCStatus::Received);
+                        .with_status(HTLCStatus::Claimable);
                 let fut = async move {
                     db.add_payment_to_db(&payment_info)
                         .await
@@ -414,7 +411,7 @@ impl LightningEventHandler {
 
     fn handle_payment_claimed(&self, payment_hash: PaymentHash, amount_msat: u64) {
         info!(
-            "Received an amount of {} millisatoshis for payment hash {}",
+            "Claimed an amount of {} millisatoshis for payment hash {}",
             amount_msat,
             hex::encode(payment_hash.0)
         );

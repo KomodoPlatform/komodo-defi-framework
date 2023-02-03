@@ -91,7 +91,6 @@ impl From<AbortedError> for EnableLightningError {
 pub enum SaveChannelClosingError {
     #[display(fmt = "DB error: {}", _0)]
     DbError(String),
-    // Todo: search for rpc id everywhere
     #[display(fmt = "Channel with uuid {} not found in DB", _0)]
     ChannelNotFound(Uuid),
     #[display(fmt = "funding_generated_in_block is Null in DB")]
