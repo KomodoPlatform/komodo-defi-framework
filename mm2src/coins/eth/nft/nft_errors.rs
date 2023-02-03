@@ -18,6 +18,8 @@ pub enum GetNftInfoError {
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
     GetEthAddressError(GetEthAddressError),
+    #[display(fmt = "X-API-Key is missing")]
+    ApiKeyError,
 }
 
 /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
@@ -61,7 +63,8 @@ impl HttpStatusCode for GetNftInfoError {
             GetNftInfoError::Transport(_)
             | GetNftInfoError::InvalidResponse(_)
             | GetNftInfoError::Internal(_)
-            | GetNftInfoError::GetEthAddressError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | GetNftInfoError::GetEthAddressError(_)
+            | GetNftInfoError::ApiKeyError => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

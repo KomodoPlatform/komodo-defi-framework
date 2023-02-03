@@ -48,7 +48,7 @@ use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerato
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use nft::nft_errors::GetNftInfoError;
-use nft::nft_structs::{Nft, NftList, NftListReq, NftMetadataReq, NftTransfersReq, NftsTransferHistoryByChain,
+use nft::nft_structs::{Nft, NftListReq, NftMetadataReq, NftTransfersReq, NftsTransferHistoryByChain,
                        TransactionNftDetails, WithdrawErc1155Request, WithdrawErc721Request};
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
@@ -811,15 +811,28 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     })
 }
 
-pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetNftInfoError> {
+pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<Vec<Json>, GetNftInfoError> {
+    let mut res = Vec::new();
     for chain in req.chains {
-        let (coin, _chain) = match chain {
+        let (coin, chain) = match chain {
             Chain::Eth => ("ETH", "eth"),
             Chain::Bnb => ("BNB", "bsc"),
         };
-        let _my_address = get_eth_address(coin, &ctx).await?;
+        let my_address = get_eth_address(coin, &ctx).await?;
+        let uri = format!(
+            "{}{}/nft?&chain={}&{}",
+            URL_MORALIS, my_address.wallet_address, chain, FORMAT_DECIMAL_MORALIS
+        );
+
+        let api_key = match ctx.conf["api_key"].as_str() {
+            Some(api_key) => api_key,
+            None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
+        };
+
+        let response = send_moralis_request(uri, api_key).await?;
+        res.push(response);
     }
-    todo!()
+    Ok(res)
 }
 
 pub async fn get_nft_metadata(_ctx: MmArc, _req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> { todo!() }
@@ -4607,7 +4620,7 @@ pub async fn get_eth_address(ticker: &str, ctx: &MmArc) -> MmResult<MyWalletAddr
 
 #[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]
-async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, GetNftInfoError> {
+async fn send_moralis_request(uri: String, api_key: &str) -> MmResult<Json, GetNftInfoError> {
     use gstuff::binprint;
     use mm2_net::transport::slurp_req;
 
