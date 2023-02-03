@@ -1,13 +1,18 @@
 use super::BlockHeaderStorageTable;
 use async_trait::async_trait;
 use chain::BlockHeader;
+use common::log::info;
 use mm2_core::mm_ctx::MmArc;
+use mm2_db::indexed_db::cursor_prelude::CollectCursor;
+use mm2_db::indexed_db::cursor_prelude::WithBound;
+use mm2_db::indexed_db::cursor_prelude::WithOnly;
 use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder,
                          InitDbResult, SharedDb};
 use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
+use spv_validation::work::MAX_BITS_BTC;
 use std::collections::HashMap;
 
 const DB_NAME: &str = "block_headers_cache";
@@ -46,7 +51,6 @@ pub struct IDBBlockHeadersStorage {
 
 impl IDBBlockHeadersStorage {
     pub fn new(ctx: &MmArc, ticker: String) -> Self {
-        println!("INTIALIZING IDDBLOCK HEADER STORAGE");
         Self {
             db: ConstructibleDb::new_shared(ctx),
             ticker,
@@ -57,10 +61,7 @@ impl IDBBlockHeadersStorage {
         self.db
             .get_or_initialize()
             .await
-            .mm_err(|err| BlockHeaderStorageError::InitializationError {
-                coin: self.ticker.to_string(),
-                reason: err.to_string(),
-            })
+            .mm_err(|err| BlockHeaderStorageError::init_err(&self.ticker, err.to_string()))
     }
 }
 
@@ -78,25 +79,16 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         let locked_db = self
             .lock_db()
             .await
-            .map_err(|err| BlockHeaderStorageError::InitializationError {
-                coin: ticker.to_string(),
-                reason: err.to_string(),
-            })?;
-        let db_transaction =
-            locked_db
-                .get_inner()
-                .transaction()
-                .await
-                .map_err(|err| BlockHeaderStorageError::InitializationError {
-                    coin: ticker.to_string(),
-                    reason: err.to_string(),
-                })?;
-        let block_headers_db = db_transaction.table::<BlockHeaderStorageTable>().await.map_err(|err| {
-            BlockHeaderStorageError::InitializationError {
-                coin: ticker.to_string(),
-                reason: err.to_string(),
-            }
-        })?;
+            .map_err(|err| BlockHeaderStorageError::DBLockError(err.to_string()))?;
+        let db_transaction = locked_db
+            .get_inner()
+            .transaction()
+            .await
+            .map_err(|err| BlockHeaderStorageError::TransactionError(err.to_string()))?;
+        let block_headers_db = db_transaction
+            .table::<BlockHeaderStorageTable>()
+            .await
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         for (height, header) in headers {
             let hash = header.hash().reversed().to_string();
@@ -111,7 +103,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             };
 
             block_headers_db.add_item(&headers_to_store).await.map_err(|err| {
-                BlockHeaderStorageError::InitializationError {
+                BlockHeaderStorageError::AddToStorageError {
                     coin: ticker.clone(),
                     reason: err.to_string(),
                 }
@@ -147,41 +139,89 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         let locked_db = self
             .lock_db()
             .await
-            .map_err(|err| BlockHeaderStorageError::InitializationError {
-                coin: ticker.to_string(),
-                reason: err.to_string(),
-            })?;
-        let db_transaction =
-            locked_db
-                .get_inner()
-                .transaction()
-                .await
-                .map_err(|err| BlockHeaderStorageError::InitializationError {
-                    coin: ticker.to_string(),
-                    reason: err.to_string(),
-                })?;
-        let block_headers_db = db_transaction.table::<BlockHeaderStorageTable>().await.map_err(|err| {
-            BlockHeaderStorageError::InitializationError {
-                coin: ticker.to_string(),
-                reason: err.to_string(),
-            }
-        })?;
+            .map_err(|err| BlockHeaderStorageError::DBLockError(err.to_string()))?;
+        let db_transaction = locked_db
+            .get_inner()
+            .transaction()
+            .await
+            .map_err(|err| BlockHeaderStorageError::TransactionError(err.to_string()))?;
+        let block_headers_db = db_transaction
+            .table::<BlockHeaderStorageTable>()
+            .await
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         Ok(block_headers_db
             .get_item_by_unique_index("height", height)
             .await
-            .map_err(|err| BlockHeaderStorageError::InitializationError {
-                coin: ticker.to_string(),
-                reason: err.to_string(),
-            })?
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .map(|raw| raw.1.raw_header))
     }
 
     async fn get_last_block_height(&self) -> Result<u64, BlockHeaderStorageError> {
-        Err(BlockHeaderStorageError::Internal("Not implemented".into()))
+        let ticker = self.ticker.clone();
+        let locked_db = self
+            .lock_db()
+            .await
+            .map_err(|err| BlockHeaderStorageError::DBLockError(err.to_string()))?;
+        let db_transaction = locked_db
+            .get_inner()
+            .transaction()
+            .await
+            .map_err(|err| BlockHeaderStorageError::TransactionError(err.to_string()))?;
+        let block_headers_db = db_transaction
+            .table::<BlockHeaderStorageTable>()
+            .await
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
+
+        let res = block_headers_db
+            .open_cursor("ticker")
+            .await
+            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .only("ticker", ticker.clone())
+            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .collect()
+            .await
+            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .into_iter()
+            .map(|(_item_id, item)| item.height)
+            .collect::<Vec<_>>();
+
+        if res.len() >= 1 {
+            return Ok(res[0]);
+        }
+
+        Ok(0)
     }
 
     async fn get_last_block_header_with_non_max_bits(&self) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+        let ticker = self.ticker.clone();
+        let locked_db = self
+            .lock_db()
+            .await
+            .map_err(|err| BlockHeaderStorageError::DBLockError(err.to_string()))?;
+        let db_transaction = locked_db
+            .get_inner()
+            .transaction()
+            .await
+            .map_err(|err| BlockHeaderStorageError::TransactionError(err.to_string()))?;
+        let block_headers_db = db_transaction
+            .table::<BlockHeaderStorageTable>()
+            .await
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
+
+        let res = block_headers_db
+            .open_cursor("bits")
+            .await
+            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .only("ticker", ticker.clone())
+            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .bound("bits", MAX_BITS_BTC, u32::MAX)
+            .collect()
+            .await
+            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?;
+
+        info!("HEY {:?}", res);
+
         Ok(None)
     }
 
@@ -190,33 +230,21 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         let locked_db = self
             .lock_db()
             .await
-            .map_err(|err| BlockHeaderStorageError::InitializationError {
-                coin: ticker.to_string(),
-                reason: err.to_string(),
-            })?;
-        let db_transaction =
-            locked_db
-                .get_inner()
-                .transaction()
-                .await
-                .map_err(|err| BlockHeaderStorageError::InitializationError {
-                    coin: ticker.to_string(),
-                    reason: err.to_string(),
-                })?;
-        let block_headers_db = db_transaction.table::<BlockHeaderStorageTable>().await.map_err(|err| {
-            BlockHeaderStorageError::InitializationError {
-                coin: ticker.to_string(),
-                reason: err.to_string(),
-            }
-        })?;
+            .map_err(|err| BlockHeaderStorageError::DBLockError(err.to_string()))?;
+        let db_transaction = locked_db
+            .get_inner()
+            .transaction()
+            .await
+            .map_err(|err| BlockHeaderStorageError::TransactionError(err.to_string()))?;
+        let block_headers_db = db_transaction
+            .table::<BlockHeaderStorageTable>()
+            .await
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         Ok(block_headers_db
             .get_item_by_unique_index("hash", hash.to_string())
             .await
-            .map_err(|err| BlockHeaderStorageError::InitializationError {
-                coin: ticker.to_string(),
-                reason: err.to_string(),
-            })?
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .map(|raw| raw.1.height as i64))
     }
 }
@@ -228,6 +256,7 @@ mod tests {
     use super::*;
     use chain::BlockHeaderBits::Compact;
     use chain::BlockHeaderNonce::U32;
+    use common::log::info;
     // use common::log::info;
     use common::log::wasm_log::register_wasm_log;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
@@ -254,8 +283,12 @@ mod tests {
         assert!(initialized);
 
         let mut headers = HashMap::with_capacity(1);
-        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
-        headers.insert(201595, block_header);
+        let header1: BlockHeader =
+            "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        let header2: BlockHeader =
+            "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
+        headers.insert(201595, header1);
+        headers.insert(520481, header2);
         let add_header = storage.add_block_headers_to_storage(headers).await;
 
         assert!(add_header.is_ok());
@@ -336,6 +369,78 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
+    async fn test_get_last_block_height() {
+        let ctx = mm_ctx_with_custom_db();
+        let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
+        register_wasm_log();
+
+        let initialized = storage.is_initialized_for().await.unwrap();
+        assert!(initialized);
+
+        // repetitive init must not fail
+        storage.init().await.unwrap();
+
+        let initialized = storage.is_initialized_for().await.unwrap();
+        assert!(initialized);
+
+        let mut headers = HashMap::with_capacity(1);
+        // This block has max difficulty
+        // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
+        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        headers.insert(201595, block_header);
+
+        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
+        let expected_block_header: BlockHeader = "02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into();
+        headers.insert(201594, expected_block_header.clone());
+
+        let add_header = storage.add_block_headers_to_storage(headers.clone()).await;
+        assert!(add_header.is_ok());
+        headers.clear();
+
+        // This block has max difficulty
+        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
+        let block_header: BlockHeader = "020000001f38c8e30b30af912fbd4c3e781506713cfb43e73dff6250348e060000000000afa8f3eede276ccb4c4ee649ad9823fc181632f262848ca330733e7e7e541beb9be51353ffff001d00a63037".into();
+
+        headers.insert(201593, block_header);
+        let add_header = storage.add_block_headers_to_storage(headers.clone()).await;
+        assert!(add_header.is_ok());
+        headers.clear();
+
+        let last_height = storage.get_last_block_height().await.unwrap();
+        assert_eq!(201595, last_height);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_get_last_block_header_with_non_max_bits() {
+        let ctx = mm_ctx_with_custom_db();
+        let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
+        register_wasm_log();
+
+        let initialized = storage.is_initialized_for().await.unwrap();
+        assert!(initialized);
+
+        // repetitive init must not fail
+        storage.init().await.unwrap();
+
+        let initialized = storage.is_initialized_for().await.unwrap();
+        assert!(initialized);
+
+        let mut headers = HashMap::with_capacity(1);
+        let header1: BlockHeader =
+                "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        let header2: BlockHeader =
+                "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
+        headers.insert(201595, header1);
+        headers.insert(520481, header2);
+        let add_header = storage.add_block_headers_to_storage(headers).await;
+
+        assert!(add_header.is_ok());
+
+        let raw_header = storage.get_last_block_header_with_non_max_bits().await.unwrap();
+        info!("HELLO {:?}", raw_header);
+    }
+
+    #[wasm_bindgen_test]
     async fn test_get_block_height_by_hash() {
         let ctx = mm_ctx_with_custom_db();
         let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
@@ -362,4 +467,12 @@ mod tests {
             .unwrap();
         assert_eq!(201595, raw_header.unwrap())
     }
+
+    #[wasm_bindgen_test]
+    async fn hello_world3() { register_wasm_log(); }
 }
+
+// wasm-pack test --firefox mm2src/mm2_main --firefox --headless
+// cargo test --target wasm32-unknown-unknown --firefox --headless
+// cargo test --target wasm32-unknown-unknown --packae mm2_main --lib
+// utxo::utxo_block_header_storage::wasm::indexedb_block_header_storage

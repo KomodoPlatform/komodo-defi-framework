@@ -26,17 +26,58 @@ pub enum BlockHeaderStorageError {
         query: String,
         reason: String,
     },
-    #[display(fmt = "Can't init from the storage - coin: {} - reason: {}", coin, reason)]
-    InitializationError {
-        coin: String,
-        reason: String,
-    },
     #[display(fmt = "Can't decode/deserialize from storage for {} - reason: {}", coin, reason)]
     DecodeError {
         coin: String,
         reason: String,
     },
+    DBLockError(String),
+    #[display(
+        fmt = "Error while performing Indexed DB cursor operation for {} - reason: {}",
+        coin,
+        reason
+    )]
+    CursorError {
+        coin: String,
+        reason: String,
+    },
+    #[display(fmt = "Initialization Error {} - reason: {}", coin, reason)]
+    InitializationError {
+        coin: String,
+        reason: String,
+    },
     Internal(String),
+    TransactionError(String),
+}
+
+impl BlockHeaderStorageError {
+    pub fn init_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::InitializationError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn table_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::CantRetrieveTableError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn get_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::GetFromStorageError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn cursor_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::CursorError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
 }
 
 #[async_trait]
