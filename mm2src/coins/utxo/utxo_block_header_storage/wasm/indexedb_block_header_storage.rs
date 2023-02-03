@@ -173,7 +173,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
-        let res = block_headers_db
+        let mut res = block_headers_db
             .open_cursor("ticker")
             .await
             .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
@@ -185,9 +185,11 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .into_iter()
             .map(|(_item_id, item)| item.height)
             .collect::<Vec<_>>();
+        res.sort();
 
-        if res.len() >= 1 {
-            return Ok(res[0]);
+        let len = res.len();
+        if len >= 1 {
+            return Ok(res[len - 1]);
         }
 
         Ok(0)
@@ -210,7 +212,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         let res = block_headers_db
-            .open_cursor("bits")
+            .open_cursor("ticker")
             .await
             .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
             .only("ticker", ticker.clone())
@@ -218,7 +220,10 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .bound("bits", MAX_BITS_BTC, u32::MAX)
             .collect()
             .await
-            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .into_iter()
+            .map(|(_item_id, item)| item.height)
+            .collect::<Vec<_>>();
 
         info!("HEY {:?}", res);
 
@@ -265,7 +270,7 @@ mod tests {
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
-    async fn hello_world() { register_wasm_log(); }
+    async fn hello_worl4d() { register_wasm_log(); }
 
     #[wasm_bindgen_test]
     async fn test_add_block_headers() {
@@ -393,10 +398,6 @@ mod tests {
         let expected_block_header: BlockHeader = "02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into();
         headers.insert(201594, expected_block_header.clone());
 
-        let add_header = storage.add_block_headers_to_storage(headers.clone()).await;
-        assert!(add_header.is_ok());
-        headers.clear();
-
         // This block has max difficulty
         // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
         let block_header: BlockHeader = "020000001f38c8e30b30af912fbd4c3e781506713cfb43e73dff6250348e060000000000afa8f3eede276ccb4c4ee649ad9823fc181632f262848ca330733e7e7e541beb9be51353ffff001d00a63037".into();
@@ -404,7 +405,6 @@ mod tests {
         headers.insert(201593, block_header);
         let add_header = storage.add_block_headers_to_storage(headers.clone()).await;
         assert!(add_header.is_ok());
-        headers.clear();
 
         let last_height = storage.get_last_block_height().await.unwrap();
         assert_eq!(201595, last_height);
@@ -467,9 +467,6 @@ mod tests {
             .unwrap();
         assert_eq!(201595, raw_header.unwrap())
     }
-
-    #[wasm_bindgen_test]
-    async fn hello_world3() { register_wasm_log(); }
 }
 
 // wasm-pack test --firefox mm2src/mm2_main --firefox --headless
