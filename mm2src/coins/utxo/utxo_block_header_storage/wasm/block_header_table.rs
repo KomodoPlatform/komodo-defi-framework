@@ -1,7 +1,5 @@
 use mm2_db::indexed_db::{DbUpgrader, OnUpgradeResult, TableSignature};
 
-pub const HEIGHT_TICKER_INDEX: &str = "block_height_ticker_index";
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BlockHeaderStorageTable {
     pub height: u64,
@@ -11,6 +9,11 @@ pub struct BlockHeaderStorageTable {
     pub ticker: String,
 }
 
+impl BlockHeaderStorageTable {
+    pub const HEIGHT_TICKER_INDEX: &str = "block_height_ticker_index";
+    pub const HASH_TICKER_INDEX: &str = "block_hash_ticker_index";
+}
+
 impl TableSignature for BlockHeaderStorageTable {
     fn table_name() -> &'static str { "block_header_storage_cache_table" }
 
@@ -18,12 +21,10 @@ impl TableSignature for BlockHeaderStorageTable {
         match (old_version, new_version) {
             (0, 1) => {
                 let table = upgrader.create_table(Self::table_name())?;
-                table.create_multi_index(HEIGHT_TICKER_INDEX, &["height", "ticker"], true)?;
-                table.create_index("height", false)?;
-                table.create_index("bits", false)?;
+                table.create_multi_index(Self::HEIGHT_TICKER_INDEX, &["height", "ticker"], true)?;
+                table.create_multi_index(Self::HASH_TICKER_INDEX, &["hash", "ticker"], true)?;
                 table.create_index("hash", true)?;
                 table.create_index("raw_header", true)?;
-                table.create_index("ticker", false)?;
             },
             _ => (),
         }

@@ -1,4 +1,4 @@
-use super::{BlockHeaderStorageTable, HEIGHT_TICKER_INDEX};
+use super::BlockHeaderStorageTable;
 
 use async_trait::async_trait;
 use chain::BlockHeader;
@@ -99,7 +99,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
                 hash,
                 raw_header,
             };
-            let index_keys = MultiIndex::new(HEIGHT_TICKER_INDEX)
+            let index_keys = MultiIndex::new(BlockHeaderStorageTable::HEIGHT_TICKER_INDEX)
                 .with_value(&height)
                 .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
                 .with_value(&ticker)
@@ -153,7 +153,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .table::<BlockHeaderStorageTable>()
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
-        let index_keys = MultiIndex::new(HEIGHT_TICKER_INDEX)
+        let index_keys = MultiIndex::new(BlockHeaderStorageTable::HEIGHT_TICKER_INDEX)
             .with_value(&height)
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
             .with_value(&ticker)
@@ -272,9 +272,14 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .table::<BlockHeaderStorageTable>()
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
+        let index_keys = MultiIndex::new(BlockHeaderStorageTable::HASH_TICKER_INDEX)
+            .with_value(&hash.to_string())
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
+            .with_value(&ticker)
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         Ok(block_headers_db
-            .get_item_by_unique_index("hash", hash.to_string())
+            .get_item_by_unique_multi_index(index_keys)
             .await
             .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .map(|raw| raw.1.height as i64))
