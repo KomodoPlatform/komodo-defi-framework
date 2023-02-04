@@ -21,14 +21,14 @@ pub enum BlockHeaderStorageError {
         coin: String,
         reason: String,
     },
-    #[display(fmt = "Can't init from the storage - coin: {} - reason: {}", coin, reason)]
-    InitializationError {
-        coin: String,
-        reason: String,
-    },
     #[display(fmt = "Can't query from the storage - query: {} - reason: {}", query, reason)]
     QueryError {
         query: String,
+        reason: String,
+    },
+    #[display(fmt = "Can't init from the storage - coin: {} - reason: {}", coin, reason)]
+    InitializationError {
+        coin: String,
         reason: String,
     },
     #[display(fmt = "Can't decode/deserialize from storage for {} - reason: {}", coin, reason)]

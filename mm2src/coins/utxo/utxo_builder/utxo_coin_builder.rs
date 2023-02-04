@@ -20,6 +20,7 @@ use common::small_rng;
 use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, Secp256k1Secret,
              StandardHDPathError, StandardHDPathToCoin};
 use derive_more::Display;
+use futures::channel::mpsc::channel;
 use futures::channel::mpsc::{unbounded, Receiver as AsyncReceiver, UnboundedReceiver};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -39,7 +40,6 @@ cfg_native! {
     use crate::utxo::coin_daemon_data_dir;
     use crate::utxo::rpc_clients::{ConcurrentRequestMap, NativeClient, NativeClientImpl};
     use dirs::home_dir;
-    use futures::channel::mpsc::channel;
     use std::path::{Path, PathBuf};
 }
 

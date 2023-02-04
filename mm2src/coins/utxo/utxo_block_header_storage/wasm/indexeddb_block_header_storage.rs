@@ -1,11 +1,11 @@
-use super::BlockHeaderStorageTable;
+use super::{BlockHeaderStorageTable, HEIGHT_TICKER_INDEX};
 
 use async_trait::async_trait;
 use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::cursor_prelude::{CollectCursor, WithOnly};
 use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, SharedDb};
+                         InitDbResult, MultiIndex, SharedDb};
 use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use serialization::Reader;
@@ -99,13 +99,19 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
                 hash,
                 raw_header,
             };
+            let index_keys = MultiIndex::new(HEIGHT_TICKER_INDEX)
+                .with_value(&height)
+                .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
+                .with_value(&ticker)
+                .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
-            block_headers_db.add_item(&headers_to_store).await.map_err(|err| {
-                BlockHeaderStorageError::AddToStorageError {
+            block_headers_db
+                .add_item_or_ignore_by_unique_multi_index(index_keys, &headers_to_store)
+                .await
+                .map_err(|err| BlockHeaderStorageError::AddToStorageError {
                     coin: ticker.clone(),
                     reason: err.to_string(),
-                }
-            })?;
+                })?;
         }
         Ok(())
     }
@@ -147,9 +153,14 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .table::<BlockHeaderStorageTable>()
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
+        let index_keys = MultiIndex::new(HEIGHT_TICKER_INDEX)
+            .with_value(&height)
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
+            .with_value(&ticker)
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         Ok(block_headers_db
-            .get_item_by_unique_index("height", height)
+            .get_item_by_unique_multi_index(index_keys)
             .await
             .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .map(|raw| raw.1.raw_header))
@@ -171,7 +182,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
-        // Todo use open_cursor with direction to optimze this process.
+        // Todo: use open_cursor with direction to optimze this process.
         let mut res = block_headers_db
             .open_cursor("ticker")
             .await
@@ -209,7 +220,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
-        // Todo use open_cursor with direction to optimze this process.
+        // Todo: use open_cursor with direction to optimze this process.
         let mut res = block_headers_db
             .open_cursor("ticker")
             .await
