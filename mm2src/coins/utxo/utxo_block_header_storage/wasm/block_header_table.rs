@@ -25,6 +25,7 @@ impl TableSignature for BlockHeaderStorageTable {
                 table.create_multi_index(Self::HASH_TICKER_INDEX, &["hash", "ticker"], true)?;
                 table.create_index("hash", true)?;
                 table.create_index("raw_header", true)?;
+                table.create_index("ticker", false)?;
             },
             _ => (),
         }

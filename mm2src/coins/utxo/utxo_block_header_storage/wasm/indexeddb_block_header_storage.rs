@@ -291,6 +291,7 @@ mod tests {
     use super::IDBBlockHeadersStorage;
     use super::*;
     use chain::BlockHeaderBits;
+    use common::log::info;
     use common::log::wasm_log::register_wasm_log;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
     use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
@@ -406,6 +407,7 @@ mod tests {
 
         headers.insert(201593, block_header);
         let add_headers = storage.add_block_headers_to_storage(headers.clone()).await;
+        info!("{add_headers:?}");
         assert!(add_headers.is_ok());
 
         let last_height = storage.get_last_block_height().await.unwrap();
@@ -482,3 +484,5 @@ mod tests {
         assert_eq!(201595, raw_header.unwrap())
     }
 }
+
+//cargo test --target wasm32-unknown-unknown --package coins --lib utxo::utxo_block_header_storage::wasm::indexeddb_block_header_storage

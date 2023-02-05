@@ -582,10 +582,12 @@ async fn test_get_history_for_addresses_impl() {
     assert_get_history_result(result, Vec::new(), 4, 4);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod native_tests {
     use super::wallet_id_for_test;
     use crate::my_tx_history_v2::TxHistoryStorage;
+    #[cfg(not(target_arch = "wasm32"))]
     use crate::tx_history_storage::sql_tx_history_storage_v2::SqliteTxHistoryStorage;
     use common::block_on;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
