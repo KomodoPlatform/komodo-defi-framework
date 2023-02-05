@@ -662,6 +662,7 @@ impl TakerSwapEvent {
             TakerSwapEvent::Started(_)
                 | TakerSwapEvent::Negotiated(_)
                 | TakerSwapEvent::TakerFeeSent(_)
+                | TakerSwapEvent::TakerPaymentInstructionsReceived(_)
                 | TakerSwapEvent::MakerPaymentReceived(_)
                 | TakerSwapEvent::MakerPaymentWaitConfirmStarted
                 | TakerSwapEvent::WatcherMessageSent(_, _)
