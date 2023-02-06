@@ -1,5 +1,5 @@
 use super::ibc::transfer_v1::MsgTransfer;
-use super::rpc::IBCWithdrawRequest;
+use super::rpc::ibc::IBCWithdrawRequest;
 /// Module containing implementation for Tendermint Tokens. They include native assets + IBC
 use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
             TX_DEFAULT_MEMO};

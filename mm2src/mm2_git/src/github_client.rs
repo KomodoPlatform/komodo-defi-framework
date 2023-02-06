@@ -106,7 +106,7 @@ mod tests {
     struct ChannelTag {
         status: String,
         preferred: bool,
-        dex: String,
+        dex: Option<String>,
     }
 
     #[test]

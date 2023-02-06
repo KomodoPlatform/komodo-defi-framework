@@ -221,8 +221,10 @@ use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalan
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{rpc::IBCWithdrawRequest, CosmosTransaction, CustomTendermintMsgType, TendermintCoin,
-                 TendermintFeeDetails, TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo};
+use tendermint::rpc::ibc::{IBCChainRegistriesResult, IBCTransferChannelsRequest, IBCTransferChannelsRequestError,
+                           IBCTransferChannelsResult, IBCWithdrawRequest};
+use tendermint::{CosmosTransaction, CustomTendermintMsgType, TendermintCoin, TendermintFeeDetails,
+                 TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -2979,6 +2981,25 @@ pub async fn ibc_withdraw(ctx: MmArc, req: IBCWithdrawRequest) -> WithdrawResult
                 coin.platform_ticker()
             ),
         }),
+    }
+}
+
+#[inline(always)]
+pub async fn ibc_chains(_ctx: MmArc, _req: serde_json::Value) -> IBCChainRegistriesResult {
+    tendermint::get_ibc_chain_list().await
+}
+
+pub async fn ibc_transfer_channels(ctx: MmArc, req: IBCTransferChannelsRequest) -> IBCTransferChannelsResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin)
+        .await
+        .map_err(|_| IBCTransferChannelsRequestError::NoSuchCoin(req.coin.clone()))?;
+
+    match coin {
+        MmCoinEnum::Tendermint(coin) => coin.get_ibc_transfer_channels(req).await,
+        MmCoinEnum::TendermintToken(token) => token.platform_coin.get_ibc_transfer_channels(req).await,
+        coin => MmError::err(IBCTransferChannelsRequestError::UnsupportedCoin(
+            coin.platform_ticker().to_owned(),
+        )),
     }
 }
 

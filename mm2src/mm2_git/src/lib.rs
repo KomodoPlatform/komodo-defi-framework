@@ -9,6 +9,7 @@ use mm2_err_handle::prelude::MmError;
 use serde::{de::DeserializeOwned, Deserialize};
 
 pub mod github_client;
+pub use github_client::*;
 
 pub const GITHUB_API_URI: &str = "https://api.github.com";
 

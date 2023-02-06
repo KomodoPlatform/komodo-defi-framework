@@ -2,8 +2,14 @@ use super::ibc::transfer_v1::MsgTransfer;
 use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
                         HTLC_STATE_REFUNDED};
 use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
+use super::rpc::ibc::{IBCChainRegistriesResult, IBCChainsRequestError, IBCTransferChannelsRequest,
+                      IBCTransferChannelsResult, IBCWithdrawRequest};
 use super::rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
+use crate::tendermint::rpc::ibc::{IBCChainRegistriesResponse, IBCTransferChannel, IBCTransferChannelTag,
+                                  IBCTransferChannelsRequestError, IBCTransferChannelsResponse, CHAIN_REGISTRY_BRANCH,
+                                  CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
@@ -52,6 +58,7 @@ use itertools::Itertools;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
 use mm2_number::MmNumber;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
@@ -122,6 +129,7 @@ pub struct TendermintProtocolInfo {
     pub account_prefix: String,
     chain_id: String,
     gas_price: Option<f64>,
+    chain_registry_name: Option<String>,
 }
 
 #[derive(Clone)]
@@ -219,6 +227,7 @@ pub struct TendermintCoinImpl {
     pub(super) abortable_system: AbortableQueue,
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
+    chain_registry_name: Option<String>,
 }
 
 #[derive(Clone)]
@@ -501,6 +510,7 @@ impl TendermintCoin {
             abortable_system,
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
+            chain_registry_name: protocol_info.chain_registry_name,
         })))
     }
 
@@ -645,6 +655,88 @@ impl TendermintCoin {
             })
         };
         Box::new(fut.boxed().compat())
+    }
+
+    pub async fn get_ibc_transfer_channels(&self, req: IBCTransferChannelsRequest) -> IBCTransferChannelsResult {
+        #[derive(Deserialize)]
+        struct ChainRegistry {
+            channels: Vec<IbcChannel>,
+        }
+
+        #[derive(Deserialize)]
+        struct ChannelInfo {
+            channel_id: String,
+            port_id: String,
+        }
+
+        #[derive(Deserialize)]
+        struct IbcChannel {
+            chain_1: ChannelInfo,
+            #[allow(dead_code)]
+            chain_2: ChannelInfo,
+            ordering: String,
+            version: String,
+            tags: Option<IBCTransferChannelTag>,
+        }
+
+        let src_chain_registry_name = self.chain_registry_name.as_ref().or_mm_err(|| {
+            IBCTransferChannelsRequestError::InternalError(format!(
+                "`chain_registry_name` is not set for '{}'",
+                self.platform_ticker()
+            ))
+        })?;
+
+        let source_filename = format!(
+            "{}-{}.json",
+            src_chain_registry_name, req.destination_chain_registry_name
+        );
+
+        let git_controller: GitController<GithubClient> = GitController::new(GITHUB_API_URI);
+
+        let metadata_list = git_controller
+            .client
+            .get_file_metadata_list(
+                CHAIN_REGISTRY_REPO_OWNER,
+                CHAIN_REGISTRY_REPO_NAME,
+                CHAIN_REGISTRY_BRANCH,
+                CHAIN_REGISTRY_IBC_DIR_NAME,
+            )
+            .await
+            .map_err(|e| IBCTransferChannelsRequestError::Transport(format!("{:?}", e)))?;
+
+        let source_channel_file = metadata_list
+            .iter()
+            .find(|metadata| metadata.name == source_filename)
+            .or_mm_err(|| IBCTransferChannelsRequestError::RegistrySourceCouldNotFound(source_filename))?;
+
+        let mut registry_object = git_controller
+            .client
+            .deserialize_json_source::<ChainRegistry>(source_channel_file.to_owned())
+            .await
+            .map_err(|e| IBCTransferChannelsRequestError::Transport(format!("{:?}", e)))?;
+
+        registry_object
+            .channels
+            .retain(|ch| ch.chain_1.port_id == *IBC_OUT_SOURCE_PORT);
+
+        let result: Vec<IBCTransferChannel> = registry_object
+            .channels
+            .iter()
+            .map(|ch| IBCTransferChannel {
+                channel_id: ch.chain_1.channel_id.clone(),
+                ordering: ch.ordering.clone(),
+                version: ch.version.clone(),
+                tags: ch.tags.clone().map(|t| IBCTransferChannelTag {
+                    status: t.status,
+                    preferred: t.preferred,
+                    dex: t.dex,
+                }),
+            })
+            .collect();
+
+        Ok(IBCTransferChannelsResponse {
+            ibc_transfer_channels: result,
+        })
     }
 
     #[inline(always)]
@@ -1563,6 +1655,46 @@ fn clients_from_urls(rpc_urls: &[String]) -> MmResult<Vec<HttpClient>, Tendermin
     Ok(clients)
 }
 
+pub async fn get_ibc_chain_list() -> IBCChainRegistriesResult {
+    fn map_metadata_to_chain_registry_name(metadata: &FileMetadata) -> Result<String, MmError<IBCChainsRequestError>> {
+        let split_filename_by_dash: Vec<&str> = metadata.name.split('-').collect();
+        let chain_registry_name = split_filename_by_dash
+            .first()
+            .or_mm_err(|| {
+                IBCChainsRequestError::InternalError(format!(
+                    "Could not read chain registry name from '{}'",
+                    metadata.name
+                ))
+            })?
+            .to_string();
+
+        Ok(chain_registry_name)
+    }
+
+    let git_controller: GitController<GithubClient> = GitController::new(GITHUB_API_URI);
+
+    let metadata_list = git_controller
+        .client
+        .get_file_metadata_list(
+            CHAIN_REGISTRY_REPO_OWNER,
+            CHAIN_REGISTRY_REPO_NAME,
+            CHAIN_REGISTRY_BRANCH,
+            CHAIN_REGISTRY_IBC_DIR_NAME,
+        )
+        .await
+        .map_err(|e| IBCChainsRequestError::Transport(format!("{:?}", e)))?;
+
+    let chain_list: Result<Vec<String>, MmError<IBCChainsRequestError>> =
+        metadata_list.iter().map(map_metadata_to_chain_registry_name).collect();
+
+    let mut distinct_chain_list = chain_list?;
+    distinct_chain_list.dedup();
+
+    Ok(IBCChainRegistriesResponse {
+        chain_registry_list: distinct_chain_list,
+    })
+}
+
 #[async_trait]
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
@@ -2468,6 +2600,7 @@ pub mod tendermint_coin_tests {
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
+            chain_registry_name: None,
         }
     }
 
@@ -2478,6 +2611,7 @@ pub mod tendermint_coin_tests {
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
+            chain_registry_name: None,
         }
     }
 

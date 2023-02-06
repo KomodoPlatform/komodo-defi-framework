@@ -1084,6 +1084,7 @@ dependencies = [
  "mm2_core",
  "mm2_db",
  "mm2_err_handle",
+ "mm2_git",
  "mm2_io",
  "mm2_metrics",
  "mm2_net",
