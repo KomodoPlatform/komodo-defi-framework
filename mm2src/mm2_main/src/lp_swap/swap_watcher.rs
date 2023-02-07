@@ -604,11 +604,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
             },
         };
 
-        if !taker_coin.is_supported_by_watchers()
-            || !maker_coin.is_supported_by_watchers()
-            || !taker_coin.contract_supports_watchers()
-            || !maker_coin.contract_supports_watchers()
-        {
+        if !taker_coin.is_supported_by_watchers() || !maker_coin.is_supported_by_watchers() {
             log!("One of the coins or their contracts does not support watchers");
             return;
         }
