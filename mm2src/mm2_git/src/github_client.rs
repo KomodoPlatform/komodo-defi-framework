@@ -1,10 +1,11 @@
 use async_trait::async_trait;
-use http::{header, Request};
 use mm2_err_handle::prelude::MmError;
-use mm2_net::transport::slurp_req;
+use mm2_net::transport::slurp_url_with_headers;
 use serde::de::DeserializeOwned;
 
 use crate::{FileMetadata, GitCommons, GitControllerError, RepositoryOperations};
+
+const GITHUB_CLIENT_USER_AGENT: &str = "mm2";
 
 pub struct GithubClient {
     api_address: String,
@@ -20,15 +21,12 @@ impl RepositoryOperations for GithubClient {
         &self,
         file_metadata: FileMetadata,
     ) -> Result<T, MmError<GitControllerError>> {
-        let req = Request::builder()
-            .header(header::USER_AGENT, "mm2")
-            .uri(&file_metadata.download_url)
-            .body(Vec::new())
-            .map_err(|e| GitControllerError::HttpError(e.to_string()))?;
-
-        let (_status_code, _headers, data_buffer) = slurp_req(req)
-            .await
-            .map_err(|e| GitControllerError::HttpError(e.to_string()))?;
+        let (_status_code, _headers, data_buffer) = slurp_url_with_headers(&file_metadata.download_url, vec![(
+            http::header::USER_AGENT.as_str(),
+            GITHUB_CLIENT_USER_AGENT,
+        )])
+        .await
+        .map_err(|e| GitControllerError::HttpError(e.to_string()))?;
 
         Ok(
             serde_json::from_slice(&data_buffer)
@@ -48,15 +46,12 @@ impl RepositoryOperations for GithubClient {
             &self.api_address, owner, repository_name, dir, branch
         );
 
-        let req = Request::builder()
-            .header(header::USER_AGENT, "mm2")
-            .uri(uri)
-            .body(Vec::new())
-            .map_err(|e| GitControllerError::HttpError(e.to_string()))?;
-
-        let (_status_code, _headers, data_buffer) = slurp_req(req)
-            .await
-            .map_err(|e| GitControllerError::HttpError(e.to_string()))?;
+        let (_status_code, _headers, data_buffer) = slurp_url_with_headers(&uri, vec![(
+            http::header::USER_AGENT.as_str(),
+            GITHUB_CLIENT_USER_AGENT,
+        )])
+        .await
+        .map_err(|e| GitControllerError::HttpError(e.to_string()))?;
 
         Ok(
             serde_json::from_slice(&data_buffer)
