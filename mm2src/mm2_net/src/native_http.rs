@@ -64,7 +64,7 @@ pub async fn slurp_req_body(request: Request<Body>) -> SlurpResultJson {
     let body_bytes = hyper::body::to_bytes(response.into_body())
         .await
         .map_to_mm(|e| SlurpError::from_hyper_error(e, uri.clone()))?;
-    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+    let body_str = String::from_utf8(body_bytes.to_vec()).map_to_mm(|e| SlurpError::Internal(e.to_string()))?;
     let body: Json = serde_json::from_str(&body_str)?;
     Ok((status, headers, body))
 }

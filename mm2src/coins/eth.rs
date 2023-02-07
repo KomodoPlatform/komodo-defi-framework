@@ -48,8 +48,9 @@ use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerato
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use nft::nft_errors::GetNftInfoError;
-use nft::nft_structs::{Nft, NftListReq, NftMetadataReq, NftTransfersReq, NftsTransferHistoryByChain,
-                       TransactionNftDetails, WithdrawErc1155Request, WithdrawErc721Request};
+use nft::nft_structs::{Chain, ContractType, Nft, NftList, NftListReq, NftMetadataReq, NftTransfersReq,
+                       NftsTransferHistoryByChain, TransactionNftDetails, WithdrawErc1155Request,
+                       WithdrawErc721Request};
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
@@ -94,7 +95,6 @@ mod nft;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
-use crate::eth::nft::nft_structs::Chain;
 use crate::eth::v2_activation::EthActivationV2Error;
 use crate::{lp_coinfind_or_err, MyWalletAddress};
 use v2_activation::build_address_and_priv_key_policy;
@@ -810,28 +810,62 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     })
 }
 
-pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<Vec<Json>, GetNftInfoError> {
-    let mut res = Vec::new();
+pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetNftInfoError> {
+    // let mut res = Vec::new();
     for chain in req.chains {
-        let (coin, chain) = match chain {
+        let (coin_str, chain_str) = match chain {
             Chain::Eth => ("ETH", "eth"),
             Chain::Bnb => ("BNB", "bsc"),
         };
-        let my_address = get_eth_address(coin, &ctx).await?;
-        let uri = format!(
+        let my_address = get_eth_address(coin_str, &ctx).await?;
+        let uri_without_cursor = format!(
             "{}{}/nft?&chain={}&{}",
-            URL_MORALIS, my_address.wallet_address, chain, FORMAT_DECIMAL_MORALIS
+            URL_MORALIS, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS
         );
 
         let api_key = match ctx.conf["api_key"].as_str() {
             Some(api_key) => api_key,
             None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
         };
-
-        let response = send_moralis_request(uri, api_key).await?;
-        res.push(response);
+        let mut cursor = "".to_owned();
+        loop {
+            let uri = format!("{}{}", uri_without_cursor, cursor);
+            let response = send_moralis_request(uri.as_str(), api_key).await?;
+            if let Some(nfts_list) = response["result"].as_array() {
+                if !nfts_list.is_empty() {
+                    for nft_json in nfts_list {
+                        let nft = Nft {
+                            chain: chain.clone(),
+                            token_address: "".to_string(),
+                            token_id: Default::default(),
+                            amount: Default::default(),
+                            owner_of: "".to_string(),
+                            token_hash: "".to_string(),
+                            block_number_minted: 0,
+                            block_number: 0,
+                            contract_type: ContractType::Erc721,
+                            name: None,
+                            symbol: None,
+                            token_uri: None,
+                            metadata: None,
+                            last_token_uri_sync: None,
+                            last_metadata_sync: None,
+                            minter_address: None,
+                        };
+                    }
+                }
+                if !response["cursor"].is_null() {
+                    if let Some(cursor_res) = response["cursor"].as_str() {
+                        cursor = format!("{}{}", "&cursor=", cursor_res);
+                        continue;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
     }
-    Ok(res)
+    todo!()
 }
 
 pub async fn get_nft_metadata(_ctx: MmArc, _req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> { todo!() }
@@ -4619,13 +4653,13 @@ pub async fn get_eth_address(ticker: &str, ctx: &MmArc) -> MmResult<MyWalletAddr
 
 #[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]
-async fn send_moralis_request(uri: String, api_key: &str) -> MmResult<Json, GetNftInfoError> {
+async fn send_moralis_request(uri: &str, api_key: &str) -> MmResult<Json, GetNftInfoError> {
     use http::header::HeaderValue;
     use mm2_net::transport::slurp_req_body;
 
     let request = http::Request::builder()
         .method("GET")
-        .uri(uri.clone())
+        .uri(uri)
         .header(X_API_KEY, api_key)
         .header(ACCEPT, HeaderValue::from_static(APPLICATION_JSON))
         .body(hyper::Body::from(""))?;

@@ -17,7 +17,7 @@ pub struct NftMetadataReq {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub enum Chain {
     Eth,
     Bnb,
@@ -33,22 +33,22 @@ pub enum ContractType {
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Nft {
-    chain: Chain,
-    token_address: String,
-    token_id: BigDecimal,
-    amount: BigDecimal,
-    owner_of: String,
-    token_hash: String,
-    block_number_minted: u64,
-    block_number: u64,
-    contract_type: ContractType,
-    name: Option<String>,
-    symbol: Option<String>,
-    token_uri: Option<String>,
-    metadata: Option<String>,
-    last_token_uri_sync: Option<String>,
-    last_metadata_sync: Option<String>,
-    minter_address: Option<String>,
+    pub(crate) chain: Chain,
+    pub(crate) token_address: String,
+    pub(crate) token_id: BigDecimal,
+    pub(crate) amount: BigDecimal,
+    pub(crate) owner_of: String,
+    pub(crate) token_hash: String,
+    pub(crate) block_number_minted: u64,
+    pub(crate) block_number: u64,
+    pub(crate) contract_type: ContractType,
+    pub(crate) name: Option<String>,
+    pub(crate) symbol: Option<String>,
+    pub(crate) token_uri: Option<String>,
+    pub(crate) metadata: Option<String>,
+    pub(crate) last_token_uri_sync: Option<String>,
+    pub(crate) last_metadata_sync: Option<String>,
+    pub(crate) minter_address: Option<String>,
 }
 
 #[allow(dead_code)]
