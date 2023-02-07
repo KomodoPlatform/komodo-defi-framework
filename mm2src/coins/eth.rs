@@ -41,7 +41,7 @@ use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
 use futures01::Future;
 use http::header::ACCEPT;
-use http::{HeaderValue, Request, StatusCode};
+use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
@@ -4620,9 +4620,10 @@ pub async fn get_eth_address(ticker: &str, ctx: &MmArc) -> MmResult<MyWalletAddr
 #[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_moralis_request(uri: String, api_key: &str) -> MmResult<Json, GetNftInfoError> {
+    use http::header::HeaderValue;
     use mm2_net::transport::slurp_req_body;
 
-    let request = Request::builder()
+    let request = http::Request::builder()
         .method("GET")
         .uri(uri.clone())
         .header(X_API_KEY, api_key)
@@ -4640,9 +4641,8 @@ async fn send_moralis_request(uri: String, api_key: &str) -> MmResult<Json, GetN
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, GetNftInfoError> {
+async fn send_moralis_request(uri: String, api_key: &str) -> MmResult<Json, GetNftInfoError> {
     use mm2_net::wasm_http::FetchRequest;
-    use web3::helpers::to_result_from_output;
 
     macro_rules! try_or {
         ($exp:expr, $errtype:ident) => {
@@ -4655,9 +4655,9 @@ async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, Ge
 
     let result = FetchRequest::get(uri.as_str())
         .cors()
-        .body_utf8("")
+        .body_utf8("".to_owned())
         .header(X_API_KEY, api_key)
-        .header(ACCEPT, APPLICATION_JSON)
+        .header(ACCEPT.as_str(), APPLICATION_JSON)
         .request_str()
         .await;
     let (status_code, response_str) = try_or!(result, Transport);
@@ -4669,6 +4669,6 @@ async fn send_moralis_request(uri: String, api_key: String) -> MmResult<Json, Ge
         ))));
     }
 
-    let response: Value = try_or!(serde_json::from_str(&response_str), InvalidResponse);
+    let response: Json = try_or!(serde_json::from_str(&response_str), InvalidResponse);
     Ok(response)
 }
