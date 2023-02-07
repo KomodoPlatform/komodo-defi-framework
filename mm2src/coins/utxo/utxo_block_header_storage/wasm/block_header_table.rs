@@ -23,8 +23,6 @@ impl TableSignature for BlockHeaderStorageTable {
                 let table = upgrader.create_table(Self::table_name())?;
                 table.create_multi_index(Self::HEIGHT_TICKER_INDEX, &["height", "ticker"], true)?;
                 table.create_multi_index(Self::HASH_TICKER_INDEX, &["hash", "ticker"], true)?;
-                table.create_index("hash", true)?;
-                table.create_index("raw_header", true)?;
                 table.create_index("ticker", false)?;
             },
             _ => (),

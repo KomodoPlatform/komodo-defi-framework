@@ -77,12 +77,12 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         let locked_db = self
             .lock_db()
             .await
-            .map_err(|err| BlockHeaderStorageError::DBLockError(err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::add_err(&ticker, err.to_string()))?;
         let db_transaction = locked_db
             .get_inner()
             .transaction()
             .await
-            .map_err(|err| BlockHeaderStorageError::TransactionError(err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::add_err(&ticker, err.to_string()))?;
         let block_headers_db = db_transaction
             .table::<BlockHeaderStorageTable>()
             .await
@@ -106,12 +106,9 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
                 .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
             block_headers_db
-                .add_item_or_ignore_by_unique_multi_index(index_keys, &headers_to_store)
+                .replace_item_by_unique_multi_index(index_keys, &headers_to_store)
                 .await
-                .map_err(|err| BlockHeaderStorageError::AddToStorageError {
-                    coin: ticker.clone(),
-                    reason: err.to_string(),
-                })?;
+                .map_err(|err| BlockHeaderStorageError::add_err(&ticker, err.to_string()))?;
         }
         Ok(())
     }
@@ -143,12 +140,12 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         let locked_db = self
             .lock_db()
             .await
-            .map_err(|err| BlockHeaderStorageError::DBLockError(err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
         let db_transaction = locked_db
             .get_inner()
             .transaction()
             .await
-            .map_err(|err| BlockHeaderStorageError::TransactionError(err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
         let block_headers_db = db_transaction
             .table::<BlockHeaderStorageTable>()
             .await
@@ -171,37 +168,32 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         let locked_db = self
             .lock_db()
             .await
-            .map_err(|err| BlockHeaderStorageError::DBLockError(err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
         let db_transaction = locked_db
             .get_inner()
             .transaction()
             .await
-            .map_err(|err| BlockHeaderStorageError::TransactionError(err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
         let block_headers_db = db_transaction
             .table::<BlockHeaderStorageTable>()
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         // Todo: use open_cursor with direction to optimze this process.
-        let mut res = block_headers_db
+        let res = block_headers_db
             .open_cursor("ticker")
             .await
-            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .only("ticker", ticker.clone())
-            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .collect()
             .await
-            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .into_iter()
             .map(|(_item_id, item)| item.height)
             .collect::<Vec<_>>();
-        res.sort_by_key(|&b| std::cmp::Reverse(b));
 
-        if res.len() >= 1 {
-            return Ok(res[0]);
-        }
-
-        Ok(0)
+        Ok(res.into_iter().max().unwrap_or(0))
     }
 
     async fn get_last_block_header_with_non_max_bits(&self) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
@@ -209,49 +201,50 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         let locked_db = self
             .lock_db()
             .await
-            .map_err(|err| BlockHeaderStorageError::DBLockError(err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
         let db_transaction = locked_db
             .get_inner()
             .transaction()
             .await
-            .map_err(|err| BlockHeaderStorageError::TransactionError(err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
         let block_headers_db = db_transaction
             .table::<BlockHeaderStorageTable>()
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         // Todo: use open_cursor with direction to optimze this process.
-        let mut res = block_headers_db
+        let res = block_headers_db
             .open_cursor("ticker")
             .await
-            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .only("ticker", ticker.clone())
-            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .collect()
             .await
-            .map_err(|err| BlockHeaderStorageError::cursor_err(&ticker, err.to_string()))?
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .into_iter()
             .map(|(_item_id, item)| item)
             .collect::<Vec<_>>();
-        res.sort_by(|a, b| b.height.cmp(&a.height));
+        let res = res
+            .into_iter()
+            .filter_map(|e| if e.bits != MAX_BITS_BTC { Some(e) } else { None })
+            .collect::<Vec<_>>();
 
         for header in res {
-            if header.bits != MAX_BITS_BTC {
-                let serialized = &hex::decode(header.raw_header).map_err(|e| BlockHeaderStorageError::DecodeError {
-                    coin: ticker.clone(),
-                    reason: e.to_string(),
-                })?;
-                let mut reader = Reader::new_with_coin_variant(serialized, ticker.as_str().into());
-                let header: BlockHeader =
-                    reader
-                        .read()
-                        .map_err(|e: serialization::Error| BlockHeaderStorageError::DecodeError {
-                            coin: ticker,
-                            reason: e.to_string(),
-                        })?;
+            let serialized = &hex::decode(header.raw_header).map_err(|e| BlockHeaderStorageError::DecodeError {
+                coin: ticker.clone(),
+                reason: e.to_string(),
+            })?;
+            let mut reader = Reader::new_with_coin_variant(serialized, ticker.as_str().into());
+            let header: BlockHeader =
+                reader
+                    .read()
+                    .map_err(|e: serialization::Error| BlockHeaderStorageError::DecodeError {
+                        coin: ticker,
+                        reason: e.to_string(),
+                    })?;
 
-                return Ok(Some(header));
-            }
+            return Ok(Some(header));
         }
 
         Ok(None)
@@ -262,12 +255,12 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         let locked_db = self
             .lock_db()
             .await
-            .map_err(|err| BlockHeaderStorageError::DBLockError(err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
         let db_transaction = locked_db
             .get_inner()
             .transaction()
             .await
-            .map_err(|err| BlockHeaderStorageError::TransactionError(err.to_string()))?;
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
         let block_headers_db = db_transaction
             .table::<BlockHeaderStorageTable>()
             .await
@@ -299,9 +292,10 @@ mod tests {
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
-    async fn test_add_block_headers() {
+    async fn test_storage_init() {
         let ctx = mm_ctx_with_custom_db();
         let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
+
         register_wasm_log();
 
         let initialized = storage.is_initialized_for().await.unwrap();
@@ -312,6 +306,13 @@ mod tests {
 
         let initialized = storage.is_initialized_for().await.unwrap();
         assert!(initialized);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_add_block_headers() {
+        let ctx = mm_ctx_with_custom_db();
+        let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
+        register_wasm_log();
 
         let mut headers = HashMap::with_capacity(1);
         let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
@@ -326,15 +327,6 @@ mod tests {
         let ctx = mm_ctx_with_custom_db();
         let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
         register_wasm_log();
-
-        let initialized = storage.is_initialized_for().await.unwrap();
-        assert!(initialized);
-
-        // repetitive init must not fail
-        storage.init().await.unwrap();
-
-        let initialized = storage.is_initialized_for().await.unwrap();
-        assert!(initialized);
 
         let mut headers = HashMap::with_capacity(1);
         let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
@@ -357,15 +349,6 @@ mod tests {
         let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
         register_wasm_log();
 
-        let initialized = storage.is_initialized_for().await.unwrap();
-        assert!(initialized);
-
-        // repetitive init must not fail
-        storage.init().await.unwrap();
-
-        let initialized = storage.is_initialized_for().await.unwrap();
-        assert!(initialized);
-
         let mut headers = HashMap::with_capacity(1);
         let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
         headers.insert(201595, block_header.clone());
@@ -381,15 +364,6 @@ mod tests {
         let ctx = mm_ctx_with_custom_db();
         let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
         register_wasm_log();
-
-        let initialized = storage.is_initialized_for().await.unwrap();
-        assert!(initialized);
-
-        // repetitive init must not fail
-        storage.init().await.unwrap();
-
-        let initialized = storage.is_initialized_for().await.unwrap();
-        assert!(initialized);
 
         let mut headers = HashMap::with_capacity(1);
         // This block has max difficulty
@@ -407,7 +381,6 @@ mod tests {
 
         headers.insert(201593, block_header);
         let add_headers = storage.add_block_headers_to_storage(headers.clone()).await;
-        info!("{add_headers:?}");
         assert!(add_headers.is_ok());
 
         let last_height = storage.get_last_block_height().await.unwrap();
@@ -419,15 +392,6 @@ mod tests {
         let ctx = mm_ctx_with_custom_db();
         let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
         register_wasm_log();
-
-        let initialized = storage.is_initialized_for().await.unwrap();
-        assert!(initialized);
-
-        // repetitive init must not fail
-        storage.init().await.unwrap();
-
-        let initialized = storage.is_initialized_for().await.unwrap();
-        assert!(initialized);
         let mut headers = HashMap::with_capacity(2);
 
         // This block has max difficulty
@@ -462,15 +426,6 @@ mod tests {
         let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
         register_wasm_log();
 
-        let initialized = storage.is_initialized_for().await.unwrap();
-        assert!(initialized);
-
-        // repetitive init must not fail
-        storage.init().await.unwrap();
-
-        let initialized = storage.is_initialized_for().await.unwrap();
-        assert!(initialized);
-
         let mut headers = HashMap::with_capacity(1);
         let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
         headers.insert(201595, block_header.clone());
@@ -484,5 +439,3 @@ mod tests {
         assert_eq!(201595, raw_header.unwrap())
     }
 }
-
-//cargo test --target wasm32-unknown-unknown --package coins --lib utxo::utxo_block_header_storage::wasm::indexeddb_block_header_storage

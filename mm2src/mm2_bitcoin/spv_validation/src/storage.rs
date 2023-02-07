@@ -36,23 +36,19 @@ pub enum BlockHeaderStorageError {
         coin: String,
         reason: String,
     },
-    DBLockError(String),
-    #[display(
-        fmt = "Error while performing Indexed DB cursor operation for {} - reason: {}",
-        coin,
-        reason
-    )]
-    CursorError {
-        coin: String,
-        reason: String,
-    },
     Internal(String),
-    TransactionError(String),
 }
 
 impl BlockHeaderStorageError {
     pub fn init_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
         BlockHeaderStorageError::InitializationError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn add_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::AddToStorageError {
             coin: ticker.to_string(),
             reason,
         }
@@ -67,13 +63,6 @@ impl BlockHeaderStorageError {
 
     pub fn get_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
         BlockHeaderStorageError::GetFromStorageError {
-            coin: ticker.to_string(),
-            reason,
-        }
-    }
-
-    pub fn cursor_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
-        BlockHeaderStorageError::CursorError {
             coin: ticker.to_string(),
             reason,
         }
