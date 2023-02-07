@@ -1173,10 +1173,24 @@ impl TakerRequest {
         }
     }
 
+    fn base_additional_info_required_for_maker(&self) -> bool {
+        match &self.action {
+            TakerAction::Buy => false,
+            TakerAction::Sell => true,
+        }
+    }
+
     fn rel_protocol_info_for_maker(&self) -> &Option<Vec<u8>> {
         match &self.action {
             TakerAction::Buy => &self.rel_protocol_info,
             TakerAction::Sell => &self.base_protocol_info,
+        }
+    }
+
+    fn rel_additional_info_required_for_maker(&self) -> bool {
+        match &self.action {
+            TakerAction::Buy => true,
+            TakerAction::Sell => false,
         }
     }
 }
@@ -1437,8 +1451,14 @@ impl<'a> TakerOrderBuilder<'a> {
                 dest_pub_key: Default::default(),
                 match_by: self.match_by,
                 conf_settings: self.conf_settings,
-                base_protocol_info: Some(self.base_coin.coin_protocol_info()),
-                rel_protocol_info: Some(self.rel_coin.coin_protocol_info()),
+                base_protocol_info: Some(
+                    self.base_coin
+                        .coin_protocol_info(self.rel_coin.coin_protocol_additional_info_required()),
+                ),
+                rel_protocol_info: Some(
+                    self.rel_coin
+                        .coin_protocol_info(self.base_coin.coin_protocol_additional_info_required()),
+                ),
             },
             matches: Default::default(),
             min_volume,
@@ -1467,8 +1487,14 @@ impl<'a> TakerOrderBuilder<'a> {
                 dest_pub_key: Default::default(),
                 match_by: self.match_by,
                 conf_settings: self.conf_settings,
-                base_protocol_info: Some(self.base_coin.coin_protocol_info()),
-                rel_protocol_info: Some(self.rel_coin.coin_protocol_info()),
+                base_protocol_info: Some(
+                    self.base_coin
+                        .coin_protocol_info(self.rel_coin.coin_protocol_additional_info_required()),
+                ),
+                rel_protocol_info: Some(
+                    self.rel_coin
+                        .coin_protocol_info(self.base_coin.coin_protocol_additional_info_required()),
+                ),
             },
             matches: HashMap::new(),
             min_volume: Default::default(),
@@ -3118,8 +3144,8 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                     maker_order_created_p2p_notify(
                         ctx.clone(),
                         &order,
-                        base.coin_protocol_info(),
-                        rel.coin_protocol_info(),
+                        base.coin_protocol_info(rel.coin_protocol_additional_info_required()),
+                        rel.coin_protocol_info(base.coin_protocol_additional_info_required()),
                     );
                 }
             }
@@ -3216,8 +3242,8 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
             maker_order_created_p2p_notify(
                 ctx.clone(),
                 &maker_order,
-                base.coin_protocol_info(),
-                rel.coin_protocol_info(),
+                base.coin_protocol_info(rel.coin_protocol_additional_info_required()),
+                rel.coin_protocol_info(base.coin_protocol_additional_info_required()),
             );
         }
     }
@@ -3333,8 +3359,14 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
             // send "connect" message if reserved message targets our pubkey AND
             // reserved amounts match our order AND order is NOT reserved by someone else (empty matches)
             if (my_order.match_reserved(&reserved_msg) == MatchReservedResult::Matched && my_order.matches.is_empty())
-                && base_coin.is_coin_protocol_supported(&reserved_msg.base_protocol_info)
-                && rel_coin.is_coin_protocol_supported(&reserved_msg.rel_protocol_info)
+                && base_coin.is_coin_protocol_supported(
+                    &reserved_msg.base_protocol_info,
+                    rel_coin.coin_protocol_additional_info_required(),
+                )
+                && rel_coin.is_coin_protocol_supported(
+                    &reserved_msg.rel_protocol_info,
+                    rel_coin.coin_protocol_additional_info_required(),
+                )
             {
                 let connect = TakerConnect {
                     sender_pubkey: H256Json::from(our_public_id.bytes),
@@ -3439,8 +3471,16 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
             };
 
             if !order.matches.contains_key(&taker_request.uuid)
-                && base_coin.is_coin_protocol_supported(taker_request.base_protocol_info_for_maker())
-                && rel_coin.is_coin_protocol_supported(taker_request.rel_protocol_info_for_maker())
+                && base_coin.is_coin_protocol_supported(
+                    taker_request.base_protocol_info_for_maker(),
+                    rel_coin.coin_protocol_additional_info_required()
+                        && taker_request.base_additional_info_required_for_maker(),
+                )
+                && rel_coin.is_coin_protocol_supported(
+                    taker_request.rel_protocol_info_for_maker(),
+                    base_coin.coin_protocol_additional_info_required()
+                        && taker_request.rel_additional_info_required_for_maker(),
+                )
             {
                 let reserved = MakerReserved {
                     dest_pub_key: taker_request.sender_pubkey,
@@ -3459,8 +3499,12 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                             rel_nota: rel_coin.requires_notarization(),
                         })
                     }),
-                    base_protocol_info: Some(base_coin.coin_protocol_info()),
-                    rel_protocol_info: Some(rel_coin.coin_protocol_info()),
+                    base_protocol_info: Some(
+                        base_coin.coin_protocol_info(rel_coin.coin_protocol_additional_info_required()),
+                    ),
+                    rel_protocol_info: Some(
+                        rel_coin.coin_protocol_info(base_coin.coin_protocol_additional_info_required()),
+                    ),
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
@@ -4416,6 +4460,7 @@ async fn get_max_volume(ctx: &MmArc, my_coin: &MmCoinEnum, other_coin: &MmCoinEn
     // check if `rel_coin` balance is sufficient
     let other_coin_trade_fee = try_s!(
         other_coin
+            // Todo: is 0 for lightning?? but need inbound liquidity
             .get_receiver_trade_fee(volume.to_decimal(), FeeApproxStage::OrderIssue)
             .compat()
             .await
@@ -4534,8 +4579,8 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
     maker_order_created_p2p_notify(
         ctx.clone(),
         &new_order,
-        base_coin.coin_protocol_info(),
-        rel_coin.coin_protocol_info(),
+        base_coin.coin_protocol_info(rel_coin.coin_protocol_additional_info_required()),
+        rel_coin.coin_protocol_info(base_coin.coin_protocol_additional_info_required()),
     );
 
     ordermatch_ctx
@@ -4633,6 +4678,7 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
     };
 
     let min_base_amount = base_coin.min_trading_vol();
+    // Todo: Here min_trading_vol depends on inbound liquidity not outbound
     let min_rel_amount = rel_coin.min_trading_vol();
 
     // Add min_volume to update_msg if min_volume is found in the request

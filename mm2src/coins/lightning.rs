@@ -44,8 +44,10 @@ use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
-use lightning::routing::router::DefaultRouter;
+use lightning::routing::router::{DefaultRouter, PaymentParameters, RouteParameters, Router as RouterTrait};
+use lightning::util::ser::{Readable, Writeable};
 use lightning_background_processor::BackgroundProcessor;
+use lightning_invoice::payment::Payer;
 use lightning_invoice::{payment, CreationError, InvoiceBuilder, SignOrCreationError};
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, PlatformCoinConfirmationTargets};
@@ -72,6 +74,7 @@ use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::fmt;
+use std::io::Cursor;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -394,6 +397,7 @@ impl LightningCoin {
         }
     }
 
+    // Todo: this can be removed after next release when min_final_cltv_expiry can be specified in create_invoice_from_channelmanager_and_duration_since_epoch_with_payment_hash
     async fn create_invoice_for_hash(
         &self,
         payment_hash: PaymentHash,
@@ -1041,6 +1045,7 @@ impl MarketCoinOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
+    // Todo: this is the lightning balance? unless JIT is used???
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.platform_coin().my_balance().map(|res| res.spendable))
     }
@@ -1204,11 +1209,31 @@ impl MarketCoinOps for LightningCoin {
             .to_string())
     }
 
-    // Todo: min_tx_amount should depend on inbound_htlc_minimum_msat of the channel/s the payment will be sent through, 1 satoshi is used for for now (1000 of the base unit of lightning which is msat)
-    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(1000, self.decimals()) }
+    // This will depend on the route/routes taken for the payment, since every channel's counterparty specifies the minimum amount they will allow to route.
+    // Since route is not specified at this stage yet, we can use the maximum of these minimum amounts as the min_tx_amount allowed.
+    // Default value: 1 msat if the counterparty is using LDK default value.
+    // Todo: balance check should be done before this is used, is it done??
+    fn min_tx_amount(&self) -> BigDecimal {
+        let amount_in_msat = self
+            .channel_manager
+            .list_channels()
+            .iter()
+            .map(|c| c.counterparty.outbound_htlc_minimum_msat.unwrap_or(1))
+            .max()
+            .unwrap_or(1) as i64;
+        big_decimal_from_sat(amount_in_msat, self.decimals())
+    }
 
     // Todo: Equals to min_tx_amount for now (1 satoshi), should change this later
+    // Todo: doesn't take routing fees into account too, should I calculate a route before just for balance calculations???
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
+}
+
+// Todo: find a better name
+#[derive(Deserialize, Serialize)]
+struct ProtocolInfo {
+    node_id: PublicKeyForRPC,
+    route_hints: Vec<Vec<u8>>,
 }
 
 #[async_trait]
@@ -1323,11 +1348,76 @@ impl MmCoin for LightningCoin {
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 
-    // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
-    fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
+    // Todo: this is just for test
+    fn coin_protocol_additional_info_required(&self) -> bool { true }
 
     // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
-    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+    // Todo: should take in consideration JIT routing and using LSP??
+    // Todo: this is important only for the side that's getting paid in lightning, channels for users should be private, so should include routing hints also
+    // Todo: make this only for the side that's getting paid in lightning, also a check should be added for taker if they can pay the dex fee or not before the taker order is placed
+    // Todo: should this be a different function from protocol_info???
+    // Todo: should I include features also? or just include a complete invoice with a random payment hash???
+    fn coin_protocol_info(&self, is_required: bool) -> Vec<u8> {
+        if !is_required {
+            return Vec::new();
+        }
+        // Todo: add to function params
+        let amt_msat = Some(100000);
+        let route_hints = filter_channels(self.channel_manager.list_usable_channels(), amt_msat)
+            .iter()
+            .map(|h| h.encode())
+            .collect();
+        let node_id = PublicKeyForRPC(self.channel_manager.get_our_node_id());
+        let protocol_info = ProtocolInfo { node_id, route_hints };
+        rmp_serde::to_vec(&protocol_info).expect("Serialization should not fail")
+    }
+
+    // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
+    // Todo: will use a const max_cltv_expiry for now but should calculate an estimate locktime at this stage in the future
+    // Todo: should take in consideration JIT routing and using LSP??
+    // Todo: ask about if this takes a lot of space in OrderbookItem
+    // Todo: also rename this function to a better name, and required parameter to a better name
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>, is_required: bool) -> bool {
+        if !is_required {
+            return true;
+        }
+        if let Some(i) = info {
+            if let Ok(protocol_info) = rmp_serde::from_read_ref::<_, ProtocolInfo>(i) {
+                // Todo: add to function params
+                let final_value_msat = 100000;
+                // Todo: remove unwrap
+                // Todo: need to check the size of vector when processing??
+                let route_hints = protocol_info
+                    .route_hints
+                    .iter()
+                    .map(|h| Readable::read(&mut Cursor::new(h)).unwrap())
+                    .collect();
+                let payment_params =
+                    PaymentParameters::from_node_id(protocol_info.node_id.into()).with_route_hints(route_hints);
+                // Todo: how to calculate max_total_cltv_expiry_delta
+                //     .with_max_total_cltv_expiry_delta(max_total_cltv_expiry_delta);
+                let route_params = RouteParameters {
+                    payment_params,
+                    final_value_msat,
+                    // Todo: how to calculate final_cltv_expiry_delta
+                    final_cltv_expiry_delta: MIN_FINAL_CLTV_EXPIRY,
+                };
+                let payer = self.channel_manager.node_id();
+                let first_hops = self.channel_manager.first_hops();
+                let inflight_htlcs = self.channel_manager.compute_inflight_htlcs();
+                return self
+                    .router
+                    .find_route(
+                        &payer,
+                        &route_params,
+                        Some(&first_hops.iter().collect::<Vec<_>>()),
+                        inflight_htlcs,
+                    )
+                    .is_ok();
+            }
+        }
+        true
+    }
 
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.platform.abortable_system) }
 

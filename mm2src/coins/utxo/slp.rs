@@ -1866,9 +1866,9 @@ impl MmCoin for SlpToken {
 
     fn mature_confirmations(&self) -> Option<u32> { self.platform_coin.mature_confirmations() }
 
-    fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
+    fn coin_protocol_info(&self, _is_required: bool) -> Vec<u8> { Vec::new() }
 
-    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>, _is_required: bool) -> bool { true }
 
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
 
