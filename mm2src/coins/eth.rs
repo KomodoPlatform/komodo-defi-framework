@@ -836,14 +836,14 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
                     for nft_json in nfts_list {
                         let nft = Nft {
                             chain: chain.clone(),
-                            token_address: "".to_string(),
-                            token_id: Default::default(),
-                            amount: Default::default(),
-                            owner_of: "".to_string(),
-                            token_hash: "".to_string(),
-                            block_number_minted: 0,
-                            block_number: 0,
-                            contract_type: ContractType::Erc721,
+                            token_address: None,
+                            token_id: None,
+                            amount: None,
+                            owner_of: None,
+                            token_hash: None,
+                            block_number_minted: None,
+                            block_number: None,
+                            contract_type: None,
                             name: None,
                             symbol: None,
                             token_uri: None,
@@ -854,6 +854,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
                         };
                     }
                 }
+                // if cursor is not null, there are other nfts on next page
                 if !response["cursor"].is_null() {
                     if let Some(cursor_res) = response["cursor"].as_str() {
                         cursor = format!("{}{}", "&cursor=", cursor_res);
