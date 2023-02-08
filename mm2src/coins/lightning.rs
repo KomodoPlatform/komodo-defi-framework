@@ -1347,72 +1347,68 @@ impl MmCoin for LightningCoin {
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 
-    // Todo: this is just for test
-    fn coin_protocol_additional_info_required(&self) -> bool { true }
-
-    // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
     // Todo: should take in consideration JIT routing and using LSP??
-    // Todo: this is important only for the side that's getting paid in lightning, channels for users should be private, so should include routing hints also
-    // Todo: make this only for the side that's getting paid in lightning, also a check should be added for taker if they can pay the dex fee or not before the taker order is placed
     // Todo: should this be a different function from protocol_info???
     // Todo: should I include features also? or just include a complete invoice with a random payment hash???
-    fn coin_protocol_info(&self, is_required: bool) -> Vec<u8> {
-        if !is_required {
-            return Vec::new();
+    // Channels for users/non-routing nodes should be private, so routing hints are sent as part of the protocol info
+    // alongside the receiver lightning node address/pubkey.
+    // Note: This is required only for the side that's getting paid in lightning.
+    fn coin_protocol_info(&self, amount_to_receive: Option<MmNumber>) -> Vec<u8> {
+        if let Some(amt) = amount_to_receive {
+            // Todo: remove unwrap
+            let amt_msat = sat_from_big_decimal(&amt.into(), self.decimals()).unwrap();
+            let route_hints = filter_channels(self.channel_manager.list_usable_channels(), Some(amt_msat))
+                .iter()
+                .map(|h| h.encode())
+                .collect();
+            let node_id = PublicKeyForRPC(self.channel_manager.get_our_node_id());
+            let protocol_info = ProtocolInfo { node_id, route_hints };
+            return rmp_serde::to_vec(&protocol_info).expect("Serialization should not fail");
         }
-        // Todo: add to function params
-        let amt_msat = Some(100000);
-        let route_hints = filter_channels(self.channel_manager.list_usable_channels(), amt_msat)
-            .iter()
-            .map(|h| h.encode())
-            .collect();
-        let node_id = PublicKeyForRPC(self.channel_manager.get_our_node_id());
-        let protocol_info = ProtocolInfo { node_id, route_hints };
-        rmp_serde::to_vec(&protocol_info).expect("Serialization should not fail")
+        Vec::new()
     }
 
-    // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
     // Todo: will use a const max_cltv_expiry for now but should calculate an estimate locktime at this stage in the future
     // Todo: should take in consideration JIT routing and using LSP??
     // Todo: ask about if this takes a lot of space in OrderbookItem
     // Todo: also rename this function to a better name, and required parameter to a better name
-    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>, is_required: bool) -> bool {
-        if !is_required {
-            return true;
-        }
-        if let Some(i) = info {
-            if let Ok(protocol_info) = rmp_serde::from_read_ref::<_, ProtocolInfo>(i) {
-                // Todo: add to function params
-                let final_value_msat = 100000;
-                // Todo: remove unwrap
-                // Todo: need to check the size of vector when processing??
-                let route_hints = protocol_info
-                    .route_hints
-                    .iter()
-                    .map(|h| Readable::read(&mut Cursor::new(h)).unwrap())
-                    .collect();
-                let payment_params =
-                    PaymentParameters::from_node_id(protocol_info.node_id.into()).with_route_hints(route_hints);
-                // Todo: how to calculate max_total_cltv_expiry_delta
-                //     .with_max_total_cltv_expiry_delta(max_total_cltv_expiry_delta);
-                let route_params = RouteParameters {
-                    payment_params,
-                    final_value_msat,
-                    // Todo: how to calculate final_cltv_expiry_delta
-                    final_cltv_expiry_delta: MIN_FINAL_CLTV_EXPIRY,
-                };
-                let payer = self.channel_manager.node_id();
-                let first_hops = self.channel_manager.first_hops();
-                let inflight_htlcs = self.channel_manager.compute_inflight_htlcs();
-                return self
-                    .router
-                    .find_route(
-                        &payer,
-                        &route_params,
-                        Some(&first_hops.iter().collect::<Vec<_>>()),
-                        inflight_htlcs,
-                    )
-                    .is_ok();
+    // Todo: a check should be added for taker if they can pay the dex fee or not before the taker order is placed
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>, amount_to_send: Option<MmNumber>) -> bool {
+        if let Some(amt) = amount_to_send {
+            if let Some(i) = info {
+                if let Ok(protocol_info) = rmp_serde::from_read_ref::<_, ProtocolInfo>(i) {
+                    // Todo: remove unwrap
+                    let final_value_msat = sat_from_big_decimal(&amt.into(), self.decimals()).unwrap();
+                    // Todo: remove unwrap
+                    // Todo: need to check the size of vector when processing??
+                    let route_hints = protocol_info
+                        .route_hints
+                        .iter()
+                        .map(|h| Readable::read(&mut Cursor::new(h)).unwrap())
+                        .collect();
+                    let payment_params =
+                        PaymentParameters::from_node_id(protocol_info.node_id.into()).with_route_hints(route_hints);
+                    // Todo: how to calculate max_total_cltv_expiry_delta
+                    //     .with_max_total_cltv_expiry_delta(max_total_cltv_expiry_delta);
+                    let route_params = RouteParameters {
+                        payment_params,
+                        final_value_msat,
+                        // Todo: how to calculate final_cltv_expiry_delta
+                        final_cltv_expiry_delta: MIN_FINAL_CLTV_EXPIRY,
+                    };
+                    let payer = self.channel_manager.node_id();
+                    let first_hops = self.channel_manager.first_hops();
+                    let inflight_htlcs = self.channel_manager.compute_inflight_htlcs();
+                    return self
+                        .router
+                        .find_route(
+                            &payer,
+                            &route_params,
+                            Some(&first_hops.iter().collect::<Vec<_>>()),
+                            inflight_htlcs,
+                        )
+                        .is_ok();
+                }
             }
         }
         true

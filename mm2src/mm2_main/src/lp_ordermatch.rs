@@ -1174,24 +1174,10 @@ impl TakerRequest {
         }
     }
 
-    fn base_additional_info_required_for_maker(&self) -> bool {
-        match &self.action {
-            TakerAction::Buy => false,
-            TakerAction::Sell => true,
-        }
-    }
-
     fn rel_protocol_info_for_maker(&self) -> &Option<Vec<u8>> {
         match &self.action {
             TakerAction::Buy => &self.rel_protocol_info,
             TakerAction::Sell => &self.base_protocol_info,
-        }
-    }
-
-    fn rel_additional_info_required_for_maker(&self) -> bool {
-        match &self.action {
-            TakerAction::Buy => true,
-            TakerAction::Sell => false,
         }
     }
 }
@@ -1439,6 +1425,17 @@ impl<'a> TakerOrderBuilder<'a> {
             None
         };
 
+        // Todo: combine this with rel_protocol_info
+        let base_protocol_info = match &self.action {
+            TakerAction::Buy => self.base_coin.coin_protocol_info(Some(self.base_amount.clone())),
+            TakerAction::Sell => self.base_coin.coin_protocol_info(None),
+        };
+
+        let rel_protocol_info = match &self.action {
+            TakerAction::Buy => self.rel_coin.coin_protocol_info(None),
+            TakerAction::Sell => self.rel_coin.coin_protocol_info(Some(self.rel_amount.clone())),
+        };
+
         Ok(TakerOrder {
             created_at: now_ms(),
             request: TakerRequest {
@@ -1452,14 +1449,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 dest_pub_key: Default::default(),
                 match_by: self.match_by,
                 conf_settings: self.conf_settings,
-                base_protocol_info: Some(
-                    self.base_coin
-                        .coin_protocol_info(self.rel_coin.coin_protocol_additional_info_required()),
-                ),
-                rel_protocol_info: Some(
-                    self.rel_coin
-                        .coin_protocol_info(self.base_coin.coin_protocol_additional_info_required()),
-                ),
+                base_protocol_info: Some(base_protocol_info),
+                rel_protocol_info: Some(rel_protocol_info),
             },
             matches: Default::default(),
             min_volume,
@@ -1475,6 +1466,17 @@ impl<'a> TakerOrderBuilder<'a> {
     #[cfg(test)]
     /// skip validation for tests
     fn build_unchecked(self) -> TakerOrder {
+        // Todo: combine this with rel_protocol_info
+        let base_protocol_info = match &self.action {
+            TakerAction::Buy => self.base_coin.coin_protocol_info(Some(self.base_amount.clone())),
+            TakerAction::Sell => self.base_coin.coin_protocol_info(None),
+        };
+
+        let rel_protocol_info = match &self.action {
+            TakerAction::Buy => self.rel_coin.coin_protocol_info(None),
+            TakerAction::Sell => self.rel_coin.coin_protocol_info(Some(self.rel_amount.clone())),
+        };
+
         TakerOrder {
             created_at: now_ms(),
             request: TakerRequest {
@@ -1488,14 +1490,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 dest_pub_key: Default::default(),
                 match_by: self.match_by,
                 conf_settings: self.conf_settings,
-                base_protocol_info: Some(
-                    self.base_coin
-                        .coin_protocol_info(self.rel_coin.coin_protocol_additional_info_required()),
-                ),
-                rel_protocol_info: Some(
-                    self.rel_coin
-                        .coin_protocol_info(self.base_coin.coin_protocol_additional_info_required()),
-                ),
+                base_protocol_info: Some(base_protocol_info),
+                rel_protocol_info: Some(rel_protocol_info),
             },
             matches: HashMap::new(),
             min_volume: Default::default(),
@@ -3145,8 +3141,8 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                     maker_order_created_p2p_notify(
                         ctx.clone(),
                         &order,
-                        base.coin_protocol_info(rel.coin_protocol_additional_info_required()),
-                        rel.coin_protocol_info(base.coin_protocol_additional_info_required()),
+                        base.coin_protocol_info(None),
+                        rel.coin_protocol_info(Some(order.max_base_vol.clone() * order.price.clone())),
                     );
                 }
             }
@@ -3243,8 +3239,8 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
             maker_order_created_p2p_notify(
                 ctx.clone(),
                 &maker_order,
-                base.coin_protocol_info(rel.coin_protocol_additional_info_required()),
-                rel.coin_protocol_info(base.coin_protocol_additional_info_required()),
+                base.coin_protocol_info(None),
+                rel.coin_protocol_info(Some(maker_order.max_base_vol.clone() * maker_order.price.clone())),
             );
         }
     }
@@ -3360,14 +3356,9 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
             // send "connect" message if reserved message targets our pubkey AND
             // reserved amounts match our order AND order is NOT reserved by someone else (empty matches)
             if (my_order.match_reserved(&reserved_msg) == MatchReservedResult::Matched && my_order.matches.is_empty())
-                && base_coin.is_coin_protocol_supported(
-                    &reserved_msg.base_protocol_info,
-                    rel_coin.coin_protocol_additional_info_required(),
-                )
-                && rel_coin.is_coin_protocol_supported(
-                    &reserved_msg.rel_protocol_info,
-                    rel_coin.coin_protocol_additional_info_required(),
-                )
+                && base_coin.is_coin_protocol_supported(&reserved_msg.base_protocol_info, None)
+                && rel_coin
+                    .is_coin_protocol_supported(&reserved_msg.rel_protocol_info, Some(reserved_msg.rel_amount.clone()))
             {
                 let connect = TakerConnect {
                     sender_pubkey: H256Json::from(our_public_id.bytes),
@@ -3472,16 +3463,9 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
             };
 
             if !order.matches.contains_key(&taker_request.uuid)
-                && base_coin.is_coin_protocol_supported(
-                    taker_request.base_protocol_info_for_maker(),
-                    rel_coin.coin_protocol_additional_info_required()
-                        && taker_request.base_additional_info_required_for_maker(),
-                )
-                && rel_coin.is_coin_protocol_supported(
-                    taker_request.rel_protocol_info_for_maker(),
-                    base_coin.coin_protocol_additional_info_required()
-                        && taker_request.rel_additional_info_required_for_maker(),
-                )
+                && base_coin
+                    .is_coin_protocol_supported(taker_request.base_protocol_info_for_maker(), Some(base_amount.clone()))
+                && rel_coin.is_coin_protocol_supported(taker_request.rel_protocol_info_for_maker(), None)
             {
                 let reserved = MakerReserved {
                     dest_pub_key: taker_request.sender_pubkey,
@@ -3500,12 +3484,8 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                             rel_nota: rel_coin.requires_notarization(),
                         })
                     }),
-                    base_protocol_info: Some(
-                        base_coin.coin_protocol_info(rel_coin.coin_protocol_additional_info_required()),
-                    ),
-                    rel_protocol_info: Some(
-                        rel_coin.coin_protocol_info(base_coin.coin_protocol_additional_info_required()),
-                    ),
+                    base_protocol_info: Some(base_coin.coin_protocol_info(None)),
+                    rel_protocol_info: Some(rel_coin.coin_protocol_info(Some(rel_amount.clone()))),
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
@@ -4540,9 +4520,9 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         rel_nota: req.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
     let builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
-        .with_max_base_vol(volume)
+        .with_max_base_vol(volume.clone())
         .with_min_base_vol(req.min_volume)
-        .with_price(req.price)
+        .with_price(req.price.clone())
         .with_conf_settings(conf_settings)
         .with_save_in_history(req.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
@@ -4566,8 +4546,8 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
     maker_order_created_p2p_notify(
         ctx.clone(),
         &new_order,
-        base_coin.coin_protocol_info(rel_coin.coin_protocol_additional_info_required()),
-        rel_coin.coin_protocol_info(base_coin.coin_protocol_additional_info_required()),
+        base_coin.coin_protocol_info(None),
+        rel_coin.coin_protocol_info(Some(volume * req.price)),
     );
 
     ordermatch_ctx
@@ -5742,6 +5722,7 @@ fn orderbook_address(
             MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))
         },
         #[cfg(not(target_arch = "wasm32"))]
+        // Todo: this sprint
         // Todo: Shielded address is used for lightning for now, the lightning node public key can be used for the orderbook entry pubkey
         // Todo: instead of the platform coin pubkey which is used right now. But lightning payments are supposed to be private,
         // Todo: so maybe we should hide the node address in the orderbook, only the sending node and the receiving node should know about a payment,

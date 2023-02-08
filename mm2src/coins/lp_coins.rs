@@ -2045,16 +2045,14 @@ pub trait MmCoin:
     /// The minimum number of confirmations at which a transaction is considered mature.
     fn mature_confirmations(&self) -> Option<u32>;
 
-    // Todo: this is just for test
-    fn coin_protocol_additional_info_required(&self) -> bool { false }
-
     // Todo: rename and change doc comment
+    // Todo: also new fields added are only needed for lightning, can I find another way to do this?
     /// Get some of the coin config info in serialized format for p2p messaging.
-    fn coin_protocol_info(&self, is_required: bool) -> Vec<u8>;
+    fn coin_protocol_info(&self, amount_to_receive: Option<MmNumber>) -> Vec<u8>;
 
     // Todo: rename and change doc comment
     /// Check if serialized coin protocol info is supported by current version.
-    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>, is_required: bool) -> bool;
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>, amount_to_send: Option<MmNumber>) -> bool;
 
     /// Abort all coin related futures on coin deactivation.
     fn on_disabled(&self) -> Result<(), AbortedError>;
