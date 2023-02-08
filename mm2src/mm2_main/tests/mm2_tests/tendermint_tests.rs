@@ -4,7 +4,7 @@ use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{atom_testnet_conf, enable_tendermint, enable_tendermint_token,
                                   get_tendermint_my_tx_history, iris_nimda_testnet_conf, iris_testnet_conf,
                                   my_balance, send_raw_transaction, withdraw_v1, MarketMakerIt, Mm2TestConf};
-use mm2_test_helpers::structs::{MyBalanceResponse, RpcV2Response, TendermintActivationResult, TransactionDetails};
+use mm2_test_helpers::structs::{RpcV2Response, TendermintActivationResult, TransactionDetails};
 use serde_json::{self as json, json};
 
 const ATOM_TEST_BALANCE_SEED: &str = "atom test seed";
@@ -35,9 +35,7 @@ fn test_tendermint_activation_and_balance() {
     let expected_balance: BigDecimal = "0.0959".parse().unwrap();
     assert_eq!(result.result.balance.spendable, expected_balance);
 
-    let my_balance_result = block_on(my_balance(&mm, ATOM_TICKER));
-    let my_balance: MyBalanceResponse = json::from_value(my_balance_result).unwrap();
-
+    let my_balance = block_on(my_balance(&mm, ATOM_TICKER));
     assert_eq!(my_balance.balance, expected_balance);
     assert_eq!(my_balance.unspendable_balance, BigDecimal::default());
     assert_eq!(my_balance.address, expected_address);
@@ -61,14 +59,13 @@ fn test_tendermint_withdraw() {
     println!("Activation {}", json::to_string(&activation_res).unwrap());
 
     // just call withdraw without sending to check response correctness
-    let withdraw_result = block_on(withdraw_v1(
+    let tx_details = block_on(withdraw_v1(
         &mm,
         ATOM_TICKER,
         "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz",
         "0.1",
     ));
-    println!("Withdraw to other {}", json::to_string(&withdraw_result).unwrap());
-    let tx_details: TransactionDetails = json::from_value(withdraw_result).unwrap();
+    println!("Withdraw to other {}", json::to_string(&tx_details).unwrap());
     // TODO how to check it if the fee is dynamic?
     /*
     let expected_total: BigDecimal = "0.15".parse().unwrap();
@@ -85,15 +82,14 @@ fn test_tendermint_withdraw() {
     ]);
 
     // withdraw and send transaction to ourselves
-    let withdraw_result = block_on(withdraw_v1(
+    let tx_details = block_on(withdraw_v1(
         &mm,
         ATOM_TICKER,
         "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v",
         "0.1",
     ));
-    println!("Withdraw to self {}", json::to_string(&withdraw_result).unwrap());
+    println!("Withdraw to self {}", json::to_string(&tx_details).unwrap());
 
-    let tx_details: TransactionDetails = json::from_value(withdraw_result).unwrap();
     // TODO how to check it if the fee is dynamic?
     /*
     let expected_total: BigDecimal = "0.15".parse().unwrap();
@@ -133,15 +129,14 @@ fn test_tendermint_token_activation_and_withdraw() {
     println!("Token activation {}", json::to_string(&activation_res).unwrap());
 
     // just call withdraw without sending to check response correctness
-    let withdraw_result = block_on(withdraw_v1(
+    let tx_details = block_on(withdraw_v1(
         &mm,
         token,
         "iaa1llp0f6qxemgh4g4m5ewk0ew0hxj76avuz8kwd5",
         "0.1",
     ));
 
-    println!("Withdraw to other {}", json::to_string(&withdraw_result).unwrap());
-    let tx_details: TransactionDetails = json::from_value(withdraw_result).unwrap();
+    println!("Withdraw to other {}", json::to_string(&tx_details).unwrap());
 
     let expected_total: BigDecimal = "0.1".parse().unwrap();
     assert_eq!(tx_details.total_amount, expected_total);
@@ -164,15 +159,14 @@ fn test_tendermint_token_activation_and_withdraw() {
     ]);
 
     // withdraw and send transaction to ourselves
-    let withdraw_result = block_on(withdraw_v1(
+    let tx_details = block_on(withdraw_v1(
         &mm,
         token,
         "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2",
         "0.1",
     ));
-    println!("Withdraw to self {}", json::to_string(&withdraw_result).unwrap());
+    println!("Withdraw to self {}", json::to_string(&tx_details).unwrap());
 
-    let tx_details: TransactionDetails = json::from_value(withdraw_result).unwrap();
     let expected_total: BigDecimal = "0.1".parse().unwrap();
     let expected_received: BigDecimal = "0.1".parse().unwrap();
 

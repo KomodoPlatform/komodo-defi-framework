@@ -29,7 +29,8 @@ use http::StatusCode;
 use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::enable_native;
+use mm2_test_helpers::for_tests::{enable_native, eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES,
+                                  ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::structs::{MyBalanceResponse, TransactionDetails};
 use primitives::hash::{H160, H256};
 use script::Builder;
@@ -133,13 +134,12 @@ pub struct BchDockerOps {
 // builds the EthCoin using the external dev Parity/OpenEthereum node
 // the address belonging to the default passphrase has million of ETH that it can distribute to
 // random privkeys generated in tests
-fn eth_distributor() -> EthCoin {
-    let conf = json!({"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}});
+pub fn eth_distributor() -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "ETH",
-        "urls": ["http://195.201.0.6:8565"],
-        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
     });
     let keypair =
         key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
@@ -147,7 +147,7 @@ fn eth_distributor() -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "ETH",
-        &conf,
+        &eth_testnet_conf(),
         &req,
         CoinProtocol::ETH,
         priv_key_policy,
@@ -161,6 +161,50 @@ pub fn fill_eth(to_addr: &str) {
         .send_to_address(to_addr.parse().unwrap(), 1_000_000_000_000_000_000u64.into())
         .wait()
         .unwrap();
+}
+
+pub fn generate_eth_coin_with_random_privkey() -> EthCoin {
+    let req = json!({
+        "method": "enable",
+        "coin": "ETH",
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+    });
+    let priv_key = random_secp256k1_secret();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
+    block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "ETH",
+        &eth_testnet_conf(),
+        &req,
+        CoinProtocol::ETH,
+        priv_key_policy,
+    ))
+    .unwrap()
+}
+
+pub fn generate_jst_with_seed(seed: &str) -> EthCoin {
+    let req = json!({
+        "method": "enable",
+        "coin": "JST",
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+    });
+
+    let keypair = key_pair_from_seed(seed).unwrap();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
+    block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "JST",
+        &eth_jst_testnet_conf(),
+        &req,
+        CoinProtocol::ERC20 {
+            platform: "ETH".into(),
+            contract_address: String::from("0x2b294F029Fde858b2c62184e8390591755521d8E"),
+        },
+        priv_key_policy,
+    ))
+    .unwrap()
 }
 
 impl BchDockerOps {

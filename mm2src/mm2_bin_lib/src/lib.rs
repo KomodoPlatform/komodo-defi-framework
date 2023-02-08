@@ -1,4 +1,6 @@
+use enum_primitive_derive::Primitive;
 use mm2_core::mm_ctx::MmArc;
+use mm2_main::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[cfg(target_arch = "wasm32")] use wasm_bindgen::prelude::*;
 
@@ -24,7 +26,7 @@ pub enum MainStatus {
 }
 
 /// Checks if the MM2 singleton thread is currently running or not.
-pub fn mm2_status() -> MainStatus {
+fn mm2_status() -> MainStatus {
     if !LP_MAIN_RUNNING.load(Ordering::Relaxed) {
         return MainStatus::NotRunning;
     }
@@ -44,4 +46,58 @@ pub fn mm2_status() -> MainStatus {
     } else {
         MainStatus::NoRpc
     }
+}
+
+enum PrepareForStopResult {
+    CanBeStopped(MmArc),
+    /// Please note that the status is not always an error.
+    /// [`StopStatus::Ok`] means that the global state was incorrect (`mm2_run` didn't work, although it should have),
+    /// and there is no need to stop an mm2 instance manually.
+    ReadyStopStatus(StopStatus),
+}
+
+#[derive(Debug, PartialEq, Primitive)]
+pub enum StopStatus {
+    Ok = 0,
+    NotRunning = 1,
+    ErrorStopping = 2,
+    StoppingAlready = 3,
+}
+
+/// Checks if we can stop a MarketMaker2 instance.
+fn prepare_for_mm2_stop() -> PrepareForStopResult {
+    // The log callback might be initialized already, so try to use the common logs.
+    use common::log::warn;
+
+    if !LP_MAIN_RUNNING.load(Ordering::Relaxed) {
+        return PrepareForStopResult::ReadyStopStatus(StopStatus::NotRunning);
+    }
+
+    let ctx = CTX.load(Ordering::Relaxed);
+    if ctx == 0 {
+        warn!("mm2_stop] lp_main is running without ctx");
+        LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
+        return PrepareForStopResult::ReadyStopStatus(StopStatus::Ok);
+    }
+
+    let ctx = match MmArc::from_ffi_handle(ctx) {
+        Ok(ctx) => ctx,
+        Err(_) => {
+            warn!("mm2_stop] lp_main is still running, although ctx has already been dropped");
+            LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
+            // There is no need to rewrite the `CTX`, because it will be removed on `mm2_main`.
+            return PrepareForStopResult::ReadyStopStatus(StopStatus::Ok);
+        },
+    };
+
+    if ctx.is_stopping() {
+        return PrepareForStopResult::ReadyStopStatus(StopStatus::StoppingAlready);
+    }
+
+    PrepareForStopResult::CanBeStopped(ctx)
+}
+
+async fn finalize_mm2_stop(ctx: MmArc) {
+    dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
+    let _ = ctx.stop();
 }

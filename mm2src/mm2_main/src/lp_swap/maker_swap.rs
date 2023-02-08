@@ -269,6 +269,12 @@ impl MakerSwap {
         match event {
             MakerSwapEvent::Started(data) => {
                 self.w().data = data;
+                log_tag!(
+                    self.ctx,
+                    "";
+                    fmt = "Maker swap {} has successfully started",
+                    self.uuid
+                );
             },
             MakerSwapEvent::StartFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::Negotiated(data) => {
@@ -587,7 +593,7 @@ impl MakerSwap {
             },
         };
         drop(send_abort_handle);
-        let time_dif = (self.r().data.started_at as i64 - taker_data.started_at() as i64).abs();
+        let time_dif = self.r().data.started_at.abs_diff(taker_data.started_at());
         if time_dif > 60 {
             self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
@@ -595,12 +601,12 @@ impl MakerSwap {
             )]));
         }
 
-        let expected_lock_time = taker_data.started_at() + self.r().data.lock_duration;
-        if taker_data.payment_locktime() != expected_lock_time {
+        let expected_lock_time = taker_data.started_at().checked_add(self.r().data.lock_duration);
+        if Some(taker_data.payment_locktime()) != expected_lock_time {
             self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                 ERRL!(
-                    "taker_data.payment_locktime {} not equal to expected {}",
+                    "taker_data.payment_locktime {:?} not equal to expected {:?}",
                     taker_data.payment_locktime(),
                     expected_lock_time
                 )
@@ -1607,6 +1613,7 @@ impl MakerSwapEvent {
             self,
             MakerSwapEvent::Started(_)
                 | MakerSwapEvent::Negotiated(_)
+                | MakerSwapEvent::MakerPaymentInstructionsReceived(_)
                 | MakerSwapEvent::TakerFeeValidated(_)
                 | MakerSwapEvent::MakerPaymentSent(_)
                 | MakerSwapEvent::TakerPaymentReceived(_)
@@ -2092,7 +2099,9 @@ pub async fn maker_swap_trade_preimage(
     let rel_coin_ticker = rel_coin.ticker();
     let volume = if req.max {
         let balance = base_coin.my_spendable_balance().compat().await?;
-        calc_max_maker_vol(ctx, &base_coin, &balance, FeeApproxStage::TradePreimage).await?
+        calc_max_maker_vol(ctx, &base_coin, &balance, FeeApproxStage::TradePreimage)
+            .await?
+            .volume
     } else {
         // Todo: impl min_trading_vol in a right way
         let threshold = base_coin.min_trading_vol().to_decimal();
@@ -2161,7 +2170,20 @@ pub async fn maker_swap_trade_preimage(
     })
 }
 
-/// Calculate max Maker volume.
+pub struct CoinVolumeInfo {
+    pub volume: MmNumber,
+    pub balance: MmNumber,
+    pub locked_by_swaps: MmNumber,
+}
+
+/// Requests the `coin` balance and calculates max Maker volume.
+/// Returns [`CheckBalanceError::NotSufficientBalance`] if the balance is insufficient.
+pub async fn get_max_maker_vol(ctx: &MmArc, my_coin: &MmCoinEnum) -> CheckBalanceResult<CoinVolumeInfo> {
+    let my_balance = my_coin.my_spendable_balance().compat().await?;
+    calc_max_maker_vol(ctx, my_coin, &my_balance, FeeApproxStage::OrderIssue).await
+}
+
+/// Calculates max Maker volume.
 /// Returns [`CheckBalanceError::NotSufficientBalance`] if the balance is not sufficient.
 /// Note the function checks base coin balance if the trade fee should be paid in base coin.
 //Todo: need to check inbound liquidity too :(, maybe in another function
@@ -2170,13 +2192,13 @@ pub async fn calc_max_maker_vol(
     coin: &MmCoinEnum,
     balance: &BigDecimal,
     stage: FeeApproxStage,
-) -> CheckBalanceResult<MmNumber> {
+) -> CheckBalanceResult<CoinVolumeInfo> {
     let ticker = coin.ticker();
-    let locked = get_locked_amount(ctx, ticker);
-    let available = &MmNumber::from(balance.clone()) - &locked;
-    let mut vol = available.clone();
+    let locked_by_swaps = get_locked_amount(ctx, ticker);
+    let available = &MmNumber::from(balance.clone()) - &locked_by_swaps;
+    let mut volume = available.clone();
 
-    let preimage_value = TradePreimageValue::UpperBound(vol.to_decimal());
+    let preimage_value = TradePreimageValue::UpperBound(volume.to_decimal());
     // Todo: should find a route at this stage probably?? but maker order stays for some time? how to calculate the fee? get all routes and calculate maximum fee? what if there is a new route?
     let trade_fee = coin
         .get_sender_trade_fee(preimage_value, stage)
@@ -2186,7 +2208,7 @@ pub async fn calc_max_maker_vol(
     debug!("{} trade fee {}", trade_fee.coin, trade_fee.amount.to_decimal());
     let mut required_to_pay_fee = MmNumber::from(0);
     if trade_fee.coin == ticker {
-        vol = &vol - &trade_fee.amount;
+        volume = &volume - &trade_fee.amount;
         required_to_pay_fee = trade_fee.amount;
     } else {
         // Todo: shouldn't use base coin balance here? since lightning doesn't depend on btc, only if JIT is enabled
@@ -2194,16 +2216,20 @@ pub async fn calc_max_maker_vol(
         check_base_coin_balance_for_swap(ctx, &MmNumber::from(base_coin_balance), trade_fee.clone(), None).await?;
     }
     let min_tx_amount = MmNumber::from(coin.min_tx_amount());
-    if vol < min_tx_amount {
+    if volume < min_tx_amount {
         let required = min_tx_amount + required_to_pay_fee;
         return MmError::err(CheckBalanceError::NotSufficientBalance {
             coin: ticker.to_owned(),
             available: available.to_decimal(),
             required: required.to_decimal(),
-            locked_by_swaps: Some(locked.to_decimal()),
+            locked_by_swaps: Some(locked_by_swaps.to_decimal()),
         });
     }
-    Ok(vol)
+    Ok(CoinVolumeInfo {
+        volume,
+        balance: MmNumber::from(balance.clone()),
+        locked_by_swaps,
+    })
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

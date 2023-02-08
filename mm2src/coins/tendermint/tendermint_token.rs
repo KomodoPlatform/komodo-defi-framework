@@ -6,15 +6,15 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
             MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr,
             PaymentInstructions, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, RefundError,
-            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
-            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFut, WithdrawRequest};
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
+            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SendWatcherRefundsPaymentArgs,
+            SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType,
+            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -276,8 +276,6 @@ impl SwapOps for TendermintToken {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
-
-    fn is_supported_by_watchers(&self) -> bool { false }
 }
 
 #[async_trait]
@@ -307,7 +305,7 @@ impl WatcherOps for TendermintToken {
         unimplemented!();
     }
 
-    fn send_maker_payment_spend_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+    fn send_maker_payment_spend_preimage(&self, _input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
         unimplemented!();
     }
 
@@ -323,7 +321,10 @@ impl WatcherOps for TendermintToken {
         unimplemented!();
     }
 
-    fn send_taker_payment_refund_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(
+        &self,
+        _watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
+    ) -> TransactionFut {
         unimplemented!();
     }
 

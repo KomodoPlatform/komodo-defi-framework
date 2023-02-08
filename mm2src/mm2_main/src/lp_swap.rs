@@ -59,19 +59,19 @@
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use bitcrypto::{dhash160, sha256};
-use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
              executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
              log::{error, info},
-             now_ms, var, PagingOptions};
+             now_ms, var, HttpStatusCode, PagingOptions, StatusCode};
 use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPrefix};
-use mm2_number::{BigDecimal, BigRational, MmNumber};
+use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::Serialize;
@@ -89,6 +89,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 #[path = "lp_swap/check_balance.rs"] mod check_balance;
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
+#[path = "lp_swap/max_maker_vol_rpc.rs"] mod max_maker_vol_rpc;
 #[path = "lp_swap/my_swaps_storage.rs"] mod my_swaps_storage;
 #[path = "lp_swap/pubkey_banning.rs"] mod pubkey_banning;
 #[path = "lp_swap/recreate_swap_data.rs"] mod recreate_swap_data;
@@ -102,13 +103,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "lp_swap/swap_wasm_db.rs"]
 mod swap_wasm_db;
 
-pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
+pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
 use crypto::CryptoCtx;
 use keys::KeyPair;
 use maker_swap::MakerSwapEvent;
-pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
-                     MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
-                     RunMakerSwapInput, MAKER_PAYMENT_SENT_LOG};
+pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, get_max_maker_vol, maker_swap_trade_preimage,
+                     run_maker_swap, CoinVolumeInfo, MakerSavedEvent, MakerSavedSwap, MakerSwap,
+                     MakerSwapStatusChanged, MakerTradePreimage, RunMakerSwapInput, MAKER_PAYMENT_SENT_LOG};
+pub use max_maker_vol_rpc::max_maker_vol;
 use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
@@ -441,6 +443,53 @@ impl SwapsContext {
 
     #[cfg(target_arch = "wasm32")]
     pub async fn swap_db(&self) -> InitDbResult<SwapDbLocked<'_>> { Ok(self.swap_db.get_or_initialize().await?) }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetLockedAmountReq {
+    coin: String,
+}
+
+#[derive(Serialize)]
+pub struct GetLockedAmountResp {
+    coin: String,
+    locked_amount: MmNumberMultiRepr,
+}
+
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum GetLockedAmountRpcError {
+    #[display(fmt = "No such coin: {}", coin)]
+    NoSuchCoin { coin: String },
+}
+
+impl HttpStatusCode for GetLockedAmountRpcError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            GetLockedAmountRpcError::NoSuchCoin { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<CoinFindError> for GetLockedAmountRpcError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => GetLockedAmountRpcError::NoSuchCoin { coin },
+        }
+    }
+}
+
+pub async fn get_locked_amount_rpc(
+    ctx: MmArc,
+    req: GetLockedAmountReq,
+) -> Result<GetLockedAmountResp, MmError<GetLockedAmountRpcError>> {
+    lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let locked_amount = get_locked_amount(&ctx, &req.coin);
+
+    Ok(GetLockedAmountResp {
+        coin: req.coin,
+        locked_amount: locked_amount.into(),
+    })
 }
 
 /// Get total amount of selected coin locked by all currently ongoing swaps

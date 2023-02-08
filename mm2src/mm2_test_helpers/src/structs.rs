@@ -1,12 +1,16 @@
 #![allow(dead_code, unused_variables)]
 
-/// The helper structs used in testing of RPC responses, these should be separated from actual MM2 code to ensure
-/// backwards compatibility
-/// Use `#[serde(deny_unknown_fields)]` for all structs for tests to fail in case of adding new fields to the response
+//! The helper structs used in testing of RPC responses, these should be separated from actual MM2 code to ensure
+//! backwards compatibility
+//! Use `#[serde(deny_unknown_fields)]` for all structs for tests to fail in case of adding new fields to the response
+
+use http::{HeaderMap, StatusCode};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use rpc::v1::types::H256 as H256Json;
+use serde::de::DeserializeOwned;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::num::NonZeroUsize;
 use uuid::Uuid;
 
@@ -29,6 +33,48 @@ pub struct RpcErrorResponse<E> {
     pub error_type: String,
     pub error_data: Option<E>,
     pub id: Option<usize>,
+}
+
+/// This RPC response helper is useful in those tests that handle `Success` and `Error` both responses.
+#[derive(Debug)]
+pub struct RpcResponse {
+    rpc_name: String,
+    status_code: StatusCode,
+    payload: String,
+}
+
+impl RpcResponse {
+    pub fn new(rpc_name: &str, rc: (StatusCode, String, HeaderMap)) -> RpcResponse {
+        RpcResponse {
+            rpc_name: rpc_name.to_string(),
+            status_code: rc.0,
+            payload: rc.1,
+        }
+    }
+
+    #[track_caller]
+    pub fn unwrap<T>(self) -> T
+    where
+        T: fmt::Debug + DeserializeOwned,
+    {
+        assert!(self.status_code.is_success(), "!{}: {}", self.rpc_name, self.payload);
+        let res: RpcSuccessResponse<T> = serde_json::from_str(&self.payload).unwrap();
+        res.result
+    }
+
+    #[track_caller]
+    pub fn unwrap_err<E>(self) -> RpcErrorResponse<E>
+    where
+        E: fmt::Debug + DeserializeOwned,
+    {
+        assert!(
+            !self.status_code.is_success(),
+            "'{}' should have failed, but got: {}",
+            self.rpc_name,
+            self.payload
+        );
+        serde_json::from_str(&self.payload).unwrap()
+    }
 }
 
 #[derive(Deserialize)]
@@ -520,6 +566,28 @@ pub struct MaxTakerVolResponse {
     pub coin: String,
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MaxMakerVolResponse {
+    pub coin: String,
+    pub volume: MmNumberMultiRepr,
+    pub balance: MmNumberMultiRepr,
+    pub locked_by_swaps: MmNumberMultiRepr,
+}
+
+pub mod max_maker_vol_error {
+    use mm2_number::BigDecimal;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct NotSufficientBalance {
+        pub coin: String,
+        pub available: BigDecimal,
+        pub required: BigDecimal,
+        pub locked_by_swaps: Option<BigDecimal>,
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawTransactionResult {
@@ -555,7 +623,7 @@ pub enum TransactionType {
     },
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransactionDetails {
     pub tx_hex: String,
@@ -952,12 +1020,26 @@ pub struct AggregatedOrderbookEntryV2 {
     pub rel_max_volume_aggr: MmNumberMultiRepr,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct MmNumberMultiRepr {
     pub decimal: BigDecimal,
     pub rational: BigRational,
     pub fraction: Fraction,
+}
+
+impl<T> From<T> for MmNumberMultiRepr
+where
+    MmNumber: From<T>,
+{
+    fn from(number: T) -> Self {
+        let mm_number = MmNumber::from(number);
+        MmNumberMultiRepr {
+            decimal: mm_number.to_decimal(),
+            rational: mm_number.to_ratio(),
+            fraction: mm_number.to_fraction(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1010,6 +1092,13 @@ pub struct TendermintActivationResult {
     pub ticker: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GetLockedAmountResponse {
+    pub coin: String,
+    pub locked_amount: MmNumberMultiRepr,
+}
+
 pub mod gui_storage {
     use mm2_number::BigDecimal;
     use std::collections::BTreeSet;
@@ -1049,4 +1138,16 @@ pub mod gui_storage {
         pub account_id: AccountId,
         pub coins: BTreeSet<String>,
     }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WatcherConf {
+    #[serde(default = "common::sixty_f64")]
+    pub wait_taker_payment: f64,
+    #[serde(default = "common::one_f64")]
+    pub wait_maker_payment_spend_factor: f64,
+    #[serde(default = "common::one_and_half_f64")]
+    pub refund_start_factor: f64,
+    #[serde(default = "common::three_hundred_f64")]
+    pub search_interval: f64,
 }
