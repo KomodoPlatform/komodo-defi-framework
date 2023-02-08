@@ -56,6 +56,10 @@ impl From<GetEthAddressError> for GetNftInfoError {
     fn from(e: GetEthAddressError) -> Self { GetNftInfoError::GetEthAddressError(e) }
 }
 
+impl From<serde_json::Error> for GetNftInfoError {
+    fn from(e: serde_json::Error) -> Self { GetNftInfoError::InvalidResponse(e.to_string()) }
+}
+
 impl HttpStatusCode for GetNftInfoError {
     fn status_code(&self) -> StatusCode {
         match self {

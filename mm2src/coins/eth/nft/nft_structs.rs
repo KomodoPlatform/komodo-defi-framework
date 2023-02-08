@@ -1,8 +1,8 @@
-use std::str::FromStr;
-use serde::Deserialize;
 use crate::{TxFeeDetails, WithdrawFee};
 use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
+use serde::Deserialize;
+use std::str::FromStr;
 // use serde_json::Value as Json;
 
 #[allow(dead_code)]
@@ -19,7 +19,6 @@ pub struct NftMetadataReq {
     chain: String,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub enum Chain {
     Eth,
@@ -31,7 +30,6 @@ pub enum ParseContractTypeError {
     UnsupportedContractType,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ContractType {
     Erc721,
@@ -45,13 +43,12 @@ impl FromStr for ContractType {
     fn from_str(s: &str) -> Result<ContractType, ParseContractTypeError> {
         match s {
             "ERC721" => Ok(ContractType::Erc721),
-            "ERC1155" =>Ok(ContractType::Erc1155),
+            "ERC1155" => Ok(ContractType::Erc1155),
             _ => Err(ParseContractTypeError::UnsupportedContractType),
         }
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Nft {
     pub(crate) chain: Chain,
@@ -74,7 +71,7 @@ pub struct Nft {
 
 /// This structure is for deserializing NFT json from Moralis to struct.
 /// Its needed to convert fields properly, bcz Moralis returns json where all fields have string type.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct NftWrapper {
     pub(crate) token_address: Option<String>,
     pub(crate) token_id: Option<Wrap<BigDecimal>>,
@@ -93,13 +90,13 @@ pub struct NftWrapper {
     pub(crate) minter_address: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Wrap<T>(T);
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Wrap<T>(pub(crate) T);
 
 impl<'de, T> Deserialize<'de> for Wrap<T>
-    where
-        T: std::str::FromStr,
-        T::Err: std::fmt::Debug + std::fmt::Display,
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Debug + std::fmt::Display,
 {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value: &str = Deserialize::deserialize(deserializer)?;
@@ -113,16 +110,13 @@ impl<'de, T> Deserialize<'de> for Wrap<T>
 
 impl<T> std::ops::Deref for Wrap<T> {
     type Target = T;
-    fn deref(&self) -> &T {
-        &self.0
-    }
+    fn deref(&self) -> &T { &self.0 }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NftList {
-    count: i64,
-    nfts: Vec<Nft>,
+    pub(crate) count: u64,
+    pub(crate) nfts: Vec<Nft>,
 }
 
 #[allow(dead_code)]
@@ -210,6 +204,6 @@ pub struct NftTransferHistory {
 #[derive(Debug, Serialize)]
 pub struct NftsTransferHistoryByChain {
     chain: Chain,
-    count: i64,
+    count: u64,
     transfer_history: Vec<NftTransferHistory>,
 }
