@@ -3,9 +3,7 @@ use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 use serde::Deserialize;
 use std::str::FromStr;
-// use serde_json::Value as Json;
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct NftListReq {
     pub(crate) chains: Vec<Chain>,
