@@ -7,7 +7,7 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_messa
             check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
             get_locked_amount, recv_swap_msg, swap_topic, taker_payment_spend_deadline, tx_helper_topic,
             wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
-            NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
+            NegotiationDataV3, NegotiationDataV4, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
             SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg, SwapsContext,
             TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
@@ -121,6 +121,7 @@ pub struct TakerNegotiationData {
     pub taker_coin_swap_contract_addr: Option<BytesJson>,
     pub maker_coin_htlc_pubkey: Option<H264Json>,
     pub taker_coin_htlc_pubkey: Option<H264Json>,
+    pub watcher_reward: bool,
 }
 
 impl TakerNegotiationData {
@@ -402,15 +403,17 @@ impl MakerSwap {
 
         let equal = r.data.maker_coin_htlc_pubkey == r.data.taker_coin_htlc_pubkey;
         let same_as_persistent = r.data.maker_coin_htlc_pubkey == Some(r.data.my_persistent_pub);
+        let watcher_reward = self.ctx.use_watchers() && self.maker_coin.is_supported_by_watchers();
 
         if equal && same_as_persistent {
-            NegotiationDataMsg::V2(NegotiationDataV2 {
+            NegotiationDataMsg::V4(NegotiationDataV4 {
                 started_at: r.data.started_at,
                 payment_locktime: r.data.maker_payment_lock,
                 persistent_pubkey: r.data.my_persistent_pub.0.to_vec(),
                 secret_hash,
                 maker_coin_swap_contract,
                 taker_coin_swap_contract,
+                watcher_reward,
             })
         } else {
             NegotiationDataMsg::V3(NegotiationDataV3 {
@@ -660,6 +663,7 @@ impl MakerSwap {
                 taker_coin_swap_contract_addr,
                 maker_coin_htlc_pubkey: Some(taker_data.maker_coin_htlc_pub().into()),
                 taker_coin_htlc_pubkey: Some(taker_data.taker_coin_htlc_pub().into()),
+                watcher_reward: taker_data.watcher_reward(),
             }),
         ]))
     }

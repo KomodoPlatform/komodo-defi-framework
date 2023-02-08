@@ -7,7 +7,7 @@ use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePr
 use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_message_every,
             check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, dex_fee_threshold,
             get_locked_amount, recv_swap_msg, swap_topic, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount,
-            MySwapInfo, NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction,
+            MySwapInfo, NegotiationDataMsg, NegotiationDataV3, NegotiationDataV4, RecoveredSwap, RecoveredSwapAction,
             SavedSwap, SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg,
             SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
@@ -509,6 +509,7 @@ pub struct TakerSwapMut {
     taker_payment_refund: Option<TransactionIdentifier>,
     secret_hash: BytesJson,
     secret: H256Json,
+    watcher_reward: bool,
     payment_instructions: Option<PaymentInstructions>,
 }
 
@@ -569,6 +570,7 @@ pub struct MakerNegotiationData {
     pub taker_coin_swap_contract_addr: Option<BytesJson>,
     pub maker_coin_htlc_pubkey: Option<H264Json>,
     pub taker_coin_htlc_pubkey: Option<H264Json>,
+    pub watcher_reward: bool,
 }
 
 impl MakerNegotiationData {
@@ -730,6 +732,7 @@ impl TakerSwap {
                 self.w().other_maker_coin_htlc_pub = data.other_maker_coin_htlc_pub();
                 self.w().other_taker_coin_htlc_pub = data.other_taker_coin_htlc_pub();
                 self.w().secret_hash = data.secret_hash;
+                self.w().watcher_reward = data.watcher_reward;
 
                 if data.maker_coin_swap_contract_addr.is_some() {
                     self.w().data.maker_coin_swap_contract_address = data.maker_coin_swap_contract_addr;
@@ -841,6 +844,7 @@ impl TakerSwap {
                 taker_payment_refund: None,
                 secret_hash: BytesJson::default(),
                 secret: H256Json::default(),
+                watcher_reward: false,
                 payment_instructions: None,
             }),
             ctx,
@@ -854,6 +858,7 @@ impl TakerSwap {
         secret_hash: Vec<u8>,
         maker_coin_swap_contract: Vec<u8>,
         taker_coin_swap_contract: Vec<u8>,
+        watcher_reward: bool,
     ) -> NegotiationDataMsg {
         let r = self.r();
 
@@ -861,13 +866,14 @@ impl TakerSwap {
         let same_as_persistent = r.data.maker_coin_htlc_pubkey == Some(r.data.my_persistent_pub);
 
         if equal && same_as_persistent {
-            NegotiationDataMsg::V2(NegotiationDataV2 {
+            NegotiationDataMsg::V4(NegotiationDataV4 {
                 started_at: r.data.started_at,
                 secret_hash,
                 payment_locktime: r.data.taker_payment_lock,
                 persistent_pubkey: self.my_persistent_pub.to_vec(),
                 maker_coin_swap_contract,
                 taker_coin_swap_contract,
+                watcher_reward,
             })
         } else {
             NegotiationDataMsg::V3(NegotiationDataV3 {
@@ -1121,10 +1127,17 @@ impl TakerSwap {
         let taker_coin_swap_contract_bytes = taker_coin_swap_contract_addr
             .clone()
             .map_or_else(Vec::new, |bytes| bytes.0);
+
+        let watcher_reward = self.ctx.use_watchers()
+            && self.taker_coin.is_supported_by_watchers()
+            && maker_data.watcher_reward()
+            && (matches!(self.taker_coin, MmCoinEnum::EthCoin(_)) || matches!(self.maker_coin, MmCoinEnum::EthCoin(_)));
+
         let my_negotiation_data = self.get_my_negotiation_data(
             maker_data.secret_hash().to_vec(),
             maker_coin_swap_contract_bytes,
             taker_coin_swap_contract_bytes,
+            watcher_reward,
         );
 
         let taker_data = SwapMsg::NegotiationReply(my_negotiation_data);
@@ -1169,6 +1182,7 @@ impl TakerSwap {
                 taker_coin_swap_contract_addr,
                 maker_coin_htlc_pubkey: Some(maker_data.maker_coin_htlc_pub().into()),
                 taker_coin_htlc_pubkey: Some(maker_data.taker_coin_htlc_pub().into()),
+                watcher_reward,
             },
         )]))
     }

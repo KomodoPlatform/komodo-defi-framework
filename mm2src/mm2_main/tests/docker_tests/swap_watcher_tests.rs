@@ -59,7 +59,7 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     log!("Alice log path: {}", mm_alice.log_path.display());
 
     let bob_passphrase = String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney");
-    let bob_conf = Mm2TestConf::light_node(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
+    let bob_conf = Mm2TestConf::light_node_using_watchers(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
@@ -121,7 +121,7 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     log!("Alice log path: {}", mm_alice.log_path.display());
 
     let bob_passphrase = String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney");
-    let bob_conf = Mm2TestConf::light_node(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
+    let bob_conf = Mm2TestConf::light_node_using_watchers(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
@@ -185,7 +185,7 @@ fn test_watcher_waits_for_taker_eth() {
     log!("Alice log path: {}", mm_alice.log_path.display());
 
     let bob_passphrase = String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney");
-    let bob_conf = Mm2TestConf::light_node(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
+    let bob_conf = Mm2TestConf::light_node_using_watchers(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
@@ -232,7 +232,7 @@ fn test_watcher_refunds_taker_payment_erc20() {
     log!("Alice log path: {}", mm_alice.log_path.display());
 
     let bob_passphrase = String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney");
-    let bob_conf = Mm2TestConf::light_node(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
+    let bob_conf = Mm2TestConf::light_node_using_watchers(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
@@ -301,7 +301,7 @@ fn test_watcher_refunds_taker_payment_eth() {
     log!("Alice log path: {}", mm_alice.log_path.display());
 
     let bob_passphrase = String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney");
-    let bob_conf = Mm2TestConf::light_node(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
+    let bob_conf = Mm2TestConf::light_node_using_watchers(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
@@ -1008,10 +1008,11 @@ fn test_watcher_spends_maker_payment_spend_utxo() {
     let mut mm_alice = MarketMakerIt::start(alice_conf.clone(), DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    let bob_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(bob_priv_key)), &coins, &[&mm_alice
-        .ip
-        .to_string()])
-    .conf;
+    let bob_conf =
+        Mm2TestConf::light_node_using_watchers(&format!("0x{}", hex::encode(bob_priv_key)), &coins, &[&mm_alice
+            .ip
+            .to_string()])
+        .conf;
     let mut mm_bob = MarketMakerIt::start(bob_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
@@ -1088,10 +1089,11 @@ fn test_watcher_waits_for_taker_utxo() {
     let mut mm_alice = MarketMakerIt::start(alice_conf.clone(), DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    let bob_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(bob_priv_key)), &coins, &[&mm_alice
-        .ip
-        .to_string()])
-    .conf;
+    let bob_conf =
+        Mm2TestConf::light_node_using_watchers(&format!("0x{}", hex::encode(bob_priv_key)), &coins, &[&mm_alice
+            .ip
+            .to_string()])
+        .conf;
     let mut mm_bob = MarketMakerIt::start(bob_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
@@ -1148,10 +1150,11 @@ fn test_watcher_refunds_taker_payment_utxo() {
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    let bob_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(bob_priv_key)), &coins, &[&mm_alice
-        .ip
-        .to_string()])
-    .conf;
+    let bob_conf =
+        Mm2TestConf::light_node_using_watchers(&format!("0x{}", hex::encode(bob_priv_key)), &coins, &[&mm_alice
+            .ip
+            .to_string()])
+        .conf;
     let mut mm_bob = MarketMakerIt::start(bob_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
