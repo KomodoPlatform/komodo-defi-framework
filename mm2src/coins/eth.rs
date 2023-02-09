@@ -950,12 +950,12 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
     Ok(transfer_history_list)
 }
 
-pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721Request) -> WithdrawNftResult {
+pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155Request) -> WithdrawNftResult {
     let _coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     todo!()
 }
 
-pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155Request) -> WithdrawNftResult {
+pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721Request) -> WithdrawNftResult {
     let _coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     todo!()
 }

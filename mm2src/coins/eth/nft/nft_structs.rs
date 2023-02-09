@@ -23,7 +23,7 @@ pub enum Chain {
     Eth,
 }
 
-#[derive(Debug, Display, PartialEq)]
+#[derive(Debug, Display)]
 pub enum ParseContractTypeError {
     UnsupportedContractType,
 }
@@ -47,7 +47,7 @@ impl FromStr for ContractType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Nft {
     pub(crate) chain: Chain,
     pub(crate) token_address: Option<String>,
@@ -69,7 +69,7 @@ pub struct Nft {
 
 /// This structure is for deserializing NFT json to struct.
 /// Its needed to convert fields properly, all fields in json from response have string type.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 pub struct NftWrapper {
     pub(crate) token_address: Option<String>,
     pub(crate) token_id: Option<Wrap<BigDecimal>>,
@@ -88,7 +88,7 @@ pub struct NftWrapper {
     pub(crate) minter_address: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Debug)]
 pub struct Wrap<T>(pub(crate) T);
 
 impl<'de, T> Deserialize<'de> for Wrap<T>
@@ -111,7 +111,7 @@ impl<T> std::ops::Deref for Wrap<T> {
     fn deref(&self) -> &T { &self.0 }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct NftList {
     pub(crate) count: u64,
     pub(crate) nfts: Vec<Nft>,
@@ -119,18 +119,8 @@ pub struct NftList {
 
 #[allow(dead_code)]
 #[derive(Clone, Deserialize)]
-pub struct WithdrawErc721Request {
-    pub coin: String,
-    to: String,
-    token_address: String,
-    token_id: BigDecimal,
-    fee: Option<WithdrawFee>,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Deserialize)]
 pub struct WithdrawErc1155Request {
-    pub coin: String,
+    pub(crate) coin: String,
     to: String,
     token_address: String,
     token_id: BigDecimal,
@@ -141,7 +131,17 @@ pub struct WithdrawErc1155Request {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Deserialize)]
+pub struct WithdrawErc721Request {
+    pub(crate) coin: String,
+    to: String,
+    token_address: String,
+    token_id: BigDecimal,
+    fee: Option<WithdrawFee>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TransactionNftDetails {
     /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction_bytes` RPC to broadcast the transaction
     tx_hex: BytesJson,
