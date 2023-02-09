@@ -48,9 +48,9 @@ use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerato
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use nft::nft_errors::GetNftInfoError;
-use nft::nft_structs::{Chain, Nft, NftList, NftListReq, NftMetadataReq, NftTransfersReq, NftWrapper,
-                       NftsTransferHistoryByChain, TransactionNftDetails, WithdrawErc1155Request,
-                       WithdrawErc721Request};
+use nft::nft_structs::{Chain, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory, NftTransferHistoryWrapper,
+                       NftTransfersReq, NftWrapper, NftsTransferHistoryList, TransactionNftDetails,
+                       WithdrawErc1155Request, WithdrawErc721Request};
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
@@ -141,10 +141,12 @@ const ETH_GAS: u64 = 150_000;
 /// Lifetime of generated signed message for gui-auth requests
 const GUI_AUTH_SIGNED_MESSAGE_LIFETIME_SEC: i64 = 90;
 
-#[allow(dead_code)]
+/// url for moralis requests
 const URL_MORALIS: &str = "https://deep-index.moralis.io/api/v2/";
-#[allow(dead_code)]
+/// query parameter for moralis request: The format of the token ID
 const FORMAT_DECIMAL_MORALIS: &str = "format=decimal";
+/// query parameter for moralis request: The transfer direction
+const DIRECTION_BOTH_MORALIS: &str = "direction=both";
 
 lazy_static! {
     pub static ref SWAP_CONTRACT: Contract = Contract::load(SWAP_CONTRACT_ABI.as_bytes()).unwrap();
@@ -819,7 +821,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
         };
         let my_address = get_eth_address(coin_str, &ctx).await?;
         let uri_without_cursor = format!(
-            "{}{}/nft?&chain={}&{}",
+            "{}{}/nft?chain={}&{}",
             URL_MORALIS, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS
         );
 
@@ -827,6 +829,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
             Some(api_key) => api_key,
             None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
         };
+        // The cursor returned in the previous response (used for getting the next page).
         let mut cursor = "".to_owned();
         loop {
             let uri = format!("{}{}", uri_without_cursor, cursor);
@@ -853,10 +856,12 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
                             last_metadata_sync: nft_wrapper.last_metadata_sync,
                             minter_address: nft_wrapper.minter_address,
                         };
+                        // collect NFTs from the page
                         res_list.push(nft);
                     }
                 }
-                // if cursor is not null, there are other nfts on next page
+                // if cursor is not null, there are other NFTs on next page,
+                // and we need to send new request with cursor to get info from the next page.
                 if !response["cursor"].is_null() {
                     if let Some(cursor_res) = response["cursor"].as_str() {
                         cursor = format!("{}{}", "&cursor=", cursor_res);
@@ -868,6 +873,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
             }
         }
     }
+    drop_mutability!(res_list);
     let nft_list = NftList {
         count: res_list.len() as u64,
         nfts: res_list,
@@ -877,11 +883,72 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 
 pub async fn get_nft_metadata(_ctx: MmArc, _req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> { todo!() }
 
-pub async fn get_nft_transfers(
-    _ctx: MmArc,
-    _req: NftTransfersReq,
-) -> MmResult<Vec<NftsTransferHistoryByChain>, GetNftInfoError> {
-    todo!()
+pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<NftsTransferHistoryList, GetNftInfoError> {
+    let mut res_list = Vec::new();
+    for chain in req.chains {
+        let (coin_str, chain_str) = match chain {
+            Chain::Eth => ("ETH", "eth"),
+            Chain::Bnb => ("BNB", "bsc"),
+        };
+        let my_address = get_eth_address(coin_str, &ctx).await?;
+        let uri_without_cursor = format!(
+            "{}{}/nft/transfers?chain={}&{}&{}",
+            URL_MORALIS, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS, DIRECTION_BOTH_MORALIS
+        );
+
+        let api_key = match ctx.conf["api_key"].as_str() {
+            Some(api_key) => api_key,
+            None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
+        };
+        // The cursor returned in the previous response (used for getting the next page).
+        let mut cursor = "".to_owned();
+        loop {
+            let uri = format!("{}{}", uri_without_cursor, cursor);
+            let response = send_moralis_request(uri.as_str(), api_key).await?;
+            if let Some(transfer_list) = response["result"].as_array() {
+                for transfer in transfer_list {
+                    let transfer_wrapper: NftTransferHistoryWrapper = serde_json::from_str(&transfer.to_string())?;
+                    let transfer_history = NftTransferHistory {
+                        chain: chain.clone(),
+                        block_number: *transfer_wrapper.block_number,
+                        block_timestamp: *transfer_wrapper.block_timestamp,
+                        block_hash: transfer_wrapper.block_hash,
+                        tx_hash: transfer_wrapper.tx_hash,
+                        tx_index: *transfer_wrapper.tx_index,
+                        log_index: *transfer_wrapper.log_index,
+                        value: transfer_wrapper.value.0,
+                        contract_type: transfer_wrapper.contract_type.0,
+                        tx_type: transfer_wrapper.tx_type,
+                        token_address: transfer_wrapper.token_address,
+                        token_id: transfer_wrapper.token_id.0,
+                        from: transfer_wrapper.from,
+                        to: transfer_wrapper.to,
+                        amount: transfer_wrapper.amount.0,
+                        verified: *transfer_wrapper.verified,
+                        operator: transfer_wrapper.operator,
+                    };
+                    // collect NFTs transfers from the page
+                    res_list.push(transfer_history);
+                }
+                // if the cursor is not null, there are other NFTs transfers on next page,
+                // and we need to send new request with cursor to get info from the next page.
+                if !response["cursor"].is_null() {
+                    if let Some(cursor_res) = response["cursor"].as_str() {
+                        cursor = format!("{}{}", "&cursor=", cursor_res);
+                        continue;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    drop_mutability!(res_list);
+    let transfer_history_list = NftsTransferHistoryList {
+        count: res_list.len() as u64,
+        transfer_history: res_list,
+    };
+    Ok(transfer_history_list)
 }
 
 pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721Request) -> WithdrawNftResult {

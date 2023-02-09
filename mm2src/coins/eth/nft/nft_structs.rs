@@ -67,8 +67,8 @@ pub struct Nft {
     pub(crate) minter_address: Option<String>,
 }
 
-/// This structure is for deserializing NFT json from Moralis to struct.
-/// Its needed to convert fields properly, bcz Moralis returns json where all fields have string type.
+/// This structure is for deserializing NFT json to struct.
+/// Its needed to convert fields properly, all fields in json from response have string type.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NftWrapper {
     pub(crate) token_address: Option<String>,
@@ -164,44 +164,56 @@ pub struct TransactionNftDetails {
     internal_id: i64,
 }
 
-#[allow(dead_code)]
-#[derive(Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct NftTransfersReq {
-    chains: Vec<String>,
+    pub(crate) chains: Vec<Chain>,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Serialize)]
-enum NftTxType {
-    Single,
-}
-
-#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct NftTransferHistory {
-    block_number: u64,
-    block_timestamp: u64,
-    block_hash: String,
+    pub(crate) chain: Chain,
+    pub(crate) block_number: u64,
+    pub(crate) block_timestamp: u64,
+    pub(crate) block_hash: String,
     /// Transaction hash in hexadecimal format
-    tx_hash: String,
-    tx_index: u64,
-    log_index: u64,
-    value: u64,
-    contract_type: ContractType,
-    tx_type: NftTxType,
-    token_address: String,
-    token_id: u64,
-    from: String,
-    to: String,
-    amount: BigDecimal,
-    verified: u64,
-    operator: Option<String>,
+    pub(crate) tx_hash: String,
+    pub(crate) tx_index: u64,
+    pub(crate) log_index: u64,
+    pub(crate) value: BigDecimal,
+    pub(crate) contract_type: ContractType,
+    pub(crate) tx_type: String,
+    pub(crate) token_address: String,
+    pub(crate) token_id: BigDecimal,
+    pub(crate) from: String,
+    pub(crate) to: String,
+    pub(crate) amount: BigDecimal,
+    pub(crate) verified: u64,
+    pub(crate) operator: Option<String>,
 }
 
-#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct NftTransferHistoryWrapper {
+    pub(crate) block_number: Wrap<u64>,
+    pub(crate) block_timestamp: Wrap<u64>,
+    pub(crate) block_hash: String,
+    /// Transaction hash in hexadecimal format
+    pub(crate) tx_hash: String,
+    pub(crate) tx_index: Wrap<u64>,
+    pub(crate) log_index: Wrap<u64>,
+    pub(crate) value: Wrap<BigDecimal>,
+    pub(crate) contract_type: Wrap<ContractType>,
+    pub(crate) tx_type: String,
+    pub(crate) token_address: String,
+    pub(crate) token_id: Wrap<BigDecimal>,
+    pub(crate) from: String,
+    pub(crate) to: String,
+    pub(crate) amount: Wrap<BigDecimal>,
+    pub(crate) verified: Wrap<u64>,
+    pub(crate) operator: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
-pub struct NftsTransferHistoryByChain {
-    chain: Chain,
-    count: u64,
-    transfer_history: Vec<NftTransferHistory>,
+pub struct NftsTransferHistoryList {
+    pub(crate) count: u64,
+    pub(crate) transfer_history: Vec<NftTransferHistory>,
 }
