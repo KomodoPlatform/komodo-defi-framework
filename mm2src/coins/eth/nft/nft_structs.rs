@@ -17,10 +17,10 @@ pub struct NftMetadataReq {
     chain: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Chain {
-    Eth,
     Bnb,
+    Eth,
 }
 
 #[derive(Debug, Display, PartialEq)]
@@ -30,8 +30,8 @@ pub enum ParseContractTypeError {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ContractType {
-    Erc721,
     Erc1155,
+    Erc721,
 }
 
 impl FromStr for ContractType {
@@ -40,8 +40,8 @@ impl FromStr for ContractType {
     #[inline]
     fn from_str(s: &str) -> Result<ContractType, ParseContractTypeError> {
         match s {
-            "ERC721" => Ok(ContractType::Erc721),
             "ERC1155" => Ok(ContractType::Erc1155),
+            "ERC721" => Ok(ContractType::Erc721),
             _ => Err(ParseContractTypeError::UnsupportedContractType),
         }
     }
@@ -88,7 +88,7 @@ pub struct NftWrapper {
     pub(crate) minter_address: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize)]
 pub struct Wrap<T>(pub(crate) T);
 
 impl<'de, T> Deserialize<'de> for Wrap<T>

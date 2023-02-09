@@ -95,9 +95,8 @@ mod nft;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
-use crate::eth::v2_activation::EthActivationV2Error;
 use crate::{lp_coinfind_or_err, MyWalletAddress};
-use v2_activation::build_address_and_priv_key_policy;
+use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.0.6:8565) contract address: 0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd
