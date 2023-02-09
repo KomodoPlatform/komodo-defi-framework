@@ -36,7 +36,7 @@ use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{AbortableSystem, AbortedError, Timer};
-use common::log::{info, LogOnError, LogState};
+use common::log::{error, info, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
 use futures::{FutureExt, TryFutureExt};
@@ -1354,18 +1354,21 @@ impl MmCoin for LightningCoin {
     // alongside the receiver lightning node address/pubkey.
     // Note: This is required only for the side that's getting paid in lightning.
     fn coin_protocol_info(&self, amount_to_receive: Option<MmNumber>) -> Vec<u8> {
-        if let Some(amt) = amount_to_receive {
-            // Todo: remove unwrap
-            let amt_msat = sat_from_big_decimal(&amt.into(), self.decimals()).unwrap();
-            let route_hints = filter_channels(self.channel_manager.list_usable_channels(), Some(amt_msat))
-                .iter()
-                .map(|h| h.encode())
-                .collect();
-            let node_id = PublicKeyForRPC(self.channel_manager.get_our_node_id());
-            let protocol_info = ProtocolInfo { node_id, route_hints };
-            return rmp_serde::to_vec(&protocol_info).expect("Serialization should not fail");
-        }
-        Vec::new()
+        let amt_msat = match amount_to_receive.map(|a| sat_from_big_decimal(&a.into(), self.decimals())) {
+            Some(Ok(amt)) => amt,
+            Some(Err(e)) => {
+                error!("{}", e);
+                return Vec::new();
+            },
+            None => return Vec::new(),
+        };
+        let route_hints = filter_channels(self.channel_manager.list_usable_channels(), Some(amt_msat))
+            .iter()
+            .map(|h| h.encode())
+            .collect();
+        let node_id = PublicKeyForRPC(self.channel_manager.get_our_node_id());
+        let protocol_info = ProtocolInfo { node_id, route_hints };
+        rmp_serde::to_vec(&protocol_info).expect("Serialization should not fail")
     }
 
     // Todo: will use a const max_cltv_expiry for now but should calculate an estimate locktime at this stage in the future
@@ -1374,44 +1377,55 @@ impl MmCoin for LightningCoin {
     // Todo: also rename this function to a better name, and required parameter to a better name
     // Todo: a check should be added for taker if they can pay the dex fee or not before the taker order is placed
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>, amount_to_send: Option<MmNumber>) -> bool {
-        if let Some(amt) = amount_to_send {
-            if let Some(i) = info {
-                if let Ok(protocol_info) = rmp_serde::from_read_ref::<_, ProtocolInfo>(i) {
-                    // Todo: remove unwrap
-                    let final_value_msat = sat_from_big_decimal(&amt.into(), self.decimals()).unwrap();
-                    // Todo: remove unwrap
-                    // Todo: need to check the size of vector when processing??
-                    let route_hints = protocol_info
-                        .route_hints
-                        .iter()
-                        .map(|h| Readable::read(&mut Cursor::new(h)).unwrap())
-                        .collect();
-                    let payment_params =
-                        PaymentParameters::from_node_id(protocol_info.node_id.into()).with_route_hints(route_hints);
-                    // Todo: how to calculate max_total_cltv_expiry_delta
-                    //     .with_max_total_cltv_expiry_delta(max_total_cltv_expiry_delta);
-                    let route_params = RouteParameters {
-                        payment_params,
-                        final_value_msat,
-                        // Todo: how to calculate final_cltv_expiry_delta
-                        final_cltv_expiry_delta: MIN_FINAL_CLTV_EXPIRY,
-                    };
-                    let payer = self.channel_manager.node_id();
-                    let first_hops = self.channel_manager.first_hops();
-                    let inflight_htlcs = self.channel_manager.compute_inflight_htlcs();
-                    return self
-                        .router
-                        .find_route(
-                            &payer,
-                            &route_params,
-                            Some(&first_hops.iter().collect::<Vec<_>>()),
-                            inflight_htlcs,
-                        )
-                        .is_ok();
-                }
-            }
+        let final_value_msat = match amount_to_send.map(|amt| sat_from_big_decimal(&amt.into(), self.decimals())) {
+            Some(Ok(amt)) => amt,
+            Some(Err(e)) => {
+                error!("{}", e);
+                return false;
+            },
+            None => return true,
+        };
+        let protocol_info = match info.as_ref().map(rmp_serde::from_read_ref::<_, ProtocolInfo>) {
+            Some(Ok(info)) => info,
+            Some(Err(e)) => {
+                error!("{}", e);
+                return false;
+            },
+            None => return false,
+        };
+        // Todo: need to check the size of vector when processing??
+        let mut route_hints = Vec::new();
+        for h in protocol_info.route_hints.iter() {
+            let hint = match Readable::read(&mut Cursor::new(h)) {
+                Ok(h) => h,
+                Err(e) => {
+                    error!("{}", e);
+                    return false;
+                },
+            };
+            route_hints.push(hint);
         }
-        true
+        let payment_params =
+            PaymentParameters::from_node_id(protocol_info.node_id.into()).with_route_hints(route_hints);
+        // Todo: how to calculate max_total_cltv_expiry_delta
+        //     .with_max_total_cltv_expiry_delta(max_total_cltv_expiry_delta);
+        let route_params = RouteParameters {
+            payment_params,
+            final_value_msat,
+            // Todo: how to calculate final_cltv_expiry_delta
+            final_cltv_expiry_delta: MIN_FINAL_CLTV_EXPIRY,
+        };
+        let payer = self.channel_manager.node_id();
+        let first_hops = self.channel_manager.first_hops();
+        let inflight_htlcs = self.channel_manager.compute_inflight_htlcs();
+        self.router
+            .find_route(
+                &payer,
+                &route_params,
+                Some(&first_hops.iter().collect::<Vec<_>>()),
+                inflight_htlcs,
+            )
+            .is_ok()
     }
 
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.platform.abortable_system) }
