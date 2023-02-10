@@ -130,7 +130,7 @@ impl Transport for HttpTransport {
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
         let fut = send_request(
             request,
-            self.nodes.clone(),
+            self.client.clone(),
             self.event_handlers.clone(),
             self.gui_auth_validation_generator.clone(),
         );
