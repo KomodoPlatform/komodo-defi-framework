@@ -9,12 +9,11 @@ pub struct NftListReq {
     pub(crate) chains: Vec<Chain>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct NftMetadataReq {
-    token_address: String,
-    token_id: BigDecimal,
-    chain: String,
+    pub(crate) token_address: String,
+    pub(crate) token_id: BigDecimal,
+    pub(crate) chain: Chain,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -57,7 +56,7 @@ pub struct Nft {
     pub(crate) token_hash: String,
     pub(crate) block_number_minted: u64,
     pub(crate) block_number: u64,
-    pub(crate) contract_type: ContractType,
+    pub(crate) contract_type: Option<ContractType>,
     pub(crate) name: Option<String>,
     pub(crate) symbol: Option<String>,
     pub(crate) token_uri: Option<String>,
@@ -78,7 +77,29 @@ pub struct NftWrapper {
     pub(crate) token_hash: String,
     pub(crate) block_number_minted: Wrap<u64>,
     pub(crate) block_number: Wrap<u64>,
-    pub(crate) contract_type: Wrap<ContractType>,
+    pub(crate) contract_type: Option<Wrap<ContractType>>,
+    pub(crate) name: Option<String>,
+    pub(crate) symbol: Option<String>,
+    pub(crate) token_uri: Option<String>,
+    pub(crate) metadata: Option<String>,
+    pub(crate) last_token_uri_sync: Option<String>,
+    pub(crate) last_metadata_sync: Option<String>,
+    pub(crate) minter_address: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct NftMetadataWrapper {
+    pub(crate) token_address: String,
+    pub(crate) token_id: Wrap<BigDecimal>,
+    // currently is not used, but is needed to deserialize json
+    pub(crate) transfer_index: Vec<u64>,
+    pub(crate) amount: Wrap<BigDecimal>,
+    pub(crate) owner_of: String,
+    pub(crate) token_hash: String,
+    pub(crate) block_number_minted: Wrap<u64>,
+    pub(crate) block_number: Wrap<u64>,
+    pub(crate) contract_type: Option<Wrap<ContractType>>,
     pub(crate) name: Option<String>,
     pub(crate) symbol: Option<String>,
     pub(crate) token_uri: Option<String>,

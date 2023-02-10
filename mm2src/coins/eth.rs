@@ -48,9 +48,9 @@ use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerato
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use nft::nft_errors::GetNftInfoError;
-use nft::nft_structs::{Chain, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory, NftTransferHistoryWrapper,
-                       NftTransfersReq, NftWrapper, NftsTransferHistoryList, TransactionNftDetails,
-                       WithdrawErc1155Request, WithdrawErc721Request};
+use nft::nft_structs::{Chain, Nft, NftList, NftListReq, NftMetadataReq, NftMetadataWrapper, NftTransferHistory,
+                       NftTransferHistoryWrapper, NftTransfersReq, NftWrapper, NftsTransferHistoryList,
+                       TransactionNftDetails, WithdrawErc1155Request, WithdrawErc721Request};
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
@@ -812,7 +812,13 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 }
 
 pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetNftInfoError> {
+    let api_key = match ctx.conf["api_key"].as_str() {
+        Some(api_key) => api_key,
+        None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
+    };
+
     let mut res_list = Vec::new();
+
     for chain in req.chains {
         let (coin_str, chain_str) = match chain {
             Chain::Eth => ("ETH", "eth"),
@@ -824,10 +830,6 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
             URL_MORALIS, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS
         );
 
-        let api_key = match ctx.conf["api_key"].as_str() {
-            Some(api_key) => api_key,
-            None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
-        };
         // The cursor returned in the previous response (used for getting the next page).
         let mut cursor = "".to_owned();
         loop {
@@ -846,7 +848,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
                             token_hash: nft_wrapper.token_hash,
                             block_number_minted: *nft_wrapper.block_number_minted,
                             block_number: *nft_wrapper.block_number,
-                            contract_type: nft_wrapper.contract_type.0,
+                            contract_type: nft_wrapper.contract_type.map(|v| v.0),
                             name: nft_wrapper.name,
                             symbol: nft_wrapper.symbol,
                             token_uri: nft_wrapper.token_uri,
@@ -880,10 +882,50 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
     Ok(nft_list)
 }
 
-pub async fn get_nft_metadata(_ctx: MmArc, _req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> { todo!() }
+pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> {
+    let api_key = match ctx.conf["api_key"].as_str() {
+        Some(api_key) => api_key,
+        None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
+    };
+    let chain_str = match req.chain {
+        Chain::Eth => "eth",
+        Chain::Bnb => "bsc",
+    };
+    let uri = format!(
+        "{}nft/{}/{}?chain={}&{}",
+        URL_MORALIS, req.token_address, req.token_id, chain_str, FORMAT_DECIMAL_MORALIS
+    );
+    let response = send_moralis_request(uri.as_str(), api_key).await?;
+    let metadata_wrapper: NftMetadataWrapper = serde_json::from_str(&response.to_string())?;
+    let nft_metadata = Nft {
+        chain: req.chain,
+        token_address: metadata_wrapper.token_address,
+        token_id: metadata_wrapper.token_id.0,
+        amount: metadata_wrapper.amount.0,
+        owner_of: metadata_wrapper.owner_of,
+        token_hash: metadata_wrapper.token_hash,
+        block_number_minted: *metadata_wrapper.block_number_minted,
+        block_number: *metadata_wrapper.block_number,
+        contract_type: metadata_wrapper.contract_type.map(|v| v.0),
+        name: metadata_wrapper.name,
+        symbol: metadata_wrapper.symbol,
+        token_uri: metadata_wrapper.token_uri,
+        metadata: metadata_wrapper.metadata,
+        last_token_uri_sync: metadata_wrapper.last_token_uri_sync,
+        last_metadata_sync: metadata_wrapper.last_metadata_sync,
+        minter_address: metadata_wrapper.minter_address,
+    };
+    Ok(nft_metadata)
+}
 
 pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<NftsTransferHistoryList, GetNftInfoError> {
+    let api_key = match ctx.conf["api_key"].as_str() {
+        Some(api_key) => api_key,
+        None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
+    };
+
     let mut res_list = Vec::new();
+
     for chain in req.chains {
         let (coin_str, chain_str) = match chain {
             Chain::Eth => ("ETH", "eth"),
@@ -895,10 +937,6 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
             URL_MORALIS, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS, DIRECTION_BOTH_MORALIS
         );
 
-        let api_key = match ctx.conf["api_key"].as_str() {
-            Some(api_key) => api_key,
-            None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
-        };
         // The cursor returned in the previous response (used for getting the next page).
         let mut cursor = "".to_owned();
         loop {
