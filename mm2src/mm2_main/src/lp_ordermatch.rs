@@ -2894,8 +2894,12 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         // detect atomic lock time version implicitly by conf_settings existence in taker request
         let atomic_locktime_v = match maker_match.request.conf_settings {
             Some(_) => {
-                let other_conf_settings =
-                    choose_taker_confs_and_notas(&maker_match.request, &maker_match.reserved, &maker_coin, &taker_coin);
+                let other_conf_settings = choose_taker_confs_and_notas(
+                    &maker_match.request,
+                    &maker_match.reserved.conf_settings,
+                    &maker_coin,
+                    &taker_coin,
+                );
                 AtomicLocktimeVersion::V2 {
                     my_conf_settings,
                     other_conf_settings,
@@ -2984,8 +2988,12 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
 
-        let my_conf_settings =
-            choose_taker_confs_and_notas(&taker_order.request, &taker_match.reserved, &maker_coin, &taker_coin);
+        let my_conf_settings = choose_taker_confs_and_notas(
+            &taker_order.request,
+            &taker_match.reserved.conf_settings,
+            &maker_coin,
+            &taker_coin,
+        );
         // detect atomic lock time version implicitly by conf_settings existence in maker reserved
         let atomic_locktime_v = match taker_match.reserved.conf_settings {
             Some(_) => {
@@ -3353,12 +3361,29 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         reserved_messages.sort_unstable_by_key(|r| r.price());
 
         for reserved_msg in reserved_messages {
+            let my_conf_settings =
+                choose_maker_confs_and_notas(reserved_msg.conf_settings, &my_order.request, &base_coin, &rel_coin);
+            let other_conf_settings =
+                choose_taker_confs_and_notas(&my_order.request, &reserved_msg.conf_settings, &base_coin, &rel_coin);
+            let atomic_locktime_v = AtomicLocktimeVersion::V2 {
+                my_conf_settings,
+                other_conf_settings,
+            };
+            let lock_time = lp_atomic_locktime(
+                my_order.maker_orderbook_ticker(),
+                my_order.taker_orderbook_ticker(),
+                atomic_locktime_v,
+            );
             // send "connect" message if reserved message targets our pubkey AND
             // reserved amounts match our order AND order is NOT reserved by someone else (empty matches)
             if (my_order.match_reserved(&reserved_msg) == MatchReservedResult::Matched && my_order.matches.is_empty())
-                && base_coin.is_coin_protocol_supported(&reserved_msg.base_protocol_info, None)
-                && rel_coin
-                    .is_coin_protocol_supported(&reserved_msg.rel_protocol_info, Some(reserved_msg.rel_amount.clone()))
+                && base_coin.is_coin_protocol_supported(&reserved_msg.base_protocol_info, None, lock_time, false)
+                && rel_coin.is_coin_protocol_supported(
+                    &reserved_msg.rel_protocol_info,
+                    Some(reserved_msg.rel_amount.clone()),
+                    lock_time,
+                    false,
+                )
             {
                 let connect = TakerConnect {
                     sender_pubkey: H256Json::from(our_public_id.bytes),
@@ -3462,10 +3487,36 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                 _ => return, // attempt to match with deactivated coin
             };
 
+            // Todo: refactor this and the other instance, leave it to last
+            let my_conf_settings =
+                choose_maker_confs_and_notas(order.conf_settings, &taker_request, &base_coin, &rel_coin);
+            let other_conf_settings =
+                choose_taker_confs_and_notas(&taker_request, &order.conf_settings, &base_coin, &rel_coin);
+            let atomic_locktime_v = AtomicLocktimeVersion::V2 {
+                my_conf_settings,
+                other_conf_settings,
+            };
+            let maker_lock_duration = (lp_atomic_locktime(
+                order.base_orderbook_ticker(),
+                order.rel_orderbook_ticker(),
+                atomic_locktime_v,
+            ) as f64
+                * rel_coin.maker_locktime_multiplier())
+            .ceil() as u64;
+
             if !order.matches.contains_key(&taker_request.uuid)
-                && base_coin
-                    .is_coin_protocol_supported(taker_request.base_protocol_info_for_maker(), Some(base_amount.clone()))
-                && rel_coin.is_coin_protocol_supported(taker_request.rel_protocol_info_for_maker(), None)
+                && base_coin.is_coin_protocol_supported(
+                    taker_request.base_protocol_info_for_maker(),
+                    Some(base_amount.clone()),
+                    maker_lock_duration,
+                    true,
+                )
+                && rel_coin.is_coin_protocol_supported(
+                    taker_request.rel_protocol_info_for_maker(),
+                    None,
+                    maker_lock_duration,
+                    true,
+                )
             {
                 let reserved = MakerReserved {
                     dest_pub_key: taker_request.sender_pubkey,
@@ -5596,7 +5647,7 @@ fn choose_maker_confs_and_notas(
 
 fn choose_taker_confs_and_notas(
     taker_req: &TakerRequest,
-    maker_reserved: &MakerReserved,
+    maker_conf_settings: &Option<OrderConfirmationsSettings>,
     maker_coin: &MmCoinEnum,
     taker_coin: &MmCoinEnum,
 ) -> SwapConfirmationsSettings {
@@ -5620,7 +5671,7 @@ fn choose_taker_confs_and_notas(
             ),
         },
     };
-    if let Some(settings_from_maker) = maker_reserved.conf_settings {
+    if let Some(settings_from_maker) = maker_conf_settings {
         if settings_from_maker.rel_confs < taker_coin_confs {
             taker_coin_confs = settings_from_maker.rel_confs;
         }

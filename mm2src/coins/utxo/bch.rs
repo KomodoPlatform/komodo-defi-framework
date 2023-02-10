@@ -1328,7 +1328,13 @@ impl MmCoin for BchCoin {
         utxo_common::coin_protocol_info(self)
     }
 
-    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>, _amount_to_send: Option<MmNumber>) -> bool {
+    fn is_coin_protocol_supported(
+        &self,
+        info: &Option<Vec<u8>>,
+        _amount_to_send: Option<MmNumber>,
+        _locktime: u64,
+        _is_maker: bool,
+    ) -> bool {
         utxo_common::is_coin_protocol_supported(self, info)
     }
 

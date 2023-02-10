@@ -398,7 +398,8 @@ impl LightningCoin {
         }
     }
 
-    // Todo: this can be removed after next release when min_final_cltv_expiry can be specified in create_invoice_from_channelmanager_and_duration_since_epoch_with_payment_hash
+    // Todo: this can be removed after next rust-lightning release when min_final_cltv_expiry can be specified in
+    // Todo: create_invoice_from_channelmanager_and_duration_since_epoch_with_payment_hash https://github.com/lightningdevkit/rust-lightning/pull/1878
     async fn create_invoice_for_hash(
         &self,
         payment_hash: PaymentHash,
@@ -1044,10 +1045,7 @@ impl MarketCoinOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    // Todo: this is the lightning balance? unless JIT is used???
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        Box::new(self.platform_coin().my_balance().map(|res| res.spendable))
-    }
+    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { Box::new(self.my_balance().map(|res| res.spendable)) }
 
     fn platform_ticker(&self) -> &str { self.platform_coin().ticker() }
 
@@ -1070,7 +1068,7 @@ impl MarketCoinOps for LightningCoin {
     }
 
     // Todo: Add waiting for confirmations logic for the case of if the channel is closed and the htlc can be claimed on-chain
-    // Todo: need to split this still, because of HTLCStatus::Received | HTLCStatus::Succeeded => return Ok(()), claim_funds doesn't always work when channel is closed
+    // Todo: The above is postponed and might not be needed after this issue is resolved https://github.com/lightningdevkit/rust-lightning/issues/2017
     fn wait_for_confirmations(
         &self,
         tx: &[u8],
@@ -1228,9 +1226,8 @@ impl MarketCoinOps for LightningCoin {
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 }
 
-// Todo: find a better name
 #[derive(Deserialize, Serialize)]
-struct ProtocolInfo {
+struct LightningProtocolInfo {
     node_id: PublicKeyForRPC,
     route_hints: Vec<Vec<u8>>,
 }
@@ -1367,16 +1364,20 @@ impl MmCoin for LightningCoin {
             .map(|h| h.encode())
             .collect();
         let node_id = PublicKeyForRPC(self.channel_manager.get_our_node_id());
-        let protocol_info = ProtocolInfo { node_id, route_hints };
+        let protocol_info = LightningProtocolInfo { node_id, route_hints };
         rmp_serde::to_vec(&protocol_info).expect("Serialization should not fail")
     }
 
-    // Todo: will use a const max_cltv_expiry for now but should calculate an estimate locktime at this stage in the future
     // Todo: should take in consideration JIT routing and using LSP??
     // Todo: ask about if this takes a lot of space in OrderbookItem
-    // Todo: also rename this function to a better name, and required parameter to a better name
     // Todo: a check should be added for taker if they can pay the dex fee or not before the taker order is placed
-    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>, amount_to_send: Option<MmNumber>) -> bool {
+    fn is_coin_protocol_supported(
+        &self,
+        info: &Option<Vec<u8>>,
+        amount_to_send: Option<MmNumber>,
+        locktime: u64,
+        is_maker: bool,
+    ) -> bool {
         let final_value_msat = match amount_to_send.map(|amt| sat_from_big_decimal(&amt.into(), self.decimals())) {
             Some(Ok(amt)) => amt,
             Some(Err(e)) => {
@@ -1385,7 +1386,7 @@ impl MmCoin for LightningCoin {
             },
             None => return true,
         };
-        let protocol_info = match info.as_ref().map(rmp_serde::from_read_ref::<_, ProtocolInfo>) {
+        let protocol_info = match info.as_ref().map(rmp_serde::from_read_ref::<_, LightningProtocolInfo>) {
             Some(Ok(info)) => info,
             Some(Err(e)) => {
                 error!("{}", e);
@@ -1405,15 +1406,24 @@ impl MmCoin for LightningCoin {
             };
             route_hints.push(hint);
         }
-        let payment_params =
+        let mut payment_params =
             PaymentParameters::from_node_id(protocol_info.node_id.into()).with_route_hints(route_hints);
-        // Todo: how to calculate max_total_cltv_expiry_delta
-        //     .with_max_total_cltv_expiry_delta(max_total_cltv_expiry_delta);
+        let final_cltv_expiry_delta = if is_maker {
+            self.estimate_blocks_from_duration(locktime)
+                .try_into()
+                .expect("final_cltv_expiry_delta shouldn't exceed u32::MAX")
+        } else {
+            payment_params.max_total_cltv_expiry_delta = self
+                .estimate_blocks_from_duration(locktime)
+                .try_into()
+                .expect("max_total_cltv_expiry_delta shouldn't exceed u32::MAX");
+            MIN_FINAL_CLTV_EXPIRY
+        };
+        drop_mutability!(payment_params);
         let route_params = RouteParameters {
             payment_params,
             final_value_msat,
-            // Todo: how to calculate final_cltv_expiry_delta
-            final_cltv_expiry_delta: MIN_FINAL_CLTV_EXPIRY,
+            final_cltv_expiry_delta,
         };
         let payer = self.channel_manager.node_id();
         let first_hops = self.channel_manager.first_hops();

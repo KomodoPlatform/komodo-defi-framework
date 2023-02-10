@@ -656,8 +656,15 @@ impl MmCoin for TendermintToken {
         self.platform_coin.coin_protocol_info(amount_to_receive)
     }
 
-    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>, amount_to_send: Option<MmNumber>) -> bool {
-        self.platform_coin.is_coin_protocol_supported(info, amount_to_send)
+    fn is_coin_protocol_supported(
+        &self,
+        info: &Option<Vec<u8>>,
+        amount_to_send: Option<MmNumber>,
+        locktime: u64,
+        is_maker: bool,
+    ) -> bool {
+        self.platform_coin
+            .is_coin_protocol_supported(info, amount_to_send, locktime, is_maker)
     }
 
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
