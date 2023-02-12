@@ -199,7 +199,7 @@ use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
 pub mod coins_tests;
 
 pub mod eth;
-use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
+use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthTxFeeDetails, GetEthAddressError, SignedEthTx};
 
 pub mod hd_pubkey;
 
@@ -253,7 +253,6 @@ use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
-use crate::eth::{get_eth_address, GetEthAddressError};
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -376,13 +375,11 @@ pub struct RawTransactionRes {
     pub tx_hex: BytesJson,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct MyAddressReq {
     coin: String,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct MyWalletAddress {
     coin: String,

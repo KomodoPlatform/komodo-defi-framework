@@ -4769,7 +4769,6 @@ pub async fn get_eth_address(ticker: &str, ctx: &MmArc) -> MmResult<MyWalletAddr
     })
 }
 
-#[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_moralis_request(uri: &str, api_key: &str) -> MmResult<Json, GetNftInfoError> {
     use http::header::HeaderValue;
