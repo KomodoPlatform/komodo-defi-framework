@@ -67,33 +67,11 @@ pub struct Nft {
 }
 
 /// This structure is for deserializing NFT json to struct.
-/// Its needed to convert fields properly, all fields in json from response have string type.
+/// Its needed to convert fields properly, because all fields in json have string type.
 #[derive(Debug, Deserialize)]
 pub struct NftWrapper {
     pub(crate) token_address: String,
     pub(crate) token_id: Wrap<BigDecimal>,
-    pub(crate) amount: Wrap<BigDecimal>,
-    pub(crate) owner_of: String,
-    pub(crate) token_hash: String,
-    pub(crate) block_number_minted: Wrap<u64>,
-    pub(crate) block_number: Wrap<u64>,
-    pub(crate) contract_type: Option<Wrap<ContractType>>,
-    pub(crate) name: Option<String>,
-    pub(crate) symbol: Option<String>,
-    pub(crate) token_uri: Option<String>,
-    pub(crate) metadata: Option<String>,
-    pub(crate) last_token_uri_sync: Option<String>,
-    pub(crate) last_metadata_sync: Option<String>,
-    pub(crate) minter_address: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-pub struct NftMetadataWrapper {
-    pub(crate) token_address: String,
-    pub(crate) token_id: Wrap<BigDecimal>,
-    // currently is not used, but is needed to deserialize json
-    pub(crate) transfer_index: Vec<u64>,
     pub(crate) amount: Wrap<BigDecimal>,
     pub(crate) owner_of: String,
     pub(crate) token_hash: String,

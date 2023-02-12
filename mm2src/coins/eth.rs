@@ -48,9 +48,9 @@ use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerato
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use nft::nft_errors::GetNftInfoError;
-use nft::nft_structs::{Chain, Nft, NftList, NftListReq, NftMetadataReq, NftMetadataWrapper, NftTransferHistory,
-                       NftTransferHistoryWrapper, NftTransfersReq, NftWrapper, NftsTransferHistoryList,
-                       TransactionNftDetails, WithdrawErc1155Request, WithdrawErc721Request};
+use nft::nft_structs::{Chain, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory, NftTransferHistoryWrapper,
+                       NftTransfersReq, NftWrapper, NftsTransferHistoryList, TransactionNftDetails,
+                       WithdrawErc1155Request, WithdrawErc721Request};
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
@@ -811,6 +811,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     })
 }
 
+/// `get_nft_list` function returns list of NFTs on ETH or/and BNB chains owned by user.
 pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetNftInfoError> {
     let api_key = match ctx.conf["api_key"].as_str() {
         Some(api_key) => api_key,
@@ -882,6 +883,10 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
     Ok(nft_list)
 }
 
+/// `get_nft_list` function returns info of one specific NFT.
+/// Current implementation sends request to Moralis.
+/// Later, after adding caching, metadata lookup can be performed using previously obtained NFTs info without
+/// sending new moralis request. The moralis request can be sent as a fallback, if the data was not found in the cache.
 pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> {
     let api_key = match ctx.conf["api_key"].as_str() {
         Some(api_key) => api_key,
@@ -896,28 +901,30 @@ pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, 
         URL_MORALIS, req.token_address, req.token_id, chain_str, FORMAT_DECIMAL_MORALIS
     );
     let response = send_moralis_request(uri.as_str(), api_key).await?;
-    let metadata_wrapper: NftMetadataWrapper = serde_json::from_str(&response.to_string())?;
+    let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string())?;
     let nft_metadata = Nft {
         chain: req.chain,
-        token_address: metadata_wrapper.token_address,
-        token_id: metadata_wrapper.token_id.0,
-        amount: metadata_wrapper.amount.0,
-        owner_of: metadata_wrapper.owner_of,
-        token_hash: metadata_wrapper.token_hash,
-        block_number_minted: *metadata_wrapper.block_number_minted,
-        block_number: *metadata_wrapper.block_number,
-        contract_type: metadata_wrapper.contract_type.map(|v| v.0),
-        name: metadata_wrapper.name,
-        symbol: metadata_wrapper.symbol,
-        token_uri: metadata_wrapper.token_uri,
-        metadata: metadata_wrapper.metadata,
-        last_token_uri_sync: metadata_wrapper.last_token_uri_sync,
-        last_metadata_sync: metadata_wrapper.last_metadata_sync,
-        minter_address: metadata_wrapper.minter_address,
+        token_address: nft_wrapper.token_address,
+        token_id: nft_wrapper.token_id.0,
+        amount: nft_wrapper.amount.0,
+        owner_of: nft_wrapper.owner_of,
+        token_hash: nft_wrapper.token_hash,
+        block_number_minted: *nft_wrapper.block_number_minted,
+        block_number: *nft_wrapper.block_number,
+        contract_type: nft_wrapper.contract_type.map(|v| v.0),
+        name: nft_wrapper.name,
+        symbol: nft_wrapper.symbol,
+        token_uri: nft_wrapper.token_uri,
+        metadata: nft_wrapper.metadata,
+        last_token_uri_sync: nft_wrapper.last_token_uri_sync,
+        last_metadata_sync: nft_wrapper.last_metadata_sync,
+        minter_address: nft_wrapper.minter_address,
     };
     Ok(nft_metadata)
 }
 
+/// `get_nft_transfers` function returns a transfer history of NFTs on ETH or/and BNb chains owned by user.
+/// Currently doesnt support filters.
 pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<NftsTransferHistoryList, GetNftInfoError> {
     let api_key = match ctx.conf["api_key"].as_str() {
         Some(api_key) => api_key,
