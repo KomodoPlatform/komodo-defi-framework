@@ -822,8 +822,8 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 
     for chain in req.chains {
         let (coin_str, chain_str) = match chain {
-            Chain::Eth => ("ETH", "eth"),
             Chain::Bnb => ("BNB", "bsc"),
+            Chain::Eth => ("ETH", "eth"),
         };
         let my_address = get_eth_address(coin_str, &ctx).await?;
         let uri_without_cursor = format!(
@@ -893,8 +893,8 @@ pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, 
         None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
     };
     let chain_str = match req.chain {
-        Chain::Eth => "eth",
         Chain::Bnb => "bsc",
+        Chain::Eth => "eth",
     };
     let uri = format!(
         "{}nft/{}/{}?chain={}&{}",
@@ -935,8 +935,8 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
 
     for chain in req.chains {
         let (coin_str, chain_str) = match chain {
-            Chain::Eth => ("ETH", "eth"),
             Chain::Bnb => ("BNB", "bsc"),
+            Chain::Eth => ("ETH", "eth"),
         };
         let my_address = get_eth_address(coin_str, &ctx).await?;
         let uri_without_cursor = format!(
