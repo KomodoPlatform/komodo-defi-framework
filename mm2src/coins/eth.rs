@@ -883,7 +883,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
     Ok(nft_list)
 }
 
-/// `get_nft_list` function returns info of one specific NFT.
+/// `get_nft_metadata` function returns info of one specific NFT.
 /// Current implementation sends request to Moralis.
 /// Later, after adding caching, metadata lookup can be performed using previously obtained NFTs info without
 /// sending new moralis request. The moralis request can be sent as a fallback, if the data was not found in the cache.
