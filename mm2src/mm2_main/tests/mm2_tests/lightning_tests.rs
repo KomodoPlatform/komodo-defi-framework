@@ -74,7 +74,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
             "our_channels_configs": {
               "inbound_channels_confirmations": 1,
               // todo: When this was 100% I got "lightning:channelmanager:2525] ERROR Cannot send value that would put our balance under counterparty-announced channel reserve value (1000000)"
-              // todo: This seems to be a bug in rust-lightning for mpp, I informed their team and will revert this to 100 if it was fixed
+              // todo: This seems to be a bug in rust-lightning for mpp, I informed their team and will revert this to 100 if it was fixed https://github.com/lightningdevkit/rust-lightning/issues/1126#issuecomment-1414308252
               "max_inbound_in_flight_htlc_percent": 90,
               // If this is set to 0 it will default to 1000 sats since it's the min allowed value
               "their_channel_reserve_sats": 1000,
@@ -899,7 +899,7 @@ fn test_lightning_maker_swap_mpp() {
     block_on(mm_node_2.stop()).unwrap();
 }
 
-// Todo: not working for now, should work once on-chain claiming is implemented
+// Todo: not working for now, should work once on-chain claiming is implemented https://github.com/lightningdevkit/rust-lightning/issues/2017
 // Todo: watchtowers implementation is needed for such cases, if taker is offline
 #[test]
 // This test is ignored because it requires refilling the tBTC and RICK addresses with test coins periodically.
@@ -955,7 +955,7 @@ fn test_lightning_taker_gets_swap_preimage_onchain() {
     block_on(mm_node_2.stop()).unwrap();
 }
 
-// Todo: not working for now, should work once on-chain claiming is implemented
+// Todo: not working for now, should work once on-chain claiming is implemented https://github.com/lightningdevkit/rust-lightning/issues/2017
 // Todo: watchtowers implementation is needed for such cases, if taker is offline
 #[test]
 // This test is ignored because it requires refilling the tBTC and RICK addresses with test coins periodically.

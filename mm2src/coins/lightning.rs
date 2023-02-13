@@ -1208,7 +1208,6 @@ impl MarketCoinOps for LightningCoin {
     // This will depend on the route/routes taken for the payment, since every channel's counterparty specifies the minimum amount they will allow to route.
     // Since route is not specified at this stage yet, we can use the maximum of these minimum amounts as the min_tx_amount allowed.
     // Default value: 1 msat if the counterparty is using LDK default value.
-    // Todo: balance check should be done before this is used, is it done??
     fn min_tx_amount(&self) -> BigDecimal {
         let amount_in_msat = self
             .channel_manager
@@ -1221,7 +1220,7 @@ impl MarketCoinOps for LightningCoin {
     }
 
     // Todo: Equals to min_tx_amount for now (1 satoshi), should change this later
-    // Todo: doesn't take routing fees into account too, should I calculate a route before just for balance calculations???
+    // Todo: doesn't take routing fees into account too, There is no way to know the route to the other side of the swap when placing the order, need to find a workaround this
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 }
 

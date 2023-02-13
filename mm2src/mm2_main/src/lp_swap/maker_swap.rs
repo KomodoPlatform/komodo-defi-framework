@@ -2060,7 +2060,6 @@ pub async fn check_balance_for_maker_swap(
         }) => (maker_payment_trade_fee, taker_payment_spend_trade_fee),
         None => {
             let preimage_value = TradePreimageValue::Exact(volume.to_decimal());
-            // Todo: required to calculate the route
             let maker_payment_trade_fee = my_coin
                 .get_sender_trade_fee(preimage_value, stage.clone())
                 .await
@@ -2103,7 +2102,6 @@ pub async fn maker_swap_trade_preimage(
             .await?
             .volume
     } else {
-        // Todo: impl min_trading_vol in a right way
         let threshold = base_coin.min_trading_vol().to_decimal();
         if req.volume.is_zero() {
             return MmError::err(TradePreimageRpcError::VolumeTooLow {
@@ -2186,7 +2184,6 @@ pub async fn get_max_maker_vol(ctx: &MmArc, my_coin: &MmCoinEnum) -> CheckBalanc
 /// Calculates max Maker volume.
 /// Returns [`CheckBalanceError::NotSufficientBalance`] if the balance is not sufficient.
 /// Note the function checks base coin balance if the trade fee should be paid in base coin.
-//Todo: need to check inbound liquidity too :(, maybe in another function
 pub async fn calc_max_maker_vol(
     ctx: &MmArc,
     coin: &MmCoinEnum,
@@ -2199,7 +2196,6 @@ pub async fn calc_max_maker_vol(
     let mut volume = available.clone();
 
     let preimage_value = TradePreimageValue::UpperBound(volume.to_decimal());
-    // Todo: should find a route at this stage probably?? but maker order stays for some time? how to calculate the fee? get all routes and calculate maximum fee? what if there is a new route?
     let trade_fee = coin
         .get_sender_trade_fee(preimage_value, stage)
         .await
@@ -2211,7 +2207,6 @@ pub async fn calc_max_maker_vol(
         volume = &volume - &trade_fee.amount;
         required_to_pay_fee = trade_fee.amount;
     } else {
-        // Todo: shouldn't use base coin balance here? since lightning doesn't depend on btc, only if JIT is enabled
         let base_coin_balance = coin.base_coin_balance().compat().await?;
         check_base_coin_balance_for_swap(ctx, &MmNumber::from(base_coin_balance), trade_fee.clone(), None).await?;
     }

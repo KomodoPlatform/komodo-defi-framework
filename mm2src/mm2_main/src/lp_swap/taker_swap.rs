@@ -2374,7 +2374,6 @@ pub async fn max_taker_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 /// - `max_dex_fee = dex_fee(max_possible_2)` is an intermediate value that will be passed into the `fee_to_send_taker_fee`.
 /// - `max_fee_to_send_taker_fee = fee_to_send_taker_fee(max_dex_fee)`
 /// After that `min_max_vol = balance - locked_amount - max_trade_fee - max_fee_to_send_taker_fee - dex_fee(max_vol)` can be solved as in the first case.
-//Todo: need to check inbound liquidity too :(, maybe in another function
 pub async fn calc_max_taker_vol(
     ctx: &MmArc,
     coin: &MmCoinEnum,

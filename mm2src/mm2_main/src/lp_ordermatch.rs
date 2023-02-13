@@ -4485,7 +4485,6 @@ pub async fn check_other_coin_balance_for_order_issue(
     my_coin_volume: BigDecimal,
 ) -> CheckBalanceResult<()> {
     let trade_fee = other_coin
-        // Todo: is 0 for lightning?? but need inbound liquidity
         .get_receiver_trade_fee(my_coin_volume, FeeApproxStage::OrderIssue)
         .compat()
         .await
@@ -4696,7 +4695,7 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
     };
 
     let min_base_amount = base_coin.min_trading_vol();
-    // Todo: Here min_trading_vol depends on inbound liquidity not outbound
+    // Todo: Here min_trading_vol for lightning depends on inbound liquidity not outbound, will require to split min_trading_vol to two functions
     let min_rel_amount = rel_coin.min_trading_vol();
 
     // Add min_volume to update_msg if min_volume is found in the request
@@ -5773,7 +5772,6 @@ fn orderbook_address(
             MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))
         },
         #[cfg(not(target_arch = "wasm32"))]
-        // Todo: this sprint
         // Todo: Shielded address is used for lightning for now, the lightning node public key can be used for the orderbook entry pubkey
         // Todo: instead of the platform coin pubkey which is used right now. But lightning payments are supposed to be private,
         // Todo: so maybe we should hide the node address in the orderbook, only the sending node and the receiving node should know about a payment,
