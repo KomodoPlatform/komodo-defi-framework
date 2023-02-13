@@ -169,8 +169,6 @@ pub async fn init_abortable_events(platform: Arc<Platform>, db: SqliteLightningD
                 .error_log_passthrough()
             {
                 if let Err(e) = db.add_closing_tx_to_db(uuid, closing_tx_hash).await {
-                    // Todo: Fix the below error that appears for 0 conf channel if it's closed before confirmation.
-                    // todo: coins:ln_events:479] ERROR Unable to update channel f6f35870-8822-46dc-9338-ef064744e89d closing details in DB: ln_platform:520] funding_generated_in_block is Null in DB
                     log::error!("Unable to update channel {} closing details in DB: {}", uuid, e);
                 }
             }
@@ -476,8 +474,6 @@ impl LightningEventHandler {
             if let Err(e) = save_channel_closing_details(db, platform, uuid, reason).await {
                 // This is the case when a channel is closed before funding is broadcasted due to the counterparty disconnecting or other incompatibility issue.
                 if e != SaveChannelClosingError::FundingTxNull.into() {
-                    // Todo: Fix the below error that appears for 0 conf channel if it's closed before confirmation.
-                    // todo: coins:ln_events:479] ERROR Unable to update channel f6f35870-8822-46dc-9338-ef064744e89d closing details in DB: ln_platform:520] funding_generated_in_block is Null in DB
                     error!("Unable to update channel {} closing details in DB: {}", uuid, e);
                 }
             }

@@ -400,6 +400,7 @@ impl LightningCoin {
 
     // Todo: this can be removed after next rust-lightning release when min_final_cltv_expiry can be specified in
     // Todo: create_invoice_from_channelmanager_and_duration_since_epoch_with_payment_hash https://github.com/lightningdevkit/rust-lightning/pull/1878
+    // Todo: The above PR will also validate min_final_cltv_expiry.
     async fn create_invoice_for_hash(
         &self,
         payment_hash: PaymentHash,
@@ -435,8 +436,6 @@ impl LightningCoin {
             .payment_hash(Hash::from_inner(payment_hash.0))
             .payment_secret(payment_secret)
             .basic_mpp()
-            // Todo: This should be validated by the other side, right now this is not validated by rust-lightning and the PaymentClaimable event doesn't include the final cltv of the payment for us to validate it
-            // Todo: This needs a PR opened to rust-lightning, I already contacted them about it and there is an issue opened for it https://github.com/lightningdevkit/rust-lightning/issues/1850
             .min_final_cltv_expiry(min_final_cltv_expiry)
             .expiry_time(core::time::Duration::from_secs(invoice_expiry_delta_secs.into()));
         if let Some(amt) = amt_msat {
@@ -1344,12 +1343,10 @@ impl MmCoin for LightningCoin {
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 
-    // Todo: should take in consideration JIT routing and using LSP??
-    // Todo: should this be a different function from protocol_info???
-    // Todo: should I include features also? or just include a complete invoice with a random payment hash???
     // Channels for users/non-routing nodes should be private, so routing hints are sent as part of the protocol info
     // alongside the receiver lightning node address/pubkey.
     // Note: This is required only for the side that's getting paid in lightning.
+    // Todo: should take in consideration JIT routing and using LSP in next PRs
     fn coin_protocol_info(&self, amount_to_receive: Option<MmNumber>) -> Vec<u8> {
         let amt_msat = match amount_to_receive.map(|a| sat_from_big_decimal(&a.into(), self.decimals())) {
             Some(Ok(amt)) => amt,
@@ -1368,8 +1365,7 @@ impl MmCoin for LightningCoin {
         rmp_serde::to_vec(&protocol_info).expect("Serialization should not fail")
     }
 
-    // Todo: should take in consideration JIT routing and using LSP??
-    // Todo: ask about if this takes a lot of space in OrderbookItem
+    // Todo: should take in consideration JIT routing and using LSP in next PRs
     // Todo: a check should be added for taker if they can pay the dex fee or not before the taker order is placed
     fn is_coin_protocol_supported(
         &self,
@@ -1394,7 +1390,6 @@ impl MmCoin for LightningCoin {
             },
             None => return false,
         };
-        // Todo: need to check the size of vector when processing??
         let mut route_hints = Vec::new();
         for h in protocol_info.route_hints.iter() {
             let hint = match Readable::read(&mut Cursor::new(h)) {

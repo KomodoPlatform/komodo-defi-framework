@@ -517,7 +517,9 @@ impl Platform {
     pub async fn get_channel_closing_tx(&self, channel_details: DBChannelDetails) -> SaveChannelClosingResult<String> {
         let from_block = channel_details
             .funding_generated_in_block
-            .ok_or_else(|| MmError::new(SaveChannelClosingError::BlockHeightNull))?;
+            .map(|b| b.try_into())
+            .transpose()?
+            .unwrap_or_else(|| self.best_block_height());
 
         let tx_id = channel_details
             .funding_tx
@@ -535,7 +537,7 @@ impl Platform {
                 &funding_tx_bytes.into_vec(),
                 &[],
                 (now_ms() / 1000) + 3600,
-                from_block.try_into()?,
+                from_block,
                 &None,
                 TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
             )
