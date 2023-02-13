@@ -1425,7 +1425,6 @@ impl<'a> TakerOrderBuilder<'a> {
             None
         };
 
-        // Todo: combine this with rel_protocol_info
         let base_protocol_info = match &self.action {
             TakerAction::Buy => self.base_coin.coin_protocol_info(Some(self.base_amount.clone())),
             TakerAction::Sell => self.base_coin.coin_protocol_info(None),
@@ -1466,7 +1465,6 @@ impl<'a> TakerOrderBuilder<'a> {
     #[cfg(test)]
     /// skip validation for tests
     fn build_unchecked(self) -> TakerOrder {
-        // Todo: combine this with rel_protocol_info
         let base_protocol_info = match &self.action {
             TakerAction::Buy => self.base_coin.coin_protocol_info(Some(self.base_amount.clone())),
             TakerAction::Sell => self.base_coin.coin_protocol_info(None),
@@ -3487,7 +3485,6 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                 _ => return, // attempt to match with deactivated coin
             };
 
-            // Todo: refactor this and the other instance, leave it to last
             let my_conf_settings =
                 choose_maker_confs_and_notas(order.conf_settings, &taker_request, &base_coin, &rel_coin);
             let other_conf_settings =

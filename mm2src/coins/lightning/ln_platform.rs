@@ -314,7 +314,6 @@ impl Platform {
     ) {
         // Retrieve channel manager transaction IDs to check the chain for un-confirmations
         let channel_manager_relevant_txids = channel_manager.get_relevant_txids();
-        // Todo: check how to best use the returned BlockHash
         for (txid, _) in channel_manager_relevant_txids {
             self.process_tx_for_unconfirmation(txid, Arc::clone(&channel_manager))
                 .await;
@@ -322,7 +321,6 @@ impl Platform {
 
         // Retrieve chain monitor transaction IDs to check the chain for un-confirmations
         let chain_monitor_relevant_txids = chain_monitor.get_relevant_txids();
-        // Todo: check how to best use the returned BlockHash
         for (txid, _) in chain_monitor_relevant_txids {
             self.process_tx_for_unconfirmation(txid, Arc::clone(&chain_monitor))
                 .await;

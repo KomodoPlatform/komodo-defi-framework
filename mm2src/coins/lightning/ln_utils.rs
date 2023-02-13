@@ -203,7 +203,6 @@ pub async fn init_channel_manager(
         for (_, channel_monitor) in channelmonitors.into_iter() {
             let funding_outpoint = channel_monitor.get_funding_txo().0;
             let chain_monitor = chain_monitor.clone();
-            // Todo: check async persisting
             if let ChannelMonitorUpdateStatus::PermanentFailure =
                 async_blocking(move || chain_monitor.watch_channel(funding_outpoint, channel_monitor)).await
             {
@@ -388,11 +387,9 @@ fn pay_internal(
     let first_hops = channel_manager.first_hops();
     let payment_hash_inner = invoice.payment_hash().into_inner();
     let payment_hash = PaymentHash(payment_hash_inner);
-    // Todo: for now we use the payment hash as the payment id, it should be no problem if kept this way but I need to recheck it
     let payment_id = PaymentId(payment_hash_inner);
     // Todo: Would be better to implement pay_invoice_with_max_total_cltv_expiry_delta in rust-lightning
     let inflight_htlcs = channel_manager.compute_inflight_htlcs();
-    // Todo: Routes should be checked before order matching also, this might require routing hints to be shared when matching orders. Just-in-time channels can solve this issue as well.
     let route = router
         .find_route(
             &payer,

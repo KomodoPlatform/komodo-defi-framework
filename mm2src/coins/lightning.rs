@@ -1220,7 +1220,7 @@ impl MarketCoinOps for LightningCoin {
     }
 
     // Todo: Equals to min_tx_amount for now (1 satoshi), should change this later
-    // Todo: doesn't take routing fees into account too, There is no way to know the route to the other side of the swap when placing the order, need to find a workaround this
+    // Todo: doesn't take routing fees into account too, There is no way to know the route to the other side of the swap when placing the order, need to find a workaround for this
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 }
 
@@ -1345,7 +1345,7 @@ impl MmCoin for LightningCoin {
     // Channels for users/non-routing nodes should be private, so routing hints are sent as part of the protocol info
     // alongside the receiver lightning node address/pubkey.
     // Note: This is required only for the side that's getting paid in lightning.
-    // Todo: should take in consideration JIT routing and using LSP in next PRs
+    // Todo: should take in consideration JIT routing and using LSPs in next PRs
     fn coin_protocol_info(&self, amount_to_receive: Option<MmNumber>) -> Vec<u8> {
         let amt_msat = match amount_to_receive.map(|a| sat_from_big_decimal(&a.into(), self.decimals())) {
             Some(Ok(amt)) => amt,
@@ -1364,8 +1364,7 @@ impl MmCoin for LightningCoin {
         rmp_serde::to_vec(&protocol_info).expect("Serialization should not fail")
     }
 
-    // Todo: should take in consideration JIT routing and using LSP in next PRs
-    // Todo: a check should be added for taker if they can pay the dex fee or not before the taker order is placed
+    // Todo: should take in consideration JIT routing and using LSPs in next PRs
     fn is_coin_protocol_supported(
         &self,
         info: &Option<Vec<u8>>,
