@@ -32,6 +32,8 @@ use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
 use rand::seq::SliceRandom;
 use serde_json::{self as json, Value as Json};
+use spv_validation::conf::SPVConf;
+use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::sync::{Arc, Mutex, Weak};
 
@@ -81,6 +83,8 @@ pub enum UtxoCoinBuildError {
     CantGetBlockCount(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+    #[display(fmt = "SPV params verificaiton failed. Error: {_0}")]
+    SPVError(SPVError),
 }
 
 impl From<UtxoConfError> for UtxoCoinBuildError {
@@ -202,7 +206,8 @@ where
     let tx_hash_algo = builder.tx_hash_algo();
     let check_utxo_maturity = builder.check_utxo_maturity();
     let tx_cache = builder.tx_cache();
-    let (block_headers_status_notifier, block_headers_status_watcher) = builder.block_header_status_channel();
+    let (block_headers_status_notifier, block_headers_status_watcher) =
+        builder.block_header_status_channel(&conf.spv_conf);
 
     let coin = UtxoCoinFields {
         conf,
@@ -274,7 +279,8 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
         let tx_cache = self.tx_cache();
-        let (block_headers_status_notifier, block_headers_status_watcher) = self.block_header_status_channel();
+        let (block_headers_status_notifier, block_headers_status_watcher) =
+            self.block_header_status_channel(&conf.spv_conf);
 
         let coin = UtxoCoinFields {
             conf,
@@ -644,21 +650,35 @@ pub trait UtxoCoinBuilderCommonOps {
     #[cfg(not(target_arch = "wasm32"))]
     fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
 
+    // Todo: implement spv for wasm to merge the block_header_status_channel functions
+    #[cfg(target_arch = "wasm32")]
     fn block_header_status_channel(
         &self,
+        _spv_conf: &Option<SPVConf>,
     ) -> (
         Option<UtxoSyncStatusLoopHandle>,
         Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
     ) {
-        if self.conf()["enable_spv_proof"].as_bool().unwrap_or(false) && !self.activation_params().mode.is_native() {
+        (None, None)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn block_header_status_channel(
+        &self,
+        spv_conf: &Option<SPVConf>,
+    ) -> (
+        Option<UtxoSyncStatusLoopHandle>,
+        Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
+    ) {
+        if spv_conf.is_some() && !self.activation_params().mode.is_native() {
             let (sync_status_notifier, sync_watcher) = channel(1);
-            (
+            return (
                 Some(UtxoSyncStatusLoopHandle::new(sync_status_notifier)),
                 Some(AsyncMutex::new(sync_watcher)),
-            )
-        } else {
-            (None, None)
-        }
+            );
+        };
+
+        (None, None)
     }
 }
 

@@ -9,7 +9,6 @@ use db_common::{sqlite::rusqlite::Error as SqlError,
 use primitives::hash::H256;
 use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use spv_validation::work::MAX_BITS_BTC;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::num::TryFromIntError;
@@ -68,11 +67,14 @@ fn get_last_block_height_sql(for_coin: &str) -> Result<String, BlockHeaderStorag
     Ok(sql)
 }
 
-fn get_last_block_header_with_non_max_bits_sql(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
+fn get_last_block_header_with_non_max_bits_sql(
+    for_coin: &str,
+    max_bits: u32,
+) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
     let sql = format!(
         "SELECT hex FROM {} WHERE block_bits<>{} ORDER BY block_height DESC LIMIT 1;",
-        table_name, MAX_BITS_BTC
+        table_name, max_bits
     );
 
     Ok(sql)
@@ -81,6 +83,13 @@ fn get_last_block_header_with_non_max_bits_sql(for_coin: &str) -> Result<String,
 fn get_block_height_by_hash(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
     let sql = format!("SELECT block_height FROM {} WHERE block_hash=?1;", table_name);
+
+    Ok(sql)
+}
+
+fn remove_headers_up_to_height_sql(for_coin: &str, to_height: u64) -> Result<String, BlockHeaderStorageError> {
+    let table_name = get_table_name_and_validate(for_coin)?;
+    let sql = format!("DELETE FROM {table_name} WHERE block_height <= {to_height};");
 
     Ok(sql)
 }
@@ -225,31 +234,34 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         })
     }
 
-    async fn get_last_block_height(&self) -> Result<u64, BlockHeaderStorageError> {
+    async fn get_last_block_height(&self) -> Result<Option<u64>, BlockHeaderStorageError> {
         let coin = self.ticker.clone();
         let sql = get_last_block_height_sql(&coin)?;
         let selfi = self.clone();
 
         async_blocking(move || {
             let conn = selfi.conn.lock().unwrap();
-            query_single_row(&conn, &sql, NO_PARAMS, |row| row.get(0))
+            query_single_row(&conn, &sql, NO_PARAMS, |row| row.get::<_, i64>(0))
         })
         .await
         .map_err(|e| BlockHeaderStorageError::GetFromStorageError {
             coin: coin.clone(),
             reason: e.to_string(),
         })?
-        .unwrap_or(0i64)
-        .try_into()
+        .map(|h| h.try_into())
+        .transpose()
         .map_err(|e: TryFromIntError| BlockHeaderStorageError::DecodeError {
             coin,
             reason: e.to_string(),
-        }) // last_block_height is 0 if the database is empty
+        })
     }
 
-    async fn get_last_block_header_with_non_max_bits(&self) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+    async fn get_last_block_header_with_non_max_bits(
+        &self,
+        max_bits: u32,
+    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
         let coin = self.ticker.clone();
-        let sql = get_last_block_header_with_non_max_bits_sql(&coin)?;
+        let sql = get_last_block_header_with_non_max_bits_sql(&coin, max_bits)?;
         let selfi = self.clone();
 
         let maybe_header_raw = async_blocking(move || {
@@ -263,13 +275,12 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         })?;
 
         if let Some(header_raw) = maybe_header_raw {
-            let header: BlockHeader =
-                header_raw
-                    .try_into()
-                    .map_err(|e: serialization::Error| BlockHeaderStorageError::DecodeError {
-                        coin,
-                        reason: e.to_string(),
-                    })?;
+            let header = BlockHeader::try_from_string_with_coin_variant(header_raw, coin.as_str().into()).map_err(
+                |e: serialization::Error| BlockHeaderStorageError::DecodeError {
+                    coin,
+                    reason: e.to_string(),
+                },
+            )?;
             return Ok(Some(header));
         }
         Ok(None)
@@ -290,6 +301,24 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
             coin,
             reason: e.to_string(),
         })
+    }
+
+    async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError> {
+        let coin = self.ticker.clone();
+        let selfi = self.clone();
+        let sql = remove_headers_up_to_height_sql(&coin, to_height)?;
+
+        async_blocking(move || {
+            let conn = selfi.conn.lock().unwrap();
+            conn.execute(&sql, NO_PARAMS)
+                .map_err(|e| BlockHeaderStorageError::UnableToDeleteHeaders {
+                    coin: coin.clone(),
+                    to_height,
+                    reason: e.to_string(),
+                })?;
+            Ok(())
+        })
+        .await
     }
 }
 
