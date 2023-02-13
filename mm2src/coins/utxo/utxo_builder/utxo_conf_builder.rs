@@ -280,11 +280,6 @@ impl<'a> UtxoConfBuilder<'a> {
 
     fn trezor_coin(&self) -> Option<String> { self.conf["trezor_coin"].as_str().map(|coin| coin.to_string()) }
 
-    // Todo: implement spv for wasm
-    #[cfg(target_arch = "wasm32")]
-    fn spv_conf(&self) -> UtxoConfResult<Option<SPVConf>> { Ok(None) }
-
-    #[cfg(not(target_arch = "wasm32"))]
     fn spv_conf(&self) -> UtxoConfResult<Option<SPVConf>> {
         json::from_value(self.conf["spv_conf"].clone())
             .map_to_mm(|e| UtxoConfError::ErrorDeserializingSPVConf(e.to_string()))

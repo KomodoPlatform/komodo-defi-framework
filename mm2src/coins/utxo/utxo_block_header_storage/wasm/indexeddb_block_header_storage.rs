@@ -311,16 +311,35 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
 
         Ok(())
     }
-}
 
-#[cfg(test)]
-impl IDBBlockHeadersStorage {
-    pub(crate) async fn is_table_empty(&self, _table_name: &str) -> bool {
+    async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError> {
         let ticker = self.ticker.clone();
-        let locked_db = self.lock_db().await.unwrap();
-        let db_transaction = locked_db.get_inner().transaction().await.unwrap();
-        let block_headers_db = db_transaction.table::<BlockHeaderStorageTable>().await.unwrap();
+        let locked_db = self
+            .lock_db()
+            .await
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
+        let db_transaction = locked_db
+            .get_inner()
+            .transaction()
+            .await
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
+        let block_headers_db = db_transaction
+            .table::<BlockHeaderStorageTable>()
+            .await
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
-        block_headers_db.get_items("ticker", ticker).await.unwrap().is_empty()
+        let items = block_headers_db
+            .get_items("ticker", ticker.clone())
+            .await
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
+
+        if !items.is_empty() {
+            return Err(BlockHeaderStorageError::table_err(
+                &ticker,
+                "Table is not empty".to_string(),
+            ));
+        };
+
+        Ok(())
     }
 }

@@ -320,6 +320,21 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         })
         .await
     }
+
+    async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError> {
+        let table_name = get_table_name_and_validate(&self.ticker).unwrap();
+        let sql = format!("SELECT COUNT(block_height) FROM {table_name};");
+        let conn = self.conn.lock().unwrap();
+        let rows_count: u32 = conn.query_row(&sql, NO_PARAMS, |row| row.get(0)).unwrap();
+        if rows_count == 0 {
+            return Ok(());
+        };
+
+        Err(BlockHeaderStorageError::table_err(
+            &self.ticker,
+            "Table is not empty".to_string(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -329,13 +344,5 @@ impl SqliteBlockHeadersStorage {
             ticker,
             conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         }
-    }
-
-    pub(crate) async fn is_table_empty(&self, table_name: &str) -> bool {
-        validate_table_name(table_name).unwrap();
-        let sql = "SELECT COUNT(block_height) FROM ".to_owned() + table_name + ";";
-        let conn = self.conn.lock().unwrap();
-        let rows_count: u32 = conn.query_row(&sql, NO_PARAMS, |row| row.get(0)).unwrap();
-        rows_count == 0
     }
 }

@@ -114,4 +114,6 @@ pub trait BlockHeaderStorageOps: Send + Sync + 'static {
     async fn get_block_height_by_hash(&self, hash: H256) -> Result<Option<i64>, BlockHeaderStorageError>;
 
     async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError>;
+
+    async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError>;
 }
