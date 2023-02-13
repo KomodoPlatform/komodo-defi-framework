@@ -238,15 +238,9 @@ mod block_headers_storage_tests {
         assert_eq!(last_block_height.unwrap(), 201595);
     }
 
-    #[test]
     pub(crate) async fn test_remove_headers_up_to_height_impl() {
         let for_coin = "get";
-        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
-        let table = block_headers_cache_table(for_coin);
-        storage.init().await.unwrap();
-
-        let initialized = storage.is_initialized_for().await;
-        assert!(initialized);
+        let (_, storage, table) = block_headers_storage_for_test(for_coin).await;
 
         let mut headers = HashMap::with_capacity(2);
 
@@ -263,7 +257,7 @@ mod block_headers_storage_tests {
         headers.insert(201593, block_header);
 
         storage.add_block_headers_to_storage(headers).await.unwrap();
-        assert!(!storage.is_table_empty(&table));
+        assert!(!storage.is_table_empty(&table).await);
 
         // Remove 2 headers from storage.
         storage.remove_headers_up_to_height(201594).await.unwrap();

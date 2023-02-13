@@ -10,7 +10,6 @@ use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use spv_validation::work::MAX_BITS_BTC;
 use std::collections::HashMap;
 
 const DB_NAME: &str = "block_headers_cache";
@@ -196,7 +195,10 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         Ok(res.into_iter().max())
     }
 
-    async fn get_last_block_header_with_non_max_bits(&self) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+    async fn get_last_block_header_with_non_max_bits(
+        &self,
+        max_bits: u32,
+    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
         let ticker = self.ticker.clone();
         let locked_db = self
             .lock_db()
@@ -227,7 +229,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .collect::<Vec<_>>();
         let res = res
             .into_iter()
-            .filter_map(|e| if e.bits != MAX_BITS_BTC { Some(e) } else { None })
+            .filter_map(|e| if e.bits != max_bits { Some(e) } else { None })
             .collect::<Vec<_>>();
 
         for header in res {
@@ -276,6 +278,38 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .await
             .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .map(|raw| raw.1.height as i64))
+    }
+
+    async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError> {
+        let ticker = self.ticker.clone();
+        let locked_db = self
+            .lock_db()
+            .await
+            .map_err(|err| BlockHeaderStorageError::delete_err(&ticker, err.to_string(), to_height))?;
+        let db_transaction = locked_db
+            .get_inner()
+            .transaction()
+            .await
+            .map_err(|err| BlockHeaderStorageError::delete_err(&ticker, err.to_string(), to_height))?;
+        let block_headers_db = db_transaction
+            .table::<BlockHeaderStorageTable>()
+            .await
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
+
+        for height in 0..=to_height {
+            let index_keys = MultiIndex::new(BlockHeaderStorageTable::HEIGHT_TICKER_INDEX)
+                .with_value(&height)
+                .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
+                .with_value(&ticker)
+                .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
+
+            block_headers_db
+                .delete_item_by_unique_multi_index(index_keys)
+                .await
+                .map_err(|err| BlockHeaderStorageError::delete_err(&ticker, err.to_string(), to_height))?;
+        }
+
+        Ok(())
     }
 }
 

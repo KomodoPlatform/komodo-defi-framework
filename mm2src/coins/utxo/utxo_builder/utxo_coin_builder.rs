@@ -650,19 +650,6 @@ pub trait UtxoCoinBuilderCommonOps {
     #[cfg(not(target_arch = "wasm32"))]
     fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
 
-    // Todo: implement spv for wasm to merge the block_header_status_channel functions
-    #[cfg(target_arch = "wasm32")]
-    fn block_header_status_channel(
-        &self,
-        _spv_conf: &Option<SPVConf>,
-    ) -> (
-        Option<UtxoSyncStatusLoopHandle>,
-        Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
-    ) {
-        (None, None)
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
     fn block_header_status_channel(
         &self,
         spv_conf: &Option<SPVConf>,

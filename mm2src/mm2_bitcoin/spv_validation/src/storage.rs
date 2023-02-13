@@ -73,6 +73,14 @@ impl BlockHeaderStorageError {
             reason,
         }
     }
+
+    pub fn delete_err(ticker: &str, reason: String, to_height: u64) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::UnableToDeleteHeaders {
+            to_height,
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
 }
 
 #[async_trait]
