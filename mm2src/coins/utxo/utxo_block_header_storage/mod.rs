@@ -205,7 +205,7 @@ mod block_headers_storage_tests {
         assert!(!storage.is_table_empty(&table).await);
 
         let actual_block_header = storage
-            .get_last_block_header_with_non_max_bits()
+            .get_last_block_header_with_non_max_bits(MAX_BITS_BTC)
             .await
             .unwrap()
             .unwrap();
@@ -235,7 +235,48 @@ mod block_headers_storage_tests {
         assert!(!storage.is_table_empty(&table).await);
 
         let last_block_height = storage.get_last_block_height().await.unwrap();
-        assert_eq!(last_block_height, 201595);
+        assert_eq!(last_block_height.unwrap(), 201595);
+    }
+
+    #[test]
+    pub(crate) async fn test_remove_headers_up_to_height_impl() {
+        let for_coin = "get";
+        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
+        let table = block_headers_cache_table(for_coin);
+        storage.init().await.unwrap();
+
+        let initialized = storage.is_initialized_for().await;
+        assert!(initialized);
+
+        let mut headers = HashMap::with_capacity(2);
+
+        // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
+        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        headers.insert(201595, block_header);
+
+        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
+        let block_header: BlockHeader = "02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into();
+        headers.insert(201594, block_header);
+
+        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
+        let block_header: BlockHeader = "020000001f38c8e30b30af912fbd4c3e781506713cfb43e73dff6250348e060000000000afa8f3eede276ccb4c4ee649ad9823fc181632f262848ca330733e7e7e541beb9be51353ffff001d00a63037".into();
+        headers.insert(201593, block_header);
+
+        storage.add_block_headers_to_storage(headers).await.unwrap();
+        assert!(!storage.is_table_empty(&table));
+
+        // Remove 2 headers from storage.
+        storage.remove_headers_up_to_height(201594).await.unwrap();
+
+        // Validate that blockers 201593..201594 are removed from storage.
+        for h in 201593..201594 {
+            let block_header = storage.get_block_header(h).await.unwrap();
+            assert!(block_header.is_none());
+        }
+
+        // Last height should be 201595
+        let last_block_height = storage.get_last_block_height().await.unwrap();
+        assert_eq!(last_block_height.unwrap(), 201595);
     }
 }
 
@@ -271,7 +312,10 @@ mod native_tests {
     fn test_get_last_block_header_with_non_max_bits() { block_on(test_get_last_block_header_with_non_max_bits_impl()) }
 
     #[test]
-    fn test_get_last_block_heigh() { block_on(test_get_last_block_height_impl()) }
+    fn test_get_last_block_height() { block_on(test_get_last_block_height_impl()) }
+
+    #[test]
+    fn test_remove_headers_up_to_height() { block_on(test_remove_headers_up_to_height_impl()) }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -314,4 +358,7 @@ mod wasm_test {
 
     #[wasm_bindgen_test]
     async fn test_get_last_block_height() { test_get_last_block_height_impl().await }
+
+    #[wasm_bindgen_test]
+    async fn test_remove_headers_up_to_height() { test_remove_headers_up_to_height_impl().await }
 }

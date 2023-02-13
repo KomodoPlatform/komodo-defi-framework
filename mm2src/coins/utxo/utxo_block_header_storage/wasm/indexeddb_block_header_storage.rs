@@ -163,7 +163,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .map(|raw| raw.1.raw_header))
     }
 
-    async fn get_last_block_height(&self) -> Result<u64, BlockHeaderStorageError> {
+    async fn get_last_block_height(&self) -> Result<Option<u64>, BlockHeaderStorageError> {
         let ticker = self.ticker.clone();
         let locked_db = self
             .lock_db()
@@ -193,7 +193,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .map(|(_item_id, item)| item.height)
             .collect::<Vec<_>>();
 
-        Ok(res.into_iter().max().unwrap_or(0))
+        Ok(res.into_iter().max())
     }
 
     async fn get_last_block_header_with_non_max_bits(&self) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
