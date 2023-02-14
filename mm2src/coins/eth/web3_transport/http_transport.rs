@@ -113,8 +113,6 @@ impl Transport for HttpTransport {
     #[cfg(not(target_arch = "wasm32"))]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
         Box::new(
-            // todo HttpTransport doesnt have request in fields to use it in get_live_client.
-            // dont impl trait and just rotate_left vector immediately in send_request func?
             send_request(
                 request,
                 self.client.clone(),
