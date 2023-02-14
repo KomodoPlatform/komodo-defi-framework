@@ -34,6 +34,7 @@ fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Resul
         _ => Err(ErrorKind::InvalidResponse("Expected single, got batch.".into()).into()),
     }
 }
+
 #[derive(Debug)]
 struct HttpTransportRpcClient(AsyncMutex<HttpTransportRpcClientImpl>);
 
