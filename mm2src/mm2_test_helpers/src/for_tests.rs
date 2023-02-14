@@ -474,13 +474,6 @@ pub fn btc_segwit_conf() -> Json {
         "txfee": 0,
         "estimate_fee_mode": "ECONOMICAL",
         "mm2": 1,
-        "enable_spv_proof": true,
-        "block_headers_verification_params": {
-            "difficulty_check": true,
-            "constant_difficulty": false,
-            "difficulty_algorithm": "Bitcoin Mainnet",
-            "genesis_block_header": "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299"
-        },
         "required_confirmations": 1,
         "avg_blocktime": 10,
         "derivation_path": "m/84'/0'",
@@ -502,15 +495,53 @@ pub fn btc_with_spv_conf() -> Json {
         "txfee": 0,
         "estimate_fee_mode": "ECONOMICAL",
         "required_confirmations": 0,
-        "enable_spv_proof": true,
         "protocol": {
             "type": "UTXO"
         },
-        "block_headers_verification_params": {
-            "difficulty_check": true,
-            "constant_difficulty": false,
-            "difficulty_algorithm": "Bitcoin Mainnet",
-            "genesis_block_header": "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299"
+        "spv_conf": {
+            "starting_block_header": {
+                "height": 0,
+                "hash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+                "bits": 486604799,
+                "time": 1231006505,
+            },
+            "validation_params": {
+                "difficulty_check": true,
+                "constant_difficulty": false,
+                "difficulty_algorithm": "Bitcoin Mainnet"
+            }
+        }
+    })
+}
+
+pub fn btc_with_sync_starting_header() -> Json {
+    json!({
+        "coin": "BTC",
+        "asset":"BTC",
+        "pubtype": 0,
+        "p2shtype": 5,
+        "wiftype": 128,
+        "segwit": true,
+        "bech32_hrp": "bc",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "required_confirmations": 0,
+        "protocol": {
+            "type": "UTXO"
+        },
+        "spv_conf": {
+            "starting_block_header": {
+                "height": 764064,
+                "hash": "00000000000000000006da48b920343944908861fa05b28824922d9e60aaa94d",
+                "bits": 386375189,
+                "time": 1668986059,
+            },
+            "max_stored_block_headers": 3000,
+            "validation_params": {
+                "difficulty_check": true,
+                "constant_difficulty": false,
+                "difficulty_algorithm": "Bitcoin Mainnet"
+            }
         }
     })
 }
@@ -571,11 +602,18 @@ pub fn tbtc_with_spv_conf() -> Json {
         "protocol": {
             "type": "UTXO"
         },
-        "block_headers_verification_params": {
-            "difficulty_check": true,
-            "constant_difficulty": false,
-            "difficulty_algorithm": "Bitcoin Testnet",
-            "genesis_block_header": "0100000043497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000bac8b0fa927c0ac8234287e33c5f74d38d354820e24756ad709d7038fc5f31f020e7494dffff001d03e4b672"
+        "spv_conf": {
+            "starting_block_header": {
+                "height": 0,
+                "hash": "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943",
+                "bits": 486604799,
+                "time": 1296688602,
+            },
+            "validation_params": {
+                "difficulty_check": true,
+                "constant_difficulty": false,
+                "difficulty_algorithm": "Bitcoin Testnet"
+            }
         }
     })
 }
