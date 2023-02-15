@@ -566,7 +566,7 @@ impl MakerSwap {
         // This value will be true if both sides support & want to use watchers and either the taker or the maker coin is ETH.
         // This requires a communication between the parties before the swap starts, which will be done during the ordermatch phase
         // or via negotiation messages in the next sprint.
-        self.w().watcher_reward = true;
+        self.w().watcher_reward = false;
 
         Ok((Some(MakerSwapCommand::Negotiate), vec![MakerSwapEvent::Started(data)]))
     }
