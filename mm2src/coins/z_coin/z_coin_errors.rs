@@ -18,13 +18,12 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {
     GrpcError(tonic::Status),
-    #[display(fmt = "Fail to send requests during clients iteration {:?}", _0)]
-    GrpcMultiError(Vec<tonic::Status>),
     BlocksDbError(SqliteError),
     ZcashSqliteError(ZcashClientError),
     UtxoRpcError(UtxoRpcError),
     InternalError(String),
     JsonRpcError(JsonRpcError),
+    GetLiveLightClientError(String),
 }
 
 impl From<tonic::Status> for UpdateBlocksCacheErr {
