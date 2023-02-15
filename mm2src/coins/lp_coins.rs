@@ -3444,69 +3444,11 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
 
     let my_address = match protocol {
         CoinProtocol::ETH => get_eth_address(&req.coin, &ctx).await?,
-        CoinProtocol::UTXO => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "UTXO protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        CoinProtocol::QTUM => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "QTUM protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        CoinProtocol::QRC20 { .. } => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "QRC20 protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        CoinProtocol::ERC20 { .. } => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "ERC20 protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        CoinProtocol::SLPTOKEN { .. } => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "SlpToken protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        CoinProtocol::BCH { .. } => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "BCH protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        CoinProtocol::TENDERMINT(_) => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "TENDERMINT protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        CoinProtocol::TENDERMINTTOKEN(_) => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "TENDERMINTTOKEN protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::LIGHTNING { .. } => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "LIGHTNING protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::SOLANA => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "SOLANA protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::SPLTOKEN { .. } => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "SplToken protocol is not supported by get_my_address".to_owned(),
-            ))
-        },
-        #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC(_) => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(
-                "ZHTLC protocol is not supported by get_my_address".to_owned(),
-            ))
+        _ => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
+                "{} doesn't support get_my_address",
+                req.coin
+            )));
         },
     };
 
