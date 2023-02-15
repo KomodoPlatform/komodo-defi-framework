@@ -152,7 +152,6 @@ impl ZRpcOps for LightRpcClient {
                     Ok(_) => break,
                     Err(e) => {
                         error!("Error on getting tx {}", tx_id);
-                        let e = e;
                         if e.message().contains(NO_TX_ERROR_CODE) {
                             if attempts >= 3 {
                                 return false;
@@ -443,6 +442,7 @@ pub(super) async fn init_light_client(
         rpc_clients.push(CompactTxStreamerClient::new(tonic_channel));
     }
     drop_mutability!(errors);
+    drop_mutability!(rpc_clients);
     // check if rpc_clients is empty, then for loop wasn't successful
     if rpc_clients.is_empty() {
         return MmError::err(ZcoinClientInitError::UrlIterFailure(errors));
@@ -461,7 +461,6 @@ pub(super) async fn init_light_client(
         scan_interval_ms,
     };
 
-    drop_mutability!(rpc_clients);
     let light_rpc_clients = LightRpcClient {
         rpc_clients: AsyncMutex::new(rpc_clients),
     };
