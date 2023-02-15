@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_metadata_list_and_json_deserialization() {
-        const REPO_OWNER: &str = "cosmos";
+        const REPO_OWNER: &str = "KomodoPlatform";
         const REPO_NAME: &str = "chain-registry";
         const BRANCH: &str = "master";
         const DIR_NAME: &str = "_IBC";

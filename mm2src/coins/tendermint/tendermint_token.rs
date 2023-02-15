@@ -1,8 +1,8 @@
 use super::ibc::transfer_v1::MsgTransfer;
 use super::rpc::ibc::IBCWithdrawRequest;
 /// Module containing implementation for Tendermint Tokens. They include native assets + IBC
-use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
-            TX_DEFAULT_MEMO};
+use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, IBC_GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS,
+            TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
             CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
@@ -196,7 +196,7 @@ impl TendermintToken {
                 amount: fee_amount_u64.into(),
             };
 
-            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+            let fee = Fee::from_amount_and_gas(fee_amount, IBC_GAS_LIMIT_DEFAULT);
 
             let tx_raw = platform
                 .any_to_signed_raw_tx(account_info, msg_transfer, fee, timeout_height, memo.clone())
@@ -222,7 +222,7 @@ impl TendermintToken {
                     coin: platform.ticker().to_string(),
                     amount: fee_amount_dec,
                     uamount: fee_amount_u64,
-                    gas_limit: GAS_LIMIT_DEFAULT,
+                    gas_limit: IBC_GAS_LIMIT_DEFAULT,
                 })),
                 coin: token.ticker.clone(),
                 internal_id: hash.to_vec().into(),

@@ -93,7 +93,8 @@ const ABCI_REQUEST_PROVE: bool = false;
 /// 0.25 is good average gas price on atom and iris
 const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
-pub const GAS_LIMIT_DEFAULT: u64 = 150_000;
+pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
+pub const IBC_GAS_LIMIT_DEFAULT: u64 = 150_000;
 pub(crate) const TX_DEFAULT_MEMO: &str = "";
 
 // https://github.com/irisnet/irismod/blob/5016c1be6fdbcffc319943f33713f4a057622f0a/modules/htlc/types/validation.go#L19-L22
@@ -584,7 +585,7 @@ impl TendermintCoin {
                 amount: fee_amount_u64.into(),
             };
 
-            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+            let fee = Fee::from_amount_and_gas(fee_amount, IBC_GAS_LIMIT_DEFAULT);
 
             let (amount_denom, total_amount) = if req.max {
                 if balance_denom < fee_amount_u64 {
@@ -645,7 +646,7 @@ impl TendermintCoin {
                     coin: coin.ticker.clone(),
                     amount: fee_amount_dec,
                     uamount: fee_amount_u64,
-                    gas_limit: GAS_LIMIT_DEFAULT,
+                    gas_limit: IBC_GAS_LIMIT_DEFAULT,
                 })),
                 coin: coin.ticker.to_string(),
                 internal_id: hash.to_vec().into(),
