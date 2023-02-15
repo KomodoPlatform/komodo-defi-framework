@@ -1,15 +1,16 @@
 use super::ibc::transfer_v1::MsgTransfer;
+use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
                         HTLC_STATE_REFUNDED};
 use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
-use super::rpc::ibc::{IBCChainRegistriesResult, IBCChainsRequestError, IBCTransferChannelsRequest,
-                      IBCTransferChannelsResult, IBCWithdrawRequest};
 use super::rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
+                                     IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequest,
+                                     IBCTransferChannelsRequestError, IBCTransferChannelsResponse,
+                                     IBCTransferChannelsResult, IBCWithdrawRequest, CHAIN_REGISTRY_BRANCH,
+                                     CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
 use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
-use crate::tendermint::rpc::ibc::{IBCChainRegistriesResponse, IBCTransferChannel, IBCTransferChannelTag,
-                                  IBCTransferChannelsRequestError, IBCTransferChannelsResponse, CHAIN_REGISTRY_BRANCH,
-                                  CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
@@ -94,7 +95,6 @@ const ABCI_REQUEST_PROVE: bool = false;
 const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
-pub const IBC_GAS_LIMIT_DEFAULT: u64 = 150_000;
 pub(crate) const TX_DEFAULT_MEMO: &str = "";
 
 // https://github.com/irisnet/irismod/blob/5016c1be6fdbcffc319943f33713f4a057622f0a/modules/htlc/types/validation.go#L19-L22

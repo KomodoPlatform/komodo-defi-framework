@@ -11,6 +11,7 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
             mm2::rpc::lp_commands::{get_public_key, get_public_key_hash}};
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
+use coins::rpc_command::tendermint::{ibc_chains, ibc_transfer_channels, ibc_withdraw};
 use coins::rpc_command::{account_balance::account_balance,
                          get_current_mtp::get_current_mtp_rpc,
                          get_enabled_coins::get_enabled_coins,
@@ -27,8 +28,8 @@ use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
-use coins::{add_delegation, get_raw_transaction, get_staking_infos, ibc_chains, ibc_transfer_channels, ibc_withdraw,
-            remove_delegation, sign_message, verify_message, withdraw};
+use coins::{add_delegation, get_raw_transaction, get_staking_infos, remove_delegation, sign_message, verify_message,
+            withdraw};
 #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 use coins::{SolanaCoin, SplToken};
 use coins_activation::{cancel_init_l2, cancel_init_standalone_coin, enable_platform_coin_with_tokens, enable_token,

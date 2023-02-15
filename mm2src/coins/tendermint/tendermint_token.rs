@@ -1,8 +1,9 @@
 use super::ibc::transfer_v1::MsgTransfer;
-use super::rpc::ibc::IBCWithdrawRequest;
+use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 /// Module containing implementation for Tendermint Tokens. They include native assets + IBC
-use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, IBC_GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS,
-            TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
+use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
+            TX_DEFAULT_MEMO};
+use crate::rpc_command::tendermint::IBCWithdrawRequest;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
             CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,

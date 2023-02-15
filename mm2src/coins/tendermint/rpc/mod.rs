@@ -1,5 +1,3 @@
-pub mod ibc;
-
 #[cfg(not(target_arch = "wasm32"))] mod tendermint_native_rpc;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use tendermint_native_rpc::*;

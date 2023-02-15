@@ -221,8 +221,6 @@ use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalan
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::rpc::ibc::{IBCChainRegistriesResult, IBCTransferChannelsRequest, IBCTransferChannelsRequestError,
-                           IBCTransferChannelsResult, IBCWithdrawRequest};
 use tendermint::{CosmosTransaction, CustomTendermintMsgType, TendermintCoin, TendermintFeeDetails,
                  TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo};
 
@@ -2968,39 +2966,6 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     coin.withdraw(req).compat().await
-}
-
-pub async fn ibc_withdraw(ctx: MmArc, req: IBCWithdrawRequest) -> WithdrawResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    match coin {
-        MmCoinEnum::Tendermint(coin) => coin.ibc_withdraw(req).compat().await,
-        MmCoinEnum::TendermintToken(token) => token.ibc_withdraw(req).compat().await,
-        coin => MmError::err(WithdrawError::UnexpectedUserAction {
-            expected: format!(
-                "Only tendermint based coins are allowed for `ibc_withdraw` operation. Current coin: {}",
-                coin.platform_ticker()
-            ),
-        }),
-    }
-}
-
-#[inline(always)]
-pub async fn ibc_chains(_ctx: MmArc, _req: serde_json::Value) -> IBCChainRegistriesResult {
-    tendermint::get_ibc_chain_list().await
-}
-
-pub async fn ibc_transfer_channels(ctx: MmArc, req: IBCTransferChannelsRequest) -> IBCTransferChannelsResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin)
-        .await
-        .map_err(|_| IBCTransferChannelsRequestError::NoSuchCoin(req.coin.clone()))?;
-
-    match coin {
-        MmCoinEnum::Tendermint(coin) => coin.get_ibc_transfer_channels(req).await,
-        MmCoinEnum::TendermintToken(token) => token.platform_coin.get_ibc_transfer_channels(req).await,
-        coin => MmError::err(IBCTransferChannelsRequestError::UnsupportedCoin(
-            coin.platform_ticker().to_owned(),
-        )),
-    }
 }
 
 pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {

@@ -1,28 +1,10 @@
 use common::HttpStatusCode;
+use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
-use mm2_number::BigDecimal;
 
-pub type IBCChainRegistriesResult = Result<IBCChainRegistriesResponse, MmError<IBCChainsRequestError>>;
+use crate::{lp_coinfind_or_err, MmCoinEnum};
+
 pub type IBCTransferChannelsResult = Result<IBCTransferChannelsResponse, MmError<IBCTransferChannelsRequestError>>;
-
-// Global constants for interacting with https://github.com/KomodoPlatform/chain-registry repository
-// using `mm2_git` crate.
-pub(crate) const CHAIN_REGISTRY_REPO_OWNER: &str = "KomodoPlatform";
-pub(crate) const CHAIN_REGISTRY_REPO_NAME: &str = "chain-registry";
-pub(crate) const CHAIN_REGISTRY_BRANCH: &str = "master";
-pub(crate) const CHAIN_REGISTRY_IBC_DIR_NAME: &str = "_IBC";
-
-#[derive(Clone, Deserialize)]
-pub struct IBCWithdrawRequest {
-    pub(crate) ibc_source_channel: String,
-    pub(crate) coin: String,
-    pub(crate) to: String,
-    #[serde(default)]
-    pub(crate) amount: BigDecimal,
-    #[serde(default)]
-    pub(crate) max: bool,
-    pub(crate) memo: Option<String>,
-}
 
 #[derive(Clone, Deserialize)]
 pub struct IBCTransferChannelsRequest {
@@ -50,11 +32,6 @@ pub(crate) struct IBCTransferChannelTag {
     pub(crate) dex: Option<String>,
 }
 
-#[derive(Clone, Serialize)]
-pub struct IBCChainRegistriesResponse {
-    pub(crate) chain_registry_list: Vec<String>,
-}
-
 #[derive(Clone, Debug, Display, Serialize, SerializeErrorType, PartialEq)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum IBCTransferChannelsRequestError {
@@ -73,24 +50,6 @@ pub enum IBCTransferChannelsRequestError {
     InternalError(String),
 }
 
-#[derive(Clone, Debug, Display, Serialize, SerializeErrorType, PartialEq)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum IBCChainsRequestError {
-    #[display(fmt = "Transport error: {}", _0)]
-    Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
-    InternalError(String),
-}
-
-impl HttpStatusCode for IBCChainsRequestError {
-    fn status_code(&self) -> common::StatusCode {
-        match self {
-            IBCChainsRequestError::Transport(_) => common::StatusCode::SERVICE_UNAVAILABLE,
-            IBCChainsRequestError::InternalError(_) => common::StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
 impl HttpStatusCode for IBCTransferChannelsRequestError {
     fn status_code(&self) -> common::StatusCode {
         match self {
@@ -101,5 +60,19 @@ impl HttpStatusCode for IBCTransferChannelsRequestError {
             IBCTransferChannelsRequestError::Transport(_) => common::StatusCode::SERVICE_UNAVAILABLE,
             IBCTransferChannelsRequestError::InternalError(_) => common::StatusCode::INTERNAL_SERVER_ERROR,
         }
+    }
+}
+
+pub async fn ibc_transfer_channels(ctx: MmArc, req: IBCTransferChannelsRequest) -> IBCTransferChannelsResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin)
+        .await
+        .map_err(|_| IBCTransferChannelsRequestError::NoSuchCoin(req.coin.clone()))?;
+
+    match coin {
+        MmCoinEnum::Tendermint(coin) => coin.get_ibc_transfer_channels(req).await,
+        MmCoinEnum::TendermintToken(token) => token.platform_coin.get_ibc_transfer_channels(req).await,
+        coin => MmError::err(IBCTransferChannelsRequestError::UnsupportedCoin(
+            coin.platform_ticker().to_owned(),
+        )),
     }
 }
