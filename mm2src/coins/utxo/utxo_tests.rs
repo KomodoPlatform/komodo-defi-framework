@@ -24,8 +24,8 @@ use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
 use crate::INVALID_SENDER_ERR_LOG;
 use crate::{BlockHeightAndTime, CoinBalance, IguanaPrivKey, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
-            SpendPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails,
-            TxMarshalingErr, ValidateFeeArgs};
+            SpendPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails, TxMarshalingErr,
+            ValidateFeeArgs};
 use chain::{BlockHeader, BlockHeaderBits, OutPoint};
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};

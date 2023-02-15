@@ -59,7 +59,7 @@ async fn test_send() {
         swap_contract_address: &None,
         swap_unique_data: &[],
         payment_instructions: &None,
-        watcher_reward: None
+        watcher_reward: None,
     };
     let tx = coin.send_maker_payment(maker_payment_args).compat().await;
     console::log_1(&format!("{:?}", tx).into());
