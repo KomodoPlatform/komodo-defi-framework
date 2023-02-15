@@ -569,7 +569,6 @@ pub struct MakerNegotiationData {
     pub taker_coin_swap_contract_addr: Option<BytesJson>,
     pub maker_coin_htlc_pubkey: Option<H264Json>,
     pub taker_coin_htlc_pubkey: Option<H264Json>,
-    pub watcher_reward: bool,
 }
 
 impl MakerNegotiationData {
@@ -738,7 +737,6 @@ impl TakerSwap {
                 self.w().other_maker_coin_htlc_pub = data.other_maker_coin_htlc_pub();
                 self.w().other_taker_coin_htlc_pub = data.other_taker_coin_htlc_pub();
                 self.w().secret_hash = data.secret_hash;
-                self.w().watcher_reward = data.watcher_reward;
 
                 if data.maker_coin_swap_contract_addr.is_some() {
                     self.w().data.maker_coin_swap_contract_address = data.maker_coin_swap_contract_addr;
@@ -1031,6 +1029,11 @@ impl TakerSwap {
             p2p_privkey: self.p2p_privkey.map(SerializableSecp256k1Keypair::from),
         };
 
+        // This value will be true if both sides support & want to use watchers and either the taker or the maker coin is ETH.
+        // This requires a communication between the parties before the swap starts, which will be done during the ordermatch phase
+        // or via negotiation messages in the next sprint.
+        self.w().watcher_reward = true;
+
         Ok((Some(TakerSwapCommand::Negotiate), vec![TakerSwapEvent::Started(data)]))
     }
 
@@ -1133,15 +1136,6 @@ impl TakerSwap {
             .clone()
             .map_or_else(Vec::new, |bytes| bytes.0);
 
-        // This value will be true if both sides support & want to use watchers and either the taker or the maker coin is ETH.
-        // This requires a communication between the parties before the swap starts, which will be done during the ordermatch phase
-        // or via negotiation messages in the next sprint.
-        // let watcher_reward = self.ctx.use_watchers()
-        //     && self.taker_coin.is_supported_by_watchers()
-        //     && maker_data.watcher_reward()
-        //     && (self.taker_coin.is_eth() || self.maker_coin.is_eth());
-        let watcher_reward = false;
-
         let my_negotiation_data = self.get_my_negotiation_data(
             maker_data.secret_hash().to_vec(),
             maker_coin_swap_contract_bytes,
@@ -1190,7 +1184,6 @@ impl TakerSwap {
                 taker_coin_swap_contract_addr,
                 maker_coin_htlc_pubkey: Some(maker_data.maker_coin_htlc_pub().into()),
                 taker_coin_htlc_pubkey: Some(maker_data.taker_coin_htlc_pub().into()),
-                watcher_reward,
             },
         )]))
     }

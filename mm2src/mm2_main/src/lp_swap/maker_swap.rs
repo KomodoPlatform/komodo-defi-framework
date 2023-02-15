@@ -122,7 +122,6 @@ pub struct TakerNegotiationData {
     pub taker_coin_swap_contract_addr: Option<BytesJson>,
     pub maker_coin_htlc_pubkey: Option<H264Json>,
     pub taker_coin_htlc_pubkey: Option<H264Json>,
-    pub watcher_reward: bool,
 }
 
 impl TakerNegotiationData {
@@ -285,7 +284,6 @@ impl MakerSwap {
                     .store(data.taker_payment_locktime, Ordering::Relaxed);
                 self.w().other_maker_coin_htlc_pub = data.other_maker_coin_htlc_pub();
                 self.w().other_taker_coin_htlc_pub = data.other_taker_coin_htlc_pub();
-                self.w().watcher_reward = data.watcher_reward;
                 if data.maker_coin_swap_contract_addr.is_some() {
                     self.w().data.maker_coin_swap_contract_address = data.maker_coin_swap_contract_addr;
                 }
@@ -565,6 +563,11 @@ impl MakerSwap {
             p2p_privkey: self.p2p_privkey.map(SerializableSecp256k1Keypair::from),
         };
 
+        // This value will be true if both sides support & want to use watchers and either the taker or the maker coin is ETH.
+        // This requires a communication between the parties before the swap starts, which will be done during the ordermatch phase
+        // or via negotiation messages in the next sprint.
+        self.w().watcher_reward = true;
+
         Ok((Some(MakerSwapCommand::Negotiate), vec![MakerSwapEvent::Started(data)]))
     }
 
@@ -661,11 +664,6 @@ impl MakerSwap {
             )]));
         };
 
-        // This value will be true if both sides support & want to use watchers and either the taker or the maker coin is ETH.
-        // This requires a communication between the parties before the swap starts, which will be done during the ordermatch phase
-        // or via negotiation messages in the next sprint.
-        let watcher_reward = false;
-
         Ok((Some(MakerSwapCommand::WaitForTakerFee), vec![
             MakerSwapEvent::Negotiated(TakerNegotiationData {
                 taker_payment_locktime: taker_data.payment_locktime(),
@@ -676,7 +674,6 @@ impl MakerSwap {
                 taker_coin_swap_contract_addr,
                 maker_coin_htlc_pubkey: Some(taker_data.maker_coin_htlc_pub().into()),
                 taker_coin_htlc_pubkey: Some(taker_data.taker_coin_htlc_pub().into()),
-                watcher_reward,
             }),
         ]))
     }
