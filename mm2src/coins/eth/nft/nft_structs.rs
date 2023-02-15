@@ -17,6 +17,7 @@ pub struct NftMetadataReq {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum Chain {
     Bnb,
     Eth,
@@ -28,6 +29,7 @@ pub enum ParseContractTypeError {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum ContractType {
     Erc1155,
     Erc721,
@@ -71,13 +73,13 @@ pub struct Nft {
 #[derive(Debug, Deserialize)]
 pub struct NftWrapper {
     pub(crate) token_address: String,
-    pub(crate) token_id: Wrap<BigDecimal>,
-    pub(crate) amount: Wrap<BigDecimal>,
+    pub(crate) token_id: SerdeStringWrap<BigDecimal>,
+    pub(crate) amount: SerdeStringWrap<BigDecimal>,
     pub(crate) owner_of: String,
     pub(crate) token_hash: String,
-    pub(crate) block_number_minted: Wrap<u64>,
-    pub(crate) block_number: Wrap<u64>,
-    pub(crate) contract_type: Option<Wrap<ContractType>>,
+    pub(crate) block_number_minted: SerdeStringWrap<u64>,
+    pub(crate) block_number: SerdeStringWrap<u64>,
+    pub(crate) contract_type: Option<SerdeStringWrap<ContractType>>,
     pub(crate) name: Option<String>,
     pub(crate) symbol: Option<String>,
     pub(crate) token_uri: Option<String>,
@@ -88,9 +90,9 @@ pub struct NftWrapper {
 }
 
 #[derive(Debug)]
-pub struct Wrap<T>(pub(crate) T);
+pub(crate) struct SerdeStringWrap<T>(pub(crate) T);
 
-impl<'de, T> Deserialize<'de> for Wrap<T>
+impl<'de, T> Deserialize<'de> for SerdeStringWrap<T>
 where
     T: std::str::FromStr,
     T::Err: std::fmt::Debug + std::fmt::Display,
@@ -101,11 +103,11 @@ where
             Ok(v) => v,
             Err(e) => return Err(<D::Error as serde::de::Error>::custom(e)),
         };
-        Ok(Wrap(value))
+        Ok(SerdeStringWrap(value))
     }
 }
 
-impl<T> std::ops::Deref for Wrap<T> {
+impl<T> std::ops::Deref for SerdeStringWrap<T> {
     type Target = T;
     fn deref(&self) -> &T { &self.0 }
 }
@@ -194,21 +196,21 @@ pub struct NftTransferHistory {
 
 #[derive(Debug, Deserialize)]
 pub struct NftTransferHistoryWrapper {
-    pub(crate) block_number: Wrap<u64>,
+    pub(crate) block_number: SerdeStringWrap<u64>,
     pub(crate) block_timestamp: String,
     pub(crate) block_hash: String,
     /// Transaction hash in hexadecimal format
     pub(crate) transaction_hash: String,
     pub(crate) transaction_index: u64,
     pub(crate) log_index: u64,
-    pub(crate) value: Wrap<BigDecimal>,
-    pub(crate) contract_type: Wrap<ContractType>,
+    pub(crate) value: SerdeStringWrap<BigDecimal>,
+    pub(crate) contract_type: SerdeStringWrap<ContractType>,
     pub(crate) transaction_type: String,
     pub(crate) token_address: String,
-    pub(crate) token_id: Wrap<BigDecimal>,
+    pub(crate) token_id: SerdeStringWrap<BigDecimal>,
     pub(crate) from_address: String,
     pub(crate) to_address: String,
-    pub(crate) amount: Wrap<BigDecimal>,
+    pub(crate) amount: SerdeStringWrap<BigDecimal>,
     pub(crate) verified: u64,
     pub(crate) operator: Option<String>,
 }

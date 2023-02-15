@@ -832,7 +832,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
         );
 
         // The cursor returned in the previous response (used for getting the next page).
-        let mut cursor = "".to_owned();
+        let mut cursor = String::new();
         loop {
             let uri = format!("{}{}", uri_without_cursor, cursor);
             let response = send_moralis_request(uri.as_str(), api_key).await?;
@@ -945,7 +945,7 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
         );
 
         // The cursor returned in the previous response (used for getting the next page).
-        let mut cursor = "".to_owned();
+        let mut cursor = String::new();
         loop {
             let uri = format!("{}{}", uri_without_cursor, cursor);
             let response = send_moralis_request(uri.as_str(), api_key).await?;
@@ -4746,6 +4746,7 @@ pub enum GetEthAddressError {
 impl From<PrivKeyPolicyNotAllowed> for GetEthAddressError {
     fn from(e: PrivKeyPolicyNotAllowed) -> Self { GetEthAddressError::PrivKeyPolicyNotAllowed(e) }
 }
+
 impl From<EthActivationV2Error> for GetEthAddressError {
     fn from(e: EthActivationV2Error) -> Self { GetEthAddressError::EthActivationV2Error(e) }
 }
