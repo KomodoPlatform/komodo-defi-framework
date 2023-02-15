@@ -12,13 +12,14 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAccountAddressId,
-            RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput,
-            SendMakerPaymentSpendPreimageInput, SendWatcherRefundsPaymentArgs, SignatureError, SignatureResult,
-            SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr, ValidateAddressResult,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
-            WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundPaymentArgs,
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
+            SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails,
+            TxMarshalingErr, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
+            EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
+            INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
 use chain::constants::SEQUENCE_FINAL;
@@ -1146,28 +1147,21 @@ where
     send_outputs_from_my_address(coin, vec![output])
 }
 
-pub fn send_maker_payment<T>(
-    coin: T,
-    time_lock: u32,
-    taker_pub: &[u8],
-    secret_hash: &[u8],
-    amount: BigDecimal,
-    swap_unique_data: &[u8],
-) -> TransactionFut
+pub fn send_maker_payment<T>(coin: T, args: SendPaymentArgs) -> TransactionFut
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
-    let maker_htlc_key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+    let maker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let SwapPaymentOutputsResult {
         payment_address,
         outputs,
     } = try_tx_fus!(generate_swap_payment_outputs(
         &coin,
-        time_lock,
+        args.time_lock,
         maker_htlc_key_pair.public_slice(),
-        taker_pub,
-        secret_hash,
-        amount
+        args.other_pubkey,
+        args.secret_hash,
+        args.amount
     ));
     let send_fut = match &coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Electrum(_) => Either::A(send_outputs_from_my_address(coin, outputs)),
@@ -1184,28 +1178,21 @@ where
     Box::new(send_fut)
 }
 
-pub fn send_taker_payment<T>(
-    coin: T,
-    time_lock: u32,
-    maker_pub: &[u8],
-    secret_hash: &[u8],
-    amount: BigDecimal,
-    swap_unique_data: &[u8],
-) -> TransactionFut
+pub fn send_taker_payment<T>(coin: T, args: SendPaymentArgs) -> TransactionFut
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
-    let taker_htlc_key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+    let taker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let SwapPaymentOutputsResult {
         payment_address,
         outputs,
     } = try_tx_fus!(generate_swap_payment_outputs(
         &coin,
-        time_lock,
+        args.time_lock,
         taker_htlc_key_pair.public_slice(),
-        maker_pub,
-        secret_hash,
-        amount
+        args.other_pubkey,
+        args.secret_hash,
+        args.amount
     ));
 
     let send_fut = match &coin.as_ref().rpc_client {
@@ -1223,36 +1210,29 @@ where
     Box::new(send_fut)
 }
 
-pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
-    coin: T,
-    taker_payment_tx: &[u8],
-    time_lock: u32,
-    taker_pub: &[u8],
-    secret: &[u8],
-    secret_hash: &[u8],
-    swap_unique_data: &[u8],
-) -> TransactionFut {
+pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(coin: T, args: SpendPaymentArgs) -> TransactionFut {
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
-    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     if prev_transaction.outputs.is_empty() {
         return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any output"));
     }
 
-    let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+    let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let script_data = Builder::default()
-        .push_data(secret)
+        .push_data(args.secret)
         .push_opcode(Opcode::OP_0)
         .into_script();
 
     let redeem_script = payment_script(
-        time_lock,
-        secret_hash,
-        &try_tx_fus!(Public::from_slice(taker_pub)),
+        args.time_lock,
+        args.secret_hash,
+        &try_tx_fus!(Public::from_slice(args.other_pubkey)),
         key_pair.public(),
     )
     .into();
+    let time_lock = args.time_lock;
     let fut = async move {
         let fee = try_tx_s!(
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
@@ -1456,36 +1436,30 @@ pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
-    coin: T,
-    maker_payment_tx: &[u8],
-    time_lock: u32,
-    maker_pub: &[u8],
-    secret: &[u8],
-    secret_hash: &[u8],
-    swap_unique_data: &[u8],
-) -> TransactionFut {
+pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(coin: T, args: SpendPaymentArgs) -> TransactionFut {
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
-    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     if prev_transaction.outputs.is_empty() {
         return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any output"));
     }
 
-    let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+    let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
 
     let script_data = Builder::default()
-        .push_data(secret)
+        .push_data(args.secret)
         .push_opcode(Opcode::OP_0)
         .into_script();
     let redeem_script = payment_script(
-        time_lock,
-        secret_hash,
-        &try_tx_fus!(Public::from_slice(maker_pub)),
+        args.time_lock,
+        args.secret_hash,
+        &try_tx_fus!(Public::from_slice(args.other_pubkey)),
         key_pair.public(),
     )
     .into();
+
+    let time_lock = args.time_lock;
     let fut = async move {
         let fee = try_tx_s!(
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
@@ -1523,32 +1497,26 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
-    coin: T,
-    taker_payment_tx: &[u8],
-    time_lock: u32,
-    maker_pub: &[u8],
-    secret_hash: &[u8],
-    swap_unique_data: &[u8],
-) -> TransactionFut {
+pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(coin: T, args: RefundPaymentArgs) -> TransactionFut {
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
     let mut prev_transaction: UtxoTx =
-        try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
+        try_tx_fus!(deserialize(args.payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     if prev_transaction.outputs.is_empty() {
         return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any output"));
     }
 
-    let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+    let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
     let redeem_script = payment_script(
-        time_lock,
-        secret_hash,
+        args.time_lock,
+        args.secret_hash,
         key_pair.public(),
-        &try_tx_fus!(Public::from_slice(maker_pub)),
+        &try_tx_fus!(Public::from_slice(args.other_pubkey)),
     )
     .into();
+    let time_lock = args.time_lock;
     let fut = async move {
         let fee = try_tx_s!(
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
@@ -1588,7 +1556,7 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
 
 pub fn send_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
-    watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
+    watcher_refunds_payment_args: RefundPaymentArgs,
 ) -> TransactionFut {
     let coin = coin.clone();
     let transaction: UtxoTx = try_tx_fus!(
@@ -1605,31 +1573,24 @@ pub fn send_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
-    coin: T,
-    maker_payment_tx: &[u8],
-    time_lock: u32,
-    taker_pub: &[u8],
-    secret_hash: &[u8],
-    swap_unique_data: &[u8],
-) -> TransactionFut {
+pub fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(coin: T, args: RefundPaymentArgs) -> TransactionFut {
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
-    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(args.payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     if prev_transaction.outputs.is_empty() {
         return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any output"));
     }
-
-    let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+    let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
     let redeem_script = payment_script(
-        time_lock,
-        secret_hash,
+        args.time_lock,
+        args.secret_hash,
         key_pair.public(),
-        &try_tx_fus!(Public::from_slice(taker_pub)),
+        &try_tx_fus!(Public::from_slice(args.other_pubkey)),
     )
     .into();
+    let time_lock = args.time_lock;
     let fut = async move {
         let fee = try_tx_s!(
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)

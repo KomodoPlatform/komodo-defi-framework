@@ -67,6 +67,7 @@ use common::{bits256, calc_total_pages,
              log::{error, info},
              now_ms, var, PagingOptions};
 use derive_more::Display;
+use futures::compat::Future01CompatExt;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
@@ -633,6 +634,59 @@ pub fn dex_fee_amount_from_taker_coin(taker_coin: &MmCoinEnum, maker_coin: &str,
     dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &dex_fee_threshold)
 }
 
+// This needs discussion. We need a way to determine the watcher reward amount, and a way to validate it at watcher side so
+// that watchers won't accept it if it's less than the expected amount. This has to be done for all coin types, because watcher rewards
+// will be required by both parties even if only one side is ETH coin. Artem's suggestion was first calculating the reward for ETH and
+// converting the value to other coins, which is what I'm planning to do. I based the values to be higher than the gas amounts used
+// when the watcher spends the maker payment or refunds the taker payment. For the validation, I check if the reward is higher
+// than a minimum amount using the min_watcher_reward method. I can't make an exact comparison because the gas price and relative
+// price of the coins will be different when the taker/maker sends their payment and when the watcher receives the message. This should
+// work fine if we pick the WATCHER_REWARD_GAS and MIN_WATCHER_REWARD_GAS constants good. The advantage of this is that the reward will
+// be directly based on the amount of gas burned when the watcher will call the contract functions (Artem's idea was to make it slightly
+// profitable for the watchers). The disadvantage is the comparison during the validations using a separate minimum value. If we want
+// validations with exact values, there are two other ways I could think of:
+// 1.  Precalculating fixed rewards for all coins. The disadvantage is that the gas price and the relative price of coins will change over
+// time and the reward will deviate from the actual gas used by the watchers, and we can't keep updating the values.
+// 2. Picking the reward to be a percentage of the trade amount like the taker fee. The disadvantage is it will be extremely hard to
+// pick the right ratio such that it will be slightly profitable for watchers.
+pub async fn watcher_reward_amount(
+    coin: &MmCoinEnum,
+    other_coin: &MmCoinEnum,
+    watcher_reward: bool,
+) -> Result<Option<u64>, String> {
+    const WATCHER_REWARD_GAS: u64 = 100_000;
+    watcher_reward_from_gas(coin, other_coin, WATCHER_REWARD_GAS, watcher_reward).await
+}
+
+pub async fn min_watcher_reward(
+    coin: &MmCoinEnum,
+    other_coin: &MmCoinEnum,
+    watcher_reward: bool,
+) -> Result<Option<u64>, String> {
+    const MIN_WATCHER_REWARD_GAS: u64 = 70_000;
+    watcher_reward_from_gas(coin, other_coin, MIN_WATCHER_REWARD_GAS, watcher_reward).await
+}
+
+// TODO: This can be done in a better way
+pub async fn watcher_reward_from_gas(
+    coin: &MmCoinEnum,
+    other_coin: &MmCoinEnum,
+    gas: u64,
+    watcher_reward: bool,
+) -> Result<Option<u64>, String> {
+    if !watcher_reward {
+        Ok(None)
+    } else if let MmCoinEnum::EthCoin(coin) = &coin {
+        let gas_price = try_s!(coin.get_gas_price().compat().await).as_u64();
+        Ok(Some(gas * gas_price))
+    } else if let MmCoinEnum::EthCoin(coin) = &other_coin {
+        let gas_price = try_s!(coin.get_gas_price().compat().await).as_u64();
+        Ok(Some(gas * gas_price))
+    } else {
+        return Err(ERRL!("At least one coin must be ETH to use watcher reward"));
+    }
+}
+
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 pub struct NegotiationDataV1 {
     started_at: u64,
@@ -663,23 +717,11 @@ pub struct NegotiationDataV3 {
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
-pub struct NegotiationDataV4 {
-    started_at: u64,
-    payment_locktime: u64,
-    secret_hash: Vec<u8>,
-    persistent_pubkey: Vec<u8>,
-    maker_coin_swap_contract: Vec<u8>,
-    taker_coin_swap_contract: Vec<u8>,
-    watcher_reward: bool,
-}
-
-#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum NegotiationDataMsg {
     V1(NegotiationDataV1),
     V2(NegotiationDataV2),
     V3(NegotiationDataV3),
-    V4(NegotiationDataV4),
 }
 
 impl NegotiationDataMsg {
@@ -688,7 +730,6 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(v1) => v1.started_at,
             NegotiationDataMsg::V2(v2) => v2.started_at,
             NegotiationDataMsg::V3(v3) => v3.started_at,
-            NegotiationDataMsg::V4(v4) => v4.started_at,
         }
     }
 
@@ -697,7 +738,6 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(v1) => v1.payment_locktime,
             NegotiationDataMsg::V2(v2) => v2.payment_locktime,
             NegotiationDataMsg::V3(v3) => v3.payment_locktime,
-            NegotiationDataMsg::V4(v4) => v4.payment_locktime,
         }
     }
 
@@ -706,7 +746,6 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(v1) => &v1.secret_hash,
             NegotiationDataMsg::V2(v2) => &v2.secret_hash,
             NegotiationDataMsg::V3(v3) => &v3.secret_hash,
-            NegotiationDataMsg::V4(v4) => &v4.secret_hash,
         }
     }
 
@@ -715,7 +754,6 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(v1) => &v1.persistent_pubkey,
             NegotiationDataMsg::V2(v2) => &v2.persistent_pubkey,
             NegotiationDataMsg::V3(v3) => &v3.maker_coin_htlc_pub,
-            NegotiationDataMsg::V4(v4) => &v4.persistent_pubkey,
         }
     }
 
@@ -724,7 +762,6 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(v1) => &v1.persistent_pubkey,
             NegotiationDataMsg::V2(v2) => &v2.persistent_pubkey,
             NegotiationDataMsg::V3(v3) => &v3.taker_coin_htlc_pub,
-            NegotiationDataMsg::V4(v4) => &v4.persistent_pubkey,
         }
     }
 
@@ -733,7 +770,6 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(_) => None,
             NegotiationDataMsg::V2(v2) => Some(&v2.maker_coin_swap_contract),
             NegotiationDataMsg::V3(v3) => Some(&v3.maker_coin_swap_contract),
-            NegotiationDataMsg::V4(v4) => Some(&v4.maker_coin_swap_contract),
         }
     }
 
@@ -742,16 +778,6 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(_) => None,
             NegotiationDataMsg::V2(v2) => Some(&v2.taker_coin_swap_contract),
             NegotiationDataMsg::V3(v3) => Some(&v3.taker_coin_swap_contract),
-            NegotiationDataMsg::V4(v4) => Some(&v4.taker_coin_swap_contract),
-        }
-    }
-
-    pub fn watcher_reward(&self) -> bool {
-        match self {
-            NegotiationDataMsg::V1(_) => false,
-            NegotiationDataMsg::V2(_) => false,
-            NegotiationDataMsg::V3(_) => false,
-            NegotiationDataMsg::V4(v4) => v4.watcher_reward,
         }
     }
 }

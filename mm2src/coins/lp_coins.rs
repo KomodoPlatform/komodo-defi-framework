@@ -276,13 +276,6 @@ pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransaction
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
-pub type SendMakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
-pub type SendTakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
-pub type SendMakerSpendsTakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
-pub type SendTakerSpendsMakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
-pub type SendTakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
-pub type SendMakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
-pub type SendWatcherRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
 
@@ -296,6 +289,7 @@ pub const INVALID_PAYMENT_STATE_ERR_LOG: &str = "Invalid payment state";
 pub const INVALID_SWAP_ID_ERR_LOG: &str = "Invalid swap id";
 pub const INVALID_SCRIPT_ERR_LOG: &str = "Invalid script";
 pub const INVALID_REFUND_TX_ERR_LOG: &str = "Invalid refund transaction";
+pub const INSUFFICIENT_WATCHER_REWARD_ERR_LOG: &str = "Insufficient watcher reward";
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -520,6 +514,7 @@ pub struct WatcherValidatePaymentInput {
     pub secret_hash: Vec<u8>,
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
+    pub min_watcher_reward: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -534,6 +529,7 @@ pub struct ValidatePaymentInput {
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
     pub unique_swap_data: Vec<u8>,
+    pub min_watcher_reward: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -544,6 +540,7 @@ pub struct WatcherSearchForSwapTxSpendInput<'a> {
     pub secret_hash: &'a [u8],
     pub tx: &'a [u8],
     pub search_from_block: u64,
+    pub watcher_reward: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -552,6 +549,7 @@ pub struct SendMakerPaymentSpendPreimageInput<'a> {
     pub secret_hash: &'a [u8],
     pub secret: &'a [u8],
     pub taker_pub: &'a [u8],
+    pub watcher_reward: bool,
 }
 
 pub struct SearchForSwapTxSpendInput<'a> {
@@ -562,10 +560,11 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub search_from_block: u64,
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
+    pub watcher_reward: bool,
 }
 
 #[derive(Clone, Debug)]
-pub struct SendSwapPaymentArgs<'a> {
+pub struct SendPaymentArgs<'a> {
     pub time_lock_duration: u64,
     pub time_lock: u32,
     /// This is either:
@@ -577,10 +576,11 @@ pub struct SendSwapPaymentArgs<'a> {
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
     pub payment_instructions: &'a Option<PaymentInstructions>,
+    pub watcher_reward: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
-pub struct SendSpendPaymentArgs<'a> {
+pub struct SpendPaymentArgs<'a> {
     /// This is either:
     /// * Taker's payment tx if this structure is used in [`SwapOps::send_maker_spends_taker_payment`].
     /// * Maker's payment tx if this structure is used in [`SwapOps::send_taker_spends_maker_payment`].
@@ -594,10 +594,11 @@ pub struct SendSpendPaymentArgs<'a> {
     pub secret_hash: &'a [u8],
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
+    pub watcher_reward: bool,
 }
 
 #[derive(Clone, Debug)]
-pub struct SendRefundPaymentArgs<'a> {
+pub struct RefundPaymentArgs<'a> {
     pub payment_tx: &'a [u8],
     pub time_lock: u32,
     /// This is either:
@@ -607,6 +608,7 @@ pub struct SendRefundPaymentArgs<'a> {
     pub secret_hash: &'a [u8],
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
+    pub watcher_reward: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -681,25 +683,17 @@ pub enum RefundError {
 pub trait SwapOps {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut;
 
-    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs<'_>) -> TransactionFut;
+    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs<'_>) -> TransactionFut;
+    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_maker_spends_taker_payment(
-        &self,
-        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs<'_>,
-    ) -> TransactionFut;
+    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_taker_spends_maker_payment(
-        &self,
-        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs<'_>,
-    ) -> TransactionFut;
+    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs<'_>)
-        -> TransactionFut;
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>)
-        -> TransactionFut;
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut;
 
     fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()>;
 
@@ -722,7 +716,12 @@ pub trait SwapOps {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
-    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
+    async fn extract_secret(
+        &self,
+        secret_hash: &[u8],
+        spend_tx: &[u8],
+        watcher_reward: bool,
+    ) -> Result<Vec<u8>, String>;
 
     fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>>;
 
@@ -816,10 +815,7 @@ pub trait MakerSwapTakerCoin {
 pub trait WatcherOps {
     fn send_maker_payment_spend_preimage(&self, input: SendMakerPaymentSpendPreimageInput) -> TransactionFut;
 
-    fn send_taker_payment_refund_preimage(
-        &self,
-        watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
-    ) -> TransactionFut;
+    fn send_taker_payment_refund_preimage(&self, watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut;
 
     fn create_taker_payment_refund_preimage(
         &self,
@@ -2229,6 +2225,8 @@ impl MmCoinEnum {
             _ => false,
         }
     }
+
+    pub fn is_eth(&self) -> bool { !matches!(self, MmCoinEnum::EthCoin(_)) }
 }
 
 #[async_trait]
