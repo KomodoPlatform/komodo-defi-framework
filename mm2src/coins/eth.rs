@@ -813,10 +813,9 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 
 /// `get_nft_list` function returns list of NFTs on ETH or/and BNB chains owned by user.
 pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetNftInfoError> {
-    let api_key = match ctx.conf["api_key"].as_str() {
-        Some(api_key) => api_key,
-        None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
-    };
+    let api_key = ctx.conf["api_key"]
+        .as_str()
+        .ok_or_else(|| MmError::new(GetNftInfoError::ApiKeyError))?;
 
     let mut res_list = Vec::new();
 
@@ -837,38 +836,34 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
             let uri = format!("{}{}", uri_without_cursor, cursor);
             let response = send_moralis_request(uri.as_str(), api_key).await?;
             if let Some(nfts_list) = response["result"].as_array() {
-                if !nfts_list.is_empty() {
-                    for nft_json in nfts_list {
-                        let nft_wrapper: NftWrapper = serde_json::from_str(&nft_json.to_string())?;
-                        let nft = Nft {
-                            chain: chain.clone(),
-                            token_address: nft_wrapper.token_address,
-                            token_id: nft_wrapper.token_id.0,
-                            amount: nft_wrapper.amount.0,
-                            owner_of: nft_wrapper.owner_of,
-                            token_hash: nft_wrapper.token_hash,
-                            block_number_minted: *nft_wrapper.block_number_minted,
-                            block_number: *nft_wrapper.block_number,
-                            contract_type: nft_wrapper.contract_type.map(|v| v.0),
-                            name: nft_wrapper.name,
-                            symbol: nft_wrapper.symbol,
-                            token_uri: nft_wrapper.token_uri,
-                            metadata: nft_wrapper.metadata,
-                            last_token_uri_sync: nft_wrapper.last_token_uri_sync,
-                            last_metadata_sync: nft_wrapper.last_metadata_sync,
-                            minter_address: nft_wrapper.minter_address,
-                        };
-                        // collect NFTs from the page
-                        res_list.push(nft);
-                    }
+                for nft_json in nfts_list {
+                    let nft_wrapper: NftWrapper = serde_json::from_str(&nft_json.to_string())?;
+                    let nft = Nft {
+                        chain: chain.clone(),
+                        token_address: nft_wrapper.token_address,
+                        token_id: nft_wrapper.token_id.0,
+                        amount: nft_wrapper.amount.0,
+                        owner_of: nft_wrapper.owner_of,
+                        token_hash: nft_wrapper.token_hash,
+                        block_number_minted: *nft_wrapper.block_number_minted,
+                        block_number: *nft_wrapper.block_number,
+                        contract_type: nft_wrapper.contract_type.map(|v| v.0),
+                        name: nft_wrapper.name,
+                        symbol: nft_wrapper.symbol,
+                        token_uri: nft_wrapper.token_uri,
+                        metadata: nft_wrapper.metadata,
+                        last_token_uri_sync: nft_wrapper.last_token_uri_sync,
+                        last_metadata_sync: nft_wrapper.last_metadata_sync,
+                        minter_address: nft_wrapper.minter_address,
+                    };
+                    // collect NFTs from the page
+                    res_list.push(nft);
                 }
                 // if cursor is not null, there are other NFTs on next page,
                 // and we need to send new request with cursor to get info from the next page.
-                if !response["cursor"].is_null() {
-                    if let Some(cursor_res) = response["cursor"].as_str() {
-                        cursor = format!("{}{}", "&cursor=", cursor_res);
-                        continue;
-                    }
+                if let Some(cursor_res) = response["cursor"].as_str() {
+                    cursor = format!("{}{}", "&cursor=", cursor_res);
+                    continue;
                 } else {
                     break;
                 }
@@ -888,10 +883,9 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 /// Later, after adding caching, metadata lookup can be performed using previously obtained NFTs info without
 /// sending new moralis request. The moralis request can be sent as a fallback, if the data was not found in the cache.
 pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> {
-    let api_key = match ctx.conf["api_key"].as_str() {
-        Some(api_key) => api_key,
-        None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
-    };
+    let api_key = ctx.conf["api_key"]
+        .as_str()
+        .ok_or_else(|| MmError::new(GetNftInfoError::ApiKeyError))?;
     let chain_str = match req.chain {
         Chain::Bnb => "bsc",
         Chain::Eth => "eth",
@@ -926,10 +920,9 @@ pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, 
 /// `get_nft_transfers` function returns a transfer history of NFTs on ETH or/and BNb chains owned by user.
 /// Currently doesnt support filters.
 pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<NftsTransferHistoryList, GetNftInfoError> {
-    let api_key = match ctx.conf["api_key"].as_str() {
-        Some(api_key) => api_key,
-        None => return Err(MmError::new(GetNftInfoError::ApiKeyError)),
-    };
+    let api_key = ctx.conf["api_key"]
+        .as_str()
+        .ok_or_else(|| MmError::new(GetNftInfoError::ApiKeyError))?;
 
     let mut res_list = Vec::new();
 
@@ -976,11 +969,9 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
                 }
                 // if the cursor is not null, there are other NFTs transfers on next page,
                 // and we need to send new request with cursor to get info from the next page.
-                if !response["cursor"].is_null() {
-                    if let Some(cursor_res) = response["cursor"].as_str() {
-                        cursor = format!("{}{}", "&cursor=", cursor_res);
-                        continue;
-                    }
+                if let Some(cursor_res) = response["cursor"].as_str() {
+                    cursor = format!("{}{}", "&cursor=", cursor_res);
+                    continue;
                 } else {
                     break;
                 }
