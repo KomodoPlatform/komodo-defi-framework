@@ -83,15 +83,22 @@ impl BlockHeaderStorageOps for BlockHeaderStorage {
         self.inner.get_block_header_raw(height).await
     }
 
-    async fn get_last_block_height(&self) -> Result<u64, BlockHeaderStorageError> {
+    async fn get_last_block_height(&self) -> Result<Option<u64>, BlockHeaderStorageError> {
         self.inner.get_last_block_height().await
     }
 
-    async fn get_last_block_header_with_non_max_bits(&self) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
-        self.inner.get_last_block_header_with_non_max_bits().await
+    async fn get_last_block_header_with_non_max_bits(
+        &self,
+        max_bits: u32,
+    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+        self.inner.get_last_block_header_with_non_max_bits(max_bits).await
     }
 
     async fn get_block_height_by_hash(&self, hash: H256) -> Result<Option<i64>, BlockHeaderStorageError> {
         self.inner.get_block_height_by_hash(hash).await
+    }
+
+    async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError> {
+        self.inner.remove_headers_up_to_height(to_height).await
     }
 }

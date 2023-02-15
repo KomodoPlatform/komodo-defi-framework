@@ -8,8 +8,7 @@ use hash::H256;
 use hex::FromHex;
 use primitives::bytes::Bytes;
 use primitives::U256;
-use ser::{deserialize, serialize, Deserializable, Reader, Serializable, Stream};
-use std::convert::TryFrom;
+use ser::{deserialize, serialize, CoinVariant, Deserializable, Reader, Serializable, Stream};
 use std::io;
 use transaction::{deserialize_tx, TxType};
 use {OutPoint, Transaction};
@@ -332,6 +331,14 @@ impl Deserializable for BlockHeader {
 }
 
 impl BlockHeader {
+    pub fn try_from_string_with_coin_variant(header: String, coin_variant: CoinVariant) -> Result<Self, ser::Error> {
+        let buffer = &header
+            .from_hex::<Vec<u8>>()
+            .map_err(|e| ser::Error::Custom(e.to_string()))? as &[u8];
+        let mut reader = Reader::new_with_coin_variant(buffer, coin_variant);
+        reader.read::<BlockHeader>()
+    }
+
     pub fn hash(&self) -> H256 { dhash256(&serialize(self)) }
 
     pub fn is_prog_pow(&self) -> bool { self.version == MTP_POW_VERSION && self.time >= PROG_POW_SWITCH_TIME }
@@ -346,16 +353,6 @@ impl BlockHeader {
 
 impl From<&'static str> for BlockHeader {
     fn from(s: &'static str) -> Self { deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap() }
-}
-
-impl TryFrom<String> for BlockHeader {
-    type Error = ser::Error;
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        deserialize(
-            &s.from_hex::<Vec<u8>>()
-                .map_err(|e| Self::Error::Custom(e.to_string()))? as &[u8],
-        )
-    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

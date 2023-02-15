@@ -9,7 +9,6 @@ use db_common::{sqlite::rusqlite::Error as SqlError,
 use primitives::hash::H256;
 use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use spv_validation::work::MAX_BITS_BTC;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::num::TryFromIntError;
@@ -68,11 +67,14 @@ fn get_last_block_height_sql(for_coin: &str) -> Result<String, BlockHeaderStorag
     Ok(sql)
 }
 
-fn get_last_block_header_with_non_max_bits_sql(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
+fn get_last_block_header_with_non_max_bits_sql(
+    for_coin: &str,
+    max_bits: u32,
+) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
     let sql = format!(
         "SELECT hex FROM {} WHERE block_bits<>{} ORDER BY block_height DESC LIMIT 1;",
-        table_name, MAX_BITS_BTC
+        table_name, max_bits
     );
 
     Ok(sql)
@@ -81,6 +83,13 @@ fn get_last_block_header_with_non_max_bits_sql(for_coin: &str) -> Result<String,
 fn get_block_height_by_hash(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
     let sql = format!("SELECT block_height FROM {} WHERE block_hash=?1;", table_name);
+
+    Ok(sql)
+}
+
+fn remove_headers_up_to_height_sql(for_coin: &str, to_height: u64) -> Result<String, BlockHeaderStorageError> {
+    let table_name = get_table_name_and_validate(for_coin)?;
+    let sql = format!("DELETE FROM {table_name} WHERE block_height <= {to_height};");
 
     Ok(sql)
 }
@@ -225,31 +234,34 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         })
     }
 
-    async fn get_last_block_height(&self) -> Result<u64, BlockHeaderStorageError> {
+    async fn get_last_block_height(&self) -> Result<Option<u64>, BlockHeaderStorageError> {
         let coin = self.ticker.clone();
         let sql = get_last_block_height_sql(&coin)?;
         let selfi = self.clone();
 
         async_blocking(move || {
             let conn = selfi.conn.lock().unwrap();
-            query_single_row(&conn, &sql, NO_PARAMS, |row| row.get(0))
+            query_single_row(&conn, &sql, NO_PARAMS, |row| row.get::<_, i64>(0))
         })
         .await
         .map_err(|e| BlockHeaderStorageError::GetFromStorageError {
             coin: coin.clone(),
             reason: e.to_string(),
         })?
-        .unwrap_or(0i64)
-        .try_into()
+        .map(|h| h.try_into())
+        .transpose()
         .map_err(|e: TryFromIntError| BlockHeaderStorageError::DecodeError {
             coin,
             reason: e.to_string(),
-        }) // last_block_height is 0 if the database is empty
+        })
     }
 
-    async fn get_last_block_header_with_non_max_bits(&self) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+    async fn get_last_block_header_with_non_max_bits(
+        &self,
+        max_bits: u32,
+    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
         let coin = self.ticker.clone();
-        let sql = get_last_block_header_with_non_max_bits_sql(&coin)?;
+        let sql = get_last_block_header_with_non_max_bits_sql(&coin, max_bits)?;
         let selfi = self.clone();
 
         let maybe_header_raw = async_blocking(move || {
@@ -263,13 +275,12 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         })?;
 
         if let Some(header_raw) = maybe_header_raw {
-            let header: BlockHeader =
-                header_raw
-                    .try_into()
-                    .map_err(|e: serialization::Error| BlockHeaderStorageError::DecodeError {
-                        coin,
-                        reason: e.to_string(),
-                    })?;
+            let header = BlockHeader::try_from_string_with_coin_variant(header_raw, coin.as_str().into()).map_err(
+                |e: serialization::Error| BlockHeaderStorageError::DecodeError {
+                    coin,
+                    reason: e.to_string(),
+                },
+            )?;
             return Ok(Some(header));
         }
         Ok(None)
@@ -290,6 +301,24 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
             coin,
             reason: e.to_string(),
         })
+    }
+
+    async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError> {
+        let coin = self.ticker.clone();
+        let selfi = self.clone();
+        let sql = remove_headers_up_to_height_sql(&coin, to_height)?;
+
+        async_blocking(move || {
+            let conn = selfi.conn.lock().unwrap();
+            conn.execute(&sql, NO_PARAMS)
+                .map_err(|e| BlockHeaderStorageError::UnableToDeleteHeaders {
+                    coin: coin.clone(),
+                    to_height,
+                    reason: e.to_string(),
+                })?;
+            Ok(())
+        })
+        .await
     }
 }
 
@@ -317,6 +346,7 @@ mod sql_block_headers_storage_tests {
     use chain::BlockHeaderBits;
     use common::block_on;
     use primitives::hash::H256;
+    use spv_validation::work::MAX_BITS_BTC;
 
     #[test]
     fn test_init_collection() {
@@ -388,7 +418,7 @@ mod sql_block_headers_storage_tests {
         let initialized = block_on(storage.is_initialized_for()).unwrap();
         assert!(initialized);
 
-        let mut headers = HashMap::with_capacity(2);
+        let mut headers = HashMap::with_capacity(3);
 
         // This block has max difficulty
         // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
@@ -407,7 +437,7 @@ mod sql_block_headers_storage_tests {
         block_on(storage.add_block_headers_to_storage(headers)).unwrap();
         assert!(!storage.is_table_empty(&table));
 
-        let actual_block_header = block_on(storage.get_last_block_header_with_non_max_bits())
+        let actual_block_header = block_on(storage.get_last_block_header_with_non_max_bits(MAX_BITS_BTC))
             .unwrap()
             .unwrap();
         assert_ne!(actual_block_header.bits, BlockHeaderBits::Compact(MAX_BITS_BTC.into()));
@@ -442,6 +472,47 @@ mod sql_block_headers_storage_tests {
         assert!(!storage.is_table_empty(&table));
 
         let last_block_height = block_on(storage.get_last_block_height()).unwrap();
-        assert_eq!(last_block_height, 201595);
+        assert_eq!(last_block_height.unwrap(), 201595);
+    }
+
+    #[test]
+    fn test_remove_headers_up_to_height() {
+        let for_coin = "get";
+        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
+        let table = block_headers_cache_table(for_coin);
+        block_on(storage.init()).unwrap();
+
+        let initialized = block_on(storage.is_initialized_for()).unwrap();
+        assert!(initialized);
+
+        let mut headers = HashMap::with_capacity(2);
+
+        // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
+        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        headers.insert(201595, block_header);
+
+        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
+        let block_header: BlockHeader = "02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into();
+        headers.insert(201594, block_header);
+
+        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
+        let block_header: BlockHeader = "020000001f38c8e30b30af912fbd4c3e781506713cfb43e73dff6250348e060000000000afa8f3eede276ccb4c4ee649ad9823fc181632f262848ca330733e7e7e541beb9be51353ffff001d00a63037".into();
+        headers.insert(201593, block_header);
+
+        block_on(storage.add_block_headers_to_storage(headers)).unwrap();
+        assert!(!storage.is_table_empty(&table));
+
+        // Remove 2 headers from storage.
+        block_on(storage.remove_headers_up_to_height(201594)).unwrap();
+
+        // Validate that blockers 201593..201594 are removed from storage.
+        for h in 201593..201594 {
+            let block_header = block_on(storage.get_block_header(h)).unwrap();
+            assert!(block_header.is_none());
+        }
+
+        // Last height should be 201595
+        let last_block_height = block_on(storage.get_last_block_height()).unwrap();
+        assert_eq!(last_block_height.unwrap(), 201595);
     }
 }

@@ -24,7 +24,7 @@ use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CoinBalance, IguanaPrivKey, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SendMakerSpendsTakerPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails,
             TxMarshalingErr, ValidateFeeArgs};
-use chain::{BlockHeader, OutPoint};
+use chain::{BlockHeader, BlockHeaderBits, OutPoint};
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath, Secp256k1Secret};
@@ -38,7 +38,9 @@ use mm2_test_helpers::for_tests::{mm_ctx_with_custom_db, MORTY_ELECTRUM_ADDRS, R
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
+use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
 use spv_validation::storage::BlockHeaderStorageOps;
+use spv_validation::work::DifficultyAlgorithm;
 use std::convert::TryFrom;
 use std::iter;
 use std::mem::discriminant;
@@ -4285,21 +4287,23 @@ fn test_block_header_utxo_loop() {
 
     ElectrumClient::get_block_count
         .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
-    let expected_steps: Arc<Mutex<Vec<(u64, u64)>>> = Arc::new(Mutex::new(vec![]));
-    let expected_steps_to_move = expected_steps.clone();
+    let expected_steps: Arc<Mutex<Vec<(u64, u64)>>> = Arc::new(Mutex::new(Vec::with_capacity(14)));
 
-    ElectrumClient::retrieve_headers.mock_safe(move |this, from, to| {
-        let (expected_from, expected_to) = expected_steps_to_move.lock().unwrap().remove(0);
-        assert_eq!(from, expected_from);
-        assert_eq!(to, expected_to);
-        MockResult::Continue((this, from, to))
+    ElectrumClient::retrieve_headers.mock_safe({
+        let expected_steps = expected_steps.clone();
+        move |this, from, to| {
+            let (expected_from, expected_to) = expected_steps.lock().unwrap().remove(0);
+            assert_eq!(from, expected_from);
+            assert_eq!(to, expected_to);
+            MockResult::Continue((this, from, to))
+        }
     });
 
     BlockHeaderUtxoLoopExtraArgs::default.mock_safe(move || {
         MockResult::Return(BlockHeaderUtxoLoopExtraArgs {
             chunk_size: 4,
             error_sleep: 1.,
-            success_sleep: 1.,
+            success_sleep: 0.8,
         })
     });
 
@@ -4311,7 +4315,7 @@ fn test_block_header_utxo_loop() {
         .collect();
     let req = json!({ "method": "electrum", "servers": servers });
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let conf = json!({"coin":"RICK", "asset":"RICK", "rpcport":8923, "enable_spv_proof": false});
+    let conf = json!({"coin":"RICK", "asset":"RICK", "rpcport":8923});
     let builder = UtxoArcBuilder::new(&ctx, "RICK", &conf, &params, priv_key_policy, UtxoStandardCoin::from);
     let arc: UtxoArc = block_on(builder.build_utxo_fields()).unwrap().into();
     let client = match &arc.rpc_client {
@@ -4322,49 +4326,137 @@ fn test_block_header_utxo_loop() {
     let (sync_status_notifier, _) = channel::<UtxoSyncStatus>(1);
     let loop_handle = UtxoSyncStatusLoopHandle::new(sync_status_notifier);
 
+    let spv_conf = json::from_value(json!({
+        "starting_block_header": {
+            "height": 1,
+            "hash": "0c714ba4f8d5f2d5c014a08c4e21a5387156e23bcc819c0f9bc536437586cdf5",
+            "time": 1564482125,
+            "bits": 537857807
+        },
+        "max_stored_block_headers": 15
+    }));
+
     let loop_fut = async move {
-        unsafe {
-            block_header_utxo_loop(
-                arc.downgrade(),
-                UtxoStandardCoin::from,
-                loop_handle,
-                CURRENT_BLOCK_COUNT,
-            )
-            .await
-        }
+        block_header_utxo_loop(
+            arc.downgrade(),
+            UtxoStandardCoin::from,
+            loop_handle,
+            unsafe { CURRENT_BLOCK_COUNT },
+            spv_conf.unwrap(),
+        )
+        .await
     };
 
     let test_fut = async move {
-        *expected_steps.lock().unwrap() = vec![(1, 4), (5, 8), (9, 12), (13, 13)];
-        unsafe { CURRENT_BLOCK_COUNT = 13 }
-        Timer::sleep(2.).await;
-        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(get_headers_count, 13);
+        *expected_steps.lock().unwrap() = vec![(2, 5), (6, 9), (10, 13), (14, 14)];
+        unsafe { CURRENT_BLOCK_COUNT = 14 }
+        Timer::sleep(3.).await;
+        let get_headers_count = client
+            .block_headers_storage()
+            .get_last_block_height()
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(get_headers_count, 14);
         assert!(expected_steps.lock().unwrap().is_empty());
 
-        *expected_steps.lock().unwrap() = vec![(14, 17)];
-        unsafe { CURRENT_BLOCK_COUNT = 17 }
-        Timer::sleep(2.).await;
-        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(get_headers_count, 17);
-        assert!(expected_steps.lock().unwrap().is_empty());
-
-        *expected_steps.lock().unwrap() = vec![(18, 18)];
+        *expected_steps.lock().unwrap() = vec![(15, 18)];
         unsafe { CURRENT_BLOCK_COUNT = 18 }
         Timer::sleep(2.).await;
-        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        let get_headers_count = client
+            .block_headers_storage()
+            .get_last_block_height()
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(get_headers_count, 18);
         assert!(expected_steps.lock().unwrap().is_empty());
 
-        *expected_steps.lock().unwrap() = vec![(19, 22), (23, 25)];
-        unsafe { CURRENT_BLOCK_COUNT = 25 }
-        Timer::sleep(3.).await;
-        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(get_headers_count, 25);
+        *expected_steps.lock().unwrap() = vec![(19, 19)];
+        unsafe { CURRENT_BLOCK_COUNT = 19 }
+        Timer::sleep(2.).await;
+        let get_headers_count = client
+            .block_headers_storage()
+            .get_last_block_height()
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(get_headers_count, 19);
         assert!(expected_steps.lock().unwrap().is_empty());
+
+        // Validate max_stored_block_headers
+        // Since max_stored_block_headers = 15, headers from 2 - 4 shouldn't be in
+        // storage anymore.
+        for i in 2..=19 {
+            let header = client.block_headers_storage().get_block_header(i).await.unwrap();
+            if i >= 5 {
+                assert!(header.is_some());
+                break;
+            }
+
+            assert_eq!(header, None);
+        }
+        Timer::sleep(2.).await;
     };
 
     if let Either::Left(_) = block_on(futures::future::select(loop_fut.boxed(), test_fut.boxed())) {
         panic!("Loop shouldn't stop")
     };
+}
+
+#[test]
+fn test_spv_conf_with_verification() {
+    let verification_params = BlockHeaderValidationParams {
+        difficulty_check: false,
+        constant_difficulty: false,
+        difficulty_algorithm: Some(DifficultyAlgorithm::BitcoinMainnet),
+    };
+
+    // Block header hash for BLOCK HEIGHT 4032
+    let hash = "00000000ca4b69045a03d7b20624def97a5366418648d5005e82fd3b345d20d0".into();
+    // test for good retarget_block_header_height
+    let mut spv_conf = SPVConf {
+        starting_block_header: SPVBlockHeader {
+            height: 4032,
+            hash,
+            time: 1234466190,
+            bits: BlockHeaderBits::Compact(486604799.into()),
+        },
+        max_stored_block_headers: None,
+        validation_params: Some(verification_params.clone()),
+    };
+    assert!(spv_conf.validate("BTC").is_ok());
+
+    // test for bad retarget_block_header_height
+    // Block header hash for BLOCK HEIGHT 4032
+    let hash = "0000000045c689dc49dee778a9fbca7b5bc48fceca9f05cde5fc8d667f00e7d2".into();
+    spv_conf.starting_block_header = SPVBlockHeader {
+        height: 4037,
+        hash,
+        time: 1234470475,
+        bits: BlockHeaderBits::Compact(486604799.into()),
+    };
+    let validate = spv_conf.validate("BTC").err().unwrap();
+    if let SPVError::WrongRetargetHeight { coin, expected_height } = validate {
+        assert_eq!(coin, "BTC");
+        assert_eq!(expected_height, 4032);
+    }
+
+    // test for bad max_stored_block_headers
+    // Block header hash for BLOCK HEIGHT 4032
+    let hash = "00000000ca4b69045a03d7b20624def97a5366418648d5005e82fd3b345d20d0".into();
+    spv_conf = SPVConf {
+        starting_block_header: SPVBlockHeader {
+            height: 4032,
+            hash,
+            time: 1234466190,
+            bits: BlockHeaderBits::Compact(486604799.into()),
+        },
+        max_stored_block_headers: NonZeroU64::new(2000),
+        validation_params: Some(verification_params),
+    };
+    let validate = spv_conf.validate("BTC").err().unwrap();
+    assert!(validate
+        .to_string()
+        .contains("max_stored_block_headers 2000 must be greater than retargeting interval"));
 }
