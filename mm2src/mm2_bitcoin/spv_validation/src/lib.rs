@@ -9,13 +9,16 @@ extern crate serialization;
 extern crate sha2;
 extern crate test_helpers;
 
+/// `conf` Contains SPV configuration structures and logics for validating [`SPVConf::starting_block_header`].
+pub mod conf;
+
 /// `helpers_validation` Override function modules from bitcoin_spv and adapt for our mm2_bitcoin library
 pub mod helpers_validation;
 
-/// `spv_proof` Contains spv proof validation logic and data structure
+/// `spv_proof` Contains spv proof validation logic and data structure.
 pub mod spv_proof;
 
-/// `storage` Contains traits that can be implemented to provide the storage needed for spv validation
+/// `storage` Contains traits that can be implemented to provide the storage needed for spv validation.
 pub mod storage;
 
 /// `work` Contains functions that can be used to calculate proof of work difficulty, target, bits, etc...

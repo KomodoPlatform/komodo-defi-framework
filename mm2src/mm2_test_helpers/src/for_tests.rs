@@ -1,7 +1,8 @@
 //! Helpers used in the unit and integration tests.
 
 use crate::electrums::qtum_electrums;
-pub use crate::structs::{MyBalanceResponse, WatcherConf};
+use crate::structs::*;
+
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -488,13 +489,6 @@ pub fn btc_segwit_conf() -> Json {
         "txfee": 0,
         "estimate_fee_mode": "ECONOMICAL",
         "mm2": 1,
-        "enable_spv_proof": true,
-        "block_headers_verification_params": {
-            "difficulty_check": true,
-            "constant_difficulty": false,
-            "difficulty_algorithm": "Bitcoin Mainnet",
-            "genesis_block_header": "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299"
-        },
         "required_confirmations": 1,
         "avg_blocktime": 10,
         "derivation_path": "m/84'/0'",
@@ -516,15 +510,53 @@ pub fn btc_with_spv_conf() -> Json {
         "txfee": 0,
         "estimate_fee_mode": "ECONOMICAL",
         "required_confirmations": 0,
-        "enable_spv_proof": true,
         "protocol": {
             "type": "UTXO"
         },
-        "block_headers_verification_params": {
-            "difficulty_check": true,
-            "constant_difficulty": false,
-            "difficulty_algorithm": "Bitcoin Mainnet",
-            "genesis_block_header": "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299"
+        "spv_conf": {
+            "starting_block_header": {
+                "height": 0,
+                "hash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+                "bits": 486604799,
+                "time": 1231006505,
+            },
+            "validation_params": {
+                "difficulty_check": true,
+                "constant_difficulty": false,
+                "difficulty_algorithm": "Bitcoin Mainnet"
+            }
+        }
+    })
+}
+
+pub fn btc_with_sync_starting_header() -> Json {
+    json!({
+        "coin": "BTC",
+        "asset":"BTC",
+        "pubtype": 0,
+        "p2shtype": 5,
+        "wiftype": 128,
+        "segwit": true,
+        "bech32_hrp": "bc",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "required_confirmations": 0,
+        "protocol": {
+            "type": "UTXO"
+        },
+        "spv_conf": {
+            "starting_block_header": {
+                "height": 764064,
+                "hash": "00000000000000000006da48b920343944908861fa05b28824922d9e60aaa94d",
+                "bits": 386375189,
+                "time": 1668986059,
+            },
+            "max_stored_block_headers": 3000,
+            "validation_params": {
+                "difficulty_check": true,
+                "constant_difficulty": false,
+                "difficulty_algorithm": "Bitcoin Mainnet"
+            }
         }
     })
 }
@@ -585,11 +617,18 @@ pub fn tbtc_with_spv_conf() -> Json {
         "protocol": {
             "type": "UTXO"
         },
-        "block_headers_verification_params": {
-            "difficulty_check": true,
-            "constant_difficulty": false,
-            "difficulty_algorithm": "Bitcoin Testnet",
-            "genesis_block_header": "0100000043497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000bac8b0fa927c0ac8234287e33c5f74d38d354820e24756ad709d7038fc5f31f020e7494dffff001d03e4b672"
+        "spv_conf": {
+            "starting_block_header": {
+                "height": 0,
+                "hash": "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943",
+                "bits": 486604799,
+                "time": 1296688602,
+            },
+            "validation_params": {
+                "difficulty_check": true,
+                "constant_difficulty": false,
+                "difficulty_algorithm": "Bitcoin Testnet"
+            }
         }
     })
 }
@@ -2149,7 +2188,7 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
+pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> TransactionDetails {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2333,6 +2372,21 @@ pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
+    let rc = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "mmrpc": "2.0",
+            "method": "max_maker_vol",
+            "params": {
+                "coin": coin,
+            }
+        }))
+        .await
+        .unwrap();
+    RpcResponse::new("max_maker_vol", rc)
+}
+
 pub async fn enable_tendermint(
     mm: &MarketMakerIt,
     coin: &str,
@@ -2472,7 +2526,15 @@ pub async fn init_utxo_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn set_price(mm: &MarketMakerIt, base: &str, rel: &str, price: &str, vol: &str) -> Json {
+/// Note that mm2 ignores `volume` if `max` is true.
+pub async fn set_price(
+    mm: &MarketMakerIt,
+    base: &str,
+    rel: &str,
+    price: &str,
+    vol: &str,
+    max: bool,
+) -> SetPriceResponse {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2481,6 +2543,7 @@ pub async fn set_price(mm: &MarketMakerIt, base: &str, rel: &str, price: &str, v
             "rel": rel,
             "price": price,
             "volume": vol,
+            "max": max,
         }))
         .await
         .unwrap();
@@ -2552,12 +2615,18 @@ pub async fn start_swaps(
         uuids.push(buy_json["result"]["uuid"].as_str().unwrap().to_owned());
     }
 
-    for (base, rel) in pairs.iter() {
+    for uuid in uuids.iter() {
         // ensure the swaps are started
-        let expected_log = format!("Entering the taker_swap_loop {}/{}", base, rel);
-        taker.wait_for_log(5., |log| log.contains(&expected_log)).await.unwrap();
-        let expected_log = format!("Entering the maker_swap_loop {}/{}", base, rel);
-        maker.wait_for_log(5., |log| log.contains(&expected_log)).await.unwrap()
+        let expected_log = format!("Taker swap {} has successfully started", uuid);
+        taker
+            .wait_for_log(10., |log| log.contains(&expected_log))
+            .await
+            .unwrap();
+        let expected_log = format!("Maker swap {} has successfully started", uuid);
+        maker
+            .wait_for_log(10., |log| log.contains(&expected_log))
+            .await
+            .unwrap()
     }
 
     uuids
@@ -2724,4 +2793,22 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
         let expected_tx = expected.remove(0);
         assert_eq!(tx["internal_id"].as_str().unwrap(), expected_tx);
     }
+}
+
+pub async fn get_locked_amount(mm: &MarketMakerIt, coin: &str) -> GetLockedAmountResponse {
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "get_locked_amount",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin
+        }
+    });
+    println!("get_locked_amount request {}", json::to_string(&request).unwrap());
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'get_locked_amount' failed: {}", request.1);
+    println!("get_locked_amount response {}", request.1);
+    let response: RpcV2Response<GetLockedAmountResponse> = json::from_str(&request.1).unwrap();
+    response.result
 }

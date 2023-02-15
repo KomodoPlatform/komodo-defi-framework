@@ -10,8 +10,9 @@ use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs, SearchFo
 use common::{block_on, now_ms};
 use futures01::Future;
 use mm2_number::{BigDecimal, MmNumber};
-use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf, kmd_conf, mm_dump, mycoin1_conf,
-                                  mycoin_conf, MarketMakerIt};
+use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf, get_locked_amount, kmd_conf,
+                                  max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
+                                  MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::*;
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -2130,6 +2131,54 @@ fn test_get_max_taker_vol_with_kmd() {
 }
 
 #[test]
+fn test_get_max_maker_vol() {
+    let (_ctx, _, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1.into());
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+    let conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(priv_key)), &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
+
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[])));
+
+    // 1 - tx_fee
+    let expected_volume = MmNumber::from("0.99999");
+    let expected = MaxMakerVolResponse {
+        coin: "MYCOIN1".to_string(),
+        volume: MmNumberMultiRepr::from(expected_volume.clone()),
+        balance: MmNumberMultiRepr::from(1),
+        locked_by_swaps: MmNumberMultiRepr::from(0),
+    };
+    let actual = block_on(max_maker_vol(&mm, "MYCOIN1")).unwrap::<MaxMakerVolResponse>();
+    assert_eq!(actual, expected);
+
+    let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true));
+    assert_eq!(res.result.max_base_vol, expected_volume.to_decimal());
+}
+
+#[test]
+fn test_get_max_maker_vol_error() {
+    let priv_key = random_secp256k1_secret();
+    let coins = json!([mycoin_conf(1000)]);
+    let conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(priv_key)), &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
+
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
+
+    let actual_error = block_on(max_maker_vol(&mm, "MYCOIN")).unwrap_err::<max_maker_vol_error::NotSufficientBalance>();
+    let expected_error = max_maker_vol_error::NotSufficientBalance {
+        coin: "MYCOIN".to_owned(),
+        available: 0.into(),
+        // tx_fee
+        required: BigDecimal::from(1000) / BigDecimal::from(100_000_000),
+        locked_by_swaps: None,
+    };
+    assert_eq!(actual_error.error_type, "NotSufficientBalance");
+    assert_eq!(actual_error.error_data, Some(expected_error));
+}
+
+#[test]
 fn test_set_price_max() {
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
@@ -3412,4 +3461,46 @@ fn test_match_utxo_with_eth_taker_buy() {
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
+}
+
+#[test]
+fn test_locked_amount() {
+    let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1000.into());
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+    let bob_conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
+        .ip
+        .to_string()]);
+    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+
+    block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[("MYCOIN", "MYCOIN1")],
+        1.,
+        1.,
+        777.,
+    ));
+
+    let locked_bob = block_on(get_locked_amount(&mm_bob, "MYCOIN"));
+    assert_eq!(locked_bob.coin, "MYCOIN");
+
+    let expected_result: MmNumberMultiRepr = MmNumber::from("777.00001").into();
+    assert_eq!(expected_result, locked_bob.locked_amount);
+
+    let locked_alice = block_on(get_locked_amount(&mm_alice, "MYCOIN1"));
+    assert_eq!(locked_alice.coin, "MYCOIN1");
+
+    let expected_result: MmNumberMultiRepr = MmNumber::from("778.00002").into();
+    assert_eq!(expected_result, locked_alice.locked_amount);
 }
