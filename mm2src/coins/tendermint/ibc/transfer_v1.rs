@@ -59,6 +59,7 @@ impl Msg for MsgTransfer {
 impl TryFrom<IBCTransferV1Proto> for MsgTransfer {
     type Error = ErrorReport;
 
+    #[inline(always)]
     fn try_from(proto: IBCTransferV1Proto) -> Result<MsgTransfer, Self::Error> { MsgTransfer::try_from(&proto) }
 }
 
