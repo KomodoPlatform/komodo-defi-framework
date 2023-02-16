@@ -988,7 +988,7 @@ impl SwapOps for EthCoin {
         watcher_reward: bool,
     ) -> Result<Vec<u8>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
-        let function_name = get_function_name("receiverSpend".to_string(), watcher_reward);
+        let function_name = get_function_name("receiverSpend", watcher_reward);
         let function = try_s!(SWAP_CONTRACT.function(&function_name));
 
         // Validate contract call; expected to be receiverSpend.
@@ -1253,7 +1253,7 @@ impl WatcherOps for EthCoin {
 
             match &selfi.coin_type {
                 EthCoinType::Eth => {
-                    let function_name = get_function_name("ethPayment".to_string(), input.min_watcher_reward.is_some());
+                    let function_name = get_function_name("ethPayment", input.min_watcher_reward.is_some());
                     let function = SWAP_CONTRACT
                         .function(&function_name)
                         .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
@@ -1316,8 +1316,7 @@ impl WatcherOps for EthCoin {
                     platform: _,
                     token_addr,
                 } => {
-                    let function_name =
-                        get_function_name("erc20Payment".to_string(), input.min_watcher_reward.is_some());
+                    let function_name = get_function_name("erc20Payment", input.min_watcher_reward.is_some());
                     let function = SWAP_CONTRACT
                         .function(&function_name)
                         .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
@@ -2592,7 +2591,7 @@ impl EthCoin {
 
         match &self.coin_type {
             EthCoinType::Eth => {
-                let function_name = get_function_name("ethPayment".to_string(), args.watcher_reward.is_some());
+                let function_name = get_function_name("ethPayment", args.watcher_reward.is_some());
                 let function = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
                 let mut value = trade_amount;
 
@@ -2626,7 +2625,7 @@ impl EthCoin {
                     .allowance(swap_contract_address)
                     .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)));
 
-                let function_name = get_function_name("erc20Payment".to_string(), args.watcher_reward.is_some());
+                let function_name = get_function_name("erc20Payment", args.watcher_reward.is_some());
                 let function = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
 
                 let data = try_tx_fus!(function.encode_input(&[
@@ -2670,7 +2669,7 @@ impl EthCoin {
         let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(input.preimage));
         let payment = try_tx_fus!(SignedEthTx::new(tx));
 
-        let function_name = get_function_name("receiverSpend".to_string(), input.watcher_reward);
+        let function_name = get_function_name("receiverSpend", input.watcher_reward);
         let spend_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
         let clone = self.clone();
         let secret_vec = input.secret.to_vec();
@@ -2687,7 +2686,7 @@ impl EthCoin {
         let watcher_reward = input.watcher_reward;
         match self.coin_type {
             EthCoinType::Eth => {
-                let function_name = get_function_name("ethPayment".to_string(), watcher_reward);
+                let function_name = get_function_name("ethPayment", watcher_reward);
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
                 let swap_id_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 0));
@@ -2730,7 +2729,7 @@ impl EthCoin {
                 platform: _,
                 token_addr,
             } => {
-                let function_name = get_function_name("erc20Payment".to_string(), watcher_reward);
+                let function_name = get_function_name("erc20Payment", watcher_reward);
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
 
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
@@ -2775,7 +2774,7 @@ impl EthCoin {
         let payment = try_tx_fus!(SignedEthTx::new(tx));
         let watcher_reward = args.watcher_reward;
 
-        let function_name = get_function_name("senderRefund".to_string(), watcher_reward);
+        let function_name = get_function_name("senderRefund", watcher_reward);
         let refund_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
 
         let clone = self.clone();
@@ -2791,7 +2790,7 @@ impl EthCoin {
 
         match self.coin_type {
             EthCoinType::Eth => {
-                let function_name = get_function_name("ethPayment".to_string(), watcher_reward);
+                let function_name = get_function_name("ethPayment", watcher_reward);
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
                 let swap_id_input = try_tx_fus!(get_function_input_data(&decoded, payment_func, 0));
@@ -2837,7 +2836,7 @@ impl EthCoin {
                 platform: _,
                 token_addr,
             } => {
-                let function_name = get_function_name("erc20Payment".to_string(), watcher_reward);
+                let function_name = get_function_name("erc20Payment", watcher_reward);
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
 
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
@@ -2886,7 +2885,7 @@ impl EthCoin {
         let swap_contract_address = try_tx_fus!(args.swap_contract_address.try_to_address());
         let watcher_reward = args.watcher_reward;
 
-        let function_name = get_function_name("receiverSpend".to_string(), watcher_reward);
+        let function_name = get_function_name("receiverSpend", watcher_reward);
         let spend_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
 
         let clone = self.clone();
@@ -2894,7 +2893,7 @@ impl EthCoin {
 
         match self.coin_type {
             EthCoinType::Eth => {
-                let function_name = get_function_name("ethPayment".to_string(), watcher_reward);
+                let function_name = get_function_name("ethPayment", watcher_reward);
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
 
@@ -2944,7 +2943,7 @@ impl EthCoin {
                 platform: _,
                 token_addr,
             } => {
-                let function_name = get_function_name("erc20Payment".to_string(), watcher_reward);
+                let function_name = get_function_name("erc20Payment", watcher_reward);
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
 
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
@@ -2999,14 +2998,14 @@ impl EthCoin {
         let swap_contract_address = try_tx_fus!(args.swap_contract_address.try_to_address());
 
         let watcher_reward = args.watcher_reward;
-        let function_name = get_function_name("senderRefund".to_string(), watcher_reward);
+        let function_name = get_function_name("senderRefund", watcher_reward);
         let refund_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
 
         let clone = self.clone();
 
         match self.coin_type {
             EthCoinType::Eth => {
-                let function_name = get_function_name("ethPayment".to_string(), watcher_reward);
+                let function_name = get_function_name("ethPayment", watcher_reward);
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
 
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
@@ -3058,7 +3057,7 @@ impl EthCoin {
                 platform: _,
                 token_addr,
             } => {
-                let function_name = get_function_name("erc20Payment".to_string(), watcher_reward);
+                let function_name = get_function_name("erc20Payment", watcher_reward);
                 let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
 
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
@@ -3354,7 +3353,7 @@ impl EthCoin {
                         )));
                     }
 
-                    let function_name = get_function_name("ethPayment".to_string(), input.min_watcher_reward.is_some());
+                    let function_name = get_function_name("ethPayment", input.min_watcher_reward.is_some());
                     let function = SWAP_CONTRACT
                         .function(&function_name)
                         .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
@@ -3425,8 +3424,7 @@ impl EthCoin {
                             tx_from_rpc, expected_swap_contract_address,
                         )));
                     }
-                    let function_name =
-                        get_function_name("erc20Payment".to_string(), input.min_watcher_reward.is_some());
+                    let function_name = get_function_name("erc20Payment", input.min_watcher_reward.is_some());
                     let function = SWAP_CONTRACT
                         .function(&function_name)
                         .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
@@ -3531,8 +3529,8 @@ impl EthCoin {
         let tx = try_s!(SignedEthTx::new(unverified));
 
         let func_name = match self.coin_type {
-            EthCoinType::Eth => get_function_name("ethPayment".to_string(), watcher_reward),
-            EthCoinType::Erc20 { .. } => get_function_name("erc20Payment".to_string(), watcher_reward),
+            EthCoinType::Eth => get_function_name("ethPayment", watcher_reward),
+            EthCoinType::Erc20 { .. } => get_function_name("erc20Payment", watcher_reward),
         };
 
         let payment_func = try_s!(SWAP_CONTRACT.function(&func_name));
@@ -4112,11 +4110,11 @@ fn get_function_input_data(decoded: &[Token], func: &Function, index: usize) -> 
     ))
 }
 
-fn get_function_name(name: String, watcher_reward: bool) -> String {
+fn get_function_name(name: &str, watcher_reward: bool) -> String {
     if watcher_reward {
-        name + "Reward"
+        format!("{}{}", name, "Reward")
     } else {
-        name
+        name.to_owned()
     }
 }
 

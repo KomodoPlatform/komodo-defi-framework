@@ -586,19 +586,21 @@ fn test_watcher_validate_taker_payment_eth() {
     let time_lock = (now_ms() / 1000 + time_lock_duration) as u32;
     let amount = BigDecimal::from_str("0.01").unwrap();
     let secret_hash = dhash160(&MakerSwap::generate_secret());
-    let watcher_reward = block_on(watcher_reward_amount(
-        &MmCoinEnum::from(taker_coin.clone()),
-        &MmCoinEnum::from(taker_coin.clone()),
-        true,
-    ))
-    .unwrap();
+    let watcher_reward = Some(
+        block_on(watcher_reward_amount(
+            &MmCoinEnum::from(taker_coin.clone()),
+            &MmCoinEnum::from(taker_coin.clone()),
+        ))
+        .unwrap(),
+    );
 
-    let min_watcher_reward = block_on(min_watcher_reward(
-        &MmCoinEnum::from(taker_coin.clone()),
-        &MmCoinEnum::from(taker_coin.clone()),
-        true,
-    ))
-    .unwrap();
+    let min_watcher_reward = Some(
+        block_on(min_watcher_reward(
+            &MmCoinEnum::from(taker_coin.clone()),
+            &MmCoinEnum::from(taker_coin.clone()),
+        ))
+        .unwrap(),
+    );
 
     let taker_payment = taker_coin
         .send_taker_payment(SendPaymentArgs {
@@ -846,18 +848,20 @@ fn test_watcher_validate_taker_payment_erc20() {
     let time_lock = (now_ms() / 1000 + time_lock_duration) as u32;
 
     let secret_hash = dhash160(&MakerSwap::generate_secret());
-    let watcher_reward = block_on(watcher_reward_amount(
-        &MmCoinEnum::from(taker_coin.clone()),
-        &MmCoinEnum::from(taker_coin.clone()),
-        true,
-    ))
-    .unwrap();
-    let min_watcher_reward = block_on(min_watcher_reward(
-        &MmCoinEnum::from(taker_coin.clone()),
-        &MmCoinEnum::from(taker_coin.clone()),
-        true,
-    ))
-    .unwrap();
+    let watcher_reward = Some(
+        block_on(watcher_reward_amount(
+            &MmCoinEnum::from(taker_coin.clone()),
+            &MmCoinEnum::from(taker_coin.clone()),
+        ))
+        .unwrap(),
+    );
+    let min_watcher_reward = Some(
+        block_on(min_watcher_reward(
+            &MmCoinEnum::from(taker_coin.clone()),
+            &MmCoinEnum::from(taker_coin.clone()),
+        ))
+        .unwrap(),
+    );
 
     let taker_payment = taker_coin
         .send_taker_payment(SendPaymentArgs {

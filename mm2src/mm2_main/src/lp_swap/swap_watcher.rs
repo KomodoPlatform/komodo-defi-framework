@@ -233,19 +233,18 @@ impl State for ValidateTakerPayment {
             )));
         }
 
-        let min_watcher_reward = match min_watcher_reward(
-            &watcher_ctx.taker_coin,
-            &watcher_ctx.maker_coin,
-            watcher_ctx.watcher_reward,
-        )
-        .await
-        {
-            Ok(reward) => reward,
-            Err(err) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Error(
-                    WatcherError::InternalError(err).into(),
-                )))
-            },
+        let min_watcher_reward = if watcher_ctx.watcher_reward {
+            let reward = match min_watcher_reward(&watcher_ctx.taker_coin, &watcher_ctx.maker_coin).await {
+                Ok(reward) => reward,
+                Err(err) => {
+                    return Self::change_state(Stopped::from_reason(StopReason::Error(
+                        WatcherError::InternalError(err.into_inner().to_string()).into(),
+                    )))
+                },
+            };
+            Some(reward)
+        } else {
+            None
         };
 
         let validate_input = WatcherValidatePaymentInput {
@@ -639,7 +638,8 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
         );
 
         let conf = json::from_value::<WatcherConf>(ctx.conf["watcher_conf"].clone()).unwrap_or_default();
-        let watcher_reward = taker_coin.is_eth() || maker_coin.is_eth();
+        //let watcher_reward = taker_coin.is_eth() || maker_coin.is_eth();
+        let watcher_reward = false;
         let watcher_ctx = WatcherContext {
             ctx,
             maker_coin,

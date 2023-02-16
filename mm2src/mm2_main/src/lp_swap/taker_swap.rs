@@ -1032,7 +1032,7 @@ impl TakerSwap {
         // This value will be true if both sides support & want to use watchers and either the taker or the maker coin is ETH.
         // This requires a communication between the parties before the swap starts, which will be done during the ordermatch phase
         // or via negotiation messages in the next sprint.
-        self.w().watcher_reward = false;
+        self.w().watcher_reward = true;
 
         Ok((Some(TakerSwapCommand::Negotiate), vec![TakerSwapEvent::Started(data)]))
     }
@@ -1325,14 +1325,18 @@ impl TakerSwap {
         }
         info!("After wait confirm");
 
-        let watcher_reward = self.r().watcher_reward;
-        let min_watcher_reward = match min_watcher_reward(&self.maker_coin, &self.taker_coin, watcher_reward).await {
-            Ok(reward) => reward,
-            Err(err) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![
-                    TakerSwapEvent::TakerPaymentTransactionFailed(err.into()),
-                ]))
-            },
+        let min_watcher_reward = if self.r().watcher_reward {
+            let reward = match min_watcher_reward(&self.maker_coin, &self.taker_coin).await {
+                Ok(reward) => reward,
+                Err(err) => {
+                    return Ok((Some(TakerSwapCommand::Finish), vec![
+                        TakerSwapEvent::TakerPaymentTransactionFailed(err.into_inner().to_string().into()),
+                    ]))
+                },
+            };
+            Some(reward)
+        } else {
+            None
         };
 
         let validate_input = ValidatePaymentInput {
@@ -1415,14 +1419,18 @@ impl TakerSwap {
             payment_instructions: &self.r().payment_instructions,
         });
 
-        let watcher_reward = self.r().watcher_reward;
-        let reward_amount = match watcher_reward_amount(&self.taker_coin, &self.maker_coin, watcher_reward).await {
-            Ok(reward) => reward,
-            Err(err) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![
-                    TakerSwapEvent::TakerPaymentTransactionFailed(err.into()),
-                ]))
-            },
+        let reward_amount = if self.r().watcher_reward {
+            let reward = match watcher_reward_amount(&self.taker_coin, &self.maker_coin).await {
+                Ok(reward) => reward,
+                Err(err) => {
+                    return Ok((Some(TakerSwapCommand::Finish), vec![
+                        TakerSwapEvent::TakerPaymentTransactionFailed(err.into_inner().to_string().into()),
+                    ]))
+                },
+            };
+            Some(reward)
+        } else {
+            None
         };
 
         let transaction = match f.compat().await {

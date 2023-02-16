@@ -59,6 +59,7 @@
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use bitcrypto::{dhash160, sha256};
+use coins::eth::Web3RpcError;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::time_cache::DuplicateCache;
@@ -683,6 +684,12 @@ pub fn dex_fee_amount_from_taker_coin(taker_coin: &MmCoinEnum, maker_coin: &str,
     dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &dex_fee_threshold)
 }
 
+#[derive(Debug, Display)]
+pub enum WatcherRewardError {
+    RPCError(Web3RpcError),
+    InvalidCoinType(String),
+}
+
 // This needs discussion. We need a way to determine the watcher reward amount, and a way to validate it at watcher side so
 // that watchers won't accept it if it's less than the expected amount. This has to be done for all coin types, because watcher rewards
 // will be required by both parties even if only one side is ETH coin. Artem's suggestion was first calculating the reward for ETH and
@@ -701,38 +708,38 @@ pub fn dex_fee_amount_from_taker_coin(taker_coin: &MmCoinEnum, maker_coin: &str,
 pub async fn watcher_reward_amount(
     coin: &MmCoinEnum,
     other_coin: &MmCoinEnum,
-    watcher_reward: bool,
-) -> Result<Option<u64>, String> {
+) -> Result<u64, MmError<WatcherRewardError>> {
     const WATCHER_REWARD_GAS: u64 = 100_000;
-    watcher_reward_from_gas(coin, other_coin, WATCHER_REWARD_GAS, watcher_reward).await
+    watcher_reward_from_gas(coin, other_coin, WATCHER_REWARD_GAS).await
 }
 
 pub async fn min_watcher_reward(
     coin: &MmCoinEnum,
     other_coin: &MmCoinEnum,
-    watcher_reward: bool,
-) -> Result<Option<u64>, String> {
+) -> Result<u64, MmError<WatcherRewardError>> {
     const MIN_WATCHER_REWARD_GAS: u64 = 70_000;
-    watcher_reward_from_gas(coin, other_coin, MIN_WATCHER_REWARD_GAS, watcher_reward).await
+    watcher_reward_from_gas(coin, other_coin, MIN_WATCHER_REWARD_GAS).await
 }
 
-// TODO: This can be done in a better way
 pub async fn watcher_reward_from_gas(
     coin: &MmCoinEnum,
     other_coin: &MmCoinEnum,
     gas: u64,
-    watcher_reward: bool,
-) -> Result<Option<u64>, String> {
-    if !watcher_reward {
-        Ok(None)
-    } else if let MmCoinEnum::EthCoin(coin) = &coin {
-        let gas_price = try_s!(coin.get_gas_price().compat().await).as_u64();
-        Ok(Some(gas * gas_price))
-    } else if let MmCoinEnum::EthCoin(coin) = &other_coin {
-        let gas_price = try_s!(coin.get_gas_price().compat().await).as_u64();
-        Ok(Some(gas * gas_price))
-    } else {
-        return Err(ERRL!("At least one coin must be ETH to use watcher reward"));
+) -> Result<u64, MmError<WatcherRewardError>> {
+    match (coin, other_coin) {
+        (MmCoinEnum::EthCoin(coin), _) | (_, MmCoinEnum::EthCoin(coin)) => {
+            let gas_price = coin
+                .get_gas_price()
+                .compat()
+                .await
+                .map_err(|err| WatcherRewardError::RPCError(err.into_inner()))?
+                .as_u64();
+            Ok(gas * gas_price)
+        },
+        _ => Err(WatcherRewardError::InvalidCoinType(
+            "At least one coin must be ETH to use watcher reward".to_string(),
+        )
+        .into()),
     }
 }
 

@@ -633,7 +633,6 @@ pub struct ValidateFeeArgs<'a> {
     pub uuid: &'a [u8],
 }
 
-#[derive(Clone, Debug)]
 pub struct EthValidateFeeArgs<'a> {
     pub fee_tx_hash: &'a H256,
     pub expected_sender: &'a [u8],
@@ -2226,7 +2225,7 @@ impl MmCoinEnum {
         }
     }
 
-    pub fn is_eth(&self) -> bool { !matches!(self, MmCoinEnum::EthCoin(_)) }
+    pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoin(_)) }
 }
 
 #[async_trait]
