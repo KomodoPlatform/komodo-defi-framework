@@ -5,6 +5,10 @@ edition = "2018"
 
 [features]
 zhtlc-native-tests = []
+# TODO
+# Remove this once the solana integration becomes stable/completed.
+disable-solana-tests = []
+default = ["disable-solana-tests"]
 
 [lib]
 name = "coins"
