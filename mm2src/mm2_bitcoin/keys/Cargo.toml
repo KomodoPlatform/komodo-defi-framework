@@ -9,7 +9,7 @@ doctest = false
 [dependencies]
 rustc-hex = "2"
 base58 = "0.2"
-bech32 = "0.8.0"
+bech32 = "0.9.1"
 bitcrypto = { path = "../crypto" }
 derive_more = "0.99"
 lazy_static = "1.4"

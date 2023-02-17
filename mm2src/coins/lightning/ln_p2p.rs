@@ -12,6 +12,7 @@ use mm2_net::ip_addr::fetch_external_ip;
 use rand::RngCore;
 use secp256k1v24::PublicKey;
 use std::net::{IpAddr, Ipv4Addr};
+use std::num::TryFromIntError;
 use tokio::net::TcpListener;
 
 const TRY_RECONNECTING_TO_NODE_INTERVAL: f64 = 60.;
@@ -211,12 +212,11 @@ pub async fn init_peer_manager(
     let node_secret = keys_manager
         .get_node_secret(Recipient::Node)
         .map_to_mm(|_| EnableLightningError::UnsupportedMode("'start_lightning'".into(), "local node".into()))?;
-    let expect_msg = "for the foreseeable future this shouldn't happen";
     let current_time: u32 = get_local_duration_since_epoch()
-        .expect(expect_msg)
+        .map_to_mm(|e| EnableLightningError::Internal(e.to_string()))?
         .as_secs()
         .try_into()
-        .expect(expect_msg);
+        .map_to_mm(|e: TryFromIntError| EnableLightningError::Internal(e.to_string()))?;
     // IgnoringMessageHandler is used as custom message types (experimental and application-specific messages) is not needed
     let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(
         lightning_msg_handler,
