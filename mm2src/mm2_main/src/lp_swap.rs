@@ -712,11 +712,25 @@ pub struct NegotiationDataV3 {
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub struct NegotiationDataV4 {
+    started_at: u64,
+    payment_locktime: u64,
+    secret_hash: Vec<u8>,
+    maker_coin_swap_contract: Vec<u8>,
+    taker_coin_swap_contract: Vec<u8>,
+    maker_coin_htlc_pub: Vec<u8>,
+    taker_coin_htlc_pub: Vec<u8>,
+    maker_pubkey: Vec<u8>,
+    taker_pubkey: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum NegotiationDataMsg {
     V1(NegotiationDataV1),
     V2(NegotiationDataV2),
     V3(NegotiationDataV3),
+    V4(NegotiationDataV4),
 }
 
 impl NegotiationDataMsg {
@@ -725,6 +739,7 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(v1) => v1.started_at,
             NegotiationDataMsg::V2(v2) => v2.started_at,
             NegotiationDataMsg::V3(v3) => v3.started_at,
+            NegotiationDataMsg::V4(v4) => v4.started_at,
         }
     }
 
@@ -733,6 +748,7 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(v1) => v1.payment_locktime,
             NegotiationDataMsg::V2(v2) => v2.payment_locktime,
             NegotiationDataMsg::V3(v3) => v3.payment_locktime,
+            NegotiationDataMsg::V4(v4) => v4.payment_locktime,
         }
     }
 
@@ -741,6 +757,7 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(v1) => &v1.secret_hash,
             NegotiationDataMsg::V2(v2) => &v2.secret_hash,
             NegotiationDataMsg::V3(v3) => &v3.secret_hash,
+            NegotiationDataMsg::V4(v4) => &v4.secret_hash,
         }
     }
 
@@ -749,6 +766,7 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(v1) => &v1.persistent_pubkey,
             NegotiationDataMsg::V2(v2) => &v2.persistent_pubkey,
             NegotiationDataMsg::V3(v3) => &v3.maker_coin_htlc_pub,
+            NegotiationDataMsg::V4(v4) => &v4.maker_coin_htlc_pub,
         }
     }
 
@@ -757,6 +775,7 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(v1) => &v1.persistent_pubkey,
             NegotiationDataMsg::V2(v2) => &v2.persistent_pubkey,
             NegotiationDataMsg::V3(v3) => &v3.taker_coin_htlc_pub,
+            NegotiationDataMsg::V4(v4) => &v4.taker_coin_htlc_pub,
         }
     }
 
@@ -765,6 +784,7 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(_) => None,
             NegotiationDataMsg::V2(v2) => Some(&v2.maker_coin_swap_contract),
             NegotiationDataMsg::V3(v3) => Some(&v3.maker_coin_swap_contract),
+            NegotiationDataMsg::V4(v4) => Some(&v4.maker_coin_swap_contract),
         }
     }
 
@@ -773,6 +793,21 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V1(_) => None,
             NegotiationDataMsg::V2(v2) => Some(&v2.taker_coin_swap_contract),
             NegotiationDataMsg::V3(v3) => Some(&v3.taker_coin_swap_contract),
+            NegotiationDataMsg::V4(v4) => Some(&v4.taker_coin_swap_contract),
+        }
+    }
+
+    pub fn maker_pubkey(&self) -> Option<&[u8]> {
+        match self {
+            NegotiationDataMsg::V1(_) | NegotiationDataMsg::V2(_) | NegotiationDataMsg::V3(_) => None,
+            NegotiationDataMsg::V4(v4) => Some(&v4.maker_pubkey),
+        }
+    }
+
+    pub fn taker_pubkey(&self) -> Option<&[u8]> {
+        match self {
+            NegotiationDataMsg::V1(_) | NegotiationDataMsg::V2(_) | NegotiationDataMsg::V3(_) => None,
+            NegotiationDataMsg::V4(v4) => Some(&v4.taker_pubkey),
         }
     }
 }

@@ -43,12 +43,21 @@ const INSERT_STATS_SWAP: &str = "INSERT INTO stats_swaps (
     taker_amount,
     is_success,
     maker_coin_usd_price,
-    taker_coin_usd_price
-) VALUES (:maker_coin, :maker_coin_ticker, :maker_coin_platform, :taker_coin, :taker_coin_ticker, :taker_coin_platform, :uuid, :started_at, :finished_at, :maker_amount, :taker_amount, :is_success, :maker_coin_usd_price, :taker_coin_usd_price)";
+    taker_coin_usd_price,
+    maker_pubkey,
+    taker_pubkey
+) VALUES (:maker_coin, :maker_coin_ticker, :maker_coin_platform, :taker_coin, :taker_coin_ticker, 
+:taker_coin_platform, :uuid, :started_at, :finished_at, :maker_amount, :taker_amount, :is_success, 
+:maker_coin_usd_price, :taker_coin_usd_price, :maker_pubkey, :taker_pubkey)";
 
 pub const ADD_COINS_PRICE_INFOMATION: &[&str] = &[
     "ALTER TABLE stats_swaps ADD COLUMN maker_coin_usd_price DECIMAL;",
     "ALTER TABLE stats_swaps ADD COLUMN taker_coin_usd_price DECIMAL;",
+];
+
+pub const ADD_MAKER_TAKER_PUBKEYS: &[&str] = &[
+    "ALTER TABLE stats_swaps ADD COLUMN maker_pubkey DECIMAL;",
+    "ALTER TABLE stats_swaps ADD COLUMN taker_pubkey DECIMAL;",
 ];
 
 pub const ADD_SPLIT_TICKERS: &[&str] = &[
@@ -133,21 +142,23 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
     let params = owned_named_params! {
-        ":maker_coin": swap_data.maker_coin.clone(),
-        ":maker_coin_ticker": maker_coin_ticker,
-        ":maker_coin_platform": maker_coin_platform,
-        ":taker_coin": swap_data.taker_coin.clone(),
-        ":taker_coin_ticker": taker_coin_ticker,
-        ":taker_coin_platform": taker_coin_platform,
-        ":uuid": swap.uuid.to_string(),
-        ":started_at": swap_data.started_at.to_string(),
-        ":finished_at": finished_at,
-        ":maker_amount": swap_data.maker_amount.to_string(),
-        ":taker_amount": swap_data.taker_amount.to_string(),
-        ":is_success": (is_success as u32).to_string(),
-        ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
-        ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
-    };
+            ":maker_coin": swap_data.maker_coin.clone(),
+            ":maker_coin_ticker": maker_coin_ticker,
+            ":maker_coin_platform": maker_coin_platform,
+            ":taker_coin": swap_data.taker_coin.clone(),
+            ":taker_coin_ticker": taker_coin_ticker,
+            ":taker_coin_platform": taker_coin_platform,
+            ":uuid": swap.uuid.to_string(),
+            ":started_at": swap_data.started_at.to_string(),
+            ":finished_at": finished_at,
+            ":maker_amount": swap_data.maker_amount.to_string(),
+            ":taker_amount": swap_data.taker_amount.to_string(),
+            ":is_success": (is_success as u32).to_string(),
+            ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
+            ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
+    //        ":maker_pubkey": swap_data.my_persistent_pub.to_string(),
+        };
+
     Some((INSERT_STATS_SWAP, params))
 }
 
@@ -206,21 +217,22 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
     let params = owned_named_params! {
-        ":maker_coin": swap_data.maker_coin.clone(),
-        ":maker_coin_ticker": maker_coin_ticker,
-        ":maker_coin_platform": maker_coin_platform,
-        ":taker_coin": swap_data.taker_coin.clone(),
-        ":taker_coin_ticker": taker_coin_ticker,
-        ":taker_coin_platform": taker_coin_platform,
-        ":uuid": swap.uuid.to_string(),
-        ":started_at": swap_data.started_at.to_string(),
-        ":finished_at": finished_at,
-        ":maker_amount": swap_data.maker_amount.to_string(),
-        ":taker_amount": swap_data.taker_amount.to_string(),
-        ":is_success": (is_success as u32).to_string(),
-        ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
-        ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
-    };
+            ":maker_coin": swap_data.maker_coin.clone(),
+            ":maker_coin_ticker": maker_coin_ticker,
+            ":maker_coin_platform": maker_coin_platform,
+            ":taker_coin": swap_data.taker_coin.clone(),
+            ":taker_coin_ticker": taker_coin_ticker,
+            ":taker_coin_platform": taker_coin_platform,
+            ":uuid": swap.uuid.to_string(),
+            ":started_at": swap_data.started_at.to_string(),
+            ":finished_at": finished_at,
+            ":maker_amount": swap_data.maker_amount.to_string(),
+            ":taker_amount": swap_data.taker_amount.to_string(),
+            ":is_success": (is_success as u32).to_string(),
+            ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
+            ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
+    //        ":taker_pubkey": swap_data.maker.to_string()
+        };
     Some((INSERT_STATS_SWAP, params))
 }
 

@@ -301,6 +301,16 @@ impl TakerSavedSwap {
             self.taker_coin_usd_price = Some(rates.rel);
         }
     }
+
+    pub fn get_maker_pubkey(&self) -> Option<String> {
+        match self.events.first() {
+            Some(data) => match &data.event {
+                TakerSwapEvent::Negotiated(negotiated) => Some(negotiated.maker_pubkey.to_string()),
+                _ => None,
+            },
+            None => None,
+        }
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
