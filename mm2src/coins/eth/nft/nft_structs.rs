@@ -1,4 +1,4 @@
-use crate::{TxFeeDetails, WithdrawFee};
+use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 use serde::Deserialize;
@@ -19,7 +19,7 @@ pub struct NftMetadataReq {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Chain {
-    Bnb,
+    Bsc,
     Eth,
 }
 
@@ -121,7 +121,7 @@ pub struct NftList {
 #[allow(dead_code)]
 #[derive(Clone, Deserialize)]
 pub struct WithdrawErc1155Request {
-    pub(crate) coin: String,
+    pub(crate) chain: Chain,
     from: String,
     to: String,
     token_address: String,
@@ -135,7 +135,7 @@ pub struct WithdrawErc1155Request {
 #[allow(dead_code)]
 #[derive(Clone, Deserialize)]
 pub struct WithdrawErc721Request {
-    pub(crate) coin: String,
+    pub(crate) chain: Chain,
     from: String,
     to: String,
     token_address: String,
@@ -165,6 +165,10 @@ pub struct TransactionNftDetails {
     timestamp: u64,
     /// Internal MM2 id used for internal transaction identification, for some coins it might be equal to transaction hash
     internal_id: i64,
+    /// Type of transactions, default is StandardTransfer
+    #[serde(default)]
+    pub(crate) transaction_type: TransactionType,
+    pub(crate) memo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

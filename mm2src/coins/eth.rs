@@ -821,7 +821,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 
     for chain in req.chains {
         let (coin_str, chain_str) = match chain {
-            Chain::Bnb => ("BNB", "bsc"),
+            Chain::Bsc => ("BNB", "bsc"),
             Chain::Eth => ("ETH", "eth"),
         };
         let my_address = get_eth_address(coin_str, &ctx).await?;
@@ -887,7 +887,7 @@ pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, 
         .as_str()
         .ok_or_else(|| MmError::new(GetNftInfoError::ApiKeyError))?;
     let chain_str = match req.chain {
-        Chain::Bnb => "bsc",
+        Chain::Bsc => "bsc",
         Chain::Eth => "eth",
     };
     let uri = format!(
@@ -928,7 +928,7 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
 
     for chain in req.chains {
         let (coin_str, chain_str) = match chain {
-            Chain::Bnb => ("BNB", "bsc"),
+            Chain::Bsc => ("BNB", "bsc"),
             Chain::Eth => ("ETH", "eth"),
         };
         let my_address = get_eth_address(coin_str, &ctx).await?;
@@ -987,12 +987,20 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
 }
 
 pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155Request) -> WithdrawNftResult {
-    let _coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let ticker = match req.chain {
+        Chain::Bsc => "BNB",
+        Chain::Eth => "ETH",
+    };
+    let _coin = lp_coinfind_or_err(&ctx, ticker).await?;
     todo!()
 }
 
 pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721Request) -> WithdrawNftResult {
-    let _coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let ticker = match req.chain {
+        Chain::Bsc => "BNB",
+        Chain::Eth => "ETH",
+    };
+    let _coin = lp_coinfind_or_err(&ctx, ticker).await?;
     todo!()
 }
 
