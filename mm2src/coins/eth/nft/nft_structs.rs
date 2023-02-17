@@ -16,7 +16,7 @@ pub struct NftMetadataReq {
     pub(crate) chain: Chain,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Chain {
     Bsc,

@@ -839,7 +839,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
                 for nft_json in nfts_list {
                     let nft_wrapper: NftWrapper = serde_json::from_str(&nft_json.to_string())?;
                     let nft = Nft {
-                        chain: chain.clone(),
+                        chain,
                         token_address: nft_wrapper.token_address,
                         token_id: nft_wrapper.token_id.0,
                         amount: nft_wrapper.amount.0,
@@ -946,7 +946,7 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
                 for transfer in transfer_list {
                     let transfer_wrapper: NftTransferHistoryWrapper = serde_json::from_str(&transfer.to_string())?;
                     let transfer_history = NftTransferHistory {
-                        chain: chain.clone(),
+                        chain,
                         block_number: *transfer_wrapper.block_number,
                         block_timestamp: transfer_wrapper.block_timestamp,
                         block_hash: transfer_wrapper.block_hash,

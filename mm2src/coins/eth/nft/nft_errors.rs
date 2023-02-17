@@ -64,11 +64,11 @@ impl HttpStatusCode for GetNftInfoError {
     fn status_code(&self) -> StatusCode {
         match self {
             GetNftInfoError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-            GetNftInfoError::Transport(_)
-            | GetNftInfoError::InvalidResponse(_)
-            | GetNftInfoError::Internal(_)
-            | GetNftInfoError::GetEthAddressError(_)
-            | GetNftInfoError::ApiKeyError => StatusCode::INTERNAL_SERVER_ERROR,
+            GetNftInfoError::InvalidResponse(_) => StatusCode::FAILED_DEPENDENCY,
+            GetNftInfoError::ApiKeyError => StatusCode::FORBIDDEN,
+            GetNftInfoError::Transport(_) | GetNftInfoError::Internal(_) | GetNftInfoError::GetEthAddressError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
         }
     }
 }
