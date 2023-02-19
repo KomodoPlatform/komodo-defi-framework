@@ -115,6 +115,7 @@ use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
+use rpc::v1::types::H264 as H264Json;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
 pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
                        MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT,
@@ -720,8 +721,7 @@ pub struct NegotiationDataV4 {
     taker_coin_swap_contract: Vec<u8>,
     maker_coin_htlc_pub: Vec<u8>,
     taker_coin_htlc_pub: Vec<u8>,
-    maker_pubkey: Vec<u8>,
-    taker_pubkey: Vec<u8>,
+    persistent_pubkey: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
@@ -797,17 +797,11 @@ impl NegotiationDataMsg {
         }
     }
 
-    pub fn maker_pubkey(&self) -> Option<&[u8]> {
+    pub fn persistent_pubkey(&self) -> Option<&[u8]> {
         match self {
-            NegotiationDataMsg::V1(_) | NegotiationDataMsg::V2(_) | NegotiationDataMsg::V3(_) => None,
-            NegotiationDataMsg::V4(v4) => Some(&v4.maker_pubkey),
-        }
-    }
-
-    pub fn taker_pubkey(&self) -> Option<&[u8]> {
-        match self {
-            NegotiationDataMsg::V1(_) | NegotiationDataMsg::V2(_) | NegotiationDataMsg::V3(_) => None,
-            NegotiationDataMsg::V4(v4) => Some(&v4.taker_pubkey),
+            NegotiationDataMsg::V1(_) | NegotiationDataMsg::V3(_) => None,
+            NegotiationDataMsg::V2(v2) => Some(&v2.persistent_pubkey),
+            NegotiationDataMsg::V4(v4) => Some(&v4.persistent_pubkey),
         }
     }
 }
@@ -1413,6 +1407,12 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
         (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
         (_, _) => SecretHashAlgo::DHASH160,
     }
+}
+
+#[derive(Debug, Deserialize, PartialEq, Serialize, Default)]
+pub struct SwapPubkeys {
+    pub maker: H264Json,
+    pub taker: H264Json,
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

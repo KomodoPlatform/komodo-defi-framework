@@ -7,14 +7,14 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_messa
             check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
             get_locked_amount, recv_swap_msg, swap_topic, taker_payment_spend_deadline, tx_helper_topic,
             wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
-            NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
-            SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg, SwapsContext,
+            NegotiationDataV2, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo, SavedTradeFee,
+            SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg, SwapsContext,
             TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration};
+use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, NegotiationDataV4, SwapPubkeys};
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, TradeFee, TradePreimageValue,
@@ -84,6 +84,7 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Maker(MakerSavedSwap {
             uuid: swap.uuid,
+            my_persistence_pub: swap.my_persistent_pub.into(),
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.clone()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -121,6 +122,7 @@ pub struct TakerNegotiationData {
     pub taker_coin_swap_contract_addr: Option<BytesJson>,
     pub maker_coin_htlc_pubkey: Option<H264Json>,
     pub taker_coin_htlc_pubkey: Option<H264Json>,
+    pub my_persistance_pubkey: H264Json,
 }
 
 impl TakerNegotiationData {
@@ -419,7 +421,7 @@ impl MakerSwap {
                 taker_coin_swap_contract,
             })
         } else {
-            NegotiationDataMsg::V3(NegotiationDataV3 {
+            NegotiationDataMsg::V4(NegotiationDataV4 {
                 started_at: r.data.started_at,
                 payment_locktime: r.data.maker_payment_lock,
                 secret_hash,
@@ -427,6 +429,7 @@ impl MakerSwap {
                 taker_coin_swap_contract,
                 maker_coin_htlc_pub: self.my_maker_coin_htlc_pub().into(),
                 taker_coin_htlc_pub: self.my_taker_coin_htlc_pub().into(),
+                persistent_pubkey: r.data.my_persistent_pub.0.to_vec(),
             })
         }
     }
@@ -656,6 +659,7 @@ impl MakerSwap {
             )]));
         };
 
+        println!("MAKER PUB{:?}", taker_data.persistent_pubkey().unwrap_or_default());
         Ok((Some(MakerSwapCommand::WaitForTakerFee), vec![
             MakerSwapEvent::Negotiated(TakerNegotiationData {
                 taker_payment_locktime: taker_data.payment_locktime(),
@@ -666,6 +670,7 @@ impl MakerSwap {
                 taker_coin_swap_contract_addr,
                 maker_coin_htlc_pubkey: Some(taker_data.maker_coin_htlc_pub().into()),
                 taker_coin_htlc_pubkey: Some(taker_data.taker_coin_htlc_pub().into()),
+                my_persistance_pubkey: taker_data.persistent_pubkey().unwrap_or_default().into(),
             }),
         ]))
     }
@@ -1702,6 +1707,7 @@ impl MakerSwapStatusChanged {
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
+    pub my_persistence_pub: H264Json,
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<MakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
@@ -1756,6 +1762,7 @@ impl MakerSavedSwap {
         });
         MakerSavedSwap {
             uuid: Default::default(),
+            my_persistence_pub: Default::default(),
             my_order_uuid: None,
             events,
             maker_amount: Some(maker_amount.to_decimal()),
@@ -1876,14 +1883,16 @@ impl MakerSavedSwap {
         }
     }
 
-    pub fn get_taker_pubkey(&self) -> Option<String> {
-        match self.events.first() {
-            Some(data) => match &data.event {
-                MakerSwapEvent::Negotiated(negotiated) => Some(negotiated.taker_pubkey.to_string()),
-                _ => None,
-            },
-            None => None,
+    pub fn get_swap_pubkeys(&self) -> SwapPubkeys {
+        let mut swap_pubkeys = SwapPubkeys::default();
+        for data in &self.events {
+            if let MakerSwapEvent::Negotiated(negotiated) = &data.event {
+                swap_pubkeys.maker = self.my_persistence_pub;
+                swap_pubkeys.taker = negotiated.my_persistance_pubkey
+            }
         }
+
+        swap_pubkeys
     }
 }
 

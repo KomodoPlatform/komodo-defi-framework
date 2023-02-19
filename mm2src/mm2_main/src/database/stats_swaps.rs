@@ -141,23 +141,25 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
+    let pubkeys = &swap.get_swap_pubkeys();
     let params = owned_named_params! {
-            ":maker_coin": swap_data.maker_coin.clone(),
-            ":maker_coin_ticker": maker_coin_ticker,
-            ":maker_coin_platform": maker_coin_platform,
-            ":taker_coin": swap_data.taker_coin.clone(),
-            ":taker_coin_ticker": taker_coin_ticker,
-            ":taker_coin_platform": taker_coin_platform,
-            ":uuid": swap.uuid.to_string(),
-            ":started_at": swap_data.started_at.to_string(),
-            ":finished_at": finished_at,
-            ":maker_amount": swap_data.maker_amount.to_string(),
-            ":taker_amount": swap_data.taker_amount.to_string(),
-            ":is_success": (is_success as u32).to_string(),
-            ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
-            ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
-    //        ":maker_pubkey": swap_data.my_persistent_pub.to_string(),
-        };
+        ":maker_coin": swap_data.maker_coin.clone(),
+        ":maker_coin_ticker": maker_coin_ticker,
+        ":maker_coin_platform": maker_coin_platform,
+        ":taker_coin": swap_data.taker_coin.clone(),
+        ":taker_coin_ticker": taker_coin_ticker,
+        ":taker_coin_platform": taker_coin_platform,
+        ":uuid": swap.uuid.to_string(),
+        ":started_at": swap_data.started_at.to_string(),
+        ":finished_at": finished_at,
+        ":maker_amount": swap_data.maker_amount.to_string(),
+        ":taker_amount": swap_data.taker_amount.to_string(),
+        ":is_success": (is_success as u32).to_string(),
+        ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
+        ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
+        ":maker_pubkey": pubkeys.maker.to_string(),
+        ":taker_pubkey": pubkeys.taker.to_string(),
+    };
 
     Some((INSERT_STATS_SWAP, params))
 }
@@ -216,23 +218,25 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
+    let pubkeys = &swap.get_swap_pubkeys();
     let params = owned_named_params! {
-            ":maker_coin": swap_data.maker_coin.clone(),
-            ":maker_coin_ticker": maker_coin_ticker,
-            ":maker_coin_platform": maker_coin_platform,
-            ":taker_coin": swap_data.taker_coin.clone(),
-            ":taker_coin_ticker": taker_coin_ticker,
-            ":taker_coin_platform": taker_coin_platform,
-            ":uuid": swap.uuid.to_string(),
-            ":started_at": swap_data.started_at.to_string(),
-            ":finished_at": finished_at,
-            ":maker_amount": swap_data.maker_amount.to_string(),
-            ":taker_amount": swap_data.taker_amount.to_string(),
-            ":is_success": (is_success as u32).to_string(),
-            ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
-            ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
-    //        ":taker_pubkey": swap_data.maker.to_string()
-        };
+        ":maker_coin": swap_data.maker_coin.clone(),
+        ":maker_coin_ticker": maker_coin_ticker,
+        ":maker_coin_platform": maker_coin_platform,
+        ":taker_coin": swap_data.taker_coin.clone(),
+        ":taker_coin_ticker": taker_coin_ticker,
+        ":taker_coin_platform": taker_coin_platform,
+        ":uuid": swap.uuid.to_string(),
+        ":started_at": swap_data.started_at.to_string(),
+        ":finished_at": finished_at,
+        ":maker_amount": swap_data.maker_amount.to_string(),
+        ":taker_amount": swap_data.taker_amount.to_string(),
+        ":is_success": (is_success as u32).to_string(),
+        ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
+        ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
+        ":maker_pubkey": pubkeys.maker.to_string(),
+        ":taker_pubkey": pubkeys.taker.to_string(),
+    };
     Some((INSERT_STATS_SWAP, params))
 }
 

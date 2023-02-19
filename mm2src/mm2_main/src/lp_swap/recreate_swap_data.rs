@@ -80,8 +80,10 @@ pub async fn recreate_swap_data(ctx: MmArc, args: RecreateSwapRequest) -> Recrea
 }
 
 fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapResult<MakerSavedSwap> {
+    let pubkeys = taker_swap.get_swap_pubkeys();
     let mut maker_swap = MakerSavedSwap {
         uuid: taker_swap.uuid,
+        my_persistence_pub: pubkeys.maker,
         my_order_uuid: taker_swap.my_order_uuid,
         events: Vec::new(),
         maker_amount: taker_swap.maker_amount,
@@ -164,6 +166,7 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
         taker_coin_swap_contract_addr: negotiated_event.taker_coin_swap_contract_addr,
         maker_coin_htlc_pubkey: started_event.maker_coin_htlc_pubkey,
         taker_coin_htlc_pubkey: started_event.taker_coin_htlc_pubkey,
+        my_persistance_pubkey: negotiated_event.my_persistance_pubkey,
     });
     maker_swap.events.push(MakerSavedEvent {
         timestamp: negotiated_event_timestamp,
@@ -279,8 +282,11 @@ fn convert_taker_to_maker_events(
 }
 
 async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> RecreateSwapResult<TakerSavedSwap> {
+    let pubkeys = maker_swap.get_swap_pubkeys();
+
     let mut taker_swap = TakerSavedSwap {
         uuid: maker_swap.uuid,
+        my_persistence_pub: pubkeys.taker,
         my_order_uuid: Some(maker_swap.uuid),
         events: Vec::new(),
         maker_amount: maker_swap.maker_amount,
@@ -363,6 +369,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         taker_coin_swap_contract_addr: negotiated_event.taker_coin_swap_contract_addr,
         maker_coin_htlc_pubkey: started_event.maker_coin_htlc_pubkey,
         taker_coin_htlc_pubkey: started_event.taker_coin_htlc_pubkey,
+        my_persistance_pubkey: negotiated_event.my_persistance_pubkey,
     });
     taker_swap.events.push(TakerSavedEvent {
         timestamp: negotiated_timestamp,
