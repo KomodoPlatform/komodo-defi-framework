@@ -10,7 +10,7 @@ pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Key
 use mm2_err_handle::prelude::*;
 use script::SignatureVersion;
 use serde_json::{self as json, Value as Json};
-use spv_validation::helpers_validation::BlockHeaderVerificationParams;
+use spv_validation::conf::SPVConf;
 use std::num::NonZeroU64;
 use std::sync::atomic::AtomicBool;
 
@@ -26,6 +26,8 @@ pub enum UtxoConfError {
     TrezorCoinIsNotSet,
     #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
     ErrorDeserializingDerivationPath(String),
+    #[display(fmt = "Error deserializing 'spv_conf': {}", _0)]
+    ErrorDeserializingSPVConf(String),
     InvalidConsensusBranchId(String),
     InvalidVersionGroupId(String),
     InvalidAddressFormat(String),
@@ -86,10 +88,9 @@ impl<'a> UtxoConfBuilder<'a> {
         let estimate_fee_mode = self.estimate_fee_mode();
         let estimate_fee_blocks = self.estimate_fee_blocks();
         let trezor_coin = self.trezor_coin();
-        let enable_spv_proof = self.enable_spv_proof();
-        let block_headers_verification_params = self.block_headers_verification_params();
         let derivation_path = self.derivation_path()?;
         let avg_blocktime = self.avg_blocktime();
+        let spv_conf = self.spv_conf()?;
 
         Ok(UtxoCoinConf {
             ticker: self.ticker.to_owned(),
@@ -121,8 +122,7 @@ impl<'a> UtxoConfBuilder<'a> {
             mature_confirmations,
             estimate_fee_blocks,
             trezor_coin,
-            enable_spv_proof,
-            block_headers_verification_params,
+            spv_conf,
             derivation_path,
             avg_blocktime,
         })
@@ -282,13 +282,12 @@ impl<'a> UtxoConfBuilder<'a> {
 
     // Todo: implement spv for wasm
     #[cfg(target_arch = "wasm32")]
-    fn enable_spv_proof(&self) -> bool { false }
+    fn spv_conf(&self) -> UtxoConfResult<Option<SPVConf>> { Ok(None) }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn enable_spv_proof(&self) -> bool { self.conf["enable_spv_proof"].as_bool().unwrap_or(false) }
-
-    fn block_headers_verification_params(&self) -> Option<BlockHeaderVerificationParams> {
-        json::from_value(self.conf["block_headers_verification_params"].clone()).unwrap_or(None)
+    fn spv_conf(&self) -> UtxoConfResult<Option<SPVConf>> {
+        json::from_value(self.conf["spv_conf"].clone())
+            .map_to_mm(|e| UtxoConfError::ErrorDeserializingSPVConf(e.to_string()))
     }
 
     fn derivation_path(&self) -> UtxoConfResult<Option<StandardHDPathToCoin>> {
