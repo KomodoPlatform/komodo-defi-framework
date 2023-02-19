@@ -1182,7 +1182,6 @@ impl TakerSwap {
             )]));
         }
 
-        println!("TAKER PUB{:?}", maker_data.persistent_pubkey().unwrap_or_default());
         Ok((Some(TakerSwapCommand::SendTakerFee), vec![TakerSwapEvent::Negotiated(
             MakerNegotiationData {
                 maker_payment_locktime: maker_data.payment_locktime(),
