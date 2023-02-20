@@ -1217,6 +1217,7 @@ pub enum TransactionType {
         msg_type: CustomTendermintMsgType,
         token_id: Option<BytesJson>,
     },
+    NftTransfer,
 }
 
 /// Transaction details
@@ -1781,6 +1782,10 @@ pub enum WithdrawError {
     #[from_stringify("NumConversError", "UnexpectedDerivationMethod", "PrivKeyPolicyNotAllowed")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "{} coin doesn't support NFT withdrawing", coin)]
+    CoinDoesntSupportNftWithdraw { coin: String },
+    #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
+    AddressMismatchError { my_address: String, from: String },
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -1799,7 +1804,9 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
-            | WithdrawError::UnexpectedUserAction { .. } => StatusCode::BAD_REQUEST,
+            | WithdrawError::UnexpectedUserAction { .. }
+            | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
+            | WithdrawError::AddressMismatchError { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -1876,7 +1883,7 @@ impl WithdrawError {
     }
 }
 
-#[derive(Serialize, Display, Debug, EnumFromStringify, SerializeErrorType)]
+#[derive(Debug, Display, EnumFromStringify, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum SignatureError {
     #[display(fmt = "Invalid request: {}", _0)]
@@ -1901,7 +1908,7 @@ impl HttpStatusCode for SignatureError {
     }
 }
 
-#[derive(Serialize, Display, Debug, SerializeErrorType)]
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum VerificationError {
     #[display(fmt = "Invalid request: {}", _0)]
@@ -2519,7 +2526,7 @@ pub trait CoinWithDerivationMethod {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
     UTXO,

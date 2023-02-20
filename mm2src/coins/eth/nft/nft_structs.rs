@@ -132,39 +132,38 @@ pub struct WithdrawErc1155Request {
     fee: Option<WithdrawFee>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Deserialize)]
 pub struct WithdrawErc721Request {
     pub(crate) chain: Chain,
-    from: String,
-    to: String,
-    token_address: String,
-    token_id: BigDecimal,
-    fee: Option<WithdrawFee>,
+    pub(crate) from: String,
+    pub(crate) to: String,
+    pub(crate) token_address: String,
+    pub(crate) token_id: BigDecimal,
+    pub(crate) fee: Option<WithdrawFee>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TransactionNftDetails {
     /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction_bytes` RPC to broadcast the transaction
-    tx_hex: BytesJson,
-    /// Transaction hash in hexadecimal format
-    tx_hash: String,
+    pub(crate) tx_hex: BytesJson,
+    pub(crate) tx_hash: String,
     /// NFTs are sent from these addresses
-    from: Vec<String>,
+    pub(crate) from: Vec<String>,
     /// NFTs are sent to these addresses
-    to: Vec<String>,
-    contract_type: String,
-    token_address: String,
-    token_id: BigDecimal,
-    amount: BigDecimal,
-    fee_details: Option<TxFeeDetails>,
+    pub(crate) to: Vec<String>,
+    pub(crate) contract_type: ContractType,
+    pub(crate) token_address: String,
+    pub(crate) token_id: BigDecimal,
+    pub(crate) amount: BigDecimal,
+    pub(crate) fee_details: Option<TxFeeDetails>,
+    /// The coin transaction belongs to
+    pub(crate) coin: String,
     /// Block height
-    block_height: u64,
+    pub(crate) block_height: u64,
     /// Transaction timestamp
-    timestamp: u64,
+    pub(crate) timestamp: u64,
     /// Internal MM2 id used for internal transaction identification, for some coins it might be equal to transaction hash
-    internal_id: i64,
+    pub(crate) internal_id: i64,
     /// Type of transactions, default is StandardTransfer
     #[serde(default)]
     pub(crate) transaction_type: TransactionType,
