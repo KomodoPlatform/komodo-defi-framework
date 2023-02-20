@@ -799,9 +799,10 @@ impl NegotiationDataMsg {
 
     pub fn persistent_pubkey(&self) -> Option<&[u8]> {
         match self {
-            NegotiationDataMsg::V1(_) | NegotiationDataMsg::V3(_) => None,
+            NegotiationDataMsg::V1(v1) => Some(&v1.persistent_pubkey),
             NegotiationDataMsg::V2(v2) => Some(&v2.persistent_pubkey),
             NegotiationDataMsg::V4(v4) => Some(&v4.persistent_pubkey),
+            NegotiationDataMsg::V3(_) => None,
         }
     }
 }

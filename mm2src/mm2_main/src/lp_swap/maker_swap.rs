@@ -1883,7 +1883,7 @@ impl MakerSavedSwap {
         }
     }
 
-    pub fn get_swap_pubkeys(&self) -> SwapPubkeys {
+    pub fn swap_pubkeys(&self) -> SwapPubkeys {
         let mut swap_pubkeys = SwapPubkeys::default();
         for data in &self.events {
             if let MakerSwapEvent::Negotiated(negotiated) = &data.event {

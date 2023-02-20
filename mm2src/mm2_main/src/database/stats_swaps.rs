@@ -141,7 +141,7 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let pubkeys = &swap.get_swap_pubkeys();
+    let pubkeys = &swap.swap_pubkeys();
     let params = owned_named_params! {
         ":maker_coin": swap_data.maker_coin.clone(),
         ":maker_coin_ticker": maker_coin_ticker,
@@ -218,7 +218,7 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let pubkeys = &swap.get_swap_pubkeys();
+    let pubkeys = &swap.swap_pubkeys();
     let params = owned_named_params! {
         ":maker_coin": swap_data.maker_coin.clone(),
         ":maker_coin_ticker": maker_coin_ticker,
