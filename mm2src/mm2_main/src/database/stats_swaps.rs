@@ -56,8 +56,8 @@ pub const ADD_COINS_PRICE_INFOMATION: &[&str] = &[
 ];
 
 pub const ADD_MAKER_TAKER_PUBKEYS: &[&str] = &[
-    "ALTER TABLE stats_swaps ADD COLUMN maker_pubkey DECIMAL;",
-    "ALTER TABLE stats_swaps ADD COLUMN taker_pubkey DECIMAL;",
+    "ALTER TABLE stats_swaps ADD COLUMN maker_pubkey VARCHAR(255);",
+    "ALTER TABLE stats_swaps ADD COLUMN taker_pubkey VARCHAR(255);",
 ];
 
 pub const ADD_SPLIT_TICKERS: &[&str] = &[
