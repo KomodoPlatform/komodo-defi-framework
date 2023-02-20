@@ -1100,7 +1100,6 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721Request) -> Withdraw
         timestamp: now_ms() / 1000,
         internal_id: 0,
         transaction_type: TransactionType::NftTransfer,
-        memo: None,
     })
 }
 

@@ -167,7 +167,6 @@ pub struct TransactionNftDetails {
     /// Type of transactions, default is StandardTransfer
     #[serde(default)]
     pub(crate) transaction_type: TransactionType,
-    pub(crate) memo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
