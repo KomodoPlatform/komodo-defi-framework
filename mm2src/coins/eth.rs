@@ -21,6 +21,10 @@
 //  Copyright © 2022 AtomicDEX. All rights reserved.
 //
 use super::eth::Action::{Call, Create};
+use crate::nft::nft_errors::GetNftInfoError;
+use crate::nft::nft_structs::{Chain, ContractType, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory,
+                              NftTransferHistoryWrapper, NftTransfersReq, NftWrapper, NftsTransferHistoryList,
+                              TransactionNftDetails, WithdrawErc1155Request, WithdrawErc721Request};
 use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
@@ -47,10 +51,6 @@ use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
-use nft::nft_errors::GetNftInfoError;
-use nft::nft_structs::{Chain, ContractType, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory,
-                       NftTransferHistoryWrapper, NftTransfersReq, NftWrapper, NftsTransferHistoryList,
-                       TransactionNftDetails, WithdrawErc1155Request, WithdrawErc721Request};
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
@@ -91,7 +91,6 @@ pub use rlp;
 
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
-mod nft;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;

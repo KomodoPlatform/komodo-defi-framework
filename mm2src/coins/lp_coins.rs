@@ -252,6 +252,8 @@ use utxo::utxo_standard::{utxo_standard_coin_with_policy, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
+mod nft;
+
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
@@ -3424,44 +3426,6 @@ pub fn address_by_coin_conf_and_pubkey_str(
     }
 }
 
-/// `get_my_address` function returns wallet address for necessary coin without its activation.
-/// Currently supports only coins with `ETH` protocol type.
-pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletAddress, GetMyAddressError> {
-    let coins_en = coin_conf(&ctx, req.coin.as_str());
-
-    if coins_en.is_null() {
-        let warning = format!(
-            "Warning, coin {} is used without a corresponding configuration.",
-            req.coin
-        );
-        ctx.log.log(
-            "😅",
-            #[allow(clippy::unnecessary_cast)]
-            &[&("coin" as &str), &req.coin, &("no-conf" as &str)],
-            &warning,
-        );
-    }
-
-    if coins_en["mm2"].is_null() {
-        return MmError::err(GetMyAddressError::CoinIsNotSupported(
-            "mm2 param is not set in coins config, assuming that coin is not supported".to_owned(),
-        ));
-    }
-    let protocol: CoinProtocol = json::from_value(coins_en["protocol"].clone())?;
-
-    let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&req.coin, &ctx).await?,
-        _ => {
-            return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
-                "{} doesn't support get_my_address",
-                req.coin
-            )));
-        },
-    };
-
-    Ok(my_address)
-}
-
 #[cfg(target_arch = "wasm32")]
 fn load_history_from_file_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>>
 where
@@ -3681,4 +3645,42 @@ pub trait RpcCommonOps {
 
     /// Returns an alive RPC client or returns an error if no RPC endpoint is currently available.
     async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error>;
+}
+
+/// `get_my_address` function returns wallet address for necessary coin without its activation.
+/// Currently supports only coins with `ETH` protocol type.
+pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletAddress, GetMyAddressError> {
+    let coins_en = coin_conf(&ctx, req.coin.as_str());
+
+    if coins_en.is_null() {
+        let warning = format!(
+            "Warning, coin {} is used without a corresponding configuration.",
+            req.coin
+        );
+        ctx.log.log(
+            "😅",
+            #[allow(clippy::unnecessary_cast)]
+            &[&("coin" as &str), &req.coin, &("no-conf" as &str)],
+            &warning,
+        );
+    }
+
+    if coins_en["mm2"].is_null() {
+        return MmError::err(GetMyAddressError::CoinIsNotSupported(
+            "mm2 param is not set in coins config, assuming that coin is not supported".to_owned(),
+        ));
+    }
+    let protocol: CoinProtocol = json::from_value(coins_en["protocol"].clone())?;
+
+    let my_address = match protocol {
+        CoinProtocol::ETH => get_eth_address(&req.coin, &ctx).await?,
+        _ => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
+                "{} doesn't support get_my_address",
+                req.coin
+            )));
+        },
+    };
+
+    Ok(my_address)
 }
