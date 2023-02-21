@@ -18,19 +18,19 @@ pub struct NftMetadataReq {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
-pub enum Chain {
+pub(crate) enum Chain {
     Bsc,
     Eth,
 }
 
 #[derive(Debug, Display)]
-pub enum ParseContractTypeError {
+pub(crate) enum ParseContractTypeError {
     UnsupportedContractType,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
-pub enum ContractType {
+pub(crate) enum ContractType {
     Erc1155,
     Erc721,
 }
@@ -71,7 +71,7 @@ pub struct Nft {
 /// This structure is for deserializing NFT json to struct.
 /// Its needed to convert fields properly, because all fields in json have string type.
 #[derive(Debug, Deserialize)]
-pub struct NftWrapper {
+pub(crate) struct NftWrapper {
     pub(crate) token_address: String,
     pub(crate) token_id: SerdeStringWrap<BigDecimal>,
     pub(crate) amount: SerdeStringWrap<BigDecimal>,
@@ -120,7 +120,7 @@ pub struct NftList {
 
 #[allow(dead_code)]
 #[derive(Clone, Deserialize)]
-pub struct WithdrawErc1155Request {
+pub struct WithdrawErc1155 {
     pub(crate) chain: Chain,
     from: String,
     to: String,
@@ -133,13 +133,19 @@ pub struct WithdrawErc1155Request {
 }
 
 #[derive(Clone, Deserialize)]
-pub struct WithdrawErc721Request {
+pub struct WithdrawErc721 {
     pub(crate) chain: Chain,
     pub(crate) from: String,
     pub(crate) to: String,
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
     pub(crate) fee: Option<WithdrawFee>,
+}
+
+#[derive(Clone, Deserialize)]
+pub enum WithdrawNftReq {
+    WithdrawErc1155(WithdrawErc1155),
+    WithdrawErc721(WithdrawErc721),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -175,7 +181,7 @@ pub struct NftTransfersReq {
 }
 
 #[derive(Debug, Serialize)]
-pub struct NftTransferHistory {
+pub(crate) struct NftTransferHistory {
     pub(crate) chain: Chain,
     pub(crate) block_number: u64,
     pub(crate) block_timestamp: String,
@@ -197,7 +203,7 @@ pub struct NftTransferHistory {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct NftTransferHistoryWrapper {
+pub(crate) struct NftTransferHistoryWrapper {
     pub(crate) block_number: SerdeStringWrap<u64>,
     pub(crate) block_timestamp: String,
     pub(crate) block_hash: String,
