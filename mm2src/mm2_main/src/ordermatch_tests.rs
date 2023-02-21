@@ -2302,7 +2302,8 @@ fn test_process_sync_pubkey_orderbook_state_after_new_orders_added() {
             (
                 *uuid.as_bytes(),
                 order.map(|o| {
-                    let o = OrderbookItem::from_p2p_and_info(o, BaseRelProtocolInfo::default(), None, order.pubkey);
+                    let from_pubkey = o.pubkey.clone();
+                    let o = OrderbookItem::from_p2p_and_info(o, BaseRelProtocolInfo::default(), None, from_pubkey);
                     o.trie_state_bytes()
                 }),
             )
