@@ -1731,7 +1731,7 @@ fn test_process_get_orderbook_request() {
                     order.clone(),
                     BaseRelProtocolInfo::default(),
                     Some(OrderConfirmationsSettings::default()),
-                    order.pubkey,
+                    order.pubkey.clone(),
                 )
             })
             .collect();
