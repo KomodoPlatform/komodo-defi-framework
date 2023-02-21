@@ -333,6 +333,7 @@ impl From<CoinFindError> for RawTransactionError {
 #[derive(Debug, Display, Serialize, SerializeErrorType, Deserialize)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetMyAddressError {
+    CoinsConfCheckError(String),
     CoinIsNotSupported(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
@@ -357,7 +358,9 @@ impl From<GetEthAddressError> for GetMyAddressError {
 impl HttpStatusCode for GetMyAddressError {
     fn status_code(&self) -> StatusCode {
         match self {
-            GetMyAddressError::CoinIsNotSupported(_) | GetMyAddressError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            GetMyAddressError::CoinsConfCheckError(_)
+            | GetMyAddressError::CoinIsNotSupported(_)
+            | GetMyAddressError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
             GetMyAddressError::Internal(_) | GetMyAddressError::GetEthAddressError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
@@ -1788,6 +1791,8 @@ pub enum WithdrawError {
     CoinDoesntSupportNftWithdraw { coin: String },
     #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
     AddressMismatchError { my_address: String, from: String },
+    #[display(fmt = "Contract type {} doesnt support 'withdraw_nft' yet", _0)]
+    NftWithdrawingNotImplemented(String),
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -1808,7 +1813,8 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::UnknownAccount { .. }
             | WithdrawError::UnexpectedUserAction { .. }
             | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
-            | WithdrawError::AddressMismatchError { .. } => StatusCode::BAD_REQUEST,
+            | WithdrawError::AddressMismatchError { .. }
+            | WithdrawError::NftWithdrawingNotImplemented(_) => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -2748,34 +2754,11 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
 
     let coins_en = coin_conf(ctx, ticker);
 
-    if coins_en.is_null() {
-        let warning = format!(
-            "Warning, coin {} is used without a corresponding configuration.",
-            ticker
-        );
-        ctx.log.log(
-            "😅",
-            #[allow(clippy::unnecessary_cast)]
-            &[&("coin" as &str), &ticker, &("no-conf" as &str)],
-            &warning,
-        );
-    }
-
-    if coins_en["mm2"].is_null() && req["mm2"].is_null() {
-        return ERR!(concat!(
-            "mm2 param is not set neither in coins config nor enable request, ",
-            "assuming that coin is not supported"
-        ));
-    }
+    coins_conf_check(ctx, &coins_en, ticker, Some(req))?;
 
     // The legacy electrum/enable RPCs don't support Hardware Wallet policy.
     let priv_key_policy = try_s!(PrivKeyBuildPolicy::detect_priv_key_policy(ctx));
 
-    if coins_en["protocol"].is_null() {
-        return ERR!(
-            r#""protocol" field is missing in coins file. The file format is deprecated, please execute ./mm2 update_config command to convert it or download a new one"#
-        );
-    }
     let protocol: CoinProtocol = try_s!(json::from_value(coins_en["protocol"].clone()));
 
     let coin: MmCoinEnum = match &protocol {
@@ -3650,30 +3633,14 @@ pub trait RpcCommonOps {
 /// `get_my_address` function returns wallet address for necessary coin without its activation.
 /// Currently supports only coins with `ETH` protocol type.
 pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletAddress, GetMyAddressError> {
-    let coins_en = coin_conf(&ctx, req.coin.as_str());
+    let ticker = req.coin.as_str();
+    let coins_en = coin_conf(&ctx, ticker);
+    coins_conf_check(&ctx, &coins_en, ticker, None).map_to_mm(GetMyAddressError::CoinsConfCheckError)?;
 
-    if coins_en.is_null() {
-        let warning = format!(
-            "Warning, coin {} is used without a corresponding configuration.",
-            req.coin
-        );
-        ctx.log.log(
-            "😅",
-            #[allow(clippy::unnecessary_cast)]
-            &[&("coin" as &str), &req.coin, &("no-conf" as &str)],
-            &warning,
-        );
-    }
-
-    if coins_en["mm2"].is_null() {
-        return MmError::err(GetMyAddressError::CoinIsNotSupported(
-            "mm2 param is not set in coins config, assuming that coin is not supported".to_owned(),
-        ));
-    }
     let protocol: CoinProtocol = json::from_value(coins_en["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&req.coin, &ctx).await?,
+        CoinProtocol::ETH => get_eth_address(&ctx, ticker).await?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",
@@ -3683,4 +3650,38 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
     };
 
     Ok(my_address)
+}
+
+fn coins_conf_check(ctx: &MmArc, coins_en: &Json, ticker: &str, req: Option<&Json>) -> Result<(), String> {
+    if coins_en.is_null() {
+        let warning = format!(
+            "Warning, coin {} is used without a corresponding configuration.",
+            ticker
+        );
+        ctx.log.log(
+            "😅",
+            #[allow(clippy::unnecessary_cast)]
+            &[&("coin" as &str), &ticker, &("no-conf" as &str)],
+            &warning,
+        );
+    }
+
+    if let Some(req) = req {
+        if coins_en["mm2"].is_null() && req["mm2"].is_null() {
+            return ERR!(concat!(
+                "mm2 param is not set neither in coins config nor enable request, assuming that coin is not supported"
+            ));
+        }
+    } else {
+        return ERR!(concat!(
+            "mm2 param is not set in coins config, assuming that coin is not supported"
+        ));
+    }
+
+    if coins_en["protocol"].is_null() {
+        return ERR!(
+            r#""protocol" field is missing in coins file. The file format is deprecated, please execute ./mm2 update_config command to convert it or download a new one"#
+        );
+    }
+    Ok(())
 }

@@ -143,6 +143,7 @@ pub struct WithdrawErc721 {
 }
 
 #[derive(Clone, Deserialize)]
+#[serde(tag = "type", content = "withdraw_data")]
 pub enum WithdrawNftReq {
     WithdrawErc1155(WithdrawErc1155),
     WithdrawErc721(WithdrawErc721),

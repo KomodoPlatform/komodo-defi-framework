@@ -4668,7 +4668,7 @@ impl From<CryptoCtxError> for GetEthAddressError {
 }
 
 /// `get_eth_address` returns wallet address for coin with `ETH` protocol type.
-pub async fn get_eth_address(ticker: &str, ctx: &MmArc) -> MmResult<MyWalletAddress, GetEthAddressError> {
+pub async fn get_eth_address(ctx: &MmArc, ticker: &str) -> MmResult<MyWalletAddress, GetEthAddressError> {
     let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(ctx)?;
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
     let priv_key_policy = EthPrivKeyBuildPolicy::try_from(priv_key_policy)?;

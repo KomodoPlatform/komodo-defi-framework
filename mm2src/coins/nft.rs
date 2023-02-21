@@ -9,7 +9,7 @@ use nft_errors::GetNftInfoError;
 use nft_structs::{Chain, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory, NftTransferHistoryWrapper,
                   NftTransfersReq, NftWrapper, NftsTransferHistoryList, TransactionNftDetails, WithdrawNftReq};
 
-use crate::eth::get_eth_address;
+use crate::eth::{get_eth_address, withdraw_erc721};
 use common::{APPLICATION_JSON, X_API_KEY};
 use http::header::ACCEPT;
 use serde_json::Value as Json;
@@ -36,7 +36,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
             Chain::Bsc => ("BNB", "bsc"),
             Chain::Eth => ("ETH", "eth"),
         };
-        let my_address = get_eth_address(coin_str, &ctx).await?;
+        let my_address = get_eth_address(&ctx, coin_str).await?;
         let uri_without_cursor = format!(
             "{}{}/nft?chain={}&{}",
             URL_MORALIS, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS
@@ -143,7 +143,7 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
             Chain::Bsc => ("BNB", "bsc"),
             Chain::Eth => ("ETH", "eth"),
         };
-        let my_address = get_eth_address(coin_str, &ctx).await?;
+        let my_address = get_eth_address(&ctx, coin_str).await?;
         let uri_without_cursor = format!(
             "{}{}/nft/transfers?chain={}&{}&{}",
             URL_MORALIS, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS, DIRECTION_BOTH_MORALIS
@@ -198,7 +198,14 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
     Ok(transfer_history_list)
 }
 
-pub async fn withdraw_nft(_ctx: MmArc, _req: WithdrawNftReq) -> WithdrawNftResult { todo!() }
+pub async fn withdraw_nft(ctx: MmArc, req_type: WithdrawNftReq) -> WithdrawNftResult {
+    match req_type {
+        WithdrawNftReq::WithdrawErc1155(_) => {
+            MmError::err(WithdrawError::NftWithdrawingNotImplemented("ERC1155".to_owned()))
+        },
+        WithdrawNftReq::WithdrawErc721(erc721_req) => withdraw_erc721(ctx, erc721_req).await,
+    }
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_moralis_request(uri: &str, api_key: &str) -> MmResult<Json, GetNftInfoError> {
