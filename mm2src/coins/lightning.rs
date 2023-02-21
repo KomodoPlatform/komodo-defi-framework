@@ -359,11 +359,14 @@ impl LightningCoin {
             true
         }
 
-        let mut total_open_channels: Vec<ChannelDetailsForRPC> =
-            self.list_channels().await.into_iter().map(From::from).collect();
-
-        total_open_channels.sort_by(|a, b| a.uuid.cmp(&b.uuid));
+        let mut total_open_channels = self.list_channels().await;
+        total_open_channels.sort_by(|a, b| {
+            b.short_channel_id
+                .unwrap_or(u64::MAX)
+                .cmp(&a.short_channel_id.unwrap_or(u64::MAX))
+        });
         drop_mutability!(total_open_channels);
+        let total_open_channels: Vec<ChannelDetailsForRPC> = total_open_channels.into_iter().map(From::from).collect();
 
         let open_channels_filtered = if let Some(ref f) = filter {
             total_open_channels
@@ -1372,31 +1375,28 @@ impl MmCoin for LightningCoin {
         locktime: u64,
         is_maker: bool,
     ) -> bool {
+        macro_rules! log_err_and_return_false {
+            ($e:expr) => {
+                match $e {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("{}", e);
+                        return false;
+                    },
+                }
+            };
+        }
         let final_value_msat = match amount_to_send.map(|amt| sat_from_big_decimal(&amt.into(), self.decimals())) {
-            Some(Ok(amt)) => amt,
-            Some(Err(e)) => {
-                error!("{}", e);
-                return false;
-            },
+            Some(amt_or_err) => log_err_and_return_false!(amt_or_err),
             None => return true,
         };
         let protocol_info = match info.as_ref().map(rmp_serde::from_read_ref::<_, LightningProtocolInfo>) {
-            Some(Ok(info)) => info,
-            Some(Err(e)) => {
-                error!("{}", e);
-                return false;
-            },
+            Some(info_or_err) => log_err_and_return_false!(info_or_err),
             None => return false,
         };
         let mut route_hints = Vec::new();
         for h in protocol_info.route_hints.iter() {
-            let hint = match Readable::read(&mut Cursor::new(h)) {
-                Ok(h) => h,
-                Err(e) => {
-                    error!("{}", e);
-                    return false;
-                },
-            };
+            let hint = log_err_and_return_false!(Readable::read(&mut Cursor::new(h)));
             route_hints.push(hint);
         }
         let mut payment_params =
