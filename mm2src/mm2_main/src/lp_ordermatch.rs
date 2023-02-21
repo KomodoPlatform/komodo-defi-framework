@@ -201,6 +201,7 @@ fn process_pubkey_full_trie(
             order,
             params.protocol_infos.get(&uuid).cloned().unwrap_or_default(),
             params.conf_infos.get(&uuid).cloned(),
+            params.pubkey.into()
         ));
     }
 
@@ -223,6 +224,7 @@ fn process_trie_delta(
                 order,
                 params.protocol_infos.get(&uuid).cloned().unwrap_or_default(),
                 params.conf_infos.get(&uuid).cloned(),
+                params.pubkey.into()
             )),
             None => {
                 orderbook.remove_order_trie_update(uuid);
@@ -4157,9 +4159,10 @@ impl OrderbookItem {
         o: OrderbookP2PItem,
         proto_info: BaseRelProtocolInfo,
         conf_info: Option<OrderConfirmationsSettings>,
+        from_pubkey: String
     ) -> Self {
         OrderbookItem {
-            pubkey: o.pubkey,
+            pubkey: from_pubkey,
             base: o.base,
             rel: o.rel,
             price: o.price,
