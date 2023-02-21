@@ -201,7 +201,7 @@ fn process_pubkey_full_trie(
             order,
             params.protocol_infos.get(&uuid).cloned().unwrap_or_default(),
             params.conf_infos.get(&uuid).cloned(),
-            params.pubkey.into(),
+            params.pubkey.to_owned(),
         ));
     }
 
