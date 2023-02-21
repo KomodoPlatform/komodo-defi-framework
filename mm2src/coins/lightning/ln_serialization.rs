@@ -102,7 +102,11 @@ impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
 
 #[derive(Clone, Serialize)]
 pub struct ChannelDetailsForRPC {
+    /// An internal identifier for the channel that doesn't change throughout the channels lifetime.
     pub uuid: Uuid,
+    /// The channel's ID, prior to funding transaction generation, this is a random 32 bytes,
+    /// after funding transaction generation, this is the txid of the funding transaction xor the funding transaction output.
+    /// Note that this means this value is *not* persistent - it can change once during the lifetime of the channel.
     pub channel_id: H256Json,
     pub counterparty_node_id: PublicKeyForRPC,
     pub funding_tx: Option<H256Json>,
