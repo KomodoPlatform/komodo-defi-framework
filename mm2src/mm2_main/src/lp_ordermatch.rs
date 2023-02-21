@@ -224,7 +224,7 @@ fn process_trie_delta(
                 order,
                 params.protocol_infos.get(&uuid).cloned().unwrap_or_default(),
                 params.conf_infos.get(&uuid).cloned(),
-                params.pubkey.into(),
+                params.pubkey.to_owned(),
             )),
             None => {
                 orderbook.remove_order_trie_update(uuid);
