@@ -198,6 +198,10 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
     Ok(transfer_history_list)
 }
 
+/// `withdraw_nft` function generates, signs and returns a transaction that transfers NFT
+/// from my address to recipient's address.
+/// This method generates a raw transaction which should then be broadcast using `send_raw_transaction`.
+/// Currently support ERC721 withdrawing, ERC1155 support will be added later.
 pub async fn withdraw_nft(ctx: MmArc, req_type: WithdrawNftReq) -> WithdrawNftResult {
     match req_type {
         WithdrawNftReq::WithdrawErc1155(_) => MmError::err(WithdrawError::ContractTypeDoesntSupportNftWithdrawing(
