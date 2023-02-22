@@ -45,6 +45,44 @@ pub enum BlockHeaderStorageError {
     Internal(String),
 }
 
+impl BlockHeaderStorageError {
+    pub fn init_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::InitializationError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn add_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::AddToStorageError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn table_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::CantRetrieveTableError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn get_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::GetFromStorageError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn delete_err(ticker: &str, reason: String, to_height: u64) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::UnableToDeleteHeaders {
+            to_height,
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+}
+
 #[async_trait]
 pub trait BlockHeaderStorageOps: Send + Sync + 'static {
     /// Initializes collection/tables in storage for a specified coin
@@ -76,4 +114,6 @@ pub trait BlockHeaderStorageOps: Send + Sync + 'static {
     async fn get_block_height_by_hash(&self, hash: H256) -> Result<Option<i64>, BlockHeaderStorageError>;
 
     async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError>;
+
+    async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError>;
 }
