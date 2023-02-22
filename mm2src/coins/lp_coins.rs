@@ -330,25 +330,19 @@ impl From<CoinFindError> for RawTransactionError {
     }
 }
 
-#[derive(Debug, Display, Serialize, SerializeErrorType, Deserialize)]
+#[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetMyAddressError {
     CoinsConfCheckError(String),
     CoinIsNotSupported(String),
+    #[from_stringify("CryptoCtxError")]
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+    #[from_stringify("serde_json::Error")]
     #[display(fmt = "Invalid request error error: {}", _0)]
     InvalidRequest(String),
     #[display(fmt = "Get Eth address error: {}", _0)]
     GetEthAddressError(GetEthAddressError),
-}
-
-impl From<CryptoCtxError> for GetMyAddressError {
-    fn from(e: CryptoCtxError) -> Self { GetMyAddressError::Internal(e.to_string()) }
-}
-
-impl From<serde_json::Error> for GetMyAddressError {
-    fn from(e: serde_json::Error) -> Self { GetMyAddressError::InvalidRequest(e.to_string()) }
 }
 
 impl From<GetEthAddressError> for GetMyAddressError {
@@ -1792,7 +1786,7 @@ pub enum WithdrawError {
     #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
     AddressMismatchError { my_address: String, from: String },
     #[display(fmt = "Contract type {} doesnt support 'withdraw_nft' yet", _0)]
-    NftWithdrawingNotImplemented(String),
+    ContractTypeDoesntSupportNftWithdrawing(String),
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -1814,7 +1808,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::UnexpectedUserAction { .. }
             | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
             | WithdrawError::AddressMismatchError { .. }
-            | WithdrawError::NftWithdrawingNotImplemented(_) => StatusCode::BAD_REQUEST,
+            | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_) => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }

@@ -200,9 +200,9 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
 
 pub async fn withdraw_nft(ctx: MmArc, req_type: WithdrawNftReq) -> WithdrawNftResult {
     match req_type {
-        WithdrawNftReq::WithdrawErc1155(_) => {
-            MmError::err(WithdrawError::NftWithdrawingNotImplemented("ERC1155".to_owned()))
-        },
+        WithdrawNftReq::WithdrawErc1155(_) => MmError::err(WithdrawError::ContractTypeDoesntSupportNftWithdrawing(
+            "ERC1155".to_owned(),
+        )),
         WithdrawNftReq::WithdrawErc721(erc721_req) => withdraw_erc721(ctx, erc721_req).await,
     }
 }

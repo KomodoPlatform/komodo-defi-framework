@@ -1,18 +1,22 @@
 use crate::eth::GetEthAddressError;
 use common::HttpStatusCode;
 use derive_more::Display;
+use enum_from::EnumFromStringify;
 use http::StatusCode;
 use mm2_net::transport::SlurpError;
 use serde::{Deserialize, Serialize};
 use web3::Error;
 
-#[derive(Debug, Display, Serialize, SerializeErrorType, Deserialize)]
+#[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetNftInfoError {
+    /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
+    #[from_stringify("http::Error")]
     #[display(fmt = "Invalid request: {}", _0)]
     InvalidRequest(String),
     #[display(fmt = "Transport: {}", _0)]
     Transport(String),
+    #[from_stringify("serde_json::Error")]
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
     #[display(fmt = "Internal: {}", _0)]
@@ -20,11 +24,6 @@ pub enum GetNftInfoError {
     GetEthAddressError(GetEthAddressError),
     #[display(fmt = "X-API-Key is missing")]
     ApiKeyError,
-}
-
-/// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
-impl From<http::Error> for GetNftInfoError {
-    fn from(e: http::Error) -> Self { GetNftInfoError::InvalidRequest(e.to_string()) }
 }
 
 impl From<SlurpError> for GetNftInfoError {
@@ -54,10 +53,6 @@ impl From<web3::Error> for GetNftInfoError {
 
 impl From<GetEthAddressError> for GetNftInfoError {
     fn from(e: GetEthAddressError) -> Self { GetNftInfoError::GetEthAddressError(e) }
-}
-
-impl From<serde_json::Error> for GetNftInfoError {
-    fn from(e: serde_json::Error) -> Self { GetNftInfoError::InvalidResponse(e.to_string()) }
 }
 
 impl HttpStatusCode for GetNftInfoError {
