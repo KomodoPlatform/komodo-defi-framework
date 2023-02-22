@@ -3424,14 +3424,6 @@ impl EthCoin {
                             tx_from_rpc, expected_swap_contract_address,
                         )));
                     }
-                    let function_name = get_function_name("erc20Payment", input.min_watcher_reward.is_some());
-                    let function = SWAP_CONTRACT
-                        .function(&function_name)
-                        .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
-                    let decoded = function
-                        .decode_input(&tx_from_rpc.input.0)
-                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
-
                     if let Some(min_reward) = input.min_watcher_reward {
                         if tx_from_rpc.value.as_u64() < min_reward {
                             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -3440,6 +3432,13 @@ impl EthCoin {
                             )));
                         }
                     }
+                    let function_name = get_function_name("erc20Payment", input.min_watcher_reward.is_some());
+                    let function = SWAP_CONTRACT
+                        .function(&function_name)
+                        .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
+                    let decoded = function
+                        .decode_input(&tx_from_rpc.input.0)
+                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
 
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -4068,8 +4067,6 @@ fn validate_fee_impl(coin: EthCoin, validate_fee_args: EthValidateFeeArgs<'_>) -
                     .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
                 let address_input = get_function_input_data(&decoded_input, function, 0)
                     .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
-                let value_input = get_function_input_data(&decoded_input, function, 1)
-                    .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
 
                 if address_input != Token::Address(fee_addr) {
                     return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -4077,6 +4074,9 @@ fn validate_fee_impl(coin: EthCoin, validate_fee_args: EthValidateFeeArgs<'_>) -
                         INVALID_RECEIVER_ERR_LOG, address_input, fee_addr
                     )));
                 }
+
+                let value_input = get_function_input_data(&decoded_input, function, 1)
+                    .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
 
                 match value_input {
                     Token::Uint(value) => {
