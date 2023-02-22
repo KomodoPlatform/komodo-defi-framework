@@ -3666,8 +3666,7 @@ fn coins_conf_check(ctx: &MmArc, coins_en: &Json, ticker: &str, req: Option<&Jso
                 "mm2 param is not set neither in coins config nor enable request, assuming that coin is not supported"
             ));
         }
-    }
-    if coins_en["mm2"].is_null() {
+    } else if coins_en["mm2"].is_null() {
         return ERR!(concat!(
             "mm2 param is not set in coins config, assuming that coin is not supported"
         ));
