@@ -1,7 +1,0 @@
-
-running 1 test
-**is_zcash: true
-test block_header::tests::test_rick_v1_block_header_des ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.00s
-
