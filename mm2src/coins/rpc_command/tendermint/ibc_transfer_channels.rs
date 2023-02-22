@@ -71,8 +71,6 @@ pub async fn ibc_transfer_channels(ctx: MmArc, req: IBCTransferChannelsRequest) 
     match coin {
         MmCoinEnum::Tendermint(coin) => coin.get_ibc_transfer_channels(req).await,
         MmCoinEnum::TendermintToken(token) => token.platform_coin.get_ibc_transfer_channels(req).await,
-        coin => MmError::err(IBCTransferChannelsRequestError::UnsupportedCoin(
-            coin.platform_ticker().to_owned(),
-        )),
+        _ => MmError::err(IBCTransferChannelsRequestError::UnsupportedCoin(req.coin)),
     }
 }

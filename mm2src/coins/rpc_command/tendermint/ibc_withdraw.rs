@@ -22,10 +22,10 @@ pub async fn ibc_withdraw(ctx: MmArc, req: IBCWithdrawRequest) -> WithdrawResult
     match coin {
         MmCoinEnum::Tendermint(coin) => coin.ibc_withdraw(req).compat().await,
         MmCoinEnum::TendermintToken(token) => token.ibc_withdraw(req).compat().await,
-        coin => MmError::err(WithdrawError::UnexpectedUserAction {
+        _ => MmError::err(WithdrawError::UnexpectedUserAction {
             expected: format!(
                 "Only tendermint based coins are allowed for `ibc_withdraw` operation. Current coin: {}",
-                coin.platform_ticker()
+                req.coin
             ),
         }),
     }
