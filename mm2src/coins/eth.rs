@@ -21,6 +21,7 @@
 //  Copyright © 2022 AtomicDEX. All rights reserved.
 //
 use super::eth::Action::{Call, Create};
+#[cfg(feature = "enable-nft-integration")]
 use crate::nft::nft_structs::{Chain, ContractType, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
 use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
@@ -90,8 +91,11 @@ pub use rlp;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
+#[cfg(feature = "enable-nft-integration")]
 use crate::nft::WithdrawNftResult;
-use crate::{lp_coinfind_or_err, MmCoinEnum, MyWalletAddress, TransactionType};
+use crate::MyWalletAddress;
+#[cfg(feature = "enable-nft-integration")]
+use crate::{lp_coinfind_or_err, MmCoinEnum, TransactionType};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -802,6 +806,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     })
 }
 
+#[cfg(feature = "enable-nft-integration")]
 pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftResult {
     let ticker = match req.chain {
         Chain::Bsc => "BNB",
@@ -811,6 +816,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
     unimplemented!()
 }
 
+#[cfg(feature = "enable-nft-integration")]
 pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResult {
     let ticker = match req.chain {
         Chain::Bsc => "BNB",

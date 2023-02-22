@@ -20,6 +20,7 @@ zhtlc-native-tests = ["coins/zhtlc-native-tests"]
 # Remove this once the solana integration becomes stable/completed.
 disable-solana-tests = []
 default = ["disable-solana-tests"]
+enable-nft-integration = ["coins/enable-nft-integration"]
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }

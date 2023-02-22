@@ -11,6 +11,7 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
             mm2::rpc::lp_commands::{get_public_key, get_public_key_hash}};
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
+#[cfg(feature = "enable-nft-integration")] use coins::nft;
 use coins::rpc_command::{account_balance::account_balance,
                          get_current_mtp::get_current_mtp_rpc,
                          get_enabled_coins::get_enabled_coins,
@@ -27,8 +28,8 @@ use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
-use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_infos, nft, remove_delegation,
-            sign_message, verify_message, withdraw};
+use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_infos, remove_delegation, sign_message,
+            verify_message, withdraw};
 #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 use coins::{SolanaCoin, SplToken};
 use coins_activation::{cancel_init_l2, cancel_init_standalone_coin, enable_platform_coin_with_tokens, enable_token,
@@ -41,6 +42,7 @@ use http::Response;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcRequest, MmRpcVersion};
+#[cfg(feature = "enable-nft-integration")]
 use nft::{get_nft_list, get_nft_metadata, get_nft_transfers, withdraw_nft};
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
@@ -161,8 +163,11 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_locked_amount" => handle_mmrpc(ctx, request, get_locked_amount_rpc).await,
         "get_my_address" => handle_mmrpc(ctx, request, get_my_address).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
+        #[cfg(feature = "enable-nft-integration")]
         "get_nft_list" => handle_mmrpc(ctx, request, get_nft_list).await,
+        #[cfg(feature = "enable-nft-integration")]
         "get_nft_metadata" => handle_mmrpc(ctx, request, get_nft_metadata).await,
+        #[cfg(feature = "enable-nft-integration")]
         "get_nft_transfers" => handle_mmrpc(ctx, request, get_nft_transfers).await,
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
         "get_public_key_hash" => handle_mmrpc(ctx, request, get_public_key_hash).await,
@@ -183,6 +188,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "verify_message" => handle_mmrpc(ctx, request, verify_message).await,
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
+        #[cfg(feature = "enable-nft-integration")]
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
         #[cfg(not(target_arch = "wasm32"))]
         native_only_methods => match native_only_methods {

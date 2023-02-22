@@ -252,7 +252,7 @@ use utxo::utxo_standard::{utxo_standard_coin_with_policy, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
-pub mod nft;
+#[cfg(feature = "enable-nft-integration")] pub mod nft;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
@@ -3666,7 +3666,8 @@ fn coins_conf_check(ctx: &MmArc, coins_en: &Json, ticker: &str, req: Option<&Jso
                 "mm2 param is not set neither in coins config nor enable request, assuming that coin is not supported"
             ));
         }
-    } else {
+    }
+    if coins_en["mm2"].is_null() {
         return ERR!(concat!(
             "mm2 param is not set in coins config, assuming that coin is not supported"
         ));
