@@ -9,15 +9,19 @@ use crate::rpc_command::get_new_address::{GetNewAddressParams, GetNewAddressRpcE
 use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, ScanAddressesParams,
                                                       ScanAddressesResponse};
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
-use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClient, ElectrumClientImpl,
-                               GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NativeUnspent,
-                               NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::utxo::rpc_clients::{BlockHashOrHeight, NativeUnspent};
+use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumClient, ElectrumClientImpl, GetAddressInfoRes,
+                               ListSinceBlockRes, NativeClient, NativeClientImpl, NetworkInfo, UtxoRpcClientOps,
+                               ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
-use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_DECIMALS,
-                                     TEST_COIN_NAME};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::utxo::utxo_common_tests::TEST_COIN_DECIMALS;
+use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_NAME};
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
@@ -28,6 +32,7 @@ use chain::{BlockHeader, BlockHeaderBits, OutPoint};
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath, Secp256k1Secret};
+#[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Connection;
 use futures::channel::mpsc::channel;
 use futures::future::join_all;
@@ -41,11 +46,12 @@ use serialization::{deserialize, CoinVariant};
 use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
 use spv_validation::storage::BlockHeaderStorageOps;
 use spv_validation::work::DifficultyAlgorithm;
-use std::convert::TryFrom;
+#[cfg(not(target_arch = "wasm32"))] use std::convert::TryFrom;
 use std::iter;
 use std::mem::discriminant;
 use std::num::NonZeroUsize;
 
+#[cfg(not(target_arch = "wasm32"))]
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
 pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
@@ -417,6 +423,7 @@ fn test_wait_for_payment_spend_timeout_native() {
     assert!(unsafe { OUTPUT_SPEND_CALLED });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_wait_for_payment_spend_timeout_electrum() {
     static mut OUTPUT_SPEND_CALLED: bool = false;
@@ -4099,6 +4106,7 @@ fn test_for_non_existent_tx_hex_utxo_electrum() {
     ));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_native_display_balances() {
     let unspents = vec![

@@ -1151,3 +1151,26 @@ pub struct WatcherConf {
     #[serde(default = "common::three_hundred_f64")]
     pub search_interval: f64,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct DisableResult {
+    pub coin: String,
+    pub cancelled_orders: HashSet<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct DisableCoinError {
+    pub error: String,
+    pub orders: DisableCoinOrders,
+    pub active_swaps: Vec<Uuid>,
+    pub dependent_tokens: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct DisableCoinOrders {
+    matching: Vec<Uuid>,
+    cancelled: Vec<Uuid>,
+}

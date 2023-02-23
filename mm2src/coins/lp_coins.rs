@@ -2320,8 +2320,8 @@ impl CoinsContext {
         Ok(())
     }
 
-    /// Get enabled coins to disable.
-    pub async fn get_tokens_to_disable(&self, ticker: &str) -> HashSet<String> {
+    /// If `ticker` is a platform coin, returns tokens dependent on it.
+    pub async fn get_dependent_tokens(&self, ticker: &str) -> HashSet<String> {
         let coins = self.platform_coin_tokens.lock();
         coins.get(ticker).cloned().unwrap_or_default()
     }
