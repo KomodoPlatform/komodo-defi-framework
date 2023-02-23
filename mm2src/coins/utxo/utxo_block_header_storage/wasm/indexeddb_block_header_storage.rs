@@ -3,7 +3,6 @@ use super::BlockHeaderStorageTable;
 use async_trait::async_trait;
 use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::cursor_prelude::{CollectCursor, WithOnly};
 use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder,
                          InitDbResult, MultiIndex, SharedDb};
 use mm2_err_handle::prelude::*;
@@ -180,10 +179,11 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
 
         // Todo: use open_cursor with direction to optimze this process.
         let res = block_headers_db
+            .cursor_builder()
+            .only("ticker", ticker.clone())
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .open_cursor("ticker")
             .await
-            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
-            .only("ticker", ticker.clone())
             .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .collect()
             .await
@@ -216,10 +216,11 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
 
         // Todo: use open_cursor with direction to optimze this process.
         let res = block_headers_db
+            .cursor_builder()
+            .only("ticker", ticker.clone())
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .open_cursor("ticker")
             .await
-            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
-            .only("ticker", ticker.clone())
             .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
             .collect()
             .await
