@@ -189,16 +189,10 @@ impl RpcCommonOps for TendermintCoin {
                     return Ok(client);
                 },
                 Ok(Err(rpc_error)) => {
-                    debug!(
-                        "Could not perform healthcheck on: {:?}. Error: {}",
-                        &client, rpc_error
-                    );
+                    debug!("Could not perform healthcheck on: {:?}. Error: {}", &client, rpc_error);
                 },
                 Err(timeout_error) => {
-                    debug!(
-                        "Healthcheck timeout exceed on: {:?}. Error: {}",
-                        &client, timeout_error
-                    );
+                    debug!("Healthcheck timeout exceed on: {:?}. Error: {}", &client, timeout_error);
                 },
             };
         }
