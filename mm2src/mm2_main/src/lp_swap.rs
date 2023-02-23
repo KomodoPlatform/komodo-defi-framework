@@ -728,13 +728,20 @@ pub async fn watcher_reward_from_gas(
 ) -> Result<u64, MmError<WatcherRewardError>> {
     match (coin, other_coin) {
         (MmCoinEnum::EthCoin(coin), _) | (_, MmCoinEnum::EthCoin(coin)) => {
-            let gas_price = coin
-                .get_gas_price()
-                .compat()
-                .await
-                .map_err(|err| WatcherRewardError::RPCError(err.into_inner()))?
-                .as_u64();
-            Ok(gas * gas_price)
+            let mut attempts = 0;
+            loop {
+                match coin.get_gas_price().compat().await {
+                    Ok(gas_price) => return Ok(gas * gas_price.as_u64()),
+                    Err(err) => {
+                        if attempts >= 3 {
+                            return MmError::err(WatcherRewardError::RPCError(err.into_inner()));
+                        } else {
+                            attempts += 1;
+                            Timer::sleep(10.).await;
+                        }
+                    },
+                };
+            }
         },
         _ => Err(WatcherRewardError::InvalidCoinType(
             "At least one coin must be ETH to use watcher reward".to_string(),
