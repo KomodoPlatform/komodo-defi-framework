@@ -1,5 +1,4 @@
 use super::{construct_event_closure, DbTransactionError, DbTransactionResult, InternalItem, ItemId};
-use crate::indexed_db::db_driver::cursor::IdbCursorBuilder;
 use common::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use futures::channel::mpsc;
 use futures::StreamExt;
@@ -9,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{IdbObjectStore, IdbRequest};
+use web_sys::{IdbIndex, IdbObjectStore, IdbRequest};
 
 pub struct IdbObjectStoreImpl {
     pub(crate) object_store: IdbObjectStore,
@@ -58,10 +57,7 @@ impl IdbObjectStoreImpl {
         let index = index_str.to_owned();
         let index_value_js = try_serialize_index_value!(serialize_to_js(&index_value), index_str);
 
-        let db_index = match self.object_store.index(index_str) {
-            Ok(index) => index,
-            Err(_) => return MmError::err(DbTransactionError::NoSuchIndex { index }),
-        };
+        let db_index = self.open_index(index_str)?;
         let get_request = match db_index.get_all_with_key(&index_value_js) {
             Ok(request) => request,
             Err(e) => {
@@ -90,10 +86,7 @@ impl IdbObjectStoreImpl {
         let index = index_str.to_owned();
         let index_value_js = try_serialize_index_value!(serialize_to_js(&index_value), index);
 
-        let db_index = match self.object_store.index(index_str) {
-            Ok(index) => index,
-            Err(_) => return MmError::err(DbTransactionError::NoSuchIndex { index }),
-        };
+        let db_index = self.open_index(index_str)?;
         let get_request = match db_index.get_all_keys_with_key(&index_value_js) {
             Ok(request) => request,
             Err(e) => {
@@ -141,10 +134,7 @@ impl IdbObjectStoreImpl {
         let index = index_str.to_owned();
         let index_value_js = try_serialize_index_value!(serialize_to_js(&index_value), index);
 
-        let db_index = match self.object_store.index(index_str) {
-            Ok(index) => index,
-            Err(_) => return MmError::err(DbTransactionError::NoSuchIndex { index }),
-        };
+        let db_index = self.open_index(index_str)?;
         let count_request = match db_index.count_with_key(&index_value_js) {
             Ok(request) => request,
             Err(e) => {
@@ -248,16 +238,13 @@ impl IdbObjectStoreImpl {
         Ok(())
     }
 
-    pub(crate) fn cursor_builder(&self, index_str: &str) -> DbTransactionResult<IdbCursorBuilder> {
-        let db_index = match self.object_store.index(index_str) {
-            Ok(index) => index,
-            Err(_) => {
-                return MmError::err(DbTransactionError::NoSuchIndex {
-                    index: index_str.to_owned(),
-                })
-            },
-        };
-        Ok(IdbCursorBuilder::new(db_index))
+    pub(crate) fn open_index(&self, index_str: &str) -> DbTransactionResult<IdbIndex> {
+        match self.object_store.index(index_str) {
+            Ok(index) => Ok(index),
+            Err(_) => MmError::err(DbTransactionError::NoSuchIndex {
+                index: index_str.to_owned(),
+            }),
+        }
     }
 
     async fn wait_for_request_complete(request: &IdbRequest) -> Result<JsValue, JsValue> {

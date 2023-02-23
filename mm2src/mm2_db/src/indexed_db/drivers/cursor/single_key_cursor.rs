@@ -1,10 +1,9 @@
-use super::{CollectCursorAction, CollectItemAction, CursorError, CursorOps, CursorResult, DbFilter};
-use async_trait::async_trait;
-use common::{log::warn, serialize_to_js, stringify_js_error};
+use super::{CollectCursorAction, CollectItemAction, CursorDriverImpl, CursorError, CursorResult};
+use common::{serialize_to_js, stringify_js_error};
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
-use web_sys::{IdbIndex, IdbKeyRange};
+use web_sys::IdbKeyRange;
 
 /// The representation of a range that includes records
 /// whose value of the [`IdbSingleKeyCursor::field_name`] field equals to the [`IdbSingleKeyCursor::field_value`] value.
@@ -16,10 +15,7 @@ pub struct IdbSingleKeyCursor {
 }
 
 impl IdbSingleKeyCursor {
-    pub(super) fn new(field_name: String, field_value: Json, filter: Option<DbFilter>) -> IdbSingleKeyCursor {
-        if filter.is_none() {
-            warn!("Consider using 'IdbObjectStoreImpl::get_items' instead of 'IdbSingleKeyCursor'");
-        }
+    pub(super) fn new(field_name: String, field_value: Json) -> IdbSingleKeyCursor {
         IdbSingleKeyCursor {
             field_name,
             field_value,
@@ -27,8 +23,7 @@ impl IdbSingleKeyCursor {
     }
 }
 
-#[async_trait(?Send)]
-impl CursorOps for IdbSingleKeyCursor {
+impl CursorDriverImpl for IdbSingleKeyCursor {
     fn key_range(&self) -> CursorResult<Option<IdbKeyRange>> {
         let js_value =
             serialize_to_js(&self.field_value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
@@ -43,11 +38,7 @@ impl CursorOps for IdbSingleKeyCursor {
         Ok(Some(key_range))
     }
 
-    fn on_collect_iter(
-        &mut self,
-        _key: JsValue,
-        value: &Json,
-    ) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
+    fn on_iteration(&mut self, _key: JsValue) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
         Ok((CollectItemAction::Include, CollectCursorAction::Continue))
     }
 }

@@ -1,10 +1,8 @@
-use super::{CollectCursorAction, CollectItemAction, CursorBoundValue, CursorError, CursorOps, CursorResult, DbFilter};
-use async_trait::async_trait;
+use super::{CollectCursorAction, CollectItemAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorResult};
 use common::{log::warn, stringify_js_error};
 use mm2_err_handle::prelude::*;
-use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
-use web_sys::{IdbIndex, IdbKeyRange};
+use web_sys::IdbKeyRange;
 
 /// The representation of a range that includes records
 /// whose value of the [`IdbSingleBoundCursor::field_name`] field is lower than [`IdbSingleBoundCursor::lower_bound_value`]
@@ -49,8 +47,7 @@ impl IdbSingleKeyBoundCursor {
     }
 }
 
-#[async_trait(?Send)]
-impl CursorOps for IdbSingleKeyBoundCursor {
+impl CursorDriverImpl for IdbSingleKeyBoundCursor {
     fn key_range(&self) -> CursorResult<Option<IdbKeyRange>> {
         let key_range = IdbKeyRange::bound(&self.lower_bound.to_js_value()?, &self.upper_bound.to_js_value()?)
             .map_to_mm(|e| CursorError::InvalidKeyRange {
@@ -59,11 +56,7 @@ impl CursorOps for IdbSingleKeyBoundCursor {
         Ok(Some(key_range))
     }
 
-    fn on_collect_iter(
-        &mut self,
-        _key: JsValue,
-        value: &Json,
-    ) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
+    fn on_iteration(&mut self, _key: JsValue) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
         Ok((CollectItemAction::Include, CollectCursorAction::Continue))
     }
 }

@@ -1,11 +1,10 @@
-use super::{CollectCursorAction, CollectItemAction, CursorError, CursorOps, CursorResult, DbFilter};
-use async_trait::async_trait;
+use super::{CollectCursorAction, CollectItemAction, CursorDriverImpl, CursorError, CursorResult};
 use common::{serialize_to_js, stringify_js_error};
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
-use web_sys::{IdbIndex, IdbKeyRange};
+use web_sys::IdbKeyRange;
 
 /// The representation of a range that includes records
 /// whose fields have only the specified [`IdbSingleCursor::only_values`] values.
@@ -15,25 +14,10 @@ pub struct IdbMultiKeyCursor {
 }
 
 impl IdbMultiKeyCursor {
-    pub(super) fn new(only_values: Vec<(String, Json)>) -> CursorResult<IdbMultiKeyCursor> {
-        Self::check_only_values(&only_values)?;
-        Ok(IdbMultiKeyCursor { only_values })
-    }
-
-    fn check_only_values(only_values: &Vec<(String, Json)>) -> CursorResult<()> {
-        if only_values.len() < 2 {
-            let description = format!(
-                "Incorrect usage of 'IdbMultiKeyCursor': expected more than one cursor bound, found '{}'",
-                only_values.len(),
-            );
-            return MmError::err(CursorError::IncorrectUsage { description });
-        }
-        Ok(())
-    }
+    pub(super) fn new(only_values: Vec<(String, Json)>) -> IdbMultiKeyCursor { IdbMultiKeyCursor { only_values } }
 }
 
-#[async_trait(?Send)]
-impl CursorOps for IdbMultiKeyCursor {
+impl CursorDriverImpl for IdbMultiKeyCursor {
     fn key_range(&self) -> CursorResult<Option<IdbKeyRange>> {
         let only = Array::new();
 
@@ -52,11 +36,7 @@ impl CursorOps for IdbMultiKeyCursor {
         Ok(Some(key_range))
     }
 
-    fn on_collect_iter(
-        &mut self,
-        _key: JsValue,
-        value: &Json,
-    ) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
+    fn on_iteration(&mut self, _key: JsValue) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
         Ok((CollectItemAction::Include, CollectCursorAction::Continue))
     }
 }

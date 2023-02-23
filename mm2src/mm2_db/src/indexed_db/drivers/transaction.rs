@@ -1,6 +1,7 @@
 use super::IdbObjectStoreImpl;
 use common::wasm::stringify_js_error;
 use derive_more::Display;
+use enum_from::EnumFromTrait;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use std::collections::HashSet;
@@ -11,7 +12,7 @@ use web_sys::IdbTransaction;
 
 pub type DbTransactionResult<T> = Result<T, MmError<DbTransactionError>>;
 
-#[derive(Debug, Display, PartialEq)]
+#[derive(Debug, Display, EnumFromTrait, PartialEq)]
 pub enum DbTransactionError {
     #[display(fmt = "No such table '{}'", table)]
     NoSuchTable { table: String },
@@ -44,6 +45,7 @@ pub enum DbTransactionError {
         description: String,
     },
     #[display(fmt = "Error occurred due to an unexpected state: {:?}", _0)]
+    #[from_trait(WithInternal::internal)]
     UnexpectedState(String),
     #[display(fmt = "Transaction was aborted")]
     TransactionAborted,
