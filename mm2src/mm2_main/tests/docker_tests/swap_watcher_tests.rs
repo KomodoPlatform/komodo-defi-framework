@@ -113,6 +113,93 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
 
 #[test]
 #[ignore]
+fn test_two_watchers_spend_maker_payment_eth_erc20() {
+    let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
+
+    let alice_passphrase =
+        String::from("spice describe gravity federal blast come thank unfair canal monkey style afraid");
+    let alice_conf = Mm2TestConf::seednode_using_watchers(&alice_passphrase, &coins);
+    let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {}", mm_alice.log_path.display());
+
+    let bob_passphrase = String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney");
+    let bob_conf = Mm2TestConf::light_node_using_watchers(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+
+    let watcher1_passphrase =
+        String::from("also shoot benefit prefer juice shell thank unfair canal monkey style afraid");
+    let watcher1_conf =
+        Mm2TestConf::watcher_light_node(&watcher1_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
+            wait_taker_payment: 0.,
+            wait_maker_payment_spend_factor: 0.,
+            refund_start_factor: 1.5,
+            search_interval: 1.0,
+        })
+        .conf;
+    let mut mm_watcher1 = MarketMakerIt::start(watcher1_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
+    let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher1.log_path);
+
+    let watcher2_passphrase =
+        String::from("also shoot benefit shell thank prefer juice unfair canal monkey style afraid");
+    let watcher2_conf =
+        Mm2TestConf::watcher_light_node(&watcher2_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
+            wait_taker_payment: 0.,
+            wait_maker_payment_spend_factor: 0.,
+            refund_start_factor: 1.5,
+            search_interval: 1.0,
+        })
+        .conf;
+    let mut mm_watcher2 = MarketMakerIt::start(watcher2_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
+    let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher1.log_path);
+
+    enable_eth_and_jst(&mm_alice);
+    enable_eth_and_jst(&mm_bob);
+    enable_eth_and_jst(&mm_watcher1);
+    enable_eth_and_jst(&mm_watcher2);
+
+    let alice_eth_balance_before = block_on(my_balance(&mm_alice, "ETH")).balance.with_scale(2);
+    let alice_jst_balance_before = block_on(my_balance(&mm_alice, "JST")).balance.with_scale(2);
+    let bob_eth_balance_before = block_on(my_balance(&mm_bob, "ETH")).balance.with_scale(2);
+    let bob_jst_balance_before = block_on(my_balance(&mm_bob, "JST")).balance.with_scale(2);
+    let watcher1_eth_balance_before = block_on(my_balance(&mm_watcher1, "ETH")).balance;
+    let watcher2_eth_balance_before = block_on(my_balance(&mm_watcher2, "ETH")).balance;
+
+    block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("ETH", "JST")], 1., 1., 0.01));
+
+    block_on(mm_alice.wait_for_log(180., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
+    block_on(mm_alice.stop()).unwrap();
+    block_on(mm_watcher1.wait_for_log(180., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
+    block_on(mm_watcher2.wait_for_log(180., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
+    thread::sleep(Duration::from_secs(25));
+
+    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    enable_eth_and_jst(&mm_alice);
+
+    let alice_eth_balance_after = block_on(my_balance(&mm_alice, "ETH")).balance.with_scale(2);
+    let alice_jst_balance_after = block_on(my_balance(&mm_alice, "JST")).balance.with_scale(2);
+    let bob_eth_balance_after = block_on(my_balance(&mm_bob, "ETH")).balance.with_scale(2);
+    let bob_jst_balance_after = block_on(my_balance(&mm_bob, "JST")).balance.with_scale(2);
+    let watcher1_eth_balance_after = block_on(my_balance(&mm_watcher1, "ETH")).balance;
+    let watcher2_eth_balance_after = block_on(my_balance(&mm_watcher2, "ETH")).balance;
+
+    let volume = BigDecimal::from_str("0.01").unwrap();
+    assert_eq!(alice_jst_balance_before - volume.clone(), alice_jst_balance_after);
+    assert_eq!(bob_jst_balance_before + volume.clone(), bob_jst_balance_after);
+    assert_eq!(alice_eth_balance_before + volume.clone(), alice_eth_balance_after);
+    assert_eq!(bob_eth_balance_before - volume.clone(), bob_eth_balance_after);
+    if watcher1_eth_balance_after > watcher1_eth_balance_before {
+        assert_eq!(watcher2_eth_balance_after, watcher2_eth_balance_after);
+    }
+    if watcher2_eth_balance_after > watcher2_eth_balance_before {
+        assert_eq!(watcher1_eth_balance_after, watcher1_eth_balance_after);
+    }
+}
+
+#[test]
+#[ignore]
 fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
 
