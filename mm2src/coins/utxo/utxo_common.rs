@@ -2019,7 +2019,7 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         }
 
         if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
-            if coin.as_ref().conf.enable_spv_proof && input.confirmations != 0 {
+            if coin.as_ref().conf.spv_conf.is_some() && input.confirmations != 0 {
                 client
                     .validate_spv_proof(&taker_payment_tx, input.try_spv_proof_until)
                     .await?;
@@ -3782,7 +3782,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
         }
 
         if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
-            if coin.as_ref().conf.enable_spv_proof && confirmations != 0 {
+            if coin.as_ref().conf.spv_conf.is_some() && confirmations != 0 {
                 client.validate_spv_proof(&tx, try_spv_proof_until).await?;
             }
         }
