@@ -71,6 +71,7 @@ pub struct EthActivationV2Request {
     pub rpc_mode: EthRpcMode,
     pub swap_contract_address: Address,
     pub fallback_swap_contract: Option<Address>,
+    #[serde(default)]
     pub contract_supports_watchers: bool,
     pub gas_station_url: Option<String>,
     pub gas_station_decimals: Option<u8>,
