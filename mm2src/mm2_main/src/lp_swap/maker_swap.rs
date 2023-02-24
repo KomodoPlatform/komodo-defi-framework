@@ -597,7 +597,7 @@ impl MakerSwap {
         if time_dif > 60 {
             self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
-                ERRL!("There is a time difference of {} seconds between when you and the other side started the swap, please make sure that your system clock is synced to the correct time before starting another swap!", time_dif).into(),
+                ERRL!("The time difference between you and the taker cannot be longer than 60 seconds. Current difference: {}. Please make sure that your system clock is synced to the correct time before starting another swap!", time_dif).into(),
             )]));
         }
 
