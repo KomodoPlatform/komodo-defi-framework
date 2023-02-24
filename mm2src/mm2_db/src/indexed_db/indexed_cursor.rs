@@ -107,6 +107,11 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
         self
     }
 
+    pub fn reverse(mut self) -> Self {
+        self.filters.reverse = true;
+        self
+    }
+
     /// Opens a cursor by the specified `index`.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/openCursor
     pub async fn open_cursor(self, index: &str) -> CursorResult<CursorIter<'transaction, Table>> {
@@ -248,6 +253,15 @@ mod tests {
                 .await
                 .expect(&format!("Error adding {:?} item", item));
         }
+    }
+
+    #[track_caller]
+    async fn next_item<Table: TableSignature>(cursor_iter: &mut CursorIter<'_, Table>) -> Option<Table> {
+        cursor_iter
+            .next()
+            .await
+            .expect("!CursorIter::next")
+            .map(|(_item_id, item)| item)
     }
 
     /// The table with `BeBigUint` parameters.
@@ -710,15 +724,6 @@ mod tests {
             .await
             .expect("!CursorBuilder::open_cursor");
 
-        #[track_caller]
-        async fn next_item<Table: TableSignature>(cursor_iter: &mut CursorIter<'_, Table>) -> Option<Table> {
-            cursor_iter
-                .next()
-                .await
-                .expect("!CursorIter::next")
-                .map(|(_item_id, item)| item)
-        }
-
         // The items must be sorted by `rel_coin_value`.
         assert_eq!(
             next_item(&mut cursor_iter).await,
@@ -739,6 +744,36 @@ mod tests {
         assert!(next_item(&mut cursor_iter).await.is_none());
         // Try to poll one more time. This should not fail but return `None`.
         assert!(next_item(&mut cursor_iter).await.is_none());
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_rev_iter_without_constraints() {
+        const DB_NAME: &str = "TEST_REV_ITER_WITHOUT_CONSTRAINTS";
+        const DB_VERSION: u32 = 1;
+
+        register_wasm_log();
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<SwapTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<SwapTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+
+        table
+            .cursor_builder()
+            .reverse()
+            .open_cursor("rel_coin_value")
+            .await
+            .map(|_| ())
+            .expect_err(
+                "CursorBuilder::open_cursor should have failed because 'reverse' can be used with key range only",
+            );
     }
 
     #[wasm_bindgen_test]
@@ -777,15 +812,6 @@ mod tests {
             .await
             .expect("!CursorBuilder::open_cursor");
 
-        #[track_caller]
-        async fn next_item<Table: TableSignature>(cursor_iter: &mut CursorIter<'_, Table>) -> Option<Table> {
-            cursor_iter
-                .next()
-                .await
-                .expect("!CursorIter::next")
-                .map(|(_item_id, item)| item)
-        }
-
         // The items must be sorted by `rel_coin_value`.
         assert_eq!(
             next_item(&mut cursor_iter).await,
@@ -798,6 +824,61 @@ mod tests {
         assert_eq!(
             next_item(&mut cursor_iter).await,
             Some(swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281))
+        );
+        assert!(next_item(&mut cursor_iter).await.is_none());
+        // Try to poll one more time. This should not fail but return `None`.
+        assert!(next_item(&mut cursor_iter).await.is_none());
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_rev_iter_single_key_bound_cursor() {
+        const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
+        const DB_VERSION: u32 = 1;
+
+        register_wasm_log();
+
+        let items = vec![
+            swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
+            swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
+            swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281), // +
+            swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92),        // +
+            swap_item!("uuid5", "QRC20", "RICK", 2, 4, 721),
+            swap_item!("uuid6", "KMD", "MORTY", 12, 3124, 214), // +
+        ];
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<SwapTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<SwapTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+        fill_table(&table, items).await;
+
+        let mut cursor_iter = table
+            .cursor_builder()
+            .bound("rel_coin_value", 5u32, u32::MAX)
+            .reverse()
+            .open_cursor("rel_coin_value")
+            .await
+            .expect("!CursorBuilder::open_cursor");
+
+        // The items must be sorted in reverse order by `rel_coin_value`.
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281))
+        );
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid6", "KMD", "MORTY", 12, 3124, 214))
+        );
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92))
         );
         assert!(next_item(&mut cursor_iter).await.is_none());
         // Try to poll one more time. This should not fail but return `None`.

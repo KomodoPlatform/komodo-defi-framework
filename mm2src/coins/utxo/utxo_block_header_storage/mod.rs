@@ -58,7 +58,6 @@ impl BlockHeaderStorage {
         })
     }
 
-    #[cfg(test)]
     pub(crate) fn into_inner(self) -> Box<dyn BlockHeaderStorageOps> { self.inner }
 }
 
@@ -108,7 +107,7 @@ impl BlockHeaderStorageOps for BlockHeaderStorage {
     async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError> { self.inner.is_table_empty().await }
 }
 
-#[cfg(test)]
+#[cfg(any(test, target_arch = "wasm32"))]
 mod block_headers_storage_tests {
     use super::*;
     use chain::BlockHeaderBits;
@@ -313,7 +312,7 @@ mod native_tests {
     fn test_remove_headers_up_to_height() { block_on(test_remove_headers_up_to_height_impl(FOR_COIN_GET)) }
 }
 
-#[cfg(all(test, target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
 mod wasm_test {
     use super::*;
     use crate::utxo::utxo_block_header_storage::block_headers_storage_tests::*;
@@ -323,7 +322,7 @@ mod wasm_test {
 
     wasm_bindgen_test_configure!(run_in_browser);
 
-    const FOR_COIN: &str = "RICK";
+    const FOR_COIN: &str = "tBTC";
 
     #[wasm_bindgen_test]
     async fn test_storage_init() {

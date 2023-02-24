@@ -12,7 +12,7 @@ use serde_json::{self as json, Value as Json};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{IdbCursorWithValue, IdbIndex, IdbKeyRange, IdbRequest};
+use web_sys::{IdbCursorDirection, IdbCursorWithValue, IdbIndex, IdbKeyRange, IdbRequest};
 
 mod empty_cursor;
 mod multi_key_bound_cursor;
@@ -87,6 +87,7 @@ pub enum CursorBoundValue {
 pub struct CursorFilters {
     pub(crate) only_keys: Vec<(String, Json)>,
     pub(crate) bound_keys: Vec<(String, CursorBoundValue, CursorBoundValue)>,
+    pub(crate) reverse: bool,
 }
 
 impl From<u32> for CursorBoundValue {
@@ -202,10 +203,21 @@ pub(crate) struct CursorDriver {
 
 impl CursorDriver {
     pub(crate) fn init_cursor(db_index: IdbIndex, filters: CursorFilters) -> CursorResult<CursorDriver> {
+        let reverse = filters.reverse;
         let inner = IdbCursorEnum::new(filters)?;
 
         let cursor_request_result = match inner.key_range()? {
+            Some(key_range) if reverse => {
+                db_index.open_cursor_with_range_and_direction(&key_range, IdbCursorDirection::Prev)
+            },
             Some(key_range) => db_index.open_cursor_with_range(&key_range),
+            // Please note that `IndexedDb` doesn't allow to open a cursor with a direction
+            // but without a key range.
+            None if reverse => {
+                return MmError::err(CursorError::ErrorOpeningCursor {
+                    description: format!("Direction cannot be specified without a range"),
+                })
+            },
             None => db_index.open_cursor(),
         };
         let cursor_request = cursor_request_result.map_err(|e| CursorError::ErrorOpeningCursor {

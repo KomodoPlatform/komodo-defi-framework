@@ -3,9 +3,10 @@ use super::BlockHeaderStorageTable;
 use async_trait::async_trait;
 use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder,
+use mm2_db::indexed_db::{BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder,
                          InitDbResult, MultiIndex, SharedDb};
 use mm2_err_handle::prelude::*;
+use num_traits::ToPrimitive;
 use primitives::hash::H256;
 use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
@@ -92,15 +93,15 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             let bits: u32 = header.bits.into();
             let headers_to_store = BlockHeaderStorageTable {
                 ticker: ticker.clone(),
-                height,
+                height: BeBigUint::from(height),
                 bits,
                 hash,
                 raw_header,
             };
-            let index_keys = MultiIndex::new(BlockHeaderStorageTable::HEIGHT_TICKER_INDEX)
-                .with_value(&height)
-                .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
+            let index_keys = MultiIndex::new(BlockHeaderStorageTable::TICKER_HEIGHT_INDEX)
                 .with_value(&ticker)
+                .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
+                .with_value(&BeBigUint::from(height))
                 .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
             block_headers_db
@@ -148,10 +149,10 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .table::<BlockHeaderStorageTable>()
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
-        let index_keys = MultiIndex::new(BlockHeaderStorageTable::HEIGHT_TICKER_INDEX)
-            .with_value(&height)
-            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
+        let index_keys = MultiIndex::new(BlockHeaderStorageTable::TICKER_HEIGHT_INDEX)
             .with_value(&ticker)
+            .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
+            .with_value(&BeBigUint::from(height))
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         Ok(block_headers_db
@@ -177,22 +178,31 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
-        // Todo: use open_cursor with direction to optimze this process.
-        let res = block_headers_db
+        let maybe_item = block_headers_db
             .cursor_builder()
             .only("ticker", ticker.clone())
             .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
-            .open_cursor("ticker")
+            // We need to provide any constraint on the `height` property
+            // since `ticker_height` consists of both `ticker` and `height` properties.
+            .bound("height", BeBigUint::from(0u64), BeBigUint::from(u64::MAX))
+            // Cursor returns values from the lowest to highest key indexes.
+            // But we need to get the most highest height, so reverse the cursor direction.
+            .reverse()
+            .open_cursor(BlockHeaderStorageTable::TICKER_HEIGHT_INDEX)
             .await
             .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
-            .collect()
+            .next()
             .await
-            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
-            .into_iter()
-            .map(|(_item_id, item)| item.height)
-            .collect::<Vec<_>>();
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
 
-        Ok(res.into_iter().max())
+        if let Some((_item_id, item)) = maybe_item {
+            let height = item
+                .height
+                .to_u64()
+                .ok_or_else(|| BlockHeaderStorageError::get_err(&ticker, "height is too large".to_string()))?;
+            return Ok(Some(height));
+        }
+        Ok(None)
     }
 
     async fn get_last_block_header_with_non_max_bits(
@@ -214,26 +224,29 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
-        // Todo: use open_cursor with direction to optimze this process.
-        let res = block_headers_db
+        let mut cursor = block_headers_db
             .cursor_builder()
             .only("ticker", ticker.clone())
             .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
-            .open_cursor("ticker")
+            // We need to provide any constraint on the `height` property
+            // since `ticker_height` consists of both `ticker` and `height` properties.
+            .bound("height", BeBigUint::from(0u64), BeBigUint::from(u64::MAX))
+            // Cursor returns values from the lowest to highest key indexes.
+            // But we need to get the most highest height, so reverse the cursor direction.
+            .reverse()
+            .open_cursor(BlockHeaderStorageTable::TICKER_HEIGHT_INDEX)
             .await
-            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
-            .collect()
-            .await
-            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
-            .into_iter()
-            .map(|(_item_id, item)| item)
-            .collect::<Vec<_>>();
-        let res = res
-            .into_iter()
-            .filter_map(|e| if e.bits != max_bits { Some(e) } else { None })
-            .collect::<Vec<_>>();
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
 
-        for header in res {
+        while let Some((_item_id, header)) = cursor
+            .next()
+            .await
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
+        {
+            if header.bits == max_bits {
+                continue;
+            }
+
             let serialized = &hex::decode(header.raw_header).map_err(|e| BlockHeaderStorageError::DecodeError {
                 coin: ticker.clone(),
                 reason: e.to_string(),
@@ -274,11 +287,19 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .with_value(&ticker)
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
-        Ok(block_headers_db
+        let maybe_item = block_headers_db
             .get_item_by_unique_multi_index(index_keys)
             .await
-            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?
-            .map(|raw| raw.1.height as i64))
+            .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
+
+        if let Some((_item_id, header)) = maybe_item {
+            let height = header
+                .height
+                .to_i64()
+                .ok_or_else(|| BlockHeaderStorageError::get_err(&ticker, "height is too large".to_string()))?;
+            return Ok(Some(height));
+        }
+        Ok(None)
     }
 
     async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError> {
@@ -298,10 +319,10 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         for height in 0..=to_height {
-            let index_keys = MultiIndex::new(BlockHeaderStorageTable::HEIGHT_TICKER_INDEX)
-                .with_value(&height)
-                .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
+            let index_keys = MultiIndex::new(BlockHeaderStorageTable::TICKER_HEIGHT_INDEX)
                 .with_value(&ticker)
+                .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
+                .with_value(&BeBigUint::from(height))
                 .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
             block_headers_db
