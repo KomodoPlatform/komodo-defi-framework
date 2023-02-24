@@ -1,4 +1,4 @@
-use super::{CollectCursorAction, CollectItemAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorResult};
+use super::{CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction, CursorResult};
 use common::{log::warn, stringify_js_error};
 use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
@@ -56,7 +56,7 @@ impl CursorDriverImpl for IdbSingleKeyBoundCursor {
         Ok(Some(key_range))
     }
 
-    fn on_iteration(&mut self, _key: JsValue) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
-        Ok((CollectItemAction::Include, CollectCursorAction::Continue))
+    fn on_iteration(&mut self, _key: JsValue) -> CursorResult<(CursorItemAction, CursorAction)> {
+        Ok((CursorItemAction::Include, CursorAction::Continue))
     }
 }

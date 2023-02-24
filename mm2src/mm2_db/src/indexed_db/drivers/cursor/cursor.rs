@@ -168,17 +168,15 @@ impl CursorBoundValue {
     }
 }
 
-/// TODO rename to `CursorAction`.
 #[derive(Debug, PartialEq)]
-pub enum CollectCursorAction {
+pub enum CursorAction {
     Continue,
     ContinueWithValue(JsValue),
     Stop,
 }
 
-/// TODO rename to `IterItemAction`.
 #[derive(Debug, PartialEq)]
-pub enum CollectItemAction {
+pub enum CursorItemAction {
     Include,
     Skip,
 }
@@ -186,7 +184,7 @@ pub enum CollectItemAction {
 pub trait CursorDriverImpl: Sized {
     fn key_range(&self) -> CursorResult<Option<IdbKeyRange>>;
 
-    fn on_iteration(&mut self, key: JsValue) -> CursorResult<(CollectItemAction, CollectCursorAction)>;
+    fn on_iteration(&mut self, key: JsValue) -> CursorResult<(CursorItemAction, CursorAction)>;
 }
 
 pub(crate) struct CursorDriver {
@@ -194,7 +192,7 @@ pub(crate) struct CursorDriver {
     inner: IdbCursorEnum,
     cursor_request: IdbRequest,
     cursor_item_rx: mpsc::Receiver<Result<JsValue, JsValue>>,
-    /// Whether we got `CollectCursorAction::Stop` at the last iteration or not.
+    /// Whether we got `CursorAction::Stop` at the last iteration or not.
     stopped: bool,
     /// We need to hold the closures in memory till `cursor` exists.
     _onsuccess_closure: Closure<dyn FnMut(JsValue)>,
@@ -244,7 +242,7 @@ impl CursorDriver {
 
     pub(crate) async fn next(&mut self) -> CursorResult<Option<(ItemId, Json)>> {
         loop {
-            // Check if we got `CollectCursorAction::Stop` at the last iteration.
+            // Check if we got `CursorAction::Stop` at the last iteration.
             if self.stopped {
                 return Ok(None);
             }
@@ -285,10 +283,10 @@ impl CursorDriver {
             let (item_action, cursor_action) = self.inner.on_iteration(key)?;
 
             match cursor_action {
-                CollectCursorAction::Continue => cursor.continue_().map_to_mm(|e| CursorError::AdvanceError {
+                CursorAction::Continue => cursor.continue_().map_to_mm(|e| CursorError::AdvanceError {
                     description: stringify_js_error(&e),
                 })?,
-                CollectCursorAction::ContinueWithValue(next_value) => {
+                CursorAction::ContinueWithValue(next_value) => {
                     cursor
                         .continue_with_key(&next_value)
                         .map_to_mm(|e| CursorError::AdvanceError {
@@ -299,13 +297,13 @@ impl CursorDriver {
                 // Here we set the `stopped` flag so we return `Ok(None)` at the next iteration immediately.
                 // This is required because `item_action` can be `CollectItemAction::Include`,
                 // and at this iteration we will return `Ok(Some)`.
-                CollectCursorAction::Stop => self.stopped = true,
+                CursorAction::Stop => self.stopped = true,
             }
 
             match item_action {
-                CollectItemAction::Include => return Ok(Some(item.into_pair())),
+                CursorItemAction::Include => return Ok(Some(item.into_pair())),
                 // Try to fetch the next item.
-                CollectItemAction::Skip => (),
+                CursorItemAction::Skip => (),
             }
         }
     }
@@ -366,7 +364,7 @@ impl CursorDriverImpl for IdbCursorEnum {
         }
     }
 
-    fn on_iteration(&mut self, key: JsValue) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
+    fn on_iteration(&mut self, key: JsValue) -> CursorResult<(CursorItemAction, CursorAction)> {
         match self {
             IdbCursorEnum::Empty(empty) => empty.on_iteration(key),
             IdbCursorEnum::SingleKey(single) => single.on_iteration(key),

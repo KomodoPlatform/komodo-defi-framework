@@ -1,5 +1,5 @@
-use super::{index_key_as_array, CollectCursorAction, CollectItemAction, CursorBoundValue, CursorDriverImpl,
-            CursorError, CursorResult};
+use super::{index_key_as_array, CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction,
+            CursorResult};
 use common::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
@@ -108,7 +108,7 @@ impl CursorDriverImpl for IdbMultiKeyBoundCursor {
     /// The range `IDBKeyRange.bound([2,2], [4,4])` includes values like `[3,0]` and `[3,5]` as `[2,2] < [3,0] < [3,5] < [4,4]`,
     /// so we need to do additional filtering.
     /// For more information on why it's required, see https://stackoverflow.com/a/32976384.
-    fn on_iteration(&mut self, index_key: JsValue) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
+    fn on_iteration(&mut self, index_key: JsValue) -> CursorResult<(CursorItemAction, CursorAction)> {
         let index_keys_js_array = index_key_as_array(index_key)?;
         let index_keys: Vec<Json> = index_keys_js_array
             .iter()
@@ -157,8 +157,8 @@ impl CursorDriverImpl for IdbMultiKeyBoundCursor {
 
                 return Ok((
                     // the `actual_index_value` is not in our expected bounds
-                    CollectItemAction::Skip,
-                    CollectCursorAction::ContinueWithValue(new_index.into()),
+                    CursorItemAction::Skip,
+                    CursorAction::ContinueWithValue(new_index.into()),
                 ));
             }
             if &actual_index_value > upper_bound {
@@ -177,13 +177,13 @@ impl CursorDriverImpl for IdbMultiKeyBoundCursor {
 
                     return Ok((
                         // the `actual_index_value` is not in our expected bounds
-                        CollectItemAction::Skip,
-                        CollectCursorAction::ContinueWithValue(new_index.into()),
+                        CursorItemAction::Skip,
+                        CursorAction::ContinueWithValue(new_index.into()),
                     ));
                 }
 
                 // otherwise there is no an index greater than actual `index`, stop the cursor
-                return Ok((CollectItemAction::Skip, CollectCursorAction::Stop));
+                return Ok((CursorItemAction::Skip, CursorAction::Stop));
             }
 
             let increased_index_key = actual_index_value.next();
@@ -194,7 +194,7 @@ impl CursorDriverImpl for IdbMultiKeyBoundCursor {
             idx_in_index += 1;
             idx_in_bounds += 1;
         }
-        Ok((CollectItemAction::Include, CollectCursorAction::Continue))
+        Ok((CursorItemAction::Include, CursorAction::Continue))
     }
 }
 
@@ -212,7 +212,7 @@ mod tests {
             let result = cursor.on_iteration(input_index_js_value);
             assert_eq!(
                 result,
-                Ok((CollectItemAction::Include, CollectCursorAction::Continue)),
+                Ok((CursorItemAction::Include, CursorAction::Continue)),
                 "'{}' index is expected to be in a bound",
                 input_index
             );
@@ -230,15 +230,12 @@ mod tests {
                 .expect(&format!("Error due to the index '{:?}'", input_index));
 
             let actual_next: Json = match cursor_action {
-                CollectCursorAction::ContinueWithValue(next_index_js_value) => {
+                CursorAction::ContinueWithValue(next_index_js_value) => {
                     deserialize_from_js(next_index_js_value).expect("Error deserializing next index}")
                 },
-                action => panic!(
-                    "Expected 'CollectCursorAction::ContinueWithValue', found '{:?}'",
-                    action
-                ),
+                action => panic!("Expected 'CursorAction::ContinueWithValue', found '{:?}'", action),
             };
-            assert_eq!(item_action, CollectItemAction::Skip);
+            assert_eq!(item_action, CursorItemAction::Skip);
             assert_eq!(actual_next, expected_next);
         }
     }
@@ -250,7 +247,7 @@ mod tests {
             let result = cursor.on_iteration(input_index_js_value);
             assert_eq!(
                 result,
-                Ok((CollectItemAction::Skip, CollectCursorAction::Stop)),
+                Ok((CursorItemAction::Skip, CursorAction::Stop)),
                 "'{}' index is expected to be out of bound",
                 input_index
             );
