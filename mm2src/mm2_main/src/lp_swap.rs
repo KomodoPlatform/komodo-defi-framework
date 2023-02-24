@@ -1412,8 +1412,8 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
 
 #[derive(Debug, Deserialize, PartialEq, Serialize, Default)]
 pub struct SwapPubkeys {
-    pub maker: H264Json,
-    pub taker: H264Json,
+    pub maker: Option<H264Json>,
+    pub taker: Option<H264Json>,
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

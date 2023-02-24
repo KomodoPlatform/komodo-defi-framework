@@ -14,7 +14,7 @@ use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, wait_for_maker_payment_conf_duration,
-                          NegotiationDataV4, SwapPubkeys, TakerSwapWatcherData};
+                          NegotiationDataV3, SwapPubkeys, TakerSwapWatcherData};
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendSpendPaymentArgs,
             SendTakerPaymentArgs, SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, TradeFee,
@@ -101,7 +101,7 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Taker(TakerSavedSwap {
             uuid: swap.uuid,
-            my_persistence_pub: swap.my_persistent_pub.into(),
+            my_persistence_pub: Some(swap.my_persistent_pub.into()),
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.to_decimal()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -183,7 +183,7 @@ impl TakerSavedEvent {
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct TakerSavedSwap {
     pub uuid: Uuid,
-    pub my_persistence_pub: H264Json,
+    pub my_persistence_pub: Option<H264Json>,
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<TakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
@@ -306,16 +306,34 @@ impl TakerSavedSwap {
 
     pub fn swap_pubkeys(&self) -> SwapPubkeys {
         let mut swap_pubkeys = SwapPubkeys::default();
+        let maker_coin = is_private_coin(&self.maker_coin);
+        let taker_coin = is_private_coin(&self.taker_coin);
+
         for data in &self.events {
             if let TakerSwapEvent::Negotiated(negotiated) = &data.event {
-                swap_pubkeys.taker = self.my_persistence_pub;
-                swap_pubkeys.maker = negotiated.my_persistance_pubkey
+                if negotiated.taker_coin_htlc_pubkey != negotiated.maker_coin_htlc_pubkey && !maker_coin && !taker_coin
+                {
+                    swap_pubkeys.maker = negotiated.maker_coin_htlc_pubkey;
+                    swap_pubkeys.taker = self.my_persistence_pub;
+
+                    return swap_pubkeys;
+                };
+
+                if maker_coin && !taker_coin {
+                    swap_pubkeys.maker = negotiated.taker_coin_htlc_pubkey;
+                    swap_pubkeys.taker = self.my_persistence_pub;
+                } else if !maker_coin && taker_coin {
+                    swap_pubkeys.maker = self.my_persistence_pub;
+                    swap_pubkeys.taker = negotiated.taker_coin_htlc_pubkey;
+                };
             }
         }
 
         swap_pubkeys
     }
 }
+
+pub(crate) fn is_private_coin(ticker: &Option<String>) -> bool { ticker == &Some("ARRR".to_string()) }
 
 #[allow(clippy::large_enum_variant)]
 pub enum RunTakerSwapInput {
@@ -583,7 +601,6 @@ pub struct MakerNegotiationData {
     pub taker_coin_swap_contract_addr: Option<BytesJson>,
     pub maker_coin_htlc_pubkey: Option<H264Json>,
     pub taker_coin_htlc_pubkey: Option<H264Json>,
-    pub my_persistance_pubkey: H264Json,
 }
 
 impl MakerNegotiationData {
@@ -892,7 +909,7 @@ impl TakerSwap {
                 taker_coin_swap_contract,
             })
         } else {
-            NegotiationDataMsg::V4(NegotiationDataV4 {
+            NegotiationDataMsg::V3(NegotiationDataV3 {
                 started_at: r.data.started_at,
                 payment_locktime: r.data.taker_payment_lock,
                 secret_hash,
@@ -900,7 +917,6 @@ impl TakerSwap {
                 taker_coin_swap_contract,
                 maker_coin_htlc_pub: self.my_maker_coin_htlc_pub().into(),
                 taker_coin_htlc_pub: self.my_taker_coin_htlc_pub().into(),
-                persistent_pubkey: self.my_persistent_pub.to_vec(),
             })
         }
     }
@@ -1193,7 +1209,6 @@ impl TakerSwap {
                 taker_coin_swap_contract_addr,
                 maker_coin_htlc_pubkey: Some(maker_data.maker_coin_htlc_pub().into()),
                 taker_coin_htlc_pubkey: Some(maker_data.taker_coin_htlc_pub().into()),
-                my_persistance_pubkey: maker_data.persistent_pubkey().unwrap_or_default().into(),
             },
         )]))
     }

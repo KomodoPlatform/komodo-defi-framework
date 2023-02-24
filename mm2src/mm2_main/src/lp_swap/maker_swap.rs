@@ -14,7 +14,8 @@ use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, NegotiationDataV4, SwapPubkeys};
+use crate::mm2::lp_swap::taker_swap::is_private_coin;
+use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, NegotiationDataV3, SwapPubkeys};
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, TradeFee, TradePreimageValue,
@@ -84,7 +85,7 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Maker(MakerSavedSwap {
             uuid: swap.uuid,
-            my_persistence_pub: swap.my_persistent_pub.into(),
+            my_persistence_pub: Some(swap.my_persistent_pub.into()),
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.clone()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -122,7 +123,6 @@ pub struct TakerNegotiationData {
     pub taker_coin_swap_contract_addr: Option<BytesJson>,
     pub maker_coin_htlc_pubkey: Option<H264Json>,
     pub taker_coin_htlc_pubkey: Option<H264Json>,
-    pub my_persistance_pubkey: H264Json,
 }
 
 impl TakerNegotiationData {
@@ -421,7 +421,7 @@ impl MakerSwap {
                 taker_coin_swap_contract,
             })
         } else {
-            NegotiationDataMsg::V4(NegotiationDataV4 {
+            NegotiationDataMsg::V3(NegotiationDataV3 {
                 started_at: r.data.started_at,
                 payment_locktime: r.data.maker_payment_lock,
                 secret_hash,
@@ -429,7 +429,6 @@ impl MakerSwap {
                 taker_coin_swap_contract,
                 maker_coin_htlc_pub: self.my_maker_coin_htlc_pub().into(),
                 taker_coin_htlc_pub: self.my_taker_coin_htlc_pub().into(),
-                persistent_pubkey: r.data.my_persistent_pub.0.to_vec(),
             })
         }
     }
@@ -659,7 +658,6 @@ impl MakerSwap {
             )]));
         };
 
-        println!("MAKER PUB{:?}", taker_data.persistent_pubkey().unwrap_or_default());
         Ok((Some(MakerSwapCommand::WaitForTakerFee), vec![
             MakerSwapEvent::Negotiated(TakerNegotiationData {
                 taker_payment_locktime: taker_data.payment_locktime(),
@@ -670,7 +668,6 @@ impl MakerSwap {
                 taker_coin_swap_contract_addr,
                 maker_coin_htlc_pubkey: Some(taker_data.maker_coin_htlc_pub().into()),
                 taker_coin_htlc_pubkey: Some(taker_data.taker_coin_htlc_pub().into()),
-                my_persistance_pubkey: taker_data.persistent_pubkey().unwrap_or_default().into(),
             }),
         ]))
     }
@@ -1707,7 +1704,7 @@ impl MakerSwapStatusChanged {
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
-    pub my_persistence_pub: H264Json,
+    pub my_persistence_pub: Option<H264Json>,
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<MakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
@@ -1885,10 +1882,26 @@ impl MakerSavedSwap {
 
     pub fn swap_pubkeys(&self) -> SwapPubkeys {
         let mut swap_pubkeys = SwapPubkeys::default();
+        let maker_coin = is_private_coin(&self.maker_coin);
+        let taker_coin = is_private_coin(&self.taker_coin);
+
         for data in &self.events {
             if let MakerSwapEvent::Negotiated(negotiated) = &data.event {
-                swap_pubkeys.maker = self.my_persistence_pub;
-                swap_pubkeys.taker = negotiated.my_persistance_pubkey
+                if negotiated.taker_coin_htlc_pubkey == negotiated.maker_coin_htlc_pubkey && !maker_coin && !taker_coin
+                {
+                    swap_pubkeys.maker = self.my_persistence_pub;
+                    swap_pubkeys.taker = negotiated.maker_coin_htlc_pubkey;
+
+                    return swap_pubkeys;
+                };
+
+                if maker_coin && !taker_coin {
+                    swap_pubkeys.maker = negotiated.taker_coin_htlc_pubkey;
+                    swap_pubkeys.taker = self.my_persistence_pub;
+                } else if !maker_coin && taker_coin {
+                    swap_pubkeys.maker = self.my_persistence_pub;
+                    swap_pubkeys.taker = negotiated.taker_coin_htlc_pubkey;
+                };
             }
         }
 
