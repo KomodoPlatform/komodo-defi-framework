@@ -16,6 +16,10 @@ custom-swap-locktime = [] # only for testing purposes, should never be activated
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
+# TODO
+# Remove this once the solana integration becomes stable/completed.
+disable-solana-tests = []
+default = ["disable-solana-tests"]
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
