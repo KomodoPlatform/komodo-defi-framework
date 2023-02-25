@@ -1,5 +1,5 @@
-use crate::{my_tx_history_v2::MyTxHistoryErrorV2, utxo::rpc_clients::UtxoRpcError, DelegationError, NumConversError,
-            TxHistoryError, UnexpectedDerivationMethod, WithdrawError};
+use crate::{eth::Web3RpcError, my_tx_history_v2::MyTxHistoryErrorV2, utxo::rpc_clients::UtxoRpcError, DelegationError,
+            NumConversError, TxHistoryError, UnexpectedDerivationMethod, WithdrawError};
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
@@ -51,6 +51,16 @@ impl From<UtxoRpcError> for ValidatePaymentError {
             UtxoRpcError::Transport(e) => Self::Transport(e.to_string()),
             UtxoRpcError::Internal(e) => Self::InternalError(e),
             _ => Self::InvalidRpcResponse(err.to_string()),
+        }
+    }
+}
+
+impl From<Web3RpcError> for ValidatePaymentError {
+    fn from(e: Web3RpcError) -> Self {
+        match e {
+            Web3RpcError::Transport(tr) => ValidatePaymentError::Transport(tr),
+            Web3RpcError::InvalidResponse(resp) => ValidatePaymentError::InvalidRpcResponse(resp),
+            Web3RpcError::Internal(internal) => ValidatePaymentError::InternalError(internal),
         }
     }
 }

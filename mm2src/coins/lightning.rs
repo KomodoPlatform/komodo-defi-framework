@@ -841,9 +841,13 @@ impl SwapOps for LightningCoin {
     }
 
     // Todo: This can be changed if private swaps were to be implemented for lightning
-    #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.platform.coin.as_ref(), swap_unique_data)
+    }
+
+    #[inline]
+    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> {
+        self.channel_manager.get_our_node_id().serialize().to_vec()
     }
 
     #[inline]

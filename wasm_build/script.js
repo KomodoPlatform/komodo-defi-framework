@@ -17,7 +17,7 @@ import init, {
     Mm2RpcErr
 } from "./deps/pkg/mm2lib.js";
 
-const LOG_LEVEL = LogLevel.Debug;
+const LOG_LEVEL = LogLevel.Info;
 
 // Loads the wasm file, so we use the
 // default export to inform it where the wasm file is located on the

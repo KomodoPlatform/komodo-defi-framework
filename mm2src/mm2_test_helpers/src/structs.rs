@@ -848,6 +848,12 @@ pub struct GetPublicKeyHashResult {
     pub public_key_hash: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GetSharedDbIdResult {
+    pub shared_db_id: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RpcV2Response<T> {

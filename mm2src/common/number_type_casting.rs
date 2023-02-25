@@ -1,14 +1,16 @@
-/// This module contains type casting functions for numbers in a
-/// safe way.
-///
-/// The problem comes with when casting a type that supports higher value
-/// than the target type's highest value.
-///
-/// eg:
-/// ```rs
-/// let x: u64 = 4294967295 + 10;
-/// assert_eq!(x as u32, std::u32::MAX, "{} is not {}", x as u32, std::u32::MAX);
-/// ```
+//! This module contains type casting functions for numbers in a
+//! safe way.
+//!
+//! The problem comes with when casting a type that supports higher value
+//! than the target type's highest value.
+//!
+//! eg:
+//! ```rs
+//! let x: u64 = 4294967295 + 10;
+//! assert_eq!(x as u32, std::u32::MAX, "{} is not {}", x as u32, std::u32::MAX);
+//! ```
+
+use primitive_types::U256;
 
 pub trait SafeTypeCastingNumbers<T>: Sized {
     fn into_or(self, or: T) -> T;
@@ -23,6 +25,9 @@ macro_rules! impl_safe_number_type_cast {
         }
     };
 }
+
+// primitive_types::U256
+impl_safe_number_type_cast!(U256, u64);
 
 // USIZE
 #[cfg(target_pointer_width = "64")]

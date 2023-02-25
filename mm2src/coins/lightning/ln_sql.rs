@@ -4,7 +4,6 @@ use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilt
 use async_trait::async_trait;
 use common::{async_blocking, PagingOptionsEnum};
 use db_common::owned_named_params;
-use db_common::sqlite::rusqlite::types::Value;
 use db_common::sqlite::rusqlite::{params, Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,

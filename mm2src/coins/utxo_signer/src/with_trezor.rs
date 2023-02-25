@@ -5,15 +5,15 @@ use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::log::debug;
 use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TxOutput, TxSignResult,
                            UnsignedTxInput, UnsignedUtxoTx};
-use crypto::trezor::TrezorClient;
+use crypto::trezor::TrezorSession;
 use keys::bytes::Bytes;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use script::{SignatureVersion, UnsignedTransactionInput};
 use serialization::deserialize;
 
-pub struct TrezorTxSigner<TxP> {
-    pub trezor: TrezorClient,
+pub struct TrezorTxSigner<'a, TxP> {
+    pub trezor: TrezorSession<'a>,
     pub tx_provider: TxP,
     pub trezor_coin: String,
     pub params: UtxoSignTxParams,
@@ -21,19 +21,18 @@ pub struct TrezorTxSigner<TxP> {
     pub branch_id: u32,
 }
 
-impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<TxP> {
-    pub async fn sign_tx(self) -> UtxoSignTxResult<UtxoTx> {
+impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
+    pub async fn sign_tx(mut self) -> UtxoSignTxResult<UtxoTx> {
         if let SignatureVersion::WitnessV0 = self.params.signature_version {
             return MmError::err(UtxoSignTxError::TrezorDoesntSupportP2WPKH);
         }
 
         let trezor_unsigned_tx = self.get_trezor_unsigned_tx().await?;
-        let mut session = self.trezor.session().await?;
 
         let TxSignResult {
             signatures,
             serialized_tx,
-        } = session.sign_utxo_tx(trezor_unsigned_tx).await?;
+        } = self.trezor.sign_utxo_tx(trezor_unsigned_tx).await?;
         debug!("Transaction signed by Trezor: {}", hex::encode(serialized_tx));
         if signatures.len() != self.params.inputs_count() {
             return MmError::err(UtxoSignTxError::InvalidSignaturesNumber {

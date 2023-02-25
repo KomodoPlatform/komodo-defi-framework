@@ -2,7 +2,6 @@
 
 use crate::electrums::qtum_electrums;
 use crate::structs::*;
-
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -792,8 +791,13 @@ pub fn mm_ctx_with_custom_db() -> MmArc {
     use std::sync::Arc;
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
+
     let connection = Connection::open_in_memory().unwrap();
     let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+
+    let connection = Connection::open_in_memory().unwrap();
+    let _ = ctx.shared_sqlite_conn.pin(Arc::new(Mutex::new(connection)));
+
     ctx
 }
 
@@ -2380,6 +2384,20 @@ pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
         .unwrap();
     assert_eq!(request.0, StatusCode::OK, "'my_balance' failed: {}", request.1);
     json::from_str(&request.1).unwrap()
+}
+
+pub async fn get_shared_db_id(mm: &MarketMakerIt) -> GetSharedDbIdResult {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "get_shared_db_id",
+            "mmrpc": "2.0",
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'get_shared_db_id' failed: {}", request.1);
+    let res: RpcSuccessResponse<_> = json::from_str(&request.1).unwrap();
+    res.result
 }
 
 pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {

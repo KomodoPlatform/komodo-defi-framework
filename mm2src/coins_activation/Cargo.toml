@@ -12,7 +12,7 @@ coins = { path = "../coins" }
 common = { path = "../common" }
 crypto = { path = "../crypto" }
 derive_more = "0.99"
-ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
+ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
 hex = "0.4.2"
 mm2_core = { path = "../mm2_core" }
@@ -26,7 +26,10 @@ ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serde = "1.0"
 serde_derive = "1.0"
-serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+mm2_metamask = { path = "../mm2_metamask" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 lightning = "0.0.110"
