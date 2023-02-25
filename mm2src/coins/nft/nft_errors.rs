@@ -40,12 +40,11 @@ impl From<SlurpError> for GetNftInfoError {
 impl From<web3::Error> for GetNftInfoError {
     fn from(e: Error) -> Self {
         let error_str = e.to_string();
-        match e.kind() {
-            web3::ErrorKind::InvalidResponse(_)
-            | web3::ErrorKind::Decoder(_)
-            | web3::ErrorKind::Msg(_)
-            | web3::ErrorKind::Rpc(_) => GetNftInfoError::InvalidResponse(error_str),
-            web3::ErrorKind::Transport(_) | web3::ErrorKind::Io(_) => GetNftInfoError::Transport(error_str),
+        match e {
+            web3::Error::InvalidResponse(_) | web3::Error::Decoder(_) | web3::Error::Rpc(_) => {
+                GetNftInfoError::InvalidResponse(error_str)
+            },
+            web3::Error::Transport(_) | web3::Error::Io(_) => GetNftInfoError::Transport(error_str),
             _ => GetNftInfoError::Internal(error_str),
         }
     }

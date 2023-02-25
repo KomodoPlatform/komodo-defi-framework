@@ -930,7 +930,6 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
                 Token::Address(from_addr),
                 Token::Address(to_addr),
                 Token::Uint(token_id_u256),
-                Token::Bytes("0x".into()),
             ])?;
             (0.into(), data, token_addr, eth_coin.ticker())
         },
@@ -955,11 +954,12 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
                 value: Some(eth_value),
                 data: Some(data.clone().into()),
                 from: Some(eth_coin.my_address),
-                to: call_addr,
+                to: Some(call_addr),
                 gas: None,
                 // gas price must be supplied because some smart contracts base their
                 // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
                 gas_price: Some(gas_price),
+                ..CallRequest::default()
             };
             // Note if the wallet's balance is insufficient to withdraw, then `estimate_gas` may fail with the `Exception` error.
             // Ideally we should determine the case when we have the insufficient balance and return `WithdrawError::NotSufficientBalance`.
@@ -968,11 +968,12 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
         },
     };
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
-    let nonce_fut = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone()).compat();
-    let nonce = match select(nonce_fut, Timer::sleep(30.)).await {
-        Either::Left((nonce_res, _)) => nonce_res.map_to_mm(WithdrawError::Transport)?,
-        Either::Right(_) => return MmError::err(WithdrawError::Transport("Get address nonce timed out".to_owned())),
-    };
+    let nonce = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone())
+        .compat()
+        .timeout_secs(30.)
+        .await?
+        .map_to_mm(WithdrawError::Transport)?;
+
     let tx = UnSignedEthTx {
         nonce,
         value: eth_value,
@@ -983,10 +984,10 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
     };
     let secret = eth_coin.priv_key_policy.key_pair_or_err()?.secret();
     let signed = tx.sign(secret, eth_coin.chain_id);
-    let bytes = rlp::encode(&signed);
+    let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
     Ok(TransactionNftDetails {
-        tx_hex: bytes.into(),
+        tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash()),
         from: vec![req.from],
         to: vec![req.to],
@@ -4915,7 +4916,7 @@ pub async fn get_eth_address(ctx: &MmArc, ticker: &str) -> MmResult<MyWalletAddr
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
     let priv_key_policy = EthPrivKeyBuildPolicy::try_from(priv_key_policy)?;
 
-    let (my_address, ..) = build_address_and_priv_key_policy(&ctx.conf, priv_key_policy)?;
+    let (my_address, ..) = build_address_and_priv_key_policy(&ctx.conf, priv_key_policy).await?;
     let wallet_address = checksum_address(&format!("{:#02x}", my_address));
 
     Ok(MyWalletAddress {
