@@ -32,6 +32,11 @@ pub struct ProtocolV1<L: Link> {
     pub link: L,
 }
 
+#[cfg(target_arch = "wasm32")]
+impl<L: Link> ProtocolV1<L> {
+    pub(crate) fn link(&self) -> &L { &self.link }
+}
+
 #[async_trait]
 impl<L: Link + Send> Protocol for ProtocolV1<L> {
     /// Protocol V1 doesn't support sessions.

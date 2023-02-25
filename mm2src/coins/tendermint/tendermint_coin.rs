@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
-use common::log::warn;
+use common::log::{debug, warn};
 use common::{get_utc_timestamp, now_ms, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
@@ -182,16 +182,19 @@ impl RpcCommonOps for TendermintCoin {
         let mut client_impl = self.client.0.lock().await;
         // try to find first live client
         for (i, client) in client_impl.rpc_clients.clone().into_iter().enumerate() {
-            if client
-                .perform(HealthRequest)
-                .timeout(Duration::from_secs(3))
-                .await
-                .is_ok()
-            {
-                // Bring the live client to the front of rpc_clients
-                client_impl.rpc_clients.rotate_left(i);
-                return Ok(client);
-            }
+            match client.perform(HealthRequest).timeout(Duration::from_secs(5)).await {
+                Ok(Ok(_)) => {
+                    // Bring the live client to the front of rpc_clients
+                    client_impl.rpc_clients.rotate_left(i);
+                    return Ok(client);
+                },
+                Ok(Err(rpc_error)) => {
+                    debug!("Could not perform healthcheck on: {:?}. Error: {}", &client, rpc_error);
+                },
+                Err(timeout_error) => {
+                    debug!("Healthcheck timeout exceed on: {:?}. Error: {}", &client, timeout_error);
+                },
+            };
         }
         return Err(TendermintCoinRpcError::RpcClientError(
             "All the current rpc nodes are unavailable.".to_string(),
@@ -2113,8 +2116,14 @@ impl SwapOps for TendermintCoin {
         Ok(None)
     }
 
+    #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         key_pair_from_secret(&self.priv_key).expect("valid priv key")
+    }
+
+    #[inline]
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+        self.derive_htlc_key_pair(swap_unique_data).public_slice().to_vec()
     }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {

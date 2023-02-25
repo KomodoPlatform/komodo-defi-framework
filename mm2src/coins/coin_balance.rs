@@ -155,7 +155,7 @@ pub trait EnableCoinBalanceOps {
         params: EnabledCoinBalanceParams,
     ) -> MmResult<CoinBalanceReport, EnableCoinBalanceError>
     where
-        XPubExtractor: HDXPubExtractor + Sync;
+        XPubExtractor: HDXPubExtractor;
 }
 
 #[async_trait]
@@ -173,7 +173,7 @@ where
         params: EnabledCoinBalanceParams,
     ) -> MmResult<CoinBalanceReport, EnableCoinBalanceError>
     where
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         match self.derivation_method() {
             DerivationMethod::SingleAddress(my_address) => self
@@ -211,7 +211,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         params: EnabledCoinBalanceParams,
     ) -> MmResult<HDWalletBalance, EnableCoinBalanceError>
     where
-        XPubExtractor: HDXPubExtractor + Sync;
+        XPubExtractor: HDXPubExtractor;
 
     /// Scans for the new addresses of the specified `hd_account` using the given `address_scanner`.
     /// Returns balances of the new addresses.
@@ -387,7 +387,7 @@ pub mod common_impl {
     where
         Coin: HDWalletBalanceOps + MarketCoinOps + Sync,
         Coin::Address: fmt::Display,
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         let mut accounts = hd_wallet.get_accounts_mut().await;
         let address_scanner = coin.produce_hd_address_scanner().await?;

@@ -2,7 +2,7 @@ use common::custom_futures::repeatable::{Ready, Retry};
 use common::{block_on, log, repeatable};
 use http::StatusCode;
 use itertools::Itertools;
-use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message,
+use mm2_test_helpers::for_tests::{disable_coin, enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message,
                                   tbch_for_slp_conf, tbch_usdf_conf, verify_message, MarketMakerIt, Mm2TestConf,
                                   UtxoRpcMode};
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, RpcV2Response, SignatureResponse, StandardHistoryV2Res,
@@ -170,13 +170,7 @@ fn test_withdraw_cashaddresses() {
     thread::sleep(Duration::from_secs(5));
 
     //Disable BCH to enable in Legacy Mode
-    let rc = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "disable_coin",
-        "coin": "BCH",
-    })))
-    .unwrap();
-    assert_eq!(rc.0, StatusCode::OK, "RPC «disable_coin» failed with status «{}»", rc.0);
+    block_on(disable_coin(&mm, "BCH"));
 
     let electrum = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,

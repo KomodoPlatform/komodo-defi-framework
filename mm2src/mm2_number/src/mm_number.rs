@@ -379,4 +379,19 @@ mod tests {
         assert_eq!(actual.number_rat, expected.number_rat);
         // Fraction doesn't implement `PartialEq` trait
     }
+
+    #[test]
+    fn test_from_non_str_decimal() {
+        let json_str = r#"{"num":218998218471824891289891282187398.99999999128948218418948571392148}"#;
+
+        #[derive(Deserialize)]
+        struct Helper {
+            num: MmNumber,
+        }
+
+        let actual: Helper = json::from_str(json_str).unwrap();
+        let expected = MmNumber::from("218998218471824891289891282187398.99999999128948218418948571392148");
+
+        assert_eq!(actual.num, expected);
+    }
 }

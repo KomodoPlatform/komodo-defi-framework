@@ -36,6 +36,7 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
+use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
 use common::log::LogOnError;
@@ -66,7 +67,6 @@ use std::fmt;
 use std::future::Future as Future03;
 use std::num::NonZeroUsize;
 use std::ops::{Add, Deref};
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -80,13 +80,14 @@ cfg_native! {
     use futures::AsyncWriteExt;
     use lightning_invoice::{Invoice, ParseOrSemanticError};
     use std::io;
+    use std::path::PathBuf;
     use zcash_primitives::transaction::Transaction as ZTransaction;
     use z_coin::ZcoinProtocolInfo;
 }
 
 cfg_wasm32! {
-    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use hd_wallet_storage::HDWalletDb;
+    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
     pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
 }
@@ -201,6 +202,7 @@ pub mod coins_tests;
 pub mod eth;
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthTxFeeDetails, GetEthAddressError, SignedEthTx};
 
+pub mod hd_confirm_address;
 pub mod hd_pubkey;
 
 pub mod hd_wallet;
@@ -215,7 +217,8 @@ pub mod qrc20;
 use qrc20::{qrc20_coin_with_policy, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
 
 pub mod rpc_command;
-use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
+use rpc_command::{get_new_address::{GetNewAddressTaskManager, GetNewAddressTaskManagerShared},
+                  init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
                   init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
                   init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
@@ -781,7 +784,12 @@ pub trait SwapOps {
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
+    /// Consider using [`SwapOps::derive_htlc_pubkey`] if you need the public key only.
+    /// Some coins may not have a private key.
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
+
+    /// Derives an HTLC key-pair and returns a public key corresponding to that key.
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8>;
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
 
@@ -1027,6 +1035,10 @@ pub struct WithdrawRequest {
     max: bool,
     fee: Option<WithdrawFee>,
     memo: Option<String>,
+    /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask **only**.
+    #[cfg(target_arch = "wasm32")]
+    #[serde(default)]
+    broadcast: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1068,26 +1080,6 @@ pub struct VerificationRequest {
 }
 
 impl WithdrawRequest {
-    pub fn new(
-        coin: String,
-        from: Option<WithdrawFrom>,
-        to: String,
-        amount: BigDecimal,
-        max: bool,
-        fee: Option<WithdrawFee>,
-        memo: Option<String>,
-    ) -> WithdrawRequest {
-        WithdrawRequest {
-            coin,
-            from,
-            to,
-            amount,
-            max,
-            fee,
-            memo,
-        }
-    }
-
     pub fn new_max(coin: String, to: String) -> WithdrawRequest {
         WithdrawRequest {
             coin,
@@ -1097,6 +1089,8 @@ impl WithdrawRequest {
             max: true,
             fee: None,
             memo: None,
+            #[cfg(target_arch = "wasm32")]
+            broadcast: false,
         }
     }
 }
@@ -1773,8 +1767,9 @@ pub enum WithdrawError {
     #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
     UnexpectedUserAction { expected: String },
     #[from_trait(WithHwRpcError::hw_rpc_error)]
-    #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
+    #[cfg(target_arch = "wasm32")]
+    BroadcastExpected(String),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[from_trait(WithInternal::internal)]
@@ -1810,6 +1805,8 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::AddressMismatchError { .. }
             | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_) => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
+            #[cfg(target_arch = "wasm32")]
+            WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
             WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -1839,6 +1836,10 @@ impl From<UtxoSignWithKeyPairError> for WithdrawError {
         let error = format!("Error signing: {}", e);
         WithdrawError::InternalError(error)
     }
+}
+
+impl From<TimeoutError> for WithdrawError {
+    fn from(e: TimeoutError) -> Self { WithdrawError::Timeout(e.duration) }
 }
 
 impl WithdrawError {
@@ -2017,6 +2018,7 @@ pub trait MmCoin:
     fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     /// Path to tx history file
+    #[cfg(not(target_arch = "wasm32"))]
     fn tx_history_path(&self, ctx: &MmArc) -> PathBuf {
         let my_address = self.my_address().unwrap_or_default();
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
@@ -2028,6 +2030,7 @@ pub trait MmCoin:
     }
 
     /// Path to tx history migration file
+    #[cfg(not(target_arch = "wasm32"))]
     fn tx_migration_path(&self, ctx: &MmArc) -> PathBuf {
         let my_address = self.my_address().unwrap_or_default();
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
@@ -2281,6 +2284,7 @@ pub struct CoinsContext {
     balance_update_handlers: AsyncMutex<Vec<Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>>>,
     account_balance_task_manager: AccountBalanceTaskManagerShared,
     create_account_manager: CreateAccountTaskManagerShared,
+    get_new_address_manager: GetNewAddressTaskManagerShared,
     platform_coin_tokens: PaMutex<HashMap<String, HashSet<String>>>,
     scan_addresses_manager: ScanAddressesTaskManagerShared,
     withdraw_task_manager: WithdrawTaskManagerShared,
@@ -2304,13 +2308,14 @@ impl CoinsContext {
                 coins: AsyncMutex::new(HashMap::new()),
                 balance_update_handlers: AsyncMutex::new(vec![]),
                 account_balance_task_manager: AccountBalanceTaskManager::new_shared(),
-                withdraw_task_manager: WithdrawTaskManager::new_shared(),
                 create_account_manager: CreateAccountTaskManager::new_shared(),
+                get_new_address_manager: GetNewAddressTaskManager::new_shared(),
                 scan_addresses_manager: ScanAddressesTaskManager::new_shared(),
+                withdraw_task_manager: WithdrawTaskManager::new_shared(),
                 #[cfg(target_arch = "wasm32")]
-                tx_history_db: ConstructibleDb::new_shared(ctx),
+                tx_history_db: ConstructibleDb::new(ctx).into_shared(),
                 #[cfg(target_arch = "wasm32")]
-                hd_wallet_db: ConstructibleDb::new_shared(ctx),
+                hd_wallet_db: ConstructibleDb::new_shared_db(ctx).into_shared(),
             })
         })))
     }
@@ -2375,8 +2380,8 @@ impl CoinsContext {
         Ok(())
     }
 
-    /// Get enabled coins to disable.
-    pub async fn get_tokens_to_disable(&self, ticker: &str) -> HashSet<String> {
+    /// If `ticker` is a platform coin, returns tokens dependent on it.
+    pub async fn get_dependent_tokens(&self, ticker: &str) -> HashSet<String> {
         let coins = self.platform_coin_tokens.lock();
         coins.get(ticker).cloned().unwrap_or_default()
     }

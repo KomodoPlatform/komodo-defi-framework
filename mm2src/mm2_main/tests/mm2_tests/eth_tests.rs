@@ -1,6 +1,7 @@
 use common::block_on;
 use http::StatusCode;
-use mm2_test_helpers::for_tests::{get_passphrase, MarketMakerIt, Mm2TestConf, ETH_DEV_NODES};
+use mm2_test_helpers::for_tests::{disable_coin, disable_coin_err, get_passphrase, MarketMakerIt, Mm2TestConf,
+                                  ETH_DEV_NODES};
 use serde_json::{json, Value as Json};
 use std::str::FromStr;
 
@@ -64,24 +65,15 @@ fn test_disable_eth_coin_with_token() {
     let order_uuid = Json::from_str(&*make_test_order.1).unwrap();
     let order_uuid = order_uuid.get("result").unwrap().get("uuid").unwrap().as_str().unwrap();
 
-    // Disable platform coin ETH
-    let disable = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "disable_coin",
-        "coin": "ETH",
-    })))
-    .unwrap();
-    assert_eq!(disable.0, StatusCode::OK);
-    // We expected make_test_order to be cancelled
-    assert!(disable.1.contains(order_uuid));
+    // Try to disable platform coin, ETH. This should fail due to the dependent tokens.
+    let error = block_on(disable_coin_err(&mm, "ETH"));
+    assert_eq!(error.dependent_tokens, ["JST"]);
 
-    // We also expected token, "JST" to be deactivated
-    let my_balance = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "my_balance",
-        "coin": "JST",
-    })))
-    .unwrap();
-    assert_eq!(my_balance.0, StatusCode::INTERNAL_SERVER_ERROR);
-    assert!(my_balance.1.contains("No such coin: JST"));
+    // Try to disable JST token first.
+    // ETH and JST should be deactivated at once.
+    let res = block_on(disable_coin(&mm, "JST"));
+    // We expected make_test_order to be cancelled
+    assert!(res.cancelled_orders.contains(order_uuid));
+    // Then try to disable ETH platform coin.
+    block_on(disable_coin(&mm, "ETH"));
 }

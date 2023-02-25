@@ -2607,7 +2607,7 @@ impl Orderbook {
         i_am_relay: bool,
     ) -> Option<OrdermatchRequest> {
         let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-
+        pubkey_state.last_keep_alive = now_ms() / 1000;
         let mut trie_roots_to_request = HashMap::new();
         for (alb_pair, trie_root) in message.trie_roots {
             let subscribed = self
@@ -2633,7 +2633,6 @@ impl Orderbook {
         }
 
         if trie_roots_to_request.is_empty() {
-            pubkey_state.last_keep_alive = message.timestamp;
             return None;
         }
 
@@ -5158,20 +5157,26 @@ pub async fn my_orders(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
         .map_err(|e| ERRL!("{}", e))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn my_maker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("MAKER") }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn my_taker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("TAKER") }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn my_orders_history_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("HISTORY") }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn my_maker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
     my_maker_orders_dir(ctx).join(format!("{}.json", uuid))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn my_taker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
     my_taker_orders_dir(ctx).join(format!("{}.json", uuid))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
     my_orders_history_dir(ctx).join(format!("{}.json", uuid))
 }

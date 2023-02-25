@@ -1,4 +1,3 @@
-use crate::HwPubkey;
 use derive_more::Display;
 use hw_common::primitives::Bip32Error;
 use mm2_err_handle::prelude::*;
@@ -20,15 +19,8 @@ pub enum HwError {
     ConnectionTimedOut {
         timeout: Duration,
     },
-    #[display(
-        fmt = "Expected a Hardware Wallet device with '{}' pubkey, found '{}'",
-        expected_pubkey,
-        actual_pubkey
-    )]
-    FoundUnexpectedDevice {
-        actual_pubkey: HwPubkey,
-        expected_pubkey: HwPubkey,
-    },
+    #[display(fmt = "Found unexpected Hardware Wallet device")]
+    FoundUnexpectedDevice,
     DeviceDisconnected,
     #[display(fmt = "'{}' transport not supported", transport)]
     TransportNotSupported {
@@ -97,7 +89,7 @@ where
         },
         HwError::CannotChooseDevice { .. } => T::hw_rpc_error(HwRpcError::FoundMultipleDevices),
         HwError::ConnectionTimedOut { timeout } => T::timeout(timeout),
-        HwError::FoundUnexpectedDevice { .. } => T::hw_rpc_error(HwRpcError::FoundUnexpectedDevice),
+        HwError::FoundUnexpectedDevice => T::hw_rpc_error(HwRpcError::FoundUnexpectedDevice),
         other => T::internal(other.to_string()),
     }
 }

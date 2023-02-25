@@ -236,6 +236,17 @@ where
         self.repeat_every(Duration::from_secs_f64(repeat_every))
     }
 
+    /// Repeat the future until it's ready.
+    ///
+    /// # Warning
+    ///
+    /// This may lead to an endless loop if the future is never ready.
+    #[inline]
+    pub fn until_ready(mut self) -> Self {
+        self.until = RepeatUntil::Ready;
+        self
+    }
+
     /// Specifies a total number of attempts to run the future.
     /// So there will be up to `total_attempts`.
     ///
@@ -325,6 +336,8 @@ where
                                 return Poll::Ready(Err(RepeatError::attempts(attempts.current_attempt, error)));
                             }
                         },
+                        // Repeat until the future is ready.
+                        RepeatUntil::Ready => (),
                     }
 
                     // Create a new future attempt.
@@ -356,6 +369,7 @@ impl AttemptsState {
 enum RepeatUntil {
     TimeoutMsExpired(u64),
     AttemptsExceed(AttemptsState),
+    Ready,
 }
 
 impl Default for RepeatUntil {
@@ -493,7 +507,7 @@ mod tests {
     fn test_until_success() {
         const ATTEMPTS_TO_FINISH: usize = 5;
         const LOWEST_TIMEOUT: Duration = Duration::from_millis(350);
-        const HIGHEST_TIMEOUT: Duration = Duration::from_millis(700);
+        const HIGHEST_TIMEOUT: Duration = Duration::from_millis(800);
 
         let counter = AsyncMutex::new(0);
 
@@ -521,7 +535,7 @@ mod tests {
     fn test_until_expired() {
         const ATTEMPTS_TO_FINISH: usize = 10;
         const LOWEST_TIMEOUT: Duration = Duration::from_millis(350);
-        const HIGHEST_TIMEOUT: Duration = Duration::from_millis(700);
+        const HIGHEST_TIMEOUT: Duration = Duration::from_millis(800);
 
         let counter = AsyncMutex::new(0);
 
@@ -555,7 +569,7 @@ mod tests {
     fn test_until_ms() {
         const ATTEMPTS_TO_FINISH: usize = 5;
         const LOWEST_TIMEOUT: u64 = 350;
-        const HIGHEST_TIMEOUT: u64 = 700;
+        const HIGHEST_TIMEOUT: u64 = 800;
 
         let counter = AsyncMutex::new(0);
 

@@ -1,19 +1,19 @@
-use crate::hw_client::{HwClient, HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
+use crate::hw_client::{HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
 use crate::hw_error::HwError;
 use crate::trezor::TrezorSession;
 use crate::{mm2_internal_der_path, HwWalletType};
 use bip32::ChildNumber;
 use bitcrypto::dhash160;
 use common::log::warn;
-use futures::lock::Mutex as AsyncMutex;
 use hw_common::primitives::{EcdsaCurve, Secp256k1ExtendedPublicKey};
 use keys::Public as PublicKey;
 use mm2_err_handle::prelude::*;
 use primitives::hash::{H160, H264};
+use std::fmt;
 use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use trezor::client::TrezorClient;
 use trezor::utxo::IGNORE_XPUB_MAGIC;
 use trezor::{ProcessTrezorResponse, TrezorRequestProcessor};
 
@@ -42,7 +42,9 @@ pub struct HardwareWalletCtx {
     /// The mutex hasn't to be locked while the client is used
     /// because every variant of `HwClient` uses an internal mutex to operate with the device.
     /// But it has to be locked while the client is initialized.
-    pub(crate) hw_wallet: AsyncMutex<Option<HwClient>>,
+    pub(crate) hw_wallet: HwClient,
+    /// Whether the Hardware Wallet is connected.
+    pub(crate) hw_wallet_connected: AtomicBool,
 }
 
 impl HardwareWalletCtx {
@@ -55,48 +57,51 @@ impl HardwareWalletCtx {
         let trezor = HwClient::trezor(processor).await?;
 
         let (hw_device_info, hw_internal_pubkey) = {
-            let (device_info, mut session) = trezor.new_session().await?;
+            let (device_info, mut session) = trezor.init_new_session().await?;
             let hw_internal_pubkey = HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session, processor).await?;
             (HwDeviceInfo::Trezor(device_info), hw_internal_pubkey)
         };
 
-        let hw_client = HwClient::Trezor(trezor);
+        let hw_wallet = HwClient::Trezor(trezor);
         let hw_ctx = HardwareWalletArc::new(HardwareWalletCtx {
             hw_internal_pubkey,
-            hw_wallet_type: hw_client.hw_wallet_type(),
-            hw_wallet: AsyncMutex::new(Some(hw_client)),
+            hw_wallet_type: hw_wallet.hw_wallet_type(),
+            hw_wallet,
+            hw_wallet_connected: AtomicBool::new(true),
         });
         Ok((hw_device_info, hw_ctx))
     }
 
     pub fn hw_wallet_type(&self) -> HwWalletType { self.hw_wallet_type }
 
-    /// Connects to a Trezor device and checks if MM was initialized from this particular device.
-    pub async fn trezor<Processor>(
-        &self,
-        processor: &Processor,
-    ) -> MmResult<TrezorClient, HwProcessingError<Processor::Error>>
-    where
-        Processor: TrezorConnectProcessor + Sync,
-        Processor::Error: std::fmt::Display,
-    {
-        let mut hw_client = self.hw_wallet.lock().await;
-        if let Some(HwClient::Trezor(connected_trezor)) = hw_client.deref() {
-            match self.check_trezor(connected_trezor, processor).await {
-                Ok(()) => return Ok(connected_trezor.clone()),
-                // The device could be unplugged. We should try to reconnect to the device.
-                Err(e) => warn!("Error checking hardware wallet device: '{}'. Trying to reconnect...", e),
-            }
+    /// Returns a Trezor session.
+    pub async fn trezor(&self) -> MmResult<TrezorSession<'_>, HwError> {
+        if !self.hw_wallet_connected.load(Ordering::Relaxed) {
+            return MmError::err(HwError::DeviceDisconnected);
         }
-        // Connect to a device.
-        let trezor = HwClient::trezor(processor).await?;
-        // Check if the connected device has the same public key as we used to initialize the app.
-        self.check_trezor(&trezor, processor).await?;
 
-        // Reinitialize the field to avoid reconnecting next time.
-        *hw_client = Some(HwClient::Trezor(trezor.clone()));
+        let HwClient::Trezor(ref trezor) = self.hw_wallet;
+        let session = trezor.session().await;
+        self.check_if_connected(session).await
+    }
 
-        Ok(trezor)
+    pub async fn trezor_connection_status(&self) -> HwConnectionStatus {
+        if !self.hw_wallet_connected.load(Ordering::Relaxed) {
+            return HwConnectionStatus::Unreachable;
+        }
+
+        let HwClient::Trezor(ref trezor) = self.hw_wallet;
+        let session = match trezor.try_session_if_not_occupied() {
+            Some(session) => session,
+            // If we got `None`, the session mutex is occupied by another task,
+            // so for now we can consider the Trezor device as connected.
+            None => return HwConnectionStatus::Connected,
+        };
+
+        match self.check_if_connected(session).await {
+            Ok(_session) => HwConnectionStatus::Connected,
+            Err(_) => HwConnectionStatus::Unreachable,
+        }
     }
 
     pub fn secp256k1_pubkey(&self) -> PublicKey { PublicKey::Compressed(self.hw_internal_pubkey) }
@@ -132,25 +137,46 @@ impl HardwareWalletCtx {
         Ok(H264::from(extended_pubkey.public_key().serialize()))
     }
 
-    async fn check_trezor<Processor>(
-        &self,
-        trezor: &TrezorClient,
-        processor: &Processor,
-    ) -> MmResult<(), HwProcessingError<Processor::Error>>
-    where
-        Processor: TrezorRequestProcessor + Sync,
-    {
-        let mut session = trezor.session().await.mm_err(HwError::from)?;
-        let actual_pubkey = Self::trezor_mm_internal_pubkey(&mut session, processor).await?;
-        if actual_pubkey != self.hw_internal_pubkey {
-            let actual_pubkey = hw_pubkey_from_h264(&actual_pubkey);
-            let expected_pubkey = self.hw_pubkey();
-            return MmError::err(HwProcessingError::HwError(HwError::FoundUnexpectedDevice {
-                actual_pubkey,
-                expected_pubkey,
-            }));
+    #[cfg(target_arch = "wasm32")]
+    async fn check_if_connected<'a>(&self, mut session: TrezorSession<'a>) -> MmResult<TrezorSession<'a>, HwError> {
+        match session.is_connected().await {
+            Ok(true) => Ok(session),
+            Ok(false) => {
+                self.handle_hw_error(&HwError::DeviceDisconnected);
+                MmError::err(HwError::DeviceDisconnected)
+            },
+            Err(e) => {
+                self.handle_hw_error(&e);
+                Err(e.map(HwError::from))
+            },
         }
-        Ok(())
+    }
+
+    /// Currently, we use the heavy [`TrezorSession::ping`] method although it may lead
+    /// to the Button/PIN press request if the device is **locked**.
+    /// So even if we cancel the Button/PIN request,
+    /// the display will have time to draw something, that is, blink.
+    ///
+    /// TODO figure out how to implement [`Transport::is_connected`] for the native `UsbTransport`.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn check_if_connected<'a>(&self, mut session: TrezorSession<'a>) -> MmResult<TrezorSession<'a>, HwError> {
+        match session.ping().await {
+            Ok(resp) => {
+                resp.cancel_if_not_ready().await;
+                Ok(session)
+            },
+            Err(e) => {
+                self.handle_hw_error(&e);
+                Err(e.map(HwError::from))
+            },
+        }
+    }
+
+    /// If either the [`HardwareWalletCtx::hw_wallet`] client failed on a connection check,
+    /// we can't use it anymore.
+    fn handle_hw_error(&self, error: &dyn fmt::Display) {
+        warn!("Error checking Trezor device status. The device is no longer available: '{error}'");
+        self.hw_wallet_connected.store(false, Ordering::Relaxed);
     }
 }
 

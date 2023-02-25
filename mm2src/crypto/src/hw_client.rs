@@ -52,6 +52,14 @@ pub enum HwDeviceInfo {
     Trezor(TrezorDeviceInfo),
 }
 
+#[derive(Debug, Serialize)]
+pub enum HwConnectionStatus {
+    Connected,
+    /// `Unreachable` means that the device is either disconnected or is in an incorrect state,
+    /// so it should be reinitialized.
+    Unreachable,
+}
+
 #[async_trait]
 pub trait TrezorConnectProcessor: TrezorRequestProcessor {
     async fn on_connect(&self) -> MmResult<Duration, HwProcessingError<Self::Error>>;

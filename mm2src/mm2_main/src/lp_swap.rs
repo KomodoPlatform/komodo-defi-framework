@@ -830,8 +830,10 @@ pub struct TransactionIdentifier {
     tx_hash: BytesJson,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn my_swaps_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("MY") }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn my_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf { my_swaps_dir(ctx).join(format!("{}.json", uuid)) }
 
 pub async fn insert_new_swap_to_db(

@@ -5,8 +5,10 @@ use crate::hw_error::HwError;
 #[cfg(target_arch = "wasm32")]
 use crate::metamask_ctx::{MetamaskArc, MetamaskCtx, MetamaskError};
 use crate::privkey::{key_pair_from_seed, PrivKeyError};
+use crate::shared_db_id::{shared_db_id_from_seed, SharedDbIdError};
 use arrayref::array_ref;
 use common::bits256;
+use common::log::info;
 use derive_more::Display;
 use keys::{KeyPair, Public as PublicKey, Secret as Secp256k1Secret};
 use mm2_core::mm_ctx::MmArc;
@@ -23,8 +25,8 @@ pub type CryptoInitResult<T> = Result<T, MmError<CryptoInitError>>;
 pub enum CryptoInitError {
     NotInitialized,
     InitializedAlready,
-    #[display(fmt = "jeezy says we cant use the nullstring as passphrase and I agree")]
-    NullStringPassphrase,
+    #[display(fmt = "Passphrase cannot be an empty string")]
+    EmptyPassphrase,
     #[display(fmt = "Invalid passphrase: '{}'", _0)]
     InvalidPassphrase(PrivKeyError),
     #[display(fmt = "Invalid 'hd_account_id' = {}: {}", hd_account_id, error)]
@@ -37,6 +39,15 @@ pub enum CryptoInitError {
 
 impl From<PrivKeyError> for CryptoInitError {
     fn from(e: PrivKeyError) -> Self { CryptoInitError::InvalidPassphrase(e) }
+}
+
+impl From<SharedDbIdError> for CryptoInitError {
+    fn from(e: SharedDbIdError) -> Self {
+        match e {
+            SharedDbIdError::EmptyPassphrase => CryptoInitError::EmptyPassphrase,
+            SharedDbIdError::Internal(internal) => CryptoInitError::Internal(internal),
+        }
+    }
 }
 
 #[derive(Debug, Display)]
@@ -248,9 +259,12 @@ impl CryptoCtx {
         result.mm_err(HwCtxInitError::from)
     }
 
-    /// TODO add `processor: Processor`, `expected_address: Option<String>`.
+    /// # Todo
+    ///
+    /// Consider taking `processor: Processor` and `expected_address: Option<String>`
+    /// the same way as `CryptoCtx::init_hw_ctx_with_trezor`.
     #[cfg(target_arch = "wasm32")]
-    pub async fn init_metamask_ctx(&self) -> MmResult<MetamaskArc, MetamaskCtxInitError> {
+    pub async fn init_metamask_ctx(&self, project_name: String) -> MmResult<MetamaskArc, MetamaskCtxInitError> {
         {
             let mut state = self.metamask_ctx.write();
             if let InitializationState::Initializing = state.deref() {
@@ -260,7 +274,7 @@ impl CryptoCtx {
             *state = InitializationState::Initializing;
         }
 
-        let metamask_ctx = MetamaskCtx::init().await?;
+        let metamask_ctx = MetamaskCtx::init(project_name).await?;
         let metamask_arc = MetamaskArc::new(metamask_ctx);
 
         *self.metamask_ctx.write() = InitializationState::Ready(metamask_arc.clone());
@@ -292,11 +306,12 @@ impl CryptoCtx {
         }
 
         if passphrase.is_empty() {
-            return MmError::err(CryptoInitError::NullStringPassphrase);
+            return MmError::err(CryptoInitError::EmptyPassphrase);
         }
 
         let (secp256k1_key_pair, key_pair_policy) = policy_builder.build(passphrase)?;
         let rmd160 = secp256k1_key_pair.public().address_hash();
+        let shared_db_id = shared_db_id_from_seed(passphrase)?;
 
         let crypto_ctx = CryptoCtx {
             secp256k1_key_pair,
@@ -311,7 +326,12 @@ impl CryptoCtx {
         drop(ctx_field);
 
         ctx.rmd160.pin(rmd160).map_to_mm(CryptoInitError::Internal)?;
+        ctx.shared_db_id
+            .pin(shared_db_id)
+            .map_to_mm(CryptoInitError::Internal)?;
 
+        info!("Public key hash: {rmd160}");
+        info!("Shared Database ID: {shared_db_id}");
         Ok(result)
     }
 }

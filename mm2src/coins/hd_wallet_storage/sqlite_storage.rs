@@ -2,8 +2,10 @@ use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorage
                                HDWalletStorageResult};
 use async_trait::async_trait;
 use common::async_blocking;
-use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, ToSql, NO_PARAMS};
-use db_common::sqlite::{SqliteConnShared, SqliteConnWeak};
+use db_common::owned_named_params;
+use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, NO_PARAMS};
+use db_common::sqlite::{query_single_row_with_named_params, AsSqlNamedParams, OwnedSqlNamedParams, SqliteConnShared,
+                        SqliteConnWeak};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -12,7 +14,6 @@ use std::sync::MutexGuard;
 
 const CREATE_HD_ACCOUNT_TABLE: &str = "CREATE TABLE IF NOT EXISTS hd_account (
     coin VARCHAR(255) NOT NULL,
-    mm2_rmd160 VARCHAR(255) NOT NULL,
     hd_wallet_rmd160 VARCHAR(255) NOT NULL,
     account_id INTEGER NOT NULL,
     account_xpub VARCHAR(255) NOT NULL,
@@ -21,23 +22,20 @@ const CREATE_HD_ACCOUNT_TABLE: &str = "CREATE TABLE IF NOT EXISTS hd_account (
 );";
 
 const INSERT_ACCOUNT: &str = "INSERT INTO hd_account
-    (coin, mm2_rmd160, hd_wallet_rmd160, account_id, account_xpub, external_addresses_number, internal_addresses_number)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);";
+    (coin, hd_wallet_rmd160, account_id, account_xpub, external_addresses_number, internal_addresses_number)
+    VALUES (:coin, :hd_wallet_rmd160, :account_id, :account_xpub, :external_addresses_number, :internal_addresses_number);";
 
 const DELETE_ACCOUNTS_BY_WALLET_ID: &str =
-    "DELETE FROM hd_account WHERE coin=?1 AND mm2_rmd160=?2 AND hd_wallet_rmd160=?3;";
+    "DELETE FROM hd_account WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160;";
 
 const SELECT_ACCOUNT: &str = "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number
     FROM hd_account
-    WHERE coin=?1 AND mm2_rmd160=?2 AND hd_wallet_rmd160=?3 AND account_id=?4;";
+    WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160 AND account_id=:account_id;";
 
 const SELECT_ACCOUNTS_BY_WALLET_ID: &str =
     "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number
     FROM hd_account
-    WHERE coin=?1 AND mm2_rmd160=?2 AND hd_wallet_rmd160=?3;";
-
-/// The max number of SQL query params.
-const PARAMS_CAPACITY: usize = 7;
+    WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160;";
 
 impl From<SqlError> for HDWalletStorageError {
     fn from(e: SqlError) -> Self {
@@ -69,32 +67,24 @@ impl TryFrom<&Row<'_>> for HDAccountStorageItem {
 }
 
 impl HDAccountStorageItem {
-    fn to_sql_params_with_wallet_id(&self, wallet_id: HDWalletId) -> Vec<String> {
-        let mut params = Vec::with_capacity(PARAMS_CAPACITY);
-        wallet_id.fill_sql_params(&mut params);
-        self.fill_sql_params(&mut params);
+    fn to_sql_params_with_wallet_id(&self, wallet_id: HDWalletId) -> OwnedSqlNamedParams {
+        let mut params = wallet_id.to_sql_params();
+        params.extend(owned_named_params! {
+            ":account_id": self.account_id,
+            ":account_xpub": self.account_xpub.clone(),
+            ":external_addresses_number": self.external_addresses_number,
+            ":internal_addresses_number": self.internal_addresses_number,
+        });
         params
-    }
-
-    fn fill_sql_params(&self, params: &mut Vec<String>) {
-        params.push(self.account_id.to_string());
-        params.push(self.account_xpub.clone());
-        params.push(self.external_addresses_number.to_string());
-        params.push(self.internal_addresses_number.to_string());
     }
 }
 
 impl HDWalletId {
-    fn to_sql_params(&self) -> Vec<String> {
-        let mut params = Vec::with_capacity(PARAMS_CAPACITY);
-        self.fill_sql_params(&mut params);
-        params
-    }
-
-    fn fill_sql_params(&self, params: &mut Vec<String>) {
-        params.push(self.coin.clone());
-        params.push(self.mm2_rmd160.clone());
-        params.push(self.hd_wallet_rmd160.clone());
+    fn to_sql_params(&self) -> OwnedSqlNamedParams {
+        owned_named_params! {
+            ":coin": self.coin.clone(),
+            ":hd_wallet_rmd160": self.hd_wallet_rmd160.clone(),
+        }
     }
 }
 
@@ -109,10 +99,9 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
     where
         Self: Sized,
     {
-        let shared = ctx
-            .sqlite_connection
-            .as_option()
-            .or_mm_err(|| HDWalletStorageError::Internal("'MmCtx::sqlite_connection' is not initialized".to_owned()))?;
+        let shared = ctx.shared_sqlite_conn.as_option().or_mm_err(|| {
+            HDWalletStorageError::Internal("'MmCtx::shared_sqlite_conn' is not initialized".to_owned())
+        })?;
         let storage = HDWalletSqliteStorage {
             conn: SqliteConnShared::downgrade(shared),
         };
@@ -130,7 +119,9 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
 
             let params = wallet_id.to_sql_params();
             let rows = statement
-                .query_map(params, |row: &Row<'_>| HDAccountStorageItem::try_from(row))?
+                .query_map_named(&params.as_sql_named_params(), |row: &Row<'_>| {
+                    HDAccountStorageItem::try_from(row)
+                })?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         })
@@ -148,11 +139,13 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
             let conn = Self::lock_conn_mutex(&conn_shared)?;
 
             let mut params = wallet_id.to_sql_params();
-            params.push(account_id.to_string());
-            query_single_row(&conn, SELECT_ACCOUNT, params, |row: &Row<'_>| {
+            params.extend(owned_named_params! {
+                ":account_id": account_id,
+            });
+            query_single_row_with_named_params(&conn, SELECT_ACCOUNT, &params.as_sql_named_params(), |row: &Row<'_>| {
                 HDAccountStorageItem::try_from(row)
             })
-            .mm_err(HDWalletStorageError::from)
+            .map_to_mm(HDWalletStorageError::from)
         })
         .await
     }
@@ -198,7 +191,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
             let conn = Self::lock_conn_mutex(&conn_shared)?;
 
             let params = account.to_sql_params_with_wallet_id(wallet_id);
-            conn.execute(INSERT_ACCOUNT, params)
+            conn.execute_named(INSERT_ACCOUNT, &params.as_sql_named_params())
                 .map(|_| ())
                 .map_to_mm(HDWalletStorageError::from)
         })
@@ -212,7 +205,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
             let conn = Self::lock_conn_mutex(&conn_shared)?;
 
             let params = wallet_id.to_sql_params();
-            conn.execute(DELETE_ACCOUNTS_BY_WALLET_ID, params)
+            conn.execute_named(DELETE_ACCOUNTS_BY_WALLET_ID, &params.as_sql_named_params())
                 .map(|_| ())
                 .map_to_mm(HDWalletStorageError::from)
         })
@@ -248,8 +241,7 @@ impl HDWalletSqliteStorage {
         new_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let sql = format!(
-            "UPDATE hd_account SET {}=?1 WHERE coin=?2 AND mm2_rmd160=?3 AND hd_wallet_rmd160=?4 AND account_id=?5;",
-            updating_property
+            "UPDATE hd_account SET {updating_property}=:new_value WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160 AND account_id=:account_id;",
         );
 
         let selfi = self.clone();
@@ -257,11 +249,13 @@ impl HDWalletSqliteStorage {
             let conn_shared = selfi.get_shared_conn()?;
             let conn = Self::lock_conn_mutex(&conn_shared)?;
 
-            let mut params = vec![new_addresses_number.to_string()];
-            wallet_id.fill_sql_params(&mut params);
-            params.push(account_id.to_string());
+            let mut params = owned_named_params! {
+                ":new_value": new_addresses_number,
+                ":account_id": account_id,
+            };
+            params.extend(wallet_id.to_sql_params());
 
-            conn.execute(&sql, params)
+            conn.execute_named(&sql, &params.as_sql_named_params())
                 .map(|_| ())
                 .map_to_mm(HDWalletStorageError::from)
         })
@@ -277,29 +271,13 @@ enum UpdatingProperty {
     InternalAddressesNumber,
 }
 
-/// TODO remove this when `db_common::query_single_row` is merged into `dev`.
-fn query_single_row<T, P, F>(conn: &Connection, query: &str, params: P, map_fn: F) -> MmResult<Option<T>, SqlError>
-where
-    P: IntoIterator,
-    P::Item: ToSql,
-    F: FnOnce(&Row<'_>) -> Result<T, SqlError>,
-{
-    let maybe_result = conn.query_row(query, params, map_fn);
-    if let Err(SqlError::QueryReturnedNoRows) = maybe_result {
-        return Ok(None);
-    }
-
-    let result = maybe_result?;
-    Ok(Some(result))
-}
-
 /// This function is used in `hd_wallet_storage::tests`.
 #[cfg(test)]
 pub(super) async fn get_all_storage_items(ctx: &MmArc) -> Vec<HDAccountStorageItem> {
     const SELECT_ALL_ACCOUNTS: &str =
         "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number FROM hd_account";
 
-    let conn = ctx.sqlite_connection();
+    let conn = ctx.shared_sqlite_conn();
     let mut statement = conn.prepare(SELECT_ALL_ACCOUNTS).unwrap();
     statement
         .query_map(NO_PARAMS, |row: &Row<'_>| HDAccountStorageItem::try_from(row))
