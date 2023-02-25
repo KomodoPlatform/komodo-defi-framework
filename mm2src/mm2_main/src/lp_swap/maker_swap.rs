@@ -1887,6 +1887,8 @@ impl MakerSavedSwap {
 
         for data in &self.events {
             if let MakerSwapEvent::Negotiated(negotiated) = &data.event {
+                // if taker_coin_htlc_pubkey is not maker_coin_htlc_pubkey, we can assume
+                // swap_pubkeys.maker is  m/taker_coin_htlc_pubkey and self.my_persistence_pub is swap_pubkeys.taker.
                 if negotiated.taker_coin_htlc_pubkey == negotiated.maker_coin_htlc_pubkey && !maker_coin && !taker_coin
                 {
                     swap_pubkeys.maker = self.my_persistence_pub;
@@ -1895,13 +1897,21 @@ impl MakerSavedSwap {
                     return swap_pubkeys;
                 };
 
+                // if taker_coin_htlc_pubkey is maker_coin_htlc_pubkey, we need to find which of the swap coin is a
+                // private coin.
                 if maker_coin && !taker_coin {
+                    // Here, maker_coin is the private coin, hence, swap_pubkeys.maker is negotiated
+                    // taker_coin_htlc_pubkey and swap_pubkeys.taker is self.my_persistence_pub.
                     swap_pubkeys.maker = negotiated.taker_coin_htlc_pubkey;
                     swap_pubkeys.taker = self.my_persistence_pub;
                 } else if !maker_coin && taker_coin {
+                    // Here, taker_coin is the private coin, hence, swap_pubkeys.maker is negotiated
+                    // swap_pubkeys.maker is maker_coin_htlc_pubkey and swap_pubkeys.taker is negotiated
+                    // .taker_coin_htlc_pubkey.
                     swap_pubkeys.maker = self.my_persistence_pub;
                     swap_pubkeys.taker = negotiated.taker_coin_htlc_pubkey;
                 };
+                // if both coins are private, swap_pubkeys::maker/taker will be set to None.
             }
         }
 
