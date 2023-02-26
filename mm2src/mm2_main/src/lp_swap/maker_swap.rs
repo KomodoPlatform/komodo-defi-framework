@@ -14,7 +14,7 @@ use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::taker_swap::is_private_coin;
+use crate::mm2::lp_swap::taker_swap::PRIVATE_COINS;
 use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, NegotiationDataV3, SwapPubkeys};
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
@@ -1881,9 +1881,17 @@ impl MakerSavedSwap {
     }
 
     pub fn swap_pubkeys(&self) -> SwapPubkeys {
-        let mut swap_pubkeys = SwapPubkeys::default();
+        let is_private_coin = |coin: &Option<String>| {
+            return if let Some(c) = coin {
+                PRIVATE_COINS.contains(&c.as_str())
+            } else {
+                false
+            };
+        };
+
         let maker_coin = is_private_coin(&self.maker_coin);
         let taker_coin = is_private_coin(&self.taker_coin);
+        let mut swap_pubkeys = SwapPubkeys::default();
 
         for data in &self.events {
             if let MakerSwapEvent::Negotiated(negotiated) = &data.event {
@@ -1894,6 +1902,7 @@ impl MakerSavedSwap {
                     swap_pubkeys.maker = self.my_persistence_pub;
                     swap_pubkeys.taker = negotiated.maker_coin_htlc_pubkey;
 
+                    drop_mutability!(swap_pubkeys);
                     return swap_pubkeys;
                 };
 
@@ -1901,7 +1910,7 @@ impl MakerSavedSwap {
                 // private coin.
                 if maker_coin && !taker_coin {
                     // Here, maker_coin is the private coin, hence, swap_pubkeys.maker is negotiated
-                    // taker_coin_htlc_pubkey and swap_pubkeys.taker is self.my_persistence_pub.
+                    // .taker_coin_htlc_pubkey and swap_pubkeys.taker is self.my_persistence_pub.
                     swap_pubkeys.maker = negotiated.taker_coin_htlc_pubkey;
                     swap_pubkeys.taker = self.my_persistence_pub;
                 } else if !maker_coin && taker_coin {
@@ -1915,6 +1924,7 @@ impl MakerSavedSwap {
             }
         }
 
+        drop_mutability!(swap_pubkeys);
         swap_pubkeys
     }
 }

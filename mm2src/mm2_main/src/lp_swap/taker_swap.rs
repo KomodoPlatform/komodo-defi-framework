@@ -39,13 +39,14 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
+pub(crate) const PRIVATE_COINS: &[&str] = &["ARRR"];
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
-    "TakerPaymentInstructionsReceived",
+    "TakerPaymentInstructionscReceived",
     "MakerPaymentReceived",
     "MakerPaymentWaitConfirmStarted",
     "MakerPaymentValidatedAndConfirmed",
@@ -305,9 +306,17 @@ impl TakerSavedSwap {
     }
 
     pub fn swap_pubkeys(&self) -> SwapPubkeys {
-        let mut swap_pubkeys = SwapPubkeys::default();
+        let is_private_coin = |coin: &Option<String>| {
+            return if let Some(c) = coin {
+                PRIVATE_COINS.contains(&c.as_str())
+            } else {
+                false
+            };
+        };
+
         let maker_coin = is_private_coin(&self.maker_coin);
         let taker_coin = is_private_coin(&self.taker_coin);
+        let mut swap_pubkeys = SwapPubkeys::default();
 
         for data in &self.events {
             if let TakerSwapEvent::Negotiated(negotiated) = &data.event {
@@ -318,6 +327,7 @@ impl TakerSavedSwap {
                     swap_pubkeys.maker = negotiated.maker_coin_htlc_pubkey;
                     swap_pubkeys.taker = self.my_persistence_pub;
 
+                    drop_mutability!(swap_pubkeys);
                     return swap_pubkeys;
                 };
 
@@ -339,11 +349,10 @@ impl TakerSavedSwap {
             }
         }
 
+        drop_mutability!(swap_pubkeys);
         swap_pubkeys
     }
 }
-
-pub(crate) fn is_private_coin(ticker: &Option<String>) -> bool { ticker == &Some("ARRR".to_string()) }
 
 #[allow(clippy::large_enum_variant)]
 pub enum RunTakerSwapInput {
