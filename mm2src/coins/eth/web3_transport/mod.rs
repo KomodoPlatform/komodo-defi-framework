@@ -1,8 +1,8 @@
 use crate::RpcTransportEventHandlerShared;
-#[cfg(target_arch = "wasm32")] use crypto::MetamaskWeak;
 use ethereum_types::U256;
-use futures01::Future as Future01;
+use futures::future::BoxFuture;
 use jsonrpc_core::Call;
+#[cfg(target_arch = "wasm32")] use mm2_metamask::MetamaskResult;
 use mm2_net::transport::GuiAuthValidationGenerator;
 use serde_json::Value as Json;
 use serde_json::Value;
@@ -14,10 +14,10 @@ use web3::{Error, RequestId, Transport};
 pub(crate) mod http_transport;
 #[cfg(target_arch = "wasm32")] pub(crate) mod metamask_transport;
 
-type Web3SendOut = Box<dyn Future01<Item = Json, Error = Error> + Send>;
+type Web3SendOut = BoxFuture<'static, Result<Json, Error>>;
 
 #[derive(Clone, Debug)]
-pub enum Web3Transport {
+pub(crate) enum Web3Transport {
     Http(http_transport::HttpTransport),
     #[cfg(target_arch = "wasm32")]
     Metamask(metamask_transport::MetamaskTransport),
@@ -32,11 +32,11 @@ impl Web3Transport {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn new_metamask(
-        metamask_ctx: MetamaskWeak,
+    pub(crate) fn new_metamask(
+        eth_config: metamask_transport::MetamaskEthConfig,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
-    ) -> Web3Transport {
-        metamask_transport::MetamaskTransport::new(metamask_ctx, event_handlers).into()
+    ) -> MetamaskResult<Web3Transport> {
+        Ok(metamask_transport::MetamaskTransport::detect(eth_config, event_handlers)?.into())
     }
 
     #[cfg(test)]

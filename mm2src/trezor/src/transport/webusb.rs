@@ -3,7 +3,6 @@ use crate::transport::protocol::{Link, Protocol, ProtocolV1};
 use crate::transport::{Transport, TrezorDevice, TREZOR_DEVICES};
 use crate::{TrezorError, TrezorResult};
 use async_trait::async_trait;
-use common::executor::Timer;
 use common::log::warn;
 use hw_common::transport::webusb_driver::{DeviceFilter, WebUsbDevice, WebUsbWrapper};
 use mm2_err_handle::prelude::*;
@@ -31,6 +30,8 @@ impl Transport for WebUsbTransport {
     async fn write_message(&mut self, message: ProtoMessage) -> TrezorResult<()> { self.protocol.write(message).await }
 
     async fn read_message(&mut self) -> TrezorResult<ProtoMessage> { self.protocol.read().await }
+
+    async fn is_connected(&mut self) -> TrezorResult<bool> { self.protocol.link().is_connected().await }
 }
 
 struct WebUsbLink {
@@ -44,14 +45,14 @@ struct WebUsbLink {
 impl Link for WebUsbLink {
     async fn write_chunk(&mut self, chunk: Vec<u8>) -> TrezorResult<()> {
         if !self.device.is_open().await? {
-            self.reconnect().await?;
+            return MmError::err(TrezorError::DeviceDisconnected);
         }
         Ok(self.device.write_chunk(self.endpoint_number, chunk).await?)
     }
 
     async fn read_chunk(&mut self, chunk_len: u32) -> TrezorResult<Vec<u8>> {
         if !self.device.is_open().await? {
-            self.reconnect().await?;
+            return MmError::err(TrezorError::DeviceDisconnected);
         }
         Ok(self.device.read_chunk(self.endpoint_number, chunk_len).await?)
     }
@@ -61,25 +62,7 @@ impl WebUsbLink {
     #[allow(dead_code)]
     pub fn is_debug(&self) -> bool { self.debug }
 
-    async fn reconnect(&self) -> TrezorResult<()> {
-        let attempts = 5usize;
-        let first = false;
-        for i in 0..attempts {
-            match self.establish_connection(first).await {
-                Ok(()) => return Ok(()),
-                Err(e) if i != attempts - 1 => {
-                    warn!(
-                        "Unsuccessful attempt to connect: '{}'. Attempts left: {}",
-                        e,
-                        attempts - i - 1
-                    );
-                    Timer::sleep_ms(500).await;
-                },
-                Err(_) => (),
-            }
-        }
-        return MmError::err(TrezorError::DeviceDisconnected);
-    }
+    pub async fn is_connected(&self) -> TrezorResult<bool> { self.device.is_open().await.mm_err(TrezorError::from) }
 
     /// Configure the WebUSB device.
     async fn establish_connection(&self, first: bool) -> TrezorResult<()> {

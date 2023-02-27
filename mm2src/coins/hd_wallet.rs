@@ -1,3 +1,4 @@
+use crate::hd_confirm_address::{HDConfirmAddress, HDConfirmAddressError};
 use crate::hd_pubkey::HDXPubExtractor;
 use crate::hd_wallet_storage::HDWalletStorageError;
 use crate::{BalanceError, WithdrawError};
@@ -99,6 +100,31 @@ impl From<AccountUpdatingError> for NewAddressDerivingError {
             AccountUpdatingError::InvalidBip44Chain(e) => NewAddressDerivingError::from(e),
             AccountUpdatingError::WalletStorageError(storage) => NewAddressDerivingError::WalletStorageError(storage),
         }
+    }
+}
+
+pub enum NewAddressDeriveConfirmError {
+    DeriveError(NewAddressDerivingError),
+    ConfirmError(HDConfirmAddressError),
+}
+
+impl From<HDConfirmAddressError> for NewAddressDeriveConfirmError {
+    fn from(e: HDConfirmAddressError) -> Self { NewAddressDeriveConfirmError::ConfirmError(e) }
+}
+
+impl From<NewAddressDerivingError> for NewAddressDeriveConfirmError {
+    fn from(e: NewAddressDerivingError) -> Self { NewAddressDeriveConfirmError::DeriveError(e) }
+}
+
+impl From<AccountUpdatingError> for NewAddressDeriveConfirmError {
+    fn from(e: AccountUpdatingError) -> Self {
+        NewAddressDeriveConfirmError::DeriveError(NewAddressDerivingError::from(e))
+    }
+}
+
+impl From<InvalidBip44ChainError> for NewAddressDeriveConfirmError {
+    fn from(e: InvalidBip44ChainError) -> Self {
+        NewAddressDeriveConfirmError::DeriveError(NewAddressDerivingError::from(e))
     }
 }
 
@@ -259,18 +285,27 @@ pub trait HDWalletCoinOps {
         hd_account: &mut Self::HDAccount,
         chain: Bip44Chain,
     ) -> MmResult<HDAddress<Self::Address, Self::Pubkey>, NewAddressDerivingError> {
-        let known_addresses_number = hd_account.known_addresses_number(chain)?;
-        // Address IDs start from 0, so the `known_addresses_number = last_known_address_id + 1`.
-        let new_address_id = known_addresses_number;
-        let max_addresses_number = hd_wallet.address_limit();
-        if new_address_id >= max_addresses_number {
-            return MmError::err(NewAddressDerivingError::AddressLimitReached { max_addresses_number });
-        }
-        let new_address = self.derive_address(hd_account, chain, new_address_id).await?;
-        self.set_known_addresses_number(hd_wallet, hd_account, chain, known_addresses_number + 1)
+        let inner_impl::NewAddress {
+            address,
+            new_known_addresses_number,
+        } = inner_impl::generate_new_address_immutable(self, hd_wallet, hd_account, chain).await?;
+
+        self.set_known_addresses_number(hd_wallet, hd_account, chain, new_known_addresses_number)
             .await?;
-        Ok(new_address)
+        Ok(address)
     }
+
+    /// Generates a new address, requests the user to confirm if it's the same as on the HW device,
+    /// and then updates the corresponding number of used `hd_account` addresses.
+    async fn generate_and_confirm_new_address<ConfirmAddress>(
+        &self,
+        hd_wallet: &Self::HDWallet,
+        hd_account: &mut Self::HDAccount,
+        chain: Bip44Chain,
+        confirm_address: &ConfirmAddress,
+    ) -> MmResult<HDAddress<Self::Address, Self::Pubkey>, NewAddressDeriveConfirmError>
+    where
+        ConfirmAddress: HDConfirmAddress;
 
     /// Creates a new HD account, registers it within the given `hd_wallet`
     /// and returns a mutable reference to the registered account.
@@ -280,7 +315,7 @@ pub trait HDWalletCoinOps {
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountMut<'a, Self::HDAccount>, NewAccountCreatingError>
     where
-        XPubExtractor: HDXPubExtractor + Sync;
+        XPubExtractor: HDXPubExtractor;
 
     async fn set_known_addresses_number(
         &self,
@@ -363,5 +398,38 @@ pub trait HDAccountOps: Send + Sync {
     fn is_address_activated(&self, chain: Bip44Chain, address_id: u32) -> MmResult<bool, InvalidBip44ChainError> {
         let is_activated = address_id < self.known_addresses_number(chain)?;
         Ok(is_activated)
+    }
+}
+
+pub(crate) mod inner_impl {
+    use super::*;
+
+    pub struct NewAddress<Address, Pubkey> {
+        pub address: HDAddress<Address, Pubkey>,
+        pub new_known_addresses_number: u32,
+    }
+
+    /// Generates a new address without updating a corresponding number of used `hd_account` addresses.
+    pub async fn generate_new_address_immutable<Coin>(
+        coin: &Coin,
+        hd_wallet: &Coin::HDWallet,
+        hd_account: &Coin::HDAccount,
+        chain: Bip44Chain,
+    ) -> MmResult<NewAddress<Coin::Address, Coin::Pubkey>, NewAddressDerivingError>
+    where
+        Coin: HDWalletCoinOps + ?Sized + Sync,
+    {
+        let known_addresses_number = hd_account.known_addresses_number(chain)?;
+        // Address IDs start from 0, so the `known_addresses_number = last_known_address_id + 1`.
+        let new_address_id = known_addresses_number;
+        let max_addresses_number = hd_wallet.address_limit();
+        if new_address_id >= max_addresses_number {
+            return MmError::err(NewAddressDerivingError::AddressLimitReached { max_addresses_number });
+        }
+        let address = coin.derive_address(hd_account, chain, new_address_id).await?;
+        Ok(NewAddress {
+            address,
+            new_known_addresses_number: known_addresses_number + 1,
+        })
     }
 }

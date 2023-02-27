@@ -37,6 +37,9 @@ pub trait Transport {
 
     async fn write_message(&mut self, message: ProtoMessage) -> TrezorResult<()>;
     async fn read_message(&mut self) -> TrezorResult<ProtoMessage>;
+
+    #[cfg(target_arch = "wasm32")]
+    async fn is_connected(&mut self) -> TrezorResult<bool>;
 }
 
 /// The Trezor session identifier.

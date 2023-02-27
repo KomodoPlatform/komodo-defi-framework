@@ -89,8 +89,10 @@ pub const TAKER_ERROR_EVENTS: [&str; 15] = [
 
 pub const WATCHER_MESSAGE_SENT_LOG: &str = "Watcher message sent...";
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("TAKER") }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
     stats_taker_swap_dir(ctx).join(format!("{}.json", uuid))
 }
@@ -998,8 +1000,8 @@ impl TakerSwap {
         let taker_coin_swap_contract_address = self.taker_coin.swap_contract_address();
 
         let unique_data = self.unique_swap_data();
-        let maker_coin_htlc_key_pair = self.maker_coin.derive_htlc_key_pair(&unique_data);
-        let taker_coin_htlc_key_pair = self.taker_coin.derive_htlc_key_pair(&unique_data);
+        let maker_coin_htlc_pubkey = self.maker_coin.derive_htlc_pubkey(&unique_data);
+        let taker_coin_htlc_pubkey = self.taker_coin.derive_htlc_pubkey(&unique_data);
 
         let data = TakerSwapData {
             taker_coin: self.taker_coin.ticker().to_owned(),
@@ -1024,8 +1026,8 @@ impl TakerSwap {
             maker_payment_spend_trade_fee: Some(SavedTradeFee::from(maker_payment_spend_trade_fee)),
             maker_coin_swap_contract_address,
             taker_coin_swap_contract_address,
-            maker_coin_htlc_pubkey: Some(maker_coin_htlc_key_pair.public_slice().into()),
-            taker_coin_htlc_pubkey: Some(taker_coin_htlc_key_pair.public_slice().into()),
+            maker_coin_htlc_pubkey: Some(maker_coin_htlc_pubkey.as_slice().into()),
+            taker_coin_htlc_pubkey: Some(taker_coin_htlc_pubkey.as_slice().into()),
             p2p_privkey: self.p2p_privkey.map(SerializableSecp256k1Keypair::from),
         };
 
@@ -1059,7 +1061,7 @@ impl TakerSwap {
         let time_dif = self.r().data.started_at.abs_diff(maker_data.started_at());
         if time_dif > 60 {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
-                ERRL!("Started_at time_dif over 60 {}", time_dif).into(),
+                ERRL!("The time difference between you and the maker cannot be longer than 60 seconds. Current difference: {}. Please make sure that your system clock is synced to the correct time before starting another swap!", time_dif).into(),
             )]));
         }
 

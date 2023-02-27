@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use chain::Transaction as UtxoTx;
-use crypto::trezor::client::TrezorClient;
-use crypto::trezor::TrezorError;
+use crypto::trezor::{TrezorError, TrezorSession};
 use derive_more::Display;
 use keys::bytes::Bytes;
 use keys::KeyPair;
@@ -111,7 +110,7 @@ pub trait TxProvider {
 }
 
 pub enum SignPolicy<'a> {
-    WithTrezor(TrezorClient),
+    WithTrezor(TrezorSession<'a>),
     WithKeyPair(&'a KeyPair),
 }
 

@@ -18,13 +18,26 @@ pub struct ConstructibleDb<Db> {
 }
 
 impl<Db: DbInstance> ConstructibleDb<Db> {
-    pub fn new_shared(ctx: &MmArc) -> SharedDb<Db> { Arc::new(Self::new(ctx)) }
+    pub fn into_shared(self) -> SharedDb<Db> { Arc::new(self) }
 
+    /// Creates a new uninitialized `Db` instance from other Iguana and/or HD accounts.
+    /// This can be initialized later using [`ConstructibleDb::get_or_initialize`].
     pub fn new(ctx: &MmArc) -> Self {
         ConstructibleDb {
             mutex: AsyncMutex::new(None),
             db_namespace: ctx.db_namespace,
             wallet_rmd160: ctx.rmd160().clone(),
+        }
+    }
+
+    /// Creates a new uninitialized `Db` instance shared between Iguana and all HD accounts
+    /// derived from the same passphrase.
+    /// This can be initialized later using [`ConstructibleDb::get_or_initialize`].
+    pub fn new_shared_db(ctx: &MmArc) -> Self {
+        ConstructibleDb {
+            mutex: AsyncMutex::new(None),
+            db_namespace: ctx.db_namespace,
+            wallet_rmd160: ctx.shared_db_id().clone(),
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::rpc_command::init_withdraw::{WithdrawAwaitingStatus, WithdrawInProgressStatus, WithdrawTaskHandle};
+use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
 use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
@@ -8,8 +8,6 @@ use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
 use common::now_ms;
-use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
-use crypto::trezor::client::TrezorClient;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
 use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, DerivationPath, HwError, HwProcessingError, HwRpcError};
 use keys::{Public as PublicKey, Type as ScriptType};
@@ -20,13 +18,9 @@ use rpc_task::RpcTaskError;
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::iter::once;
-use std::time::Duration;
 use utxo_signer::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo, UtxoSignTxParamsBuilder};
 use utxo_signer::{with_key_pair, UtxoSignTxError};
 use utxo_signer::{SignPolicy, UtxoSignerOps};
-
-const TREZOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(300);
-const TREZOR_PIN_TIMEOUT: Duration = Duration::from_secs(300);
 
 impl From<UtxoSignTxError> for WithdrawError {
     fn from(sign_err: UtxoSignTxError) -> Self {
@@ -310,11 +304,16 @@ where
             .with_prev_script(Builder::build_p2pkh(&self.from_address.hash));
         let sign_params = sign_params.build()?;
 
+        let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
+        let hw_ctx = crypto_ctx
+            .hw_ctx()
+            .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
+
         let sign_policy = match self.coin.as_ref().priv_key_policy {
             PrivKeyPolicy::KeyPair(ref key_pair) => SignPolicy::WithKeyPair(key_pair),
             PrivKeyPolicy::Trezor => {
-                let trezor_client = self.trezor_client().await?;
-                SignPolicy::WithTrezor(trezor_client)
+                let trezor_session = hw_ctx.trezor().await?;
+                SignPolicy::WithTrezor(trezor_session)
             },
         };
 
@@ -360,33 +359,6 @@ impl<'a, Coin> InitUtxoWithdraw<'a, Coin> {
             from_derivation_path,
             from_pubkey: from.pubkey,
         })
-    }
-
-    /// # Fail
-    ///
-    /// The method fails if [`CryptoCtx::hw_ctx`] is not initialized yet.
-    async fn trezor_client(&self) -> MmResult<TrezorClient, WithdrawError> {
-        let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
-        let hw_ctx = crypto_ctx
-            .hw_ctx()
-            .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
-
-        let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(self.task_handle, HwConnectStatuses {
-            on_connect: WithdrawInProgressStatus::WaitingForTrezorToConnect,
-            on_connected: WithdrawInProgressStatus::Preparing,
-            on_connection_failed: WithdrawInProgressStatus::Finishing,
-            on_button_request: WithdrawInProgressStatus::FollowHwDeviceInstructions,
-            on_pin_request: WithdrawAwaitingStatus::EnterTrezorPin,
-            on_passphrase_request: WithdrawAwaitingStatus::EnterTrezorPassphrase,
-            on_ready: WithdrawInProgressStatus::Preparing,
-        })
-        .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)
-        .with_pin_timeout(TREZOR_PIN_TIMEOUT);
-
-        hw_ctx
-            .trezor(&trezor_connect_processor)
-            .await
-            .mm_err(WithdrawError::from)
     }
 }
 

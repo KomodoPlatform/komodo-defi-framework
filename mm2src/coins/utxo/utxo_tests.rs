@@ -1,6 +1,8 @@
 use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::coin_errors::ValidatePaymentError;
+use crate::hd_confirm_address::for_tests::MockableConfirmAddress;
+use crate::hd_confirm_address::{HDConfirmAddress, HDConfirmAddressError};
 use crate::hd_wallet::HDAccountsMap;
 use crate::hd_wallet_storage::{HDWalletMockStorage, HDWalletStorageInternalOps};
 use crate::my_tx_history_v2::for_tests::init_storage_for;
@@ -3945,6 +3947,9 @@ fn test_get_new_address() {
         }
     });
 
+    MockableConfirmAddress::confirm_utxo_address
+        .mock_safe(move |_, _, _, _| MockResult::Return(Box::pin(futures::future::ok(()))));
+
     // This mock is required just not to fail on [`UtxoAddressScanner::init`].
     NativeClient::list_all_transactions
         .mock_safe(move |_, _| MockResult::Return(Box::new(futures01::future::ok(Vec::new()))));
@@ -3974,9 +3979,12 @@ fn test_get_new_address() {
         accounts: HDAccountsMutex::new(hd_accounts),
         gap_limit: 2,
     });
+    fields.conf.trezor_coin = Some("Komodo".to_string());
     let coin = utxo_coin_from_fields(fields);
 
     // =======
+
+    let confirm_address = MockableConfirmAddress::default();
 
     expected_checked_addresses!["m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1"];
     non_empty_addresses!["m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1"];
@@ -3985,7 +3993,7 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: None, // Will be used 2 from `UtxoHDWallet` by default.
     };
-    block_on(coin.get_new_address_rpc(params)).unwrap();
+    block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
 
     // `m/44'/141'/1'/0/3` is empty, so `m/44'/141'/1'/0/2` will be checked.
@@ -3997,8 +4005,8 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: Some(1),
     };
-    let err = block_on(coin.get_new_address_rpc(params))
-        .expect_err("check_if_can_get_new_address should have failed with 'EmptyAddressesLimitReached' error");
+    let err = block_on(coin.get_new_address_rpc(params, &confirm_address))
+        .expect_err("get_new_address_rpc should have failed with 'EmptyAddressesLimitReached' error");
     let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 1 };
     assert_eq!(err.into_inner(), expected);
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
@@ -4015,7 +4023,7 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: Some(2),
     };
-    block_on(coin.get_new_address_rpc(params)).unwrap();
+    block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
 
     // `m/44'/141'/2'/0/3` and `m/44'/141'/2'/0/2` are empty.
@@ -4030,8 +4038,8 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: Some(2),
     };
-    let err = block_on(coin.get_new_address_rpc(params))
-        .expect_err("check_if_can_get_new_address should have failed with 'EmptyAddressesLimitReached' error");
+    let err = block_on(coin.get_new_address_rpc(params, &confirm_address))
+        .expect_err("get_new_address_rpc should have failed with 'EmptyAddressesLimitReached' error");
     let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 2 };
     assert_eq!(err.into_inner(), expected);
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
@@ -4045,8 +4053,8 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: Some(0),
     };
-    let err = block_on(coin.get_new_address_rpc(params))
-        .expect_err("!check_if_can_get_new_address should have failed with 'EmptyAddressesLimitReached' error");
+    let err = block_on(coin.get_new_address_rpc(params, &confirm_address))
+        .expect_err("!get_new_address_rpc should have failed with 'EmptyAddressesLimitReached' error");
     let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 0 };
     assert_eq!(err.into_inner(), expected);
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
@@ -4060,7 +4068,7 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: Some(5),
     };
-    block_on(coin.get_new_address_rpc(params)).unwrap();
+    block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
 
     // `known_addresses_number=0`, always allow.
@@ -4072,8 +4080,27 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::Internal),
         gap_limit: Some(0),
     };
-    block_on(coin.get_new_address_rpc(params)).unwrap();
+    block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+
+    // Check if `get_new_address_rpc` fails on the `HDAddressConfirm::confirm_utxo_address` error.
+
+    MockableConfirmAddress::confirm_utxo_address.mock_safe(move |_, _, _, _| {
+        MockResult::Return(Box::pin(futures::future::ready(MmError::err(
+            HDConfirmAddressError::HwContextNotInitialized,
+        ))))
+    });
+
+    expected_checked_addresses![];
+    non_empty_addresses![];
+    let params = GetNewAddressParams {
+        account_id: 0,
+        chain: Some(Bip44Chain::Internal),
+        gap_limit: Some(2),
+    };
+    let err = block_on(coin.get_new_address_rpc(params, &confirm_address))
+        .expect_err("!get_new_address_rpc should have failed with 'HwContextNotInitialized' error");
+    assert_eq!(err.into_inner(), GetNewAddressRpcError::HwContextNotInitialized);
 }
 
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1196

@@ -114,7 +114,7 @@ impl InitUtxoStandardError {
             },
             HwError::CannotChooseDevice { .. } => InitUtxoStandardError::HwError(HwRpcError::FoundMultipleDevices),
             HwError::ConnectionTimedOut { timeout } => InitUtxoStandardError::TaskTimedOut { duration: timeout },
-            HwError::FoundUnexpectedDevice { .. } => InitUtxoStandardError::HwError(HwRpcError::FoundUnexpectedDevice),
+            HwError::FoundUnexpectedDevice => InitUtxoStandardError::HwError(HwRpcError::FoundUnexpectedDevice),
             HwError::Failure(error) => InitUtxoStandardError::CoinCreationError { ticker, error },
             other => InitUtxoStandardError::Internal(other.to_string()),
         }
