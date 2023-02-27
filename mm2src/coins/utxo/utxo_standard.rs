@@ -2,8 +2,10 @@ use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
 use crate::coin_errors::MyAddressError;
+use crate::hd_confirm_address::HDConfirmAddress;
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, NewAccountCreatingError};
+use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, NewAccountCreatingError,
+                       NewAddressDeriveConfirmError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
@@ -465,9 +467,12 @@ impl SwapOps for UtxoStandardCoin {
         Ok(None)
     }
 
-    #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
+    }
+
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+        utxo_common::derive_htlc_pubkey(self, swap_unique_data)
     }
 
     #[inline]
@@ -859,7 +864,7 @@ impl ExtractExtendedPubkey for UtxoStandardCoin {
         derivation_path: DerivationPath,
     ) -> MmResult<Self::ExtendedPublicKey, HDExtractPubkeyError>
     where
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         utxo_common::extract_extended_pubkey(&self.utxo_arc.conf, xpub_extractor, derivation_path).await
     }
@@ -883,13 +888,26 @@ impl HDWalletCoinOps for UtxoStandardCoin {
         utxo_common::derive_addresses(self, hd_account, address_ids).await
     }
 
+    async fn generate_and_confirm_new_address<ConfirmAddress>(
+        &self,
+        hd_wallet: &Self::HDWallet,
+        hd_account: &mut Self::HDAccount,
+        chain: Bip44Chain,
+        confirm_address: &ConfirmAddress,
+    ) -> MmResult<HDAddress<Self::Address, Self::Pubkey>, NewAddressDeriveConfirmError>
+    where
+        ConfirmAddress: HDConfirmAddress,
+    {
+        utxo_common::generate_and_confirm_new_address(self, hd_wallet, hd_account, chain, confirm_address).await
+    }
+
     async fn create_new_account<'a, XPubExtractor>(
         &self,
         hd_wallet: &'a Self::HDWallet,
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountMut<'a, Self::HDAccount>, NewAccountCreatingError>
     where
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         utxo_common::create_new_account(self, hd_wallet, xpub_extractor).await
     }
@@ -907,11 +925,22 @@ impl HDWalletCoinOps for UtxoStandardCoin {
 
 #[async_trait]
 impl GetNewAddressRpcOps for UtxoStandardCoin {
-    async fn get_new_address_rpc(
+    async fn get_new_address_rpc_without_conf(
         &self,
         params: GetNewAddressParams,
     ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError> {
-        get_new_address::common_impl::get_new_address_rpc(self, params).await
+        get_new_address::common_impl::get_new_address_rpc_without_conf(self, params).await
+    }
+
+    async fn get_new_address_rpc<ConfirmAddress>(
+        &self,
+        params: GetNewAddressParams,
+        confirm_address: &ConfirmAddress,
+    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+    where
+        ConfirmAddress: HDConfirmAddress,
+    {
+        get_new_address::common_impl::get_new_address_rpc(self, params, confirm_address).await
     }
 }
 
@@ -930,7 +959,7 @@ impl HDWalletBalanceOps for UtxoStandardCoin {
         params: EnabledCoinBalanceParams,
     ) -> MmResult<HDWalletBalance, EnableCoinBalanceError>
     where
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         coin_balance::common_impl::enable_hd_wallet(self, hd_wallet, xpub_extractor, params).await
     }
@@ -1006,7 +1035,7 @@ impl InitCreateAccountRpcOps for UtxoStandardCoin {
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
     where
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         init_create_account::common_impl::init_create_new_account_rpc(self, params, state, xpub_extractor).await
     }

@@ -231,8 +231,14 @@ impl SwapOps for TendermintToken {
         self.platform_coin.negotiate_swap_contract_addr(other_side_address)
     }
 
+    #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         self.platform_coin.derive_htlc_key_pair(swap_unique_data)
+    }
+
+    #[inline]
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+        self.derive_htlc_key_pair(swap_unique_data).public_slice().to_vec()
     }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
@@ -667,7 +673,7 @@ impl MmCoin for TendermintToken {
             .is_coin_protocol_supported(info, amount_to_send, locktime, is_maker)
     }
 
-    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
+    fn on_disabled(&self) -> Result<(), AbortedError> { self.abortable_system.abort_all() }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 }

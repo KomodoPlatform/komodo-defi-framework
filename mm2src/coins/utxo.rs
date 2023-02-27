@@ -74,7 +74,8 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
-use spv_validation::helpers_validation::{BlockHeaderVerificationParams, SPVError};
+use spv_validation::conf::SPVConf;
+use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::BlockHeaderStorageError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
@@ -464,15 +465,15 @@ impl UtxoSyncStatusLoopHandle {
             .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
     }
 
-    pub fn notify_on_temp_error(&mut self, error: String) {
+    pub fn notify_on_temp_error(&mut self, error: impl ToString) {
         self.0
-            .try_send(UtxoSyncStatus::TemporaryError(error))
+            .try_send(UtxoSyncStatus::TemporaryError(error.to_string()))
             .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
     }
 
-    pub fn notify_on_permanent_error(&mut self, error: String) {
+    pub fn notify_on_permanent_error(&mut self, error: impl ToString) {
         self.0
-            .try_send(UtxoSyncStatus::PermanentError(error))
+            .try_send(UtxoSyncStatus::PermanentError(error.to_string()))
             .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
     }
 
@@ -552,11 +553,8 @@ pub struct UtxoCoinConf {
     /// The name of the coin with which Trezor wallet associates this asset.
     pub trezor_coin: Option<String>,
     /// Whether to verify swaps and lightning transactions using spv or not. When enabled, block headers will be retrieved, verified according
-    /// to block_headers_verification_params and stored in the DB. Can be false if the coin's RPC server is trusted.
-    pub enable_spv_proof: bool,
-    /// The parameters that specify how the coin block headers should be verified. If None and enable_spv_proof is true,
-    /// headers will be saved in DB without verification, can be none if the coin's RPC server is trusted.
-    pub block_headers_verification_params: Option<BlockHeaderVerificationParams>,
+    /// to [`SPVConf::validation_params`] and stored in the DB. Can be false if the coin's RPC server is trusted.
+    pub spv_conf: Option<SPVConf>,
     /// Derivation path of the coin.
     /// This derivation path consists of `purpose` and `coin_type` only
     /// where the full `BIP44` address has the following structure:

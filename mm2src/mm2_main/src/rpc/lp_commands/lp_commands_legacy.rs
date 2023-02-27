@@ -25,11 +25,13 @@ use common::log::error;
 use common::{rpc_err_response, rpc_response, HyRes};
 use futures::compat::Future01CompatExt;
 use http::Response;
+use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_metrics::MetricsOps;
 use mm2_number::{construct_detailed, BigDecimal};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::iter::Extend;
 use uuid::Uuid;
 
@@ -47,6 +49,7 @@ pub fn disable_coin_err(
     matching: &[Uuid],
     cancelled: &[Uuid],
     active_swaps: &[Uuid],
+    dependent_tokens: &[String],
 ) -> Result<Response<Vec<u8>>, String> {
     let err = json!({
         "error": error,
@@ -54,7 +57,8 @@ pub fn disable_coin_err(
             "matching": matching,
             "cancelled": cancelled
         },
-        "active_swaps": active_swaps
+        "active_swaps": active_swaps,
+        "dependent_tokens": dependent_tokens,
     });
     Response::builder()
         .status(INTERNAL_SERVER_ERROR_CODE)
@@ -70,50 +74,50 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): ", err),
     };
-    let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
-
-    // If a platform coin is to be disabled, we get all the enabled tokens for this platform coin first.
-    let mut tokens_to_disable = coins_ctx.get_tokens_to_disable(&ticker).await;
-    // We then add the platform coin to the list of the coins to be disabled.
-    tokens_to_disable.insert(ticker.clone());
 
     // Get all matching orders and active swaps.
-    let active_swaps = try_s!(active_swaps_using_coins(&ctx, &tokens_to_disable));
-    let still_matching_orders = try_s!(get_matching_orders(&ctx, &tokens_to_disable).await);
+    let coins_to_disable: HashSet<_> = std::iter::once(ticker.clone()).collect();
+    let active_swaps = try_s!(active_swaps_using_coins(&ctx, &coins_to_disable));
+    let still_matching_orders = try_s!(get_matching_orders(&ctx, &coins_to_disable).await);
 
-    // If there're matching orders or active swaps we return an error.
-    if !active_swaps.is_empty() || !still_matching_orders.is_empty() {
-        let err = String::from("There're currently matching orders or active swaps for some tokens");
-        return disable_coin_err(err, &still_matching_orders, &[], &active_swaps);
+    let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
+    // Convert `HashSet<String>` into the sorted `Vec<String>`.
+    let dependent_tokens: Vec<_> = coins_ctx
+        .get_dependent_tokens(&ticker)
+        .await
+        .into_iter()
+        .sorted()
+        .collect();
+
+    // Return an error if:
+    // 1. There are matching orders or active swaps.
+    // 2. A platform coin is to be disabled and there are tokens dependent on it.
+    if !active_swaps.is_empty() || !still_matching_orders.is_empty() || !dependent_tokens.is_empty() {
+        let err = format!("There are currently matching orders, active swaps, or tokens dependent on '{ticker}'");
+        return disable_coin_err(err, &still_matching_orders, &[], &active_swaps, &dependent_tokens);
     }
 
     // Proceed with diabling the coin/tokens.
     let mut cancelled_orders = vec![];
-    for ticker in &tokens_to_disable {
-        log!("disabling {ticker} coin");
-        let cancelled_and_matching_orders = cancel_orders_by(&ctx, CancelBy::Coin {
-            ticker: ticker.to_string(),
-        })
-        .await;
-        match cancelled_and_matching_orders {
-            Ok((cancelled, _)) => {
-                cancelled_orders.extend(cancelled);
-            },
-            Err(err) => {
-                return disable_coin_err(err, &still_matching_orders, &cancelled_orders, &active_swaps);
-            },
-        }
+    log!("disabling {ticker} coin");
+    let cancelled_and_matching_orders = cancel_orders_by(&ctx, CancelBy::Coin {
+        ticker: ticker.to_string(),
+    })
+    .await;
+    match cancelled_and_matching_orders {
+        Ok((cancelled, _)) => {
+            cancelled_orders.extend(cancelled);
+        },
+        Err(err) => {
+            return disable_coin_err(err, &still_matching_orders, &cancelled_orders, &active_swaps, &[]);
+        },
     }
 
     coins_ctx.remove_coin(coin).await;
-    // Ticker shouldn't be a part of the disabled tokens vector in the response.
-    tokens_to_disable.remove(&ticker);
-    drop_mutability!(tokens_to_disable);
     let res = json!({
         "result": {
             "coin": ticker,
             "cancelled_orders": cancelled_orders,
-            "tokens": tokens_to_disable
         }
     });
     Response::builder()

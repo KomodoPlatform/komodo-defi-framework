@@ -1,7 +1,7 @@
 use crate::mm2::lp_native_dex::init_context::MmInitContext;
 use async_trait::async_trait;
 use common::{HttpStatusCode, SerdeInfallible, SuccessResponse};
-use crypto::metamask::{from_metamask_error, EthAccount, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
+use crypto::metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
 use crypto::{CryptoCtx, CryptoCtxError, MetamaskCtxInitError};
 use derive_more::Display;
 use enum_from::EnumFromTrait;
@@ -87,12 +87,13 @@ pub enum InitMetamaskInProgressStatus {
 }
 
 #[derive(Deserialize)]
-pub struct InitMetamaskRequest;
+pub struct InitMetamaskRequest {
+    project: String,
+}
 
 #[derive(Clone, Serialize)]
 pub struct InitMetamaskResponse {
     eth_address: String,
-    eth_address_pubkey: String,
 }
 
 pub struct InitMetamaskTask {
@@ -121,11 +122,9 @@ impl RpcTask for InitMetamaskTask {
     async fn run(&mut self, _task_handle: &InitMetamaskTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
         let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
 
-        let metamask = crypto_ctx.init_metamask_ctx().await?;
+        let metamask = crypto_ctx.init_metamask_ctx(self.req.project.clone()).await?;
         Ok(InitMetamaskResponse {
-            eth_address: metamask.eth_account().address.to_string(),
-            // TODO
-            eth_address_pubkey: "NOT SUPPORTED YET".to_string(),
+            eth_address: metamask.eth_account_str().to_string(),
         })
     }
 }

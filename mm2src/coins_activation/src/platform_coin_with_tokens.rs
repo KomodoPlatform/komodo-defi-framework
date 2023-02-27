@@ -204,9 +204,6 @@ pub enum EnablePlatformCoinWithTokensError {
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[display(fmt = "Unexpected derivation method: {}", _0)]
     UnexpectedDerivationMethod(String),
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    #[display(fmt = "Preparation required: {}", _0)]
-    PreparationRequired(String),
     Transport(String),
     AtLeastOneNodeRequired(String),
     InvalidPayload(String),
@@ -278,7 +275,6 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
             | EnablePlatformCoinWithTokensError::InvalidPayload { .. }
             | EnablePlatformCoinWithTokensError::AtLeastOneNodeRequired(_)
-            | EnablePlatformCoinWithTokensError::PreparationRequired(_)
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
         }
     }

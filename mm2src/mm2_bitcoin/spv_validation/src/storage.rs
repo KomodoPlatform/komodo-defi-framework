@@ -21,6 +21,12 @@ pub enum BlockHeaderStorageError {
         coin: String,
         reason: String,
     },
+    #[display(fmt = "Unable to delete block headers <= {to_height} from storage for {coin} - reason: {reason}")]
+    UnableToDeleteHeaders {
+        to_height: u64,
+        coin: String,
+        reason: String,
+    },
     #[display(fmt = "Can't query from the storage - query: {} - reason: {}", query, reason)]
     QueryError {
         query: String,
@@ -37,6 +43,44 @@ pub enum BlockHeaderStorageError {
         reason: String,
     },
     Internal(String),
+}
+
+impl BlockHeaderStorageError {
+    pub fn init_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::InitializationError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn add_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::AddToStorageError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn table_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::CantRetrieveTableError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn get_err(ticker: &str, reason: String) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::GetFromStorageError {
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
+
+    pub fn delete_err(ticker: &str, reason: String, to_height: u64) -> BlockHeaderStorageError {
+        BlockHeaderStorageError::UnableToDeleteHeaders {
+            to_height,
+            coin: ticker.to_string(),
+            reason,
+        }
+    }
 }
 
 #[async_trait]
@@ -60,9 +104,16 @@ pub trait BlockHeaderStorageOps: Send + Sync + 'static {
     /// Gets the block header by height from the selected coin's storage as hex
     async fn get_block_header_raw(&self, height: u64) -> Result<Option<String>, BlockHeaderStorageError>;
 
-    async fn get_last_block_height(&self) -> Result<u64, BlockHeaderStorageError>;
+    async fn get_last_block_height(&self) -> Result<Option<u64>, BlockHeaderStorageError>;
 
-    async fn get_last_block_header_with_non_max_bits(&self) -> Result<Option<BlockHeader>, BlockHeaderStorageError>;
+    async fn get_last_block_header_with_non_max_bits(
+        &self,
+        max_bits: u32,
+    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError>;
 
     async fn get_block_height_by_hash(&self, hash: H256) -> Result<Option<i64>, BlockHeaderStorageError>;
+
+    async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError>;
+
+    async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError>;
 }

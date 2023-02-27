@@ -60,21 +60,15 @@ impl HDWalletStorageError {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HDWalletId {
     coin: String,
-    /// RIPEMD160(SHA256(x)) where x is a pubkey with which mm2 is launched.
-    /// It's expected to be equal to [`MmCtx::rmd160`].
-    /// This property allows us to store DB items that are unique to each user (passphrase).
-    mm2_rmd160: String,
     /// RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
     /// This property allows us to store DB items that are unique to each Hardware Wallet device.
-    /// Please note it can be equal to [`HDWalletId::mm2_rmd160`] if mm2 is launched with a HD private key derived from a passphrase.
     hd_wallet_rmd160: String,
 }
 
 impl HDWalletId {
-    pub fn new(coin: String, mm2_rmd160: &H160, hd_wallet_rmd160: &H160) -> HDWalletId {
+    pub fn new(coin: String, hd_wallet_rmd160: &H160) -> HDWalletId {
         HDWalletId {
             coin,
-            mm2_rmd160: display_rmd160(mm2_rmd160),
             hd_wallet_rmd160: display_rmd160(hd_wallet_rmd160),
         }
     }
@@ -188,13 +182,8 @@ pub trait HDWalletCoinWithStorageOps: HDWalletCoinOps {
 /// It's associated with a specific mm2 user, HD wallet and coin.
 pub struct HDWalletCoinStorage {
     coin: String,
-    /// RIPEMD160(SHA256(x)) where x is a pubkey with which mm2 is launched.
-    /// It's expected to be equal to [`MmCtx::rmd160`].
-    /// This property allows us to store DB items that are unique to each user (passphrase).
-    mm2_rmd160: H160,
     /// RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
     /// This property allows us to store DB items that are unique to each Hardware Wallet device.
-    /// Please note it can be equal to [`HDWalletId::mm2_rmd160`] if mm2 is launched with a HD private key derived from a passphrase.
     hd_wallet_rmd160: H160,
     inner: HDWalletStorageBoxed,
 }
@@ -203,7 +192,6 @@ impl fmt::Debug for HDWalletCoinStorage {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("HDWalletCoinStorage")
             .field("coin", &self.coin)
-            .field("mm2_rmd160", &self.mm2_rmd160)
             .field("hd_wallet_rmd160", &self.hd_wallet_rmd160)
             .finish()
     }
@@ -214,7 +202,6 @@ impl Default for HDWalletCoinStorage {
     fn default() -> Self {
         HDWalletCoinStorage {
             coin: String::default(),
-            mm2_rmd160: H160::default(),
             hd_wallet_rmd160: H160::default(),
             inner: Box::new(HDWalletMockStorage),
         }
@@ -230,7 +217,6 @@ impl HDWalletCoinStorage {
             .or_mm_err(|| HDWalletStorageError::HDWalletUnavailable)?;
         Ok(HDWalletCoinStorage {
             coin,
-            mm2_rmd160: *ctx.rmd160(),
             hd_wallet_rmd160,
             inner,
         })
@@ -240,21 +226,17 @@ impl HDWalletCoinStorage {
     pub async fn init_with_rmd160(
         ctx: &MmArc,
         coin: String,
-        mm2_rmd160: H160,
         hd_wallet_rmd160: H160,
     ) -> HDWalletStorageResult<HDWalletCoinStorage> {
         let inner = Box::new(HDWalletStorageInstance::init(ctx).await?);
         Ok(HDWalletCoinStorage {
             coin,
-            mm2_rmd160,
             hd_wallet_rmd160,
             inner,
         })
     }
 
-    pub fn wallet_id(&self) -> HDWalletId {
-        HDWalletId::new(self.coin.clone(), &self.mm2_rmd160, &self.hd_wallet_rmd160)
-    }
+    pub fn wallet_id(&self) -> HDWalletId { HDWalletId::new(self.coin.clone(), &self.hd_wallet_rmd160) }
 
     pub async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
         let wallet_id = self.wallet_id();
@@ -321,31 +303,25 @@ mod tests {
     }
 
     async fn test_unique_wallets_impl() {
-        let rick_user0_device0_account0 = HDAccountStorageItem {
+        let rick_device0_account0 = HDAccountStorageItem {
             account_id: 0,
             account_xpub: "xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ".to_owned(),
             external_addresses_number: 1,
             internal_addresses_number: 2,
         };
-        let rick_user0_device0_account1 = HDAccountStorageItem {
+        let rick_device0_account1 = HDAccountStorageItem {
             account_id: 1,
             account_xpub: "xpub6DEHSksajpRPQq2FdGT6JoieiQZUpTZ3WZn8fcuLJhFVmtCpXbuXxp5aPzaokwcLV2V9LE55Dwt8JYkpuMv7jXKwmyD28WbHYjBH2zhbW2p".to_owned(),
             external_addresses_number: 1,
             internal_addresses_number: 2,
         };
-        let rick_user0_device1_account0 = HDAccountStorageItem {
+        let rick_device1_account0 = HDAccountStorageItem {
             account_id: 0,
             account_xpub: "xpub6EuV33a2DXxAhoJTRTnr8qnysu81AA4YHpLY6o8NiGkEJ8KADJ35T64eJsStWsmRf1xXkEANVjXFXnaUKbRtFwuSPCLfDdZwYNZToh4LBCd".to_owned(),
             external_addresses_number: 3,
             internal_addresses_number: 4,
         };
-        let rick_user1_device0_account0 = HDAccountStorageItem {
-            account_id: 0,
-            account_xpub: "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz".to_owned(),
-            external_addresses_number: 5,
-            internal_addresses_number: 6,
-        };
-        let morty_user0_device0_account0 = HDAccountStorageItem {
+        let morty_device0_account0 = HDAccountStorageItem {
             account_id: 0,
             account_xpub: "xpub6AHA9hZDN11k2ijHMeS5QqHx2KP9aMBRhTDqANMnwVtdyw2TDYRmF8PjpvwUFcL1Et8Hj59S3gTSMcUQ5gAqTz3Wd8EsMTmF3DChhqPQBnU".to_owned(),
             external_addresses_number: 7,
@@ -353,88 +329,68 @@ mod tests {
         };
 
         let ctx = mm_ctx_with_custom_db();
-        let user0_rmd160 = H160::from("0000000000000000000000000000000000000000");
-        let user1_rmd160 = H160::from("0000000000000000000000000000000000000001");
         let device0_rmd160 = H160::from("0000000000000000000000000000000000000020");
         let device1_rmd160 = H160::from("0000000000000000000000000000000000000030");
 
-        let rick_user0_device0_db =
-            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user0_rmd160, device0_rmd160)
-                .await
-                .expect("!HDWalletCoinStorage::new");
-        let rick_user0_device1_db =
-            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user0_rmd160, device1_rmd160)
-                .await
-                .expect("!HDWalletCoinStorage::new");
-        let rick_user1_device0_db =
-            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user1_rmd160, device0_rmd160)
-                .await
-                .expect("!HDWalletCoinStorage::new");
-        let morty_user0_device0_db =
-            HDWalletCoinStorage::init_with_rmd160(&ctx, "MORTY".to_owned(), user0_rmd160, device0_rmd160)
-                .await
-                .expect("!HDWalletCoinStorage::new");
+        let rick_device0_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device0_rmd160)
+            .await
+            .expect("!HDWalletCoinStorage::new");
+        let rick_device1_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device1_rmd160)
+            .await
+            .expect("!HDWalletCoinStorage::new");
+        let morty_device0_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "MORTY".to_owned(), device0_rmd160)
+            .await
+            .expect("!HDWalletCoinStorage::new");
 
-        rick_user0_device0_db
-            .upload_new_account(rick_user0_device0_account0.clone())
+        rick_device0_db
+            .upload_new_account(rick_device0_account0.clone())
             .await
-            .expect("!HDWalletCoinStorage::upload_new_account: RICK user=0 device=0 account=0");
-        rick_user0_device0_db
-            .upload_new_account(rick_user0_device0_account1.clone())
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK device=0 account=0");
+        rick_device0_db
+            .upload_new_account(rick_device0_account1.clone())
             .await
-            .expect("!HDWalletCoinStorage::upload_new_account: RICK user=0 device=0 account=1");
-        rick_user0_device1_db
-            .upload_new_account(rick_user0_device1_account0.clone())
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK device=0 account=1");
+        rick_device1_db
+            .upload_new_account(rick_device1_account0.clone())
             .await
-            .expect("!HDWalletCoinStorage::upload_new_account: RICK user=0 device=1 account=0");
-        rick_user1_device0_db
-            .upload_new_account(rick_user1_device0_account0.clone())
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK device=1 account=0");
+        morty_device0_db
+            .upload_new_account(morty_device0_account0.clone())
             .await
-            .expect("!HDWalletCoinStorage::upload_new_account: RICK user=1 device=0 account=0");
-        morty_user0_device0_db
-            .upload_new_account(morty_user0_device0_account0.clone())
-            .await
-            .expect("!HDWalletCoinStorage::upload_new_account: MORTY user=0 device=0 account=0");
+            .expect("!HDWalletCoinStorage::upload_new_account: MORTY device=0 account=0");
 
         // All accounts must be in the only one database.
-        // Rows in the database must differ by only `coin`, `mm2_rmd160`, `hd_wallet_rmd160` and `account_id` values.
+        // Rows in the database must differ by only `coin`, `hd_wallet_rmd160` and `account_id` values.
         let all_accounts: Vec<_> = get_all_storage_items(&ctx)
             .await
             .into_iter()
             .sorted_by(|x, y| x.external_addresses_number.cmp(&y.external_addresses_number))
             .collect();
         assert_eq!(all_accounts, vec![
-            rick_user0_device0_account0.clone(),
-            rick_user0_device0_account1.clone(),
-            rick_user0_device1_account0.clone(),
-            rick_user1_device0_account0.clone(),
-            morty_user0_device0_account0.clone()
+            rick_device0_account0.clone(),
+            rick_device0_account1.clone(),
+            rick_device1_account0.clone(),
+            morty_device0_account0.clone()
         ]);
 
-        let mut actual = rick_user0_device0_db
+        let mut actual = rick_device0_db
             .load_all_accounts()
             .await
-            .expect("HDWalletCoinStorage::load_all_accounts: RICK user=0 device=0");
+            .expect("HDWalletCoinStorage::load_all_accounts: RICK device=0");
         actual.sort_by(|x, y| x.account_id.cmp(&y.account_id));
-        assert_eq!(actual, vec![rick_user0_device0_account0, rick_user0_device0_account1]);
+        assert_eq!(actual, vec![rick_device0_account0, rick_device0_account1]);
 
-        let actual = rick_user0_device1_db
+        let actual = rick_device1_db
             .load_all_accounts()
             .await
-            .expect("HDWalletCoinStorage::load_all_accounts: RICK user=0 device=1");
-        assert_eq!(actual, vec![rick_user0_device1_account0]);
+            .expect("HDWalletCoinStorage::load_all_accounts: RICK device=1");
+        assert_eq!(actual, vec![rick_device1_account0]);
 
-        let actual = rick_user1_device0_db
+        let actual = morty_device0_db
             .load_all_accounts()
             .await
-            .expect("HDWalletCoinStorage::load_all_accounts: RICK user=1 device=0");
-        assert_eq!(actual, vec![rick_user1_device0_account0]);
-
-        let actual = morty_user0_device0_db
-            .load_all_accounts()
-            .await
-            .expect("HDWalletCoinStorage::load_all_accounts: MORTY user=0 device=0");
-        assert_eq!(actual, vec![morty_user0_device0_account0]);
+            .expect("HDWalletCoinStorage::load_all_accounts: MORTY device=0");
+        assert_eq!(actual, vec![morty_device0_account0]);
     }
 
     async fn test_delete_accounts_impl() {
@@ -464,18 +420,17 @@ mod tests {
         };
 
         let ctx = mm_ctx_with_custom_db();
-        let user_rmd160 = H160::from("0000000000000000000000000000000000000000");
         let device0_rmd160 = H160::from("0000000000000000000000000000000000000010");
         let device1_rmd160 = H160::from("0000000000000000000000000000000000000020");
         let device2_rmd160 = H160::from("0000000000000000000000000000000000000030");
 
-        let wallet0_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user_rmd160, device0_rmd160)
+        let wallet0_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device0_rmd160)
             .await
             .expect("!HDWalletCoinStorage::new");
-        let wallet1_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user_rmd160, device1_rmd160)
+        let wallet1_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device1_rmd160)
             .await
             .expect("!HDWalletCoinStorage::new");
-        let wallet2_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user_rmd160, device2_rmd160)
+        let wallet2_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device2_rmd160)
             .await
             .expect("!HDWalletCoinStorage::new");
 
@@ -502,7 +457,7 @@ mod tests {
             .expect("HDWalletCoinStorage::clear_accounts: RICK wallet=0");
 
         // All accounts must be in the only one database.
-        // Rows in the database must differ by only `coin`, `mm2_rmd160`, `hd_wallet_rmd160` and `account_id` values.
+        // Rows in the database must differ by only `coin`, `hd_wallet_rmd160` and `account_id` values.
         let all_accounts: Vec<_> = get_all_storage_items(&ctx)
             .await
             .into_iter()
@@ -526,10 +481,9 @@ mod tests {
         };
 
         let ctx = mm_ctx_with_custom_db();
-        let user_rmd160 = H160::from("0000000000000000000000000000000000000000");
         let device_rmd160 = H160::from("0000000000000000000000000000000000000010");
 
-        let db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user_rmd160, device_rmd160)
+        let db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device_rmd160)
             .await
             .expect("!HDWalletCoinStorage::new");
 

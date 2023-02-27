@@ -1,5 +1,6 @@
 use super::history::TransferHistoryBuilder;
 use super::*;
+use crate::eth::decode_contract_call;
 use bitcrypto::ripemd160;
 use script_pubkey::{extract_contract_addr_from_script, extract_contract_call_from_script, is_contract_call};
 
@@ -521,7 +522,8 @@ impl Qrc20Coin {
         let gas_limit = QRC20_GAS_LIMIT_DEFAULT;
         let gas_price = QRC20_GAS_PRICE_DEFAULT;
         let script_pubkey =
-            generate_contract_call_script_pubkey(&params, gas_limit, gas_price, &self.contract_address)?.to_bytes();
+            generate_contract_call_script_pubkey(&params, gas_limit, gas_price, self.contract_address.as_bytes())?
+                .to_bytes();
 
         Ok(ContractCallOutput {
             value: OUTPUT_QTUM_AMOUNT,
@@ -549,7 +551,7 @@ impl Qrc20Coin {
             &params, // params of the function
             gas_limit,
             gas_price,
-            swap_contract_address, // address of the contract which function will be called
+            swap_contract_address.as_bytes(), // address of the contract which function will be called
         )?
         .to_bytes();
 
@@ -604,7 +606,7 @@ impl Qrc20Coin {
             &params, // params of the function
             gas_limit,
             gas_price,
-            swap_contract_address, // address of the contract which function will be called
+            swap_contract_address.as_bytes(), // address of the contract which function will be called
         )?
         .to_bytes();
 
@@ -640,7 +642,7 @@ impl Qrc20Coin {
             &params, // params of the function
             gas_limit,
             gas_price,
-            swap_contract_address, // address of the contract which function will be called
+            swap_contract_address.as_bytes(), // address of the contract which function will be called
         )?
         .to_bytes();
 
@@ -679,7 +681,7 @@ impl Qrc20Coin {
             try_s!(check_if_contract_call_completed(&receipt));
 
             let function = try_s!(eth::SWAP_CONTRACT.function("erc20Payment"));
-            let decoded = try_s!(function.decode_input(&contract_call_bytes));
+            let decoded = try_s!(decode_contract_call(function, &contract_call_bytes));
 
             let mut decoded = decoded.into_iter();
 
@@ -868,7 +870,7 @@ fn transfer_call_details_from_script_pubkey(script_pubkey: &Script) -> Result<(H
     }
 
     let function = try_s!(eth::ERC20_CONTRACT.function("transfer"));
-    let decoded = try_s!(function.decode_input(&contract_call_bytes));
+    let decoded = try_s!(decode_contract_call(function, &contract_call_bytes));
     let mut decoded = decoded.into_iter();
 
     let receiver = match decoded.next() {
@@ -900,7 +902,7 @@ pub fn receiver_spend_call_details_from_script_pubkey(script_pubkey: &Script) ->
     }
 
     let function = try_s!(eth::SWAP_CONTRACT.function("receiverSpend"));
-    let decoded = try_s!(function.decode_input(&contract_call_bytes));
+    let decoded = try_s!(decode_contract_call(function, &contract_call_bytes));
     let mut decoded = decoded.into_iter();
 
     let swap_id = match decoded.next() {
@@ -1018,7 +1020,7 @@ fn find_swap_contract_call_with_swap_id(
         }
 
         let function = call_type.as_function();
-        let decoded = match function.decode_input(&contract_call_bytes) {
+        let decoded = match decode_contract_call(function, &contract_call_bytes) {
             Ok(d) => d,
             Err(e) => {
                 error!("{}", e);

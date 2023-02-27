@@ -16,6 +16,10 @@ custom-swap-locktime = [] # only for testing purposes, should never be activated
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
+# TODO
+# Remove this once the solana integration becomes stable/completed.
+disable-solana-tests = []
+default = ["disable-solana-tests"]
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
@@ -34,7 +38,7 @@ crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
 either = "1.6"
-ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
+ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
 enum_from = { path = "../derives/enum_from" }
 enum-primitive-derive = "0.2"
 futures01 = { version = "0.1", package = "futures" }
@@ -74,7 +78,7 @@ rpc_task = { path = "../rpc_task" }
 script = { path = "../mm2_bitcoin/script" }
 secp256k1 = { version = "0.20", features = ["rand"] }
 serde = "1.0"
-serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 serde_derive = "1.0"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
@@ -102,7 +106,7 @@ web-sys = { version = "0.3.55", features = ["console"] }
 dirs = { version = "1" }
 futures-rustls = { version = "0.21.1" }
 hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
-tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
+tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"

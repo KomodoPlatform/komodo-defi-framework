@@ -76,6 +76,19 @@ impl<'a, 'b, T: 'static> TrezorResponse<'a, 'b, T> {
         }
     }
 
+    /// Returns `Some(T)` if the result is ready, otherwise cancels the request.
+    pub async fn cancel_if_not_ready(self) -> Option<T> {
+        match self {
+            TrezorResponse::Ready(val) => {
+                return Some(val);
+            },
+            TrezorResponse::ButtonRequest(button) => button.cancel().await,
+            TrezorResponse::PinMatrixRequest(pin) => pin.cancel().await,
+            TrezorResponse::PassphraseRequest(pass) => pass.cancel().await,
+        }
+        None
+    }
+
     pub(crate) fn new_button_request(
         session: &'b mut TrezorSession<'a>,
         message: proto_common::ButtonRequest,

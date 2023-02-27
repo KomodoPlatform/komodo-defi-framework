@@ -385,7 +385,13 @@ impl SwapOps for SplToken {
         unimplemented!()
     }
 
+    #[inline]
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
+
+    #[inline]
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+        self.derive_htlc_key_pair(swap_unique_data).public_slice().to_vec()
+    }
 
     fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 
@@ -567,7 +573,7 @@ impl MmCoin for SplToken {
         true
     }
 
-    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.conf.abortable_system) }
+    fn on_disabled(&self) -> Result<(), AbortedError> { self.conf.abortable_system.abort_all() }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 }

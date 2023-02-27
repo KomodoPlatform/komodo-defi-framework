@@ -44,11 +44,15 @@ use std::sync::Mutex;
 use std::{convert::TryFrom, fmt::Debug, ops::Deref, sync::Arc};
 
 pub mod solana_common;
-#[cfg(test)] mod solana_common_tests;
 mod solana_decode_tx_helpers;
-#[cfg(test)] mod solana_tests;
 pub mod spl;
-#[cfg(test)] mod spl_tests;
+
+#[cfg(all(test, not(feature = "disable-solana-tests")))]
+mod solana_common_tests;
+#[cfg(all(test, not(feature = "disable-solana-tests")))]
+mod solana_tests;
+#[cfg(all(test, not(feature = "disable-solana-tests")))]
+mod spl_tests;
 
 pub const SOLANA_DEFAULT_DECIMALS: u64 = 9;
 pub const LAMPORTS_DUMMY_AMOUNT: u64 = 10;
@@ -561,7 +565,13 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
+    #[inline]
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
+
+    #[inline]
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+        self.derive_htlc_key_pair(swap_unique_data).public_slice().to_vec()
+    }
 
     fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 

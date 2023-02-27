@@ -104,7 +104,7 @@ pub fn extract_contract_addr_from_script(script: &Script) -> Result<H160, String
         _ => return ERR!("Unexpected instruction's opcode {}", instruction.opcode),
     }
 
-    Ok(instruction.data.ok_or(ERRL!("An empty contract call data"))?.into())
+    instruction.data.try_to_address()
 }
 
 /// Serialize the `number` similar to BigEndian but in QRC20 specific format.

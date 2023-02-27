@@ -1,0 +1,19 @@
+[package]
+name = "mm2_eth"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+doctest = false
+
+[dependencies]
+ethabi = { version = "17.0.0" }
+ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
+hex = "0.4.2"
+indexmap = "1.7.0"
+itertools = "0.10"
+mm2_err_handle = { path = "../mm2_err_handle" }
+secp256k1 = { version = "0.20", features = ["recovery"] }
+serde = "1.0"
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.19.0", default-features = false }

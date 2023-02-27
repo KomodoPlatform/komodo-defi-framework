@@ -351,7 +351,7 @@ impl Platform {
                 },
             });
 
-        let is_spv_enabled = self.coin.as_ref().conf.enable_spv_proof;
+        let is_spv_enabled = self.coin.as_ref().conf.spv_conf.is_some();
         let confirmed_transactions_futs = on_chain_txs
             .map(|transaction| async move {
                 if is_spv_enabled {
@@ -420,7 +420,7 @@ impl Platform {
                 .any(|info| info.tx.hash() == output.spending_tx.hash())
         });
 
-        let is_spv_enabled = self.coin.as_ref().conf.enable_spv_proof;
+        let is_spv_enabled = self.coin.as_ref().conf.spv_conf.is_some();
         let confirmed_transactions_futs = spent_outputs_info
             .into_iter()
             .map(|output| async move {

@@ -1,13 +1,20 @@
 use super::*;
 use common::executor::AbortedError;
 use crypto::{CryptoCtxError, StandardHDPathToCoin};
+use enum_from::EnumFromTrait;
+use mm2_err_handle::common_errors::WithInternal;
+#[cfg(target_arch = "wasm32")]
+use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
 
-#[derive(Display, Serialize, SerializeErrorType)]
+#[derive(Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EthActivationV2Error {
     InvalidPayload(String),
     InvalidSwapContractAddr(String),
     InvalidFallbackSwapContract(String),
+    #[display(fmt = "Expected either 'chain_id' or 'rpc_chain_id' to be set")]
+    #[cfg(target_arch = "wasm32")]
+    ExpectedRpcChainId,
     #[display(fmt = "Platform coin {} activation failed. {}", ticker, error)]
     ActivationFailed {
         ticker: String,
@@ -23,8 +30,11 @@ pub enum EthActivationV2Error {
     ErrorDeserializingDerivationPath(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[cfg(target_arch = "wasm32")]
-    #[display(fmt = "MetaMask context is not initialized")]
-    MetamaskCtxNotInitialized,
+    #[from_trait(WithMetamaskRpcError::metamask_rpc_error)]
+    #[display(fmt = "{}", _0)]
+    MetamaskError(MetamaskRpcError),
+    #[from_trait(WithInternal::internal)]
+    #[display(fmt = "Internal: {}", _0)]
     InternalError(String),
 }
 
@@ -38,6 +48,15 @@ impl From<AbortedError> for EthActivationV2Error {
 
 impl From<CryptoCtxError> for EthActivationV2Error {
     fn from(e: CryptoCtxError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+}
+
+impl From<UnexpectedDerivationMethod> for EthActivationV2Error {
+    fn from(e: UnexpectedDerivationMethod) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl From<MetamaskError> for EthActivationV2Error {
+    fn from(e: MetamaskError) -> Self { from_metamask_error(e) }
 }
 
 /// An alternative to `crate::PrivKeyActivationPolicy`, typical only for ETH coin.
@@ -224,16 +243,21 @@ pub async fn eth_coin_from_conf_and_request_v2(
         }
     }
 
-    let (my_address, priv_key_policy) = build_address_and_priv_key_policy(conf, priv_key_policy)?;
+    let (my_address, priv_key_policy) = build_address_and_priv_key_policy(conf, priv_key_policy).await?;
     let my_address_str = checksum_address(&format!("{:02x}", my_address));
+
+    let chain_id = conf["chain_id"].as_u64();
 
     let (web3, web3_instances) = match (req.rpc_mode, &priv_key_policy) {
         (EthRpcMode::Http, EthPrivKeyPolicy::KeyPair(key_pair)) => {
             build_http_transport(ctx, ticker.clone(), my_address_str, key_pair, &req.nodes).await?
         },
         #[cfg(target_arch = "wasm32")]
-        (EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(metamask_ctx)) => {
-            build_metamask_transport(ctx, metamask_ctx.clone(), ticker.clone())
+        (EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(_)) => {
+            let chain_id = chain_id
+                .or_else(|| conf["rpc_chain_id"].as_u64())
+                .or_mm_err(|| EthActivationV2Error::ExpectedRpcChainId)?;
+            build_metamask_transport(ctx, ticker.clone(), chain_id).await?
         },
         #[cfg(target_arch = "wasm32")]
         (_, _) => {
@@ -278,7 +302,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         ctx: ctx.weak(),
         required_confirmations,
-        chain_id: conf["chain_id"].as_u64(),
+        chain_id,
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
         erc20_tokens_infos: Default::default(),
@@ -291,7 +315,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
 /// Processes the given `priv_key_policy` and generates corresponding `KeyPair`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
 /// or [`PrivKeyBuildPolicy::GlobalHDAccount`], otherwise returns `PrivKeyPolicyNotAllowed` error.
-pub(crate) fn build_address_and_priv_key_policy(
+pub(crate) async fn build_address_and_priv_key_policy(
     conf: &Json,
     priv_key_policy: EthPrivKeyBuildPolicy,
 ) -> MmResult<(Address, EthPrivKeyPolicy), EthActivationV2Error> {
@@ -308,9 +332,16 @@ pub(crate) fn build_address_and_priv_key_policy(
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyBuildPolicy::Metamask(metamask_ctx) => {
-            let address_str = metamask_ctx.eth_account().address.as_str();
-            let address = addr_from_str(address_str).map_to_mm(EthActivationV2Error::InternalError)?;
-            return Ok((address, EthPrivKeyPolicy::Metamask(metamask_ctx.downgrade())));
+            let address = *metamask_ctx.check_active_eth_account().await?;
+            let public_key_uncompressed = metamask_ctx.eth_account_pubkey_uncompressed();
+            let public_key = compress_public_key(public_key_uncompressed)?;
+            return Ok((
+                address,
+                EthPrivKeyPolicy::Metamask(EthMetamaskPolicy {
+                    public_key,
+                    public_key_uncompressed,
+                }),
+            ));
         },
     };
 
@@ -361,7 +392,7 @@ async fn build_http_transport(
         );
 
         let web3 = Web3::new(transport);
-        let version = match web3.web3().client_version().compat().await {
+        let version = match web3.web3().client_version().await {
             Ok(v) => v,
             Err(e) => {
                 error!("Couldn't get client version for url {}: {}", node.uri, e);
@@ -405,14 +436,19 @@ fn build_single_http_transport(
 }
 
 #[cfg(target_arch = "wasm32")]
-fn build_metamask_transport(
+async fn build_metamask_transport(
     ctx: &MmArc,
-    metamask_ctx: MetamaskWeak,
     coin_ticker: String,
-) -> (Web3<Web3Transport>, Vec<Web3Instance>) {
-    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker);
+    chain_id: u64,
+) -> MmResult<(Web3<Web3Transport>, Vec<Web3Instance>), EthActivationV2Error> {
+    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
 
-    let web3 = Web3::new(Web3Transport::new_metamask(metamask_ctx, event_handlers));
+    let eth_config = web3_transport::metamask_transport::MetamaskEthConfig { chain_id };
+    let web3 = Web3::new(Web3Transport::new_metamask(eth_config, event_handlers)?);
+
+    // Check if MetaMask supports the given `chain_id`.
+    // Please note that this request may take a long time.
+    check_metamask_supports_chain_id(coin_ticker, &web3, chain_id).await?;
 
     // MetaMask doesn't use Parity nodes. So `MetamaskTransport` doesn't support `parity_nextNonce` RPC.
     // An example of the `web3_clientVersion` RPC - `MetaMask/v10.22.1`.
@@ -421,5 +457,45 @@ fn build_metamask_transport(
         is_parity: false,
     }];
 
-    (web3, web3_instances)
+    Ok((web3, web3_instances))
+}
+
+/// This method is based on the fact that `MetamaskTransport` tries to switch the `ChainId`
+/// if the MetaMask is targeted to another ETH chain.
+#[cfg(target_arch = "wasm32")]
+async fn check_metamask_supports_chain_id(
+    ticker: String,
+    web3: &Web3<Web3Transport>,
+    expected_chain_id: u64,
+) -> MmResult<(), EthActivationV2Error> {
+    use jsonrpc_core::ErrorCode;
+
+    /// See the documentation:
+    /// https://docs.metamask.io/guide/rpc-api.html#wallet-switchethereumchain
+    const CHAIN_IS_NOT_REGISTERED_ERROR: ErrorCode = ErrorCode::ServerError(4902);
+
+    match web3.eth().chain_id().await {
+        Ok(chain_id) if chain_id == U256::from(expected_chain_id) => Ok(()),
+        // The RPC client should have returned ChainId with which it has been created on [`Web3Transport::new_metamask`].
+        Ok(unexpected_chain_id) => {
+            let error = format!("Expected '{expected_chain_id}' ChainId, found '{unexpected_chain_id}'");
+            MmError::err(EthActivationV2Error::InternalError(error))
+        },
+        Err(web3::Error::Rpc(rpc_err)) if rpc_err.code == CHAIN_IS_NOT_REGISTERED_ERROR => {
+            let error = format!("Ethereum chain_id({expected_chain_id}) is not supported");
+            MmError::err(EthActivationV2Error::ActivationFailed { ticker, error })
+        },
+        Err(other) => {
+            let error = other.to_string();
+            MmError::err(EthActivationV2Error::ActivationFailed { ticker, error })
+        },
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn compress_public_key(uncompressed: H520) -> MmResult<H264, EthActivationV2Error> {
+    let public_key = PublicKey::from_slice(uncompressed.as_bytes())
+        .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+    let compressed = public_key.serialize();
+    Ok(H264::from(compressed))
 }

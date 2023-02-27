@@ -1,8 +1,7 @@
 use crate::eth::{web3_transport::Web3SendOut, EthCoin, GuiAuthMessages, RpcTransportEventHandler,
                  RpcTransportEventHandlerShared, Web3RpcError};
 use common::APPLICATION_JSON;
-#[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
-use futures::TryFutureExt;
+use futures::lock::Mutex as AsyncMutex;
 use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
 use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
@@ -10,7 +9,7 @@ use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use web3::error::{Error, ErrorKind};
+use web3::error::{Error, TransportError};
 use web3::helpers::{build_request, to_result_from_output, to_string};
 use web3::{RequestId, Transport};
 
@@ -25,19 +24,27 @@ pub struct AuthPayload<'a> {
 /// Implementation copied from Web3 HTTP transport
 #[cfg(not(target_arch = "wasm32"))]
 fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Result<Json, Error> {
-    let response = serde_json::from_slice(&response)
-        .map_err(|e| Error::from(ErrorKind::InvalidResponse(format!("{}: {}", rpc_url, e))))?;
+    let response =
+        serde_json::from_slice(&response).map_err(|e| Error::InvalidResponse(format!("{}: {}", rpc_url, e)))?;
 
     match response {
         Response::Single(output) => to_result_from_output(output),
-        _ => Err(ErrorKind::InvalidResponse("Expected single, got batch.".into()).into()),
+        _ => Err(Error::InvalidResponse("Expected single, got batch.".into())),
     }
+}
+
+#[derive(Debug)]
+struct HttpTransportRpcClient(AsyncMutex<HttpTransportRpcClientImpl>);
+
+#[derive(Debug)]
+struct HttpTransportRpcClientImpl {
+    nodes: Vec<HttpTransportNode>,
 }
 
 #[derive(Clone, Debug)]
 pub struct HttpTransport {
     id: Arc<AtomicUsize>,
-    nodes: Vec<HttpTransportNode>,
+    client: Arc<HttpTransportRpcClient>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 }
@@ -52,9 +59,10 @@ impl HttpTransport {
     #[cfg(test)]
     #[inline]
     pub fn new(nodes: Vec<HttpTransportNode>) -> Self {
+        let client_impl = HttpTransportRpcClientImpl { nodes };
         HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
-            nodes,
+            client: Arc::new(HttpTransportRpcClient(AsyncMutex::new(client_impl))),
             event_handlers: Default::default(),
             gui_auth_validation_generator: None,
         }
@@ -65,9 +73,10 @@ impl HttpTransport {
         nodes: Vec<HttpTransportNode>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Self {
+        let client_impl = HttpTransportRpcClientImpl { nodes };
         HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
-            nodes,
+            client: Arc::new(HttpTransportRpcClient(AsyncMutex::new(client_impl))),
             event_handlers,
             gui_auth_validation_generator: None,
         }
@@ -79,10 +88,11 @@ impl HttpTransport {
             uri: url.parse().unwrap(),
             gui_auth,
         }];
+        let client_impl = HttpTransportRpcClientImpl { nodes };
 
         HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
-            nodes,
+            client: Arc::new(HttpTransportRpcClient(AsyncMutex::new(client_impl))),
             event_handlers: Default::default(),
             gui_auth_validation_generator: None,
         }
@@ -101,27 +111,22 @@ impl Transport for HttpTransport {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        Box::new(
-            send_request(
-                request,
-                self.nodes.clone(),
-                self.event_handlers.clone(),
-                self.gui_auth_validation_generator.clone(),
-            )
-            .boxed()
-            .compat(),
-        )
+        Box::pin(send_request(
+            request,
+            self.client.clone(),
+            self.event_handlers.clone(),
+            self.gui_auth_validation_generator.clone(),
+        ))
     }
 
     #[cfg(target_arch = "wasm32")]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        let fut = send_request(
+        Box::pin(send_request(
             request,
-            self.nodes.clone(),
+            self.client.clone(),
             self.event_handlers.clone(),
             self.gui_auth_validation_generator.clone(),
-        );
-        Box::new(Box::pin(fut).compat())
+        ))
     }
 }
 
@@ -167,7 +172,7 @@ fn handle_gui_auth_payload_if_activated(
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_request(
     request: Call,
-    nodes: Vec<HttpTransportNode>,
+    client: Arc<HttpTransportRpcClient>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {
@@ -184,7 +189,9 @@ async fn send_request(
 
     let serialized_request = to_string(&request);
 
-    for node in nodes.iter() {
+    let mut client_impl = client.0.lock().await;
+
+    for (i, node) in client_impl.nodes.clone().iter().enumerate() {
         let serialized_request =
             match handle_gui_auth_payload_if_activated(&gui_auth_validation_generator, node, &request) {
                 Ok(Some(r)) => r,
@@ -238,6 +245,8 @@ async fn send_request(
             continue;
         }
 
+        client_impl.nodes.rotate_left(i);
+
         return single_response(body, &node.uri.to_string());
     }
 
@@ -247,14 +256,16 @@ async fn send_request(
 #[cfg(target_arch = "wasm32")]
 async fn send_request(
     request: Call,
-    nodes: Vec<HttpTransportNode>,
+    client: Arc<HttpTransportRpcClient>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {
     let serialized_request = to_string(&request);
 
     let mut transport_errors = Vec::new();
-    for node in nodes.iter() {
+    let mut client_impl = client.0.lock().await;
+
+    for (i, node) in client_impl.nodes.clone().iter().enumerate() {
         let serialized_request =
             match handle_gui_auth_payload_if_activated(&gui_auth_validation_generator, node, &request) {
                 Ok(Some(r)) => r,
@@ -266,9 +277,12 @@ async fn send_request(
             };
 
         match send_request_once(serialized_request.clone(), &node.uri, &event_handlers).await {
-            Ok(response_json) => return Ok(response_json),
-            Err(Error(ErrorKind::Transport(e), _)) => {
-                transport_errors.push(Web3RpcError::Transport(e));
+            Ok(response_json) => {
+                client_impl.nodes.rotate_left(i);
+                return Ok(response_json);
+            },
+            Err(Error::Transport(e)) => {
+                transport_errors.push(Web3RpcError::Transport(e.to_string()));
             },
             Err(e) => return Err(e),
         }
@@ -286,48 +300,35 @@ async fn send_request_once(
     use http::header::ACCEPT;
     use mm2_net::wasm_http::FetchRequest;
 
-    macro_rules! try_or {
-        ($exp:expr, $errkind:ident) => {
-            match $exp {
-                Ok(x) => x,
-                Err(e) => return Err(Error::from(ErrorKind::$errkind(ERRL!("{:?}", e)))),
-            }
-        };
-    }
-
     // account for outgoing traffic
     event_handlers.on_outgoing_request(request_payload.as_bytes());
 
-    let result = FetchRequest::post(&uri.to_string())
+    let (status_code, response_str) = FetchRequest::post(&uri.to_string())
         .cors()
         .body_utf8(request_payload)
         .header(ACCEPT.as_str(), APPLICATION_JSON)
         .header(CONTENT_TYPE.as_str(), APPLICATION_JSON)
         .request_str()
-        .await;
-    let (status_code, response_str) = try_or!(result, Transport);
+        .await
+        .map_err(|e| Error::Transport(TransportError::Message(ERRL!("{:?}", e))))?;
+
     if !status_code.is_success() {
-        return Err(Error::from(ErrorKind::Transport(ERRL!(
-            "!200: {}, {}",
-            status_code,
-            response_str
-        ))));
+        let err = ERRL!("!200: {}, {}", status_code, response_str);
+        return Err(Error::Transport(TransportError::Message(err)));
     }
 
     // account for incoming traffic
     event_handlers.on_incoming_response(response_str.as_bytes());
 
-    let response: Response = try_or!(serde_json::from_str(&response_str), InvalidResponse);
+    let response: Response = serde_json::from_str(&response_str).map_err(|e| Error::InvalidResponse(e.to_string()))?;
     match response {
         Response::Single(output) => to_result_from_output(output),
-        Response::Batch(_) => Err(Error::from(ErrorKind::InvalidResponse(
-            "Expected single, got batch.".to_owned(),
-        ))),
+        Response::Batch(_) => Err(Error::InvalidResponse("Expected single, got batch.".to_owned())),
     }
 }
 
 fn request_failed_error(request: &Call, errors: &[Web3RpcError]) -> Error {
     let errors: String = errors.iter().map(|e| format!("{:?}; ", e)).collect();
     let error = format!("request {:?} failed: {}", request, errors);
-    Error::from(ErrorKind::Transport(error))
+    Error::Transport(TransportError::Message(error))
 }
