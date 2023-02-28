@@ -46,7 +46,7 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
-    "TakerPaymentInstructionscReceived",
+    "TakerPaymentInstructionsReceived",
     "MakerPaymentReceived",
     "MakerPaymentWaitConfirmStarted",
     "MakerPaymentValidatedAndConfirmed",
@@ -102,7 +102,6 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Taker(TakerSavedSwap {
             uuid: swap.uuid,
-            my_persistence_pub: Some(swap.my_persistent_pub.into()),
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.to_decimal()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -184,7 +183,6 @@ impl TakerSavedEvent {
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct TakerSavedSwap {
     pub uuid: Uuid,
-    pub my_persistence_pub: Option<H264Json>,
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<TakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
@@ -319,13 +317,12 @@ impl TakerSavedSwap {
         let mut swap_pubkeys = SwapPubkeys::default();
 
         for data in &self.events {
-            if let TakerSwapEvent::Negotiated(negotiated) = &data.event {
+            if let TakerSwapEvent::Started(started) = &data.event {
                 // if taker_coin_htlc_pubkey is not maker_coin_htlc_pubkey, we can assume
                 // swap_pubkeys.maker is  m/taker_coin_htlc_pubkey and self.my_persistence_pub is swap_pubkeys.taker.
-                if negotiated.taker_coin_htlc_pubkey != negotiated.maker_coin_htlc_pubkey && !maker_coin && !taker_coin
-                {
-                    swap_pubkeys.maker = negotiated.maker_coin_htlc_pubkey;
-                    swap_pubkeys.taker = self.my_persistence_pub;
+                if started.taker_coin_htlc_pubkey != started.maker_coin_htlc_pubkey && !maker_coin && !taker_coin {
+                    swap_pubkeys.maker = started.maker_coin_htlc_pubkey;
+                    swap_pubkeys.taker = Some(started.my_persistent_pub);
 
                     drop_mutability!(swap_pubkeys);
                     return swap_pubkeys;
@@ -334,16 +331,16 @@ impl TakerSavedSwap {
                 // if taker_coin_htlc_pubkey is maker_coin_htlc_pubkey, we need to find which of the swap coin is a
                 // private coin.
                 if maker_coin && !taker_coin {
-                    // Here, maker_coin is the private coin, hence, swap_pubkeys.maker is negotiated
+                    // Here, maker_coin is the private coin, hence, swap_pubkeys.maker is started
                     // taker_coin_htlc_pubkey and swap_pubkeys.taker is self.my_persistence_pub.
-                    swap_pubkeys.maker = negotiated.taker_coin_htlc_pubkey;
-                    swap_pubkeys.taker = self.my_persistence_pub;
+                    swap_pubkeys.maker = started.taker_coin_htlc_pubkey;
+                    swap_pubkeys.taker = Some(started.my_persistent_pub);
                 } else if !maker_coin && taker_coin {
-                    // Here, taker_coin is the private coin, hence, swap_pubkeys.maker is negotiated
-                    // swap_pubkeys.maker is maker_coin_htlc_pubkey and swap_pubkeys.taker is negotiated
+                    // Here, taker_coin is the private coin, hence, swap_pubkeys.maker is started
+                    // swap_pubkeys.maker is maker_coin_htlc_pubkey and swap_pubkeys.taker is started
                     // .taker_coin_htlc_pubkey.
-                    swap_pubkeys.maker = self.my_persistence_pub;
-                    swap_pubkeys.taker = negotiated.taker_coin_htlc_pubkey;
+                    swap_pubkeys.maker = Some(started.my_persistent_pub);
+                    swap_pubkeys.taker = started.taker_coin_htlc_pubkey;
                 };
                 // if both coins are private, swap_pubkeys::maker/taker will be set to None.
             }
