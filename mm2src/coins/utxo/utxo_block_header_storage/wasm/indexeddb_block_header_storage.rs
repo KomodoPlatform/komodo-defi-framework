@@ -195,14 +195,13 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .await
             .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
 
-        if let Some((_item_id, item)) = maybe_item {
-            let height = item
-                .height
-                .to_u64()
-                .ok_or_else(|| BlockHeaderStorageError::get_err(&ticker, "height is too large".to_string()))?;
-            return Ok(Some(height));
-        }
-        Ok(None)
+        maybe_item
+            .map(|(_, item)| {
+                item.height
+                    .to_u64()
+                    .ok_or_else(|| BlockHeaderStorageError::get_err(&ticker, "height is too large".to_string()))
+            })
+            .transpose()
     }
 
     async fn get_last_block_header_with_non_max_bits(
@@ -292,14 +291,13 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .await
             .map_err(|err| BlockHeaderStorageError::get_err(&ticker, err.to_string()))?;
 
-        if let Some((_item_id, header)) = maybe_item {
-            let height = header
-                .height
-                .to_i64()
-                .ok_or_else(|| BlockHeaderStorageError::get_err(&ticker, "height is too large".to_string()))?;
-            return Ok(Some(height));
-        }
-        Ok(None)
+        maybe_item
+            .map(|(_, item)| {
+                item.height
+                    .to_i64()
+                    .ok_or_else(|| BlockHeaderStorageError::get_err(&ticker, "height is too large".to_string()))
+            })
+            .transpose()
     }
 
     async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError> {
