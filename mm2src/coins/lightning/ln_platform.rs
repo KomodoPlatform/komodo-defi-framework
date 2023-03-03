@@ -601,15 +601,40 @@ impl BroadcasterInterface for Platform {
         let tx_hex = serialize_hex(tx);
         debug!("Trying to broadcast transaction: {}", tx_hex);
 
-        let fut = self.coin.send_raw_tx(&tx_hex);
+        let platform_coin = self.coin.clone();
         let fut = async move {
-            match fut.compat().await {
-                Ok(id) => info!("Transaction broadcasted successfully: {:?} ", id),
-                // TODO: broadcast transaction through p2p network in case of error
-                Err(e) => error!("Broadcast transaction {} failed: {}", txid, e),
+            loop {
+                let bytes = match hex::decode(&tx_hex) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        error!("Converting transaction to bytes error:{}", e);
+                        break;
+                    },
+                };
+                match platform_coin
+                    .as_ref()
+                    .rpc_client
+                    .send_raw_transaction(bytes.into())
+                    .compat()
+                    .await
+                {
+                    Ok(id) => {
+                        info!("Transaction broadcasted successfully: {:?} ", id);
+                        break;
+                    },
+                    // Todo: broadcast transaction through p2p network instead in case of error
+                    // Todo: I don't want to rely on p2p broadcasting for now since there is no way to know if there are nodes running bitcoin in native mode or not
+                    // Todo: Also we need to make sure that the transaction was broadcasted after relying on the p2p network
+                    Err(e) => {
+                        error!("Broadcast transaction {} failed: {}", txid, e);
+                        if !e.get_inner().is_network_error() {
+                            break;
+                        }
+                        Timer::sleep(TRY_LOOP_INTERVAL).await;
+                    },
+                }
             }
         };
-
         self.spawner().spawn(fut);
     }
 }
