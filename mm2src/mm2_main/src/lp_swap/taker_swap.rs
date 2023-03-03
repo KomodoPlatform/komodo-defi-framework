@@ -39,7 +39,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
-pub(crate) const PRIVATE_COINS: &[&str] = &["ARRR"];
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
@@ -304,46 +303,14 @@ impl TakerSavedSwap {
     }
 
     pub fn swap_pubkeys(&self) -> SwapPubkeys {
-        let is_private_coin = |coin: &Option<String>| {
-            return if let Some(c) = coin {
-                PRIVATE_COINS.contains(&c.as_str())
-            } else {
-                false
-            };
-        };
-
-        let maker_coin = is_private_coin(&self.maker_coin);
-        let taker_coin = is_private_coin(&self.taker_coin);
         let mut swap_pubkeys = SwapPubkeys::default();
 
+        // TODO: Adjust for private coins when/if they are braodcasted
         for data in &self.events {
             if let TakerSwapEvent::Started(started) = &data.event {
-                // if taker_coin_htlc_pubkey is not maker_coin_htlc_pubkey, we can assume
-                // swap_pubkeys.maker is  m/taker_coin_htlc_pubkey and self.my_persistence_pub is swap_pubkeys.taker.
-                if started.taker_coin_htlc_pubkey != started.maker_coin_htlc_pubkey && !maker_coin && !taker_coin {
-                    swap_pubkeys.maker = started.maker_coin_htlc_pubkey;
-                    swap_pubkeys.taker = Some(started.my_persistent_pub);
-
-                    drop_mutability!(swap_pubkeys);
-                    return swap_pubkeys;
-                };
-
-                // if taker_coin_htlc_pubkey is maker_coin_htlc_pubkey, we need to find which of the swap coin is a
-                // private coin.
-                if maker_coin && !taker_coin {
-                    // Here, maker_coin is the private coin, hence, swap_pubkeys.maker is started
-                    // taker_coin_htlc_pubkey and swap_pubkeys.taker is self.my_persistence_pub.
-                    swap_pubkeys.maker = started.taker_coin_htlc_pubkey;
-                    swap_pubkeys.taker = Some(started.my_persistent_pub);
-                } else if !maker_coin && taker_coin {
-                    // Here, taker_coin is the private coin, hence, swap_pubkeys.maker is started
-                    // swap_pubkeys.maker is maker_coin_htlc_pubkey and swap_pubkeys.taker is started
-                    // .taker_coin_htlc_pubkey.
-                    swap_pubkeys.maker = Some(started.my_persistent_pub);
-                    swap_pubkeys.taker = started.taker_coin_htlc_pubkey;
-                };
-                // if both coins are private, swap_pubkeys::maker/taker will be set to None.
-            }
+                swap_pubkeys.maker = started.maker_coin_htlc_pubkey;
+                swap_pubkeys.taker = Some(started.my_persistent_pub);
+            };
         }
 
         drop_mutability!(swap_pubkeys);
