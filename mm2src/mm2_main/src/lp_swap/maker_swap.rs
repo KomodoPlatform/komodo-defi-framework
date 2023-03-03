@@ -1728,6 +1728,7 @@ impl MakerSavedSwap {
                 taker: Default::default(),
                 secret: Default::default(),
                 secret_hash: None,
+                my_persistent_pub: Default::default(),
                 lock_duration: 0,
                 maker_amount: maker_amount.to_decimal(),
                 taker_amount: taker_amount.to_decimal(),
