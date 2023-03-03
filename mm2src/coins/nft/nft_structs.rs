@@ -118,18 +118,17 @@ pub struct NftList {
     pub(crate) nfts: Vec<Nft>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Deserialize)]
 pub struct WithdrawErc1155 {
     pub(crate) chain: Chain,
-    from: String,
-    to: String,
-    token_address: String,
-    token_id: BigDecimal,
-    amount: BigDecimal,
+    pub(crate) from: String,
+    pub(crate) to: String,
+    pub(crate) token_address: String,
+    pub(crate) token_id: BigDecimal,
+    pub(crate) amount: Option<BigDecimal>,
     #[serde(default)]
-    max: bool,
-    fee: Option<WithdrawFee>,
+    pub(crate) max: bool,
+    pub(crate) fee: Option<WithdrawFee>,
 }
 
 #[derive(Clone, Deserialize)]

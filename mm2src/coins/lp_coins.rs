@@ -256,6 +256,8 @@ use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 #[cfg(feature = "enable-nft-integration")] pub mod nft;
+#[cfg(feature = "enable-nft-integration")]
+use nft::nft_errors::GetNftInfoError;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
@@ -406,7 +408,7 @@ pub enum TxHistoryError {
     InternalError(String),
 }
 
-#[derive(Clone, Debug, Display, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Display, PartialEq)]
 pub enum PrivKeyPolicyNotAllowed {
     #[display(fmt = "Hardware Wallet is not supported")]
     HardwareWalletNotSupported,
@@ -1713,7 +1715,7 @@ impl DelegationError {
     }
 }
 
-#[derive(Clone, Debug, Display, EnumFromStringify, EnumFromTrait, Serialize, SerializeErrorType, PartialEq)]
+#[derive(Clone, Debug, Display, EnumFromStringify, EnumFromTrait, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum WithdrawError {
     #[display(
@@ -1780,8 +1782,30 @@ pub enum WithdrawError {
     CoinDoesntSupportNftWithdraw { coin: String },
     #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
     AddressMismatchError { my_address: String, from: String },
+    #[cfg(feature = "enable-nft-integration")]
     #[display(fmt = "Contract type {} doesnt support 'withdraw_nft' yet", _0)]
     ContractTypeDoesntSupportNftWithdrawing(String),
+    #[cfg(feature = "enable-nft-integration")]
+    GetNftInfoError(GetNftInfoError),
+    #[cfg(feature = "enable-nft-integration")]
+    #[display(
+        fmt = "Not enough NFTs amount with token_address: {} and token_id {}. Available {}, required {}",
+        token_address,
+        token_id,
+        available,
+        required
+    )]
+    NotEnoughNftsAmount {
+        token_address: String,
+        token_id: String,
+        available: BigDecimal,
+        required: BigDecimal,
+    },
+}
+
+#[cfg(feature = "enable-nft-integration")]
+impl From<GetNftInfoError> for WithdrawError {
+    fn from(e: GetNftInfoError) -> Self { WithdrawError::GetNftInfoError(e) }
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -1802,12 +1826,15 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::UnknownAccount { .. }
             | WithdrawError::UnexpectedUserAction { .. }
             | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
-            | WithdrawError::AddressMismatchError { .. }
-            | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_) => StatusCode::BAD_REQUEST,
+            | WithdrawError::AddressMismatchError { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
             WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            #[cfg(feature = "enable-nft-integration")]
+            WithdrawError::GetNftInfoError(_)
+            | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_)
+            | WithdrawError::NotEnoughNftsAmount { .. } => StatusCode::BAD_REQUEST,
         }
     }
 }

@@ -9,9 +9,10 @@ use nft_errors::GetNftInfoError;
 use nft_structs::{Chain, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory, NftTransferHistoryWrapper,
                   NftTransfersReq, NftWrapper, NftsTransferHistoryList, TransactionNftDetails, WithdrawNftReq};
 
-use crate::eth::{get_eth_address, withdraw_erc721};
+use crate::eth::{get_eth_address, withdraw_erc1155, withdraw_erc721};
 use common::{APPLICATION_JSON, X_API_KEY};
 use http::header::ACCEPT;
+use mm2_number::BigDecimal;
 use serde_json::Value as Json;
 
 /// url for moralis requests
@@ -94,6 +95,9 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 /// Current implementation sends request to Moralis.
 /// Later, after adding caching, metadata lookup can be performed using previously obtained NFTs info without
 /// sending new moralis request. The moralis request can be sent as a fallback, if the data was not found in the cache.
+/// `Caution`. Erc1155 token can have a total supply more than 1, which means there could be several owners
+/// of the same token. `get_nft_metadata` returns NFTs info with the most recent owner.
+/// **Dont** use this function to get specific info about owner, amount etc, you will get info not related to the current address.
 pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> {
     let api_key = ctx.conf["api_key"]
         .as_str()
@@ -201,12 +205,9 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
 /// `withdraw_nft` function generates, signs and returns a transaction that transfers NFT
 /// from my address to recipient's address.
 /// This method generates a raw transaction which should then be broadcast using `send_raw_transaction`.
-/// Currently support ERC721 withdrawing, ERC1155 support will be added later.
 pub async fn withdraw_nft(ctx: MmArc, req_type: WithdrawNftReq) -> WithdrawNftResult {
     match req_type {
-        WithdrawNftReq::WithdrawErc1155(_) => MmError::err(WithdrawError::ContractTypeDoesntSupportNftWithdrawing(
-            "ERC1155".to_owned(),
-        )),
+        WithdrawNftReq::WithdrawErc1155(erc1155_req) => withdraw_erc1155(ctx, erc1155_req).await,
         WithdrawNftReq::WithdrawErc721(erc721_req) => withdraw_erc721(ctx, erc721_req).await,
     }
 }
@@ -264,4 +265,22 @@ async fn send_moralis_request(uri: &str, api_key: &str) -> MmResult<Json, GetNft
 
     let response: Json = try_or!(serde_json::from_str(&response_str), InvalidResponse);
     Ok(response)
+}
+
+pub(crate) async fn find_wallet_amount(
+    ctx: MmArc,
+    nft_list: NftListReq,
+    token_address_req: String,
+    token_id_req: BigDecimal,
+) -> MmResult<BigDecimal, GetNftInfoError> {
+    let nft_list = get_nft_list(ctx, nft_list).await?;
+    for nft in nft_list.nfts {
+        if nft.token_address == token_address_req && nft.token_id == token_id_req {
+            return Ok(nft.amount);
+        }
+    }
+    MmError::err(GetNftInfoError::TokenNotFindInWallet {
+        token_address: token_address_req,
+        token_id: token_id_req.to_string(),
+    })
 }

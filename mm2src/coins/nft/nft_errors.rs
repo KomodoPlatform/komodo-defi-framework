@@ -7,7 +7,7 @@ use mm2_net::transport::SlurpError;
 use serde::{Deserialize, Serialize};
 use web3::Error;
 
-#[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetNftInfoError {
     /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
@@ -24,6 +24,15 @@ pub enum GetNftInfoError {
     GetEthAddressError(GetEthAddressError),
     #[display(fmt = "X-API-Key is missing")]
     ApiKeyError,
+    #[display(
+        fmt = "Token: token_address {}, token_id {} was not find in wallet",
+        token_address,
+        token_id
+    )]
+    TokenNotFindInWallet {
+        token_address: String,
+        token_id: String,
+    },
 }
 
 impl From<SlurpError> for GetNftInfoError {
@@ -60,9 +69,10 @@ impl HttpStatusCode for GetNftInfoError {
             GetNftInfoError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
             GetNftInfoError::InvalidResponse(_) => StatusCode::FAILED_DEPENDENCY,
             GetNftInfoError::ApiKeyError => StatusCode::FORBIDDEN,
-            GetNftInfoError::Transport(_) | GetNftInfoError::Internal(_) | GetNftInfoError::GetEthAddressError(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            GetNftInfoError::Transport(_)
+            | GetNftInfoError::Internal(_)
+            | GetNftInfoError::GetEthAddressError(_)
+            | GetNftInfoError::TokenNotFindInWallet { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
