@@ -108,10 +108,7 @@ fn insert_channel_sql(
     Ok((sql, params))
 }
 
-fn insert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(String, OwnedSqlNamedParams), SqlError> {
-    let table_name = payments_history_table(for_coin);
-    validate_table_name(&table_name)?;
-
+fn payment_info_to_owned_named_params(payment_info: &PaymentInfo) -> OwnedSqlNamedParams {
     let payment_hash = hex::encode(payment_info.payment_hash.0);
     let (is_outbound, destination) = match payment_info.payment_type {
         PaymentType::OutboundPayment { destination } => (true, Some(destination.to_string())),
@@ -119,6 +116,24 @@ fn insert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(Str
     };
     let preimage = payment_info.preimage.map(|p| hex::encode(p.0));
     let status = payment_info.status.to_string();
+
+    owned_named_params! {
+        ":payment_hash": payment_hash,
+        ":destination": destination,
+        ":description": payment_info.description.clone(),
+        ":preimage": preimage,
+        ":amount_msat": payment_info.amt_msat,
+        ":fee_paid_msat": payment_info.fee_paid_msat,
+        ":is_outbound": is_outbound,
+        ":status": status,
+        ":created_at": payment_info.created_at,
+        ":last_updated": payment_info.last_updated,
+    }
+}
+
+fn insert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(String, OwnedSqlNamedParams), SqlError> {
+    let table_name = payments_history_table(for_coin);
+    validate_table_name(&table_name)?;
 
     let sql = format!(
         "INSERT INTO {} (
@@ -138,19 +153,32 @@ fn insert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(Str
         table_name
     );
 
-    let params = owned_named_params! {
-        ":payment_hash": payment_hash,
-        ":destination": destination,
-        ":description": payment_info.description.clone(),
-        ":preimage": preimage,
-        ":amount_msat": payment_info.amt_msat,
-        ":fee_paid_msat": payment_info.fee_paid_msat,
-        ":is_outbound": is_outbound,
-        ":status": status,
-        ":created_at": payment_info.created_at,
-        ":last_updated": payment_info.last_updated,
-    };
-    Ok((sql, params))
+    Ok((sql, payment_info_to_owned_named_params(payment_info)))
+}
+
+fn upsert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(String, OwnedSqlNamedParams), SqlError> {
+    let table_name = payments_history_table(for_coin);
+    validate_table_name(&table_name)?;
+
+    let sql = format!(
+        "INSERT OR REPLACE INTO {} (
+            payment_hash,
+            destination,
+            description,
+            preimage,
+            amount_msat,
+            fee_paid_msat,
+            is_outbound,
+            status,
+            created_at,
+            last_updated
+        ) VALUES (
+            :payment_hash, :destination, :description, :preimage, :amount_msat, :fee_paid_msat, :is_outbound, :status, :created_at, :last_updated
+        )",
+        table_name
+    );
+
+    Ok((sql, payment_info_to_owned_named_params(payment_info)))
 }
 
 fn update_payment_preimage_sql(for_coin: &str) -> Result<String, SqlError> {
@@ -833,6 +861,19 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
+    async fn add_or_update_payment_in_db(&self, info: &PaymentInfo) -> Result<(), Self::Error> {
+        let for_coin = self.db_ticker.clone();
+        let (sql, params) = upsert_payment_sql(&for_coin, info)?;
+
+        let sqlite_connection = self.sqlite_connection.clone();
+        async_blocking(move || {
+            let conn = sqlite_connection.lock().unwrap();
+            conn.execute_named(&sql, &params.as_sql_named_params())?;
+            Ok(())
+        })
+        .await
+    }
+
     async fn update_payment_preimage_in_db(
         &self,
         hash: PaymentHash,
@@ -1267,13 +1308,21 @@ mod tests {
         let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([0; 32]))).unwrap().unwrap();
         assert_eq!(expected_payment_info, actual_payment_info);
 
+        // Test add_or_update_payment_in_db
+        expected_payment_info.status = HTLCStatus::Succeeded;
+        block_on(db.add_payment_to_db(&expected_payment_info)).unwrap_err();
+        block_on(db.add_or_update_payment_in_db(&expected_payment_info)).unwrap();
+
+        let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([0; 32]))).unwrap().unwrap();
+        assert_eq!(expected_payment_info, actual_payment_info);
+
+        // Add another payment to DB
         expected_payment_info.payment_hash = PaymentHash([1; 32]);
         expected_payment_info.payment_type = PaymentType::OutboundPayment {
             destination: PublicKey::from_str("038863cf8ab91046230f561cd5b386cbff8309fa02e3f0c3ed161a3aeb64a643b9")
                 .unwrap(),
         };
         expected_payment_info.amt_msat = None;
-        expected_payment_info.status = HTLCStatus::Succeeded;
         expected_payment_info.last_updated = (now_ms() / 1000) as i64;
         block_on(db.add_payment_to_db(&expected_payment_info)).unwrap();
 

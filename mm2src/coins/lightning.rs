@@ -198,6 +198,16 @@ impl LightningCoin {
         max_total_cltv_expiry_delta: Option<u32>,
     ) -> Result<PaymentInfo, MmError<PaymentError>> {
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
+        // check if the invoice was already paid
+        if let Some(info) = self.db.get_payment_from_db(payment_hash).await? {
+            // If payment is still pending pay_invoice_with_max_total_cltv_expiry_delta/pay_invoice will return an error later
+            if info.status == HTLCStatus::Succeeded {
+                return MmError::err(PaymentError::Invoice(format!(
+                    "Invoice with payment hash {} is already paid!",
+                    hex::encode(payment_hash.0)
+                )));
+            }
+        }
         let payment_type = PaymentType::OutboundPayment {
             destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
         };
@@ -224,7 +234,8 @@ impl LightningCoin {
         };
 
         let payment_info = PaymentInfo::new(payment_hash, payment_type, description, amt_msat);
-        self.db.add_payment_to_db(&payment_info).await?;
+        // So this only updates the payment in db if the user is retrying to pay an invoice payment that has failed
+        self.db.add_or_update_payment_in_db(&payment_info).await?;
         Ok(payment_info)
     }
 
