@@ -997,7 +997,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
         contract_type: ContractType::Erc1155,
         token_address: req.token_address,
         token_id: req.token_id,
-        amount: 1.into(),
+        amount: amount_dec,
         fee_details: Some(fee_details.into()),
         coin: eth_coin.ticker.clone(),
         block_height: 0,
