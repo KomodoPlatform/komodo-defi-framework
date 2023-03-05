@@ -22,7 +22,8 @@
 //
 use super::eth::Action::{Call, Create};
 #[cfg(feature = "enable-nft-integration")]
-use crate::nft::nft_structs::{Chain, ContractType, NftListReq, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
+use crate::nft::nft_structs::{ContractType, ConvertChain, NftListReq, TransactionNftDetails, WithdrawErc1155,
+                              WithdrawErc721};
 use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry};
@@ -891,31 +892,9 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 
 #[cfg(feature = "enable-nft-integration")]
 pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftResult {
-    let ticker = match req.chain {
-        Chain::Avalanche => "AVAX",
-        Chain::Bsc => "BNB",
-        Chain::Eth => "ETH",
-        Chain::Fantom => "FTM",
-        Chain::Polygon => "MATIC",
-    };
-    let coin = lp_coinfind_or_err(&ctx, ticker).await?;
-    let eth_coin = match coin {
-        MmCoinEnum::EthCoin(eth_coin) => eth_coin,
-        _ => {
-            return MmError::err(WithdrawError::CoinDoesntSupportNftWithdraw {
-                coin: coin.ticker().to_owned(),
-            })
-        },
-    };
-    let from_addr = valid_addr_from_str(&req.from).map_to_mm(WithdrawError::InvalidAddress)?;
-    if eth_coin.my_address != from_addr {
-        return MmError::err(WithdrawError::AddressMismatchError {
-            my_address: eth_coin.my_address.to_string(),
-            from: req.from,
-        });
-    }
-    let to_addr = valid_addr_from_str(&req.to).map_to_mm(WithdrawError::InvalidAddress)?;
-    let token_addr = addr_from_str(&req.token_address).map_to_mm(WithdrawError::InvalidAddress)?;
+    let coin = lp_coinfind_or_err(&ctx, &req.chain.to_ticker()).await?;
+    let (from_addr, to_addr, token_addr, eth_coin) =
+        get_valid_eth_withdraw_addresses(coin, &req.from, &req.to, &req.token_address)?;
 
     // todo check amount in nft cache, instead of sending new moralis req
     // dont use `get_nft_metadata` for erc1155, it can return info related to other owner.
@@ -1030,31 +1009,9 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
 
 #[cfg(feature = "enable-nft-integration")]
 pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResult {
-    let ticker = match req.chain {
-        Chain::Avalanche => "AVAX",
-        Chain::Bsc => "BNB",
-        Chain::Eth => "ETH",
-        Chain::Fantom => "FTM",
-        Chain::Polygon => "MATIC",
-    };
-    let coin = lp_coinfind_or_err(&ctx, ticker).await?;
-    let eth_coin = match coin {
-        MmCoinEnum::EthCoin(eth_coin) => eth_coin,
-        _ => {
-            return MmError::err(WithdrawError::CoinDoesntSupportNftWithdraw {
-                coin: coin.ticker().to_owned(),
-            })
-        },
-    };
-    let from_addr = valid_addr_from_str(&req.from).map_to_mm(WithdrawError::InvalidAddress)?;
-    if eth_coin.my_address != from_addr {
-        return MmError::err(WithdrawError::AddressMismatchError {
-            my_address: eth_coin.my_address.to_string(),
-            from: req.from,
-        });
-    }
-    let to_addr = valid_addr_from_str(&req.to).map_to_mm(WithdrawError::InvalidAddress)?;
-    let token_addr = addr_from_str(&req.token_address).map_to_mm(WithdrawError::InvalidAddress)?;
+    let coin = lp_coinfind_or_err(&ctx, &req.chain.to_ticker()).await?;
+    let (from_addr, to_addr, token_addr, eth_coin) =
+        get_valid_eth_withdraw_addresses(coin, &req.from, &req.to, &req.token_address)?;
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC721_CONTRACT.function("safeTransferFrom")?;
@@ -5058,4 +5015,46 @@ pub async fn get_eth_address(ctx: &MmArc, ticker: &str) -> MmResult<MyWalletAddr
         coin: ticker.to_owned(),
         wallet_address,
     })
+}
+
+#[cfg(feature = "enable-nft-integration")]
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum GetValidEthWithdrawAddError {
+    #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
+    AddressMismatchError {
+        my_address: String,
+        from: String,
+    },
+    #[display(fmt = "{} coin doesn't support NFT withdrawing", coin)]
+    CoinDoesntSupportNftWithdraw {
+        coin: String,
+    },
+    InvalidAddress(String),
+}
+
+#[cfg(feature = "enable-nft-integration")]
+fn get_valid_eth_withdraw_addresses(
+    coin_enum: MmCoinEnum,
+    from: &str,
+    to: &str,
+    token_add: &str,
+) -> MmResult<(Address, Address, Address, EthCoin), GetValidEthWithdrawAddError> {
+    let eth_coin = match coin_enum {
+        MmCoinEnum::EthCoin(eth_coin) => eth_coin,
+        _ => {
+            return MmError::err(GetValidEthWithdrawAddError::CoinDoesntSupportNftWithdraw {
+                coin: coin_enum.ticker().to_owned(),
+            })
+        },
+    };
+    let from_addr = valid_addr_from_str(from).map_err(GetValidEthWithdrawAddError::InvalidAddress)?;
+    if eth_coin.my_address != from_addr {
+        return MmError::err(GetValidEthWithdrawAddError::AddressMismatchError {
+            my_address: eth_coin.my_address.to_string(),
+            from: from.to_string(),
+        });
+    }
+    let to_addr = valid_addr_from_str(to).map_err(GetValidEthWithdrawAddError::InvalidAddress)?;
+    let token_addr = addr_from_str(token_add).map_err(GetValidEthWithdrawAddError::InvalidAddress)?;
+    Ok((from_addr, to_addr, token_addr, eth_coin))
 }

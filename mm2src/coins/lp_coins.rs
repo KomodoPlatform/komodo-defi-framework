@@ -200,6 +200,8 @@ use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
 pub mod coins_tests;
 
 pub mod eth;
+#[cfg(feature = "enable-nft-integration")]
+use eth::GetValidEthWithdrawAddError;
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthTxFeeDetails, GetEthAddressError, SignedEthTx};
 
 pub mod hd_confirm_address;
@@ -1778,8 +1780,10 @@ pub enum WithdrawError {
     #[from_stringify("NumConversError", "UnexpectedDerivationMethod", "PrivKeyPolicyNotAllowed")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[cfg(feature = "enable-nft-integration")]
     #[display(fmt = "{} coin doesn't support NFT withdrawing", coin)]
     CoinDoesntSupportNftWithdraw { coin: String },
+    #[cfg(feature = "enable-nft-integration")]
     #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
     AddressMismatchError { my_address: String, from: String },
     #[cfg(feature = "enable-nft-integration")]
@@ -1824,16 +1828,16 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
-            | WithdrawError::UnexpectedUserAction { .. }
-            | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
-            | WithdrawError::AddressMismatchError { .. } => StatusCode::BAD_REQUEST,
+            | WithdrawError::UnexpectedUserAction { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
             WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             #[cfg(feature = "enable-nft-integration")]
             WithdrawError::GetNftInfoError(_)
+            | WithdrawError::AddressMismatchError { .. }
             | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_)
+            | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
             | WithdrawError::NotEnoughNftsAmount { .. } => StatusCode::BAD_REQUEST,
         }
     }
@@ -1867,6 +1871,21 @@ impl From<UtxoSignWithKeyPairError> for WithdrawError {
 
 impl From<TimeoutError> for WithdrawError {
     fn from(e: TimeoutError) -> Self { WithdrawError::Timeout(e.duration) }
+}
+
+#[cfg(feature = "enable-nft-integration")]
+impl From<GetValidEthWithdrawAddError> for WithdrawError {
+    fn from(e: GetValidEthWithdrawAddError) -> Self {
+        match e {
+            GetValidEthWithdrawAddError::AddressMismatchError { my_address, from } => {
+                WithdrawError::AddressMismatchError { my_address, from }
+            },
+            GetValidEthWithdrawAddError::CoinDoesntSupportNftWithdraw { coin } => {
+                WithdrawError::CoinDoesntSupportNftWithdraw { coin }
+            },
+            GetValidEthWithdrawAddError::InvalidAddress(e) => WithdrawError::InvalidAddress(e),
+        }
+    }
 }
 
 impl WithdrawError {

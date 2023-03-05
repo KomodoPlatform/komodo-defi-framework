@@ -26,6 +26,34 @@ pub(crate) enum Chain {
     Polygon,
 }
 
+pub(crate) trait ConvertChain {
+    fn to_ticker(&self) -> String;
+
+    fn to_ticker_chain(&self) -> (String, String);
+}
+
+impl ConvertChain for Chain {
+    fn to_ticker(&self) -> String {
+        match self {
+            Chain::Avalanche => "AVAX".to_owned(),
+            Chain::Bsc => "BNB".to_owned(),
+            Chain::Eth => "ETH".to_owned(),
+            Chain::Fantom => "FTM".to_owned(),
+            Chain::Polygon => "MATIC".to_owned(),
+        }
+    }
+
+    fn to_ticker_chain(&self) -> (String, String) {
+        match self {
+            Chain::Avalanche => ("AVAX".to_owned(), "avalanche".to_owned()),
+            Chain::Bsc => ("BNB".to_owned(), "bsc".to_owned()),
+            Chain::Eth => ("ETH".to_owned(), "eth".to_owned()),
+            Chain::Fantom => ("FTM".to_owned(), "fantom".to_owned()),
+            Chain::Polygon => ("MATIC".to_owned(), "polygon".to_owned()),
+        }
+    }
+}
+
 #[derive(Debug, Display)]
 pub(crate) enum ParseContractTypeError {
     UnsupportedContractType,

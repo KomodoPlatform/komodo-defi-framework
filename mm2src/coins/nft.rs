@@ -6,8 +6,9 @@ pub(crate) mod nft_structs;
 
 use crate::WithdrawError;
 use nft_errors::GetNftInfoError;
-use nft_structs::{Chain, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory, NftTransferHistoryWrapper,
-                  NftTransfersReq, NftWrapper, NftsTransferHistoryList, TransactionNftDetails, WithdrawNftReq};
+use nft_structs::{Chain, ConvertChain, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory,
+                  NftTransferHistoryWrapper, NftTransfersReq, NftWrapper, NftsTransferHistoryList,
+                  TransactionNftDetails, WithdrawNftReq};
 
 use crate::eth::{get_eth_address, withdraw_erc1155, withdraw_erc721};
 use common::{APPLICATION_JSON, X_API_KEY};
@@ -33,14 +34,8 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
     let mut res_list = Vec::new();
 
     for chain in req.chains {
-        let (coin_str, chain_str) = match chain {
-            Chain::Avalanche => ("AVAX", "avalanche"),
-            Chain::Bsc => ("BNB", "bsc"),
-            Chain::Eth => ("ETH", "eth"),
-            Chain::Fantom => ("FTM", "fantom"),
-            Chain::Polygon => ("MATIC", "polygon"),
-        };
-        let my_address = get_eth_address(&ctx, coin_str).await?;
+        let (coin_str, chain_str) = chain.to_ticker_chain();
+        let my_address = get_eth_address(&ctx, &coin_str).await?;
         let uri_without_cursor = format!(
             "{}{}/nft?chain={}&{}",
             URL_MORALIS, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS
