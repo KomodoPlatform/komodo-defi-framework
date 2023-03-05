@@ -892,8 +892,11 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 #[cfg(feature = "enable-nft-integration")]
 pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftResult {
     let ticker = match req.chain {
+        Chain::Avalanche => "AVAX",
         Chain::Bsc => "BNB",
         Chain::Eth => "ETH",
+        Chain::Fantom => "FTM",
+        Chain::Polygon => "MATIC",
     };
     let coin = lp_coinfind_or_err(&ctx, ticker).await?;
     let eth_coin = match coin {
@@ -1028,8 +1031,11 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
 #[cfg(feature = "enable-nft-integration")]
 pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResult {
     let ticker = match req.chain {
+        Chain::Avalanche => "AVAX",
         Chain::Bsc => "BNB",
         Chain::Eth => "ETH",
+        Chain::Fantom => "FTM",
+        Chain::Polygon => "MATIC",
     };
     let coin = lp_coinfind_or_err(&ctx, ticker).await?;
     let eth_coin = match coin {

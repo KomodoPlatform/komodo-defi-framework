@@ -34,8 +34,11 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 
     for chain in req.chains {
         let (coin_str, chain_str) = match chain {
+            Chain::Avalanche => ("AVAX", "avalanche"),
             Chain::Bsc => ("BNB", "bsc"),
             Chain::Eth => ("ETH", "eth"),
+            Chain::Fantom => ("FTM", "fantom"),
+            Chain::Polygon => ("MATIC", "polygon"),
         };
         let my_address = get_eth_address(&ctx, coin_str).await?;
         let uri_without_cursor = format!(
@@ -103,8 +106,11 @@ pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, 
         .as_str()
         .ok_or_else(|| MmError::new(GetNftInfoError::ApiKeyError))?;
     let chain_str = match req.chain {
+        Chain::Avalanche => "avalanche",
         Chain::Bsc => "bsc",
         Chain::Eth => "eth",
+        Chain::Fantom => "fantom",
+        Chain::Polygon => "polygon",
     };
     let uri = format!(
         "{}nft/{}/{}?chain={}&{}",
@@ -144,8 +150,11 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
 
     for chain in req.chains {
         let (coin_str, chain_str) = match chain {
+            Chain::Avalanche => ("AVAX", "avalanche"),
             Chain::Bsc => ("BNB", "bsc"),
             Chain::Eth => ("ETH", "eth"),
+            Chain::Fantom => ("FTM", "fantom"),
+            Chain::Polygon => ("MATIC", "polygon"),
         };
         let my_address = get_eth_address(&ctx, coin_str).await?;
         let uri_without_cursor = format!(
