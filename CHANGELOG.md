@@ -1,3 +1,5 @@
+## v1.0.0-beta <030623>
+
 **Features:**
 - [WIP] Lightning integration [#1045](https://github.com/KomodoPlatform/atomicDEX-API/issues/1045)
   - [rust-lightning](https://github.com/lightningdevkit/rust-lightning) was updated to [v0.0.110](https://github.com/lightningdevkit/rust-lightning/releases/tag/v0.0.110) in [#1452](https://github.com/KomodoPlatform/atomicDEX-API/pull/1452)
