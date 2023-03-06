@@ -278,7 +278,6 @@ skip = [
     { name = "semver", version = "*" },
     { name = "send_wrapper", version = "*" },
     { name = "sha2", version = "*" },
-    { name = "sha3", version = "*" },
     { name = "slab", version = "*" },
     { name = "smallvec", version = "*" },
     { name = "socket2", version = "*" },
@@ -296,12 +295,6 @@ skip = [
     { name = "uuid", version = "*" },
     { name = "wasi", version = "*" },
     { name = "webpki", version = "*" },
-    { name = "windows_aarch64_msvc", version = "*" },
-    { name = "windows_i686_gnu", version = "*" },
-    { name = "windows_i686_msvc", version = "*" },
-    { name = "windows-sys", version = "*" },
-    { name = "windows_x86_64_msvc", version = "*" },
-    { name = "windows_x86_64_gnu", version = "*" },
     { name = "wyz", version = "*" },
 ]
 # Similarly to `skip` allows you to skip certain crates during duplicate 
