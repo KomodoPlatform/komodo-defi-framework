@@ -23,7 +23,7 @@ jobs:
           echo "##vso[task.setvariable variable=COMMIT_HASH]${TAG}"
         displayName: Setup ENV
       - bash: |
-          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_android_armv7_CI
+          VERSION=$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_android_armv7_CI
           if ! grep -q $VERSION MM_VERSION; then
             echo $VERSION > MM_VERSION
           fi
@@ -34,7 +34,7 @@ jobs:
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_android_aarch64_CI
+          VERSION=$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_android_aarch64_CI
           if ! grep -q $VERSION MM_VERSION; then
             echo $VERSION > MM_VERSION
           fi

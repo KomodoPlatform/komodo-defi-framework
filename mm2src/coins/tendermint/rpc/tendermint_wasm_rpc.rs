@@ -117,7 +117,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_get_abci_info() {
-        let client = HttpClient::new("https://cosmos-testnet-rpc.allthatnode.com:26657").unwrap();
+        let client = HttpClient::new("https://rpc.sentry-02.theta-testnet.polypore.xyz").unwrap();
         client.abci_info().await.unwrap();
     }
 }

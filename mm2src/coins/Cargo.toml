@@ -38,9 +38,9 @@ ed25519-dalek = "1.0.1"
 ed25519-dalek-bip32 = "0.2.0"
 enum_from = { path = "../derives/enum_from" }
 ethabi = { version = "17.0.0" }
-ethcore-transaction = { git = "https://github.com/artemii235/parity-ethereum.git" }
+ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
-ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
+ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
 # Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
 #enum_dispatch = "0.1"
 futures01 = { version = "0.1", package = "futures" }
