@@ -66,6 +66,7 @@ ignore = [
     "RUSTSEC-2021-0059",
     "RUSTSEC-2021-0060",
     "RUSTSEC-2022-0090",
+    "RUSTSEC-2023-0018",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
 # lower than the range specified will be ignored. Note that ignored advisories
