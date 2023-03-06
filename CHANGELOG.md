@@ -1,5 +1,3 @@
-## v1.0.0-beta <022523>
-
 **Features:**
 - [WIP] Lightning integration [#1045](https://github.com/KomodoPlatform/atomicDEX-API/issues/1045)
   - [rust-lightning](https://github.com/lightningdevkit/rust-lightning) was updated to [v0.0.110](https://github.com/lightningdevkit/rust-lightning/releases/tag/v0.0.110) in [#1452](https://github.com/KomodoPlatform/atomicDEX-API/pull/1452)
@@ -38,6 +36,17 @@ under review stage as `r2r`(https://github.com/KomodoPlatform/atomicDEX-API/pull
    - Checksum verification of Zcash params files was added  [#1549](https://github.com/KomodoPlatform/atomicDEX-API/pull/1549)
 -  NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
    - under review stage as [r2r] NFT proof of concept implementation [#1652](https://github.com/KomodoPlatform/atomicDEX-API/pull/1652)
+   - gui-auth & enable_v2 rpc implementation https://github.com/KomodoPlatform/atomicDEX-API/commit/6631a20822a0a496b42b963c4ce05d58f69b7065
+- tendermint htlc implementation https://github.com/KomodoPlatform/atomicDEX-API/commit/5e2dd3dd716d19fb99441d5a3d7ec185a120153a
+- tendermint swap support(p.o.c level) https://github.com/KomodoPlatform/atomicDEX-API/commit/4de3cf2b24b914935b0d3f7364676b38275084fe
+- created safe number type castings https://github.com/KomodoPlatform/atomicDEX-API/commit/535d6cb06ba17428226bbbadc00fc905b1cb00cc
+- complete tendermint support for swaps and tx history implementation https://github.com/KomodoPlatform/atomicDEX-API/commit/15ff4c59496256c3e85c20ed4c3e4683be6c59dd
+- Implement TX history V2 for UTXO coins activated with a Hardware wallet: https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/36392fdf1e36d290cec97181b85889bcae7abe8f
+- Improve `stop` functionality https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/4a93790e01a1227d97cdb774fa52f34a694785cf
+- Implement Global HD account activation mode https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/a05819d272278fc708a5ee42a6004edc80ec0e80
+- Login with a MetaMask wallet https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/7ea1436d98aac6de3f9233a9ef5ec16badbf838b 
+- Add `max_maker_vol` RPC https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/7201146b3d2a4f95c6a080552faf8d7daa2a75e2
+- Add `task::get_new_address::*` RPCs https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/6b4ec0f0383ffc5e9b5f3575a9a15d5ebfd36634
    
 **Enhancements/Fixes:**
 - A possible seednode p2p thread panicking attack due to `GetKnownPeers` msg was fixed in [#1445](https://github.com/KomodoPlatform/atomicDEX-API/pull/1445)
@@ -68,6 +77,20 @@ under review stage as `r2r`(https://github.com/KomodoPlatform/atomicDEX-API/pull
 - Handling multiple rpcs optimization [#1480](https://github.com/KomodoPlatform/atomicDEX-API/issues/1480)
   - Tendermint multiple rpcs optimization [#1568](https://github.com/KomodoPlatform/atomicDEX-API/pull/1568)
   - Multiple rpcs optimization for `z_rpc` and `http_transport` [#1653](https://github.com/KomodoPlatform/atomicDEX-API/pull/1653)
-  
+  - refactor p2p message processing flow(related with one of the security problem) https://github.com/KomodoPlatform/atomicDEX-API/commit/957fd856fb74d462058a5ad47ec46d79e3bf1d83
+- Small fixes https://github.com/KomodoPlatform/atomicDEX-API/commit/f552644cd470945aa14f4d2f2fd48a527add23bf, https://github.com/KomodoPlatform/atomicDEX-API/commit/b27a9a4351fad141a5e941b5b4b774ee3895e810, https://github.com/KomodoPlatform/atomicDEX-API/commit/174519747298b13f68b6de0dadb5b0dc84df7c3d
+- solana tests are disabled https://github.com/KomodoPlatform/atomicDEX-API/commit/0c507ccba561d3296f58ea3bac9bc52fbdab3378
+- some of vulnerable dependencies(tokio, libp2p) are fixed https://github.com/KomodoPlatform/atomicDEX-API/commit/7ad381963ff463986a4c647b1d7f14f115fbbd66, https://github.com/KomodoPlatform/atomicDEX-API/commit/5f83b09f867da12416bae14a56177a5ed11629cf
+- bugfix & improvement on tendermint rpc client rotation https://github.com/KomodoPlatform/atomicDEX-API/commit/95fc67dfcd92949dde9fea3acb4bfb7d4bd9d473
+- Fix KMD withdraw with Trezor, add `mm2_stop` WASM FFI https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/1086720487942457855590ac206c7f771edd4e44
+- Use `futures_timer` crate and fix unstable tests https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/14b145d84f54c9b5e9deec1e13252cf6c07bd241
+- Fix `Timer::sleep_ms` in WASM https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/3618e7f2cff95aac273df8c77c84e014a530c247
+- Fix a race condition in `AbortableQueue` https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/2c1524dfdcaad68ccabbefc7caa3dfd73e8926d5
+- Spawn `process_json_request` so the RPC requests can be processed asynchronously https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/90ce38a57c8be11d915c8af891b00a17030f97be
+- Fix `task::-::cancel` if the RPC task is an awaiting status https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/4f1190b7fc16972b22f6399b7264bd57a9d2d2b1
+- disable_coin should fail if there are tokens dependent on the platform https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/0f3967903a1177225d030d8f4006adefed4ad671
+- implement a repeatable future https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/9f1f4e927197ea5a30cdff3b88bcc744a906f7aa
+- Use a shared DB for HD accounts storage https://github.com/KomodoPlatform/atomicDEX-API/pull/1576/commits/6f8d35c200684800a04234331837fc8abbe48e72
+
 **NB - Backwards compatibility breaking changes:**
 - Because of [#1548](https://github.com/KomodoPlatform/atomicDEX-API/pull/1548), old nodes will not be able to swap BTC segwit with new nodes since locktimes are exchanged and validated in the negotiation messages.
