@@ -2190,7 +2190,7 @@ dependencies = [
 [[package]]
 name = "ethcore-transaction"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#223da7972113a548531804510708f87b629a48fd"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git#223da7972113a548531804510708f87b629a48fd"
 dependencies = [
  "ethereum-types",
  "ethkey",
@@ -2217,7 +2217,7 @@ dependencies = [
 [[package]]
 name = "ethkey"
 version = "0.3.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#223da7972113a548531804510708f87b629a48fd"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git#223da7972113a548531804510708f87b629a48fd"
 dependencies = [
  "byteorder 1.4.3",
  "edit-distance",
@@ -3990,7 +3990,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 [[package]]
 name = "mem"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#223da7972113a548531804510708f87b629a48fd"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git#223da7972113a548531804510708f87b629a48fd"
 
 [[package]]
 name = "memchr"
@@ -4188,7 +4188,7 @@ dependencies = [
 
 [[package]]
 name = "mm2_bin_lib"
-version = "0.1.0"
+version = "1.0.0-beta"
 dependencies = [
  "chrono",
  "common",
@@ -7680,7 +7680,7 @@ dependencies = [
 [[package]]
 name = "tc_cli_client"
 version = "0.2.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "log 0.4.14",
  "serde",
@@ -7692,7 +7692,7 @@ dependencies = [
 [[package]]
 name = "tc_coblox_bitcoincore"
 version = "0.5.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "hex 0.3.2",
  "hmac 0.7.1",
@@ -7705,7 +7705,7 @@ dependencies = [
 [[package]]
 name = "tc_core"
 version = "0.3.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "debug_stub_derive",
  "log 0.4.14",
@@ -7714,7 +7714,7 @@ dependencies = [
 [[package]]
 name = "tc_dynamodb_local"
 version = "0.2.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "log 0.4.14",
  "tc_core",
@@ -7723,7 +7723,7 @@ dependencies = [
 [[package]]
 name = "tc_elasticmq"
 version = "0.2.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "tc_core",
 ]
@@ -7731,7 +7731,7 @@ dependencies = [
 [[package]]
 name = "tc_generic"
 version = "0.2.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "tc_core",
 ]
@@ -7739,7 +7739,7 @@ dependencies = [
 [[package]]
 name = "tc_parity_parity"
 version = "0.5.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "log 0.4.14",
  "tc_core",
@@ -7748,7 +7748,7 @@ dependencies = [
 [[package]]
 name = "tc_postgres"
 version = "0.2.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "log 0.4.14",
  "tc_core",
@@ -7757,7 +7757,7 @@ dependencies = [
 [[package]]
 name = "tc_redis"
 version = "0.2.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "tc_core",
 ]
@@ -7765,7 +7765,7 @@ dependencies = [
 [[package]]
 name = "tc_trufflesuite_ganachecli"
 version = "0.4.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "tc_core",
 ]
@@ -7901,7 +7901,7 @@ dependencies = [
 [[package]]
 name = "testcontainers"
 version = "0.7.0"
-source = "git+https://github.com/artemii235/testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
+source = "git+https://github.com/KomodoPlatform/mm2-testcontainers-rs.git#65e738093488f1b37185af0f1d3cf0ffd23e840d"
 dependencies = [
  "tc_cli_client",
  "tc_coblox_bitcoincore",
@@ -8459,7 +8459,7 @@ dependencies = [
 [[package]]
 name = "unexpected"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#223da7972113a548531804510708f87b629a48fd"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git#223da7972113a548531804510708f87b629a48fd"
 
 [[package]]
 name = "unicode-bidi"

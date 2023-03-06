@@ -41,7 +41,7 @@ jobs:
           mkdir upload
         displayName: 'Recreate upload dir'
       - bash: |
-          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Debug
+          VERSION=$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Debug
           if ! grep -q $VERSION MM_VERSION; then
             echo $VERSION > MM_VERSION
           fi
@@ -83,7 +83,7 @@ jobs:
         condition: and( eq( variables['Agent.OS'], 'Windows_NT' ), eq( variables['DEBUG_UPLOADED'], '' ) )
       - bash: |
           rm -f MM_VERSION
-          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release
+          VERSION=$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release
           if ! grep -q $VERSION MM_VERSION; then
             echo $VERSION > MM_VERSION
           fi
