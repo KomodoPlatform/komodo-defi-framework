@@ -307,9 +307,9 @@ impl TakerSavedSwap {
 
         // TODO: Adjust for private coins when/if they are braodcasted
         for data in &self.events {
-            if let TakerSwapEvent::Started(started) = &data.event {
-                swap_pubkeys.maker = started.maker_coin_htlc_pubkey;
-                swap_pubkeys.taker = Some(started.my_persistent_pub);
+            if let (TakerSwapEvent::Negotiated(maker), Ok(taker)) = (&data.event, self.swap_data()) {
+                swap_pubkeys.maker = maker.maker_coin_htlc_pubkey;
+                swap_pubkeys.taker = taker.taker_coin_htlc_pubkey;
             };
         }
 

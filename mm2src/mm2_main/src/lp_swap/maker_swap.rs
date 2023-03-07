@@ -1879,11 +1879,11 @@ impl MakerSavedSwap {
     pub fn swap_pubkeys(&self) -> SwapPubkeys {
         let mut swap_pubkeys = SwapPubkeys::default();
 
-        // TODO: Adjust for private coins when/if they are braodcasted
+        // TODO: Adjust for private coins when/if they are broadcasted
         for data in &self.events {
-            if let MakerSwapEvent::Started(started) = &data.event {
-                swap_pubkeys.maker = Some(started.my_persistent_pub);
-                swap_pubkeys.taker = started.maker_coin_htlc_pubkey;
+            if let (MakerSwapEvent::Negotiated(taker), Ok(maker)) = (&data.event, self.swap_data()) {
+                swap_pubkeys.maker = maker.maker_coin_htlc_pubkey;
+                swap_pubkeys.taker = taker.taker_coin_htlc_pubkey;
             };
         }
 

@@ -1,9 +1,11 @@
 use crate::integration_tests_common::*;
 use common::executor::Timer;
+use common::log::log_crate::kv::Source;
 use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log};
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
+use mm2_main::mm2::lp_swap::{MakerSavedSwap, TakerSavedSwap};
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::electrums::*;
@@ -886,6 +888,175 @@ async fn trade_base_rel_electrum(
         mm_bob.stop().await.unwrap();
         mm_alice.stop().await.unwrap();
     }
+}
+
+async fn save_swap_pubkeys_to_db(
+    bob_priv_key_policy: Mm2InitPrivKeyPolicy,
+    alice_priv_key_policy: Mm2InitPrivKeyPolicy,
+    pairs: &[(&'static str, &'static str)],
+    maker_price: f64,
+    taker_price: f64,
+    volume: f64,
+) {
+    let coins = json!([
+        rick_conf(),
+        morty_conf(),
+        eth_testnet_conf(),
+        eth_jst_testnet_conf(),
+        {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0},
+    ]);
+
+    let bob_conf = Mm2TestConfForSwap::bob_conf_with_policy(bob_priv_key_policy, &coins);
+    let mut mm_bob = MarketMakerIt::start_async(bob_conf.conf, bob_conf.rpc_password, None)
+        .await
+        .unwrap();
+
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        log!("Bob log path: {}", mm_bob.log_path.display())
+    }
+
+    Timer::sleep(1.).await;
+
+    let alice_conf = Mm2TestConfForSwap::alice_conf_with_policy(alice_priv_key_policy, &coins, &mm_bob.my_seed_addr());
+    let mut mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, None)
+        .await
+        .unwrap();
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        log!("Alice log path: {}", mm_alice.log_path.display())
+    }
+
+    #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
+    {
+        Timer::sleep(1.).await;
+        let rmd = rmd160_from_passphrase(&bob_passphrase);
+        let bob_zombie_cache_path = mm_bob.folder.join("DB").join(hex::encode(rmd)).join("ZOMBIE_CACHE.db");
+        log!("bob_zombie_cache_path {}", bob_zombie_cache_path.display());
+        std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
+
+        let rmd = rmd160_from_passphrase(&alice_passphrase);
+        let alice_zombie_cache_path = mm_alice
+            .folder
+            .join("DB")
+            .join(hex::encode(rmd))
+            .join("ZOMBIE_CACHE.db");
+        log!("alice_zombie_cache_path {}", alice_zombie_cache_path.display());
+
+        std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", alice_zombie_cache_path).unwrap();
+
+        let zombie_bob = enable_z_coin(&mm_bob, "ZOMBIE").await;
+        log!("enable ZOMBIE bob {:?}", zombie_bob);
+        let zombie_alice = enable_z_coin(&mm_alice, "ZOMBIE").await;
+        log!("enable ZOMBIE alice {:?}", zombie_alice);
+    }
+    // Enable coins on Bob side. Print the replies in case we need the address.
+    let rc = enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES).await;
+    log!("enable_coins (bob): {:?}", rc);
+
+    // Enable coins on Alice side. Print the replies in case we need the address.
+    let rc = enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES).await;
+    log!("enable_coins (alice): {:?}", rc);
+
+    let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    for uuid in uuids.iter() {
+        // ensure the swaps are indexed to the SQLite database
+        let expected_log = format!("Inserting new swap {} to the SQLite database", uuid);
+        mm_alice
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap();
+        mm_bob
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap()
+    }
+
+    wait_for_swaps_finish_and_check_status(&mut mm_bob, &mut mm_alice, &uuids, volume, maker_price).await;
+
+    log!("Waiting 3 seconds for nodes to broadcast their swaps data..");
+    Timer::sleep(3.).await;
+
+    #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
+    for uuid in uuids.iter() {
+        log!("Checking alice status..");
+        check_stats_swap_status(&mm_alice, uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
+
+        log!("Checking bob status..");
+        check_stats_swap_status(&mm_bob, uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
+    }
+
+    log!("Checking alice recent swaps..");
+    check_recent_swaps(&mm_alice, uuids.len()).await;
+    log!("Checking bob recent swaps..");
+    check_recent_swaps(&mm_bob, uuids.len()).await;
+    for (base, rel) in pairs.iter() {
+        log!("Get {}/{} orderbook", base, rel);
+        let rc = mm_bob
+            .rpc(&json! ({
+                "userpass": mm_bob.userpass,
+                "method": "orderbook",
+                "base": base,
+                "rel": rel,
+            }))
+            .await
+            .unwrap();
+        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+        let bob_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
+        log!("{}/{} orderbook {:?}", base, rel, bob_orderbook);
+
+        assert_eq!(0, bob_orderbook.bids.len(), "{} {} bids must be empty", base, rel);
+        assert_eq!(0, bob_orderbook.asks.len(), "{} {} asks must be empty", base, rel);
+
+        let stats_swap = mm_bob
+            .rpc(&json! ({
+            "userpass": mm_bob.userpass,
+            "method": "stats_swap_status",
+            "params": {
+                "uuid": uuids[0], }
+            }))
+            .await
+            .unwrap();
+
+        let maker: Json = json::from_str(&stats_swap.1).unwrap();
+        let maker = json::from_value::<MakerSavedSwap>(maker["result"]["maker"].clone()).unwrap();
+        let taker: Json = json::from_str(&stats_swap.1).unwrap();
+        let taker = json::from_value::<TakerSavedSwap>(taker["result"]["taker"].clone()).unwrap();
+        println!("MAKER {:?}", maker.swap_pubkeys());
+        println!("TAKER {:?}", taker.swap_pubkeys());
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        const STOP_TIMEOUT_MS: u64 = 1000;
+
+        mm_bob.stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS).await.unwrap();
+        mm_alice
+            .stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS)
+            .await
+            .unwrap();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        mm_bob.stop().await.unwrap();
+        mm_alice.stop().await.unwrap();
+    }
+}
+
+#[test]
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_stats_swap_db_swap_pubkeys() {
+    let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
+    let alice_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount(0);
+    let pairs = &[("ETH", "JST")];
+    block_on(save_swap_pubkeys_to_db(bob_policy, alice_policy, pairs, 1., 2., 0.1));
 }
 
 #[test]
