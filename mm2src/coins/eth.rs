@@ -35,6 +35,8 @@ use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
 use derive_more::Display;
+#[cfg(feature = "enable-nft-integration")]
+use enum_from::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
@@ -942,34 +944,8 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
             ))
         },
     };
-    let (gas, gas_price) = match req.fee {
-        Some(WithdrawFee::EthGas { gas_price, gas }) => {
-            let gas_price = wei_from_big_decimal(&gas_price, 9)?;
-            (gas.into(), gas_price)
-        },
-        Some(fee_policy) => {
-            let error = format!("Expected 'EthGas' fee type, found {:?}", fee_policy);
-            return MmError::err(WithdrawError::InvalidFeePolicy(error));
-        },
-        None => {
-            let gas_price = eth_coin.get_gas_price().compat().await?;
-            let estimate_gas_req = CallRequest {
-                value: Some(eth_value),
-                data: Some(data.clone().into()),
-                from: Some(eth_coin.my_address),
-                to: Some(call_addr),
-                gas: None,
-                // gas price must be supplied because some smart contracts base their
-                // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
-                gas_price: Some(gas_price),
-                ..CallRequest::default()
-            };
-            // Note if the wallet's balance is insufficient to withdraw, then `estimate_gas` may fail with the `Exception` error.
-            // Ideally we should determine the case when we have the insufficient balance and return `WithdrawError::NotSufficientBalance`.
-            let gas_limit = eth_coin.estimate_gas(estimate_gas_req).compat().await?;
-            (gas_limit, gas_price)
-        },
-    };
+    let (gas, gas_price) =
+        get_eth_nft_gas_details(&eth_coin, req.fee, eth_value, data.clone().into(), call_addr).await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
     let nonce = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone())
         .compat()
@@ -1031,34 +1007,8 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
             ))
         },
     };
-    let (gas, gas_price) = match req.fee {
-        Some(WithdrawFee::EthGas { gas_price, gas }) => {
-            let gas_price = wei_from_big_decimal(&gas_price, 9)?;
-            (gas.into(), gas_price)
-        },
-        Some(fee_policy) => {
-            let error = format!("Expected 'EthGas' fee type, found {:?}", fee_policy);
-            return MmError::err(WithdrawError::InvalidFeePolicy(error));
-        },
-        None => {
-            let gas_price = eth_coin.get_gas_price().compat().await?;
-            let estimate_gas_req = CallRequest {
-                value: Some(eth_value),
-                data: Some(data.clone().into()),
-                from: Some(eth_coin.my_address),
-                to: Some(call_addr),
-                gas: None,
-                // gas price must be supplied because some smart contracts base their
-                // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
-                gas_price: Some(gas_price),
-                ..CallRequest::default()
-            };
-            // Note if the wallet's balance is insufficient to withdraw, then `estimate_gas` may fail with the `Exception` error.
-            // Ideally we should determine the case when we have the insufficient balance and return `WithdrawError::NotSufficientBalance`.
-            let gas_limit = eth_coin.estimate_gas(estimate_gas_req).compat().await?;
-            (gas_limit, gas_price)
-        },
-    };
+    let (gas, gas_price) =
+        get_eth_nft_gas_details(&eth_coin, req.fee, eth_value, data.clone().into(), call_addr).await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
     let nonce = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone())
         .compat()
@@ -5057,4 +5007,69 @@ fn get_valid_eth_withdraw_addresses(
     let to_addr = valid_addr_from_str(to).map_err(GetValidEthWithdrawAddError::InvalidAddress)?;
     let token_addr = addr_from_str(token_add).map_err(GetValidEthWithdrawAddError::InvalidAddress)?;
     Ok((from_addr, to_addr, token_addr, eth_coin))
+}
+
+#[cfg(feature = "enable-nft-integration")]
+#[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize)]
+pub enum EthNftGasDetailsErr {
+    #[display(fmt = "Invalid fee policy: {}", _0)]
+    InvalidFeePolicy(String),
+    #[from_stringify("NumConversError")]
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+    #[display(fmt = "Transport: {}", _0)]
+    Transport(String),
+}
+
+#[cfg(feature = "enable-nft-integration")]
+impl From<web3::Error> for EthNftGasDetailsErr {
+    fn from(e: web3::Error) -> Self { EthNftGasDetailsErr::from(Web3RpcError::from(e)) }
+}
+
+#[cfg(feature = "enable-nft-integration")]
+impl From<Web3RpcError> for EthNftGasDetailsErr {
+    fn from(e: Web3RpcError) -> Self {
+        match e {
+            Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => EthNftGasDetailsErr::Transport(tr),
+            Web3RpcError::Internal(internal) => EthNftGasDetailsErr::Internal(internal),
+        }
+    }
+}
+
+#[cfg(feature = "enable-nft-integration")]
+async fn get_eth_nft_gas_details(
+    eth_coin: &EthCoin,
+    fee: Option<WithdrawFee>,
+    eth_value: U256,
+    data: Bytes,
+    call_addr: Address,
+) -> MmResult<(U256, U256), EthNftGasDetailsErr> {
+    match fee {
+        Some(WithdrawFee::EthGas { gas_price, gas }) => {
+            let gas_price = wei_from_big_decimal(&gas_price, 9)?;
+            Ok((gas.into(), gas_price))
+        },
+        Some(fee_policy) => {
+            let error = format!("Expected 'EthGas' fee type, found {:?}", fee_policy);
+            MmError::err(EthNftGasDetailsErr::InvalidFeePolicy(error))
+        },
+        None => {
+            let gas_price = eth_coin.get_gas_price().compat().await?;
+            let estimate_gas_req = CallRequest {
+                value: Some(eth_value),
+                data: Some(data),
+                from: Some(eth_coin.my_address),
+                to: Some(call_addr),
+                gas: None,
+                // gas price must be supplied because some smart contracts base their
+                // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
+                gas_price: Some(gas_price),
+                ..CallRequest::default()
+            };
+            // Note if the wallet's balance is insufficient to withdraw, then `estimate_gas` may fail with the `Exception` error.
+            // Ideally we should determine the case when we have the insufficient balance and return `WithdrawError::NotSufficientBalance`.
+            let gas_limit = eth_coin.estimate_gas(estimate_gas_req).compat().await?;
+            Ok((gas_limit, gas_price))
+        },
+    }
 }

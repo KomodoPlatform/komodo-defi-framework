@@ -200,9 +200,9 @@ use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
 pub mod coins_tests;
 
 pub mod eth;
-#[cfg(feature = "enable-nft-integration")]
-use eth::GetValidEthWithdrawAddError;
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthTxFeeDetails, GetEthAddressError, SignedEthTx};
+#[cfg(feature = "enable-nft-integration")]
+use eth::{EthNftGasDetailsErr, GetValidEthWithdrawAddError};
 
 pub mod hd_confirm_address;
 pub mod hd_pubkey;
@@ -1884,6 +1884,17 @@ impl From<GetValidEthWithdrawAddError> for WithdrawError {
                 WithdrawError::CoinDoesntSupportNftWithdraw { coin }
             },
             GetValidEthWithdrawAddError::InvalidAddress(e) => WithdrawError::InvalidAddress(e),
+        }
+    }
+}
+
+#[cfg(feature = "enable-nft-integration")]
+impl From<EthNftGasDetailsErr> for WithdrawError {
+    fn from(e: EthNftGasDetailsErr) -> Self {
+        match e {
+            EthNftGasDetailsErr::InvalidFeePolicy(e) => WithdrawError::InvalidFeePolicy(e),
+            EthNftGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
+            EthNftGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
         }
     }
 }
