@@ -339,7 +339,6 @@ pub fn mm2_main(version: String, datetime: String) {
     use libc::c_char;
 
     init_crash_reports();
-    log!("AtomicDEX MarketMaker {} DT {}", version, datetime);
 
     // Temporarily simulate `argv[]` for the C version of the main method.
     let args: Vec<String> = env::args()
@@ -376,14 +375,22 @@ pub fn mm2_main(version: String, datetime: String) {
         return;
     }
 
+    if first_arg == Some("--version") || first_arg == Some("-v") || first_arg == Some("version") {
+        println!("AtomicDEX API: {version}");
+        return;
+    }
+
     if first_arg == Some("--help") || first_arg == Some("-h") || first_arg == Some("help") {
         help();
         return;
     }
+
     if cfg!(windows) && first_arg == Some("/?") {
         help();
         return;
     }
+
+    log!("AtomicDEX API {} DT {}", version, datetime);
 
     if let Err(err) = run_lp_main(first_arg, &|_| (), version, datetime) {
         log!("{}", err);

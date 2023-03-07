@@ -182,7 +182,7 @@ impl RpcCommonOps for TendermintCoin {
         let mut client_impl = self.client.0.lock().await;
         // try to find first live client
         for (i, client) in client_impl.rpc_clients.clone().into_iter().enumerate() {
-            match client.perform(HealthRequest).timeout(Duration::from_secs(5)).await {
+            match client.perform(HealthRequest).timeout(Duration::from_secs(15)).await {
                 Ok(Ok(_)) => {
                     // Bring the live client to the front of rpc_clients
                     client_impl.rpc_clients.rotate_left(i);
