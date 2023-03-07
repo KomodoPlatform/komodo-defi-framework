@@ -600,21 +600,21 @@ impl BroadcasterInterface for Platform {
         let txid = tx.txid();
         let tx_hex = serialize_hex(tx);
         debug!("Trying to broadcast transaction: {}", tx_hex);
+        let tx_bytes = match hex::decode(&tx_hex) {
+            Ok(b) => b,
+            Err(e) => {
+                error!("Converting transaction to bytes error:{}", e);
+                return;
+            },
+        };
 
         let platform_coin = self.coin.clone();
         let fut = async move {
             loop {
-                let bytes = match hex::decode(&tx_hex) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        error!("Converting transaction to bytes error:{}", e);
-                        break;
-                    },
-                };
                 match platform_coin
                     .as_ref()
                     .rpc_client
-                    .send_raw_transaction(bytes.into())
+                    .send_raw_transaction(tx_bytes.clone().into())
                     .compat()
                     .await
                 {
