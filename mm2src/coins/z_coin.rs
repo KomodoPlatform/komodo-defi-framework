@@ -17,16 +17,14 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, PaymentInstructions, PaymentInstructionsErr,
             PrivKeyActivationPolicy, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut,
-            RawTransactionRequest, RefundError, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
-            SendMakerPaymentSpendPreimageInput, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs,
-            SendTakerPaymentArgs, SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs,
-            SendWatcherRefundsPaymentArgs, SignatureError, SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
-            WithdrawRequest};
+            RawTransactionRequest, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
+            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs,
+            SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
+            VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash256;
@@ -1115,7 +1113,7 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs<'_>) -> TransactionFut {
+    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
         let selfi = self.clone();
         let maker_key_pair = self.derive_htlc_key_pair(maker_payment_args.swap_unique_data);
         let taker_pub = try_tx_fus!(Public::from_slice(maker_payment_args.other_pubkey));
@@ -1139,7 +1137,7 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs<'_>) -> TransactionFut {
+    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
         let selfi = self.clone();
         let taker_keypair = self.derive_htlc_key_pair(taker_payment_args.swap_unique_data);
         let maker_pub = try_tx_fus!(Public::from_slice(taker_payment_args.other_pubkey));
@@ -1163,10 +1161,7 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_spends_taker_payment(
-        &self,
-        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs<'_>,
-    ) -> TransactionFut {
+    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
         let tx = try_tx_fus!(ZTransaction::read(maker_spends_payment_args.other_payment_tx));
         let key_pair = self.derive_htlc_key_pair(maker_spends_payment_args.swap_unique_data);
         let time_lock = maker_spends_payment_args.time_lock;
@@ -1197,10 +1192,7 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_spends_maker_payment(
-        &self,
-        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs<'_>,
-    ) -> TransactionFut {
+    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
         let tx = try_tx_fus!(ZTransaction::read(taker_spends_payment_args.other_payment_tx));
         let key_pair = self.derive_htlc_key_pair(taker_spends_payment_args.swap_unique_data);
         let time_lock = taker_spends_payment_args.time_lock;
@@ -1231,10 +1223,7 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_refunds_payment(
-        &self,
-        taker_refunds_payment_args: SendTakerRefundsPaymentArgs<'_>,
-    ) -> TransactionFut {
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut {
         let tx = try_tx_fus!(ZTransaction::read(taker_refunds_payment_args.payment_tx));
         let key_pair = self.derive_htlc_key_pair(taker_refunds_payment_args.swap_unique_data);
         let time_lock = taker_refunds_payment_args.time_lock;
@@ -1262,10 +1251,7 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_refunds_payment(
-        &self,
-        maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>,
-    ) -> TransactionFut {
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut {
         let tx = try_tx_fus!(ZTransaction::read(maker_refunds_payment_args.payment_tx));
         let key_pair = self.derive_htlc_key_pair(maker_refunds_payment_args.swap_unique_data);
         let time_lock = maker_refunds_payment_args.time_lock;
@@ -1293,41 +1279,41 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_fee(
-        &self,
-        validate_fee_args: ValidateFeeArgs<'_>,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
         let z_tx = match validate_fee_args.fee_tx {
             TransactionEnum::ZTransaction(t) => t.clone(),
             _ => panic!("Unexpected tx {:?}", validate_fee_args.fee_tx),
         };
-        let amount_sat = try_fus!(sat_from_big_decimal(validate_fee_args.amount, self.utxo_arc.decimals));
+        let amount_sat = try_f!(sat_from_big_decimal(validate_fee_args.amount, self.utxo_arc.decimals));
         let expected_memo = MemoBytes::from_bytes(validate_fee_args.uuid).expect("Uuid length < 512");
         let min_block_number = validate_fee_args.min_block_number;
 
         let coin = self.clone();
         let fut = async move {
             let tx_hash = H256::from(z_tx.txid().0).reversed();
-            let tx_from_rpc = try_s!(
-                coin.utxo_rpc_client()
-                    .get_verbose_transaction(&tx_hash.into())
-                    .compat()
-                    .await
-            );
+            let tx_from_rpc = coin
+                .utxo_rpc_client()
+                .get_verbose_transaction(&tx_hash.into())
+                .compat()
+                .await
+                .map_err(|e| MmError::new(ValidatePaymentError::InvalidRpcResponse(e.into_inner().to_string())))?;
+
             let mut encoded = Vec::with_capacity(1024);
             z_tx.write(&mut encoded).expect("Writing should not fail");
             if encoded != tx_from_rpc.hex.0 {
-                return ERR!(
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Encoded transaction {:?} does not match the tx {:?} from RPC",
-                    encoded,
-                    tx_from_rpc
-                );
+                    encoded, tx_from_rpc
+                )));
             }
 
             let block_height = match tx_from_rpc.height {
                 Some(h) => {
                     if h < min_block_number {
-                        return ERR!("Dex fee tx {:?} confirmed before min block {}", z_tx, min_block_number);
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Dex fee tx {:?} confirmed before min block {}",
+                            z_tx, min_block_number
+                        )));
                     } else {
                         BlockHeight::from_u32(h as u32)
                     }
@@ -1346,29 +1332,34 @@ impl SwapOps for ZCoin {
                             z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS,
                             &coin.z_fields.dex_fee_addr,
                         );
-                        return ERR!(
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Dex fee was sent to the invalid address {}, expected {}",
-                            encoded,
-                            expected
-                        );
+                            encoded, expected
+                        )));
                     }
 
                     if note.value != amount_sat {
-                        return ERR!("Dex fee has invalid amount {}, expected {}", note.value, amount_sat);
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Dex fee has invalid amount {}, expected {}",
+                            note.value, amount_sat
+                        )));
                     }
 
                     if memo != expected_memo {
-                        return ERR!("Dex fee has invalid memo {:?}, expected {:?}", memo, expected_memo);
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Dex fee has invalid memo {:?}, expected {:?}",
+                            memo, expected_memo
+                        )));
                     }
 
                     return Ok(());
                 }
             }
 
-            ERR!(
+            MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "The dex fee tx {:?} has no shielded outputs or outputs decryption failed",
                 z_tx
-            )
+            )))
         };
 
         Box::new(fut.boxed().compat())
@@ -1419,7 +1410,12 @@ impl SwapOps for ZCoin {
     }
 
     #[inline]
-    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    async fn extract_secret(
+        &self,
+        secret_hash: &[u8],
+        spend_tx: &[u8],
+        _watcher_reward: bool,
+    ) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -1539,10 +1535,7 @@ impl WatcherOps for ZCoin {
         unimplemented!();
     }
 
-    fn send_taker_payment_refund_preimage(
-        &self,
-        _watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
-    ) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         unimplemented!();
     }
 

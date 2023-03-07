@@ -1,9 +1,9 @@
 use super::construct_event_closure;
 use crate::indexed_db::db_driver::{InternalItem, ItemId};
 use crate::indexed_db::BeBigUint;
-use async_trait::async_trait;
 use common::wasm::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use derive_more::Display;
+use enum_from::EnumFromTrait;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use js_sys::Array;
@@ -12,22 +12,23 @@ use serde_json::{self as json, Value as Json};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{IdbCursorWithValue, IdbIndex, IdbKeyRange, IdbRequest};
+use web_sys::{IdbCursorDirection, IdbCursorWithValue, IdbIndex, IdbKeyRange, IdbRequest};
 
+mod empty_cursor;
 mod multi_key_bound_cursor;
 mod multi_key_cursor;
 mod single_key_bound_cursor;
 mod single_key_cursor;
 
-pub use multi_key_bound_cursor::IdbMultiKeyBoundCursor;
-pub use multi_key_cursor::IdbMultiKeyCursor;
-pub use single_key_bound_cursor::IdbSingleKeyBoundCursor;
-pub use single_key_cursor::IdbSingleKeyCursor;
+use empty_cursor::IdbEmptyCursor;
+use multi_key_bound_cursor::IdbMultiKeyBoundCursor;
+use multi_key_cursor::IdbMultiKeyCursor;
+use single_key_bound_cursor::IdbSingleKeyBoundCursor;
+use single_key_cursor::IdbSingleKeyCursor;
 
 pub type CursorResult<T> = Result<T, MmError<CursorError>>;
-pub type DbFilter = Box<dyn FnMut(&Json) -> (CollectItemAction, CollectCursorAction) + Send>;
 
-#[derive(Debug, Display, PartialEq)]
+#[derive(Debug, Display, EnumFromTrait, PartialEq)]
 pub enum CursorError {
     #[display(
         fmt = "Error serializing the '{}' value of the index field '{}' : {:?}",
@@ -59,6 +60,7 @@ pub enum CursorError {
     )]
     IncorrectNumberOfKeysPerIndex { expected: usize, found: usize },
     #[display(fmt = "Error occurred due to an unexpected state: {:?}", _0)]
+    #[from_trait(WithInternal::internal)]
     UnexpectedState(String),
     #[display(fmt = "Incorrect usage of the cursor: {:?}", description)]
     IncorrectUsage { description: String },
@@ -79,6 +81,13 @@ pub enum CursorBoundValue {
     Uint(u32),
     Int(i32),
     BigUint(BeBigUint),
+}
+
+#[derive(Default)]
+pub struct CursorFilters {
+    pub(crate) only_keys: Vec<(String, Json)>,
+    pub(crate) bound_keys: Vec<(String, CursorBoundValue, CursorBoundValue)>,
+    pub(crate) reverse: bool,
 }
 
 impl From<u32> for CursorBoundValue {
@@ -160,143 +169,209 @@ impl CursorBoundValue {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum CollectCursorAction {
+pub enum CursorAction {
     Continue,
     ContinueWithValue(JsValue),
     Stop,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum CollectItemAction {
+pub enum CursorItemAction {
     Include,
     Skip,
 }
 
-#[async_trait(?Send)]
-pub trait CursorOps: Sized {
-    fn db_index(&self) -> &IdbIndex;
-
+pub trait CursorDriverImpl: Sized {
     fn key_range(&self) -> CursorResult<Option<IdbKeyRange>>;
 
-    fn on_collect_iter(&mut self, key: JsValue, value: &Json)
-        -> CursorResult<(CollectItemAction, CollectCursorAction)>;
+    fn on_iteration(&mut self, key: JsValue) -> CursorResult<(CursorItemAction, CursorAction)>;
+}
 
-    /// Collect items that match the specified bounds.
-    async fn collect(mut self) -> CursorResult<Vec<(ItemId, Json)>> {
-        let (tx, mut rx) = mpsc::channel(1);
+pub(crate) struct CursorDriver {
+    /// An actual cursor implementation.
+    inner: IdbCursorEnum,
+    cursor_request: IdbRequest,
+    cursor_item_rx: mpsc::Receiver<Result<JsValue, JsValue>>,
+    /// Whether we got `CursorAction::Stop` at the last iteration or not.
+    stopped: bool,
+    /// We need to hold the closures in memory till `cursor` exists.
+    _onsuccess_closure: Closure<dyn FnMut(JsValue)>,
+    _onerror_closure: Closure<dyn FnMut(JsValue)>,
+}
 
-        let db_index = self.db_index();
-        let cursor_request_result = match self.key_range()? {
+impl CursorDriver {
+    pub(crate) fn init_cursor(db_index: IdbIndex, filters: CursorFilters) -> CursorResult<CursorDriver> {
+        let reverse = filters.reverse;
+        let inner = IdbCursorEnum::new(filters)?;
+
+        let cursor_request_result = match inner.key_range()? {
+            Some(key_range) if reverse => {
+                db_index.open_cursor_with_range_and_direction(&key_range, IdbCursorDirection::Prev)
+            },
             Some(key_range) => db_index.open_cursor_with_range(&key_range),
+            // Please note that `IndexedDb` doesn't allow to open a cursor with a direction
+            // but without a key range.
+            None if reverse => {
+                return MmError::err(CursorError::ErrorOpeningCursor {
+                    description: format!("Direction cannot be specified without a range"),
+                })
+            },
             None => db_index.open_cursor(),
         };
         let cursor_request = cursor_request_result.map_err(|e| CursorError::ErrorOpeningCursor {
             description: stringify_js_error(&e),
         })?;
 
-        let onsuccess_closure = construct_event_closure(Ok, tx.clone());
-        let onerror_closure = construct_event_closure(Err, tx);
+        let (cursor_item_tx, cursor_item_rx) = mpsc::channel(1);
+
+        let onsuccess_closure = construct_event_closure(Ok, cursor_item_tx.clone());
+        let onerror_closure = construct_event_closure(Err, cursor_item_tx);
 
         cursor_request.set_onsuccess(Some(onsuccess_closure.as_ref().unchecked_ref()));
         cursor_request.set_onerror(Some(onerror_closure.as_ref().unchecked_ref()));
 
-        let mut collected_items = Vec::new();
+        Ok(CursorDriver {
+            inner,
+            cursor_request,
+            cursor_item_rx,
+            stopped: false,
+            _onsuccess_closure: onsuccess_closure,
+            _onerror_closure: onerror_closure,
+        })
+    }
 
-        while let Some(event) = rx.next().await {
+    pub(crate) async fn next(&mut self) -> CursorResult<Option<(ItemId, Json)>> {
+        loop {
+            // Check if we got `CursorAction::Stop` at the last iteration.
+            if self.stopped {
+                return Ok(None);
+            }
+
+            let event = match self.cursor_item_rx.next().await {
+                Some(event) => event,
+                None => {
+                    self.stopped = true;
+                    return Ok(None);
+                },
+            };
+
             let _cursor_event = event.map_to_mm(|e| CursorError::ErrorOpeningCursor {
                 description: stringify_js_error(&e),
             })?;
 
-            let cursor = match cursor_from_request(&cursor_request)? {
+            let cursor = match cursor_from_request(&self.cursor_request)? {
                 Some(cursor) => cursor,
-                // no more items, stop the loop
-                None => break,
+                // No more items.
+                None => {
+                    self.stopped = true;
+                    return Ok(None);
+                },
             };
 
             let (key, js_value) = match (cursor.key(), cursor.value()) {
                 (Ok(key), Ok(js_value)) => (key, js_value),
-                // no more items, stop the loop
-                _ => break,
+                // No more items.
+                _ => {
+                    self.stopped = true;
+                    return Ok(None);
+                },
             };
 
             let item: InternalItem =
                 deserialize_from_js(js_value).map_to_mm(|e| CursorError::ErrorDeserializingItem(e.to_string()))?;
 
-            let (item_action, cursor_action) = self.on_collect_iter(key, &item.item)?;
-            match item_action {
-                CollectItemAction::Include => collected_items.push(item.into_pair()),
-                CollectItemAction::Skip => (),
-            }
+            let (item_action, cursor_action) = self.inner.on_iteration(key)?;
 
             match cursor_action {
-                CollectCursorAction::Continue => cursor.continue_().map_to_mm(|e| CursorError::AdvanceError {
+                CursorAction::Continue => cursor.continue_().map_to_mm(|e| CursorError::AdvanceError {
                     description: stringify_js_error(&e),
                 })?,
-                CollectCursorAction::ContinueWithValue(next_value) => {
+                CursorAction::ContinueWithValue(next_value) => {
                     cursor
                         .continue_with_key(&next_value)
                         .map_to_mm(|e| CursorError::AdvanceError {
                             description: stringify_js_error(&e),
                         })?
                 },
-                // don't advance the cursor, just stop the loop
-                CollectCursorAction::Stop => break,
+                // Don't advance the cursor.
+                // Here we set the `stopped` flag so we return `Ok(None)` at the next iteration immediately.
+                // This is required because `item_action` can be `CollectItemAction::Include`,
+                // and at this iteration we will return `Ok(Some)`.
+                CursorAction::Stop => self.stopped = true,
+            }
+
+            match item_action {
+                CursorItemAction::Include => return Ok(Some(item.into_pair())),
+                // Try to fetch the next item.
+                CursorItemAction::Skip => (),
             }
         }
-
-        Ok(collected_items)
     }
 }
 
-pub struct IdbCursorBuilder {
-    db_index: IdbIndex,
+pub(crate) enum IdbCursorEnum {
+    Empty(IdbEmptyCursor),
+    SingleKey(IdbSingleKeyCursor),
+    SingleKeyBound(IdbSingleKeyBoundCursor),
+    MultiKey(IdbMultiKeyCursor),
+    MultiKeyBound(IdbMultiKeyBoundCursor),
 }
 
-impl IdbCursorBuilder {
-    pub fn new(db_index: IdbIndex) -> IdbCursorBuilder { IdbCursorBuilder { db_index } }
+impl IdbCursorEnum {
+    fn new(cursor_filters: CursorFilters) -> CursorResult<IdbCursorEnum> {
+        if cursor_filters.only_keys.len() > 1 && cursor_filters.bound_keys.is_empty() {
+            return Ok(IdbCursorEnum::MultiKey(IdbMultiKeyCursor::new(
+                cursor_filters.only_keys,
+            )));
+        }
+        if !cursor_filters.bound_keys.is_empty()
+            && (cursor_filters.only_keys.len() + cursor_filters.bound_keys.len() > 1)
+        {
+            return Ok(IdbCursorEnum::MultiKeyBound(IdbMultiKeyBoundCursor::new(
+                cursor_filters.only_keys,
+                cursor_filters.bound_keys,
+            )?));
+        } // otherwise we're sure that there is either one `only`, or one `bound`, or no constraint specified.
 
-    /// Returns a cursor that is a representation of a range that includes records
-    /// whose value of the `field_name` field equals to the `field_value` value.
-    pub fn single_key_cursor(
-        self,
-        field_name: String,
-        field_value: Json,
-        collect_filter: Option<DbFilter>,
-    ) -> IdbSingleKeyCursor {
-        IdbSingleKeyCursor::new(self.db_index, field_name, field_value, collect_filter)
+        if let Some((field_name, field_value)) = cursor_filters.only_keys.into_iter().next() {
+            return Ok(IdbCursorEnum::SingleKey(IdbSingleKeyCursor::new(
+                field_name,
+                field_value,
+            )));
+        }
+
+        if let Some((field_name, lower_bound, upper_bound)) = cursor_filters.bound_keys.into_iter().next() {
+            return Ok(IdbCursorEnum::SingleKeyBound(IdbSingleKeyBoundCursor::new(
+                field_name,
+                lower_bound,
+                upper_bound,
+            )?));
+        }
+
+        // There are no constraint specified.
+        Ok(IdbCursorEnum::Empty(IdbEmptyCursor))
+    }
+}
+
+impl CursorDriverImpl for IdbCursorEnum {
+    fn key_range(&self) -> CursorResult<Option<IdbKeyRange>> {
+        match self {
+            IdbCursorEnum::Empty(empty) => empty.key_range(),
+            IdbCursorEnum::SingleKey(single) => single.key_range(),
+            IdbCursorEnum::SingleKeyBound(single_bound) => single_bound.key_range(),
+            IdbCursorEnum::MultiKey(multi) => multi.key_range(),
+            IdbCursorEnum::MultiKeyBound(multi_bound) => multi_bound.key_range(),
+        }
     }
 
-    /// Returns a cursor that is a representation of a range that includes records
-    /// whose value of the `field_name` field is lower than `lower_bound` and greater than `upper_bound`.
-    pub fn single_key_bound_cursor(
-        self,
-        field_name: String,
-        lower_bound: CursorBoundValue,
-        upper_bound: CursorBoundValue,
-        collect_filter: Option<DbFilter>,
-    ) -> CursorResult<IdbSingleKeyBoundCursor> {
-        IdbSingleKeyBoundCursor::new(self.db_index, field_name, lower_bound, upper_bound, collect_filter)
-    }
-
-    /// Returns a cursor that is a representation of a range that includes records
-    /// whose fields have only the specified values `only_values`.
-    pub fn multi_key_cursor(
-        self,
-        only_values: Vec<(String, Json)>,
-        collect_filter: Option<DbFilter>,
-    ) -> CursorResult<IdbMultiKeyCursor> {
-        IdbMultiKeyCursor::new(self.db_index, only_values, collect_filter)
-    }
-
-    /// Returns a cursor that is a representation of a range that includes records
-    /// with the multiple `only` and `bound` restrictions.
-    pub fn multi_key_bound_cursor(
-        self,
-        only_values: Vec<(String, Json)>,
-        bound_values: Vec<(String, CursorBoundValue, CursorBoundValue)>,
-        collect_filter: Option<DbFilter>,
-    ) -> CursorResult<IdbMultiKeyBoundCursor> {
-        IdbMultiKeyBoundCursor::new(self.db_index, only_values, bound_values, collect_filter)
+    fn on_iteration(&mut self, key: JsValue) -> CursorResult<(CursorItemAction, CursorAction)> {
+        match self {
+            IdbCursorEnum::Empty(empty) => empty.on_iteration(key),
+            IdbCursorEnum::SingleKey(single) => single.on_iteration(key),
+            IdbCursorEnum::SingleKeyBound(single_bound) => single_bound.on_iteration(key),
+            IdbCursorEnum::MultiKey(multi) => multi.on_iteration(key),
+            IdbCursorEnum::MultiKeyBound(multi_bound) => multi_bound.on_iteration(key),
+        }
     }
 }
 

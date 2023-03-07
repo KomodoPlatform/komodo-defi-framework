@@ -6,7 +6,7 @@ use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
 
-#[derive(Display, EnumFromTrait, Serialize, SerializeErrorType)]
+#[derive(Debug, Deserialize, Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EthActivationV2Error {
     InvalidPayload(String),
@@ -90,6 +90,8 @@ pub struct EthActivationV2Request {
     pub rpc_mode: EthRpcMode,
     pub swap_contract_address: Address,
     pub fallback_swap_contract: Option<Address>,
+    #[serde(default)]
+    pub contract_supports_watchers: bool,
     pub gas_station_url: Option<String>,
     pub gas_station_decimals: Option<u8>,
     #[serde(default)]
@@ -197,6 +199,7 @@ impl EthCoin {
             sign_message_prefix: self.sign_message_prefix.clone(),
             swap_contract_address: self.swap_contract_address,
             fallback_swap_contract: self.fallback_swap_contract,
+            contract_supports_watchers: self.contract_supports_watchers,
             decimals,
             ticker,
             gas_station_url: self.gas_station_url.clone(),
@@ -292,6 +295,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         sign_message_prefix,
         swap_contract_address: req.swap_contract_address,
         fallback_swap_contract: req.fallback_swap_contract,
+        contract_supports_watchers: req.contract_supports_watchers,
         decimals: ETH_DECIMALS,
         ticker,
         gas_station_url: req.gas_station_url,

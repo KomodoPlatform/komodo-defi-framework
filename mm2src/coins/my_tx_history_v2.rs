@@ -233,7 +233,8 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
             TransactionType::StakingDelegation
             | TransactionType::RemoveDelegation
             | TransactionType::FeeForTokenTx
-            | TransactionType::StandardTransfer => tx_hash.clone(),
+            | TransactionType::StandardTransfer
+            | TransactionType::NftTransfer => tx_hash.clone(),
         };
 
         TransactionDetails {

@@ -9,6 +9,7 @@ zhtlc-native-tests = []
 # Remove this once the solana integration becomes stable/completed.
 disable-solana-tests = []
 default = ["disable-solana-tests"]
+enable-nft-integration = []
 
 [lib]
 name = "coins"

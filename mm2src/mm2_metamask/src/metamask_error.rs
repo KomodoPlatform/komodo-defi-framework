@@ -1,7 +1,7 @@
 use derive_more::Display;
 use jsonrpc_core::{Error as RPCError, ErrorCode as RpcErrorCode};
 use mm2_err_handle::prelude::*;
-use serde_derive::Serialize;
+use serde_derive::{Deserialize, Serialize};
 use web3::Error as Web3Error;
 
 const USER_CANCELLED_ERROR_CODE: RpcErrorCode = RpcErrorCode::ServerError(4001);
@@ -55,7 +55,7 @@ impl From<Web3Error> for MetamaskError {
 /// so please extend it if it's required **only**.
 ///
 /// Please also note that this enum is fieldless.
-#[derive(Clone, Debug, Display, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Display, Serialize, PartialEq)]
 pub enum MetamaskRpcError {
     EthProviderNotFound,
     #[display(fmt = "User cancelled request")]

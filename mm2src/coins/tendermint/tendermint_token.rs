@@ -6,15 +6,14 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
             MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr,
             PaymentInstructions, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, RefundError,
-            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
-            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SendWatcherRefundsPaymentArgs,
-            SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -107,7 +106,7 @@ impl SwapOps for TendermintToken {
             .send_taker_fee_for_denom(fee_addr, amount, self.denom.clone(), self.decimals, uuid)
     }
 
-    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
+    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
         self.platform_coin.send_htlc_for_denom(
             maker_payment_args.time_lock_duration,
             maker_payment_args.other_pubkey,
@@ -118,7 +117,7 @@ impl SwapOps for TendermintToken {
         )
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
+    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
         self.platform_coin.send_htlc_for_denom(
             taker_payment_args.time_lock_duration,
             taker_payment_args.other_pubkey,
@@ -129,35 +128,29 @@ impl SwapOps for TendermintToken {
         )
     }
 
-    fn send_maker_spends_taker_payment(
-        &self,
-        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
-    ) -> TransactionFut {
+    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
         self.platform_coin
             .send_maker_spends_taker_payment(maker_spends_payment_args)
     }
 
-    fn send_taker_spends_maker_payment(
-        &self,
-        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
-    ) -> TransactionFut {
+    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
         self.platform_coin
             .send_taker_spends_maker_payment(taker_spends_payment_args)
     }
 
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs) -> TransactionFut {
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         Box::new(futures01::future::err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to be refunded".into(),
         )))
     }
 
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs) -> TransactionFut {
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         Box::new(futures01::future::err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to be refunded".into(),
         )))
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
         self.platform_coin.validate_fee_for_denom(
             validate_fee_args.fee_tx,
             validate_fee_args.expected_sender,
@@ -206,8 +199,15 @@ impl SwapOps for TendermintToken {
         self.platform_coin.search_for_swap_tx_spend_other(input).await
     }
 
-    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
-        self.platform_coin.extract_secret(secret_hash, spend_tx).await
+    async fn extract_secret(
+        &self,
+        secret_hash: &[u8],
+        spend_tx: &[u8],
+        watcher_reward: bool,
+    ) -> Result<Vec<u8>, String> {
+        self.platform_coin
+            .extract_secret(secret_hash, spend_tx, watcher_reward)
+            .await
     }
 
     fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
@@ -327,10 +327,7 @@ impl WatcherOps for TendermintToken {
         unimplemented!();
     }
 
-    fn send_taker_payment_refund_preimage(
-        &self,
-        _watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
-    ) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         unimplemented!();
     }
 
