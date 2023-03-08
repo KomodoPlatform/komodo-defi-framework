@@ -876,7 +876,6 @@ async fn trade_base_rel_electrum(
 }
 
 #[test]
-#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn trade_test_electrum_and_eth_coins_validate_pubkeys() {
     let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
