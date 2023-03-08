@@ -1,4 +1,4 @@
-## v1.0.0-beta <030623>
+## v1.0.0-beta - 2023-03-08
 
 **Features:**
 - ARRR integration [#927](https://github.com/KomodoPlatform/atomicDEX-API/issues/927):
