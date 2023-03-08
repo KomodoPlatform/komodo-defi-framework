@@ -25,7 +25,7 @@ const DIRECTION_BOTH_MORALIS: &str = "direction=both";
 
 pub type WithdrawNftResult = Result<TransactionNftDetails, MmError<WithdrawError>>;
 
-/// `get_nft_list` function returns list of NFTs on ETH or/and BNB chains owned by user.
+/// `get_nft_list` function returns list of NFTs on requested chains owned by user.
 pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetNftInfoError> {
     let api_key = ctx.conf["api_key"]
         .as_str()
@@ -93,9 +93,10 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 /// Current implementation sends request to Moralis.
 /// Later, after adding caching, metadata lookup can be performed using previously obtained NFTs info without
 /// sending new moralis request. The moralis request can be sent as a fallback, if the data was not found in the cache.
-/// `Caution`. Erc1155 token can have a total supply more than 1, which means there could be several owners
+///
+/// `Caution`. ERC-1155 token can have a total supply more than 1, which means there could be several owners
 /// of the same token. `get_nft_metadata` returns NFTs info with the most recent owner.
-/// **Dont** use this function to get specific info about owner, amount etc, you will get info not related to the current address.
+/// **Dont** use this function to get specific info about owner address, amount etc, you will get info not related to my_address.
 pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> {
     let api_key = ctx.conf["api_key"]
         .as_str()
@@ -134,7 +135,7 @@ pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, 
     Ok(nft_metadata)
 }
 
-/// `get_nft_transfers` function returns a transfer history of NFTs on ETH or/and BNb chains owned by user.
+/// `get_nft_transfers` function returns a transfer history of NFTs on requested chains owned by user.
 /// Currently doesnt support filters.
 pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<NftsTransferHistoryList, GetNftInfoError> {
     let api_key = ctx.conf["api_key"]
@@ -271,6 +272,7 @@ async fn send_moralis_request(uri: &str, api_key: &str) -> MmResult<Json, GetNft
     Ok(response)
 }
 
+/// This function uses `get_nft_list` method to get the correct info about amount of specific NFT owned by my_address.
 pub(crate) async fn find_wallet_amount(
     ctx: MmArc,
     nft_list: NftListReq,

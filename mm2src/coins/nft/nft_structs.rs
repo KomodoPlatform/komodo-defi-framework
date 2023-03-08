@@ -181,7 +181,7 @@ pub enum WithdrawNftReq {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TransactionNftDetails {
-    /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction_bytes` RPC to broadcast the transaction
+    /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction` RPC to broadcast the transaction
     pub(crate) tx_hex: BytesJson,
     pub(crate) tx_hash: String,
     /// NFTs are sent from these addresses

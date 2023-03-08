@@ -893,6 +893,8 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 }
 
 #[cfg(feature = "enable-nft-integration")]
+/// `withdraw_erc1155` function returns details of `ERC-1155` transaction including tx hex,
+/// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
 pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, &req.chain.to_ticker()).await?;
     let (from_addr, to_addr, token_addr, eth_coin) =
@@ -984,6 +986,8 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
 }
 
 #[cfg(feature = "enable-nft-integration")]
+/// `withdraw_erc721` function returns details of `ERC-721` transaction including tx hex,
+/// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
 pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, &req.chain.to_ticker()).await?;
     let (from_addr, to_addr, token_addr, eth_coin) =
