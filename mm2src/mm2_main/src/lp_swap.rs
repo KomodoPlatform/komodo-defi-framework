@@ -115,7 +115,6 @@ use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
-use rpc::v1::types::H264 as H264Json;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
 pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
                        MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT,
@@ -1383,8 +1382,8 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
 
 #[derive(Debug, Deserialize, PartialEq, Serialize, Default)]
 pub struct SwapPubkeys {
-    pub maker: Option<H264Json>,
-    pub taker: Option<H264Json>,
+    pub maker: Option<String>,
+    pub taker: Option<String>,
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

@@ -157,8 +157,8 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
         ":is_success": (is_success as u32).to_string(),
         ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
         ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
-        ":maker_pubkey": pubkeys.maker.map(|key|key.to_string()),
-        ":taker_pubkey": pubkeys.taker.map(|key|key.to_string()),
+        ":maker_pubkey": pubkeys.maker.clone(),
+        ":taker_pubkey": pubkeys.taker.clone(),
     };
 
     Some((INSERT_STATS_SWAP, params))
@@ -234,8 +234,8 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
         ":is_success": (is_success as u32).to_string(),
         ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
         ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
-        ":maker_pubkey": pubkeys.maker.map(|key|key.to_string()),
-        ":taker_pubkey": pubkeys.taker.map(|key|key.to_string()),
+        ":maker_pubkey": pubkeys.maker.clone(),
+        ":taker_pubkey": pubkeys.taker.clone(),
     };
     Some((INSERT_STATS_SWAP, params))
 }

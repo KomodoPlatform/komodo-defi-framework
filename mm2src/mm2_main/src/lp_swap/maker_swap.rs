@@ -1881,9 +1881,9 @@ impl MakerSavedSwap {
 
         // TODO: Adjust for private coins when/if they are broadcasted
         for data in &self.events {
-            if let (MakerSwapEvent::Negotiated(taker), Ok(maker)) = (&data.event, self.swap_data()) {
-                swap_pubkeys.maker = maker.maker_coin_htlc_pubkey;
-                swap_pubkeys.taker = taker.taker_coin_htlc_pubkey;
+            if let MakerSwapEvent::Started(maker) = &data.event {
+                swap_pubkeys.maker = Some(maker.my_persistent_pub.to_string());
+                swap_pubkeys.taker = Some(maker.taker.to_string());
             };
         }
 
