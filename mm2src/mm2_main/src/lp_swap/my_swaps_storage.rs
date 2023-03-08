@@ -201,37 +201,41 @@ mod wasm_impl {
             let items = match (&filter.my_coin, &filter.other_coin) {
                 (Some(my_coin), Some(other_coin)) => {
                     my_swaps_table
-                        .open_cursor("with_my_other_coins")
-                        .await?
+                        .cursor_builder()
                         .only("my_coin", my_coin)?
                         .only("other_coin", other_coin)?
                         .bound("started_at", from_timestamp, to_timestamp)
+                        .open_cursor("with_my_other_coins")
+                        .await?
                         .collect()
                         .await?
                 },
                 (Some(my_coin), None) => {
                     my_swaps_table
-                        .open_cursor("with_my_coin")
-                        .await?
+                        .cursor_builder()
                         .only("my_coin", my_coin)?
                         .bound("started_at", from_timestamp, to_timestamp)
+                        .open_cursor("with_my_coin")
+                        .await?
                         .collect()
                         .await?
                 },
                 (None, Some(other_coin)) => {
                     my_swaps_table
-                        .open_cursor("with_other_coin")
-                        .await?
+                        .cursor_builder()
                         .only("other_coin", other_coin)?
                         .bound("started_at", from_timestamp, to_timestamp)
+                        .open_cursor("with_other_coin")
+                        .await?
                         .collect()
                         .await?
                 },
                 (None, None) => {
                     my_swaps_table
+                        .cursor_builder()
+                        .bound("started_at", from_timestamp, to_timestamp)
                         .open_cursor("started_at")
                         .await?
-                        .bound("started_at", from_timestamp, to_timestamp)
                         .collect()
                         .await?
                 },

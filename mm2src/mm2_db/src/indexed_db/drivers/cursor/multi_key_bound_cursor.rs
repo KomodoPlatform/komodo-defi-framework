@@ -1,37 +1,29 @@
-use super::{index_key_as_array, CollectCursorAction, CollectItemAction, CursorBoundValue, CursorError, CursorOps,
-            CursorResult, DbFilter};
-use async_trait::async_trait;
+use super::{index_key_as_array, CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction,
+            CursorResult};
 use common::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use serde_json::{json, Value as Json};
 use wasm_bindgen::prelude::*;
-use web_sys::{IdbIndex, IdbKeyRange};
+use web_sys::IdbKeyRange;
 
 /// The representation of a range that includes records
 /// with the multiple `only` and `bound` restrictions.
 /// https://developer.mozilla.org/en-US/docs/Web/API/IDBKeyRange/bound
 pub struct IdbMultiKeyBoundCursor {
-    db_index: IdbIndex,
     only_values: Vec<(String, Json)>,
     bound_values: Vec<(String, CursorBoundValue, CursorBoundValue)>,
-    /// An additional predicate that may be used to filter records.
-    collect_filter: Option<DbFilter>,
 }
 
 impl IdbMultiKeyBoundCursor {
     pub(super) fn new(
-        db_index: IdbIndex,
         only_values: Vec<(String, Json)>,
         bound_values: Vec<(String, CursorBoundValue, CursorBoundValue)>,
-        collect_filter: Option<DbFilter>,
     ) -> CursorResult<IdbMultiKeyBoundCursor> {
         Self::check_bounds(&only_values, &bound_values)?;
         Ok(IdbMultiKeyBoundCursor {
-            db_index,
             only_values,
             bound_values,
-            collect_filter,
         })
     }
 
@@ -83,10 +75,7 @@ impl IdbMultiKeyBoundCursor {
     }
 }
 
-#[async_trait(?Send)]
-impl CursorOps for IdbMultiKeyBoundCursor {
-    fn db_index(&self) -> &IdbIndex { &self.db_index }
-
+impl CursorDriverImpl for IdbMultiKeyBoundCursor {
     fn key_range(&self) -> CursorResult<Option<IdbKeyRange>> {
         let lower = Array::new();
         let upper = Array::new();
@@ -119,11 +108,7 @@ impl CursorOps for IdbMultiKeyBoundCursor {
     /// The range `IDBKeyRange.bound([2,2], [4,4])` includes values like `[3,0]` and `[3,5]` as `[2,2] < [3,0] < [3,5] < [4,4]`,
     /// so we need to do additional filtering.
     /// For more information on why it's required, see https://stackoverflow.com/a/32976384.
-    fn on_collect_iter(
-        &mut self,
-        index_key: JsValue,
-        value: &Json,
-    ) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
+    fn on_iteration(&mut self, index_key: JsValue) -> CursorResult<(CursorItemAction, CursorAction)> {
         let index_keys_js_array = index_key_as_array(index_key)?;
         let index_keys: Vec<Json> = index_keys_js_array
             .iter()
@@ -172,8 +157,8 @@ impl CursorOps for IdbMultiKeyBoundCursor {
 
                 return Ok((
                     // the `actual_index_value` is not in our expected bounds
-                    CollectItemAction::Skip,
-                    CollectCursorAction::ContinueWithValue(new_index.into()),
+                    CursorItemAction::Skip,
+                    CursorAction::ContinueWithValue(new_index.into()),
                 ));
             }
             if &actual_index_value > upper_bound {
@@ -192,13 +177,13 @@ impl CursorOps for IdbMultiKeyBoundCursor {
 
                     return Ok((
                         // the `actual_index_value` is not in our expected bounds
-                        CollectItemAction::Skip,
-                        CollectCursorAction::ContinueWithValue(new_index.into()),
+                        CursorItemAction::Skip,
+                        CursorAction::ContinueWithValue(new_index.into()),
                     ));
                 }
 
                 // otherwise there is no an index greater than actual `index`, stop the cursor
-                return Ok((CollectItemAction::Skip, CollectCursorAction::Stop));
+                return Ok((CursorItemAction::Skip, CursorAction::Stop));
             }
 
             let increased_index_key = actual_index_value.next();
@@ -209,19 +194,13 @@ impl CursorOps for IdbMultiKeyBoundCursor {
             idx_in_index += 1;
             idx_in_bounds += 1;
         }
-
-        // `index_key` is in our expected bounds
-        if let Some(ref mut filter) = self.collect_filter {
-            return Ok(filter(value));
-        }
-        Ok((CollectItemAction::Include, CollectCursorAction::Continue))
+        Ok((CursorItemAction::Include, CursorAction::Continue))
     }
 }
 
 mod tests {
     use super::*;
     use common::log::wasm_log::register_wasm_log;
-    use wasm_bindgen::JsCast;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
@@ -230,10 +209,10 @@ mod tests {
     fn test_in_bound_indexes(cursor: &mut IdbMultiKeyBoundCursor, input_indexes: Vec<Json>) {
         for input_index in input_indexes {
             let input_index_js_value = serialize_to_js(&input_index).unwrap();
-            let result = cursor.on_collect_iter(input_index_js_value, &Json::Null);
+            let result = cursor.on_iteration(input_index_js_value);
             assert_eq!(
                 result,
-                Ok((CollectItemAction::Include, CollectCursorAction::Continue)),
+                Ok((CursorItemAction::Include, CursorAction::Continue)),
                 "'{}' index is expected to be in a bound",
                 input_index
             );
@@ -247,19 +226,16 @@ mod tests {
         for (input_index, expected_next) in input_indexes {
             let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let (item_action, cursor_action) = cursor
-                .on_collect_iter(input_index_js_value, &Json::Null)
+                .on_iteration(input_index_js_value)
                 .expect(&format!("Error due to the index '{:?}'", input_index));
 
             let actual_next: Json = match cursor_action {
-                CollectCursorAction::ContinueWithValue(next_index_js_value) => {
+                CursorAction::ContinueWithValue(next_index_js_value) => {
                     deserialize_from_js(next_index_js_value).expect("Error deserializing next index}")
                 },
-                action => panic!(
-                    "Expected 'CollectCursorAction::ContinueWithValue', found '{:?}'",
-                    action
-                ),
+                action => panic!("Expected 'CursorAction::ContinueWithValue', found '{:?}'", action),
             };
-            assert_eq!(item_action, CollectItemAction::Skip);
+            assert_eq!(item_action, CursorItemAction::Skip);
             assert_eq!(actual_next, expected_next);
         }
     }
@@ -268,10 +244,10 @@ mod tests {
     fn test_out_of_bound_indexes(cursor: &mut IdbMultiKeyBoundCursor, input_indexes: Vec<Json>) {
         for input_index in input_indexes {
             let input_index_js_value = serialize_to_js(&input_index).unwrap();
-            let result = cursor.on_collect_iter(input_index_js_value, &Json::Null);
+            let result = cursor.on_iteration(input_index_js_value);
             assert_eq!(
                 result,
-                Ok((CollectItemAction::Skip, CollectCursorAction::Stop)),
+                Ok((CursorItemAction::Skip, CursorAction::Stop)),
                 "'{}' index is expected to be out of bound",
                 input_index
             );
@@ -280,7 +256,7 @@ mod tests {
 
     /// This test doesn't check [`IdbMultiKeyBoundCursor::filter`].
     #[wasm_bindgen_test]
-    fn test_on_collect_iter_multiple_only_and_bound_values() {
+    fn test_on_iteration_multiple_only_and_bound_values() {
         register_wasm_log();
 
         let only_values = vec![
@@ -311,10 +287,7 @@ mod tests {
             ),
         ];
 
-        // Use [`wasm_bindgen::JsCast::unchecked_from_js`] to create not-valid `IdbIndex`
-        // that is not used by [`IdbMultiKeyBoundCursor::on_collect_iter`] anyway.
-        let db_index = IdbIndex::unchecked_from_js(JsValue::NULL);
-        let mut cursor = IdbMultiKeyBoundCursor::new(db_index, only_values, bound_values, None).unwrap();
+        let mut cursor = IdbMultiKeyBoundCursor::new(only_values, bound_values).unwrap();
 
         //////////////////
 
@@ -388,7 +361,7 @@ mod tests {
 
     /// This test doesn't check [`IdbMultiKeyBoundCursor::filter`].
     #[wasm_bindgen_test]
-    fn test_on_collect_iter_multiple_bound_values() {
+    fn test_on_iteration_multiple_bound_values() {
         register_wasm_log();
 
         let only_values = Vec::new();
@@ -405,10 +378,7 @@ mod tests {
             ),
         ];
 
-        // Use [`wasm_bindgen::JsCast::unchecked_from_js`] to create not-valid `IdbIndex`
-        // that is not used by [`IdbMultiKeyBoundCursor::on_collect_iter`] anyway.
-        let db_index = IdbIndex::unchecked_from_js(JsValue::NULL);
-        let mut cursor = IdbMultiKeyBoundCursor::new(db_index, only_values, bound_values, None).unwrap();
+        let mut cursor = IdbMultiKeyBoundCursor::new(only_values, bound_values).unwrap();
 
         //////////////////
 
@@ -453,7 +423,7 @@ mod tests {
 
     /// This test doesn't check [`IdbMultiKeyBoundCursor::filter`].
     #[wasm_bindgen_test]
-    fn test_on_collect_iter_single_only_and_bound_values() {
+    fn test_on_iteration_single_only_and_bound_values() {
         register_wasm_log();
 
         let only_values = vec![("field1".to_owned(), json!(2))];
@@ -463,10 +433,7 @@ mod tests {
             CursorBoundValue::Uint(5), // upper bound
         )];
 
-        // Use [`wasm_bindgen::JsCast::unchecked_from_js`] to create not-valid `IdbIndex`
-        // that is not used by [`IdbMultiKeyBoundCursor::on_collect_iter`] anyway.
-        let db_index = IdbIndex::unchecked_from_js(JsValue::NULL);
-        let mut cursor = IdbMultiKeyBoundCursor::new(db_index, only_values, bound_values, None).unwrap();
+        let mut cursor = IdbMultiKeyBoundCursor::new(only_values, bound_values).unwrap();
 
         //////////////////
 
@@ -502,7 +469,7 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    fn test_on_collect_iter_error() {
+    fn test_on_iteration_error() {
         register_wasm_log();
 
         let only_values = vec![("field1".to_owned(), json!(2u32))];
@@ -512,10 +479,7 @@ mod tests {
             CursorBoundValue::Uint(5), // upper bound
         )];
 
-        // Use [`wasm_bindgen::JsCast::unchecked_from_js`] to create not-valid `IdbIndex`
-        // that is not used by [`IdbMultiKeyBoundCursor::on_collect_iter`] anyway.
-        let db_index = IdbIndex::unchecked_from_js(JsValue::NULL);
-        let mut cursor = IdbMultiKeyBoundCursor::new(db_index, only_values, bound_values, None).unwrap();
+        let mut cursor = IdbMultiKeyBoundCursor::new(only_values, bound_values).unwrap();
 
         //////////////////
 
@@ -531,7 +495,7 @@ mod tests {
         for (input_index, expected_type) in input_indexes {
             let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let error = cursor
-                .on_collect_iter(input_index_js_value, &Json::Null)
+                .on_iteration(input_index_js_value)
                 .expect_err(&format!("'{:?}' must lead to 'CursorError::TypeMismatch'", input_index));
             match error.into_inner() {
                 CursorError::TypeMismatch { expected, .. } => assert_eq!(expected, expected_type),
@@ -549,7 +513,7 @@ mod tests {
         for input_index in input_indexes {
             let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let error = cursor
-                .on_collect_iter(input_index_js_value, &Json::Null)
+                .on_iteration(input_index_js_value)
                 .expect_err(&format!("'{:?}' must lead to 'CursorError::TypeMismatch'", input_index));
             match error.into_inner() {
                 CursorError::IncorrectNumberOfKeysPerIndex { .. } => (),

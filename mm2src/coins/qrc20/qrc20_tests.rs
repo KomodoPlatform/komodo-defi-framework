@@ -170,6 +170,7 @@ fn test_validate_maker_payment() {
         try_spv_proof_until: now_ms() / 1000 + 30,
         confirmations: 1,
         unique_swap_data: Vec::new(),
+        min_watcher_reward: None,
     };
 
     coin.validate_maker_payment(input.clone()).wait().unwrap();
@@ -314,7 +315,7 @@ fn test_send_taker_fee() {
             uuid: &[],
         })
         .wait();
-    assert_eq!(result, Ok(()));
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -342,7 +343,7 @@ fn test_validate_fee() {
             uuid: &[],
         })
         .wait();
-    assert_eq!(result, Ok(()));
+    assert!(result.is_ok());
 
     let fee_addr_dif = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
     let err = coin
@@ -356,9 +357,13 @@ fn test_validate_fee() {
         })
         .wait()
         .err()
-        .expect("Expected an error");
+        .expect("Expected an error")
+        .into_inner();
     log!("error: {:?}", err);
-    assert!(err.contains("QRC20 Fee tx was sent to wrong address"));
+    match err {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("QRC20 Fee tx was sent to wrong address")),
+        _ => panic!("Expected `WrongPaymentTx` wrong receiver address, found {:?}", err),
+    }
 
     let err = coin
         .validate_fee(ValidateFeeArgs {
@@ -371,9 +376,13 @@ fn test_validate_fee() {
         })
         .wait()
         .err()
-        .expect("Expected an error");
+        .expect("Expected an error")
+        .into_inner();
     log!("error: {:?}", err);
-    assert!(err.contains("was sent from wrong address"));
+    match err {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("was sent from wrong address")),
+        _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", err),
+    }
 
     let err = coin
         .validate_fee(ValidateFeeArgs {
@@ -386,9 +395,13 @@ fn test_validate_fee() {
         })
         .wait()
         .err()
-        .expect("Expected an error");
+        .expect("Expected an error")
+        .into_inner();
     log!("error: {:?}", err);
-    assert!(err.contains("confirmed before min_block"));
+    match err {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
+        _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", err),
+    }
 
     let amount_dif = BigDecimal::from_str("0.02").unwrap();
     let err = coin
@@ -402,9 +415,15 @@ fn test_validate_fee() {
         })
         .wait()
         .err()
-        .expect("Expected an error");
+        .expect("Expected an error")
+        .into_inner();
     log!("error: {:?}", err);
-    assert!(err.contains("QRC20 Fee tx value 1000000 is less than expected 2000000"));
+    match err {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("QRC20 Fee tx value 1000000 is less than expected 2000000"))
+        },
+        _ => panic!("Expected `WrongPaymentTx` invalid fee value, found {:?}", err),
+    }
 
     // QTUM tx "8a51f0ffd45f34974de50f07c5bf2f0949da4e88433f8f75191953a442cf9310"
     let tx = TransactionEnum::UtxoTx("020000000113640281c9332caeddd02a8dd0d784809e1ad87bda3c972d89d5ae41f5494b85010000006a47304402207c5c904a93310b8672f4ecdbab356b65dd869a426e92f1064a567be7ccfc61ff02203e4173b9467127f7de4682513a21efb5980e66dbed4da91dff46534b8e77c7ef012102baefe72b3591de2070c0da3853226b00f082d72daa417688b61cb18c1d543d1afeffffff020001b2c4000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acbc4dd20c2f0000001976a9144208fa7be80dcf972f767194ad365950495064a488ac76e70800".into());
@@ -420,9 +439,13 @@ fn test_validate_fee() {
         })
         .wait()
         .err()
-        .expect("Expected an error");
+        .expect("Expected an error")
+        .into_inner();
     log!("error: {:?}", err);
-    assert!(err.contains("Expected 'transfer' contract call"));
+    match err {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Expected 'transfer' contract call")),
+        _ => panic!("Expected `WrongPaymentTx` invalid contract call, found {:?}", err),
+    }
 }
 
 #[test]
@@ -478,7 +501,7 @@ fn test_extract_secret() {
 
     // taker spent maker payment - d3f5dab4d54c14b3d7ed8c7f5c8cc7f47ccf45ce589fdc7cd5140a3c1c3df6e1
     let tx_hex = hex::decode("01000000033f56ecafafc8602fde083ba868d1192d6649b8433e42e1a2d79ba007ea4f7abb010000006b48304502210093404e90e40d22730013035d31c404c875646dcf2fad9aa298348558b6d65ba60220297d045eac5617c1a3eddb71d4bca9772841afa3c4c9d6c68d8d2d42ee6de3950121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff9cac7fe90d597922a1d92e05306c2215628e7ea6d5b855bfb4289c2944f4c73a030000006b483045022100b987da58c2c0c40ce5b6ef2a59e8124ed4ef7a8b3e60c7fb631139280019bc93022069649bcde6fe4dd5df9462a1fcae40598488d6af8c324cd083f5c08afd9568be0121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff70b9870f2b0c65d220a839acecebf80f5b44c3ca4c982fa2fdc5552c037f5610010000006a473044022071b34dd3ebb72d29ca24f3fa0fc96571c815668d3b185dd45cc46a7222b6843f02206c39c030e618d411d4124f7b3e7ca1dd5436775bd8083a85712d123d933a51300121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff020000000000000000c35403a0860101284ca402ed292b806a1835a1b514ad643f2acdb5c8db6b6a9714accff3275ea0d79a3f23be8fd00000000000000000000000000000000000000000000000000000000001312d000101010101010101010101010101010101010101010101010101010101010101000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac2c02288d4010000001976a914783cf0be521101942da509846ea476e683aad83288ac0f047f5f").unwrap();
-    let secret = block_on(coin.extract_secret(secret_hash, &tx_hex)).unwrap();
+    let secret = block_on(coin.extract_secret(secret_hash, &tx_hex, false)).unwrap();
 
     assert_eq!(secret, expected_secret);
 }
@@ -499,7 +522,7 @@ fn test_extract_secret_malicious() {
     let spend_tx = hex::decode("01000000022bc8299981ec0cea664cdf9df4f8306396a02e2067d6ac2d3770b34646d2bc2a010000006b483045022100eb13ef2d99ac1cd9984045c2365654b115dd8a7815b7fbf8e2a257f0b93d1592022060d648e73118c843e97f75fafc94e5ff6da70ec8ba36ae255f8c96e2626af6260121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffffd92a0a10ac6d144b36033916f67ae79889f40f35096629a5cd87be1a08f40ee7010000006b48304502210080cdad5c4770dfbeb760e215494c63cc30da843b8505e75e7bf9e8dad18568000220234c0b11c41bfbcdd50046c69059976aedabe17657fe43d809af71e9635678e20121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff030000000000000000c35403a0860101284ca402ed292b8620ad3b72361a5aeba5dffd333fb64750089d935a1ec974d6a91ef4f24ff6ba0000000000000000000000000000000000000000000000000000000001312d000202020202020202020202020202020202020202020202020202020202020202000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac20000000000000000c35403a0860101284ca402ed292b8620ad3b72361a5aeba5dffd333fb64750089d935a1ec974d6a91ef4f24ff6ba0000000000000000000000000000000000000000000000000000000001312d000101010101010101010101010101010101010101010101010101010101010101000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac2b8ea82d3010000001976a914783cf0be521101942da509846ea476e683aad83288ac735d855f").unwrap();
     let expected_secret = &[1; 32];
     let secret_hash = &*dhash160(expected_secret);
-    let actual = block_on(coin.extract_secret(secret_hash, &spend_tx));
+    let actual = block_on(coin.extract_secret(secret_hash, &spend_tx, false));
     assert_eq!(actual, Ok(expected_secret.to_vec()));
 }
 
@@ -1043,6 +1066,7 @@ fn test_validate_maker_payment_malicious() {
         confirmations: 1,
         other_pub: maker_pub,
         unique_swap_data: Vec::new(),
+        min_watcher_reward: None,
     };
     let error = coin
         .validate_maker_payment(input)

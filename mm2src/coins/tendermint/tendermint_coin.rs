@@ -9,11 +9,9 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin,
             MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
             PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, RawTransactionRes, RefundError, RefundResult, RpcCommonOps,
-            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
-            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SendWatcherRefundsPaymentArgs,
-            SignatureError, SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError,
+            RawTransactionRequest, RawTransactionRes, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
+            SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
             TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
@@ -970,30 +968,33 @@ impl TendermintCoin {
         decimals: u8,
         uuid: &[u8],
         denom: String,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> ValidatePaymentFut<()> {
         let tx = match fee_tx {
             TransactionEnum::CosmosTransaction(tx) => tx.clone(),
             invalid_variant => {
-                return Box::new(futures01::future::err(ERRL!(
-                    "Unexpected tx variant {:?}",
-                    invalid_variant
-                )))
+                return Box::new(futures01::future::err(
+                    ValidatePaymentError::WrongPaymentTx(format!("Unexpected tx variant {:?}", invalid_variant)).into(),
+                ))
             },
         };
 
-        let uuid = try_fus!(Uuid::from_slice(uuid)).to_string();
-        let sender_pubkey_hash = dhash160(expected_sender);
-        let expected_sender_address =
-            try_fus!(AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())).to_string();
+        let uuid = try_f!(Uuid::from_slice(uuid).map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())))
+            .to_string();
 
-        let dex_fee_addr_pubkey_hash = dhash160(fee_addr);
-        let expected_dex_fee_address = try_fus!(AccountId::new(
-            &self.account_prefix,
-            dex_fee_addr_pubkey_hash.as_slice()
-        ))
+        let sender_pubkey_hash = dhash160(expected_sender);
+        let expected_sender_address = try_f!(AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())
+            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())))
         .to_string();
 
-        let expected_amount = try_fus!(sat_from_big_decimal(amount, decimals));
+        let dex_fee_addr_pubkey_hash = dhash160(fee_addr);
+        let expected_dex_fee_address = try_f!(AccountId::new(
+            &self.account_prefix,
+            dex_fee_addr_pubkey_hash.as_slice()
+        )
+        .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())))
+        .to_string();
+
+        let expected_amount = try_f!(sat_from_big_decimal(amount, decimals));
         let expected_amount = CoinProto {
             denom,
             amount: expected_amount.to_string(),
@@ -1001,45 +1002,61 @@ impl TendermintCoin {
 
         let coin = self.clone();
         let fut = async move {
-            let tx_body = try_s!(TxBody::decode(tx.data.body_bytes.as_slice()));
+            let tx_body = TxBody::decode(tx.data.body_bytes.as_slice())
+                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
             if tx_body.messages.len() != 1 {
-                return ERR!("Tx body must have exactly one message");
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                    "Tx body must have exactly one message".to_string(),
+                ));
             }
 
-            let msg = try_s!(MsgSendProto::decode(tx_body.messages[0].value.as_slice()));
+            let msg = MsgSendProto::decode(tx_body.messages[0].value.as_slice())
+                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
             if msg.to_address != expected_dex_fee_address {
-                return ERR!(
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Dex fee is sent to wrong address: {}, expected {}",
-                    msg.to_address,
-                    expected_dex_fee_address
-                );
+                    msg.to_address, expected_dex_fee_address
+                )));
             }
 
             if msg.amount.len() != 1 {
-                return ERR!("Msg must have exactly one Coin");
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                    "Msg must have exactly one Coin".to_string(),
+                ));
             }
 
             if msg.amount[0] != expected_amount {
-                return ERR!("Invalid amount {:?}, expected {:?}", msg.amount[0], expected_amount);
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Invalid amount {:?}, expected {:?}",
+                    msg.amount[0], expected_amount
+                )));
             }
 
             if msg.from_address != expected_sender_address {
-                return ERR!(
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Invalid sender: {}, expected {}",
-                    msg.from_address,
-                    expected_sender_address
-                );
+                    msg.from_address, expected_sender_address
+                )));
             }
 
             if tx_body.memo != uuid {
-                return ERR!("Invalid memo: {}, expected {}", msg.from_address, uuid);
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Invalid memo: {}, expected {}",
+                    msg.from_address, uuid
+                )));
             }
 
             let encoded_tx = tx.data.encode_to_vec();
             let hash = hex::encode_upper(sha256(&encoded_tx).as_slice());
-            let encoded_from_rpc = try_s!(coin.request_tx(hash).await).encode_to_vec();
+            let encoded_from_rpc = coin
+                .request_tx(hash)
+                .await
+                .map_err(|e| MmError::new(ValidatePaymentError::TxDeserializationError(e.into_inner().to_string())))?
+                .encode_to_vec();
             if encoded_tx != encoded_from_rpc {
-                return ERR!("Transaction from RPC doesn't match the input");
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                    "Transaction from RPC doesn't match the input".to_string(),
+                ));
             }
             Ok(())
         };
@@ -1888,7 +1905,7 @@ impl SwapOps for TendermintCoin {
         self.send_taker_fee_for_denom(fee_addr, amount, self.denom.clone(), self.decimals, uuid)
     }
 
-    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
+    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
         self.send_htlc_for_denom(
             maker_payment_args.time_lock_duration,
             maker_payment_args.other_pubkey,
@@ -1899,7 +1916,7 @@ impl SwapOps for TendermintCoin {
         )
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
+    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
         self.send_htlc_for_denom(
             taker_payment_args.time_lock_duration,
             taker_payment_args.other_pubkey,
@@ -1910,10 +1927,7 @@ impl SwapOps for TendermintCoin {
         )
     }
 
-    fn send_maker_spends_taker_payment(
-        &self,
-        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
-    ) -> TransactionFut {
+    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(maker_spends_payment_args.other_payment_tx));
         let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto: CreateHtlcProtoRep = try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
@@ -1968,10 +1982,7 @@ impl SwapOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_spends_maker_payment(
-        &self,
-        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
-    ) -> TransactionFut {
+    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(taker_spends_payment_args.other_payment_tx));
         let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto: CreateHtlcProtoRep = try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
@@ -2026,19 +2037,19 @@ impl SwapOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs) -> TransactionFut {
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         Box::new(futures01::future::err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to refund IRIS HTLC".into(),
         )))
     }
 
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs) -> TransactionFut {
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         Box::new(futures01::future::err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to refund IRIS HTLC".into(),
         )))
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
         self.validate_fee_for_denom(
             validate_fee_args.fee_tx,
             validate_fee_args.expected_sender,
@@ -2085,7 +2096,12 @@ impl SwapOps for TendermintCoin {
         self.search_for_swap_tx_spend(input).await.map_err(|e| e.to_string())
     }
 
-    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    async fn extract_secret(
+        &self,
+        secret_hash: &[u8],
+        spend_tx: &[u8],
+        watcher_reward: bool,
+    ) -> Result<Vec<u8>, String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto: super::iris::htlc_proto::ClaimHtlcProtoRep =
@@ -2214,10 +2230,7 @@ impl WatcherOps for TendermintCoin {
         unimplemented!();
     }
 
-    fn send_taker_payment_refund_preimage(
-        &self,
-        _watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
-    ) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         unimplemented!();
     }
 
@@ -2646,7 +2659,7 @@ pub mod tendermint_coin_tests {
         });
 
         let invalid_amount = 1.into();
-        let validate_err = coin
+        let error = coin
             .validate_fee(ValidateFeeArgs {
                 fee_tx: &create_htlc_tx,
                 expected_sender: &[],
@@ -2656,9 +2669,18 @@ pub mod tendermint_coin_tests {
                 uuid: &[1; 16],
             })
             .wait()
-            .unwrap_err();
-        println!("{}", validate_err);
-        assert!(validate_err.contains("failed to decode Protobuf message: MsgSend.amount"));
+            .unwrap_err()
+            .into_inner();
+        println!("{}", error);
+        match error {
+            ValidatePaymentError::TxDeserializationError(err) => {
+                assert!(err.contains("failed to decode Protobuf message: MsgSend.amount"))
+            },
+            _ => panic!(
+                "Expected `WrongPaymentTx` MsgSend.amount decode failure, found {:?}",
+                error
+            ),
+        }
 
         // just a random transfer tx not related to AtomicDEX, should fail on recipient address check
         // https://nyancat.iobscan.io/#/tx?txHash=65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF
@@ -2671,7 +2693,7 @@ pub mod tendermint_coin_tests {
             data: TxRaw::decode(random_transfer_tx_bytes.as_slice()).unwrap(),
         });
 
-        let validate_err = coin
+        let error = coin
             .validate_fee(ValidateFeeArgs {
                 fee_tx: &random_transfer_tx,
                 expected_sender: &[],
@@ -2681,9 +2703,13 @@ pub mod tendermint_coin_tests {
                 uuid: &[1; 16],
             })
             .wait()
-            .unwrap_err();
-        println!("{}", validate_err);
-        assert!(validate_err.contains("sent to wrong address"));
+            .unwrap_err()
+            .into_inner();
+        println!("{}", error);
+        match error {
+            ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("sent to wrong address")),
+            _ => panic!("Expected `WrongPaymentTx` wrong address, found {:?}", error),
+        }
 
         // dex fee tx sent during real swap
         // https://nyancat.iobscan.io/#/tx?txHash=8AA6B9591FE1EE93C8B89DE4F2C59B2F5D3473BD9FB5F3CFF6A5442BEDC881D7
@@ -2700,7 +2726,7 @@ pub mod tendermint_coin_tests {
             data: TxRaw::decode(dex_fee_tx.encode_to_vec().as_slice()).unwrap(),
         });
 
-        let validate_err = coin
+        let error = coin
             .validate_fee(ValidateFeeArgs {
                 fee_tx: &dex_fee_tx,
                 expected_sender: &[],
@@ -2710,13 +2736,17 @@ pub mod tendermint_coin_tests {
                 uuid: &[1; 16],
             })
             .wait()
-            .unwrap_err();
-        println!("{}", validate_err);
-        assert!(validate_err.contains("Invalid amount"));
+            .unwrap_err()
+            .into_inner();
+        println!("{}", error);
+        match error {
+            ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid amount")),
+            _ => panic!("Expected `WrongPaymentTx` invalid amount, found {:?}", error),
+        }
 
         let valid_amount: BigDecimal = "0.0001".parse().unwrap();
         // valid amount but invalid sender
-        let validate_err = coin
+        let error = coin
             .validate_fee(ValidateFeeArgs {
                 fee_tx: &dex_fee_tx,
                 expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
@@ -2726,12 +2756,16 @@ pub mod tendermint_coin_tests {
                 uuid: &[1; 16],
             })
             .wait()
-            .unwrap_err();
-        println!("{}", validate_err);
-        assert!(validate_err.contains("Invalid sender"));
+            .unwrap_err()
+            .into_inner();
+        println!("{}", error);
+        match error {
+            ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid sender")),
+            _ => panic!("Expected `WrongPaymentTx` invalid sender, found {:?}", error),
+        }
 
         // invalid memo
-        let validate_err = coin
+        let error = coin
             .validate_fee(ValidateFeeArgs {
                 fee_tx: &dex_fee_tx,
                 expected_sender: &pubkey,
@@ -2741,9 +2775,13 @@ pub mod tendermint_coin_tests {
                 uuid: &[1; 16],
             })
             .wait()
-            .unwrap_err();
-        println!("{}", validate_err);
-        assert!(validate_err.contains("Invalid memo"));
+            .unwrap_err()
+            .into_inner();
+        println!("{}", error);
+        match error {
+            ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid memo")),
+            _ => panic!("Expected `WrongPaymentTx` invalid memo, found {:?}", error),
+        }
 
         // https://nyancat.iobscan.io/#/tx?txHash=5939A9D1AF57BB828714E0C4C4D7F2AEE349BB719B0A1F25F8FBCC3BB227C5F9
         let fee_with_memo_hash = "5939A9D1AF57BB828714E0C4C4D7F2AEE349BB719B0A1F25F8FBCC3BB227C5F9";
@@ -2822,6 +2860,7 @@ pub mod tendermint_coin_tests {
             try_spv_proof_until: 0,
             confirmations: 0,
             unique_swap_data: Vec::new(),
+            min_watcher_reward: None,
         };
         let validate_err = coin.validate_taker_payment(input).wait().unwrap_err();
         match validate_err.into_inner() {
@@ -2847,6 +2886,7 @@ pub mod tendermint_coin_tests {
             try_spv_proof_until: 0,
             confirmations: 0,
             unique_swap_data: Vec::new(),
+            min_watcher_reward: None,
         };
         let validate_err = block_on(
             coin.validate_payment_for_denom(input, "nim".parse().unwrap(), 6)
@@ -2919,6 +2959,7 @@ pub mod tendermint_coin_tests {
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
+            watcher_reward: false,
         };
 
         let spend_tx = match block_on(coin.search_for_swap_tx_spend_my(input)).unwrap().unwrap() {
@@ -2992,6 +3033,7 @@ pub mod tendermint_coin_tests {
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
+            watcher_reward: false,
         };
 
         match block_on(coin.search_for_swap_tx_spend_my(input)).unwrap().unwrap() {

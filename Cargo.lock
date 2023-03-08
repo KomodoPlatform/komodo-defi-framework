@@ -4239,6 +4239,7 @@ dependencies = [
  "async-trait",
  "common",
  "derive_more",
+ "enum_from",
  "futures 0.3.15",
  "hex 0.4.3",
  "itertools",
