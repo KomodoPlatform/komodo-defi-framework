@@ -14,7 +14,7 @@ use std::convert::TryInto;
 use std::num::TryFromIntError;
 use std::sync::{Arc, Mutex};
 
-fn block_headers_cache_table(ticker: &str) -> String { ticker.to_owned() + "_block_headers_cache" }
+pub(crate) fn block_headers_cache_table(ticker: &str) -> String { ticker.to_owned() + "_block_headers_cache" }
 
 fn get_table_name_and_validate(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = block_headers_cache_table(for_coin);
@@ -320,6 +320,21 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         })
         .await
     }
+
+    async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError> {
+        let table_name = get_table_name_and_validate(&self.ticker).unwrap();
+        let sql = format!("SELECT COUNT(block_height) FROM {table_name};");
+        let conn = self.conn.lock().unwrap();
+        let rows_count: u32 = conn.query_row(&sql, NO_PARAMS, |row| row.get(0)).unwrap();
+        if rows_count == 0 {
+            return Ok(());
+        };
+
+        Err(BlockHeaderStorageError::table_err(
+            &self.ticker,
+            "Table is not empty".to_string(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -329,190 +344,5 @@ impl SqliteBlockHeadersStorage {
             ticker,
             conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         }
-    }
-
-    fn is_table_empty(&self, table_name: &str) -> bool {
-        validate_table_name(table_name).unwrap();
-        let sql = "SELECT COUNT(block_height) FROM ".to_owned() + table_name + ";";
-        let conn = self.conn.lock().unwrap();
-        let rows_count: u32 = conn.query_row(&sql, NO_PARAMS, |row| row.get(0)).unwrap();
-        rows_count == 0
-    }
-}
-
-#[cfg(test)]
-mod sql_block_headers_storage_tests {
-    use super::*;
-    use chain::BlockHeaderBits;
-    use common::block_on;
-    use primitives::hash::H256;
-    use spv_validation::work::MAX_BITS_BTC;
-
-    #[test]
-    fn test_init_collection() {
-        let for_coin = "init_collection";
-        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
-        let initialized = block_on(storage.is_initialized_for()).unwrap();
-        assert!(!initialized);
-
-        block_on(storage.init()).unwrap();
-        // repetitive init must not fail
-        block_on(storage.init()).unwrap();
-
-        let initialized = block_on(storage.is_initialized_for()).unwrap();
-        assert!(initialized);
-    }
-
-    #[test]
-    fn test_add_block_headers() {
-        let for_coin = "insert";
-        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
-        let table = block_headers_cache_table(for_coin);
-        block_on(storage.init()).unwrap();
-
-        let initialized = block_on(storage.is_initialized_for()).unwrap();
-        assert!(initialized);
-
-        let mut headers = HashMap::with_capacity(1);
-        let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
-        headers.insert(520481, block_header);
-        block_on(storage.add_block_headers_to_storage(headers)).unwrap();
-        assert!(!storage.is_table_empty(&table));
-    }
-
-    #[test]
-    fn test_get_block_header() {
-        let for_coin = "get";
-        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
-        let table = block_headers_cache_table(for_coin);
-        block_on(storage.init()).unwrap();
-
-        let initialized = block_on(storage.is_initialized_for()).unwrap();
-        assert!(initialized);
-
-        let mut headers = HashMap::with_capacity(1);
-        let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
-        headers.insert(520481, block_header);
-
-        block_on(storage.add_block_headers_to_storage(headers)).unwrap();
-        assert!(!storage.is_table_empty(&table));
-
-        let hex = block_on(storage.get_block_header_raw(520481)).unwrap().unwrap();
-        assert_eq!(hex, "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".to_string());
-
-        let block_header = block_on(storage.get_block_header(520481)).unwrap().unwrap();
-        let block_hash: H256 = "0000000000000000002e31d0714a5ab23100945ff87ba2d856cd566a3c9344ec".into();
-        assert_eq!(block_header.hash(), block_hash.reversed());
-
-        let height = block_on(storage.get_block_height_by_hash(block_hash)).unwrap().unwrap();
-        assert_eq!(height, 520481);
-    }
-
-    #[test]
-    fn test_get_last_block_header_with_non_max_bits() {
-        let for_coin = "get";
-        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
-        let table = block_headers_cache_table(for_coin);
-        block_on(storage.init()).unwrap();
-
-        let initialized = block_on(storage.is_initialized_for()).unwrap();
-        assert!(initialized);
-
-        let mut headers = HashMap::with_capacity(3);
-
-        // This block has max difficulty
-        // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
-        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
-        headers.insert(201595, block_header);
-
-        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
-        let expected_block_header: BlockHeader = "02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into();
-        headers.insert(201594, expected_block_header.clone());
-
-        // This block has max difficulty
-        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
-        let block_header: BlockHeader = "020000001f38c8e30b30af912fbd4c3e781506713cfb43e73dff6250348e060000000000afa8f3eede276ccb4c4ee649ad9823fc181632f262848ca330733e7e7e541beb9be51353ffff001d00a63037".into();
-        headers.insert(201593, block_header);
-
-        block_on(storage.add_block_headers_to_storage(headers)).unwrap();
-        assert!(!storage.is_table_empty(&table));
-
-        let actual_block_header = block_on(storage.get_last_block_header_with_non_max_bits(MAX_BITS_BTC))
-            .unwrap()
-            .unwrap();
-        assert_ne!(actual_block_header.bits, BlockHeaderBits::Compact(MAX_BITS_BTC.into()));
-        assert_eq!(actual_block_header, expected_block_header);
-    }
-
-    #[test]
-    fn test_get_last_block_height() {
-        let for_coin = "get";
-        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
-        let table = block_headers_cache_table(for_coin);
-        block_on(storage.init()).unwrap();
-
-        let initialized = block_on(storage.is_initialized_for()).unwrap();
-        assert!(initialized);
-
-        let mut headers = HashMap::with_capacity(2);
-
-        // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
-        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
-        headers.insert(201595, block_header);
-
-        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
-        let block_header: BlockHeader = "02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into();
-        headers.insert(201594, block_header);
-
-        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
-        let block_header: BlockHeader = "020000001f38c8e30b30af912fbd4c3e781506713cfb43e73dff6250348e060000000000afa8f3eede276ccb4c4ee649ad9823fc181632f262848ca330733e7e7e541beb9be51353ffff001d00a63037".into();
-        headers.insert(201593, block_header);
-
-        block_on(storage.add_block_headers_to_storage(headers)).unwrap();
-        assert!(!storage.is_table_empty(&table));
-
-        let last_block_height = block_on(storage.get_last_block_height()).unwrap();
-        assert_eq!(last_block_height.unwrap(), 201595);
-    }
-
-    #[test]
-    fn test_remove_headers_up_to_height() {
-        let for_coin = "get";
-        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
-        let table = block_headers_cache_table(for_coin);
-        block_on(storage.init()).unwrap();
-
-        let initialized = block_on(storage.is_initialized_for()).unwrap();
-        assert!(initialized);
-
-        let mut headers = HashMap::with_capacity(2);
-
-        // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
-        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
-        headers.insert(201595, block_header);
-
-        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
-        let block_header: BlockHeader = "02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into();
-        headers.insert(201594, block_header);
-
-        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
-        let block_header: BlockHeader = "020000001f38c8e30b30af912fbd4c3e781506713cfb43e73dff6250348e060000000000afa8f3eede276ccb4c4ee649ad9823fc181632f262848ca330733e7e7e541beb9be51353ffff001d00a63037".into();
-        headers.insert(201593, block_header);
-
-        block_on(storage.add_block_headers_to_storage(headers)).unwrap();
-        assert!(!storage.is_table_empty(&table));
-
-        // Remove 2 headers from storage.
-        block_on(storage.remove_headers_up_to_height(201594)).unwrap();
-
-        // Validate that blockers 201593..201594 are removed from storage.
-        for h in 201593..201594 {
-            let block_header = block_on(storage.get_block_header(h)).unwrap();
-            assert!(block_header.is_none());
-        }
-
-        // Last height should be 201595
-        let last_block_height = block_on(storage.get_last_block_height()).unwrap();
-        assert_eq!(last_block_height.unwrap(), 201595);
     }
 }

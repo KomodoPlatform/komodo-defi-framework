@@ -68,16 +68,17 @@ fn private_from_seed(seed: &str) -> PrivKeyResult<Private> {
                 checksum_type: ChecksumType::DSHA256,
             })
         },
-        None => {
-            let hash = sha256(seed.as_bytes());
+        None => Ok(private_from_seed_hash(seed)),
+    }
+}
 
-            Ok(Private {
-                prefix: 0,
-                secret: secp_privkey_from_hash(hash),
-                compressed: true,
-                checksum_type: ChecksumType::DSHA256,
-            })
-        },
+pub(crate) fn private_from_seed_hash(seed: &str) -> Private {
+    let hash = sha256(seed.as_bytes());
+    Private {
+        prefix: 0,
+        secret: secp_privkey_from_hash(hash),
+        compressed: true,
+        checksum_type: ChecksumType::DSHA256,
     }
 }
 
@@ -109,7 +110,7 @@ pub fn key_pair_from_secret(secret: &[u8]) -> PrivKeyResult<KeyPair> {
         prefix: 0,
         secret: secret.into(),
         compressed: true,
-        checksum_type: Default::default(),
+        checksum_type: ChecksumType::DSHA256,
     };
     Ok(KeyPair::from_private(private)?)
 }

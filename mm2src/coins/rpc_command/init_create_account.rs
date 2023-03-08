@@ -205,7 +205,7 @@ pub trait InitCreateAccountRpcOps {
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
     where
-        XPubExtractor: HDXPubExtractor + Sync;
+        XPubExtractor: HDXPubExtractor;
 
     async fn revert_creating_account(&self, account_id: u32);
 }
@@ -362,7 +362,7 @@ pub(crate) mod common_impl {
     where
         Coin:
             HDWalletBalanceOps + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + Send + Sync,
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
 

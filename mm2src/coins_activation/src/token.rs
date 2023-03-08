@@ -59,8 +59,8 @@ pub enum EnableTokenError {
     #[display(fmt = "{}", _0)]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     CouldNotFetchBalance(String),
-    Transport(String),
     InvalidConfig(String),
+    Transport(String),
     Internal(String),
 }
 

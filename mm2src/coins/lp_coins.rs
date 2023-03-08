@@ -36,6 +36,7 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
+use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
 use common::log::LogOnError;
@@ -44,6 +45,7 @@ use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAcco
              Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_from::{EnumFromStringify, EnumFromTrait};
+use ethereum_types::H256;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -66,7 +68,6 @@ use std::fmt;
 use std::future::Future as Future03;
 use std::num::NonZeroUsize;
 use std::ops::{Add, Deref};
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -80,13 +81,14 @@ cfg_native! {
     use futures::AsyncWriteExt;
     use lightning_invoice::{Invoice, ParseOrSemanticError};
     use std::io;
+    use std::path::PathBuf;
     use zcash_primitives::transaction::Transaction as ZTransaction;
     use z_coin::ZcoinProtocolInfo;
 }
 
 cfg_wasm32! {
-    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use hd_wallet_storage::HDWalletDb;
+    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
     pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
 }
@@ -199,8 +201,9 @@ use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
 pub mod coins_tests;
 
 pub mod eth;
-use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
+use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthTxFeeDetails, GetEthAddressError, SignedEthTx};
 
+pub mod hd_confirm_address;
 pub mod hd_pubkey;
 
 pub mod hd_wallet;
@@ -215,7 +218,8 @@ pub mod qrc20;
 use qrc20::{qrc20_coin_with_policy, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
 
 pub mod rpc_command;
-use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
+use rpc_command::{get_new_address::{GetNewAddressTaskManager, GetNewAddressTaskManagerShared},
+                  init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
                   init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
                   init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
@@ -252,6 +256,8 @@ use utxo::utxo_standard::{utxo_standard_coin_with_policy, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
+#[cfg(feature = "enable-nft-integration")] pub mod nft;
+
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
@@ -275,13 +281,6 @@ pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransaction
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
-pub type SendMakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
-pub type SendTakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
-pub type SendMakerSpendsTakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
-pub type SendTakerSpendsMakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
-pub type SendTakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
-pub type SendMakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
-pub type SendWatcherRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
 
@@ -291,6 +290,11 @@ pub const EARLY_CONFIRMATION_ERR_LOG: &str = "Early confirmation";
 pub const OLD_TRANSACTION_ERR_LOG: &str = "Old transaction";
 pub const INVALID_RECEIVER_ERR_LOG: &str = "Invalid receiver";
 pub const INVALID_CONTRACT_ADDRESS_ERR_LOG: &str = "Invalid contract address";
+pub const INVALID_PAYMENT_STATE_ERR_LOG: &str = "Invalid payment state";
+pub const INVALID_SWAP_ID_ERR_LOG: &str = "Invalid swap id";
+pub const INVALID_SCRIPT_ERR_LOG: &str = "Invalid script";
+pub const INVALID_REFUND_TX_ERR_LOG: &str = "Invalid refund transaction";
+pub const INSUFFICIENT_WATCHER_REWARD_ERR_LOG: &str = "Insufficient watcher reward";
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -328,6 +332,38 @@ impl From<CoinFindError> for RawTransactionError {
     }
 }
 
+#[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum GetMyAddressError {
+    CoinsConfCheckError(String),
+    CoinIsNotSupported(String),
+    #[from_stringify("CryptoCtxError")]
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+    #[from_stringify("serde_json::Error")]
+    #[display(fmt = "Invalid request error error: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Get Eth address error: {}", _0)]
+    GetEthAddressError(GetEthAddressError),
+}
+
+impl From<GetEthAddressError> for GetMyAddressError {
+    fn from(e: GetEthAddressError) -> Self { GetMyAddressError::GetEthAddressError(e) }
+}
+
+impl HttpStatusCode for GetMyAddressError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            GetMyAddressError::CoinsConfCheckError(_)
+            | GetMyAddressError::CoinIsNotSupported(_)
+            | GetMyAddressError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            GetMyAddressError::Internal(_) | GetMyAddressError::GetEthAddressError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct RawTransactionRequest {
     pub coin: String,
@@ -338,6 +374,17 @@ pub struct RawTransactionRequest {
 pub struct RawTransactionRes {
     /// Raw bytes of signed transaction in hexadecimal string, this should be return hexadecimal encoded signed transaction for get_raw_transaction
     pub tx_hex: BytesJson,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MyAddressReq {
+    coin: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MyWalletAddress {
+    coin: String,
+    wallet_address: String,
 }
 
 pub type SignatureResult<T> = Result<T, MmError<SignatureError>>;
@@ -358,7 +405,7 @@ pub enum TxHistoryError {
     InternalError(String),
 }
 
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Display, Deserialize)]
 pub enum PrivKeyPolicyNotAllowed {
     #[display(fmt = "Hardware Wallet is not supported")]
     HardwareWalletNotSupported,
@@ -515,6 +562,7 @@ pub struct WatcherValidatePaymentInput {
     pub secret_hash: Vec<u8>,
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
+    pub min_watcher_reward: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -529,6 +577,7 @@ pub struct ValidatePaymentInput {
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
     pub unique_swap_data: Vec<u8>,
+    pub min_watcher_reward: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -539,6 +588,7 @@ pub struct WatcherSearchForSwapTxSpendInput<'a> {
     pub secret_hash: &'a [u8],
     pub tx: &'a [u8],
     pub search_from_block: u64,
+    pub watcher_reward: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -547,6 +597,7 @@ pub struct SendMakerPaymentSpendPreimageInput<'a> {
     pub secret_hash: &'a [u8],
     pub secret: &'a [u8],
     pub taker_pub: &'a [u8],
+    pub watcher_reward: bool,
 }
 
 pub struct SearchForSwapTxSpendInput<'a> {
@@ -557,10 +608,11 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub search_from_block: u64,
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
+    pub watcher_reward: bool,
 }
 
 #[derive(Clone, Debug)]
-pub struct SendSwapPaymentArgs<'a> {
+pub struct SendPaymentArgs<'a> {
     pub time_lock_duration: u64,
     pub time_lock: u32,
     /// This is either:
@@ -572,10 +624,11 @@ pub struct SendSwapPaymentArgs<'a> {
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
     pub payment_instructions: &'a Option<PaymentInstructions>,
+    pub watcher_reward: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
-pub struct SendSpendPaymentArgs<'a> {
+pub struct SpendPaymentArgs<'a> {
     /// This is either:
     /// * Taker's payment tx if this structure is used in [`SwapOps::send_maker_spends_taker_payment`].
     /// * Maker's payment tx if this structure is used in [`SwapOps::send_taker_spends_maker_payment`].
@@ -589,10 +642,11 @@ pub struct SendSpendPaymentArgs<'a> {
     pub secret_hash: &'a [u8],
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
+    pub watcher_reward: bool,
 }
 
 #[derive(Clone, Debug)]
-pub struct SendRefundPaymentArgs<'a> {
+pub struct RefundPaymentArgs<'a> {
     pub payment_tx: &'a [u8],
     pub time_lock: u32,
     /// This is either:
@@ -602,6 +656,7 @@ pub struct SendRefundPaymentArgs<'a> {
     pub secret_hash: &'a [u8],
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
+    pub watcher_reward: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -619,6 +674,15 @@ pub struct CheckIfMyPaymentSentArgs<'a> {
 #[derive(Clone, Debug)]
 pub struct ValidateFeeArgs<'a> {
     pub fee_tx: &'a TransactionEnum,
+    pub expected_sender: &'a [u8],
+    pub fee_addr: &'a [u8],
+    pub amount: &'a BigDecimal,
+    pub min_block_number: u64,
+    pub uuid: &'a [u8],
+}
+
+pub struct EthValidateFeeArgs<'a> {
+    pub fee_tx_hash: &'a H256,
     pub expected_sender: &'a [u8],
     pub fee_addr: &'a [u8],
     pub amount: &'a BigDecimal,
@@ -666,28 +730,19 @@ pub enum RefundError {
 pub trait SwapOps {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut;
 
-    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs<'_>) -> TransactionFut;
+    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs<'_>) -> TransactionFut;
+    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_maker_spends_taker_payment(
-        &self,
-        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs<'_>,
-    ) -> TransactionFut;
+    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_taker_spends_maker_payment(
-        &self,
-        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs<'_>,
-    ) -> TransactionFut;
+    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs<'_>)
-        -> TransactionFut;
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>)
-        -> TransactionFut;
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut;
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>)
-        -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()>;
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
@@ -708,7 +763,12 @@ pub trait SwapOps {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
-    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
+    async fn extract_secret(
+        &self,
+        secret_hash: &[u8],
+        spend_tx: &[u8],
+        watcher_reward: bool,
+    ) -> Result<Vec<u8>, String>;
 
     fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>>;
 
@@ -736,7 +796,12 @@ pub trait SwapOps {
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
+    /// Consider using [`SwapOps::derive_htlc_pubkey`] if you need the public key only.
+    /// Some coins may not have a private key.
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
+
+    /// Derives an HTLC key-pair and returns a public key corresponding to that key.
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8>;
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
 
@@ -774,6 +839,9 @@ pub trait SwapOps {
 
     fn is_supported_by_watchers(&self) -> bool { false }
 
+    // Do we also need a method for the fallback contract?
+    fn contract_supports_watchers(&self) -> bool { true }
+
     fn maker_locktime_multiplier(&self) -> f64 { 2.0 }
 }
 
@@ -799,10 +867,7 @@ pub trait MakerSwapTakerCoin {
 pub trait WatcherOps {
     fn send_maker_payment_spend_preimage(&self, input: SendMakerPaymentSpendPreimageInput) -> TransactionFut;
 
-    fn send_taker_payment_refund_preimage(
-        &self,
-        watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
-    ) -> TransactionFut;
+    fn send_taker_payment_refund_preimage(&self, watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut;
 
     fn create_taker_payment_refund_preimage(
         &self,
@@ -982,6 +1047,10 @@ pub struct WithdrawRequest {
     max: bool,
     fee: Option<WithdrawFee>,
     memo: Option<String>,
+    /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask **only**.
+    #[cfg(target_arch = "wasm32")]
+    #[serde(default)]
+    broadcast: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1023,26 +1092,6 @@ pub struct VerificationRequest {
 }
 
 impl WithdrawRequest {
-    pub fn new(
-        coin: String,
-        from: Option<WithdrawFrom>,
-        to: String,
-        amount: BigDecimal,
-        max: bool,
-        fee: Option<WithdrawFee>,
-        memo: Option<String>,
-    ) -> WithdrawRequest {
-        WithdrawRequest {
-            coin,
-            from,
-            to,
-            amount,
-            max,
-            fee,
-            memo,
-        }
-    }
-
     pub fn new_max(coin: String, to: String) -> WithdrawRequest {
         WithdrawRequest {
             coin,
@@ -1052,6 +1101,8 @@ impl WithdrawRequest {
             max: true,
             fee: None,
             memo: None,
+            #[cfg(target_arch = "wasm32")]
+            broadcast: false,
         }
     }
 }
@@ -1171,6 +1222,7 @@ pub enum TransactionType {
         msg_type: CustomTendermintMsgType,
         token_id: Option<BytesJson>,
     },
+    NftTransfer,
 }
 
 /// Transaction details
@@ -1727,14 +1779,21 @@ pub enum WithdrawError {
     #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
     UnexpectedUserAction { expected: String },
     #[from_trait(WithHwRpcError::hw_rpc_error)]
-    #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
+    #[cfg(target_arch = "wasm32")]
+    BroadcastExpected(String),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[from_trait(WithInternal::internal)]
     #[from_stringify("NumConversError", "UnexpectedDerivationMethod", "PrivKeyPolicyNotAllowed")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "{} coin doesn't support NFT withdrawing", coin)]
+    CoinDoesntSupportNftWithdraw { coin: String },
+    #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
+    AddressMismatchError { my_address: String, from: String },
+    #[display(fmt = "Contract type {} doesnt support 'withdraw_nft' yet", _0)]
+    ContractTypeDoesntSupportNftWithdrawing(String),
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -1753,8 +1812,13 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
-            | WithdrawError::UnexpectedUserAction { .. } => StatusCode::BAD_REQUEST,
+            | WithdrawError::UnexpectedUserAction { .. }
+            | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
+            | WithdrawError::AddressMismatchError { .. }
+            | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_) => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
+            #[cfg(target_arch = "wasm32")]
+            WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
             WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -1784,6 +1848,10 @@ impl From<UtxoSignWithKeyPairError> for WithdrawError {
         let error = format!("Error signing: {}", e);
         WithdrawError::InternalError(error)
     }
+}
+
+impl From<TimeoutError> for WithdrawError {
+    fn from(e: TimeoutError) -> Self { WithdrawError::Timeout(e.duration) }
 }
 
 impl WithdrawError {
@@ -1830,7 +1898,7 @@ impl WithdrawError {
     }
 }
 
-#[derive(Serialize, Display, Debug, EnumFromStringify, SerializeErrorType)]
+#[derive(Debug, Display, EnumFromStringify, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum SignatureError {
     #[display(fmt = "Invalid request: {}", _0)]
@@ -1855,7 +1923,7 @@ impl HttpStatusCode for SignatureError {
     }
 }
 
-#[derive(Serialize, Display, Debug, SerializeErrorType)]
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum VerificationError {
     #[display(fmt = "Invalid request: {}", _0)]
@@ -1962,6 +2030,7 @@ pub trait MmCoin:
     fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     /// Path to tx history file
+    #[cfg(not(target_arch = "wasm32"))]
     fn tx_history_path(&self, ctx: &MmArc) -> PathBuf {
         let my_address = self.my_address().unwrap_or_default();
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
@@ -1973,6 +2042,7 @@ pub trait MmCoin:
     }
 
     /// Path to tx history migration file
+    #[cfg(not(target_arch = "wasm32"))]
     fn tx_migration_path(&self, ctx: &MmArc) -> PathBuf {
         let my_address = self.my_address().unwrap_or_default();
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
@@ -2212,6 +2282,8 @@ impl MmCoinEnum {
             _ => false,
         }
     }
+
+    pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoin(_)) }
 }
 
 #[async_trait]
@@ -2226,6 +2298,7 @@ pub struct CoinsContext {
     balance_update_handlers: AsyncMutex<Vec<Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>>>,
     account_balance_task_manager: AccountBalanceTaskManagerShared,
     create_account_manager: CreateAccountTaskManagerShared,
+    get_new_address_manager: GetNewAddressTaskManagerShared,
     platform_coin_tokens: PaMutex<HashMap<String, HashSet<String>>>,
     scan_addresses_manager: ScanAddressesTaskManagerShared,
     withdraw_task_manager: WithdrawTaskManagerShared,
@@ -2249,13 +2322,14 @@ impl CoinsContext {
                 coins: AsyncMutex::new(HashMap::new()),
                 balance_update_handlers: AsyncMutex::new(vec![]),
                 account_balance_task_manager: AccountBalanceTaskManager::new_shared(),
-                withdraw_task_manager: WithdrawTaskManager::new_shared(),
                 create_account_manager: CreateAccountTaskManager::new_shared(),
+                get_new_address_manager: GetNewAddressTaskManager::new_shared(),
                 scan_addresses_manager: ScanAddressesTaskManager::new_shared(),
+                withdraw_task_manager: WithdrawTaskManager::new_shared(),
                 #[cfg(target_arch = "wasm32")]
-                tx_history_db: ConstructibleDb::new_shared(ctx),
+                tx_history_db: ConstructibleDb::new(ctx).into_shared(),
                 #[cfg(target_arch = "wasm32")]
-                hd_wallet_db: ConstructibleDb::new_shared(ctx),
+                hd_wallet_db: ConstructibleDb::new_shared_db(ctx).into_shared(),
             })
         })))
     }
@@ -2320,8 +2394,8 @@ impl CoinsContext {
         Ok(())
     }
 
-    /// Get enabled coins to disable.
-    pub async fn get_tokens_to_disable(&self, ticker: &str) -> HashSet<String> {
+    /// If `ticker` is a platform coin, returns tokens dependent on it.
+    pub async fn get_dependent_tokens(&self, ticker: &str) -> HashSet<String> {
         let coins = self.platform_coin_tokens.lock();
         coins.get(ticker).cloned().unwrap_or_default()
     }
@@ -2473,7 +2547,7 @@ pub trait CoinWithDerivationMethod {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
     UTXO,
@@ -2693,34 +2767,11 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
 
     let coins_en = coin_conf(ctx, ticker);
 
-    if coins_en.is_null() {
-        let warning = format!(
-            "Warning, coin {} is used without a corresponding configuration.",
-            ticker
-        );
-        ctx.log.log(
-            "😅",
-            #[allow(clippy::unnecessary_cast)]
-            &[&("coin" as &str), &ticker, &("no-conf" as &str)],
-            &warning,
-        );
-    }
-
-    if coins_en["mm2"].is_null() && req["mm2"].is_null() {
-        return ERR!(concat!(
-            "mm2 param is not set neither in coins config nor enable request, ",
-            "assuming that coin is not supported"
-        ));
-    }
+    coins_conf_check(ctx, &coins_en, ticker, Some(req))?;
 
     // The legacy electrum/enable RPCs don't support Hardware Wallet policy.
     let priv_key_policy = try_s!(PrivKeyBuildPolicy::detect_priv_key_policy(ctx));
 
-    if coins_en["protocol"].is_null() {
-        return ERR!(
-            r#""protocol" field is missing in coins file. The file format is deprecated, please execute ./mm2 update_config command to convert it or download a new one"#
-        );
-    }
     let protocol: CoinProtocol = try_s!(json::from_value(coins_en["protocol"].clone()));
 
     let coin: MmCoinEnum = match &protocol {
@@ -3590,4 +3641,60 @@ pub trait RpcCommonOps {
 
     /// Returns an alive RPC client or returns an error if no RPC endpoint is currently available.
     async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error>;
+}
+
+/// `get_my_address` function returns wallet address for necessary coin without its activation.
+/// Currently supports only coins with `ETH` protocol type.
+pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletAddress, GetMyAddressError> {
+    let ticker = req.coin.as_str();
+    let coins_en = coin_conf(&ctx, ticker);
+    coins_conf_check(&ctx, &coins_en, ticker, None).map_to_mm(GetMyAddressError::CoinsConfCheckError)?;
+
+    let protocol: CoinProtocol = json::from_value(coins_en["protocol"].clone())?;
+
+    let my_address = match protocol {
+        CoinProtocol::ETH => get_eth_address(&ctx, ticker).await?,
+        _ => {
+            return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
+                "{} doesn't support get_my_address",
+                req.coin
+            )));
+        },
+    };
+
+    Ok(my_address)
+}
+
+fn coins_conf_check(ctx: &MmArc, coins_en: &Json, ticker: &str, req: Option<&Json>) -> Result<(), String> {
+    if coins_en.is_null() {
+        let warning = format!(
+            "Warning, coin {} is used without a corresponding configuration.",
+            ticker
+        );
+        ctx.log.log(
+            "😅",
+            #[allow(clippy::unnecessary_cast)]
+            &[&("coin" as &str), &ticker, &("no-conf" as &str)],
+            &warning,
+        );
+    }
+
+    if let Some(req) = req {
+        if coins_en["mm2"].is_null() && req["mm2"].is_null() {
+            return ERR!(concat!(
+                "mm2 param is not set neither in coins config nor enable request, assuming that coin is not supported"
+            ));
+        }
+    } else if coins_en["mm2"].is_null() {
+        return ERR!(concat!(
+            "mm2 param is not set in coins config, assuming that coin is not supported"
+        ));
+    }
+
+    if coins_en["protocol"].is_null() {
+        return ERR!(
+            r#""protocol" field is missing in coins file. The file format is deprecated, please execute ./mm2 update_config command to convert it or download a new one"#
+        );
+    }
+    Ok(())
 }

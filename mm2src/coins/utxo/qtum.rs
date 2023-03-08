@@ -2,8 +2,10 @@ use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
 use crate::coin_errors::MyAddressError;
+use crate::hd_confirm_address::HDConfirmAddress;
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, NewAccountCreatingError};
+use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, NewAccountCreatingError,
+                       NewAddressDeriveConfirmError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
@@ -24,12 +26,10 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
                                       UtxoTxHistoryOps};
 use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, DelegationError,
             DelegationFut, GetWithdrawSenderAddress, IguanaPrivKey, MakerSwapTakerCoin, NegotiateSwapContractAddrErr,
-            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundResult,
-            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
-            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SendWatcherRefundsPaymentArgs,
-            SignatureResult, StakingInfosFut, SwapOps, TakerSwapMakerCoin, TradePreimageValue, TransactionFut,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundPaymentArgs,
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignatureResult, SpendPaymentArgs, StakingInfosFut, SwapOps, TakerSwapMakerCoin, TradePreimageValue,
+            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
             ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
@@ -530,86 +530,36 @@ impl SwapOps for QtumCoin {
     }
 
     #[inline]
-    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
-        utxo_common::send_maker_payment(
-            self.clone(),
-            maker_payment_args.time_lock,
-            maker_payment_args.other_pubkey,
-            maker_payment_args.secret_hash,
-            maker_payment_args.amount,
-            maker_payment_args.swap_unique_data,
-        )
+    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
+        utxo_common::send_maker_payment(self.clone(), maker_payment_args)
     }
 
     #[inline]
-    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
-        utxo_common::send_taker_payment(
-            self.clone(),
-            taker_payment_args.time_lock,
-            taker_payment_args.other_pubkey,
-            taker_payment_args.secret_hash,
-            taker_payment_args.amount,
-            taker_payment_args.swap_unique_data,
-        )
+    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
+        utxo_common::send_taker_payment(self.clone(), taker_payment_args)
     }
 
     #[inline]
-    fn send_maker_spends_taker_payment(
-        &self,
-        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
-    ) -> TransactionFut {
-        utxo_common::send_maker_spends_taker_payment(
-            self.clone(),
-            maker_spends_payment_args.other_payment_tx,
-            maker_spends_payment_args.time_lock,
-            maker_spends_payment_args.other_pubkey,
-            maker_spends_payment_args.secret,
-            maker_spends_payment_args.secret_hash,
-            maker_spends_payment_args.swap_unique_data,
-        )
+    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+        utxo_common::send_maker_spends_taker_payment(self.clone(), maker_spends_payment_args)
     }
 
     #[inline]
-    fn send_taker_spends_maker_payment(
-        &self,
-        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
-    ) -> TransactionFut {
-        utxo_common::send_taker_spends_maker_payment(
-            self.clone(),
-            taker_spends_payment_args.other_payment_tx,
-            taker_spends_payment_args.time_lock,
-            taker_spends_payment_args.other_pubkey,
-            taker_spends_payment_args.secret,
-            taker_spends_payment_args.secret_hash,
-            taker_spends_payment_args.swap_unique_data,
-        )
+    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+        utxo_common::send_taker_spends_maker_payment(self.clone(), taker_spends_payment_args)
     }
 
     #[inline]
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs) -> TransactionFut {
-        utxo_common::send_taker_refunds_payment(
-            self.clone(),
-            taker_refunds_payment_args.payment_tx,
-            taker_refunds_payment_args.time_lock,
-            taker_refunds_payment_args.other_pubkey,
-            taker_refunds_payment_args.secret_hash,
-            taker_refunds_payment_args.swap_unique_data,
-        )
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
+        utxo_common::send_taker_refunds_payment(self.clone(), taker_refunds_payment_args)
     }
 
     #[inline]
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs) -> TransactionFut {
-        utxo_common::send_maker_refunds_payment(
-            self.clone(),
-            maker_refunds_payment_args.payment_tx,
-            maker_refunds_payment_args.time_lock,
-            maker_refunds_payment_args.other_pubkey,
-            maker_refunds_payment_args.secret_hash,
-            maker_refunds_payment_args.swap_unique_data,
-        )
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
+        utxo_common::send_maker_refunds_payment(self.clone(), maker_refunds_payment_args)
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             _ => panic!(),
@@ -671,7 +621,12 @@ impl SwapOps for QtumCoin {
     }
 
     #[inline]
-    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    async fn extract_secret(
+        &self,
+        secret_hash: &[u8],
+        spend_tx: &[u8],
+        _watcher_reward: bool,
+    ) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -701,9 +656,12 @@ impl SwapOps for QtumCoin {
         Ok(None)
     }
 
-    #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
+    }
+
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+        utxo_common::derive_htlc_pubkey(self, swap_unique_data)
     }
 
     #[inline]
@@ -813,10 +771,7 @@ impl WatcherOps for QtumCoin {
     }
 
     #[inline]
-    fn send_taker_payment_refund_preimage(
-        &self,
-        watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
-    ) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         utxo_common::send_taker_payment_refund_preimage(self, watcher_refunds_payment_args)
     }
 
@@ -1087,7 +1042,7 @@ impl ExtractExtendedPubkey for QtumCoin {
         derivation_path: DerivationPath,
     ) -> MmResult<Self::ExtendedPublicKey, HDExtractPubkeyError>
     where
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         utxo_common::extract_extended_pubkey(&self.utxo_arc.conf, xpub_extractor, derivation_path).await
     }
@@ -1111,13 +1066,26 @@ impl HDWalletCoinOps for QtumCoin {
         utxo_common::derive_addresses(self, hd_account, address_ids).await
     }
 
+    async fn generate_and_confirm_new_address<ConfirmAddress>(
+        &self,
+        hd_wallet: &Self::HDWallet,
+        hd_account: &mut Self::HDAccount,
+        chain: Bip44Chain,
+        confirm_address: &ConfirmAddress,
+    ) -> MmResult<HDAddress<Self::Address, Self::Pubkey>, NewAddressDeriveConfirmError>
+    where
+        ConfirmAddress: HDConfirmAddress,
+    {
+        utxo_common::generate_and_confirm_new_address(self, hd_wallet, hd_account, chain, confirm_address).await
+    }
+
     async fn create_new_account<'a, XPubExtractor>(
         &self,
         hd_wallet: &'a Self::HDWallet,
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountMut<'a, Self::HDAccount>, NewAccountCreatingError>
     where
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         utxo_common::create_new_account(self, hd_wallet, xpub_extractor).await
     }
@@ -1148,7 +1116,7 @@ impl HDWalletBalanceOps for QtumCoin {
         params: EnabledCoinBalanceParams,
     ) -> MmResult<HDWalletBalance, EnableCoinBalanceError>
     where
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         coin_balance::common_impl::enable_hd_wallet(self, hd_wallet, xpub_extractor, params).await
     }
@@ -1187,11 +1155,22 @@ impl HDWalletCoinWithStorageOps for QtumCoin {
 
 #[async_trait]
 impl GetNewAddressRpcOps for QtumCoin {
-    async fn get_new_address_rpc(
+    async fn get_new_address_rpc_without_conf(
         &self,
         params: GetNewAddressParams,
     ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError> {
-        get_new_address::common_impl::get_new_address_rpc(self, params).await
+        get_new_address::common_impl::get_new_address_rpc_without_conf(self, params).await
+    }
+
+    async fn get_new_address_rpc<ConfirmAddress>(
+        &self,
+        params: GetNewAddressParams,
+        confirm_address: &ConfirmAddress,
+    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+    where
+        ConfirmAddress: HDConfirmAddress,
+    {
+        get_new_address::common_impl::get_new_address_rpc(self, params, confirm_address).await
     }
 }
 
@@ -1234,7 +1213,7 @@ impl InitCreateAccountRpcOps for QtumCoin {
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
     where
-        XPubExtractor: HDXPubExtractor + Sync,
+        XPubExtractor: HDXPubExtractor,
     {
         init_create_account::common_impl::init_create_new_account_rpc(self, params, state, xpub_extractor).await
     }

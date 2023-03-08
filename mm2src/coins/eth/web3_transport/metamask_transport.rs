@@ -1,56 +1,41 @@
 use crate::eth::web3_transport::Web3SendOut;
 use crate::RpcTransportEventHandlerShared;
-use crypto::MetamaskWeak;
-use futures::{FutureExt, TryFutureExt};
-use jsonrpc_core::{Call, Params};
+use jsonrpc_core::Call;
+use mm2_metamask::{detect_metamask_provider, Eip1193Provider, MetamaskResult, MetamaskSession};
 use serde_json::Value as Json;
 use std::fmt;
-use web3::error::{Error, ErrorKind};
-use web3::helpers::build_request;
+use std::sync::Arc;
 use web3::{RequestId, Transport};
 
+pub(crate) struct MetamaskEthConfig {
+    /// The `ChainId` that the MetaMask wallet should be targeted on each RPC.
+    pub chain_id: u64,
+}
+
 #[derive(Clone)]
-pub struct MetamaskTransport {
-    metamask_ctx: MetamaskWeak,
-    // TODO use `even_handlers` properly.
+pub(crate) struct MetamaskTransport {
+    inner: Arc<MetamaskTransportInner>,
+}
+
+struct MetamaskTransportInner {
+    eth_config: MetamaskEthConfig,
+    eip1193: Eip1193Provider,
+    // TODO use `event_handlers` properly.
     _event_handlers: Vec<RpcTransportEventHandlerShared>,
 }
 
 impl MetamaskTransport {
-    pub fn new(metamask_ctx: MetamaskWeak, event_handlers: Vec<RpcTransportEventHandlerShared>) -> MetamaskTransport {
-        MetamaskTransport {
-            metamask_ctx,
+    pub fn detect(
+        eth_config: MetamaskEthConfig,
+        event_handlers: Vec<RpcTransportEventHandlerShared>,
+    ) -> MetamaskResult<MetamaskTransport> {
+        let eip1193 = detect_metamask_provider()?;
+        let inner = MetamaskTransportInner {
+            eth_config,
+            eip1193,
             _event_handlers: event_handlers,
-        }
-    }
-
-    async fn send_request(&self, request: Call) -> Result<Json, Error> {
-        let metamask_ctx = self.metamask_ctx.upgrade().ok_or_else(|| {
-            Error::from(ErrorKind::Transport(
-                "MetaMask context doesn't exist already".to_string(),
-            ))
-        })?;
-        let provider = metamask_ctx.metamask_provider();
-        let mut session = provider.session().await;
-
-        let (method, params) = match request {
-            Call::MethodCall(method_call) => (method_call.method, method_call.params),
-            Call::Notification(notification) => (notification.method, notification.params),
-            Call::Invalid(_) => return Err(Error::from(ErrorKind::Internal)),
         };
-
-        let params = match params {
-            // EthProvider doesn't allow to pass an object as the params,
-            // but we still can try to pass the object as a single array item.
-            Some(Params::Map(object)) => vec![Json::Object(object)],
-            Some(Params::Array(array)) => array,
-            Some(Params::None) | None => Vec::new(),
-        };
-        session
-            .eth_request(method, params)
-            .await
-            // TODO consider matching this error.
-            .map_err(|e| Error::from(ErrorKind::Transport(e.to_string())))
+        Ok(MetamaskTransport { inner: Arc::new(inner) })
     }
 }
 
@@ -58,20 +43,35 @@ impl Transport for MetamaskTransport {
     type Out = Web3SendOut;
 
     fn prepare(&self, method: &str, params: Vec<Json>) -> (RequestId, Call) {
-        // RequestId doesn't make sense for `MetamaskProvider`.
-        const REQUEST_ID: RequestId = 0;
-
-        let request = build_request(REQUEST_ID, method, params);
-        (REQUEST_ID, request)
+        self.inner.eip1193.prepare(method, params)
     }
 
-    fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        let transport = self.clone();
-        let fut = async move { transport.send_request(request).await };
-        Box::new(fut.boxed().compat())
+    fn send(&self, id: RequestId, request: Call) -> Self::Out {
+        let selfi = self.clone();
+        let fut = async move { selfi.send_impl(id, request).await };
+        Box::pin(fut)
     }
 }
 
 impl fmt::Debug for MetamaskTransport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "MetamaskTransport") }
+}
+
+impl MetamaskTransport {
+    async fn send_impl(&self, id: RequestId, request: Call) -> Result<Json, web3::Error> {
+        // Hold the mutex guard until the request is finished.
+        let _rpc_lock = self.request_preparation().await?;
+        self.inner.eip1193.send(id, request).await
+    }
+
+    /// Ensures that the MetaMask wallet is targeted to [`EthConfig::chain_id`].
+    async fn request_preparation(&self) -> Result<MetamaskSession<'_>, web3::Error> {
+        // Lock the MetaMask session and keep it until the RPC is finished.
+        let metamask_session = MetamaskSession::lock(&self.inner.eip1193).await;
+        metamask_session
+            .wallet_switch_ethereum_chain(self.inner.eth_config.chain_id)
+            .await?;
+
+        Ok(metamask_session)
+    }
 }

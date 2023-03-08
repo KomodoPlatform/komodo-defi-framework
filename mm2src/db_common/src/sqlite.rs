@@ -19,7 +19,7 @@ macro_rules! owned_named_params {
         Vec::new()
     };
     ($($param_name:literal: $param_val:expr),+ $(,)?) => {
-        vec![$(($param_name, Value::from($param_val))),+]
+        vec![$(($param_name, $crate::sqlite::rusqlite::types::Value::from($param_val))),+]
     };
 }
 
@@ -55,6 +55,24 @@ where
     F: FnOnce(&Row<'_>) -> Result<T, SqlError>,
 {
     let maybe_result = conn.query_row(query, params, map_fn);
+    if let Err(SqlError::QueryReturnedNoRows) = maybe_result {
+        return Ok(None);
+    }
+
+    let result = maybe_result?;
+    Ok(Some(result))
+}
+
+pub fn query_single_row_with_named_params<T, F>(
+    conn: &Connection,
+    query: &str,
+    params: &SqlNamedParams<'_>,
+    map_fn: F,
+) -> Result<Option<T>, SqlError>
+where
+    F: FnOnce(&Row<'_>) -> Result<T, SqlError>,
+{
+    let maybe_result = conn.query_row_named(query, params, map_fn);
     if let Err(SqlError::QueryReturnedNoRows) = maybe_result {
         return Ok(None);
     }

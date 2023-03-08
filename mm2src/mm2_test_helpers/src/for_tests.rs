@@ -2,7 +2,6 @@
 
 use crate::electrums::qtum_electrums;
 use crate::structs::*;
-
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -148,7 +147,7 @@ pub const ETH_DEV_NODES: &[&str] = &["http://195.201.0.6:8565"];
 pub const ETH_DEV_SWAP_CONTRACT: &str = "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd";
 
 pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc-sepolia.rockx.com/"];
-pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xA25E0e06fB139CDc2f9f11675877DaD9EdD1C352";
+pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0x5BCC05dD32a87fABEDBcbbfeb77476eaD1F7051C";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x948BF5172383F1Bc0Fdf3aBe0630b855694A5D2c";
 
 pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
@@ -212,6 +211,21 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+        }
+    }
+
+    pub fn light_node_using_watchers(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "seednodes": seednodes,
+                "use_watchers": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -792,8 +806,13 @@ pub fn mm_ctx_with_custom_db() -> MmArc {
     use std::sync::Arc;
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
+
     let connection = Connection::open_in_memory().unwrap();
     let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+
+    let connection = Connection::open_in_memory().unwrap();
+    let _ = ctx.shared_sqlite_conn.pin(Arc::new(Mutex::new(connection)));
+
     ctx
 }
 
@@ -1572,6 +1591,7 @@ pub async fn enable_eth_coin(
     urls: &[&str],
     swap_contract_address: &str,
     fallback_swap_contract: Option<&str>,
+    contract_supports_watcher: bool,
 ) -> Json {
     let enable = mm
         .rpc(&json!({
@@ -1582,6 +1602,7 @@ pub async fn enable_eth_coin(
             "swap_contract_address": swap_contract_address,
             "fallback_swap_contract": fallback_swap_contract,
             "mm2": 1,
+            "contract_supports_watchers": contract_supports_watcher
         }))
         .await
         .unwrap();
@@ -2355,6 +2376,20 @@ pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn get_shared_db_id(mm: &MarketMakerIt) -> GetSharedDbIdResult {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "get_shared_db_id",
+            "mmrpc": "2.0",
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'get_shared_db_id' failed: {}", request.1);
+    let res: RpcSuccessResponse<_> = json::from_str(&request.1).unwrap();
+    res.result
+}
+
 pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
     let rc = mm
         .rpc(&json!({
@@ -2368,6 +2403,46 @@ pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
         .await
         .unwrap();
     RpcResponse::new("max_maker_vol", rc)
+}
+
+pub async fn disable_coin(mm: &MarketMakerIt, coin: &str) -> DisableResult {
+    let req = json! ({
+        "userpass": mm.userpass,
+        "method": "disable_coin",
+        "coin": coin,
+    });
+    let disable = mm.rpc(&req).await.unwrap();
+    assert_eq!(disable.0, StatusCode::OK, "!disable_coin: {}", disable.1);
+    let res: Json = json::from_str(&disable.1).unwrap();
+    json::from_value(res["result"].clone()).unwrap()
+}
+
+/// Checks whether the `disable_coin` RPC fails.
+/// Returns a `DisableCoinError` error.
+pub async fn disable_coin_err(mm: &MarketMakerIt, coin: &str) -> DisableCoinError {
+    let disable = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "disable_coin",
+            "coin": coin,
+        }))
+        .await
+        .unwrap();
+    assert!(!disable.0.is_success(), "'disable_coin' should have failed");
+    json::from_str(&disable.1).unwrap()
+}
+
+pub async fn assert_coin_not_found_on_balance(mm: &MarketMakerIt, coin: &str) {
+    let balance = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "my_balance",
+            "coin": coin
+        }))
+        .await
+        .unwrap();
+    assert_eq!(balance.0, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(balance.1.contains(&format!("No such coin: {coin}")));
 }
 
 pub async fn enable_tendermint(

@@ -48,15 +48,15 @@ pub use db_driver::{DbTransactionError, DbTransactionResult, DbUpgrader, InitDbE
 pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
 
 use db_driver::{IdbDatabaseBuilder, IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl, OnUpgradeNeededCb};
-use indexed_cursor::{cursor_event_loop, DbCursorEventTx, DbEmptyCursor};
+use indexed_cursor::{cursor_event_loop, CursorBuilder, CursorDriver, CursorError, CursorFilters, CursorResult,
+                     DbCursorEventTx};
 
 type DbEventTx = mpsc::UnboundedSender<internal::DbEvent>;
 type DbTransactionEventTx = mpsc::UnboundedSender<internal::DbTransactionEvent>;
 type DbTableEventTx = mpsc::UnboundedSender<internal::DbTableEvent>;
 
 pub mod cursor_prelude {
-    pub use crate::indexed_db::indexed_cursor::{CollectCursor, CursorError, CursorResult, WithBound, WithFilter,
-                                                WithOnly};
+    pub use crate::indexed_db::indexed_cursor::{CursorError, CursorResult};
 }
 
 pub trait TableSignature: DeserializeOwned + Serialize + 'static {
@@ -174,21 +174,20 @@ pub struct IndexedDb {
     event_tx: DbEventTx,
 }
 
-async fn send_event_recv_response<Event, Result>(
+async fn send_event_recv_response<Event, Item, Error>(
     event_tx: &mpsc::UnboundedSender<Event>,
     event: Event,
-    result_rx: oneshot::Receiver<DbTransactionResult<Result>>,
-) -> DbTransactionResult<Result> {
+    result_rx: oneshot::Receiver<MmResult<Item, Error>>,
+) -> MmResult<Item, Error>
+where
+    Error: WithInternal + NotMmError,
+{
     if let Err(e) = event_tx.unbounded_send(event) {
-        let error = format!("Error sending event: {}", e);
-        return MmError::err(DbTransactionError::UnexpectedState(error));
+        return MmError::err(Error::internal(format!("Error sending event: {}", e)));
     }
     match result_rx.await {
         Ok(result) => result,
-        Err(e) => {
-            let error = format!("Error receiving result: {}", e);
-            MmError::err(DbTransactionError::UnexpectedState(error))
-        },
+        Err(e) => MmError::err(Error::internal(format!("Error receiving result: {}", e))),
     }
 }
 
@@ -232,9 +231,9 @@ impl IndexedDb {
     }
 }
 
-pub struct DbTransaction<'a> {
+pub struct DbTransaction<'transaction> {
     event_tx: DbTransactionEventTx,
-    phantom: PhantomData<&'a ()>,
+    phantom: PhantomData<&'transaction ()>,
 }
 
 impl DbTransaction<'_> {
@@ -297,9 +296,9 @@ impl DbTransaction<'_> {
     }
 }
 
-pub struct DbTable<'a, Table: TableSignature> {
+pub struct DbTable<'transaction, Table: TableSignature> {
     event_tx: DbTableEventTx,
-    phantom: PhantomData<&'a Table>,
+    phantom: PhantomData<&'transaction Table>,
 }
 
 pub enum AddOrIgnoreResult {
@@ -307,7 +306,7 @@ pub enum AddOrIgnoreResult {
     ExistAlready(ItemId),
 }
 
-impl<Table: TableSignature> DbTable<'_, Table> {
+impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
     /// Adds the given item to the table.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/add
     pub async fn add_item(&self, item: &Table) -> DbTransactionResult<ItemId> {
@@ -636,16 +635,10 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         send_event_recv_response(&self.event_tx, event, result_rx).await
     }
 
-    /// Opens a cursor by the specified `index`.
-    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/openCursor
-    pub async fn open_cursor(&self, index: &str) -> DbTransactionResult<DbEmptyCursor<'_, Table>> {
-        let (result_tx, result_rx) = oneshot::channel();
-        let event = internal::DbTableEvent::OpenCursor {
-            index: index.to_owned(),
-            result_tx,
-        };
-        let cursor_event_tx = send_event_recv_response(&self.event_tx, event, result_rx).await?;
-        Ok(DbEmptyCursor::new(cursor_event_tx))
+    /// Returns a `CursorBuilder` builder. It can be used to open a cursor at the specified with specific key bounds.
+    /// See [`CursorBuilder::open_cursor`].
+    pub fn cursor_builder<'reference>(&'reference self) -> CursorBuilder<'transaction, 'reference, Table> {
+        CursorBuilder::new(self)
     }
 
     /// Whether the transaction is aborted.
@@ -653,6 +646,21 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::IsAborted { result_tx };
         send_event_recv_response(&self.event_tx, event, result_rx).await
+    }
+
+    /// Opens a cursor by the specified `index`.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/openCursor
+    async fn open_cursor(&self, index: &str, filters: CursorFilters) -> CursorResult<DbCursorEventTx> {
+        let (result_tx, result_rx) = oneshot::channel();
+        let event = internal::DbTableEvent::OpenCursor {
+            index: index.to_owned(),
+            filters,
+            result_tx,
+        };
+        let cursor_event_tx = send_event_recv_response(&self.event_tx, event, result_rx)
+            .await
+            .mm_err(|e| CursorError::UnexpectedState(e.to_string()))?;
+        Ok(cursor_event_tx)
     }
 
     fn deserialize_items(items: Vec<(ItemId, Json)>) -> DbTransactionResult<Vec<(ItemId, Table)>> {
@@ -726,8 +734,12 @@ async fn table_event_loop(mut rx: mpsc::UnboundedReceiver<internal::DbTableEvent
             internal::DbTableEvent::IsAborted { result_tx } => {
                 result_tx.send(Ok(table.aborted())).ok();
             },
-            internal::DbTableEvent::OpenCursor { index, result_tx } => {
-                open_cursor(&table, index, result_tx);
+            internal::DbTableEvent::OpenCursor {
+                index,
+                filters,
+                result_tx,
+            } => {
+                open_cursor(&table, index, filters, result_tx);
             },
         }
     }
@@ -761,18 +773,30 @@ impl MultiIndex {
 fn open_cursor(
     table: &IdbObjectStoreImpl,
     index: String,
-    result_tx: oneshot::Sender<DbTransactionResult<DbCursorEventTx>>,
+    filters: CursorFilters,
+    result_tx: oneshot::Sender<CursorResult<DbCursorEventTx>>,
 ) {
-    let cursor_builder = match table.cursor_builder(&index) {
-        Ok(builder) => builder,
+    let db_index = match table.open_index(&index) {
+        Ok(db_index) => db_index,
+        Err(tr_err) => {
+            let cursor_err = tr_err.map(|tr_err| CursorError::ErrorOpeningCursor {
+                description: tr_err.to_string(),
+            });
+            result_tx.send(Err(cursor_err)).ok();
+            return;
+        },
+    };
+    let cursor = match CursorDriver::init_cursor(db_index, filters) {
+        Ok(cursor) => cursor,
         Err(e) => {
             result_tx.send(Err(e)).ok();
             return;
         },
     };
+
     let (event_tx, event_rx) = mpsc::unbounded();
 
-    let fut = async move { cursor_event_loop(event_rx, cursor_builder).await };
+    let fut = async move { cursor_event_loop(event_rx, cursor).await };
     // `cursor_event_loop` will finish almost immediately once `event_tx` is dropped.
     spawn_local(fut);
 
@@ -843,7 +867,8 @@ mod internal {
         },
         OpenCursor {
             index: String,
-            result_tx: oneshot::Sender<DbTransactionResult<DbCursorEventTx>>,
+            filters: CursorFilters,
+            result_tx: oneshot::Sender<CursorResult<DbCursorEventTx>>,
         },
     }
 }

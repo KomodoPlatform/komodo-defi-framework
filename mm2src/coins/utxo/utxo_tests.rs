@@ -1,5 +1,8 @@
 use super::*;
 use crate::coin_balance::HDAddressBalance;
+use crate::coin_errors::ValidatePaymentError;
+use crate::hd_confirm_address::for_tests::MockableConfirmAddress;
+use crate::hd_confirm_address::{HDConfirmAddress, HDConfirmAddressError};
 use crate::hd_wallet::HDAccountsMap;
 use crate::hd_wallet_storage::{HDWalletMockStorage, HDWalletStorageInternalOps};
 use crate::my_tx_history_v2::for_tests::init_storage_for;
@@ -9,25 +12,31 @@ use crate::rpc_command::get_new_address::{GetNewAddressParams, GetNewAddressRpcE
 use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, ScanAddressesParams,
                                                       ScanAddressesResponse};
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
-use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClient, ElectrumClientImpl,
-                               GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NativeUnspent,
-                               NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::utxo::rpc_clients::{BlockHashOrHeight, NativeUnspent};
+use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumClient, ElectrumClientImpl, GetAddressInfoRes,
+                               ListSinceBlockRes, NativeClient, NativeClientImpl, NetworkInfo, UtxoRpcClientOps,
+                               ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
-use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_DECIMALS,
-                                     TEST_COIN_NAME};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::utxo::utxo_common_tests::TEST_COIN_DECIMALS;
+use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_NAME};
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
+use crate::INVALID_SENDER_ERR_LOG;
 use crate::{BlockHeightAndTime, CoinBalance, IguanaPrivKey, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
-            SendMakerSpendsTakerPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails,
-            TxMarshalingErr, ValidateFeeArgs};
+            SpendPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails, TxMarshalingErr,
+            ValidateFeeArgs};
 use chain::{BlockHeader, BlockHeaderBits, OutPoint};
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath, Secp256k1Secret};
+#[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Connection;
 use futures::channel::mpsc::channel;
 use futures::future::join_all;
@@ -41,11 +50,12 @@ use serialization::{deserialize, CoinVariant};
 use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
 use spv_validation::storage::BlockHeaderStorageOps;
 use spv_validation::work::DifficultyAlgorithm;
-use std::convert::TryFrom;
+#[cfg(not(target_arch = "wasm32"))] use std::convert::TryFrom;
 use std::iter;
 use std::mem::discriminant;
 use std::num::NonZeroUsize;
 
+#[cfg(not(target_arch = "wasm32"))]
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
 pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
@@ -141,7 +151,7 @@ fn test_extract_secret() {
     let tx_hex = hex::decode("0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c").unwrap();
     let expected_secret = hex::decode("9da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365").unwrap();
     let secret_hash = &*dhash160(&expected_secret);
-    let secret = block_on(coin.extract_secret(secret_hash, &tx_hex)).unwrap();
+    let secret = block_on(coin.extract_secret(secret_hash, &tx_hex, false)).unwrap();
     assert_eq!(secret, expected_secret);
 }
 
@@ -151,7 +161,7 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
     let coin = utxo_coin_for_test(client.into(), None, false);
     let tx_hex = hex::decode("0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c").unwrap();
     let secret = hex::decode("9da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365").unwrap();
-    let maker_spends_payment_args = SendMakerSpendsTakerPaymentArgs {
+    let maker_spends_payment_args = SpendPaymentArgs {
         other_payment_tx: &tx_hex,
         time_lock: 777,
         other_pubkey: &coin.my_public_key().unwrap().to_vec(),
@@ -159,6 +169,7 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
         secret_hash: &*dhash160(&secret),
         swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
+        watcher_reward: false,
     };
     let tx_err = coin
         .send_maker_spends_taker_payment(maker_spends_payment_args)
@@ -417,6 +428,7 @@ fn test_wait_for_payment_spend_timeout_native() {
     assert!(unsafe { OUTPUT_SPEND_CALLED });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_wait_for_payment_spend_timeout_electrum() {
     static mut OUTPUT_SPEND_CALLED: bool = false;
@@ -489,6 +501,7 @@ fn test_search_for_swap_tx_spend_electrum_was_spent() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
+        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -523,6 +536,7 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
+        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -2526,8 +2540,12 @@ fn test_validate_fee_wrong_sender() {
         min_block_number: 0,
         uuid: &[],
     };
-    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
-    assert!(validate_err.contains("was sent from wrong address"));
+    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains(INVALID_SENDER_ERR_LOG)),
+        _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", error),
+    }
 }
 
 #[test]
@@ -2551,8 +2569,11 @@ fn test_validate_fee_min_block() {
         min_block_number: 810329,
         uuid: &[],
     };
-    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
-    assert!(validate_err.contains("confirmed before min_block"));
+    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
+        _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", error),
+    }
 }
 
 #[test]
@@ -3926,6 +3947,9 @@ fn test_get_new_address() {
         }
     });
 
+    MockableConfirmAddress::confirm_utxo_address
+        .mock_safe(move |_, _, _, _| MockResult::Return(Box::pin(futures::future::ok(()))));
+
     // This mock is required just not to fail on [`UtxoAddressScanner::init`].
     NativeClient::list_all_transactions
         .mock_safe(move |_, _| MockResult::Return(Box::new(futures01::future::ok(Vec::new()))));
@@ -3955,9 +3979,12 @@ fn test_get_new_address() {
         accounts: HDAccountsMutex::new(hd_accounts),
         gap_limit: 2,
     });
+    fields.conf.trezor_coin = Some("Komodo".to_string());
     let coin = utxo_coin_from_fields(fields);
 
     // =======
+
+    let confirm_address = MockableConfirmAddress::default();
 
     expected_checked_addresses!["m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1"];
     non_empty_addresses!["m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1"];
@@ -3966,7 +3993,7 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: None, // Will be used 2 from `UtxoHDWallet` by default.
     };
-    block_on(coin.get_new_address_rpc(params)).unwrap();
+    block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
 
     // `m/44'/141'/1'/0/3` is empty, so `m/44'/141'/1'/0/2` will be checked.
@@ -3978,8 +4005,8 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: Some(1),
     };
-    let err = block_on(coin.get_new_address_rpc(params))
-        .expect_err("check_if_can_get_new_address should have failed with 'EmptyAddressesLimitReached' error");
+    let err = block_on(coin.get_new_address_rpc(params, &confirm_address))
+        .expect_err("get_new_address_rpc should have failed with 'EmptyAddressesLimitReached' error");
     let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 1 };
     assert_eq!(err.into_inner(), expected);
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
@@ -3996,7 +4023,7 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: Some(2),
     };
-    block_on(coin.get_new_address_rpc(params)).unwrap();
+    block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
 
     // `m/44'/141'/2'/0/3` and `m/44'/141'/2'/0/2` are empty.
@@ -4011,8 +4038,8 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: Some(2),
     };
-    let err = block_on(coin.get_new_address_rpc(params))
-        .expect_err("check_if_can_get_new_address should have failed with 'EmptyAddressesLimitReached' error");
+    let err = block_on(coin.get_new_address_rpc(params, &confirm_address))
+        .expect_err("get_new_address_rpc should have failed with 'EmptyAddressesLimitReached' error");
     let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 2 };
     assert_eq!(err.into_inner(), expected);
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
@@ -4026,8 +4053,8 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: Some(0),
     };
-    let err = block_on(coin.get_new_address_rpc(params))
-        .expect_err("!check_if_can_get_new_address should have failed with 'EmptyAddressesLimitReached' error");
+    let err = block_on(coin.get_new_address_rpc(params, &confirm_address))
+        .expect_err("!get_new_address_rpc should have failed with 'EmptyAddressesLimitReached' error");
     let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 0 };
     assert_eq!(err.into_inner(), expected);
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
@@ -4041,7 +4068,7 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::External),
         gap_limit: Some(5),
     };
-    block_on(coin.get_new_address_rpc(params)).unwrap();
+    block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
 
     // `known_addresses_number=0`, always allow.
@@ -4053,8 +4080,27 @@ fn test_get_new_address() {
         chain: Some(Bip44Chain::Internal),
         gap_limit: Some(0),
     };
-    block_on(coin.get_new_address_rpc(params)).unwrap();
+    block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+
+    // Check if `get_new_address_rpc` fails on the `HDAddressConfirm::confirm_utxo_address` error.
+
+    MockableConfirmAddress::confirm_utxo_address.mock_safe(move |_, _, _, _| {
+        MockResult::Return(Box::pin(futures::future::ready(MmError::err(
+            HDConfirmAddressError::HwContextNotInitialized,
+        ))))
+    });
+
+    expected_checked_addresses![];
+    non_empty_addresses![];
+    let params = GetNewAddressParams {
+        account_id: 0,
+        chain: Some(Bip44Chain::Internal),
+        gap_limit: Some(2),
+    };
+    let err = block_on(coin.get_new_address_rpc(params, &confirm_address))
+        .expect_err("!get_new_address_rpc should have failed with 'HwContextNotInitialized' error");
+    assert_eq!(err.into_inner(), GetNewAddressRpcError::HwContextNotInitialized);
 }
 
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1196
@@ -4099,6 +4145,7 @@ fn test_for_non_existent_tx_hex_utxo_electrum() {
     ));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_native_display_balances() {
     let unspents = vec![

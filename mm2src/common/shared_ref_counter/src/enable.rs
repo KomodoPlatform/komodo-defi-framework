@@ -77,7 +77,7 @@ impl<T> SharedRc<T> {
         let existing_pointers = self.existing_pointers.read().expect(LOCKING_ERROR);
         log!(level, "{} exists at:", ident);
         for (_idx, location) in existing_pointers.iter() {
-            log!(level, "\t{}", stringify_location(*location));
+            log!(level, "\t{}", stringify_location(location));
         }
     }
 

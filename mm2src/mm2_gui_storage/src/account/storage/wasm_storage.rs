@@ -64,7 +64,7 @@ pub(crate) struct WasmAccountStorage {
 impl WasmAccountStorage {
     pub fn new(ctx: &MmArc) -> Self {
         WasmAccountStorage {
-            account_db: ConstructibleDb::new_shared(ctx),
+            account_db: ConstructibleDb::new_shared_db(ctx).into_shared(),
         }
     }
 

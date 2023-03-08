@@ -29,8 +29,9 @@ async fn test_send() {
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         priv_key_policy: key_pair.into(),
-        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        swap_contract_address: Address::from_str("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94").unwrap(),
         fallback_swap_contract: None,
+        contract_supports_watchers: false,
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
             is_parity: true,
@@ -49,7 +50,7 @@ async fn test_send() {
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
-    let maker_payment_args = SendMakerPaymentArgs {
+    let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock: 1000,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
@@ -58,6 +59,7 @@ async fn test_send() {
         swap_contract_address: &None,
         swap_unique_data: &[],
         payment_instructions: &None,
+        watcher_reward: None,
     };
     let tx = coin.send_maker_payment(maker_payment_args).compat().await;
     console::log_1(&format!("{:?}", tx).into());

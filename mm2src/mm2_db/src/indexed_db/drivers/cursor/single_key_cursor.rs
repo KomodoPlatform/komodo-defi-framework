@@ -1,46 +1,29 @@
-use super::{CollectCursorAction, CollectItemAction, CursorError, CursorOps, CursorResult, DbFilter};
-use async_trait::async_trait;
-use common::{log::warn, serialize_to_js, stringify_js_error};
+use super::{CursorAction, CursorDriverImpl, CursorError, CursorItemAction, CursorResult};
+use common::{serialize_to_js, stringify_js_error};
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
-use web_sys::{IdbIndex, IdbKeyRange};
+use web_sys::IdbKeyRange;
 
 /// The representation of a range that includes records
 /// whose value of the [`IdbSingleKeyCursor::field_name`] field equals to the [`IdbSingleKeyCursor::field_value`] value.
 /// https://developer.mozilla.org/en-US/docs/Web/API/IDBKeyRange/only
 pub struct IdbSingleKeyCursor {
-    db_index: IdbIndex,
     #[allow(dead_code)]
     field_name: String,
     field_value: Json,
-    /// An additional predicate that may be used to filter records.
-    collect_filter: Option<DbFilter>,
 }
 
 impl IdbSingleKeyCursor {
-    pub(super) fn new(
-        db_index: IdbIndex,
-        field_name: String,
-        field_value: Json,
-        filter: Option<DbFilter>,
-    ) -> IdbSingleKeyCursor {
-        if filter.is_none() {
-            warn!("Consider using 'IdbObjectStoreImpl::get_items' instead of 'IdbSingleKeyCursor'");
-        }
+    pub(super) fn new(field_name: String, field_value: Json) -> IdbSingleKeyCursor {
         IdbSingleKeyCursor {
-            db_index,
             field_name,
             field_value,
-            collect_filter: None,
         }
     }
 }
 
-#[async_trait(?Send)]
-impl CursorOps for IdbSingleKeyCursor {
-    fn db_index(&self) -> &IdbIndex { &self.db_index }
-
+impl CursorDriverImpl for IdbSingleKeyCursor {
     fn key_range(&self) -> CursorResult<Option<IdbKeyRange>> {
         let js_value =
             serialize_to_js(&self.field_value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
@@ -55,14 +38,7 @@ impl CursorOps for IdbSingleKeyCursor {
         Ok(Some(key_range))
     }
 
-    fn on_collect_iter(
-        &mut self,
-        _key: JsValue,
-        value: &Json,
-    ) -> CursorResult<(CollectItemAction, CollectCursorAction)> {
-        if let Some(ref mut filter) = self.collect_filter {
-            return Ok(filter(value));
-        }
-        Ok((CollectItemAction::Include, CollectCursorAction::Continue))
+    fn on_iteration(&mut self, _key: JsValue) -> CursorResult<(CursorItemAction, CursorAction)> {
+        Ok((CursorItemAction::Include, CursorAction::Continue))
     }
 }

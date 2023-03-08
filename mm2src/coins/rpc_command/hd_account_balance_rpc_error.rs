@@ -72,8 +72,7 @@ impl From<BalanceError> for HDAccountBalanceRpcError {
             BalanceError::Transport(transport) => HDAccountBalanceRpcError::Transport(transport),
             BalanceError::InvalidResponse(rpc) => HDAccountBalanceRpcError::RpcInvalidResponse(rpc),
             BalanceError::UnexpectedDerivationMethod(der_method) => HDAccountBalanceRpcError::from(der_method),
-            BalanceError::WalletStorageError(e) => HDAccountBalanceRpcError::Internal(e),
-            BalanceError::Internal(internal) => HDAccountBalanceRpcError::Internal(internal),
+            BalanceError::WalletStorageError(e) | BalanceError::Internal(e) => HDAccountBalanceRpcError::Internal(e),
         }
     }
 }

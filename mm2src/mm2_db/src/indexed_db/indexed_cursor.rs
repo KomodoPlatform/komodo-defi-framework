@@ -18,10 +18,13 @@
 //! you can use [`WithBound::bound`] along with [`WithOnly::only`]:
 //! ```rust
 //! let table = open_table_somehow();
-//! let all_rick_morty_swaps = table.open_cursor("search_index")
+//! let all_rick_morty_swaps = table
+//!     .cursor_builder()
 //!     .only("base_coin", "RICK", "MORTY")?
 //!     .bound("base_coin_value", 10, 13)
 //!     .bound("started_at", 1000000030.into(), u32::MAX.into())
+//!     .open_cursor("search_index")
+//!     .await?
 //!     .collect()
 //!     .await?;
 //! ```
@@ -49,13 +52,12 @@
 //! because ['RICK', 'MORTY', 13] < ['RICK', 'MORTY', 13, 1000000030],
 //! although it is expected to be within the specified bounds.
 
-use crate::indexed_db::db_driver::cursor::{CollectCursorAction, CollectItemAction, CursorBoundValue, CursorOps,
-                                           DbFilter, IdbCursorBuilder};
+use crate::indexed_db::db_driver::cursor::CursorBoundValue;
+pub(crate) use crate::indexed_db::db_driver::cursor::{CursorDriver, CursorFilters};
 pub use crate::indexed_db::db_driver::cursor::{CursorError, CursorResult};
-use crate::indexed_db::{ItemId, TableSignature};
-use async_trait::async_trait;
+use crate::indexed_db::{DbTable, ItemId, TableSignature};
 use futures::channel::{mpsc, oneshot};
-use futures::StreamExt;
+use futures::{SinkExt, StreamExt};
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
@@ -65,102 +67,20 @@ use std::marker::PhantomData;
 pub(super) type DbCursorEventTx = mpsc::UnboundedSender<DbCursorEvent>;
 pub(super) type DbCursorEventRx = mpsc::UnboundedReceiver<DbCursorEvent>;
 
-pub enum DbCursorEvent {
-    Collect {
-        options: CursorCollectOptions,
-        result_tx: oneshot::Sender<CursorResult<Vec<(ItemId, Json)>>>,
-    },
+pub struct CursorBuilder<'transaction, 'reference, Table: TableSignature> {
+    db_table: &'reference DbTable<'transaction, Table>,
+    filters: CursorFilters,
 }
 
-pub enum CursorCollectOptions {
-    SingleKey {
-        field_name: String,
-        field_value: Json,
-        filter: Option<DbFilter>,
-    },
-    SingleKeyBound {
-        field_name: String,
-        lower_bound: CursorBoundValue,
-        upper_bound: CursorBoundValue,
-        filter: Option<DbFilter>,
-    },
-    MultiKey {
-        keys: Vec<(String, Json)>,
-        filter: Option<DbFilter>,
-    },
-    MultiKeyBound {
-        only_keys: Vec<(String, Json)>,
-        bound_keys: Vec<(String, CursorBoundValue, CursorBoundValue)>,
-        filter: Option<DbFilter>,
-    },
-}
-
-pub async fn cursor_event_loop(mut rx: DbCursorEventRx, cursor_builder: IdbCursorBuilder) {
-    while let Some(event) = rx.next().await {
-        match event {
-            DbCursorEvent::Collect { options, result_tx } => {
-                on_collect_cursor_event(result_tx, options, cursor_builder).await;
-                return;
-            },
-        }
-    }
-}
-
-async fn on_collect_cursor_event(
-    result_tx: oneshot::Sender<CursorResult<Vec<(ItemId, Json)>>>,
-    options: CursorCollectOptions,
-    cursor_builder: IdbCursorBuilder,
-) {
-    async fn on_collect_cursor_event_impl(
-        options: CursorCollectOptions,
-        cursor_builder: IdbCursorBuilder,
-    ) -> CursorResult<Vec<(ItemId, Json)>> {
-        match options {
-            CursorCollectOptions::SingleKey {
-                field_name,
-                field_value,
-                filter,
-            } => {
-                cursor_builder
-                    .single_key_cursor(field_name, field_value, filter)
-                    .collect()
-                    .await
-            },
-            CursorCollectOptions::SingleKeyBound {
-                field_name,
-                lower_bound,
-                upper_bound,
-                filter,
-            } => {
-                cursor_builder
-                    .single_key_bound_cursor(field_name, lower_bound, upper_bound, filter)?
-                    .collect()
-                    .await
-            },
-            CursorCollectOptions::MultiKey { keys, filter } => {
-                cursor_builder.multi_key_cursor(keys, filter)?.collect().await
-            },
-            CursorCollectOptions::MultiKeyBound {
-                only_keys,
-                bound_keys,
-                filter,
-            } => {
-                cursor_builder
-                    .multi_key_bound_cursor(only_keys, bound_keys, filter)?
-                    .collect()
-                    .await
-            },
+impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction, 'reference, Table> {
+    pub(crate) fn new(db_table: &'reference DbTable<'transaction, Table>) -> Self {
+        CursorBuilder {
+            db_table,
+            filters: CursorFilters::default(),
         }
     }
 
-    let result = on_collect_cursor_event_impl(options, cursor_builder).await;
-    result_tx.send(result).ok();
-}
-
-pub trait WithOnly: Sized {
-    type ResultCursor;
-
-    fn only<Value>(self, field_name: &str, field_value: Value) -> CursorResult<Self::ResultCursor>
+    pub fn only<Value>(mut self, field_name: &str, field_value: Value) -> CursorResult<Self>
     where
         Value: Serialize + fmt::Debug,
     {
@@ -170,366 +90,92 @@ pub trait WithOnly: Sized {
             value: field_value_str,
             description: e.to_string(),
         })?;
-        Ok(self.only_json(field_name, field_value))
+
+        self.filters.only_keys.push((field_name.to_owned(), field_value));
+        Ok(self)
     }
 
-    fn only_json(self, field_name: &str, field_value: Json) -> Self::ResultCursor;
-}
-
-pub trait WithBound: Sized {
-    type ResultCursor;
-
-    fn bound<Value>(self, field_name: &str, lower_bound: Value, upper_bound: Value) -> Self::ResultCursor
+    pub fn bound<Value>(mut self, field_name: &str, lower_bound: Value, upper_bound: Value) -> Self
     where
         CursorBoundValue: From<Value>,
     {
         let lower_bound = CursorBoundValue::from(lower_bound);
         let upper_bound = CursorBoundValue::from(upper_bound);
-        self.bound_values(field_name, lower_bound, upper_bound)
-    }
-
-    fn bound_values(
-        self,
-        field_name: &str,
-        lower_bound: CursorBoundValue,
-        upper_bound: CursorBoundValue,
-    ) -> Self::ResultCursor;
-}
-
-pub trait WithFilter: Sized {
-    fn filter<F>(self, filter: F) -> Self
-    where
-        F: FnMut(&Json) -> (CollectItemAction, CollectCursorAction) + Send + 'static,
-    {
-        let filter = Box::new(filter);
-        self.filter_boxed(filter)
-    }
-
-    fn filter_boxed(self, filter: DbFilter) -> Self;
-}
-
-#[async_trait]
-pub trait CollectCursor<Table: TableSignature> {
-    async fn collect(self) -> CursorResult<Vec<(ItemId, Table)>>;
-}
-
-#[async_trait]
-impl<Table: TableSignature, T: CollectCursorImpl<Table> + Send> CollectCursor<Table> for T {
-    async fn collect(self) -> CursorResult<Vec<(ItemId, Table)>> { self.collect_impl().await }
-}
-
-#[async_trait]
-pub(crate) trait CollectCursorImpl<Table: TableSignature>: Sized {
-    fn into_collect_options(self) -> CursorCollectOptions;
-
-    fn event_tx(&self) -> DbCursorEventTx;
-
-    async fn collect_impl(self) -> CursorResult<Vec<(ItemId, Table)>> {
-        let event_tx = self.event_tx();
-        let options = self.into_collect_options();
-
-        let (result_tx, result_rx) = oneshot::channel();
-        let event = DbCursorEvent::Collect { result_tx, options };
-        let items: Vec<(ItemId, Json)> = send_event_recv_response(&event_tx, event, result_rx).await?;
-
-        items
-            .into_iter()
-            .map(|(item_id, item)| json::from_value(item).map(|item| (item_id, item)))
-            .map(|res| res.map_to_mm(|e| CursorError::ErrorDeserializingItem(e.to_string())))
-            // Item = CursorResult<(ItemId, Table)>
-            .collect()
-    }
-}
-
-pub struct DbEmptyCursor<'a, Table: TableSignature> {
-    event_tx: DbCursorEventTx,
-    filter: Option<DbFilter>,
-    phantom: PhantomData<&'a Table>,
-}
-
-impl<'a, Table: TableSignature> WithOnly for DbEmptyCursor<'a, Table> {
-    type ResultCursor = DbSingleKeyCursor<'a, Table>;
-
-    fn only_json(self, field_name: &str, field_value: Json) -> Self::ResultCursor {
-        DbSingleKeyCursor {
-            event_tx: self.event_tx,
-            field_name: field_name.to_owned(),
-            field_value,
-            filter: self.filter,
-            phantom: PhantomData::default(),
-        }
-    }
-}
-
-impl<'a, Table: TableSignature> WithBound for DbEmptyCursor<'a, Table> {
-    type ResultCursor = DbSingleKeyBoundCursor<'a, Table>;
-
-    fn bound_values(
-        self,
-        field_name: &str,
-        lower_bound: CursorBoundValue,
-        upper_bound: CursorBoundValue,
-    ) -> Self::ResultCursor {
-        DbSingleKeyBoundCursor {
-            event_tx: self.event_tx,
-            field_name: field_name.to_owned(),
-            lower_bound,
-            upper_bound,
-            filter: self.filter,
-            phantom: PhantomData::default(),
-        }
-    }
-}
-
-impl<'a, Table: TableSignature> WithFilter for DbEmptyCursor<'a, Table> {
-    fn filter_boxed(mut self, filter: DbFilter) -> Self {
-        self.filter = Some(filter);
+        self.filters
+            .bound_keys
+            .push((field_name.to_owned(), lower_bound, upper_bound));
         self
     }
-}
 
-impl<'a, Table: TableSignature> DbEmptyCursor<'a, Table> {
-    pub(super) fn new(event_tx: DbCursorEventTx) -> DbEmptyCursor<'a, Table> {
-        DbEmptyCursor {
+    pub fn reverse(mut self) -> Self {
+        self.filters.reverse = true;
+        self
+    }
+
+    /// Opens a cursor by the specified `index`.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/openCursor
+    pub async fn open_cursor(self, index: &str) -> CursorResult<CursorIter<'transaction, Table>> {
+        let event_tx =
+            self.db_table
+                .open_cursor(index, self.filters)
+                .await
+                .mm_err(|e| CursorError::ErrorOpeningCursor {
+                    description: e.to_string(),
+                })?;
+        Ok(CursorIter {
             event_tx,
-            filter: None,
             phantom: PhantomData::default(),
-        }
+        })
     }
 }
 
-pub struct DbSingleKeyCursor<'a, Table: TableSignature> {
+pub struct CursorIter<'transaction, Table> {
     event_tx: DbCursorEventTx,
-    field_name: String,
-    field_value: Json,
-    filter: Option<DbFilter>,
-    phantom: PhantomData<&'a Table>,
+    phantom: PhantomData<&'transaction Table>,
 }
 
-impl<'a, Table: TableSignature> WithOnly for DbSingleKeyCursor<'a, Table> {
-    type ResultCursor = DbMultiKeyCursor<'a, Table>;
+impl<'transaction, Table: TableSignature> CursorIter<'transaction, Table> {
+    /// Advances the iterator and returns the next value.
+    /// Please note that the items are sorted by the index keys.
+    pub async fn next(&mut self) -> CursorResult<Option<(ItemId, Table)>> {
+        let (result_tx, result_rx) = oneshot::channel();
+        self.event_tx
+            .send(DbCursorEvent::NextItem { result_tx })
+            .await
+            .map_to_mm(|e| CursorError::UnexpectedState(format!("Error sending cursor event: {e}")))?;
+        let maybe_item = result_rx
+            .await
+            .map_to_mm(|e| CursorError::UnexpectedState(format!("Error receiving cursor item: {e}")))??;
+        let (item_id, item) = match maybe_item {
+            Some((item_id, item)) => (item_id, item),
+            None => return Ok(None),
+        };
+        let item = json::from_value(item).map_to_mm(|e| CursorError::ErrorDeserializingItem(e.to_string()))?;
+        Ok(Some((item_id, item)))
+    }
 
-    fn only_json(self, field_name: &str, field_value: Json) -> Self::ResultCursor {
-        let keys = vec![
-            (self.field_name, self.field_value),
-            (field_name.to_owned(), field_value),
-        ];
-        DbMultiKeyCursor {
-            event_tx: self.event_tx,
-            keys,
-            filter: self.filter,
-            phantom: PhantomData::default(),
+    pub async fn collect(mut self) -> CursorResult<Vec<(ItemId, Table)>> {
+        let mut result = Vec::new();
+        while let Some((item_id, item)) = self.next().await? {
+            result.push((item_id, item));
         }
+        Ok(result)
     }
 }
 
-impl<'a, Table: TableSignature> WithBound for DbSingleKeyCursor<'a, Table> {
-    type ResultCursor = DbMultiKeyBoundCursor<'a, Table>;
+pub enum DbCursorEvent {
+    NextItem {
+        result_tx: oneshot::Sender<CursorResult<Option<(ItemId, Json)>>>,
+    },
+}
 
-    fn bound_values(
-        self,
-        field_name: &str,
-        lower_bound: CursorBoundValue,
-        upper_bound: CursorBoundValue,
-    ) -> Self::ResultCursor {
-        let only_keys = vec![(self.field_name, self.field_value)];
-        let bound_keys = vec![(field_name.to_owned(), lower_bound, upper_bound)];
-        DbMultiKeyBoundCursor {
-            event_tx: self.event_tx,
-            only_keys,
-            bound_keys,
-            filter: self.filter,
-            phantom: PhantomData::default(),
+pub(crate) async fn cursor_event_loop(mut rx: DbCursorEventRx, mut cursor: CursorDriver) {
+    while let Some(event) = rx.next().await {
+        match event {
+            DbCursorEvent::NextItem { result_tx } => {
+                result_tx.send(cursor.next().await).ok();
+            },
         }
-    }
-}
-
-impl<'a, Table: TableSignature> WithFilter for DbSingleKeyCursor<'a, Table> {
-    fn filter_boxed(mut self, filter: DbFilter) -> Self {
-        self.filter = Some(filter);
-        self
-    }
-}
-
-#[async_trait]
-impl<'a, Table: TableSignature> CollectCursorImpl<Table> for DbSingleKeyCursor<'a, Table> {
-    fn into_collect_options(self) -> CursorCollectOptions {
-        CursorCollectOptions::SingleKey {
-            field_name: self.field_name,
-            field_value: self.field_value,
-            filter: self.filter,
-        }
-    }
-
-    fn event_tx(&self) -> DbCursorEventTx { self.event_tx.clone() }
-}
-
-/// `DbSingleKeyBoundCursor` doesn't implement `WithOnly` trait, because indexes MUST start with `only` values.
-pub struct DbSingleKeyBoundCursor<'a, Table: TableSignature> {
-    event_tx: DbCursorEventTx,
-    field_name: String,
-    lower_bound: CursorBoundValue,
-    upper_bound: CursorBoundValue,
-    filter: Option<DbFilter>,
-    phantom: PhantomData<&'a Table>,
-}
-
-impl<'a, Table: TableSignature> WithBound for DbSingleKeyBoundCursor<'a, Table> {
-    type ResultCursor = DbMultiKeyBoundCursor<'a, Table>;
-
-    fn bound_values(
-        self,
-        field_name: &str,
-        lower_bound: CursorBoundValue,
-        upper_bound: CursorBoundValue,
-    ) -> Self::ResultCursor {
-        let bound_keys = vec![
-            (self.field_name, self.lower_bound, self.upper_bound),
-            (field_name.to_owned(), lower_bound, upper_bound),
-        ];
-        DbMultiKeyBoundCursor {
-            event_tx: self.event_tx,
-            only_keys: Vec::new(),
-            bound_keys,
-            filter: self.filter,
-            phantom: PhantomData::default(),
-        }
-    }
-}
-
-impl<'a, Table: TableSignature> WithFilter for DbSingleKeyBoundCursor<'a, Table> {
-    fn filter_boxed(mut self, filter: DbFilter) -> Self {
-        self.filter = Some(filter);
-        self
-    }
-}
-
-#[async_trait]
-impl<'a, Table: TableSignature> CollectCursorImpl<Table> for DbSingleKeyBoundCursor<'a, Table> {
-    fn into_collect_options(self) -> CursorCollectOptions {
-        CursorCollectOptions::SingleKeyBound {
-            field_name: self.field_name,
-            lower_bound: self.lower_bound,
-            upper_bound: self.upper_bound,
-            filter: self.filter,
-        }
-    }
-
-    fn event_tx(&self) -> DbCursorEventTx { self.event_tx.clone() }
-}
-
-pub struct DbMultiKeyCursor<'a, Table: TableSignature> {
-    event_tx: DbCursorEventTx,
-    keys: Vec<(String, Json)>,
-    filter: Option<DbFilter>,
-    phantom: PhantomData<&'a Table>,
-}
-
-impl<'a, Table: TableSignature> WithOnly for DbMultiKeyCursor<'a, Table> {
-    type ResultCursor = DbMultiKeyCursor<'a, Table>;
-
-    fn only_json(mut self, field_name: &str, field_value: Json) -> Self::ResultCursor {
-        self.keys.push((field_name.to_owned(), field_value));
-        self
-    }
-}
-
-impl<'a, Table: TableSignature> WithBound for DbMultiKeyCursor<'a, Table> {
-    type ResultCursor = DbMultiKeyBoundCursor<'a, Table>;
-
-    fn bound_values(
-        self,
-        field_name: &str,
-        lower_bound: CursorBoundValue,
-        upper_bound: CursorBoundValue,
-    ) -> Self::ResultCursor {
-        DbMultiKeyBoundCursor {
-            event_tx: self.event_tx,
-            only_keys: self.keys,
-            bound_keys: vec![(field_name.to_owned(), lower_bound, upper_bound)],
-            filter: self.filter,
-            phantom: PhantomData::default(),
-        }
-    }
-}
-
-impl<'a, Table: TableSignature> WithFilter for DbMultiKeyCursor<'a, Table> {
-    fn filter_boxed(mut self, filter: DbFilter) -> Self {
-        self.filter = Some(filter);
-        self
-    }
-}
-
-#[async_trait]
-impl<'a, Table: TableSignature> CollectCursorImpl<Table> for DbMultiKeyCursor<'a, Table> {
-    fn into_collect_options(self) -> CursorCollectOptions {
-        CursorCollectOptions::MultiKey {
-            keys: self.keys,
-            filter: self.filter,
-        }
-    }
-
-    fn event_tx(&self) -> DbCursorEventTx { self.event_tx.clone() }
-}
-
-/// `DbMultiKeyBoundCursor` doesn't implement `WithOnly` trait, because indexes MUST start with `only` values.
-pub struct DbMultiKeyBoundCursor<'a, Table: TableSignature> {
-    event_tx: DbCursorEventTx,
-    only_keys: Vec<(String, Json)>,
-    bound_keys: Vec<(String, CursorBoundValue, CursorBoundValue)>,
-    filter: Option<DbFilter>,
-    phantom: PhantomData<&'a Table>,
-}
-
-impl<'a, Table: TableSignature> WithBound for DbMultiKeyBoundCursor<'a, Table> {
-    type ResultCursor = DbMultiKeyBoundCursor<'a, Table>;
-
-    fn bound_values(
-        mut self,
-        field_name: &str,
-        lower_bound: CursorBoundValue,
-        upper_bound: CursorBoundValue,
-    ) -> Self::ResultCursor {
-        self.bound_keys.push((field_name.to_owned(), lower_bound, upper_bound));
-        self
-    }
-}
-
-impl<'a, Table: TableSignature> WithFilter for DbMultiKeyBoundCursor<'a, Table> {
-    fn filter_boxed(mut self, filter: DbFilter) -> Self {
-        self.filter = Some(filter);
-        self
-    }
-}
-
-#[async_trait]
-impl<'a, Table: TableSignature> CollectCursorImpl<Table> for DbMultiKeyBoundCursor<'a, Table> {
-    fn into_collect_options(self) -> CursorCollectOptions {
-        CursorCollectOptions::MultiKeyBound {
-            only_keys: self.only_keys,
-            bound_keys: self.bound_keys,
-            filter: self.filter,
-        }
-    }
-
-    fn event_tx(&self) -> DbCursorEventTx { self.event_tx.clone() }
-}
-
-async fn send_event_recv_response<Event, Result>(
-    event_tx: &mpsc::UnboundedSender<Event>,
-    event: Event,
-    result_rx: oneshot::Receiver<CursorResult<Result>>,
-) -> CursorResult<Result> {
-    if let Err(e) = event_tx.unbounded_send(event) {
-        let error = format!("Error sending event: {}", e);
-        return MmError::err(CursorError::UnexpectedState(error));
-    }
-    match result_rx.await {
-        Ok(result) => result,
-        Err(e) => {
-            let error = format!("Error receiving result: {}", e);
-            MmError::err(CursorError::UnexpectedState(error))
-        },
     }
 }
 
@@ -607,6 +253,15 @@ mod tests {
                 .await
                 .expect(&format!("Error adding {:?} item", item));
         }
+    }
+
+    #[track_caller]
+    async fn next_item<Table: TableSignature>(cursor_iter: &mut CursorIter<'_, Table>) -> Option<Table> {
+        cursor_iter
+            .next()
+            .await
+            .expect("!CursorIter::next")
+            .map(|(_item_id, item)| item)
     }
 
     /// The table with `BeBigUint` parameters.
@@ -705,13 +360,14 @@ mod tests {
 
                 // Get every item that satisfies the following [num_x, num_y] bound.
                 let actual_items = table
+                    .cursor_builder()
+                    .bound("timestamp_x", num_x.clone(), num_y.clone())
                     .open_cursor("timestamp_x")
                     .await
-                    .expect("!DbTable::open_cursor")
-                    .bound("timestamp_x", num_x.clone(), num_y.clone())
+                    .expect("!CursorBuilder::open_cursor")
                     .collect()
                     .await
-                    .expect("!DbSingleKeyBoundCursor::collect")
+                    .expect("!CursorIter::collect")
                     .into_iter()
                     // Map `(ItemId, TimestampTable)` into `BeBigUint`.
                     .map(|(_item_id, item)| item.timestamp_x)
@@ -759,14 +415,15 @@ mod tests {
         fill_table(&table, items).await;
 
         let mut actual_items = table
+            .cursor_builder()
+            .only("base_coin", "RICK")
+            .expect("!CursorBuilder::only")
             .open_cursor("base_coin")
             .await
-            .expect("!DbTable::open_cursor")
-            .only("base_coin", "RICK")
-            .expect("!DbEmptyCursor::only")
+            .expect("!CursorBuilder::open_cursor")
             .collect()
             .await
-            .expect("!DbSingleKeyCursor::collect")
+            .expect("!CursorIter::collect")
             .into_iter()
             .map(|(_item_id, item)| item)
             .collect::<Vec<_>>();
@@ -812,13 +469,14 @@ mod tests {
         fill_table(&table, items).await;
 
         let mut actual_items = table
+            .cursor_builder()
+            .bound("rel_coin_value", 5u32, u32::MAX)
             .open_cursor("rel_coin_value")
             .await
-            .expect("!DbTable::open_cursor")
-            .bound("rel_coin_value", 5u32, u32::MAX)
+            .expect("!CursorBuilder::open_cursor")
             .collect()
             .await
-            .expect("!DbSingleKeyCursor::collect")
+            .expect("!CursorIter::collect")
             .into_iter()
             .map(|(_item_id, item)| item)
             .collect::<Vec<_>>();
@@ -870,18 +528,19 @@ mod tests {
         fill_table(&table, items).await;
 
         let mut actual_items = table
+            .cursor_builder()
+            .only("base_coin", "RICK")
+            .expect("!CursorBuilder::only")
+            .only("base_coin_value", 12)
+            .expect("!CursorBuilder::only")
+            .only("started_at", 721)
+            .expect("!CursorBuilder::only")
             .open_cursor("basecoin_basecoinvalue_startedat_index")
             .await
-            .expect("!DbTable::open_cursor")
-            .only("base_coin", "RICK")
-            .expect("!DbEmptyCursor::only")
-            .only("base_coin_value", 12)
-            .expect("!DbSingleKeyCursor::only")
-            .only("started_at", 721)
-            .expect("!DbMultiKeyCursor::only")
+            .expect("!CursorBuilder::open_cursor")
             .collect()
             .await
-            .expect("!DbMultiKeyCursor::collect")
+            .expect("!CursorIter::collect")
             .into_iter()
             .map(|(_item_id, item)| item)
             .collect::<Vec<_>>();
@@ -946,19 +605,20 @@ mod tests {
         fill_table(&table, items).await;
 
         let actual_items = table
-            .open_cursor("all_fields_index")
-            .await
-            .expect("!DbTable::open_cursor")
+            .cursor_builder()
             .only("base_coin", "RICK")
-            .expect("!DbEmptyCursor::only")
+            .expect("!CursorBuilder::only")
             .only("rel_coin", "QRC20")
-            .expect("!DbEmptyCursor::only")
+            .expect("!CursorBuilder::only")
             .bound("base_coin_value", 3u32, 8u32)
             .bound("rel_coin_value", 10u32, 12u32)
             .bound("started_at", 600i32, 800i32)
+            .open_cursor("all_fields_index")
+            .await
+            .expect("!CursorBuilder::open_cursor")
             .collect()
             .await
-            .expect("!DbMultiKeyCursor::collect")
+            .expect("!CursorIter::collect")
             .into_iter()
             .map(|(_item_id, item)| item)
             .collect::<Vec<_>>();
@@ -1006,15 +666,16 @@ mod tests {
         fill_table(&table, items).await;
 
         let actual_items = table
-            .open_cursor("timestamp_xyz")
-            .await
-            .expect("!DbTable::open_cursor")
+            .cursor_builder()
             .bound("timestamp_x", BeBigUint::from(u64::MAX - 1), BeBigUint::from(u128::MAX))
             .bound("timestamp_y", 0u32, 5u32)
             .bound("timestamp_z", BeBigUint::from(u64::MAX), BeBigUint::from(u128::MAX - 2))
+            .open_cursor("timestamp_xyz")
+            .await
+            .expect("!CursorBuilder::open_cursor")
             .collect()
             .await
-            .expect("!DbMultiKeyCursor::collect")
+            .expect("!CursorIter::collect")
             .into_iter()
             .map(|(_item_id, item)| item)
             .collect::<Vec<_>>();
@@ -1028,5 +689,199 @@ mod tests {
         ];
 
         assert_eq!(actual_items, expected_items);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_iter_without_constraints() {
+        const DB_NAME: &str = "TEST_ITER_WITHOUT_CONSTRAINTS";
+        const DB_VERSION: u32 = 1;
+
+        register_wasm_log();
+
+        let items = vec![
+            swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
+            swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
+            swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281),
+            swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92),
+        ];
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<SwapTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<SwapTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+        fill_table(&table, items).await;
+
+        let mut cursor_iter = table
+            .cursor_builder()
+            .open_cursor("rel_coin_value")
+            .await
+            .expect("!CursorBuilder::open_cursor");
+
+        // The items must be sorted by `rel_coin_value`.
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721))
+        );
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700))
+        );
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92))
+        );
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281))
+        );
+        assert!(next_item(&mut cursor_iter).await.is_none());
+        // Try to poll one more time. This should not fail but return `None`.
+        assert!(next_item(&mut cursor_iter).await.is_none());
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_rev_iter_without_constraints() {
+        const DB_NAME: &str = "TEST_REV_ITER_WITHOUT_CONSTRAINTS";
+        const DB_VERSION: u32 = 1;
+
+        register_wasm_log();
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<SwapTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<SwapTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+
+        table
+            .cursor_builder()
+            .reverse()
+            .open_cursor("rel_coin_value")
+            .await
+            .map(|_| ())
+            .expect_err(
+                "CursorBuilder::open_cursor should have failed because 'reverse' can be used with key range only",
+            );
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_iter_single_key_bound_cursor() {
+        const DB_NAME: &str = "TEST_ITER_SINGLE_KEY_BOUND_CURSOR";
+        const DB_VERSION: u32 = 1;
+
+        register_wasm_log();
+
+        let items = vec![
+            swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
+            swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
+            swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281), // +
+            swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92),        // +
+            swap_item!("uuid5", "QRC20", "RICK", 2, 4, 721),
+            swap_item!("uuid6", "KMD", "MORTY", 12, 3124, 214), // +
+        ];
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<SwapTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<SwapTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+        fill_table(&table, items).await;
+
+        let mut cursor_iter = table
+            .cursor_builder()
+            .bound("rel_coin_value", 5u32, u32::MAX)
+            .open_cursor("rel_coin_value")
+            .await
+            .expect("!CursorBuilder::open_cursor");
+
+        // The items must be sorted by `rel_coin_value`.
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92))
+        );
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid6", "KMD", "MORTY", 12, 3124, 214))
+        );
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281))
+        );
+        assert!(next_item(&mut cursor_iter).await.is_none());
+        // Try to poll one more time. This should not fail but return `None`.
+        assert!(next_item(&mut cursor_iter).await.is_none());
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_rev_iter_single_key_bound_cursor() {
+        const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
+        const DB_VERSION: u32 = 1;
+
+        register_wasm_log();
+
+        let items = vec![
+            swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
+            swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
+            swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281), // +
+            swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92),        // +
+            swap_item!("uuid5", "QRC20", "RICK", 2, 4, 721),
+            swap_item!("uuid6", "KMD", "MORTY", 12, 3124, 214), // +
+        ];
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<SwapTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<SwapTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+        fill_table(&table, items).await;
+
+        let mut cursor_iter = table
+            .cursor_builder()
+            .bound("rel_coin_value", 5u32, u32::MAX)
+            .reverse()
+            .open_cursor("rel_coin_value")
+            .await
+            .expect("!CursorBuilder::open_cursor");
+
+        // The items must be sorted in reverse order by `rel_coin_value`.
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281))
+        );
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid6", "KMD", "MORTY", 12, 3124, 214))
+        );
+        assert_eq!(
+            next_item(&mut cursor_iter).await,
+            Some(swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92))
+        );
+        assert!(next_item(&mut cursor_iter).await.is_none());
+        // Try to poll one more time. This should not fail but return `None`.
+        assert!(next_item(&mut cursor_iter).await.is_none());
     }
 }
