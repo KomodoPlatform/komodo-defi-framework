@@ -100,6 +100,7 @@
 - `parity-ethereum` and `testcontainers-rs` crates from KomodoPlatform repo are now used [#1690](https://github.com/KomodoPlatform/atomicDEX-API/pull/1690)
 - Testnet node of atom was updated, RUSTSEC-2023-0018 was ignored [#1692](https://github.com/KomodoPlatform/atomicDEX-API/pull/1692)
 - Timestamp value sent from the peer in `PubkeyKeepAlive` msg was ignored and the received timestamp was used instead [#1668](https://github.com/KomodoPlatform/atomicDEX-API/pull/1668)
+- Change release branch from mm2.1 to main in CI [#1697](https://github.com/KomodoPlatform/atomicDEX-API/pull/1697)
 - CHANGELOG.md was introduced to have a complete log of code changes [#1680](https://github.com/KomodoPlatform/atomicDEX-API/pull/1680)
 - Small fixes [#1518](https://github.com/KomodoPlatform/atomicDEX-API/pull/1518), [#1515](https://github.com/KomodoPlatform/atomicDEX-API/pull/1515), [#1550](https://github.com/KomodoPlatform/atomicDEX-API/pull/1657), [#1657](https://github.com/KomodoPlatform/atomicDEX-API/pull/1657)
 
