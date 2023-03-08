@@ -1730,6 +1730,8 @@ pub enum WithdrawError {
     #[from_stringify("NumConversError", "UnexpectedDerivationMethod", "PrivKeyPolicyNotAllowed")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "Action not allowed for coin: {}", _0)]
+    ActionNotAllowed(String),
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -1748,6 +1750,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
+            | WithdrawError::ActionNotAllowed(_)
             | WithdrawError::UnexpectedUserAction { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
