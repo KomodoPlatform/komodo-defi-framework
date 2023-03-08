@@ -11,7 +11,7 @@ const IRIS_TEST_SEED: &str = "iris test seed";
 const ATOM_TEST_BALANCE_SEED: &str = "atom test seed";
 const ATOM_TEST_WITHDRAW_SEED: &str = "atom test withdraw seed";
 const ATOM_TICKER: &str = "ATOM";
-const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["https://cosmos-testnet-rpc.allthatnode.com:26657"];
+const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["https://rpc.sentry-02.theta-testnet.polypore.xyz"];
 
 const IRIS_TESTNET_RPC_URLS: &[&str] = &["http://34.80.202.172:26657"];
 

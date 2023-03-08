@@ -18,15 +18,13 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
             HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, RefundError, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
-            SendMakerPaymentSpendPreimageInput, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs,
-            SendSpendPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs,
-            SendWatcherRefundsPaymentArgs, SignatureError, SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr,
-            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
-            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            RawTransactionRequest, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
+            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs,
+            SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            Transaction, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
+            UtxoStandardCoin, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
             WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
@@ -523,7 +521,7 @@ impl LightningCoin {
         Ok(PaymentInstructions::Lightning(invoice))
     }
 
-    fn spend_swap_payment(&self, spend_payment_args: SendSpendPaymentArgs<'_>) -> TransactionFut {
+    fn spend_swap_payment(&self, spend_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
         let payment_hash = try_tx_fus!(payment_hash_from_slice(spend_payment_args.other_payment_tx));
         let mut preimage = [b' '; 32];
         preimage.copy_from_slice(spend_payment_args.secret);
@@ -601,7 +599,7 @@ impl SwapOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs<'_>) -> TransactionFut {
+    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
         let PaymentInstructions::Lightning(invoice) = try_tx_fus!(maker_payment_args
             .payment_instructions
             .clone()
@@ -615,7 +613,7 @@ impl SwapOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs<'_>) -> TransactionFut {
+    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
         let PaymentInstructions::Lightning(invoice) = try_tx_fus!(taker_payment_args
             .payment_instructions
             .clone()
@@ -634,44 +632,29 @@ impl SwapOps for LightningCoin {
     }
 
     #[inline]
-    fn send_maker_spends_taker_payment(
-        &self,
-        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs<'_>,
-    ) -> TransactionFut {
+    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
         self.spend_swap_payment(maker_spends_payment_args)
     }
 
     #[inline]
-    fn send_taker_spends_maker_payment(
-        &self,
-        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs<'_>,
-    ) -> TransactionFut {
+    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
         self.spend_swap_payment(taker_spends_payment_args)
     }
 
-    fn send_taker_refunds_payment(
-        &self,
-        _taker_refunds_payment_args: SendTakerRefundsPaymentArgs<'_>,
-    ) -> TransactionFut {
+    fn send_taker_refunds_payment(&self, _taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut {
         Box::new(futures01::future::err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to refund lightning HTLC".into(),
         )))
     }
 
-    fn send_maker_refunds_payment(
-        &self,
-        _maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>,
-    ) -> TransactionFut {
+    fn send_maker_refunds_payment(&self, _maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut {
         Box::new(futures01::future::err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to refund lightning HTLC".into(),
         )))
     }
 
     // Todo: This validates the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
-    fn validate_fee(
-        &self,
-        _validate_fee_args: ValidateFeeArgs<'_>,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
         Box::new(futures01::future::ok(()))
     }
 
@@ -782,7 +765,12 @@ impl SwapOps for LightningCoin {
         unimplemented!();
     }
 
-    async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    async fn extract_secret(
+        &self,
+        _secret_hash: &[u8],
+        spend_tx: &[u8],
+        _watcher_reward: bool,
+    ) -> Result<Vec<u8>, String> {
         let payment_hash = payment_hash_from_slice(spend_tx).map_err(|e| e.to_string())?;
         let payment_hex = hex::encode(payment_hash.0);
 
@@ -967,10 +955,7 @@ impl WatcherOps for LightningCoin {
         unimplemented!();
     }
 
-    fn send_taker_payment_refund_preimage(
-        &self,
-        _watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
-    ) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         unimplemented!();
     }
 

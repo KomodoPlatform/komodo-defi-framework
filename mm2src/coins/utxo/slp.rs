@@ -16,16 +16,14 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
             HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             NumConversError, PaymentInstructions, PaymentInstructionsErr, PrivKeyPolicyNotAllowed, RawTransactionFut,
-            RawTransactionRequest, RefundError, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
-            SendMakerPaymentSpendPreimageInput, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs,
-            SendTakerPaymentArgs, SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs,
-            SendWatcherRefundsPaymentArgs, SignatureResult, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest};
+            RawTransactionRequest, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
+            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOps,
+            TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError,
+            VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -752,7 +750,7 @@ impl SlpToken {
         validate_fut
             .compat()
             .await
-            .map_to_mm(ValidateDexFeeError::ValidatePaymentError)?;
+            .map_err(|e| MmError::new(ValidateDexFeeError::ValidatePaymentError(e.into_inner().to_string())))?;
 
         Ok(())
     }
@@ -1224,7 +1222,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat().map(|tx| tx.into()))
     }
 
-    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
+    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
         let taker_pub = try_tx_fus!(Public::from_slice(maker_payment_args.other_pubkey));
         let amount = try_tx_fus!(sat_from_big_decimal(&maker_payment_args.amount, self.decimals()));
         let secret_hash = maker_payment_args.secret_hash.to_owned();
@@ -1242,7 +1240,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
+    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
         let maker_pub = try_tx_fus!(Public::from_slice(taker_payment_args.other_pubkey));
         let amount = try_tx_fus!(sat_from_big_decimal(&taker_payment_args.amount, self.decimals()));
         let secret_hash = taker_payment_args.secret_hash.to_owned();
@@ -1261,10 +1259,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_spends_taker_payment(
-        &self,
-        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
-    ) -> TransactionFut {
+    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
         let tx = maker_spends_payment_args.other_payment_tx.to_owned();
         let taker_pub = try_tx_fus!(Public::from_slice(maker_spends_payment_args.other_pubkey));
         let secret = maker_spends_payment_args.secret.to_owned();
@@ -1283,10 +1278,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_spends_maker_payment(
-        &self,
-        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
-    ) -> TransactionFut {
+    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
         let tx = taker_spends_payment_args.other_payment_tx.to_owned();
         let maker_pub = try_tx_fus!(Public::from_slice(taker_spends_payment_args.other_pubkey));
         let secret = taker_spends_payment_args.secret.to_owned();
@@ -1305,7 +1297,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs) -> TransactionFut {
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         let tx = taker_refunds_payment_args.payment_tx.to_owned();
         let maker_pub = try_tx_fus!(Public::from_slice(taker_refunds_payment_args.other_pubkey));
         let secret_hash = taker_refunds_payment_args.secret_hash.to_owned();
@@ -1323,7 +1315,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat().map_err(TransactionErr::Plain))
     }
 
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs) -> TransactionFut {
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         let tx = maker_refunds_payment_args.payment_tx.to_owned();
         let taker_pub = try_tx_fus!(Public::from_slice(maker_refunds_payment_args.other_pubkey));
         let secret_hash = maker_refunds_payment_args.secret_hash.to_owned();
@@ -1341,7 +1333,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             _ => panic!(),
@@ -1353,10 +1345,9 @@ impl SwapOps for SlpToken {
         let min_block_number = validate_fee_args.min_block_number;
 
         let fut = async move {
-            try_s!(
-                coin.validate_dex_fee(tx, &expected_sender, &fee_addr, amount, min_block_number)
-                    .await
-            );
+            coin.validate_dex_fee(tx, &expected_sender, &fee_addr, amount, min_block_number)
+                .await
+                .map_err(|e| MmError::new(ValidatePaymentError::WrongPaymentTx(e.into_inner().to_string())))?;
             Ok(())
         };
         Box::new(fut.boxed().compat())
@@ -1415,7 +1406,12 @@ impl SwapOps for SlpToken {
     }
 
     #[inline]
-    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    async fn extract_secret(
+        &self,
+        secret_hash: &[u8],
+        spend_tx: &[u8],
+        _watcher_reward: bool,
+    ) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -1530,10 +1526,7 @@ impl WatcherOps for SlpToken {
         unimplemented!();
     }
 
-    fn send_taker_payment_refund_preimage(
-        &self,
-        _watcher_refunds_payment_args: SendWatcherRefundsPaymentArgs,
-    ) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         unimplemented!();
     }
 
@@ -2119,6 +2112,7 @@ mod slp_tests {
             try_spv_proof_until: now_ms() / 1000 + 60,
             unique_swap_data: Vec::new(),
             swap_contract_address: None,
+            min_watcher_reward: None,
         };
         block_on(fusd.validate_htlc(input)).unwrap();
     }
@@ -2253,6 +2247,7 @@ mod slp_tests {
             try_spv_proof_until: now_ms() / 1000 + 60,
             confirmations: 1,
             unique_swap_data: Vec::new(),
+            min_watcher_reward: None,
         };
         let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {

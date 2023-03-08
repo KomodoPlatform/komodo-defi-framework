@@ -35,7 +35,7 @@ jobs:
       - bash: |
           rm -rf upload
           mkdir upload
-          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release
+          VERSION=$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release
           if ! grep -q $VERSION MM_VERSION; then
             echo $VERSION > MM_VERSION
           fi
