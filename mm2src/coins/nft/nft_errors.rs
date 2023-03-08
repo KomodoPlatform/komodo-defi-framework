@@ -7,7 +7,7 @@ use mm2_net::transport::SlurpError;
 use serde::{Deserialize, Serialize};
 use web3::Error;
 
-#[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetNftInfoError {
     /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
