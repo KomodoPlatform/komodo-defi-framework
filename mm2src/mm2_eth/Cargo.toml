@@ -8,7 +8,7 @@ doctest = false
 
 [dependencies]
 ethabi = { version = "17.0.0" }
-ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
+ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
 hex = "0.4.2"
 indexmap = "1.7.0"
 itertools = "0.10"

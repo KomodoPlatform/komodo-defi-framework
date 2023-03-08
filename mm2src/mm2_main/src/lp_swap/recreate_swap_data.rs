@@ -448,7 +448,8 @@ async fn convert_maker_to_taker_events(
                 return events;
             },
             MakerSwapEvent::TakerPaymentSpent(tx_ident) => {
-                let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex).await {
+                //Is the watcher_reward argument important here?
+                let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex, false).await {
                     Ok(secret) => H256Json::from(secret.as_slice()),
                     Err(e) => {
                         push_event!(TakerSwapEvent::TakerPaymentWaitForSpendFailed(ERRL!("{}", e).into()));
@@ -528,7 +529,7 @@ mod tests {
 
     #[test]
     fn test_recreate_taker_swap() {
-        TestCoin::extract_secret.mock_safe(|_coin, _secret_hash, _spend_tx| {
+        TestCoin::extract_secret.mock_safe(|_coin, _secret_hash, _spend_tx, _watcher_reward| {
             let secret = hex::decode("23a6bb64bc0ab2cc14cb84277d8d25134b814e5f999c66e578c9bba3c5e2d3a4").unwrap();
             MockResult::Return(Box::pin(async move { Ok(secret) }))
         });

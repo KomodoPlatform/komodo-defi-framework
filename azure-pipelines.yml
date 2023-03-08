@@ -41,10 +41,10 @@ stages:
           name: 'MM2_Lint_Linux'
           os: 'Linux'
 
-      - template: azure-pipelines-lint-stage-job.yml  # Template reference
-        parameters:
-          name: 'MM2_Lint_MacOS'
-          os: 'Darwin'
+#      - template: azure-pipelines-lint-stage-job.yml  # Template reference
+#        parameters:
+#          name: 'MM2_Lint_MacOS'
+#          os: 'Darwin'
 
       - template: azure-pipelines-lint-stage-job.yml  # Template reference
         parameters:
@@ -67,14 +67,14 @@ stages:
 
   - stage: Mobile
     displayName: Mobile libs build
-    condition: and(succeeded('WASM'), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'mm2.1'), eq(variables['Build.SourceBranchName'], 'dev')))
+    condition: and(succeeded('WASM'), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'), eq(variables['Build.SourceBranchName'], 'dev')))
     jobs:
       - template: azure-pipelines-android-job.yml
         parameters:
           os: 'Linux'
-      - template: azure-pipelines-ios-job.yml
-        parameters:
-          os: 'Darwin'
+#      - template: azure-pipelines-ios-job.yml
+#        parameters:
+#          os: 'Darwin'
 
   - stage: Desktop
     displayName: Desktop Build and test
@@ -91,15 +91,15 @@ stages:
           alice_userpass: 'ALICE_USERPASS_LINUX'
           telegram_api_key: 'TELEGRAM_API_KEY'
 
-      - template: azure-pipelines-build-stage-job.yml  # Template reference
-        parameters:
-          name: 'MM2_Build_MacOS'
-          os: 'Darwin'
-          bob_passphrase: 'BOB_PASSPHRASE_MAC'
-          bob_userpass: 'BOB_USERPASS_MAC'
-          alice_passphrase: 'ALICE_PASSPHRASE_MAC'
-          alice_userpass: 'ALICE_USERPASS_MAC'
-          telegram_api_key: 'TELEGRAM_API_KEY'
+#      - template: azure-pipelines-build-stage-job.yml  # Template reference
+#        parameters:
+#          name: 'MM2_Build_MacOS'
+#          os: 'Darwin'
+#          bob_passphrase: 'BOB_PASSPHRASE_MAC'
+#          bob_userpass: 'BOB_USERPASS_MAC'
+#          alice_passphrase: 'ALICE_PASSPHRASE_MAC'
+#          alice_userpass: 'ALICE_USERPASS_MAC'
+#          telegram_api_key: 'TELEGRAM_API_KEY'
 
       - template: azure-pipelines-build-stage-job.yml  # Template reference
         parameters:

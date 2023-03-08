@@ -4,14 +4,17 @@ use ethkey::Secret;
 use http::{HeaderMap, StatusCode};
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_json::{Error, Value as Json};
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::native_http::{slurp_post_json, slurp_req, slurp_url};
+pub use crate::native_http::{slurp_post_json, slurp_req, slurp_req_body, slurp_url};
 
 #[cfg(target_arch = "wasm32")]
 pub use crate::wasm_http::{slurp_post_json, slurp_url};
 
 pub type SlurpResult = Result<(StatusCode, HeaderMap, Vec<u8>), MmError<SlurpError>>;
+
+pub type SlurpResultJson = Result<(StatusCode, HeaderMap, Json), MmError<SlurpError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize)]
 pub enum SlurpError {
@@ -25,6 +28,10 @@ pub enum SlurpError {
     Transport { uri: String, error: String },
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+}
+
+impl From<serde_json::Error> for SlurpError {
+    fn from(e: Error) -> Self { SlurpError::Internal(e.to_string()) }
 }
 
 impl From<SlurpError> for JsonRpcErrorType {

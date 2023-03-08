@@ -147,7 +147,7 @@ pub const ETH_DEV_NODES: &[&str] = &["http://195.201.0.6:8565"];
 pub const ETH_DEV_SWAP_CONTRACT: &str = "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd";
 
 pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc-sepolia.rockx.com/"];
-pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xA25E0e06fB139CDc2f9f11675877DaD9EdD1C352";
+pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0x5BCC05dD32a87fABEDBcbbfeb77476eaD1F7051C";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x948BF5172383F1Bc0Fdf3aBe0630b855694A5D2c";
 
 pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
@@ -211,6 +211,21 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+        }
+    }
+
+    pub fn light_node_using_watchers(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "seednodes": seednodes,
+                "use_watchers": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -1576,6 +1591,7 @@ pub async fn enable_eth_coin(
     urls: &[&str],
     swap_contract_address: &str,
     fallback_swap_contract: Option<&str>,
+    contract_supports_watcher: bool,
 ) -> Json {
     let enable = mm
         .rpc(&json!({
@@ -1586,6 +1602,7 @@ pub async fn enable_eth_coin(
             "swap_contract_address": swap_contract_address,
             "fallback_swap_contract": fallback_swap_contract,
             "mm2": 1,
+            "contract_supports_watchers": contract_supports_watcher
         }))
         .await
         .unwrap();

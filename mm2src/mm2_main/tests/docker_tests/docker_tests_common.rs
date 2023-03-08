@@ -1,5 +1,7 @@
 pub use common::{block_on, now_ms};
 pub use mm2_number::MmNumber;
+use mm2_test_helpers::for_tests::ETH_SEPOLIA_NODE;
+use mm2_test_helpers::for_tests::ETH_SEPOLIA_SWAP_CONTRACT;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                                       enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
@@ -163,15 +165,16 @@ pub fn fill_eth(to_addr: &str) {
         .unwrap();
 }
 
-pub fn generate_eth_coin_with_random_privkey() -> EthCoin {
+// Generates an ethereum coin in the sepolia network with the given seed
+pub fn generate_eth_coin_with_seed(seed: &str) -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "ETH",
-        "urls": ETH_DEV_NODES,
-        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+        "urls": ETH_SEPOLIA_NODE,
+        "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
     });
-    let priv_key = random_secp256k1_secret();
-    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
+    let keypair = key_pair_from_seed(seed).unwrap();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "ETH",
@@ -187,8 +190,8 @@ pub fn generate_jst_with_seed(seed: &str) -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "JST",
-        "urls": ETH_DEV_NODES,
-        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+        "urls": ETH_SEPOLIA_NODE,
+        "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
     });
 
     let keypair = key_pair_from_seed(seed).unwrap();
@@ -200,7 +203,7 @@ pub fn generate_jst_with_seed(seed: &str) -> EthCoin {
         &req,
         CoinProtocol::ERC20 {
             platform: "ETH".into(),
-            contract_address: String::from("0x2b294F029Fde858b2c62184e8390591755521d8E"),
+            contract_address: String::from("0x948BF5172383F1Bc0Fdf3aBe0630b855694A5D2c"),
         },
         priv_key_policy,
     ))
