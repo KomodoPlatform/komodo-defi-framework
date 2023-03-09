@@ -828,6 +828,8 @@ impl MakerSwap {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
+                    let maker_payment_wait_confirm =
+                        wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
                     let payment_fut = self.maker_coin.send_maker_payment(SendPaymentArgs {
                         time_lock_duration: self.r().data.lock_duration,
                         time_lock: self.r().data.maker_payment_lock as u32,
@@ -838,6 +840,7 @@ impl MakerSwap {
                         swap_unique_data: &unique_data,
                         payment_instructions: &self.r().payment_instructions,
                         watcher_reward: reward_amount,
+                        wait_for_confirmation_until: maker_payment_wait_confirm,
                     });
 
                     match payment_fut.compat().await {

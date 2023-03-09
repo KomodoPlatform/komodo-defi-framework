@@ -191,6 +191,7 @@ fn test_taker_spends_maker_payment() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = maker_coin.send_maker_payment(maker_payment_args).wait().unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -287,6 +288,7 @@ fn test_maker_spends_taker_payment() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = taker_coin.send_taker_payment(taker_payment_args).wait().unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -372,6 +374,7 @@ fn test_maker_refunds_payment() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = coin.send_maker_payment(maker_payment).wait().unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -434,6 +437,7 @@ fn test_taker_refunds_payment() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = coin.send_taker_payment(taker_payment_args).wait().unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -493,6 +497,7 @@ fn test_check_if_my_payment_sent() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = coin.send_maker_payment(maker_payment_args).wait().unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -544,6 +549,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = maker_coin.send_maker_payment(maker_payment_args).wait().unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -617,6 +623,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = maker_coin.send_maker_payment(maker_payment_args).wait().unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -689,6 +696,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = maker_coin.send_maker_payment(maker_payment_args).wait().unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -741,6 +749,7 @@ fn test_wait_for_tx_spend() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = maker_coin.send_maker_payment(maker_payment_args).wait().unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -1058,6 +1067,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
 
     let _taker_payment_tx = coin
@@ -1457,6 +1467,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let tx = coin.send_maker_payment(maker_payment).wait().unwrap();
 
@@ -1515,6 +1526,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let tx = coin.send_taker_payment(taker_payment).wait().unwrap();
 

@@ -60,6 +60,7 @@ async fn test_send() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let tx = coin.send_maker_payment(maker_payment_args).compat().await;
     console::log_1(&format!("{:?}", tx).into());

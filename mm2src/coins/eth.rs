@@ -2823,6 +2823,9 @@ impl EthCoin {
     }
 
     fn send_hash_time_locked_payment(&self, args: SendPaymentArgs<'_>) -> EthTxFut {
+        const APPROVE_TX_CONFIRMATIONS: u64 = 1;
+        const APPROVE_TX_CHECK_EVERY: u64 = 5;
+
         let receiver_addr = try_tx_fus!(addr_from_raw_pubkey(args.other_pubkey));
         let swap_contract_address = try_tx_fus!(args.swap_contract_address.try_to_address());
         let id = self.etomic_swap_id(args.time_lock, args.secret_hash);
@@ -2882,19 +2885,32 @@ impl EthCoin {
                     Token::Uint(U256::from(args.time_lock))
                 ]));
                 let value = U256::from(args.watcher_reward.unwrap_or(0));
+                // wait for the approval tx confirmation only half the time required for the actual htlc tx confirmation
+                let wait_for_approval_confirmation_until = args.wait_for_confirmation_until / 2;
 
                 let arc = self.clone();
                 Box::new(allowance_fut.and_then(move |allowed| -> EthTxFut {
                     if allowed < value {
                         Box::new(
                             arc.approve(swap_contract_address, U256::max_value())
-                                .and_then(move |_approved| {
-                                    arc.sign_and_send_transaction(
-                                        value,
-                                        Action::Call(swap_contract_address),
-                                        data,
-                                        U256::from(ETH_GAS),
+                                .and_then(move |approved| {
+                                    // make sure the approve tx is confirmed before sending the htlc tx
+                                    arc.wait_for_confirmations(
+                                        &BytesJson::from(approved.tx_hex()),
+                                        APPROVE_TX_CONFIRMATIONS,
+                                        false,
+                                        wait_for_approval_confirmation_until,
+                                        APPROVE_TX_CHECK_EVERY,
                                     )
+                                    .map_err(TransactionErr::Plain)
+                                    .and_then(move |_confirmed| {
+                                        arc.sign_and_send_transaction(
+                                            value,
+                                            Action::Call(swap_contract_address),
+                                            data,
+                                            U256::from(ETH_GAS),
+                                        )
+                                    })
                                 }),
                         )
                     } else {

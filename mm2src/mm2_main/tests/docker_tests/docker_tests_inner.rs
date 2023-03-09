@@ -37,6 +37,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let tx = coin.send_taker_payment(taker_payment_args).wait().unwrap();
 
@@ -111,6 +112,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let tx = coin.send_maker_payment(maker_payment_args).wait().unwrap();
 
@@ -170,6 +172,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let tx = coin.send_taker_payment(taker_payment_args).wait().unwrap();
 
@@ -230,6 +233,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let tx = coin.send_maker_payment(maker_payment_args).wait().unwrap();
 
@@ -293,6 +297,7 @@ fn test_one_hundred_maker_payments_in_a_row_native() {
             swap_unique_data: &[],
             payment_instructions: &None,
             watcher_reward: None,
+            wait_for_confirmation_until: 0,
         };
         let tx = coin.send_maker_payment(maker_payment_args).wait().unwrap();
         if let TransactionEnum::UtxoTx(tx) = tx {

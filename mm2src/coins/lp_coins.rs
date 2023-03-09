@@ -625,6 +625,7 @@ pub struct SendPaymentArgs<'a> {
     pub swap_unique_data: &'a [u8],
     pub payment_instructions: &'a Option<PaymentInstructions>,
     pub watcher_reward: Option<u64>,
+    pub wait_for_confirmation_until: u64,
 }
 
 #[derive(Clone, Debug)]
