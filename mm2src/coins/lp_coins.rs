@@ -1843,10 +1843,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
             | WithdrawError::UnexpectedUserAction { .. }
-            | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
-            | WithdrawError::AddressMismatchError { .. }
-            | WithdrawError::ActionNotAllowed(_)
-            | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_) => StatusCode::BAD_REQUEST,
+            | WithdrawError::ActionNotAllowed(_) => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
