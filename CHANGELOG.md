@@ -5,6 +5,9 @@
   - NFT integration PoC added. Includes ERC721 support for ETH and BSC [#1652](https://github.com/KomodoPlatform/atomicDEX-API/pull/1652)
 - Swap watcher nodes [#1431](https://github.com/KomodoPlatform/atomicDEX-API/issues/1431)
   - Watcher rewards for ETH swaps were added [#1658](https://github.com/KomodoPlatform/atomicDEX-API/pull/1658)
+- Cosmos integration [#1432](https://github.com/KomodoPlatform/atomicDEX-API/issues/1432)
+  - `ibc_withdraw`, `ibc_chains` and `ibc_transfer_channels` RPC methods were added [#1636](https://github.com/KomodoPlatform/atomicDEX-API/pull/1636)
+- `mm2_git` crate was added to provide an abstraction layer on Git for doing query/parse operations over the repositories [#1636](https://github.com/KomodoPlatform/atomicDEX-API/pull/1636)
 
 **Enhancements/Fixes:**
 - IndexedDB Cursor can now iterate over the items step-by-step [#1678](https://github.com/KomodoPlatform/atomicDEX-API/pull/1678)
