@@ -2207,6 +2207,33 @@ pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str)
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn ibc_withdraw(
+    mm: &MarketMakerIt,
+    source_channel: &str,
+    coin: &str,
+    to: &str,
+    amount: &str,
+) -> TransactionDetails {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "ibc_withdraw",
+            "mmrpc": "2.0",
+            "params": {
+                "ibc_source_channel": source_channel,
+                "coin": coin,
+                "to": to,
+                "amount": amount
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'ibc_withdraw' failed: {}", request.1);
+
+    let json: Json = json::from_str(&request.1).unwrap();
+    json::from_value(json["result"].clone()).unwrap()
+}
+
 pub async fn withdraw_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
         .rpc(&json!({

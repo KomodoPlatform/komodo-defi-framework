@@ -1,8 +1,16 @@
+use super::ibc::transfer_v1::MsgTransfer;
+use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
                         HTLC_STATE_REFUNDED};
 use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
 use super::rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
+                                     IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequest,
+                                     IBCTransferChannelsRequestError, IBCTransferChannelsResponse,
+                                     IBCTransferChannelsResult, IBCWithdrawRequest, CHAIN_REGISTRY_BRANCH,
+                                     CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
+use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
@@ -49,6 +57,7 @@ use itertools::Itertools;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
 use mm2_number::MmNumber;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
@@ -119,6 +128,7 @@ pub struct TendermintProtocolInfo {
     pub account_prefix: String,
     chain_id: String,
     gas_price: Option<f64>,
+    chain_registry_name: Option<String>,
 }
 
 #[derive(Clone)]
@@ -219,6 +229,7 @@ pub struct TendermintCoinImpl {
     pub(super) abortable_system: AbortableQueue,
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
+    chain_registry_name: Option<String>,
 }
 
 #[derive(Clone)]
@@ -501,7 +512,233 @@ impl TendermintCoin {
             abortable_system,
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
+            chain_registry_name: protocol_info.chain_registry_name,
         })))
+    }
+
+    pub fn ibc_withdraw(&self, req: IBCWithdrawRequest) -> WithdrawFut {
+        let coin = self.clone();
+        let fut = async move {
+            let to_address =
+                AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
+
+            let (balance_denom, balance_dec) = coin
+                .get_balance_as_unsigned_and_decimal(&coin.denom, coin.decimals())
+                .await?;
+
+            // << BEGIN TX SIMULATION FOR FEE CALCULATION
+            let (amount_denom, amount_dec) = if req.max {
+                let amount_denom = balance_denom;
+                (amount_denom, big_decimal_from_sat_unsigned(amount_denom, coin.decimals))
+            } else {
+                (sat_from_big_decimal(&req.amount, coin.decimals)?, req.amount.clone())
+            };
+
+            if !coin.is_tx_amount_enough(coin.decimals, &amount_dec) {
+                return MmError::err(WithdrawError::AmountTooLow {
+                    amount: amount_dec,
+                    threshold: coin.min_tx_amount(),
+                });
+            }
+
+            let received_by_me = if to_address == coin.account_id {
+                amount_dec
+            } else {
+                BigDecimal::default()
+            };
+
+            let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
+
+            let msg_transfer = MsgTransfer::new_with_default_timeout(
+                req.ibc_source_channel.clone(),
+                coin.account_id.clone(),
+                to_address.clone(),
+                Coin {
+                    denom: coin.denom.clone(),
+                    amount: amount_denom.into(),
+                },
+            )
+            .to_any()
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let current_block = coin
+                .current_block()
+                .compat()
+                .await
+                .map_to_mm(WithdrawError::Transport)?;
+
+            let _sequence_lock = coin.sequence_lock.lock().await;
+            let account_info = coin.my_account_info().await?;
+
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let simulated_tx = coin
+                .gen_simulated_tx(account_info.clone(), msg_transfer.clone(), timeout_height, memo.clone())
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            // >> END TX SIMULATION FOR FEE CALCULATION
+
+            let (fee_amount_u64, fee_amount_dec) = coin
+                .calculate_fee_as_unsigned_and_decimal(simulated_tx, coin.decimals())
+                .await?;
+
+            let fee_amount = Coin {
+                denom: coin.denom.clone(),
+                amount: fee_amount_u64.into(),
+            };
+
+            let fee = Fee::from_amount_and_gas(fee_amount, IBC_GAS_LIMIT_DEFAULT);
+
+            let (amount_denom, total_amount) = if req.max {
+                if balance_denom < fee_amount_u64 {
+                    return MmError::err(WithdrawError::NotSufficientBalance {
+                        coin: coin.ticker.clone(),
+                        available: balance_dec,
+                        required: fee_amount_dec,
+                    });
+                }
+                let amount_denom = balance_denom - fee_amount_u64;
+                (amount_denom, balance_dec)
+            } else {
+                let total = &req.amount + &fee_amount_dec;
+                if balance_dec < total {
+                    return MmError::err(WithdrawError::NotSufficientBalance {
+                        coin: coin.ticker.clone(),
+                        available: balance_dec,
+                        required: total,
+                    });
+                }
+
+                (sat_from_big_decimal(&req.amount, coin.decimals)?, total)
+            };
+
+            let msg_transfer = MsgTransfer::new_with_default_timeout(
+                req.ibc_source_channel.clone(),
+                coin.account_id.clone(),
+                to_address.clone(),
+                Coin {
+                    denom: coin.denom.clone(),
+                    amount: amount_denom.into(),
+                },
+            )
+            .to_any()
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let tx_raw = coin
+                .any_to_signed_raw_tx(account_info, msg_transfer, fee, timeout_height, memo.clone())
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let tx_bytes = tx_raw
+                .to_bytes()
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let hash = sha256(&tx_bytes);
+            Ok(TransactionDetails {
+                tx_hash: hex::encode_upper(hash.as_slice()),
+                tx_hex: tx_bytes.into(),
+                from: vec![coin.account_id.to_string()],
+                to: vec![req.to],
+                my_balance_change: &received_by_me - &total_amount,
+                spent_by_me: total_amount.clone(),
+                total_amount,
+                received_by_me,
+                block_height: 0,
+                timestamp: 0,
+                fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                    coin: coin.ticker.clone(),
+                    amount: fee_amount_dec,
+                    uamount: fee_amount_u64,
+                    gas_limit: IBC_GAS_LIMIT_DEFAULT,
+                })),
+                coin: coin.ticker.to_string(),
+                internal_id: hash.to_vec().into(),
+                kmd_rewards: None,
+                transaction_type: TransactionType::default(),
+                memo: Some(memo),
+            })
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    pub async fn get_ibc_transfer_channels(&self, req: IBCTransferChannelsRequest) -> IBCTransferChannelsResult {
+        #[derive(Deserialize)]
+        struct ChainRegistry {
+            channels: Vec<IbcChannel>,
+        }
+
+        #[derive(Deserialize)]
+        struct ChannelInfo {
+            channel_id: String,
+            port_id: String,
+        }
+
+        #[derive(Deserialize)]
+        struct IbcChannel {
+            chain_1: ChannelInfo,
+            #[allow(dead_code)]
+            chain_2: ChannelInfo,
+            ordering: String,
+            version: String,
+            tags: Option<IBCTransferChannelTag>,
+        }
+
+        let src_chain_registry_name = self.chain_registry_name.as_ref().or_mm_err(|| {
+            IBCTransferChannelsRequestError::InternalError(format!(
+                "`chain_registry_name` is not set for '{}'",
+                self.platform_ticker()
+            ))
+        })?;
+
+        let source_filename = format!(
+            "{}-{}.json",
+            src_chain_registry_name, req.destination_chain_registry_name
+        );
+
+        let git_controller: GitController<GithubClient> = GitController::new(GITHUB_API_URI);
+
+        let metadata_list = git_controller
+            .client
+            .get_file_metadata_list(
+                CHAIN_REGISTRY_REPO_OWNER,
+                CHAIN_REGISTRY_REPO_NAME,
+                CHAIN_REGISTRY_BRANCH,
+                CHAIN_REGISTRY_IBC_DIR_NAME,
+            )
+            .await
+            .map_err(|e| IBCTransferChannelsRequestError::Transport(format!("{:?}", e)))?;
+
+        let source_channel_file = metadata_list
+            .iter()
+            .find(|metadata| metadata.name == source_filename)
+            .or_mm_err(|| IBCTransferChannelsRequestError::RegistrySourceCouldNotFound(source_filename))?;
+
+        let mut registry_object = git_controller
+            .client
+            .deserialize_json_source::<ChainRegistry>(source_channel_file.to_owned())
+            .await
+            .map_err(|e| IBCTransferChannelsRequestError::Transport(format!("{:?}", e)))?;
+
+        registry_object
+            .channels
+            .retain(|ch| ch.chain_1.port_id == *IBC_OUT_SOURCE_PORT);
+
+        let result: Vec<IBCTransferChannel> = registry_object
+            .channels
+            .iter()
+            .map(|ch| IBCTransferChannel {
+                channel_id: ch.chain_1.channel_id.clone(),
+                ordering: ch.ordering.clone(),
+                version: ch.version.clone(),
+                tags: ch.tags.clone().map(|t| IBCTransferChannelTag {
+                    status: t.status,
+                    preferred: t.preferred,
+                    dex: t.dex,
+                }),
+            })
+            .collect();
+
+        Ok(IBCTransferChannelsResponse {
+            ibc_transfer_channels: result,
+        })
     }
 
     #[inline(always)]
@@ -576,7 +813,7 @@ impl TendermintCoin {
         amount: Vec<Coin>,
         secret_hash: &[u8],
     ) -> String {
-        // Needs to be sorted if cointains multiple coins
+        // Needs to be sorted if contains multiple coins
         // let mut amount = amount;
         // amount.sort();
 
@@ -1250,6 +1487,28 @@ impl TendermintCoin {
         })
     }
 
+    pub(super) async fn calculate_fee_as_unsigned_and_decimal(
+        &self,
+        tx: Vec<u8>,
+        decimals: u8,
+    ) -> MmResult<(u64, BigDecimal), TendermintCoinRpcError> {
+        let fee_amount_u64 = self.calculate_fee_amount_as_u64(tx).await?;
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, decimals);
+
+        Ok((fee_amount_u64, fee_amount_dec))
+    }
+
+    pub(super) async fn get_balance_as_unsigned_and_decimal(
+        &self,
+        denom: &Denom,
+        decimals: u8,
+    ) -> MmResult<(u64, BigDecimal), TendermintCoinRpcError> {
+        let denom_ubalance = self.balance_for_denom(denom.to_string()).await?;
+        let denom_balance_dec = big_decimal_from_sat_unsigned(denom_ubalance, decimals);
+
+        Ok((denom_ubalance, denom_balance_dec))
+    }
+
     async fn request_tx(&self, hash: String) -> MmResult<Tx, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_GET_TX_PATH).expect("valid path");
         let request = GetTxRequest { hash };
@@ -1417,6 +1676,46 @@ fn clients_from_urls(rpc_urls: &[String]) -> MmResult<Vec<HttpClient>, Tendermin
     Ok(clients)
 }
 
+pub async fn get_ibc_chain_list() -> IBCChainRegistriesResult {
+    fn map_metadata_to_chain_registry_name(metadata: &FileMetadata) -> Result<String, MmError<IBCChainsRequestError>> {
+        let split_filename_by_dash: Vec<&str> = metadata.name.split('-').collect();
+        let chain_registry_name = split_filename_by_dash
+            .first()
+            .or_mm_err(|| {
+                IBCChainsRequestError::InternalError(format!(
+                    "Could not read chain registry name from '{}'",
+                    metadata.name
+                ))
+            })?
+            .to_string();
+
+        Ok(chain_registry_name)
+    }
+
+    let git_controller: GitController<GithubClient> = GitController::new(GITHUB_API_URI);
+
+    let metadata_list = git_controller
+        .client
+        .get_file_metadata_list(
+            CHAIN_REGISTRY_REPO_OWNER,
+            CHAIN_REGISTRY_REPO_NAME,
+            CHAIN_REGISTRY_BRANCH,
+            CHAIN_REGISTRY_IBC_DIR_NAME,
+        )
+        .await
+        .map_err(|e| IBCChainsRequestError::Transport(format!("{:?}", e)))?;
+
+    let chain_list: Result<Vec<String>, MmError<IBCChainsRequestError>> =
+        metadata_list.iter().map(map_metadata_to_chain_registry_name).collect();
+
+    let mut distinct_chain_list = chain_list?;
+    distinct_chain_list.dedup();
+
+    Ok(IBCChainRegistriesResponse {
+        chain_registry_list: distinct_chain_list,
+    })
+}
+
 #[async_trait]
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
@@ -1435,25 +1734,19 @@ impl MmCoin for TendermintCoin {
                     coin.account_prefix
                 )));
             }
-            let balance_denom = coin.balance_for_denom(coin.denom.to_string()).await?;
-            let balance_dec = big_decimal_from_sat_unsigned(balance_denom, coin.decimals);
+
+            let (balance_denom, balance_dec) = coin
+                .get_balance_as_unsigned_and_decimal(&coin.denom, coin.decimals())
+                .await?;
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
-            let (amount_denom, amount_dec, total_amount) = if req.max {
+            let (amount_denom, amount_dec) = if req.max {
                 let amount_denom = balance_denom;
-                (
-                    amount_denom,
-                    big_decimal_from_sat_unsigned(amount_denom, coin.decimals),
-                    balance_dec.clone(),
-                )
+                (amount_denom, big_decimal_from_sat_unsigned(amount_denom, coin.decimals))
             } else {
                 let total = req.amount.clone();
 
-                (
-                    sat_from_big_decimal(&req.amount, coin.decimals)?,
-                    req.amount.clone(),
-                    total,
-                )
+                (sat_from_big_decimal(&req.amount, coin.decimals)?, req.amount.clone())
             };
 
             if !coin.is_tx_amount_enough(coin.decimals, &amount_dec) {
@@ -1497,8 +1790,9 @@ impl MmCoin for TendermintCoin {
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
             // >> END TX SIMULATION FOR FEE CALCULATION
 
-            let fee_amount_u64 = coin.calculate_fee_amount_as_u64(simulated_tx).await?;
-            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
+            let (fee_amount_u64, fee_amount_dec) = coin
+                .calculate_fee_as_unsigned_and_decimal(simulated_tx, coin.decimals())
+                .await?;
 
             let fee_amount = Coin {
                 denom: coin.denom.clone(),
@@ -1507,7 +1801,7 @@ impl MmCoin for TendermintCoin {
 
             let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
 
-            let (amount_denom, amount_dec, total_amount) = if req.max {
+            let (amount_denom, total_amount) = if req.max {
                 if balance_denom < fee_amount_u64 {
                     return MmError::err(WithdrawError::NotSufficientBalance {
                         coin: coin.ticker.clone(),
@@ -1516,11 +1810,7 @@ impl MmCoin for TendermintCoin {
                     });
                 }
                 let amount_denom = balance_denom - fee_amount_u64;
-                (
-                    amount_denom,
-                    big_decimal_from_sat_unsigned(amount_denom, coin.decimals),
-                    balance_dec,
-                )
+                (amount_denom, balance_dec)
             } else {
                 let total = &req.amount + &fee_amount_dec;
                 if balance_dec < total {
@@ -1531,11 +1821,7 @@ impl MmCoin for TendermintCoin {
                     });
                 }
 
-                (
-                    sat_from_big_decimal(&req.amount, coin.decimals)?,
-                    req.amount.clone(),
-                    total,
-                )
+                (sat_from_big_decimal(&req.amount, coin.decimals)?, total)
             };
 
             let msg_send = MsgSend {
@@ -2337,6 +2623,7 @@ pub mod tendermint_coin_tests {
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
+            chain_registry_name: None,
         }
     }
 
@@ -2347,6 +2634,7 @@ pub mod tendermint_coin_tests {
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
+            chain_registry_name: None,
         }
     }
 

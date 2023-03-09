@@ -2,7 +2,7 @@ use crate::transport::{SlurpError, SlurpResult, SlurpResultJson};
 use common::wio::{drive03, HYPER};
 use common::APPLICATION_JSON;
 use futures::channel::oneshot::Canceled;
-use http::{header, Request};
+use http::{header, HeaderValue, Request};
 use hyper::Body;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
@@ -72,6 +72,22 @@ pub async fn slurp_req_body(request: Request<Body>) -> SlurpResultJson {
 /// Executes a GET request, returning the response status, headers and body.
 pub async fn slurp_url(url: &str) -> SlurpResult {
     let req = Request::builder().uri(url).body(Vec::new())?;
+    slurp_req(req).await
+}
+
+/// Executes a GET request with additional headers.
+/// Returning the response status, headers and body.
+pub async fn slurp_url_with_headers(url: &str, headers: Vec<(&'static str, &'static str)>) -> SlurpResult {
+    let mut req = Request::builder();
+    let h = req
+        .headers_mut()
+        .or_mm_err(|| SlurpError::Internal("An error occured while accessing to the request headers.".to_string()))?;
+
+    for (key, value) in headers {
+        h.insert(key, HeaderValue::from_static(value));
+    }
+
+    let req = req.uri(url).body(Vec::new())?;
     slurp_req(req).await
 }
 

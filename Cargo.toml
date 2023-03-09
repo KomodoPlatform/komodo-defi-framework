@@ -27,6 +27,7 @@ members = [
     "mm2src/mm2_db",
     "mm2src/mm2_err_handle",
     "mm2src/mm2_eth",
+    "mm2src/mm2_git",
     "mm2src/mm2_io",
     "mm2src/mm2_libp2p",
     "mm2src/mm2_metamask",

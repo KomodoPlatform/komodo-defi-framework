@@ -1077,6 +1077,7 @@ dependencies = [
  "mm2_core",
  "mm2_db",
  "mm2_err_handle",
+ "mm2_git",
  "mm2_io",
  "mm2_metamask",
  "mm2_metrics",
@@ -4288,6 +4289,19 @@ dependencies = [
  "serde",
  "serde_json",
  "web3",
+]
+
+[[package]]
+name = "mm2_git"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "common",
+ "http 0.2.7",
+ "mm2_err_handle",
+ "mm2_net",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

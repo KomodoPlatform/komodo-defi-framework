@@ -1,0 +1,16 @@
+[package]
+name = "mm2_git"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+doctest = false
+
+[dependencies]
+async-trait = "0.1"
+common = { path = "../common" }
+http = "0.2"
+mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_net = { path = "../mm2_net" }
+serde = "1"
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }

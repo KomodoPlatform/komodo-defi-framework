@@ -1801,6 +1801,8 @@ pub enum WithdrawError {
     #[cfg(feature = "enable-nft-integration")]
     #[display(fmt = "Contract type {} doesnt support 'withdraw_nft' yet", _0)]
     ContractTypeDoesntSupportNftWithdrawing(String),
+    #[display(fmt = "Action not allowed for coin: {}", _0)]
+    ActionNotAllowed(String),
     #[cfg(feature = "enable-nft-integration")]
     GetNftInfoError(GetNftInfoError),
     #[cfg(feature = "enable-nft-integration")]
@@ -1840,7 +1842,11 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
-            | WithdrawError::UnexpectedUserAction { .. } => StatusCode::BAD_REQUEST,
+            | WithdrawError::UnexpectedUserAction { .. }
+            | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
+            | WithdrawError::AddressMismatchError { .. }
+            | WithdrawError::ActionNotAllowed(_)
+            | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_) => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
