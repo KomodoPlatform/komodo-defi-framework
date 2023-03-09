@@ -75,7 +75,7 @@ jobs:
         condition: and( eq( variables['Agent.OS'], 'Linux' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
         displayName: 'Update playground deployment'
       # Explicit --test-threads=16 makes testing process slightly faster on agents that have <16 CPU cores.
-      # Always run tests on mm2.1 branch and PRs
+      # Always run tests on main branch and PRs
       # On MacOS, run for x86_64-apple-darwin
       - bash: |
           if [ $AGENT_OS = "Darwin" ]
@@ -94,7 +94,7 @@ jobs:
           TELEGRAM_API_KEY: $(${{ parameters.telegram_api_key }})
           RUST_LOG: debug
           MANUAL_MM_VERSION: true
-        condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'mm2.1' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
+        condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'main' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
       - bash: |
           containers=$(docker ps -q | wc -l)
           echo $containers

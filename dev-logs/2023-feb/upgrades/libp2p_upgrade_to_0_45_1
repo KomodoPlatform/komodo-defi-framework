@@ -1,6 +1,0 @@
-libp2p upgraded to 0.45.1 because current version(0.45.0) considered as vulnerable
-
-further informations https://rustsec.org/advisories/RUSTSEC-2022-0084.html
-
-
-author: @ozkanonur <work@onurozkan.dev>
