@@ -813,7 +813,7 @@ impl TendermintCoin {
         amount: Vec<Coin>,
         secret_hash: &[u8],
     ) -> String {
-        // Needs to be sorted if cointains multiple coins
+        // Needs to be sorted if contains multiple coins
         // let mut amount = amount;
         // amount.sort();
 
