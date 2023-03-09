@@ -1,6 +1,0 @@
-axum-core upgraded to 0.2.9 because current version(0.2.4) considered as vulnerable
-
-further informations https://rustsec.org/advisories/RUSTSEC-2022-0055.html
-
-
-author: @ozkanonur <work@onurozkan.dev>

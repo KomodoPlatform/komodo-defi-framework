@@ -1,6 +1,0 @@
-bumpalo upgraded to 3.12.0 because current version(3.4.0) considered as vulnerable
-
-further informations https://rustsec.org/advisories/RUSTSEC-2022-0078.html
-
-
-author: @ozkanonur <work@onurozkan.dev>

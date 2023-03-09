@@ -54,7 +54,7 @@ jobs:
           BOB_PASSPHRASE: $(${{ parameters.bob_passphrase }})
           ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
           MANUAL_MM_VERSION: true
-        condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'mm2.1' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
+        condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'main' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
       - bash: |
           cd target/target-wasm-release/
           zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Wasm-Release mm2lib_bg.wasm mm2lib.js snippets -r

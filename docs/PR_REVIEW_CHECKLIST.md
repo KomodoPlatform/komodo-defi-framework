@@ -12,4 +12,4 @@ the test is unstable, please clarify it with the team.
 - [ ] Indicate code that is worth moving to a separate module or crate.
 - [ ] Check if the code can be improved/simplified: it might be overly abstracted or require the additional abstraction layer instead for a better design.
 - [ ] Follow SOLID if applicable.
-- [ ] For PRs targeting release (mm2.1) branch check that QA tested and approved it.
+- [ ] For PRs targeting release (main) branch check that QA tested and approved it.

@@ -1,6 +1,0 @@
-tokio upgraded to 1.25.0 because current version(1.18.2) considered as vulnerable
-
-further informations https://rustsec.org/advisories/RUSTSEC-2023-0001.html and https://rustsec.org/advisories/RUSTSEC-2023-0005.html
-
-
-author: @ozkanonur <work@onurozkan.dev>

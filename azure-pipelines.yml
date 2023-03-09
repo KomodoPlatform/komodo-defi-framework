@@ -67,7 +67,7 @@ stages:
 
   - stage: Mobile
     displayName: Mobile libs build
-    condition: and(succeeded('WASM'), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'mm2.1'), eq(variables['Build.SourceBranchName'], 'dev')))
+    condition: and(succeeded('WASM'), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'), eq(variables['Build.SourceBranchName'], 'dev')))
     jobs:
       - template: azure-pipelines-android-job.yml
         parameters:
