@@ -2830,6 +2830,9 @@ impl EthCoin {
         let swap_contract_address = try_tx_fus!(args.swap_contract_address.try_to_address());
         let id = self.etomic_swap_id(args.time_lock, args.secret_hash);
         let trade_amount = try_tx_fus!(wei_from_big_decimal(&args.amount, self.decimals));
+        let watcher_reward = args.watcher_reward.map(U256::from);
+        let time_lock = U256::from(args.time_lock);
+        let gas = U256::from(ETH_GAS);
 
         let secret_hash = if args.secret_hash.len() == 32 {
             ripemd160(args.secret_hash).to_vec()
@@ -2839,31 +2842,32 @@ impl EthCoin {
 
         match &self.coin_type {
             EthCoinType::Eth => {
-                let function_name = get_function_name("ethPayment", args.watcher_reward.is_some());
+                let function_name = get_function_name("ethPayment", watcher_reward.is_some());
                 let function = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
-                let mut value = trade_amount;
 
-                let data = match args.watcher_reward {
+                let mut value = trade_amount;
+                let data = match watcher_reward {
                     Some(reward) => {
-                        value += U256::from(reward);
+                        value += reward;
 
                         try_tx_fus!(function.encode_input(&[
                             Token::FixedBytes(id),
                             Token::Address(receiver_addr),
                             Token::FixedBytes(secret_hash),
-                            Token::Uint(U256::from(args.time_lock)),
-                            Token::Uint(U256::from(reward)),
+                            Token::Uint(time_lock),
+                            Token::Uint(reward),
                         ]))
                     },
                     None => try_tx_fus!(function.encode_input(&[
                         Token::FixedBytes(id),
                         Token::Address(receiver_addr),
                         Token::FixedBytes(secret_hash),
-                        Token::Uint(U256::from(args.time_lock)),
+                        Token::Uint(time_lock),
                     ])),
                 };
+                drop_mutability!(value);
 
-                self.sign_and_send_transaction(value, Action::Call(swap_contract_address), data, U256::from(ETH_GAS))
+                self.sign_and_send_transaction(value, Action::Call(swap_contract_address), data, gas)
             },
             EthCoinType::Erc20 {
                 platform: _,
@@ -2873,7 +2877,7 @@ impl EthCoin {
                     .allowance(swap_contract_address)
                     .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)));
 
-                let function_name = get_function_name("erc20Payment", args.watcher_reward.is_some());
+                let function_name = get_function_name("erc20Payment", watcher_reward.is_some());
                 let function = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
 
                 let data = try_tx_fus!(function.encode_input(&[
@@ -2882,15 +2886,14 @@ impl EthCoin {
                     Token::Address(*token_addr),
                     Token::Address(receiver_addr),
                     Token::FixedBytes(secret_hash),
-                    Token::Uint(U256::from(args.time_lock))
+                    Token::Uint(time_lock)
                 ]));
-                let value = U256::from(args.watcher_reward.unwrap_or(0));
                 // wait for the approval tx confirmation only half the time required for the actual htlc tx confirmation
                 let wait_for_approval_confirmation_until = args.wait_for_confirmation_until / 2;
 
                 let arc = self.clone();
                 Box::new(allowance_fut.and_then(move |allowed| -> EthTxFut {
-                    if allowed < value {
+                    if allowed < trade_amount {
                         Box::new(
                             arc.approve(swap_contract_address, U256::max_value())
                                 .and_then(move |approved| {
@@ -2905,20 +2908,20 @@ impl EthCoin {
                                     .map_err(TransactionErr::Plain)
                                     .and_then(move |_confirmed| {
                                         arc.sign_and_send_transaction(
-                                            value,
+                                            watcher_reward.unwrap_or_else(|| 0.into()),
                                             Action::Call(swap_contract_address),
                                             data,
-                                            U256::from(ETH_GAS),
+                                            gas,
                                         )
                                     })
                                 }),
                         )
                     } else {
                         Box::new(arc.sign_and_send_transaction(
-                            value,
+                            watcher_reward.unwrap_or_else(|| 0.into()),
                             Action::Call(swap_contract_address),
                             data,
-                            U256::from(ETH_GAS),
+                            gas,
                         ))
                     }
                 }))
