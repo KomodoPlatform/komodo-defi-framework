@@ -2904,7 +2904,13 @@ impl EthCoin {
                                         wait_for_approval_confirmation_until,
                                         APPROVE_TX_CHECK_EVERY,
                                     )
-                                    .map_err(TransactionErr::Plain)
+                                    .map_err(move |e| {
+                                        TransactionErr::Plain(ERRL!(
+                                            "wait_for_confirmations for approve transaction {:02x} failed: {}",
+                                            approved.tx_hash(),
+                                            e
+                                        ))
+                                    })
                                     .and_then(move |_confirmed| {
                                         arc.sign_and_send_transaction(
                                             watcher_reward.unwrap_or_else(|| 0.into()),
