@@ -2888,8 +2888,7 @@ impl EthCoin {
                     Token::FixedBytes(secret_hash),
                     Token::Uint(time_lock)
                 ]));
-                // wait for the approval tx confirmation only half the time required for the actual htlc tx confirmation
-                let wait_for_approval_confirmation_until = args.wait_for_confirmation_until / 2;
+                let wait_for_approval_confirmation_until = args.wait_for_confirmation_until;
 
                 let arc = self.clone();
                 Box::new(allowance_fut.and_then(move |allowed| -> EthTxFut {
