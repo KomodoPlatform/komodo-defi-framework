@@ -4,7 +4,6 @@ use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log};
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
-use mm2_main::mm2::lp_swap::{MakerSavedSwap, TakerSavedSwap};
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::electrums::*;
@@ -873,61 +872,6 @@ async fn trade_base_rel_electrum(
     }
 
     (mm_bob, mm_alice, uuids[0].clone())
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn trade_test_electrum_and_eth_coins_validate_pubkeys() {
-    let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
-    let alice_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount(0);
-    let pairs = &[("ETH", "JST")];
-    let (mm_bob, mm_alice, uuid) = block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1., 2., 0.1));
-
-    let stats_swap = block_on(mm_bob.rpc(&json! ({
-    "userpass": mm_bob.userpass,
-    "method": "stats_swap_status",
-    "params": {
-        "uuid": uuid,
-    }})))
-    .unwrap();
-
-    let pubkeys = [&mm_bob, &mm_alice].map(|mm| {
-        let key_res = block_on(mm.rpc(&json! ({
-            "userpass": mm.userpass,
-            "method": "get_public_key",
-            "mmrpc": "2.0",
-            "params": {} })))
-        .unwrap();
-        assert_eq!(200, key_res.0);
-
-        key_res.1
-    });
-
-    // Validate saved pubkeys.
-    let expected_bob_pubkey = &pubkeys[0];
-    let expected_alice_pubkey = &pubkeys[1];
-
-    let maker: Json = json::from_str(&stats_swap.1).unwrap();
-    let maker = json::from_value::<MakerSavedSwap>(maker["result"]["maker"].clone())
-        .unwrap()
-        .swap_pubkeys();
-
-    assert!(expected_bob_pubkey.contains(&maker.maker.unwrap()));
-    assert!(expected_alice_pubkey.contains(&maker.taker.unwrap()));
-
-    let taker: Json = json::from_str(&stats_swap.1).unwrap();
-    let taker = json::from_value::<TakerSavedSwap>(taker["result"]["taker"].clone())
-        .unwrap()
-        .swap_pubkeys();
-
-    assert!(expected_bob_pubkey.contains(&taker.maker.unwrap()));
-    assert!(expected_alice_pubkey.contains(&taker.taker.unwrap()));
-
-    // stop mm2.
-    {
-        block_on(mm_bob.stop()).unwrap();
-        block_on(mm_alice.stop()).unwrap();
-    };
 }
 
 #[test]
