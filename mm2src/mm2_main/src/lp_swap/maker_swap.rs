@@ -1923,19 +1923,19 @@ impl MakerSavedSwap {
         }
     }
 
-    pub fn swap_pubkeys(&self) -> SwapPubkeys {
-        let mut swap_pubkeys = SwapPubkeys::default();
-
-        // TODO: Adjust for private coins when/if they are broadcasted
-        for data in &self.events {
-            if let MakerSwapEvent::Started(maker) = &data.event {
-                swap_pubkeys.maker = Some(maker.my_persistent_pub.to_string());
-                swap_pubkeys.taker = Some(maker.taker.to_string());
-            };
+    pub fn swap_pubkeys(&self) -> Result<SwapPubkeys, String> {
+        match self.events.first() {
+            Some(event) => match &event.event {
+                // TODO: Adjust for private coins when/if they are braodcasted
+                // TODO: Adjust for HD wallet when completed
+                MakerSwapEvent::Started(data) => Ok(SwapPubkeys::new(
+                    data.my_persistent_pub.to_string(),
+                    data.taker.to_string(),
+                )),
+                _ => ERR!("First swap event must be Started"),
+            },
+            None => ERR!("Can't get maker/taker pubkey, events are empty"),
         }
-
-        drop_mutability!(swap_pubkeys);
-        swap_pubkeys
     }
 }
 

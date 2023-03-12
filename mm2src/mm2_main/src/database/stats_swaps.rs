@@ -127,6 +127,7 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
             return None;
         },
     };
+
     let finished_at = match swap.finished_at() {
         Ok(t) => t.to_string(),
         Err(e) => {
@@ -134,6 +135,15 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
             return None;
         },
     };
+
+    let pubkeys = match swap.swap_pubkeys() {
+        Ok(p) => p,
+        Err(e) => {
+            error!("Error {} on getting swap {} pubkeys", e, swap.uuid);
+            return None;
+        },
+    };
+
     let is_success = swap
         .is_success()
         .expect("is_success can return error only when swap is not finished");
@@ -141,7 +151,6 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let pubkeys = &swap.swap_pubkeys();
     let params = owned_named_params! {
         ":maker_coin": swap_data.maker_coin.clone(),
         ":maker_coin_ticker": maker_coin_ticker,
@@ -157,8 +166,8 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
         ":is_success": (is_success as u32).to_string(),
         ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
         ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
-        ":maker_pubkey": pubkeys.maker.clone(),
-        ":taker_pubkey": pubkeys.taker.clone(),
+        ":maker_pubkey": pubkeys.maker,
+        ":taker_pubkey": pubkeys.taker,
     };
 
     Some((INSERT_STATS_SWAP, params))
@@ -211,6 +220,15 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
             return None;
         },
     };
+
+    let pubkeys = match swap.swap_pubkeys() {
+        Ok(p) => p,
+        Err(e) => {
+            error!("Error {} on getting swap {} pubkeys", e, swap.uuid);
+            return None;
+        },
+    };
+
     let is_success = swap
         .is_success()
         .expect("is_success can return error only when swap is not finished");
@@ -218,7 +236,6 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let pubkeys = &swap.swap_pubkeys();
     let params = owned_named_params! {
         ":maker_coin": swap_data.maker_coin.clone(),
         ":maker_coin_ticker": maker_coin_ticker,
@@ -234,8 +251,8 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
         ":is_success": (is_success as u32).to_string(),
         ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
         ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
-        ":maker_pubkey": pubkeys.maker.clone(),
-        ":taker_pubkey": pubkeys.taker.clone(),
+        ":maker_pubkey": pubkeys.maker,
+        ":taker_pubkey": pubkeys.taker,
     };
     Some((INSERT_STATS_SWAP, params))
 }
