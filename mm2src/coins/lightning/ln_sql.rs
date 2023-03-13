@@ -4,6 +4,7 @@ use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilt
 use async_trait::async_trait;
 use common::{async_blocking, PagingOptionsEnum};
 use db_common::owned_named_params;
+use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{params, Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,
@@ -11,9 +12,10 @@ use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_
                         OwnedSqlNamedParams, SqlNamedParams, SqliteConnShared, CHECK_TABLE_EXISTS_SQL};
 use gstuff::now_ms;
 use lightning::ln::{PaymentHash, PaymentPreimage};
-use secp256k1v22::PublicKey;
+use secp256k1v24::PublicKey;
 use std::convert::TryInto;
 use std::str::FromStr;
+use uuid::Uuid;
 
 fn channels_history_table(ticker: &str) -> String { ticker.to_owned() + "_channels_history" }
 
@@ -26,7 +28,7 @@ fn create_channels_history_table_sql(for_coin: &str) -> Result<String, SqlError>
     let sql = format!(
         "CREATE TABLE IF NOT EXISTS {} (
             id INTEGER NOT NULL PRIMARY KEY,
-            rpc_id INTEGER NOT NULL UNIQUE,
+            uuid VARCHAR(255) NOT NULL UNIQUE,
             channel_id VARCHAR(255) NOT NULL,
             counterparty_node_id VARCHAR(255) NOT NULL,
             funding_tx VARCHAR(255),
@@ -79,12 +81,9 @@ fn insert_channel_sql(
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let rpc_id = channel_detail.rpc_id;
-    let created_at = channel_detail.created_at;
-
     let sql = format!(
         "INSERT INTO {} (
-            rpc_id,
+            uuid,
             channel_id,
             counterparty_node_id,
             is_outbound,
@@ -92,27 +91,24 @@ fn insert_channel_sql(
             is_closed,
             created_at
         ) VALUES (
-            :rpc_id, :channel_id, :counterparty_node_id, :is_outbound, :is_public, :is_closed, :created_at
+            :uuid, :channel_id, :counterparty_node_id, :is_outbound, :is_public, :is_closed, :created_at
         )",
         table_name
     );
 
     let params = owned_named_params! {
-        ":rpc_id": rpc_id,
+        ":uuid": channel_detail.uuid.to_string(),
         ":channel_id": channel_detail.channel_id.clone(),
         ":counterparty_node_id": channel_detail.counterparty_node_id.clone(),
         ":is_outbound": channel_detail.is_outbound,
         ":is_public": channel_detail.is_public,
         ":is_closed": channel_detail.is_closed,
-        ":created_at": created_at,
+        ":created_at": channel_detail.created_at,
     };
     Ok((sql, params))
 }
 
-fn insert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(String, OwnedSqlNamedParams), SqlError> {
-    let table_name = payments_history_table(for_coin);
-    validate_table_name(&table_name)?;
-
+fn payment_info_to_owned_named_params(payment_info: &PaymentInfo) -> OwnedSqlNamedParams {
     let payment_hash = hex::encode(payment_info.payment_hash.0);
     let (is_outbound, destination) = match payment_info.payment_type {
         PaymentType::OutboundPayment { destination } => (true, Some(destination.to_string())),
@@ -120,6 +116,24 @@ fn insert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(Str
     };
     let preimage = payment_info.preimage.map(|p| hex::encode(p.0));
     let status = payment_info.status.to_string();
+
+    owned_named_params! {
+        ":payment_hash": payment_hash,
+        ":destination": destination,
+        ":description": payment_info.description.clone(),
+        ":preimage": preimage,
+        ":amount_msat": payment_info.amt_msat,
+        ":fee_paid_msat": payment_info.fee_paid_msat,
+        ":is_outbound": is_outbound,
+        ":status": status,
+        ":created_at": payment_info.created_at,
+        ":last_updated": payment_info.last_updated,
+    }
+}
+
+fn insert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(String, OwnedSqlNamedParams), SqlError> {
+    let table_name = payments_history_table(for_coin);
+    validate_table_name(&table_name)?;
 
     let sql = format!(
         "INSERT INTO {} (
@@ -139,19 +153,32 @@ fn insert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(Str
         table_name
     );
 
-    let params = owned_named_params! {
-        ":payment_hash": payment_hash,
-        ":destination": destination,
-        ":description": payment_info.description.clone(),
-        ":preimage": preimage,
-        ":amount_msat": payment_info.amt_msat,
-        ":fee_paid_msat": payment_info.fee_paid_msat,
-        ":is_outbound": is_outbound,
-        ":status": status,
-        ":created_at": payment_info.created_at,
-        ":last_updated": payment_info.last_updated,
-    };
-    Ok((sql, params))
+    Ok((sql, payment_info_to_owned_named_params(payment_info)))
+}
+
+fn upsert_payment_sql(for_coin: &str, payment_info: &PaymentInfo) -> Result<(String, OwnedSqlNamedParams), SqlError> {
+    let table_name = payments_history_table(for_coin);
+    validate_table_name(&table_name)?;
+
+    let sql = format!(
+        "INSERT OR REPLACE INTO {} (
+            payment_hash,
+            destination,
+            description,
+            preimage,
+            amount_msat,
+            fee_paid_msat,
+            is_outbound,
+            status,
+            created_at,
+            last_updated
+        ) VALUES (
+            :payment_hash, :destination, :description, :preimage, :amount_msat, :fee_paid_msat, :is_outbound, :status, :created_at, :last_updated
+        )",
+        table_name
+    );
+
+    Ok((sql, payment_info_to_owned_named_params(payment_info)))
 }
 
 fn update_payment_preimage_sql(for_coin: &str) -> Result<String, SqlError> {
@@ -186,7 +213,7 @@ fn update_payment_status_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
-fn update_received_payment_sql(for_coin: &str) -> Result<String, SqlError> {
+fn update_claimable_payment_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = payments_history_table(for_coin);
     validate_table_name(&table_name)?;
 
@@ -221,13 +248,13 @@ fn update_sent_payment_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
-fn select_channel_by_rpc_id_sql(for_coin: &str) -> Result<String, SqlError> {
+fn select_channel_by_uuid_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
     let sql = format!(
         "SELECT
-            rpc_id,
+            uuid,
             channel_id,
             counterparty_node_id,
             funding_tx,
@@ -245,7 +272,7 @@ fn select_channel_by_rpc_id_sql(for_coin: &str) -> Result<String, SqlError> {
         FROM
             {}
         WHERE
-            rpc_id=?1",
+            uuid=?1",
         table_name
     );
 
@@ -280,7 +307,8 @@ fn select_payment_by_hash_sql(for_coin: &str) -> Result<String, SqlError> {
 
 fn channel_details_from_row(row: &Row<'_>) -> Result<DBChannelDetails, SqlError> {
     let channel_details = DBChannelDetails {
-        rpc_id: row.get(0)?,
+        uuid: Uuid::parse_str(&row.get::<_, String>(0)?)
+            .map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))?,
         channel_id: row.get(1)?,
         counterparty_node_id: row.get(2)?,
         funding_tx: row.get(3)?,
@@ -323,15 +351,6 @@ fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
     Ok(payment_info)
 }
 
-fn get_last_channel_rpc_id_sql(for_coin: &str) -> Result<String, SqlError> {
-    let table_name = channels_history_table(for_coin);
-    validate_table_name(&table_name)?;
-
-    let sql = format!("SELECT IFNULL(MAX(rpc_id), 0) FROM {};", table_name);
-
-    Ok(sql)
-}
-
 fn update_funding_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
@@ -342,7 +361,7 @@ fn update_funding_tx_sql(for_coin: &str) -> Result<String, SqlError> {
             funding_value = ?2,
             funding_generated_in_block = ?3
         WHERE
-            rpc_id = ?4;",
+            uuid = ?4;",
         table_name
     );
 
@@ -366,7 +385,7 @@ fn update_channel_to_closed_sql(for_coin: &str) -> Result<String, SqlError> {
     validate_table_name(&table_name)?;
 
     let sql = format!(
-        "UPDATE {} SET closure_reason = ?1, is_closed = ?2, closed_at = ?3 WHERE rpc_id = ?4;",
+        "UPDATE {} SET closure_reason = ?1, is_closed = ?2, closed_at = ?3 WHERE uuid = ?4;",
         table_name
     );
 
@@ -377,7 +396,7 @@ fn update_closing_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = format!("UPDATE {} SET closing_tx = ?1 WHERE rpc_id = ?2;", table_name);
+    let sql = format!("UPDATE {} SET closing_tx = ?1 WHERE uuid = ?2;", table_name);
 
     Ok(sql)
 }
@@ -393,7 +412,7 @@ fn get_channels_builder_preimage(for_coin: &str) -> Result<SqlBuilder, SqlError>
 
 fn add_fields_to_get_channels_sql_builder(sql_builder: &mut SqlBuilder) {
     sql_builder
-        .field("rpc_id")
+        .field("uuid")
         .field("channel_id")
         .field("counterparty_node_id")
         .field("funding_tx")
@@ -633,18 +652,6 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn get_last_channel_rpc_id(&self) -> Result<u32, Self::Error> {
-        let sql = get_last_channel_rpc_id_sql(self.db_ticker.as_str())?;
-        let sqlite_connection = self.sqlite_connection.clone();
-
-        async_blocking(move || {
-            let conn = sqlite_connection.lock().unwrap();
-            let count: u32 = conn.query_row(&sql, NO_PARAMS, |r| r.get(0))?;
-            Ok(count)
-        })
-        .await
-    }
-
     async fn add_channel_to_db(&self, details: &DBChannelDetails) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
         let (sql, params) = insert_channel_sql(&for_coin, details)?;
@@ -660,7 +667,7 @@ impl LightningDB for SqliteLightningDB {
 
     async fn add_funding_tx_to_db(
         &self,
-        rpc_id: i64,
+        uuid: Uuid,
         funding_tx: String,
         funding_value: i64,
         funding_generated_in_block: i64,
@@ -671,7 +678,7 @@ impl LightningDB for SqliteLightningDB {
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = params!(funding_tx, funding_value, funding_generated_in_block, rpc_id);
+            let params = params!(funding_tx, funding_value, funding_generated_in_block, uuid.to_string());
             sql_transaction.execute(&update_funding_tx_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -696,7 +703,7 @@ impl LightningDB for SqliteLightningDB {
 
     async fn update_channel_to_closed(
         &self,
-        rpc_id: i64,
+        uuid: Uuid,
         closure_reason: String,
         closed_at: i64,
     ) -> Result<(), Self::Error> {
@@ -707,7 +714,7 @@ impl LightningDB for SqliteLightningDB {
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = params!(closure_reason, is_closed, closed_at, rpc_id);
+            let params = params!(closure_reason, is_closed, closed_at, uuid.to_string());
             sql_transaction.execute(&update_channel_to_closed_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -735,14 +742,14 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn add_closing_tx_to_db(&self, rpc_id: i64, closing_tx: String) -> Result<(), Self::Error> {
+    async fn add_closing_tx_to_db(&self, uuid: Uuid, closing_tx: String) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = params!(closing_tx, rpc_id);
+            let params = params!(closing_tx, uuid.to_string());
             sql_transaction.execute(&update_closing_tx_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -770,9 +777,9 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn get_channel_from_db(&self, rpc_id: u64) -> Result<Option<DBChannelDetails>, Self::Error> {
-        let params = [rpc_id.to_string()];
-        let sql = select_channel_by_rpc_id_sql(self.db_ticker.as_str())?;
+    async fn get_channel_from_db(&self, uuid: Uuid) -> Result<Option<DBChannelDetails>, Self::Error> {
+        let params = [uuid.to_string()];
+        let sql = select_channel_by_uuid_sql(self.db_ticker.as_str())?;
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
@@ -785,7 +792,7 @@ impl LightningDB for SqliteLightningDB {
     async fn get_closed_channels_by_filter(
         &self,
         filter: Option<ClosedChannelsFilter>,
-        paging: PagingOptionsEnum<u64>,
+        paging: PagingOptionsEnum<Uuid>,
         limit: usize,
     ) -> Result<GetClosedChannelsResult, Self::Error> {
         let mut sql_builder = get_channels_builder_preimage(self.db_ticker.as_str())?;
@@ -802,10 +809,10 @@ impl LightningDB for SqliteLightningDB {
 
             let offset = match paging {
                 PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
-                PagingOptionsEnum::FromId(rpc_id) => {
-                    let params = [rpc_id as u32];
+                PagingOptionsEnum::FromId(uuid) => {
+                    let params = [uuid.to_string()];
                     let maybe_offset =
-                        offset_by_id(&conn, &sql_builder, params, "rpc_id", "closed_at DESC", "rpc_id = ?1")?;
+                        offset_by_id(&conn, &sql_builder, params, "uuid", "closed_at DESC", "uuid = ?1")?;
                     match maybe_offset {
                         Some(offset) => offset,
                         None => {
@@ -844,6 +851,19 @@ impl LightningDB for SqliteLightningDB {
     async fn add_payment_to_db(&self, info: &PaymentInfo) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
         let (sql, params) = insert_payment_sql(&for_coin, info)?;
+
+        let sqlite_connection = self.sqlite_connection.clone();
+        async_blocking(move || {
+            let conn = sqlite_connection.lock().unwrap();
+            conn.execute_named(&sql, &params.as_sql_named_params())?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn add_or_update_payment_in_db(&self, info: &PaymentInfo) -> Result<(), Self::Error> {
+        let for_coin = self.db_ticker.clone();
+        let (sql, params) = upsert_payment_sql(&for_coin, info)?;
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
@@ -894,14 +914,14 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn update_payment_to_received_in_db(
+    async fn update_payment_to_claimable_in_db(
         &self,
         hash: PaymentHash,
         preimage: PaymentPreimage,
     ) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
         let preimage = hex::encode(preimage.0);
-        let status = HTLCStatus::Received.to_string();
+        let status = HTLCStatus::Claimable.to_string();
         let last_updated = (now_ms() / 1000) as i64;
         let payment_hash = hex::encode(hash.0);
 
@@ -910,7 +930,7 @@ impl LightningDB for SqliteLightningDB {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
             let params = params!(preimage, status, last_updated, payment_hash);
-            sql_transaction.execute(&update_received_payment_sql(&for_coin)?, params)?;
+            sql_transaction.execute(&update_claimable_payment_sql(&for_coin)?, params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -1025,11 +1045,11 @@ impl LightningDB for SqliteLightningDB {
 mod tests {
     use super::*;
     use crate::lightning::ln_db::DBChannelDetails;
-    use common::{block_on, now_ms};
+    use common::{block_on, new_uuid, now_ms};
     use db_common::sqlite::rusqlite::Connection;
     use rand::distributions::Alphanumeric;
     use rand::{Rng, RngCore};
-    use secp256k1v22::{Secp256k1, SecretKey};
+    use secp256k1v24::{Secp256k1, SecretKey};
     use std::num::NonZeroUsize;
     use std::sync::{Arc, Mutex};
 
@@ -1038,9 +1058,9 @@ mod tests {
         let mut channels = vec![];
         let s = Secp256k1::new();
         let mut bytes = [0; 32];
-        for i in 0..num {
+        for _i in 0..num {
             let details = DBChannelDetails {
-                rpc_id: (i + 1) as i64,
+                uuid: new_uuid(),
                 channel_id: {
                     rng.fill_bytes(&mut bytes);
                     hex::encode(bytes)
@@ -1157,37 +1177,30 @@ mod tests {
 
         block_on(db.init_db()).unwrap();
 
-        let last_channel_rpc_id = block_on(db.get_last_channel_rpc_id()).unwrap();
-        assert_eq!(last_channel_rpc_id, 0);
-
-        let channel = block_on(db.get_channel_from_db(1)).unwrap();
+        let uuid_1 = new_uuid();
+        let channel = block_on(db.get_channel_from_db(uuid_1)).unwrap();
         assert!(channel.is_none());
 
         let mut expected_channel_details = DBChannelDetails::new(
-            1,
+            uuid_1,
             [0; 32],
             PublicKey::from_str("038863cf8ab91046230f561cd5b386cbff8309fa02e3f0c3ed161a3aeb64a643b9").unwrap(),
             true,
             true,
         );
         block_on(db.add_channel_to_db(&expected_channel_details)).unwrap();
-        let last_channel_rpc_id = block_on(db.get_last_channel_rpc_id()).unwrap();
-        assert_eq!(last_channel_rpc_id, 1);
-
-        let actual_channel_details = block_on(db.get_channel_from_db(1)).unwrap().unwrap();
+        let actual_channel_details = block_on(db.get_channel_from_db(uuid_1)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
-        // must fail because we are adding channel with the same rpc_id
+        // must fail because we are adding channel with the same uuid
         block_on(db.add_channel_to_db(&expected_channel_details)).unwrap_err();
-        assert_eq!(last_channel_rpc_id, 1);
 
-        expected_channel_details.rpc_id = 2;
+        let uuid_2 = new_uuid();
+        expected_channel_details.uuid = uuid_2;
         block_on(db.add_channel_to_db(&expected_channel_details)).unwrap();
-        let last_channel_rpc_id = block_on(db.get_last_channel_rpc_id()).unwrap();
-        assert_eq!(last_channel_rpc_id, 2);
 
         block_on(db.add_funding_tx_to_db(
-            2,
+            uuid_2,
             "9cdafd6d42dcbdc06b0b5bce1866deb82630581285bbfb56870577300c0a8c6e".into(),
             3000,
             50000,
@@ -1198,7 +1211,7 @@ mod tests {
         expected_channel_details.funding_value = Some(3000);
         expected_channel_details.funding_generated_in_block = Some(50000);
 
-        let actual_channel_details = block_on(db.get_channel_from_db(2)).unwrap().unwrap();
+        let actual_channel_details = block_on(db.get_channel_from_db(uuid_2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
         block_on(db.update_funding_tx_block_height(
@@ -1208,16 +1221,17 @@ mod tests {
         .unwrap();
         expected_channel_details.funding_generated_in_block = Some(50001);
 
-        let actual_channel_details = block_on(db.get_channel_from_db(2)).unwrap().unwrap();
+        let actual_channel_details = block_on(db.get_channel_from_db(uuid_2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
         let current_time = (now_ms() / 1000) as i64;
-        block_on(db.update_channel_to_closed(2, "the channel was cooperatively closed".into(), current_time)).unwrap();
+        block_on(db.update_channel_to_closed(uuid_2, "the channel was cooperatively closed".into(), current_time))
+            .unwrap();
         expected_channel_details.closure_reason = Some("the channel was cooperatively closed".into());
         expected_channel_details.is_closed = true;
         expected_channel_details.closed_at = Some(current_time);
 
-        let actual_channel_details = block_on(db.get_channel_from_db(2)).unwrap().unwrap();
+        let actual_channel_details = block_on(db.get_channel_from_db(uuid_2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
         let closed_channels =
@@ -1226,7 +1240,7 @@ mod tests {
         assert_eq!(expected_channel_details, closed_channels.channels[0]);
 
         block_on(db.update_channel_to_closed(
-            1,
+            uuid_1,
             "the channel was cooperatively closed".into(),
             (now_ms() / 1000) as i64,
         ))
@@ -1239,7 +1253,7 @@ mod tests {
         assert_eq!(actual_channels.len(), 1);
 
         block_on(db.add_closing_tx_to_db(
-            2,
+            uuid_2,
             "5557df9ad2c9b3c57a4df8b4a7da0b7a6f4e923b4a01daa98bf9e5a3b33e9c8f".into(),
         ))
         .unwrap();
@@ -1249,7 +1263,7 @@ mod tests {
         let actual_channels = block_on(db.get_closed_channels_with_no_closing_tx()).unwrap();
         assert!(actual_channels.is_empty());
 
-        let actual_channel_details = block_on(db.get_channel_from_db(2)).unwrap().unwrap();
+        let actual_channel_details = block_on(db.get_channel_from_db(uuid_2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
         block_on(db.add_claiming_tx_to_db(
@@ -1262,7 +1276,7 @@ mod tests {
             Some("97f061634a4a7b0b0c2b95648f86b1c39b95e0cf5073f07725b7143c095b612a".into());
         expected_channel_details.claimed_balance = Some(2000.333333);
 
-        let actual_channel_details = block_on(db.get_channel_from_db(2)).unwrap().unwrap();
+        let actual_channel_details = block_on(db.get_channel_from_db(uuid_2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
     }
 
@@ -1294,13 +1308,21 @@ mod tests {
         let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([0; 32]))).unwrap().unwrap();
         assert_eq!(expected_payment_info, actual_payment_info);
 
+        // Test add_or_update_payment_in_db
+        expected_payment_info.status = HTLCStatus::Succeeded;
+        block_on(db.add_payment_to_db(&expected_payment_info)).unwrap_err();
+        block_on(db.add_or_update_payment_in_db(&expected_payment_info)).unwrap();
+
+        let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([0; 32]))).unwrap().unwrap();
+        assert_eq!(expected_payment_info, actual_payment_info);
+
+        // Add another payment to DB
         expected_payment_info.payment_hash = PaymentHash([1; 32]);
         expected_payment_info.payment_type = PaymentType::OutboundPayment {
             destination: PublicKey::from_str("038863cf8ab91046230f561cd5b386cbff8309fa02e3f0c3ed161a3aeb64a643b9")
                 .unwrap(),
         };
         expected_payment_info.amt_msat = None;
-        expected_payment_info.status = HTLCStatus::Succeeded;
         expected_payment_info.last_updated = (now_ms() / 1000) as i64;
         block_on(db.add_payment_to_db(&expected_payment_info)).unwrap();
 
@@ -1328,9 +1350,9 @@ mod tests {
 
         // Test update_payment_to_received_in_db
         let expected_preimage = PaymentPreimage([5; 32]);
-        block_on(db.update_payment_to_received_in_db(PaymentHash([1; 32]), expected_preimage)).unwrap();
+        block_on(db.update_payment_to_claimable_in_db(PaymentHash([1; 32]), expected_preimage)).unwrap();
         let payment_after_update = block_on(db.get_payment_from_db(PaymentHash([1; 32]))).unwrap().unwrap();
-        assert_eq!(payment_after_update.status, HTLCStatus::Received);
+        assert_eq!(payment_after_update.status, HTLCStatus::Claimable);
         assert_eq!(payment_after_update.preimage.unwrap(), expected_preimage);
 
         // Test update_payment_to_sent_in_db
@@ -1480,14 +1502,14 @@ mod tests {
         for channel in channels {
             block_on(db.add_channel_to_db(&channel)).unwrap();
             block_on(db.add_funding_tx_to_db(
-                channel.rpc_id,
+                channel.uuid,
                 channel.funding_tx.unwrap(),
                 channel.funding_value.unwrap(),
                 channel.funding_generated_in_block.unwrap(),
             ))
             .unwrap();
-            block_on(db.update_channel_to_closed(channel.rpc_id, channel.closure_reason.unwrap(), 1655806080)).unwrap();
-            block_on(db.add_closing_tx_to_db(channel.rpc_id, channel.closing_tx.clone().unwrap())).unwrap();
+            block_on(db.update_channel_to_closed(channel.uuid, channel.closure_reason.unwrap(), 1655806080)).unwrap();
+            block_on(db.add_closing_tx_to_db(channel.uuid, channel.closing_tx.clone().unwrap())).unwrap();
             block_on(db.add_claiming_tx_to_db(
                 channel.closing_tx.unwrap(),
                 channel.claiming_tx.unwrap(),
@@ -1524,17 +1546,6 @@ mod tests {
 
         assert_eq!(5, result.skipped);
         assert_eq!(100, result.total);
-        assert_eq!(expected_channels, actual_channels);
-
-        let from_rpc_id = 20;
-        let paging = PagingOptionsEnum::FromId(from_rpc_id);
-        let limit = 3;
-
-        let result = block_on(db.get_closed_channels_by_filter(None, paging, limit)).unwrap();
-
-        let expected_channels = channels[20..23].to_vec();
-        let actual_channels = result.channels;
-
         assert_eq!(expected_channels, actual_channels);
 
         let mut filter = ClosedChannelsFilter {

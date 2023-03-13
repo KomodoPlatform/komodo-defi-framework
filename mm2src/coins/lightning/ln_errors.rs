@@ -8,6 +8,7 @@ use http::StatusCode;
 use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
 use std::num::TryFromIntError;
+use uuid::Uuid;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;
@@ -90,10 +91,8 @@ impl From<AbortedError> for EnableLightningError {
 pub enum SaveChannelClosingError {
     #[display(fmt = "DB error: {}", _0)]
     DbError(String),
-    #[display(fmt = "Channel with rpc id {} not found in DB", _0)]
-    ChannelNotFound(u64),
-    #[display(fmt = "funding_generated_in_block is Null in DB")]
-    BlockHeightNull,
+    #[display(fmt = "Channel with uuid {} not found in DB", _0)]
+    ChannelNotFound(Uuid),
     #[display(fmt = "Funding transaction hash is Null in DB")]
     FundingTxNull,
     #[display(fmt = "Error parsing funding transaction hash: {}", _0)]

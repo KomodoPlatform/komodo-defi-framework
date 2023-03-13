@@ -8,6 +8,7 @@ use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlRe
 use db_common::sqlite::sql_builder::SqlBuilder;
 use mm2_core::mm_ctx::MmArc;
 use std::convert::TryInto;
+use std::string::ParseError;
 use uuid::Uuid;
 
 const MY_ORDERS_TABLE: &str = "my_orders";
@@ -179,7 +180,7 @@ fn apply_my_orders_filter(builder: &mut SqlBuilder, params: &mut Vec<(&str, Stri
 #[derive(Debug)]
 pub enum SelectRecentOrdersUuidsErr {
     Sql(SqlError),
-    Parse(uuid::parser::ParseError),
+    Parse(ParseError),
 }
 
 impl std::fmt::Display for SelectRecentOrdersUuidsErr {
@@ -190,8 +191,8 @@ impl From<SqlError> for SelectRecentOrdersUuidsErr {
     fn from(err: SqlError) -> Self { SelectRecentOrdersUuidsErr::Sql(err) }
 }
 
-impl From<uuid::parser::ParseError> for SelectRecentOrdersUuidsErr {
-    fn from(err: uuid::parser::ParseError) -> Self { SelectRecentOrdersUuidsErr::Parse(err) }
+impl From<ParseError> for SelectRecentOrdersUuidsErr {
+    fn from(err: ParseError) -> Self { SelectRecentOrdersUuidsErr::Parse(err) }
 }
 
 pub fn select_orders_by_filter(

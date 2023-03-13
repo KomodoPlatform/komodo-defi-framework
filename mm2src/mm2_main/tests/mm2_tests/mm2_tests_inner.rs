@@ -1,6 +1,6 @@
 use crate::integration_tests_common::*;
 use common::executor::Timer;
-use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log};
+use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log, new_uuid};
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
@@ -1417,7 +1417,7 @@ fn test_swap_status() {
         "userpass": mm.userpass,
         "method": "my_swap_status",
         "params": {
-            "uuid":Uuid::new_v4(),
+            "uuid": new_uuid(),
         }
     })))
     .unwrap();
@@ -1428,7 +1428,7 @@ fn test_swap_status() {
         "userpass": mm.userpass,
         "method": "stats_swap_status",
         "params": {
-            "uuid":Uuid::new_v4(),
+            "uuid": new_uuid(),
         }
     })))
     .unwrap();

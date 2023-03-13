@@ -6,6 +6,7 @@ use db_common::sqlite::rusqlite::Error as SqlError;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use uuid::Uuid;
 
 type GetChannelDetailsResult<T> = Result<T, MmError<GetChannelDetailsError>>;
 
@@ -16,8 +17,8 @@ pub enum GetChannelDetailsError {
     UnsupportedCoin(String),
     #[display(fmt = "No such coin {}", _0)]
     NoSuchCoin(String),
-    #[display(fmt = "Channel with rpc id: {} is not found", _0)]
-    NoSuchChannel(u64),
+    #[display(fmt = "Channel with uuid: {} is not found", _0)]
+    NoSuchChannel(Uuid),
     #[display(fmt = "DB error {}", _0)]
     DbError(String),
 }
@@ -47,7 +48,7 @@ impl From<SqlError> for GetChannelDetailsError {
 #[derive(Deserialize)]
 pub struct GetChannelDetailsRequest {
     pub coin: String,
-    pub rpc_channel_id: u64,
+    pub uuid: Uuid,
 }
 
 #[derive(Serialize)]
@@ -66,14 +67,14 @@ pub async fn get_channel_details(
         e => return MmError::err(GetChannelDetailsError::UnsupportedCoin(e.ticker().to_string())),
     };
 
-    let channel_details = match ln_coin.get_channel_by_rpc_id(req.rpc_channel_id).await {
+    let channel_details = match ln_coin.get_channel_by_uuid(req.uuid).await {
         Some(details) => GetChannelDetailsResponse::Open(details.into()),
         None => GetChannelDetailsResponse::Closed(
             ln_coin
                 .db
-                .get_channel_from_db(req.rpc_channel_id)
+                .get_channel_from_db(req.uuid)
                 .await?
-                .ok_or(GetChannelDetailsError::NoSuchChannel(req.rpc_channel_id))?,
+                .ok_or(GetChannelDetailsError::NoSuchChannel(req.uuid))?,
         ),
     };
 

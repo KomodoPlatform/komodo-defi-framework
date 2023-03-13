@@ -32,6 +32,6 @@ serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 mm2_metamask = { path = "../mm2_metamask" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-lightning = "0.0.110"
-lightning-background-processor = "0.0.110"
-lightning-invoice = { version = "0.18.0", features = ["serde"] }
+lightning = "0.0.113"
+lightning-background-processor = "0.0.113"
+lightning-invoice = { version = "0.21.0", features = ["serde"] }

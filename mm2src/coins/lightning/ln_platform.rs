@@ -22,8 +22,9 @@ use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget
                        Confirm, Filter, WatchedOutput};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
+use uuid::Uuid;
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const TRY_LOOP_INTERVAL: f64 = 60.;
@@ -168,7 +169,7 @@ pub struct Platform {
     /// This cache stores the outputs that the LN node has interest in.
     pub registered_outputs: PaMutex<Vec<WatchedOutput>>,
     /// This cache stores transactions to be broadcasted once the other node accepts the channel
-    pub unsigned_funding_txs: PaMutex<HashMap<u64, TransactionInputSigner>>,
+    pub unsigned_funding_txs: PaMutex<HashMap<Uuid, TransactionInputSigner>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
@@ -313,14 +314,14 @@ impl Platform {
     ) {
         // Retrieve channel manager transaction IDs to check the chain for un-confirmations
         let channel_manager_relevant_txids = channel_manager.get_relevant_txids();
-        for txid in channel_manager_relevant_txids {
+        for (txid, _) in channel_manager_relevant_txids {
             self.process_tx_for_unconfirmation(txid, Arc::clone(&channel_manager))
                 .await;
         }
 
         // Retrieve chain monitor transaction IDs to check the chain for un-confirmations
         let chain_monitor_relevant_txids = chain_monitor.get_relevant_txids();
-        for txid in chain_monitor_relevant_txids {
+        for (txid, _) in chain_monitor_relevant_txids {
             self.process_tx_for_unconfirmation(txid, Arc::clone(&chain_monitor))
                 .await;
         }
@@ -514,7 +515,9 @@ impl Platform {
     pub async fn get_channel_closing_tx(&self, channel_details: DBChannelDetails) -> SaveChannelClosingResult<String> {
         let from_block = channel_details
             .funding_generated_in_block
-            .ok_or_else(|| MmError::new(SaveChannelClosingError::BlockHeightNull))?;
+            .map(|b| b.try_into())
+            .transpose()?
+            .unwrap_or_else(|| self.best_block_height());
 
         let tx_id = channel_details
             .funding_tx
@@ -532,7 +535,7 @@ impl Platform {
                 &funding_tx_bytes.into_vec(),
                 &[],
                 (now_ms() / 1000) + 3600,
-                from_block.try_into()?,
+                from_block,
                 &None,
                 TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
             )
@@ -597,16 +600,41 @@ impl BroadcasterInterface for Platform {
         let txid = tx.txid();
         let tx_hex = serialize_hex(tx);
         debug!("Trying to broadcast transaction: {}", tx_hex);
-
-        let fut = self.coin.send_raw_tx(&tx_hex);
-        let fut = async move {
-            match fut.compat().await {
-                Ok(id) => info!("Transaction broadcasted successfully: {:?} ", id),
-                // TODO: broadcast transaction through p2p network in case of error
-                Err(e) => error!("Broadcast transaction {} failed: {}", txid, e),
-            }
+        let tx_bytes = match hex::decode(&tx_hex) {
+            Ok(b) => b,
+            Err(e) => {
+                error!("Converting transaction to bytes error:{}", e);
+                return;
+            },
         };
 
+        let platform_coin = self.coin.clone();
+        let fut = async move {
+            loop {
+                match platform_coin
+                    .as_ref()
+                    .rpc_client
+                    .send_raw_transaction(tx_bytes.clone().into())
+                    .compat()
+                    .await
+                {
+                    Ok(id) => {
+                        info!("Transaction broadcasted successfully: {:?} ", id);
+                        break;
+                    },
+                    // Todo: broadcast transaction through p2p network instead in case of error
+                    // Todo: I don't want to rely on p2p broadcasting for now since there is no way to know if there are nodes running bitcoin in native mode or not
+                    // Todo: Also we need to make sure that the transaction was broadcasted after relying on the p2p network
+                    Err(e) => {
+                        error!("Broadcast transaction {} failed: {}", txid, e);
+                        if !e.get_inner().is_network_error() {
+                            break;
+                        }
+                        Timer::sleep(TRY_LOOP_INTERVAL).await;
+                    },
+                }
+            }
+        };
         self.spawner().spawn(fut);
     }
 }
@@ -617,33 +645,5 @@ impl Filter for Platform {
     fn register_tx(&self, txid: &Txid, _script_pubkey: &Script) { self.add_tx(*txid); }
 
     // Watches for any transactions that spend this output on-chain
-    fn register_output(&self, output: WatchedOutput) -> Option<(usize, Transaction)> {
-        self.add_output(output.clone());
-        let block_hash = match output.block_hash {
-            Some(h) => H256Json::from(h.as_hash().into_inner()),
-            None => return None,
-        };
-
-        // Although this works for both native and electrum clients as the block hash is available,
-        // the filter interface which includes register_output and register_tx should be used for electrum clients only,
-        // this is the reason for initializing the filter as an option in the start_lightning function as it will be None
-        // when implementing lightning for native clients
-        let output_spend_fut = self.rpc_client().find_output_spend(
-            h256_from_txid(output.outpoint.txid),
-            output.script_pubkey.as_ref(),
-            output.outpoint.index.into(),
-            BlockHashOrHeight::Hash(block_hash),
-        );
-        let maybe_output_spend_res =
-            tokio::task::block_in_place(move || output_spend_fut.wait()).error_log_passthrough();
-
-        if let Ok(Some(spent_output_info)) = maybe_output_spend_res {
-            match Transaction::try_from(spent_output_info.spending_tx) {
-                Ok(spending_tx) => return Some((spent_output_info.input_index, spending_tx)),
-                Err(e) => error!("Can't convert transaction error: {}", e.to_string()),
-            }
-        }
-
-        None
-    }
+    fn register_output(&self, output: WatchedOutput) { self.add_output(output); }
 }

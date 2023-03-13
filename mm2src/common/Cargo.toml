@@ -32,7 +32,7 @@ log = "0.4.8"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
 primitive-types = "0.11.1"
-rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
+rand = { version = "0.7", features = ["std", "small_rng"] }
 serde = "1"
 serde_derive = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
@@ -40,7 +40,7 @@ ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 sha2 = "0.9"
 shared_ref_counter = { path = "shared_ref_counter", optional = true }
-uuid = { version = "0.7", features = ["serde", "v4"] }
+uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 wasm-timer = "0.2.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -65,7 +65,7 @@ hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 libc = { version = "0.2" }
-lightning = "0.0.110"
+lightning = "0.0.113"
 log4rs = { version = "1.0", default-features = false, features = ["console_appender", "pattern_encoder"] }
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
 

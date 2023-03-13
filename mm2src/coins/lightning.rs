@@ -34,7 +34,7 @@ use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{AbortableSystem, AbortedError, Timer};
-use common::log::{info, LogOnError, LogState};
+use common::log::{error, info, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
 use futures::{FutureExt, TryFutureExt};
@@ -43,8 +43,10 @@ use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
+use lightning::routing::router::{DefaultRouter, PaymentParameters, RouteParameters, Router as RouterTrait};
+use lightning::util::ser::{Readable, Writeable};
 use lightning_background_processor::BackgroundProcessor;
-use lightning_invoice::utils::DefaultRouter;
+use lightning_invoice::payment::Payer;
 use lightning_invoice::{payment, CreationError, InvoiceBuilder, SignOrCreationError};
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, PlatformCoinConfirmationTargets};
@@ -65,20 +67,22 @@ use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::TransactionInputSigner;
-use secp256k1v22::PublicKey;
+use secp256k1v24::PublicKey;
 use serde::Deserialize;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::fmt;
+use std::io::Cursor;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use uuid::Uuid;
 
 const WAIT_FOR_REFUND_INTERVAL: f64 = 60.;
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
-pub type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
+pub type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<LogState>, E>;
 
 #[derive(Clone)]
 pub struct LightningCoin {
@@ -110,10 +114,8 @@ pub struct LightningCoin {
     /// The lightning node router that takes care of finding routes for payments.
     // Todo: this should be removed once pay_invoice_with_max_total_cltv_expiry_delta similar functionality is implemented in rust-lightning
     pub router: Arc<Router>,
-    /// The lightning node scorer that takes care of scoring routes. Given the uncertainty of channel liquidity balances,
-    /// the scorer stores the probabilities that a route is successful based on knowledge learned from successful and unsuccessful attempts.
-    // Todo: this should be removed once pay_invoice_with_max_total_cltv_expiry_delta similar functionality is implemented in rust-lightning
-    pub scorer: Arc<Scorer>,
+    /// The lightning node logger, this is required to be passed to some function so that logs from these functions are displayed in mm2 logs.
+    pub logger: Arc<LogState>,
 }
 
 impl fmt::Debug for LightningCoin {
@@ -181,11 +183,11 @@ impl LightningCoin {
             })
     }
 
-    pub(crate) async fn get_channel_by_rpc_id(&self, rpc_id: u64) -> Option<ChannelDetails> {
+    pub(crate) async fn get_channel_by_uuid(&self, uuid: Uuid) -> Option<ChannelDetails> {
         self.list_channels()
             .await
             .into_iter()
-            .find(|chan| chan.user_channel_id == rpc_id)
+            .find(|chan| chan.user_channel_id == uuid.as_u128())
     }
 
     pub(crate) async fn pay_invoice(
@@ -194,6 +196,16 @@ impl LightningCoin {
         max_total_cltv_expiry_delta: Option<u32>,
     ) -> Result<PaymentInfo, MmError<PaymentError>> {
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
+        // check if the invoice was already paid
+        if let Some(info) = self.db.get_payment_from_db(payment_hash).await? {
+            // If payment is still pending pay_invoice_with_max_total_cltv_expiry_delta/pay_invoice will return an error later
+            if info.status == HTLCStatus::Succeeded {
+                return MmError::err(PaymentError::Invoice(format!(
+                    "Invoice with payment hash {} is already paid!",
+                    hex::encode(payment_hash.0)
+                )));
+            }
+        }
         let payment_type = PaymentType::OutboundPayment {
             destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
         };
@@ -210,7 +222,6 @@ impl LightningCoin {
                     pay_invoice_with_max_total_cltv_expiry_delta(
                         selfi.channel_manager,
                         selfi.router,
-                        selfi.scorer,
                         &invoice,
                         total_cltv,
                     )
@@ -221,7 +232,8 @@ impl LightningCoin {
         };
 
         let payment_info = PaymentInfo::new(payment_hash, payment_type, description, amt_msat);
-        self.db.add_payment_to_db(&payment_info).await?;
+        // So this only updates the payment in db if the user is retrying to pay an invoice payment that has failed
+        self.db.add_or_update_payment_in_db(&payment_info).await?;
         Ok(payment_info)
     }
 
@@ -256,7 +268,7 @@ impl LightningCoin {
     pub(crate) async fn get_open_channels_by_filter(
         &self,
         filter: Option<OpenChannelsFilter>,
-        paging: PagingOptionsEnum<u64>,
+        paging: PagingOptionsEnum<Uuid>,
         limit: usize,
     ) -> GetOpenChannelsResult {
         fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &OpenChannelsFilter) -> bool {
@@ -356,11 +368,14 @@ impl LightningCoin {
             true
         }
 
-        let mut total_open_channels: Vec<ChannelDetailsForRPC> =
-            self.list_channels().await.into_iter().map(From::from).collect();
-
-        total_open_channels.sort_by(|a, b| a.rpc_channel_id.cmp(&b.rpc_channel_id));
+        let mut total_open_channels = self.list_channels().await;
+        total_open_channels.sort_by(|a, b| {
+            b.short_channel_id
+                .unwrap_or(u64::MAX)
+                .cmp(&a.short_channel_id.unwrap_or(u64::MAX))
+        });
         drop_mutability!(total_open_channels);
+        let total_open_channels: Vec<ChannelDetailsForRPC> = total_open_channels.into_iter().map(From::from).collect();
 
         let open_channels_filtered = if let Some(ref f) = filter {
             total_open_channels
@@ -373,9 +388,9 @@ impl LightningCoin {
 
         let offset = match paging {
             PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
-            PagingOptionsEnum::FromId(rpc_id) => open_channels_filtered
+            PagingOptionsEnum::FromId(uuid) => open_channels_filtered
                 .iter()
-                .position(|x| x.rpc_channel_id == rpc_id)
+                .position(|x| x.uuid == uuid)
                 .map(|pos| pos + 1)
                 .unwrap_or_default(),
         };
@@ -395,6 +410,9 @@ impl LightningCoin {
         }
     }
 
+    // Todo: this can be removed after next rust-lightning release when min_final_cltv_expiry can be specified in
+    // Todo: create_invoice_from_channelmanager_and_duration_since_epoch_with_payment_hash https://github.com/lightningdevkit/rust-lightning/pull/1878
+    // Todo: The above PR will also validate min_final_cltv_expiry.
     async fn create_invoice_for_hash(
         &self,
         payment_hash: PaymentHash,
@@ -430,8 +448,6 @@ impl LightningCoin {
             .payment_hash(Hash::from_inner(payment_hash.0))
             .payment_secret(payment_secret)
             .basic_mpp()
-            // Todo: This should be validated by the other side, right now this is not validated by rust-lightning and the PaymentReceived event doesn't include the final cltv of the payment for us to validate it
-            // Todo: This needs a PR opened to rust-lightning, I already contacted them about it and there is an issue opened for it https://github.com/lightningdevkit/rust-lightning/issues/1850
             .min_final_cltv_expiry(min_final_cltv_expiry)
             .expiry_time(core::time::Duration::from_secs(invoice_expiry_delta_secs.into()));
         if let Some(amt) = amt_msat {
@@ -554,15 +570,15 @@ impl LightningCoin {
         let fut = async move {
             match coin.db.get_payment_from_db(payment_hash).await {
                 Ok(Some(payment)) => {
-                    let amount_received = payment.amt_msat;
+                    let amount_claimable = payment.amt_msat;
                     // Note: locktime doesn't need to be validated since min_final_cltv_expiry should be validated in rust-lightning after fixing the below issue
                     // https://github.com/lightningdevkit/rust-lightning/issues/1850
-                    // Also, PaymentReceived won't be fired if amount_received < the amount requested in the invoice, this check is probably not needed.
+                    // Also, PaymentClaimable won't be fired if amount_claimable < the amount requested in the invoice, this check is probably not needed.
                     // But keeping it just in case any changes happen in rust-lightning
-                    if amount_received != Some(amt_msat as i64) {
+                    if amount_claimable != Some(amt_msat as i64) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Provided payment {} amount {:?} doesn't match required amount {}",
-                            payment_hex, amount_received, amt_msat
+                            payment_hex, amount_claimable, amt_msat
                         )));
                     }
                     Ok(())
@@ -709,7 +725,7 @@ impl SwapOps for LightningCoin {
                     HTLCStatus::Succeeded => Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::LightningPayment(
                         payment_hash,
                     )))),
-                    HTLCStatus::Received => {
+                    HTLCStatus::Claimable => {
                         ERR!(
                             "Payment {} has an invalid status of {} in the db",
                             payment_hex,
@@ -743,7 +759,7 @@ impl SwapOps for LightningCoin {
                     return ERR!("Payment {} should be an inbound payment!", payment_hex);
                 }
                 match payment.status {
-                    HTLCStatus::Pending | HTLCStatus::Received => Ok(None),
+                    HTLCStatus::Pending | HTLCStatus::Claimable => Ok(None),
                     HTLCStatus::Succeeded => Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::LightningPayment(
                         payment_hash,
                     )))),
@@ -1031,9 +1047,7 @@ impl MarketCoinOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        Box::new(self.platform_coin().my_balance().map(|res| res.spendable))
-    }
+    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { Box::new(self.my_balance().map(|res| res.spendable)) }
 
     fn platform_ticker(&self) -> &str { self.platform_coin().ticker() }
 
@@ -1056,6 +1070,7 @@ impl MarketCoinOps for LightningCoin {
     }
 
     // Todo: Add waiting for confirmations logic for the case of if the channel is closed and the htlc can be claimed on-chain
+    // Todo: The above is postponed and might not be needed after this issue is resolved https://github.com/lightningdevkit/rust-lightning/issues/2017
     fn wait_for_confirmations(
         &self,
         tx: &[u8],
@@ -1083,7 +1098,7 @@ impl MarketCoinOps for LightningCoin {
                         match payment.payment_type {
                             PaymentType::OutboundPayment { .. } => match payment.status {
                                 HTLCStatus::Pending | HTLCStatus::Succeeded => return Ok(()),
-                                HTLCStatus::Received => {
+                                HTLCStatus::Claimable => {
                                     return ERR!(
                                         "Payment {} has an invalid status of {} in the db",
                                         payment_hex,
@@ -1096,7 +1111,7 @@ impl MarketCoinOps for LightningCoin {
                                 HTLCStatus::Failed => return ERR!("Lightning swap payment {} failed", payment_hex),
                             },
                             PaymentType::InboundPayment => match payment.status {
-                                HTLCStatus::Received | HTLCStatus::Succeeded => return Ok(()),
+                                HTLCStatus::Claimable | HTLCStatus::Succeeded => return Ok(()),
                                 HTLCStatus::Pending => info!("Payment {} not received yet!", payment_hex),
                                 HTLCStatus::Failed => return ERR!("Lightning swap payment {} failed", payment_hex),
                             },
@@ -1141,7 +1156,7 @@ impl MarketCoinOps for LightningCoin {
                 match coin.db.get_payment_from_db(payment_hash).await {
                     Ok(Some(payment)) => match payment.status {
                         HTLCStatus::Pending => (),
-                        HTLCStatus::Received => {
+                        HTLCStatus::Claimable => {
                             return Err(TransactionErr::Plain(ERRL!(
                                 "Payment {} has an invalid status of {} in the db",
                                 payment_hex,
@@ -1193,11 +1208,29 @@ impl MarketCoinOps for LightningCoin {
             .to_string())
     }
 
-    // Todo: min_tx_amount should depend on inbound_htlc_minimum_msat of the channel/s the payment will be sent through, 1 satoshi is used for for now (1000 of the base unit of lightning which is msat)
-    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(1000, self.decimals()) }
+    // This will depend on the route/routes taken for the payment, since every channel's counterparty specifies the minimum amount they will allow to route.
+    // Since route is not specified at this stage yet, we can use the maximum of these minimum amounts as the min_tx_amount allowed.
+    // Default value: 1 msat if the counterparty is using LDK default value.
+    fn min_tx_amount(&self) -> BigDecimal {
+        let amount_in_msat = self
+            .channel_manager
+            .list_channels()
+            .iter()
+            .map(|c| c.counterparty.outbound_htlc_minimum_msat.unwrap_or(1))
+            .max()
+            .unwrap_or(1) as i64;
+        big_decimal_from_sat(amount_in_msat, self.decimals())
+    }
 
     // Todo: Equals to min_tx_amount for now (1 satoshi), should change this later
+    // Todo: doesn't take routing fees into account too, There is no way to know the route to the other side of the swap when placing the order, need to find a workaround for this
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
+}
+
+#[derive(Deserialize, Serialize)]
+struct LightningProtocolInfo {
+    node_id: PublicKeyForRPC,
+    route_hints: Vec<Vec<u8>>,
 }
 
 #[async_trait]
@@ -1312,11 +1345,91 @@ impl MmCoin for LightningCoin {
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 
-    // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
-    fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
+    // Channels for users/non-routing nodes should be private, so routing hints are sent as part of the protocol info
+    // alongside the receiver lightning node address/pubkey.
+    // Note: This is required only for the side that's getting paid in lightning.
+    // Todo: should take in consideration JIT routing and using LSPs in next PRs
+    fn coin_protocol_info(&self, amount_to_receive: Option<MmNumber>) -> Vec<u8> {
+        let amt_msat = match amount_to_receive.map(|a| sat_from_big_decimal(&a.into(), self.decimals())) {
+            Some(Ok(amt)) => amt,
+            Some(Err(e)) => {
+                error!("{}", e);
+                return Vec::new();
+            },
+            None => return Vec::new(),
+        };
+        let route_hints = filter_channels(self.channel_manager.list_usable_channels(), Some(amt_msat))
+            .iter()
+            .map(|h| h.encode())
+            .collect();
+        let node_id = PublicKeyForRPC(self.channel_manager.get_our_node_id());
+        let protocol_info = LightningProtocolInfo { node_id, route_hints };
+        rmp_serde::to_vec(&protocol_info).expect("Serialization should not fail")
+    }
 
-    // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
-    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+    // Todo: should take in consideration JIT routing and using LSPs in next PRs
+    fn is_coin_protocol_supported(
+        &self,
+        info: &Option<Vec<u8>>,
+        amount_to_send: Option<MmNumber>,
+        locktime: u64,
+        is_maker: bool,
+    ) -> bool {
+        macro_rules! log_err_and_return_false {
+            ($e:expr) => {
+                match $e {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("{}", e);
+                        return false;
+                    },
+                }
+            };
+        }
+        let final_value_msat = match amount_to_send.map(|amt| sat_from_big_decimal(&amt.into(), self.decimals())) {
+            Some(amt_or_err) => log_err_and_return_false!(amt_or_err),
+            None => return true,
+        };
+        let protocol_info = match info.as_ref().map(rmp_serde::from_read_ref::<_, LightningProtocolInfo>) {
+            Some(info_or_err) => log_err_and_return_false!(info_or_err),
+            None => return false,
+        };
+        let mut route_hints = Vec::new();
+        for h in protocol_info.route_hints.iter() {
+            let hint = log_err_and_return_false!(Readable::read(&mut Cursor::new(h)));
+            route_hints.push(hint);
+        }
+        let mut payment_params =
+            PaymentParameters::from_node_id(protocol_info.node_id.into()).with_route_hints(route_hints);
+        let final_cltv_expiry_delta = if is_maker {
+            self.estimate_blocks_from_duration(locktime)
+                .try_into()
+                .expect("final_cltv_expiry_delta shouldn't exceed u32::MAX")
+        } else {
+            payment_params.max_total_cltv_expiry_delta = self
+                .estimate_blocks_from_duration(locktime)
+                .try_into()
+                .expect("max_total_cltv_expiry_delta shouldn't exceed u32::MAX");
+            MIN_FINAL_CLTV_EXPIRY
+        };
+        drop_mutability!(payment_params);
+        let route_params = RouteParameters {
+            payment_params,
+            final_value_msat,
+            final_cltv_expiry_delta,
+        };
+        let payer = self.channel_manager.node_id();
+        let first_hops = self.channel_manager.first_hops();
+        let inflight_htlcs = self.channel_manager.compute_inflight_htlcs();
+        self.router
+            .find_route(
+                &payer,
+                &route_params,
+                Some(&first_hops.iter().collect::<Vec<_>>()),
+                inflight_htlcs,
+            )
+            .is_ok()
+    }
 
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.platform.abortable_system) }
 

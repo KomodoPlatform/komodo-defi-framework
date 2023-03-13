@@ -22,7 +22,7 @@ rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 shared_ref_counter = { path = "../common/shared_ref_counter" }
-uuid = { version = "0.7", features = ["serde", "v4"] }
+uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gstuff = { version = "0.7", features = ["nightly"] }

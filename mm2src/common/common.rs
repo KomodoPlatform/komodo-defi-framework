@@ -799,7 +799,7 @@ pub struct PagingOptions {
     pub from_uuid: Option<Uuid>,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[inline]
 pub fn new_uuid() -> Uuid { Uuid::new_v4() }
 
 pub fn first_char_to_upper(input: &str) -> String {

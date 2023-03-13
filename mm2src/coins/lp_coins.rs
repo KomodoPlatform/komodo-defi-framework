@@ -2175,11 +2175,18 @@ pub trait MmCoin:
     /// The minimum number of confirmations at which a transaction is considered mature.
     fn mature_confirmations(&self) -> Option<u32>;
 
-    /// Get some of the coin config info in serialized format for p2p messaging.
-    fn coin_protocol_info(&self) -> Vec<u8>;
+    /// Get some of the coin protocol related info in serialized format for p2p messaging.
+    fn coin_protocol_info(&self, amount_to_receive: Option<MmNumber>) -> Vec<u8>;
 
     /// Check if serialized coin protocol info is supported by current version.
-    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
+    /// Can also be used to check if orders can be matched or not.
+    fn is_coin_protocol_supported(
+        &self,
+        info: &Option<Vec<u8>>,
+        amount_to_send: Option<MmNumber>,
+        locktime: u64,
+        is_maker: bool,
+    ) -> bool;
 
     /// Abort all coin related futures on coin deactivation.
     fn on_disabled(&self) -> Result<(), AbortedError>;

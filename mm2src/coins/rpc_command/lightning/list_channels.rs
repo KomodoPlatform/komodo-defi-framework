@@ -7,6 +7,7 @@ use db_common::sqlite::rusqlite::Error as SqlError;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use uuid::Uuid;
 
 type ListChannelsResult<T> = Result<T, MmError<ListChannelsError>>;
 
@@ -50,7 +51,7 @@ pub struct ListOpenChannelsRequest {
     #[serde(default = "ten")]
     limit: usize,
     #[serde(default)]
-    paging_options: PagingOptionsEnum<u64>,
+    paging_options: PagingOptionsEnum<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -60,7 +61,7 @@ pub struct ListOpenChannelsResponse {
     skipped: usize,
     total: usize,
     total_pages: usize,
-    paging_options: PagingOptionsEnum<u64>,
+    paging_options: PagingOptionsEnum<Uuid>,
 }
 
 pub async fn list_open_channels_by_filter(
@@ -93,7 +94,7 @@ pub struct ListClosedChannelsRequest {
     #[serde(default = "ten")]
     limit: usize,
     #[serde(default)]
-    paging_options: PagingOptionsEnum<u64>,
+    paging_options: PagingOptionsEnum<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -103,7 +104,7 @@ pub struct ListClosedChannelsResponse {
     skipped: usize,
     total: usize,
     total_pages: usize,
-    paging_options: PagingOptionsEnum<u64>,
+    paging_options: PagingOptionsEnum<Uuid>,
 }
 
 pub async fn list_closed_channels_by_filter(

@@ -1425,6 +1425,16 @@ impl<'a> TakerOrderBuilder<'a> {
             None
         };
 
+        let base_protocol_info = match &self.action {
+            TakerAction::Buy => self.base_coin.coin_protocol_info(Some(self.base_amount.clone())),
+            TakerAction::Sell => self.base_coin.coin_protocol_info(None),
+        };
+
+        let rel_protocol_info = match &self.action {
+            TakerAction::Buy => self.rel_coin.coin_protocol_info(None),
+            TakerAction::Sell => self.rel_coin.coin_protocol_info(Some(self.rel_amount.clone())),
+        };
+
         Ok(TakerOrder {
             created_at: now_ms(),
             request: TakerRequest {
@@ -1438,8 +1448,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 dest_pub_key: Default::default(),
                 match_by: self.match_by,
                 conf_settings: self.conf_settings,
-                base_protocol_info: Some(self.base_coin.coin_protocol_info()),
-                rel_protocol_info: Some(self.rel_coin.coin_protocol_info()),
+                base_protocol_info: Some(base_protocol_info),
+                rel_protocol_info: Some(rel_protocol_info),
             },
             matches: Default::default(),
             min_volume,
@@ -1455,6 +1465,16 @@ impl<'a> TakerOrderBuilder<'a> {
     #[cfg(test)]
     /// skip validation for tests
     fn build_unchecked(self) -> TakerOrder {
+        let base_protocol_info = match &self.action {
+            TakerAction::Buy => self.base_coin.coin_protocol_info(Some(self.base_amount.clone())),
+            TakerAction::Sell => self.base_coin.coin_protocol_info(None),
+        };
+
+        let rel_protocol_info = match &self.action {
+            TakerAction::Buy => self.rel_coin.coin_protocol_info(None),
+            TakerAction::Sell => self.rel_coin.coin_protocol_info(Some(self.rel_amount.clone())),
+        };
+
         TakerOrder {
             created_at: now_ms(),
             request: TakerRequest {
@@ -1468,8 +1488,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 dest_pub_key: Default::default(),
                 match_by: self.match_by,
                 conf_settings: self.conf_settings,
-                base_protocol_info: Some(self.base_coin.coin_protocol_info()),
-                rel_protocol_info: Some(self.rel_coin.coin_protocol_info()),
+                base_protocol_info: Some(base_protocol_info),
+                rel_protocol_info: Some(rel_protocol_info),
             },
             matches: HashMap::new(),
             min_volume: Default::default(),
@@ -2871,8 +2891,12 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         // detect atomic lock time version implicitly by conf_settings existence in taker request
         let atomic_locktime_v = match maker_match.request.conf_settings {
             Some(_) => {
-                let other_conf_settings =
-                    choose_taker_confs_and_notas(&maker_match.request, &maker_match.reserved, &maker_coin, &taker_coin);
+                let other_conf_settings = choose_taker_confs_and_notas(
+                    &maker_match.request,
+                    &maker_match.reserved.conf_settings,
+                    &maker_coin,
+                    &taker_coin,
+                );
                 AtomicLocktimeVersion::V2 {
                     my_conf_settings,
                     other_conf_settings,
@@ -2961,8 +2985,12 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
 
-        let my_conf_settings =
-            choose_taker_confs_and_notas(&taker_order.request, &taker_match.reserved, &maker_coin, &taker_coin);
+        let my_conf_settings = choose_taker_confs_and_notas(
+            &taker_order.request,
+            &taker_match.reserved.conf_settings,
+            &maker_coin,
+            &taker_coin,
+        );
         // detect atomic lock time version implicitly by conf_settings existence in maker reserved
         let atomic_locktime_v = match taker_match.reserved.conf_settings {
             Some(_) => {
@@ -3118,8 +3146,8 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                     maker_order_created_p2p_notify(
                         ctx.clone(),
                         &order,
-                        base.coin_protocol_info(),
-                        rel.coin_protocol_info(),
+                        base.coin_protocol_info(None),
+                        rel.coin_protocol_info(Some(order.max_base_vol.clone() * order.price.clone())),
                     );
                 }
             }
@@ -3216,8 +3244,8 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
             maker_order_created_p2p_notify(
                 ctx.clone(),
                 &maker_order,
-                base.coin_protocol_info(),
-                rel.coin_protocol_info(),
+                base.coin_protocol_info(None),
+                rel.coin_protocol_info(Some(maker_order.max_base_vol.clone() * maker_order.price.clone())),
             );
         }
     }
@@ -3330,11 +3358,29 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         reserved_messages.sort_unstable_by_key(|r| r.price());
 
         for reserved_msg in reserved_messages {
+            let my_conf_settings =
+                choose_maker_confs_and_notas(reserved_msg.conf_settings, &my_order.request, &base_coin, &rel_coin);
+            let other_conf_settings =
+                choose_taker_confs_and_notas(&my_order.request, &reserved_msg.conf_settings, &base_coin, &rel_coin);
+            let atomic_locktime_v = AtomicLocktimeVersion::V2 {
+                my_conf_settings,
+                other_conf_settings,
+            };
+            let lock_time = lp_atomic_locktime(
+                my_order.maker_orderbook_ticker(),
+                my_order.taker_orderbook_ticker(),
+                atomic_locktime_v,
+            );
             // send "connect" message if reserved message targets our pubkey AND
             // reserved amounts match our order AND order is NOT reserved by someone else (empty matches)
             if (my_order.match_reserved(&reserved_msg) == MatchReservedResult::Matched && my_order.matches.is_empty())
-                && base_coin.is_coin_protocol_supported(&reserved_msg.base_protocol_info)
-                && rel_coin.is_coin_protocol_supported(&reserved_msg.rel_protocol_info)
+                && base_coin.is_coin_protocol_supported(&reserved_msg.base_protocol_info, None, lock_time, false)
+                && rel_coin.is_coin_protocol_supported(
+                    &reserved_msg.rel_protocol_info,
+                    Some(reserved_msg.rel_amount.clone()),
+                    lock_time,
+                    false,
+                )
             {
                 let connect = TakerConnect {
                     sender_pubkey: H256Json::from(our_public_id.bytes),
@@ -3438,9 +3484,35 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                 _ => return, // attempt to match with deactivated coin
             };
 
+            let my_conf_settings =
+                choose_maker_confs_and_notas(order.conf_settings, &taker_request, &base_coin, &rel_coin);
+            let other_conf_settings =
+                choose_taker_confs_and_notas(&taker_request, &order.conf_settings, &base_coin, &rel_coin);
+            let atomic_locktime_v = AtomicLocktimeVersion::V2 {
+                my_conf_settings,
+                other_conf_settings,
+            };
+            let maker_lock_duration = (lp_atomic_locktime(
+                order.base_orderbook_ticker(),
+                order.rel_orderbook_ticker(),
+                atomic_locktime_v,
+            ) as f64
+                * rel_coin.maker_locktime_multiplier())
+            .ceil() as u64;
+
             if !order.matches.contains_key(&taker_request.uuid)
-                && base_coin.is_coin_protocol_supported(taker_request.base_protocol_info_for_maker())
-                && rel_coin.is_coin_protocol_supported(taker_request.rel_protocol_info_for_maker())
+                && base_coin.is_coin_protocol_supported(
+                    taker_request.base_protocol_info_for_maker(),
+                    Some(base_amount.clone()),
+                    maker_lock_duration,
+                    true,
+                )
+                && rel_coin.is_coin_protocol_supported(
+                    taker_request.rel_protocol_info_for_maker(),
+                    None,
+                    maker_lock_duration,
+                    true,
+                )
             {
                 let reserved = MakerReserved {
                     dest_pub_key: taker_request.sender_pubkey,
@@ -3459,8 +3531,8 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                             rel_nota: rel_coin.requires_notarization(),
                         })
                     }),
-                    base_protocol_info: Some(base_coin.coin_protocol_info()),
-                    rel_protocol_info: Some(rel_coin.coin_protocol_info()),
+                    base_protocol_info: Some(base_coin.coin_protocol_info(None)),
+                    rel_protocol_info: Some(rel_coin.coin_protocol_info(Some(rel_amount.clone()))),
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
@@ -4494,9 +4566,9 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         rel_nota: req.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
     let builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
-        .with_max_base_vol(volume)
+        .with_max_base_vol(volume.clone())
         .with_min_base_vol(req.min_volume)
-        .with_price(req.price)
+        .with_price(req.price.clone())
         .with_conf_settings(conf_settings)
         .with_save_in_history(req.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
@@ -4520,8 +4592,8 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
     maker_order_created_p2p_notify(
         ctx.clone(),
         &new_order,
-        base_coin.coin_protocol_info(),
-        rel_coin.coin_protocol_info(),
+        base_coin.coin_protocol_info(None),
+        rel_coin.coin_protocol_info(Some(volume * req.price)),
     );
 
     ordermatch_ctx
@@ -4619,6 +4691,7 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
     };
 
     let min_base_amount = base_coin.min_trading_vol();
+    // Todo: Here min_trading_vol for lightning depends on inbound liquidity not outbound, will require to split min_trading_vol to two functions
     let min_rel_amount = rel_coin.min_trading_vol();
 
     // Add min_volume to update_msg if min_volume is found in the request
@@ -5575,7 +5648,7 @@ fn choose_maker_confs_and_notas(
 
 fn choose_taker_confs_and_notas(
     taker_req: &TakerRequest,
-    maker_reserved: &MakerReserved,
+    maker_conf_settings: &Option<OrderConfirmationsSettings>,
     maker_coin: &MmCoinEnum,
     taker_coin: &MmCoinEnum,
 ) -> SwapConfirmationsSettings {
@@ -5599,7 +5672,7 @@ fn choose_taker_confs_and_notas(
             ),
         },
     };
-    if let Some(settings_from_maker) = maker_reserved.conf_settings {
+    if let Some(settings_from_maker) = maker_conf_settings {
         if settings_from_maker.rel_confs < taker_coin_confs {
             taker_coin_confs = settings_from_maker.rel_confs;
         }

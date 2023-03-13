@@ -351,9 +351,17 @@ impl MmCoin for TestCoin {
 
     fn mature_confirmations(&self) -> Option<u32> { unimplemented!() }
 
-    fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
+    fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> { Vec::new() }
 
-    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+    fn is_coin_protocol_supported(
+        &self,
+        _info: &Option<Vec<u8>>,
+        _amount_to_send: Option<MmNumber>,
+        _locktime: u64,
+        _is_maker: bool,
+    ) -> bool {
+        true
+    }
 
     fn on_disabled(&self) -> Result<(), AbortedError> { Ok(()) }
 

@@ -5,19 +5,21 @@ use derive_more::Display;
 use lightning::chain::Access;
 use lightning::ln::msgs::NetAddress;
 use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, SimpleArcPeerManager};
+use lightning::onion_message::SimpleArcOnionMessenger;
 use lightning::routing::gossip;
 use lightning_net_tokio::SocketDescriptor;
 use mm2_net::ip_addr::fetch_external_ip;
 use rand::RngCore;
-use secp256k1v22::{PublicKey, SecretKey};
+use secp256k1v24::PublicKey;
 use std::net::{IpAddr, Ipv4Addr};
+use std::num::TryFromIntError;
 use tokio::net::TcpListener;
 
 const TRY_RECONNECTING_TO_NODE_INTERVAL: f64 = 60.;
 const BROADCAST_NODE_ANNOUNCEMENT_INTERVAL: u64 = 600;
 
 pub type NetworkGossip = gossip::P2PGossipSync<Arc<NetworkGraph>, Arc<dyn Access + Send + Sync>, Arc<LogState>>;
-
+type OnionMessenger = SimpleArcOnionMessenger<LogState>;
 pub type PeerManager =
     SimpleArcPeerManager<SocketDescriptor, ChainMonitor, Platform, Platform, dyn Access + Send + Sync, LogState>;
 
@@ -124,7 +126,7 @@ fn netaddress_from_ipaddr(addr: IpAddr, port: u16) -> Vec<NetAddress> {
 }
 
 pub async fn ln_node_announcement_loop(
-    channel_manager: Arc<ChannelManager>,
+    peer_manager: Arc<PeerManager>,
     node_name: [u8; 32],
     node_color: [u8; 3],
     port: u16,
@@ -144,8 +146,8 @@ pub async fn ln_node_announcement_loop(
                 continue;
             },
         };
-        let channel_manager = channel_manager.clone();
-        async_blocking(move || channel_manager.broadcast_node_announcement(node_color, node_name, addresses)).await;
+        let peer_manager = peer_manager.clone();
+        async_blocking(move || peer_manager.broadcast_node_announcement(node_color, node_name, addresses)).await;
 
         Timer::sleep(BROADCAST_NODE_ANNOUNCEMENT_INTERVAL as f64).await;
     }
@@ -181,8 +183,8 @@ pub async fn init_peer_manager(
     platform: &Arc<Platform>,
     listening_port: u16,
     channel_manager: Arc<ChannelManager>,
+    keys_manager: Arc<KeysManager>,
     gossip_sync: Arc<NetworkGossip>,
-    node_secret: SecretKey,
     logger: Arc<LogState>,
 ) -> EnableLightningResult<Arc<PeerManager>> {
     // The set (possibly empty) of socket addresses on which this node accepts incoming connections.
@@ -196,18 +198,33 @@ pub async fn init_peer_manager(
     // ephemeral_random_data is used to derive per-connection ephemeral keys
     let mut ephemeral_bytes = [0; 32];
     rand::thread_rng().fill_bytes(&mut ephemeral_bytes);
+    let onion_message_handler = Arc::new(OnionMessenger::new(
+        keys_manager.clone(),
+        logger.clone(),
+        IgnoringMessageHandler {},
+    ));
     let lightning_msg_handler = MessageHandler {
         chan_handler: channel_manager,
         route_handler: gossip_sync,
+        onion_message_handler,
     };
 
+    let node_secret = keys_manager
+        .get_node_secret(Recipient::Node)
+        .map_to_mm(|_| EnableLightningError::UnsupportedMode("'start_lightning'".into(), "local node".into()))?;
+    let current_time: u32 = get_local_duration_since_epoch()
+        .map_to_mm(|e| EnableLightningError::Internal(e.to_string()))?
+        .as_secs()
+        .try_into()
+        .map_to_mm(|e: TryFromIntError| EnableLightningError::Internal(e.to_string()))?;
     // IgnoringMessageHandler is used as custom message types (experimental and application-specific messages) is not needed
     let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(
         lightning_msg_handler,
         node_secret,
+        current_time,
         &ephemeral_bytes,
         logger,
-        Arc::new(IgnoringMessageHandler {}),
+        IgnoringMessageHandler {},
     ));
 
     // Initialize p2p networking

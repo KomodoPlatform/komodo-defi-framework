@@ -3,13 +3,14 @@ use common::{now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::types::FromSqlError;
 use derive_more::Display;
 use lightning::ln::{PaymentHash, PaymentPreimage};
-use secp256k1v22::PublicKey;
+use secp256k1v24::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct DBChannelDetails {
-    pub rpc_id: i64,
+    pub uuid: Uuid,
     pub channel_id: String,
     pub counterparty_node_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -37,14 +38,14 @@ pub struct DBChannelDetails {
 impl DBChannelDetails {
     #[inline]
     pub fn new(
-        rpc_id: u64,
+        uuid: Uuid,
         channel_id: [u8; 32],
         counterparty_node_id: PublicKey,
         is_outbound: bool,
         is_public: bool,
     ) -> Self {
         DBChannelDetails {
-            rpc_id: rpc_id as i64,
+            uuid,
             channel_id: hex::encode(channel_id),
             counterparty_node_id: counterparty_node_id.to_string(),
             funding_tx: None,
@@ -101,7 +102,7 @@ pub struct GetClosedChannelsResult {
 #[serde(rename_all = "lowercase")]
 pub enum HTLCStatus {
     Pending,
-    Received,
+    Claimable,
     Succeeded,
     Failed,
 }
@@ -112,7 +113,7 @@ impl FromStr for HTLCStatus {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "Pending" => Ok(HTLCStatus::Pending),
-            "Received" => Ok(HTLCStatus::Received),
+            "Claimable" => Ok(HTLCStatus::Claimable),
             "Succeeded" => Ok(HTLCStatus::Succeeded),
             "Failed" => Ok(HTLCStatus::Failed),
             _ => Err(FromSqlError::InvalidType),
@@ -205,9 +206,6 @@ pub trait LightningDB {
     /// Checks if tables have been initialized or not in DB.
     async fn is_db_initialized(&self) -> Result<bool, Self::Error>;
 
-    /// Gets the last added channel rpc_id. Can be used to deduce the rpc_id for a new channel to be added to DB.
-    async fn get_last_channel_rpc_id(&self) -> Result<u32, Self::Error>;
-
     /// Inserts a new channel record in the DB. The record's data is completed using add_funding_tx_to_db,
     /// add_closing_tx_to_db, add_claiming_tx_to_db when this information is available.
     async fn add_channel_to_db(&self, details: &DBChannelDetails) -> Result<(), Self::Error>;
@@ -215,7 +213,7 @@ pub trait LightningDB {
     /// Updates a channel's DB record with the channel's funding transaction information.
     async fn add_funding_tx_to_db(
         &self,
-        rpc_id: i64,
+        uuid: Uuid,
         funding_tx: String,
         funding_value: i64,
         funding_generated_in_block: i64,
@@ -228,7 +226,7 @@ pub trait LightningDB {
     /// Updates the is_closed value for a channel in the DB to 1.
     async fn update_channel_to_closed(
         &self,
-        rpc_id: i64,
+        uuid: Uuid,
         closure_reason: String,
         close_at: i64,
     ) -> Result<(), Self::Error>;
@@ -240,7 +238,7 @@ pub trait LightningDB {
     async fn get_closed_channels_with_no_closing_tx(&self) -> Result<Vec<DBChannelDetails>, Self::Error>;
 
     /// Updates a channel's DB record with the channel's closing transaction hash.
-    async fn add_closing_tx_to_db(&self, rpc_id: i64, closing_tx: String) -> Result<(), Self::Error>;
+    async fn add_closing_tx_to_db(&self, uuid: Uuid, closing_tx: String) -> Result<(), Self::Error>;
 
     /// Updates a channel's DB record with information about the transaction responsible for claiming the channel's
     /// closing balance back to the user's address.
@@ -251,8 +249,8 @@ pub trait LightningDB {
         claimed_balance: f64,
     ) -> Result<(), Self::Error>;
 
-    /// Gets a channel record from DB by the channel's rpc_id.
-    async fn get_channel_from_db(&self, rpc_id: u64) -> Result<Option<DBChannelDetails>, Self::Error>;
+    /// Gets a channel record from DB by the channel's uuid.
+    async fn get_channel_from_db(&self, uuid: Uuid) -> Result<Option<DBChannelDetails>, Self::Error>;
 
     /// Gets the list of closed channels that match the provided filter criteria. The number of requested records is
     /// specified by the limit parameter, the starting record to list from is specified by the paging parameter. The
@@ -260,12 +258,15 @@ pub trait LightningDB {
     async fn get_closed_channels_by_filter(
         &self,
         filter: Option<ClosedChannelsFilter>,
-        paging: PagingOptionsEnum<u64>,
+        paging: PagingOptionsEnum<Uuid>,
         limit: usize,
     ) -> Result<GetClosedChannelsResult, Self::Error>;
 
     /// Inserts a new payment record in the DB.
     async fn add_payment_to_db(&self, info: &PaymentInfo) -> Result<(), Self::Error>;
+
+    /// Inserts or updates a payment record in the DB.
+    async fn add_or_update_payment_in_db(&self, info: &PaymentInfo) -> Result<(), Self::Error>;
 
     /// Updates a payment's preimage in DB by the payment's hash.
     async fn update_payment_preimage_in_db(
@@ -277,8 +278,8 @@ pub trait LightningDB {
     /// Updates a payment's status in DB by the payment's hash.
     async fn update_payment_status_in_db(&self, hash: PaymentHash, status: &HTLCStatus) -> Result<(), Self::Error>;
 
-    /// Updates a payment's status to received in DB by the payment's hash. Also, adds the payment preimage to the db.
-    async fn update_payment_to_received_in_db(
+    /// Updates a payment's status to claimable in DB by the payment's hash. Also, adds the payment preimage to the db.
+    async fn update_payment_to_claimable_in_db(
         &self,
         hash: PaymentHash,
         preimage: PaymentPreimage,

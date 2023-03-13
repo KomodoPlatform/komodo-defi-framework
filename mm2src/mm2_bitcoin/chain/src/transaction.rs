@@ -8,7 +8,8 @@ use crypto::{dhash256, sha256};
 use ext_bitcoin::blockdata::transaction::{OutPoint as ExtOutpoint, Transaction as ExtTransaction, TxIn, TxOut};
 #[cfg(not(target_arch = "wasm32"))]
 use ext_bitcoin::hash_types::Txid;
-#[cfg(not(target_arch = "wasm32"))] use ext_bitcoin::Witness;
+#[cfg(not(target_arch = "wasm32"))]
+use ext_bitcoin::{PackedLockTime, Sequence, Witness};
 use hash::{CipherText, EncCipherText, OutCipherText, ZkProof, ZkProofSapling, H256, H512, H64};
 use hex::FromHex;
 use ser::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
@@ -79,7 +80,7 @@ impl From<TransactionInput> for TxIn {
         TxIn {
             previous_output: txin.previous_output.into(),
             script_sig: txin.script_sig.take().into(),
-            sequence: txin.sequence,
+            sequence: Sequence(txin.sequence),
             witness: Witness::from_vec(txin.script_witness.into_iter().map(|s| s.take()).collect()),
         }
     }
@@ -237,7 +238,7 @@ impl From<Transaction> for ExtTransaction {
     fn from(tx: Transaction) -> Self {
         ExtTransaction {
             version: tx.version,
-            lock_time: tx.lock_time,
+            lock_time: PackedLockTime(tx.lock_time),
             input: tx.inputs.into_iter().map(|i| i.into()).collect(),
             output: tx.outputs.into_iter().map(|o| o.into()).collect(),
         }

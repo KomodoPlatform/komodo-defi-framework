@@ -4,10 +4,9 @@ use common::PagingOptions;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use uuid::Uuid;
 
 pub type MySwapsResult<T> = Result<T, MmError<MySwapsError>>;
-
-use uuid::Uuid;
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 #[derive(Debug, Display, PartialEq)]
@@ -23,7 +22,7 @@ pub enum MySwapsError {
     #[display(fmt = "'from_uuid' not found: {}", _0)]
     FromUuidNotFound(Uuid),
     #[display(fmt = "Error parsing uuid: {}", _0)]
-    UuidParse(uuid::parser::ParseError),
+    UuidParse(uuid::Error),
     #[display(fmt = "Unknown SQL error: {}", _0)]
     UnknownSqlError(String),
     #[display(fmt = "Internal error: {}", _0)]

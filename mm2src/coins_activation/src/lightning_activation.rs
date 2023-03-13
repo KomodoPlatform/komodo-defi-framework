@@ -20,12 +20,12 @@ use common::executor::{SpawnFuture, Timer};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use lightning::chain::keysinterface::{KeysInterface, Recipient};
+use lightning::chain::keysinterface::KeysInterface;
 use lightning::chain::Access;
 use lightning::routing::gossip;
+use lightning::routing::router::DefaultRouter;
 use lightning_background_processor::{BackgroundProcessor, GossipSync};
 use lightning_invoice::payment;
-use lightning_invoice::utils::DefaultRouter;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
@@ -392,10 +392,8 @@ async fn start_lightning(
         &platform,
         params.listening_port,
         channel_manager.clone(),
+        keys_manager.clone(),
         gossip_sync.clone(),
-        keys_manager
-            .get_node_secret(Recipient::Node)
-            .map_to_mm(|_| EnableLightningError::UnsupportedMode("'start_lightning'".into(), "local node".into()))?,
         logger.clone(),
     )
     .await?;
@@ -428,11 +426,15 @@ async fn start_lightning(
     // https://github.com/lightningdevkit/rust-lightning/pull/1286
     // https://github.com/lightningdevkit/rust-lightning/pull/1359
     let router_random_seed_bytes = keys_manager.get_secure_random_bytes();
-    let router = DefaultRouter::new(network_graph.clone(), logger.clone(), router_random_seed_bytes);
+    let router = DefaultRouter::new(
+        network_graph.clone(),
+        logger.clone(),
+        router_random_seed_bytes,
+        scorer.clone(),
+    );
     let invoice_payer = Arc::new(InvoicePayer::new(
         channel_manager.clone(),
         router,
-        scorer.clone(),
         logger.clone(),
         event_handler,
         // Todo: Add option for choosing payment::Retry::Timeout instead of Attempts in LightningParams
@@ -468,7 +470,7 @@ async fn start_lightning(
 
     // Broadcast Node Announcement
     platform.spawner().spawn(ln_node_announcement_loop(
-        channel_manager.clone(),
+        peer_manager.clone(),
         params.node_name,
         params.node_color,
         params.listening_port,
@@ -487,7 +489,12 @@ async fn start_lightning(
         db,
         open_channels_nodes,
         trusted_nodes,
-        router: Arc::new(DefaultRouter::new(network_graph, logger, router_random_seed_bytes)),
-        scorer,
+        router: Arc::new(DefaultRouter::new(
+            network_graph,
+            logger.clone(),
+            router_random_seed_bytes,
+            scorer,
+        )),
+        logger,
     })
 }

@@ -9,7 +9,7 @@ use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, GenerateTxError, Mm
             UnexpectedDerivationMethod, UtxoRpcError};
 use chain::TransactionOutput;
 use common::log::error;
-use common::{async_blocking, HttpStatusCode};
+use common::{async_blocking, new_uuid, HttpStatusCode};
 use db_common::sqlite::rusqlite::Error as SqlError;
 use http::StatusCode;
 use keys::AddressHashEnum;
@@ -18,6 +18,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use script::Builder;
+use uuid::Uuid;
 
 type OpenChannelResult<T> = Result<T, MmError<OpenChannelError>>;
 
@@ -127,7 +128,7 @@ pub struct OpenChannelRequest {
 
 #[derive(Serialize)]
 pub struct OpenChannelResponse {
-    rpc_channel_id: u64,
+    uuid: Uuid,
     node_address: NodeAddress,
 }
 
@@ -197,22 +198,21 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
     drop_mutability!(conf);
     let user_config: UserConfig = conf.into();
 
-    let rpc_channel_id = ln_coin.db.get_last_channel_rpc_id().await? as u64 + 1;
-
+    let uuid = new_uuid();
     let temp_channel_id = async_blocking(move || {
         channel_manager
-            .create_channel(node_pubkey, amount_in_sat, push_msat, rpc_channel_id, Some(user_config))
+            .create_channel(node_pubkey, amount_in_sat, push_msat, uuid.as_u128(), Some(user_config))
             .map_to_mm(|e| OpenChannelError::FailureToOpenChannel(node_pubkey.to_string(), format!("{:?}", e)))
     })
     .await?;
 
     {
         let mut unsigned_funding_txs = ln_coin.platform.unsigned_funding_txs.lock();
-        unsigned_funding_txs.insert(rpc_channel_id, unsigned);
+        unsigned_funding_txs.insert(uuid, unsigned);
     }
 
     let pending_channel_details = DBChannelDetails::new(
-        rpc_channel_id,
+        uuid,
         temp_channel_id,
         node_pubkey,
         true,
@@ -227,11 +227,11 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         .await?;
 
     if let Err(e) = ln_coin.db.add_channel_to_db(&pending_channel_details).await {
-        error!("Unable to add new outbound channel {} to db: {}", rpc_channel_id, e);
+        error!("Unable to add new outbound channel {} to db: {}", uuid, e);
     }
 
     Ok(OpenChannelResponse {
-        rpc_channel_id,
+        uuid,
         node_address: req.node_address,
     })
 }

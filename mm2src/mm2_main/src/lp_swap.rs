@@ -1459,7 +1459,7 @@ mod lp_swap_tests {
     use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
     use coins::MarketCoinOps;
     use coins::PrivKeyActivationPolicy;
-    use common::block_on;
+    use common::{block_on, new_uuid};
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 
@@ -1931,7 +1931,7 @@ mod lp_swap_tests {
 
         println!("Taker address {}", rick_taker.my_address().unwrap());
 
-        let uuid = Uuid::new_v4();
+        let uuid = new_uuid();
         let maker_amount = BigDecimal::from_str("0.1").unwrap();
         let taker_amount = BigDecimal::from_str("0.1").unwrap();
         let conf_settings = SwapConfirmationsSettings {

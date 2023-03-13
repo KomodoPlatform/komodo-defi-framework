@@ -10,7 +10,7 @@ doctest = false
 common = { path = "../common" }
 hex = "0.4.2"
 log = "0.4.8"
-uuid = { version = "0.7", features = ["serde", "v4"] }
+uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { version = "0.24.2", features = ["bundled"] }
