@@ -21,4 +21,4 @@ ser_error_derive = { path = "../derives/ser_error_derive" }
 gstuff = { version = "0.7", features = ["nightly"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
+gstuff = { version = "0.7", features = ["nightly"] }
