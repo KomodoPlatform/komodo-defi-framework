@@ -2823,9 +2823,6 @@ impl EthCoin {
     }
 
     fn send_hash_time_locked_payment(&self, args: SendPaymentArgs<'_>) -> EthTxFut {
-        const APPROVE_TX_CONFIRMATIONS: u64 = 1;
-        const APPROVE_TX_CHECK_EVERY: u64 = 5;
-
         let receiver_addr = try_tx_fus!(addr_from_raw_pubkey(args.other_pubkey));
         let swap_contract_address = try_tx_fus!(args.swap_contract_address.try_to_address());
         let id = self.etomic_swap_id(args.time_lock, args.secret_hash);
@@ -2888,7 +2885,7 @@ impl EthCoin {
                     Token::FixedBytes(secret_hash),
                     Token::Uint(time_lock)
                 ]));
-                let wait_for_approval_confirmation_until = args.wait_for_confirmation_until;
+                let wait_for_required_allowance_until = args.wait_for_confirmation_until;
 
                 let arc = self.clone();
                 Box::new(allowance_fut.and_then(move |allowed| -> EthTxFut {
@@ -2896,22 +2893,21 @@ impl EthCoin {
                         Box::new(
                             arc.approve(swap_contract_address, U256::max_value())
                                 .and_then(move |approved| {
-                                    // make sure the approve tx is confirmed before sending the htlc tx
-                                    arc.wait_for_confirmations(
-                                        &BytesJson::from(approved.tx_hex()),
-                                        APPROVE_TX_CONFIRMATIONS,
-                                        false,
-                                        wait_for_approval_confirmation_until,
-                                        APPROVE_TX_CHECK_EVERY,
+                                    // make sure the approve tx is confirmed by making sure that the allowed value has been updated
+                                    // this call is cheaper than waiting for confirmation calls
+                                    arc.wait_for_required_allowance(
+                                        swap_contract_address,
+                                        trade_amount,
+                                        wait_for_required_allowance_until,
                                     )
                                     .map_err(move |e| {
                                         TransactionErr::Plain(ERRL!(
-                                            "wait_for_confirmations for approve transaction {:02x} failed: {}",
+                                            "Allowed value was not updated in time after sending approve transaction {:02x}: {}",
                                             approved.tx_hash(),
                                             e
                                         ))
                                     })
-                                    .and_then(move |_confirmed| {
+                                    .and_then(move |_| {
                                         arc.sign_and_send_transaction(
                                             watcher_reward.unwrap_or_else(|| 0.into()),
                                             Action::Call(swap_contract_address),
@@ -3518,6 +3514,40 @@ impl EthCoin {
                         },
                     }
                 },
+            }
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    fn wait_for_required_allowance(
+        &self,
+        spender: Address,
+        required_allowance: U256,
+        wait_until: u64,
+    ) -> Web3RpcFut<()> {
+        const CHECK_ALLOWANCE_EVERY: f64 = 5.;
+
+        let selfi = self.clone();
+        let fut = async move {
+            loop {
+                if now_ms() / 1000 > wait_until {
+                    return MmError::err(Web3RpcError::Internal(ERRL!(
+                        "Waited too long until {} for allowance to be updated to at least {}",
+                        wait_until,
+                        required_allowance
+                    )));
+                }
+
+                match selfi.allowance(spender).compat().await {
+                    Ok(allowed) if allowed >= required_allowance => return Ok(()),
+                    Ok(_allowed) => (),
+                    Err(e) => match e.get_inner() {
+                        Web3RpcError::Transport(e) => error!("Error {} on trying to get the allowed amount!", e),
+                        _ => return Err(e),
+                    },
+                }
+
+                Timer::sleep(CHECK_ALLOWANCE_EVERY).await;
             }
         };
         Box::new(fut.boxed().compat())
