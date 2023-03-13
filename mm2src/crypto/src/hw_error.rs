@@ -3,7 +3,7 @@ use hw_common::primitives::Bip32Error;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
 use std::time::Duration;
-use trezor::{TrezorError, TrezorUserInteraction};
+use trezor::{OperationFailure, TrezorError, TrezorUserInteraction};
 
 pub type HwResult<T> = Result<T, MmError<HwError>>;
 
@@ -28,7 +28,7 @@ pub enum HwError {
     },
     #[display(fmt = "Invalid xpub received from a device: '{}'", _0)]
     InvalidXpub(String),
-    Failure(String),
+    Failure(OperationFailure),
     UnderlyingError(String),
     ProtocolError(String),
     UnexpectedUserInteractionRequest(TrezorUserInteraction),
@@ -45,7 +45,7 @@ impl From<TrezorError> for HwError {
             TrezorError::UnderlyingError(_) => HwError::UnderlyingError(error),
             TrezorError::ProtocolError(_) | TrezorError::UnexpectedMessageType(_) => HwError::Internal(error),
             // TODO handle the failure correctly later
-            TrezorError::Failure(_) => HwError::Failure(error),
+            TrezorError::Failure(err) => HwError::Failure(err),
             TrezorError::UnexpectedInteractionRequest(req) => HwError::UnexpectedUserInteractionRequest(req),
             TrezorError::Internal(_) => HwError::Internal(error),
         }

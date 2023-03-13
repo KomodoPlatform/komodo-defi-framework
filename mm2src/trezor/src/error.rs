@@ -34,7 +34,7 @@ pub enum TrezorError {
     Internal(String),
 }
 
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display)]
 pub enum OperationFailure {
     InvalidPin,
     UnexpectedMessage,
