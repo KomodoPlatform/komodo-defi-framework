@@ -80,27 +80,27 @@ pub trait CoinDockerOps {
     }
 
     fn wait_ready(&self, expected_tx_version: i32) {
-        // let timeout = now_ms() + 120000;
-        // loop {
-        //     match self.rpc_client().get_block_count().wait() {
-        //         Ok(n) => {
-        //             if n > 1 {
-        //                 if let UtxoRpcClientEnum::Native(client) = self.rpc_client() {
-        //                     let hash = client.get_block_hash(n).wait().unwrap();
-        //                     let block = client.get_block(hash).wait().unwrap();
-        //                     let coinbase = client.get_verbose_transaction(&block.tx[0]).wait().unwrap();
-        //                     println!("Coinbase tx {:?} in block {}", coinbase, n);
-        //                     if coinbase.version == expected_tx_version {
-        //                         break;
-        //                     }
-        //                 }
-        //             }
-        //         },
-        //         Err(e) => log!("{:?}", e),
-        //     }
-        //     assert!(now_ms() < timeout, "Test timed out");
-        //     thread::sleep(Duration::from_secs(1));
-        // }
+        let timeout = now_ms() + 120000;
+        loop {
+            match self.rpc_client().get_block_count().wait() {
+                Ok(n) => {
+                    if n > 1 {
+                        if let UtxoRpcClientEnum::Native(client) = self.rpc_client() {
+                            let hash = client.get_block_hash(n).wait().unwrap();
+                            let block = client.get_block(hash).wait().unwrap();
+                            let coinbase = client.get_verbose_transaction(&block.tx[0]).wait().unwrap();
+                            println!("Coinbase tx {:?} in block {}", coinbase, n);
+                            if coinbase.version == expected_tx_version {
+                                break;
+                            }
+                        }
+                    }
+                },
+                Err(e) => log!("{:?}", e),
+            }
+            assert!(now_ms() < timeout, "Test timed out");
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 }
 

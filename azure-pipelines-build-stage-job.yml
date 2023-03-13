@@ -80,9 +80,9 @@ jobs:
       - bash: |
           if [ $AGENT_OS = "Darwin" ]
           then
-            cargo test --test 'docker_tests_main' --target x86_64-apple-darwin --profile ci -- --test-threads=16
+            cargo test --test 'mm2_tests_main' --target x86_64-apple-darwin --profile ci -- --test-threads=16
           else
-            cargo test --test 'docker_tests_main' --profile ci -- --test-threads=32
+            cargo test --test 'mm2_tests_main' --profile ci -- --test-threads=32
           fi
         displayName: 'Test MM2'
         timeoutInMinutes: 22

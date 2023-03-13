@@ -15,12 +15,3 @@ pub mod qrc20_tests;
 // dummy test helping IDE to recognize this as test module
 #[test]
 fn dummy() { assert!(true) }
-
-#[test]
-fn dump() {
-    for (key, value) in std::env::vars() {
-        println!("key: {}, val: {:?}", key, value.as_bytes());
-    }
-
-    assert!(false);
-}
