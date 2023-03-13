@@ -94,7 +94,6 @@ jobs:
           TELEGRAM_API_KEY: $(${{ parameters.telegram_api_key }})
           RUST_LOG: debug
           MANUAL_MM_VERSION: true
-        condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'main' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
       - bash: |
           containers=$(docker ps -q | wc -l)
           echo $containers
