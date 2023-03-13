@@ -119,7 +119,7 @@ impl<'a> TrezorSession<'a> {
             if pong.message == Some(ping_message) {
                 Ok(())
             } else {
-                MmError::err(TrezorError::Failure(OperationFailure::PongMessageMismatch))
+                MmError::err(TrezorError::PongMessageMismatch)
             }
         });
         self.call(req, result_handler).await

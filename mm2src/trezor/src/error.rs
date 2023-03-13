@@ -32,6 +32,7 @@ pub enum TrezorError {
     #[display(fmt = "Unexpected interaction request: {:?}", _0)]
     UnexpectedInteractionRequest(TrezorUserInteraction),
     Internal(String),
+    PongMessageMismatch,
 }
 
 #[derive(Clone, Debug, Display)]
@@ -40,9 +41,7 @@ pub enum OperationFailure {
     UnexpectedMessage,
     ButtonExpected,
     DataError,
-    ActionCancelled,
     PinExpected,
-    PinCancelled,
     InvalidSignature,
     ProcessError,
     NotEnoughFunds,
@@ -52,6 +51,7 @@ pub enum OperationFailure {
     FirmwareError,
     PongMessageMismatch,
     FailureMessageNotFound,
+    UserCancelled,
 }
 
 impl From<Failure> for OperationFailure {
@@ -60,12 +60,13 @@ impl From<Failure> for OperationFailure {
             Some(FailureType::FailurePinInvalid) | Some(FailureType::FailurePinMismatch) => {
                 OperationFailure::InvalidPin
             },
+            Some(FailureType::FailureActionCancelled) | Some(FailureType::FailurePinCancelled) => {
+                OperationFailure::UserCancelled
+            },
             Some(FailureType::FailureUnexpectedMessage) => OperationFailure::UnexpectedMessage,
             Some(FailureType::FailureButtonExpected) => OperationFailure::ButtonExpected,
             Some(FailureType::FailureDataError) => OperationFailure::DataError,
-            Some(FailureType::FailureActionCancelled) => OperationFailure::ActionCancelled,
             Some(FailureType::FailurePinExpected) => OperationFailure::PinExpected,
-            Some(FailureType::FailurePinCancelled) => OperationFailure::PinCancelled,
             Some(FailureType::FailureInvalidSignature) => OperationFailure::InvalidSignature,
             Some(FailureType::FailureProcessError) => OperationFailure::ProcessError,
             Some(FailureType::FailureNotEnoughFunds) => OperationFailure::NotEnoughFunds,
@@ -76,10 +77,6 @@ impl From<Failure> for OperationFailure {
             None => OperationFailure::FailureMessageNotFound,
         }
     }
-}
-
-impl From<OperationFailure> for TrezorError {
-    fn from(failure: OperationFailure) -> Self { TrezorError::Failure(failure) }
 }
 
 impl From<DecodeError> for TrezorError {

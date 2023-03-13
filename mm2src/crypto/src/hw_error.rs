@@ -33,6 +33,7 @@ pub enum HwError {
     ProtocolError(String),
     UnexpectedUserInteractionRequest(TrezorUserInteraction),
     Internal(String),
+    PongMessageMismatch,
 }
 
 impl From<TrezorError> for HwError {
@@ -48,6 +49,7 @@ impl From<TrezorError> for HwError {
             TrezorError::Failure(err) => HwError::Failure(err),
             TrezorError::UnexpectedInteractionRequest(req) => HwError::UnexpectedUserInteractionRequest(req),
             TrezorError::Internal(_) => HwError::Internal(error),
+            TrezorError::PongMessageMismatch => HwError::PongMessageMismatch,
         }
     }
 }
