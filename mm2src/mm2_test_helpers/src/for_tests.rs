@@ -37,7 +37,6 @@ cfg_native! {
     use bytes::Bytes;
     use futures::channel::oneshot;
     use futures::task::SpawnExt;
-    use gstuff::ISATTY;
     use http::Request;
     use regex::Regex;
     use std::fs;
@@ -871,7 +870,10 @@ impl Drop for RaiiDump {
         let log = String::from_utf8_lossy(&log);
         let log = log.trim();
 
-        if let (true, true) = (nocapture, *ISATTY) {
+        // If we want to determine is a tty or not here and write logs to stdout only if it's tty,
+        // we can use something like https://docs.rs/atty/latest/atty/ here, look like it's more cross-platform than gstuff::ISATTY .
+
+        if nocapture == true {
             std::io::stdout().write(format!("vvv {:?} vvv\n", self.log_path).as_bytes()).expect("Printing to stdout failed");
             std::io::stdout().write(log.as_bytes()).expect("Printing to stdout failed");
         } else {
