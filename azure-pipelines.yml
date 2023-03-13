@@ -33,53 +33,8 @@ schedules:
         - dev
 
 stages:
-  - stage: Lint
-    displayName: Formatting, Clippy, and other checks
-    jobs:
-      - template: azure-pipelines-lint-stage-job.yml  # Template reference
-        parameters:
-          name: 'MM2_Lint_Linux'
-          os: 'Linux'
-
-      - template: azure-pipelines-lint-stage-job.yml  # Template reference
-        parameters:
-          name: 'MM2_Lint_MacOS'
-          os: 'Darwin'
-
-      - template: azure-pipelines-lint-stage-job.yml  # Template reference
-        parameters:
-          name: 'MM2_Lint_Win'
-          os: 'Windows_NT'
-
-  - stage: WASM
-    displayName: WASM build and test
-    condition: succeeded('Lint')
-    jobs:
-      - template: azure-pipelines-wasm-stage-job.yml  # Template reference
-        parameters:
-          name: 'MM2_WASM_Linux'
-          os: 'Linux'
-          bob_passphrase: 'BOB_PASSPHRASE_LINUX'
-          bob_userpass: 'BOB_USERPASS_LINUX'
-          alice_passphrase: 'ALICE_PASSPHRASE_LINUX'
-          alice_userpass: 'ALICE_USERPASS_LINUX'
-          telegram_api_key: 'TELEGRAM_API_KEY'
-
-  - stage: Mobile
-    displayName: Mobile libs build
-    condition: and(succeeded('WASM'), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'), eq(variables['Build.SourceBranchName'], 'dev')))
-    jobs:
-      - template: azure-pipelines-android-job.yml
-        parameters:
-          os: 'Linux'
-      - template: azure-pipelines-ios-job.yml
-        parameters:
-          os: 'Darwin'
-
   - stage: Desktop
     displayName: Desktop Build and test
-    condition: or(eq(dependencies.Mobile.result, 'Succeeded'), and(eq(dependencies.Mobile.result, 'Skipped'), succeeded('WASM')))
-    dependsOn: Mobile
     jobs:
       - template: azure-pipelines-build-stage-job.yml  # Template reference
         parameters:

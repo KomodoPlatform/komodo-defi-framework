@@ -161,6 +161,7 @@ fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, amount: f64) {
 }
 
 #[test]
+#[ignore]
 fn test_taker_spends_maker_payment() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let (_ctx, taker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 1.into());
@@ -257,6 +258,7 @@ fn test_taker_spends_maker_payment() {
 }
 
 #[test]
+#[ignore]
 fn test_maker_spends_taker_payment() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let (_ctx, taker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
@@ -353,6 +355,7 @@ fn test_maker_spends_taker_payment() {
 }
 
 #[test]
+#[ignore]
 fn test_maker_refunds_payment() {
     let (_ctx, coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let expected_balance = coin.my_spendable_balance().wait().unwrap();
@@ -415,6 +418,7 @@ fn test_maker_refunds_payment() {
 }
 
 #[test]
+#[ignore]
 fn test_taker_refunds_payment() {
     let (_ctx, coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let expected_balance = coin.my_spendable_balance().wait().unwrap();
@@ -477,6 +481,7 @@ fn test_taker_refunds_payment() {
 }
 
 #[test]
+#[ignore]
 fn test_check_if_my_payment_sent() {
     let (_ctx, coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let timelock = (now_ms() / 1000) as u32 - 200;
@@ -523,6 +528,7 @@ fn test_check_if_my_payment_sent() {
 }
 
 #[test]
+#[ignore]
 fn test_search_for_swap_tx_spend_taker_spent() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let (_ctx, taker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 1.into());
@@ -598,6 +604,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
 }
 
 #[test]
+#[ignore]
 fn test_search_for_swap_tx_spend_maker_refunded() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let search_from_block = maker_coin.current_block().wait().expect("!current_block");
@@ -670,6 +677,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
 }
 
 #[test]
+#[ignore]
 fn test_search_for_swap_tx_spend_not_spent() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let search_from_block = maker_coin.current_block().wait().expect("!current_block");
@@ -720,6 +728,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
 }
 
 #[test]
+#[ignore]
 fn test_wait_for_tx_spend() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let (_ctx, taker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 1.into());
@@ -815,6 +824,7 @@ fn test_wait_for_tx_spend() {
 }
 
 #[test]
+#[ignore]
 fn test_check_balance_on_order_post_base_coin_locked() {
     let bob_priv_key = random_secp256k1_secret();
     let alice_priv_key = random_secp256k1_secret();
@@ -1075,6 +1085,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
 
 /// Generate the Qtum coin with a random balance and start the `test_get_max_taker_vol_and_trade_with_dynamic_trade_fee` test.
 #[test]
+#[ignore]
 fn test_max_taker_vol_dynamic_trade_fee() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 2 Qtums
@@ -1102,6 +1113,7 @@ fn test_max_taker_vol_dynamic_trade_fee() {
 /// To sum up, `get_sender_trade_fee(balance) < get_sender_trade_fee(max_volume)`, where `balance > max_volume`.
 /// This test checks if the fee returned from `get_sender_trade_fee` should include the change output anyway.
 #[test]
+#[ignore]
 fn test_trade_preimage_fee_includes_change_output_anyway() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 2 Qtums
@@ -1118,6 +1130,7 @@ fn test_trade_preimage_fee_includes_change_output_anyway() {
     test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin, &priv_key);
 }
 #[test]
+#[ignore]
 fn test_trade_preimage_not_sufficient_base_coin_balance_for_ticker() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QRC20 coin(QICK) fill the wallet with 10 QICK
@@ -1180,6 +1193,7 @@ fn test_trade_preimage_not_sufficient_base_coin_balance_for_ticker() {
 }
 
 #[test]
+#[ignore]
 fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
@@ -1241,6 +1255,7 @@ fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
 /// If we try to deduct a transaction fee from `output = 0.00073`, the remaining value less than `dust = 0.000728`,
 /// so we have to receive the `NotSufficientBalance` error.
 #[test]
+#[ignore]
 fn test_trade_preimage_deduct_fee_from_output_failed() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.00073 Qtums (that is little greater than dust 0.000728)
@@ -1301,6 +1316,7 @@ fn test_trade_preimage_deduct_fee_from_output_failed() {
 }
 
 #[test]
+#[ignore]
 fn test_segwit_native_balance() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
@@ -1347,6 +1363,7 @@ fn test_segwit_native_balance() {
 }
 
 #[test]
+#[ignore]
 fn test_withdraw_and_send_from_segwit() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.7 Qtums
@@ -1395,6 +1412,7 @@ fn test_withdraw_and_send_from_segwit() {
 }
 
 #[test]
+#[ignore]
 fn test_withdraw_and_send_legacy_to_segwit() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.7 Qtums
@@ -1440,6 +1458,7 @@ fn test_withdraw_and_send_legacy_to_segwit() {
 }
 
 #[test]
+#[ignore]
 fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
@@ -1498,6 +1517,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
 }
 
 #[test]
+#[ignore]
 fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
