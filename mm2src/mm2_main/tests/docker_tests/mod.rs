@@ -23,9 +23,9 @@ fn dump() {
     }
 
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-    dbg!(bob_passphrase);
+    dbg!(bob_passphrase.as_bytes());
     let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
-    dbg!(alice_passphrase);
+    dbg!(alice_passphrase.as_bytes());
 
     assert!(false);
 }
