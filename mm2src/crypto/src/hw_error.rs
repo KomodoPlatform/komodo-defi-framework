@@ -98,19 +98,33 @@ pub enum HwRpcError {
     FoundMultipleDevices,
     #[display(fmt = "Found unexpected device. Please re-initialize Hardware wallet")]
     FoundUnexpectedDevice,
+    #[display(fmt = "Pin is invalid")]
     InvalidPin,
+    #[display(fmt = "Unexpected message")]
     UnexpectedMessage,
+    #[display(fmt = "Button expected")]
     ButtonExpected,
+    #[display(fmt = "Got data error")]
     DataError,
+    #[display(fmt = "Pin expected")]
     PinExpected,
+    #[display(fmt = "Invalid signature")]
     InvalidSignature,
+    #[display(fmt = "Got process error")]
     ProcessError,
+    #[display(fmt = "Not enough funds")]
     NotEnoughFunds,
+    #[display(fmt = "Not initialized")]
     NotInitialized,
+    #[display(fmt = "Wipe code mismatch")]
     WipeCodeMismatch,
+    #[display(fmt = "Invalid session")]
     InvalidSession,
+    #[display(fmt = "Got firmware error")]
     FirmwareError,
+    #[display(fmt = "Failure message not found")]
     FailureMessageNotFound,
+    #[display(fmt = "User cancelled action")]
     UserCancelled,
 }
 
