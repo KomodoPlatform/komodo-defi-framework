@@ -874,8 +874,12 @@ impl Drop for RaiiDump {
         // we can use something like https://docs.rs/atty/latest/atty/ here, look like it's more cross-platform than gstuff::ISATTY .
 
         if nocapture == true {
-            std::io::stdout().write(format!("vvv {:?} vvv\n", self.log_path).as_bytes()).expect("Printing to stdout failed");
-            std::io::stdout().write(log.as_bytes()).expect("Printing to stdout failed");
+        std::io::stdout()
+            .write(format!("{}vvv {:?} vvv\n", DARK_YELLOW_ANSI_CODE, self.log_path).as_bytes())
+            .expect("Printing to stdout failed");
+        std::io::stdout()
+            .write(format!("{}{}{}", YELLOW_ANSI_CODE, log, RESET_COLOR_ANSI_CODE).as_bytes())
+            .expect("Printing to stdout failed");
         } else {
             log!("vvv {:?} vvv\n{}", self.log_path, log);
         }
