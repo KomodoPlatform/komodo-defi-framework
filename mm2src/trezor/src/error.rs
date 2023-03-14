@@ -49,7 +49,6 @@ pub enum OperationFailure {
     WipeCodeMismatch,
     InvalidSession,
     FirmwareError,
-    PongMessageMismatch,
     FailureMessageNotFound,
     UserCancelled,
 }
