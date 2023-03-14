@@ -860,6 +860,10 @@ pub struct RaiiDump {
 impl Drop for RaiiDump {
     fn drop(&mut self) {
 
+        const DARK_YELLOW_ANSI_CODE: &str = "\x1b[33m";
+        const YELLOW_ANSI_CODE: &str = "\x1b[93m";
+        const RESET_COLOR_ANSI_CODE: &str = "\x1b[0m";
+
         // `term` bypasses the stdout capturing, we should only use it if the capturing was disabled.
         let nocapture = env::args().any(|a| a == "--nocapture");
 
@@ -878,7 +882,7 @@ impl Drop for RaiiDump {
             .write(format!("{}vvv {:?} vvv\n", DARK_YELLOW_ANSI_CODE, self.log_path).as_bytes())
             .expect("Printing to stdout failed");
         std::io::stdout()
-            .write(format!("{}{}{}", YELLOW_ANSI_CODE, log, RESET_COLOR_ANSI_CODE).as_bytes())
+            .write(format!("{}{}{}\n", YELLOW_ANSI_CODE, log, RESET_COLOR_ANSI_CODE).as_bytes())
             .expect("Printing to stdout failed");
         } else {
             log!("vvv {:?} vvv\n{}", self.log_path, log);
