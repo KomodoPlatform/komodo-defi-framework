@@ -1453,6 +1453,7 @@ impl TakerSwap {
                         swap_unique_data: &unique_data,
                         payment_instructions: &self.r().payment_instructions,
                         watcher_reward: reward_amount,
+                        wait_for_confirmation_until: self.r().data.taker_payment_lock,
                     });
 
                     match payment_fut.compat().await {

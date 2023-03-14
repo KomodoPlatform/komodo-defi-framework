@@ -670,7 +670,8 @@ fn test_watcher_validate_taker_payment_eth() {
     let maker_pub = maker_keypair.public();
 
     let time_lock_duration = get_payment_locktime();
-    let time_lock = (now_ms() / 1000 + time_lock_duration) as u32;
+    let wait_for_confirmation_until = now_ms() / 1000 + time_lock_duration;
+    let time_lock = wait_for_confirmation_until as u32;
     let amount = BigDecimal::from_str("0.01").unwrap();
     let secret_hash = dhash160(&MakerSwap::generate_secret());
     let watcher_reward = Some(
@@ -700,6 +701,7 @@ fn test_watcher_validate_taker_payment_eth() {
             swap_unique_data: &[],
             payment_instructions: &None,
             watcher_reward,
+            wait_for_confirmation_until,
         })
         .wait()
         .unwrap();
@@ -761,6 +763,7 @@ fn test_watcher_validate_taker_payment_eth() {
             swap_unique_data: &[],
             payment_instructions: &None,
             watcher_reward,
+            wait_for_confirmation_until,
         })
         .wait()
         .unwrap();
@@ -830,6 +833,7 @@ fn test_watcher_validate_taker_payment_eth() {
             swap_unique_data: &[],
             payment_instructions: &None,
             watcher_reward,
+            wait_for_confirmation_until,
         })
         .wait()
         .unwrap();
@@ -932,7 +936,8 @@ fn test_watcher_validate_taker_payment_erc20() {
     let maker_pub = maker_keypair.public();
 
     let time_lock_duration = get_payment_locktime();
-    let time_lock = (now_ms() / 1000 + time_lock_duration) as u32;
+    let wait_for_confirmation_until = now_ms() / 1000 + time_lock_duration;
+    let time_lock = wait_for_confirmation_until as u32;
 
     let secret_hash = dhash160(&MakerSwap::generate_secret());
     let watcher_reward = Some(
@@ -961,6 +966,7 @@ fn test_watcher_validate_taker_payment_erc20() {
             swap_unique_data: &[],
             payment_instructions: &None,
             watcher_reward,
+            wait_for_confirmation_until,
         })
         .wait()
         .unwrap();
@@ -1022,6 +1028,7 @@ fn test_watcher_validate_taker_payment_erc20() {
             swap_unique_data: &[],
             payment_instructions: &None,
             watcher_reward,
+            wait_for_confirmation_until,
         })
         .wait()
         .unwrap();
@@ -1091,6 +1098,7 @@ fn test_watcher_validate_taker_payment_erc20() {
             swap_unique_data: &[],
             payment_instructions: &None,
             watcher_reward,
+            wait_for_confirmation_until,
         })
         .wait()
         .unwrap();
@@ -1530,7 +1538,8 @@ fn test_watcher_validate_taker_fee_utxo() {
 fn test_watcher_validate_taker_payment_utxo() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
     let time_lock_duration = get_payment_locktime();
-    let time_lock = (now_ms() / 1000 + time_lock_duration) as u32;
+    let wait_for_confirmation_until = now_ms() / 1000 + time_lock_duration;
+    let time_lock = wait_for_confirmation_until as u32;
 
     let (_ctx, taker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let taker_pubkey = taker_coin.my_public_key().unwrap();
@@ -1551,6 +1560,7 @@ fn test_watcher_validate_taker_payment_utxo() {
             swap_unique_data: &[],
             payment_instructions: &None,
             watcher_reward: None,
+            wait_for_confirmation_until,
         })
         .wait()
         .unwrap();
@@ -1723,6 +1733,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let tx = coin.send_taker_payment(taker_payment_args).wait().unwrap();
 

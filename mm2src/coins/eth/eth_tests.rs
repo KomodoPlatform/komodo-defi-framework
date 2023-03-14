@@ -262,6 +262,7 @@ fn send_and_refund_erc20_payment() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = coin.send_maker_payment(maker_payment_args).wait().unwrap();
     log!("{:?}", payment);
@@ -332,6 +333,7 @@ fn send_and_refund_eth_payment() {
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
+        wait_for_confirmation_until: 0,
     };
     let payment = coin.send_maker_payment(send_maker_payment_args).wait().unwrap();
 
