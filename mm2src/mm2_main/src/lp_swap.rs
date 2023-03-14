@@ -1450,7 +1450,6 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize, Default)]
 pub struct SwapPubkeys {
     pub maker: String,
     pub taker: String,

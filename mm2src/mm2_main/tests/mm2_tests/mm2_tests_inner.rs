@@ -1,6 +1,6 @@
 use crate::integration_tests_common::*;
 use common::executor::Timer;
-use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log};
+use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log, new_uuid};
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
@@ -753,7 +753,7 @@ async fn trade_base_rel_electrum(
     maker_price: f64,
     taker_price: f64,
     volume: f64,
-) -> (MarketMakerIt, MarketMakerIt, String) {
+) {
     let coins = json!([
         rick_conf(),
         morty_conf(),
@@ -871,7 +871,21 @@ async fn trade_base_rel_electrum(
         assert_eq!(0, bob_orderbook.asks.len(), "{} {} asks must be empty", base, rel);
     }
 
-    (mm_bob, mm_alice, uuids[0].clone())
+    #[cfg(target_arch = "wasm32")]
+    {
+        const STOP_TIMEOUT_MS: u64 = 1000;
+
+        mm_bob.stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS).await.unwrap();
+        mm_alice
+            .stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS)
+            .await
+            .unwrap();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        mm_bob.stop().await.unwrap();
+        mm_alice.stop().await.unwrap();
+    }
 }
 
 #[test]
@@ -880,13 +894,7 @@ fn trade_test_electrum_and_eth_coins() {
     let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
     let alice_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount(0);
     let pairs = &[("ETH", "JST")];
-    let (mm_bob, mm_alice, _) = block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1., 2., 0.1));
-
-    // stop mm2.
-    {
-        block_on(mm_bob.stop()).unwrap();
-        block_on(mm_alice.stop()).unwrap();
-    };
+    block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1., 2., 0.1));
 }
 
 #[test]
@@ -895,13 +903,7 @@ fn trade_test_electrum_rick_zombie() {
     let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
     let alice_policy = Mm2InitPrivKeyPolicy::Iguana;
     let pairs = &[("RICK", "ZOMBIE")];
-    let (mm_bob, mm_alice, _) = block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1., 2., 0.1));
-
-    // stop mm2.
-    {
-        block_on(mm_bob.stop()).unwrap();
-        block_on(mm_alice.stop()).unwrap();
-    };
+    block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1., 2., 0.1));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1415,7 +1417,7 @@ fn test_swap_status() {
         "userpass": mm.userpass,
         "method": "my_swap_status",
         "params": {
-            "uuid":Uuid::new_v4(),
+            "uuid": new_uuid(),
         }
     })))
     .unwrap();
@@ -1426,7 +1428,7 @@ fn test_swap_status() {
         "userpass": mm.userpass,
         "method": "stats_swap_status",
         "params": {
-            "uuid":Uuid::new_v4(),
+            "uuid": new_uuid(),
         }
     })))
     .unwrap();
@@ -3347,7 +3349,7 @@ fn test_add_delegation_qtum() {
         "pass".into(),
         None,
     )
-    .unwrap();
+        .unwrap();
 
     let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
         "electrum1.cipig.net:10071",
@@ -3432,7 +3434,7 @@ fn test_remove_delegation_qtum() {
         "pass".into(),
         None,
     )
-    .unwrap();
+        .unwrap();
 
     let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
         "electrum1.cipig.net:10071",
@@ -4516,7 +4518,7 @@ fn test_tx_history_tbtc_non_segwit() {
         "mm2": 1,
         "tx_history": true,
     })))
-    .unwrap();
+        .unwrap();
     assert_eq!(
         electrum.0,
         StatusCode::OK,
@@ -6825,9 +6827,9 @@ fn test_sign_verify_message_eth() {
         "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600"
     );
 
-    let response = block_on(verify_message(&mm_bob, "ETH", 
-    "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600",
-    "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"));
+    let response = block_on(verify_message(&mm_bob, "ETH",
+                                           "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600",
+                                           "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"));
     let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
