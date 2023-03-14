@@ -8,8 +8,8 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_messa
             get_locked_amount, recv_swap_msg, swap_topic, taker_payment_spend_deadline, tx_helper_topic,
             wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
             NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
-            SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg, SwapsContext,
-            TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
+            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
@@ -1923,6 +1923,21 @@ impl MakerSavedSwap {
         if let Some(rates) = fetch_swap_coins_price(self.maker_coin.clone(), self.taker_coin.clone()).await {
             self.maker_coin_usd_price = Some(rates.base);
             self.taker_coin_usd_price = Some(rates.rel);
+        }
+    }
+
+    pub fn swap_pubkeys(&self) -> Result<SwapPubkeys, String> {
+        match self.events.first() {
+            Some(event) => match &event.event {
+                // TODO: Adjust for private coins when/if they are braodcasted
+                // TODO: Adjust for HD wallet when completed
+                MakerSwapEvent::Started(data) => Ok(SwapPubkeys::new(
+                    data.my_persistent_pub.to_string(),
+                    data.taker.to_string(),
+                )),
+                _ => ERR!("First swap event must be Started"),
+            },
+            None => ERR!("Can't get maker/taker pubkey, events are empty"),
         }
     }
 }

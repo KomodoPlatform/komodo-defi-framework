@@ -17,15 +17,13 @@ const TBNB_URLS: &[&str] = &["https://data-seed-prebsc-1-s3.binance.org:8545/"];
 const TBNB_SWAP_CONTRACT: &str = "0xB1Ad803ea4F57401639c123000C75F5B66E4D123";
 
 #[test]
-#[ignore]
-// TODO https://github.com/KomodoPlatform/atomicDEX-API/issues/1569
 fn start_swap_operation() {
     let pairs = [
         ("USDC-IBC-IRIS", "IRIS-NIMDA"),
         ("IRIS-NIMDA", "RICK"),
         ("USDC-IBC-IRIS", "tBNB"),
     ];
-    block_on(trade_base_rel_iris(&pairs, 1, 2, 0.01));
+    block_on(trade_base_rel_iris(&pairs, 1, 2, 0.008));
 }
 
 pub async fn trade_base_rel_iris(

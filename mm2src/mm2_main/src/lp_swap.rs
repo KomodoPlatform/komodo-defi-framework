@@ -1450,6 +1450,16 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
     }
 }
 
+pub struct SwapPubkeys {
+    pub maker: String,
+    pub taker: String,
+}
+
+impl SwapPubkeys {
+    #[inline]
+    fn new(maker: String, taker: String) -> Self { SwapPubkeys { maker, taker } }
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod lp_swap_tests {
     use super::*;
