@@ -1794,8 +1794,40 @@ impl MarketCoinOps for EthCoin {
                         };
                         // checking if the current block is above the confirmed_at block prediction for pos chain to prevent overflow
                         if current_block >= confirmed_at && current_block - confirmed_at + 1 >= required_confirms {
-                            status.append(" Confirmed.");
-                            return Ok(());
+                            loop {
+                                if status.ms2deadline().unwrap() < 0 {
+                                    status.append(" Timed out.");
+                                    return ERR!(
+                                        "Waited too long until {} for transaction {:?} confirmation ",
+                                        wait_until,
+                                        tx
+                                    );
+                                }
+
+                                // Make sure that the transaction is returned by eth_getTransactionByHash too so that swaps don't fail at payment validation
+                                // https://github.com/KomodoPlatform/atomicDEX-API/issues/1630#issuecomment-1401736168
+                                match selfi.web3.eth().transaction(TransactionId::Hash(tx.hash)).await {
+                                    Ok(Some(_)) => {
+                                        status.append(" Confirmed.");
+                                        return Ok(());
+                                    },
+                                    Ok(None) => error!(
+                                        "Didn't find tx: {:02x} for coin: {} on RPC node using eth_getTransactionByHash. Retrying in {} seconds",
+                                        tx.hash,
+                                        selfi.ticker(),
+                                        check_every
+                                    ),
+                                    Err(e) => error!(
+                                        "Error {} calling eth_getTransactionByHash for coin: {}, tx: {:02x}. Retrying in {} seconds",
+                                        e,
+                                        selfi.ticker(),
+                                        tx.hash,
+                                        check_every
+                                    ),
+                                }
+
+                                Timer::sleep(check_every as f64).await;
+                            }
                         }
                     }
                 }
