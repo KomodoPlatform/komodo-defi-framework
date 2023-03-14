@@ -33,12 +33,6 @@ jobs:
         rm -f ./MM_VERSION
         echo $VERSION > ./MM_VERSION
         cargo build --bin mm2 --profile ci
-        tar -czvf mm2-linux.tar.gz mm2
-    - name: Upload komodo-linux.tar.gz as artifact
-        uses: actions/upload-artifact@v1
-        with:
-          name: komodo-linux
-          path: ./komodo-linux.tar.gz
 
   mac-x86:
     timeout-minutes: 30
