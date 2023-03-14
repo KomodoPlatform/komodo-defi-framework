@@ -98,6 +98,20 @@ pub enum HwRpcError {
     FoundMultipleDevices,
     #[display(fmt = "Found unexpected device. Please re-initialize Hardware wallet")]
     FoundUnexpectedDevice,
+    InvalidPin,
+    UnexpectedMessage,
+    ButtonExpected,
+    DataError,
+    PinExpected,
+    InvalidSignature,
+    ProcessError,
+    NotEnoughFunds,
+    NotInitialized,
+    WipeCodeMismatch,
+    InvalidSession,
+    FirmwareError,
+    FailureMessageNotFound,
+    UserCancelled,
 }
 
 /// The trait is implemented for those error enumerations that have `HwRpcError` variant.
@@ -119,6 +133,20 @@ where
         HwError::CannotChooseDevice { .. } => T::hw_rpc_error(HwRpcError::FoundMultipleDevices),
         HwError::ConnectionTimedOut { timeout } => T::timeout(timeout),
         HwError::FoundUnexpectedDevice => T::hw_rpc_error(HwRpcError::FoundUnexpectedDevice),
+        HwError::InvalidPin => T::hw_rpc_error(HwRpcError::InvalidPin),
+        HwError::UnexpectedMessage => T::hw_rpc_error(HwRpcError::UnexpectedMessage),
+        HwError::ButtonExpected => T::hw_rpc_error(HwRpcError::ButtonExpected),
+        HwError::DataError => T::hw_rpc_error(HwRpcError::DataError),
+        HwError::PinExpected => T::hw_rpc_error(HwRpcError::PinExpected),
+        HwError::InvalidSignature => T::hw_rpc_error(HwRpcError::InvalidSignature),
+        HwError::ProcessError => T::hw_rpc_error(HwRpcError::ProcessError),
+        HwError::NotEnoughFunds => T::hw_rpc_error(HwRpcError::NotEnoughFunds),
+        HwError::NotInitialized => T::hw_rpc_error(HwRpcError::NotInitialized),
+        HwError::WipeCodeMismatch => T::hw_rpc_error(HwRpcError::WipeCodeMismatch),
+        HwError::InvalidSession => T::hw_rpc_error(HwRpcError::InvalidSession),
+        HwError::FirmwareError => T::hw_rpc_error(HwRpcError::FirmwareError),
+        HwError::FailureMessageNotFound => T::hw_rpc_error(HwRpcError::FailureMessageNotFound),
+        HwError::UserCancelled => T::hw_rpc_error(HwRpcError::UserCancelled),
         other => T::internal(other.to_string()),
     }
 }
