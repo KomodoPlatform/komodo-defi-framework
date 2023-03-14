@@ -23,6 +23,8 @@
 - IndexedDB Cursor can now iterate over the items step-by-step [#1678](https://github.com/KomodoPlatform/atomicDEX-API/pull/1678)
 - Uuid lib was update from v0.7.4 to v1.2.2 in [#1655](https://github.com/KomodoPlatform/atomicDEX-API/pull/1655)
 - A bug was fixed in [#1706](https://github.com/KomodoPlatform/atomicDEX-API/pull/1706) where EVM swap transactions were failing if sent before the approval transaction confirmation.
+- Tendermint account sequence problem due to running multiple instances were fixed in [#1694](https://github.com/KomodoPlatform/atomicDEX-API/pull/1694)
+- Maker/taker pubkeys were added to new columns in `stats_swaps` table in [#1665](https://github.com/KomodoPlatform/atomicDEX-API/pull/1665)
 
 ## v1.0.0-beta - 2023-03-08
 
