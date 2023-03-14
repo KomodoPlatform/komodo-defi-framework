@@ -1,7 +1,7 @@
 # Job template for MM2 Build
 
 parameters:
-  name: ''  # defaults for any parameters that aren't specified
+  name: 'mm2'  # defaults for any parameters that aren't specified
   os: ''
   bob_passphrase: ''
   bob_userpass: ''
