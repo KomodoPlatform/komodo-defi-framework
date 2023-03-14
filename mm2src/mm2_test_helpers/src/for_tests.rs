@@ -20,6 +20,7 @@ use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::env;
+use std::io::Write;
 use std::net::IpAddr;
 use std::num::NonZeroUsize;
 use std::process::Child;
@@ -36,7 +37,6 @@ cfg_native! {
     use bytes::Bytes;
     use futures::channel::oneshot;
     use futures::task::SpawnExt;
-    use gstuff::ISATTY;
     use http::Request;
     use regex::Regex;
     use std::fs;
@@ -859,8 +859,9 @@ pub struct RaiiDump {
 #[cfg(not(target_arch = "wasm32"))]
 impl Drop for RaiiDump {
     fn drop(&mut self) {
-        use crossterm::execute;
-        use crossterm::style::{Color, Print, SetForegroundColor};
+        const DARK_YELLOW_ANSI_CODE: &str = "\x1b[33m";
+        const YELLOW_ANSI_CODE: &str = "\x1b[93m";
+        const RESET_COLOR_ANSI_CODE: &str = "\x1b[0m";
 
         // `term` bypasses the stdout capturing, we should only use it if the capturing was disabled.
         let nocapture = env::args().any(|a| a == "--nocapture");
@@ -872,15 +873,16 @@ impl Drop for RaiiDump {
         let log = String::from_utf8_lossy(&log);
         let log = log.trim();
 
-        if let (true, true, mut stdout) = (nocapture, *ISATTY, std::io::stdout()) {
-            execute!(
-                stdout,
-                SetForegroundColor(Color::DarkYellow),
-                Print(format!("vvv {:?} vvv\n", self.log_path)),
-                SetForegroundColor(Color::Yellow),
-                Print(log),
-            )
-            .expect("Printing to stdout failed");
+        // If we want to determine is a tty or not here and write logs to stdout only if it's tty,
+        // we can use something like https://docs.rs/atty/latest/atty/ here, look like it's more cross-platform than gstuff::ISATTY .
+
+        if nocapture {
+            std::io::stdout()
+                .write_all(format!("{}vvv {:?} vvv\n", DARK_YELLOW_ANSI_CODE, self.log_path).as_bytes())
+                .expect("Printing to stdout failed");
+            std::io::stdout()
+                .write_all(format!("{}{}{}\n", YELLOW_ANSI_CODE, log, RESET_COLOR_ANSI_CODE).as_bytes())
+                .expect("Printing to stdout failed");
         } else {
             log!("vvv {:?} vvv\n{}", self.log_path, log);
         }

@@ -404,7 +404,7 @@ mod tests {
 
     #[test]
     fn test_convert_bits() {
-        let (five, padded) = convert_bits(8, 5, &vec![0xFF], true);
+        let (five, padded) = convert_bits(8, 5, &[0xFF], true);
         assert!(padded, "Should have been padded");
         assert_eq!(vec![0x1F, 0x1C], five);
         let (eight, padded) = convert_bits(5, 8, &five, false);
@@ -494,7 +494,7 @@ mod tests {
         ];
 
         for i in 0..4 {
-            let actual_address = CashAddress::decode(&encoded[i]).unwrap();
+            let actual_address = CashAddress::decode(encoded[i]).unwrap();
             let expected_address = expected_addresses[i].clone();
             assert_eq!(actual_address, expected_address);
             let actual_encoded = actual_address.encode().unwrap();

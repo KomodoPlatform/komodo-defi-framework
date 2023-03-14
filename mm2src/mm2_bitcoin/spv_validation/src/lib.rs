@@ -72,7 +72,7 @@ pub(crate) mod test_utils {
 
     pub(crate) fn run_test<T>(test: T)
     where
-        T: FnOnce(&serde_json::Value) -> () + panic::UnwindSafe,
+        T: FnOnce(&serde_json::Value) + panic::UnwindSafe,
     {
         let fixtures = setup();
 

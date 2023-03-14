@@ -468,10 +468,10 @@ mod test {
         let mut actual = metrics.collect_json().unwrap();
         let actual = actual["metrics"].as_array_mut().unwrap();
         for expected in expected["metrics"].as_array().unwrap() {
-            let index = actual.iter().position(|metric| metric == expected).expect(&format!(
-                "Couldn't find expected metric: {:#?} \n in {:#?}",
-                expected, actual
-            ));
+            let index = actual
+                .iter()
+                .position(|metric| metric == expected)
+                .unwrap_or_else(|| panic!("Couldn't find expected metric: {:#?} \n in {:#?}", expected, actual));
             actual.remove(index);
         }
 

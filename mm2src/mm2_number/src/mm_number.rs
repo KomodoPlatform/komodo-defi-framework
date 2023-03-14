@@ -282,7 +282,7 @@ mod tests {
         for num in vals {
             let decimal: BigDecimal = BigDecimal::from_str(num).unwrap();
             let expected: MmNumber = from_dec_to_ratio(&decimal).into();
-            let actual: MmNumber = json::from_str(&num).unwrap();
+            let actual: MmNumber = json::from_str(num).unwrap();
             assert_eq!(expected, actual);
         }
     }

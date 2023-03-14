@@ -14,18 +14,15 @@ env:
  MANUAL_MM_VERSION: true
 
 jobs:
-  linux-x86:
+  linux-x86-64:
     timeout-minutes: 30
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [nightly-2022-10-29]
     steps:
     - uses: actions/checkout@v3
     - name: Install toolchain
       run: |
-        rustup toolchain install ${{ matrix.rust }} --no-self-update --profile=minimal
-        rustup default ${{ matrix.rust }}
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
 
     - name: Build
       run: |
@@ -34,18 +31,15 @@ jobs:
         echo $VERSION > ./MM_VERSION
         cargo build --bin mm2 --profile ci
 
-  mac-x86:
+  mac-x86-64:
     timeout-minutes: 30
     runs-on: macos-latest
-    strategy:
-      matrix:
-        rust: [nightly-2022-10-29]
     steps:
     - uses: actions/checkout@v3
     - name: Install toolchain
       run: |
-        rustup toolchain install ${{ matrix.rust }} --no-self-update --profile=minimal
-        rustup default ${{ matrix.rust }}
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
 
     - name: Build
       run: |
@@ -54,18 +48,15 @@ jobs:
         echo $VERSION > ./MM_VERSION
         cargo build --bin mm2 --profile ci --target x86_64-apple-darwin
 
-  win-x86:
+  win-x86-64:
     timeout-minutes: 30
     runs-on: windows-latest
-    strategy:
-      matrix:
-        rust: [nightly-2022-10-29]
     steps:
     - uses: actions/checkout@v3
     - name: Install toolchain
       run: |
-        rustup toolchain install ${{ matrix.rust }} --no-self-update --profile=minimal
-        rustup default ${{ matrix.rust }}
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
 
     - name: Build
       run: |
@@ -79,15 +70,12 @@ jobs:
   wasm:
     timeout-minutes: 30
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [nightly-2022-10-29]
     steps:
     - uses: actions/checkout@v3
     - name: Install toolchain
       run: |
-        rustup toolchain install ${{ matrix.rust }} --no-self-update --profile=minimal
-        rustup default ${{ matrix.rust }}
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
         rustup target add wasm32-unknown-unknown
 
     - name: Install wasm-pack
@@ -103,15 +91,12 @@ jobs:
   ios-aarch64:
     timeout-minutes: 30
     runs-on: macos-latest
-    strategy:
-      matrix:
-        rust: [nightly-2022-10-29]
     steps:
     - uses: actions/checkout@v3
     - name: Install toolchain
       run: |
-        rustup toolchain install ${{ matrix.rust }} --no-self-update --profile=minimal
-        rustup default ${{ matrix.rust }}
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
         rustup target add aarch64-apple-ios
 
     - name: Build
@@ -124,15 +109,12 @@ jobs:
   android-aarch64:
     timeout-minutes: 30
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [nightly-2022-10-29]
     steps:
     - uses: actions/checkout@v3
     - name: Install toolchain
       run: |
-        rustup toolchain install ${{ matrix.rust }} --no-self-update --profile=minimal
-        rustup default ${{ matrix.rust }}
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
         rustup target add aarch64-linux-android
 
     - name: Setup NDK
@@ -150,15 +132,12 @@ jobs:
   android-armv7:
     timeout-minutes: 30
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [nightly-2022-10-29]
     steps:
     - uses: actions/checkout@v3
     - name: Install toolchain
       run: |
-        rustup toolchain install ${{ matrix.rust }} --no-self-update --profile=minimal
-        rustup default ${{ matrix.rust }}
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
         rustup target add armv7-linux-androideabi
 
     - name: Setup NDK

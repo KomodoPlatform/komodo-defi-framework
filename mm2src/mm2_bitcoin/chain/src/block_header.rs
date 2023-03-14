@@ -498,6 +498,7 @@ mod tests {
     #[test]
     fn test_doge_block_headers_serde_2() {
         // block headers of https://dogechain.info/block/3631810 and https://dogechain.info/block/3631811
+        #[allow(clippy::zero_prefixed_literal)]
         let headers_bytes: &[u8] = &[
             02, 4, 1, 98, 0, 169, 253, 69, 196, 153, 115, 241, 239, 162, 112, 182, 254, 4, 175, 104, 238, 165, 178, 80,
             67, 77, 109, 241, 134, 124, 3, 242, 203, 235, 211, 98, 185, 102, 124, 144, 105, 144, 228, 58, 25, 26, 29,

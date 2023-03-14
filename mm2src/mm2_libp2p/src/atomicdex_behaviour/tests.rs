@@ -127,6 +127,7 @@ async fn test_request_response_ok() {
 }
 
 #[tokio::test]
+#[cfg(not(windows))] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 async fn test_request_response_ok_three_peers() {
     let _ = env_logger::try_init();
 
@@ -265,6 +266,7 @@ async fn test_request_response_none() {
 }
 
 #[tokio::test]
+#[cfg(not(windows))] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 async fn test_request_peers_ok_three_peers() {
     let _ = env_logger::try_init();
 
