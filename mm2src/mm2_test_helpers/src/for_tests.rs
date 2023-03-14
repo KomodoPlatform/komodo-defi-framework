@@ -859,7 +859,6 @@ pub struct RaiiDump {
 #[cfg(not(target_arch = "wasm32"))]
 impl Drop for RaiiDump {
     fn drop(&mut self) {
-
         const DARK_YELLOW_ANSI_CODE: &str = "\x1b[33m";
         const YELLOW_ANSI_CODE: &str = "\x1b[93m";
         const RESET_COLOR_ANSI_CODE: &str = "\x1b[0m";
@@ -877,13 +876,13 @@ impl Drop for RaiiDump {
         // If we want to determine is a tty or not here and write logs to stdout only if it's tty,
         // we can use something like https://docs.rs/atty/latest/atty/ here, look like it's more cross-platform than gstuff::ISATTY .
 
-        if nocapture == true {
-        std::io::stdout()
-            .write(format!("{}vvv {:?} vvv\n", DARK_YELLOW_ANSI_CODE, self.log_path).as_bytes())
-            .expect("Printing to stdout failed");
-        std::io::stdout()
-            .write(format!("{}{}{}\n", YELLOW_ANSI_CODE, log, RESET_COLOR_ANSI_CODE).as_bytes())
-            .expect("Printing to stdout failed");
+        if nocapture {
+            std::io::stdout()
+                .write_all(format!("{}vvv {:?} vvv\n", DARK_YELLOW_ANSI_CODE, self.log_path).as_bytes())
+                .expect("Printing to stdout failed");
+            std::io::stdout()
+                .write_all(format!("{}{}{}\n", YELLOW_ANSI_CODE, log, RESET_COLOR_ANSI_CODE).as_bytes())
+                .expect("Printing to stdout failed");
         } else {
             log!("vvv {:?} vvv\n{}", self.log_path, log);
         }
