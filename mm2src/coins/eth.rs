@@ -4118,7 +4118,7 @@ impl MmCoin for EthCoin {
                 &[&"tx_history", &self.ticker],
                 &ERRL!("Transaction history is not supported for ETH/ERC20 coins"),
             );
-            return Box::new(futures01::future::ok(()));
+            Box::new(futures01::future::ok(()))
         }
         cfg_native! {
             let coin = self.clone();

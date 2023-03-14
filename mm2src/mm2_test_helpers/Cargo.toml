@@ -34,5 +34,4 @@ gstuff = { version = "0.7", features = ["nightly"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 chrono = "0.4"
-crossterm = "0.20"
-gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
+gstuff = { version = "0.7", features = ["nightly"] }

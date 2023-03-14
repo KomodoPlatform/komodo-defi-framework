@@ -8,7 +8,7 @@ Please note we have a code of conduct, please follow it in all your interactions
 Before uploading any changes, please make sure that the test suite passes locally before submitting a pull request with your changes.
 
 ```
-cargo test --all
+cargo test --all --features run-docker-tests
 ```
 
 We also use [Clippy](https://github.com/rust-lang/rust-clippy) to avoid common mistakes

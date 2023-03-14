@@ -109,6 +109,12 @@ fn test_tendermint_withdraw() {
         "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v".to_owned()
     ]);
 
+    let tx_details = block_on(withdraw_v1(
+        &mm,
+        ATOM_TICKER,
+        "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v",
+        "0.1",
+    ));
     let send_raw_tx = block_on(send_raw_transaction(&mm, ATOM_TICKER, &tx_details.tx_hex));
     println!("Send raw tx {}", json::to_string(&send_raw_tx).unwrap());
 }
@@ -141,6 +147,7 @@ fn test_tendermint_ibc_withdraw() {
     assert_eq!(tx_details.to, vec![IBC_TARGET_ADDRESS.to_owned()]);
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
+    let tx_details = block_on(ibc_withdraw(&mm, IBC_SOURCE_CHANNEL, token, IBC_TARGET_ADDRESS, "0.1"));
     let send_raw_tx = block_on(send_raw_transaction(&mm, token, &tx_details.tx_hex));
     println!("Send raw tx {}", json::to_string(&send_raw_tx).unwrap());
 }
@@ -220,6 +227,12 @@ fn test_tendermint_token_activation_and_withdraw() {
         "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2".to_owned()
     ]);
 
+    let tx_details = block_on(withdraw_v1(
+        &mm,
+        token,
+        "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2",
+        "0.1",
+    ));
     let send_raw_tx = block_on(send_raw_transaction(&mm, token, &tx_details.tx_hex));
     println!("Send raw tx {}", json::to_string(&send_raw_tx).unwrap());
 }

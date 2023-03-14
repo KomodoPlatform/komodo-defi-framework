@@ -1,0 +1,153 @@
+name: Build and Upload
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+env:
+ BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+ MANUAL_MM_VERSION: true
+
+jobs:
+  linux-x86-64:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install toolchain
+      run: |
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
+
+    - name: Build
+      run: |
+        VERSION=$BRANCH_NAME"_$(git rev-parse --short=7 HEAD)-Linux-CI"
+        rm -f ./MM_VERSION
+        echo $VERSION > ./MM_VERSION
+        cargo build --bin mm2 --profile ci
+
+  mac-x86-64:
+    timeout-minutes: 30
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install toolchain
+      run: |
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
+
+    - name: Build
+      run: |
+        VERSION=$BRANCH_NAME"_$(git rev-parse --short=7 HEAD)-Mac-CI"
+        rm -f ./MM_VERSION
+        echo $VERSION > ./MM_VERSION
+        cargo build --bin mm2 --profile ci --target x86_64-apple-darwin
+
+  win-x86-64:
+    timeout-minutes: 30
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install toolchain
+      run: |
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
+
+    - name: Build
+      run: |
+        $VERSION=$Env:BRANCH_NAME+"_$(git rev-parse --short=7 HEAD)-Win-CI"
+        if (test-path "./MM_VERSION") {
+          remove-item "./MM_VERSION"
+        }
+        echo $VERSION > ./MM_VERSION
+        cargo build --bin mm2 --profile ci
+
+  wasm:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install toolchain
+      run: |
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
+        rustup target add wasm32-unknown-unknown
+
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Build
+      run: |
+        VERSION=$BRANCH_NAME"_$(git rev-parse --short=7 HEAD)-Linux-Wasm-CI"
+        rm -f ./MM_VERSION
+        echo $VERSION > ./MM_VERSION
+        wasm-pack build mm2src/mm2_bin_lib --target web --out-dir wasm_build/deps/pkg/
+
+  ios-aarch64:
+    timeout-minutes: 30
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install toolchain
+      run: |
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
+        rustup target add aarch64-apple-ios
+
+    - name: Build
+      run: |
+        VERSION=$BRANCH_NAME"_$(git rev-parse --short=7 HEAD)-ios-aarch64-CI"
+        rm -f ./MM_VERSION
+        echo $VERSION > ./MM_VERSION
+        cargo rustc --target aarch64-apple-ios --lib --profile ci --package mm2_bin_lib --crate-type=staticlib
+
+  android-aarch64:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install toolchain
+      run: |
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
+        rustup target add aarch64-linux-android
+
+    - name: Setup NDK
+      run: ./android-ndk.sh x86 21
+
+    - name: Build
+      run: |
+        VERSION=$BRANCH_NAME"_$(git rev-parse --short=7 HEAD)-android-aarch64-CI"
+        rm -f ./MM_VERSION
+        echo $VERSION > ./MM_VERSION
+
+        export PATH=$PATH:/android-ndk/bin
+        CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --target=aarch64-linux-android --lib --profile ci --crate-type=staticlib --package mm2_bin_lib
+
+  android-armv7:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install toolchain
+      run: |
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
+        rustup target add armv7-linux-androideabi
+
+    - name: Setup NDK
+      run: ./android-ndk.sh x86 21
+
+    - name: Build
+      run: |
+        VERSION=$BRANCH_NAME"_$(git rev-parse --short=7 HEAD)-android-armv7-CI"
+        rm -f ./MM_VERSION
+        echo $VERSION > ./MM_VERSION
+
+        export PATH=$PATH:/android-ndk/bin
+        CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --target=armv7-linux-androideabi --lib --profile ci --crate-type=staticlib --package mm2_bin_lib

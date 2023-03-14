@@ -18,7 +18,7 @@ async-trait = "0.1"
 backtrace = "0.3"
 bytes = "1.1"
 cfg-if = "1.0"
-crossbeam = "0.7"
+crossbeam = "0.8"
 fnv = "1.0.6"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
@@ -58,8 +58,7 @@ web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomExcepti
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 anyhow = "1.0"
 chrono = "0.4"
-crossterm = "0.20"
-gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
+gstuff = { version = "0.7", features = ["nightly"] }
 hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features

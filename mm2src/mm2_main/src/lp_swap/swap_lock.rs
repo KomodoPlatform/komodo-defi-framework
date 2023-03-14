@@ -205,7 +205,7 @@ mod tests {
     wasm_bindgen_test_configure!(run_in_browser);
 
     async fn get_all_items(ctx: &MmArc) -> Vec<(ItemId, SwapLockTable)> {
-        let swaps_ctx = SwapsContext::from_ctx(&ctx).unwrap();
+        let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
         let db = swaps_ctx.swap_db().await.expect("Error getting SwapDb");
         let transaction = db.transaction().await.expect("Error creating transaction");
         let table = transaction.table::<SwapLockTable>().await.expect("Error opening table");

@@ -10,7 +10,7 @@ use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-const TEST_COIN_NAME: &'static str = "RICK";
+const TEST_COIN_NAME: &str = "RICK";
 
 pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     let ctx = MmCtxBuilder::default().into_mm_arc();

@@ -755,7 +755,7 @@ mod tests {
     }
 
     async fn get_all_items<Table: TableSignature>(ctx: &MmArc) -> Vec<Table> {
-        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
         let db = ordermatch_ctx.ordermatch_db().await.unwrap();
         let transaction = db.transaction().await.unwrap();
         let table = transaction.table::<Table>().await.unwrap();

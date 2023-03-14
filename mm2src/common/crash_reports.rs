@@ -42,7 +42,7 @@ pub extern "C" fn rust_seh_handler(exception_code: u32) {
 #[inline(never)]
 #[allow(dead_code)]
 fn access_violation() {
-    let ptr: *mut i32 = 0 as *mut i32;
+    let ptr: *mut i32 = std::ptr::null_mut::<i32>();
     unsafe { *ptr = 123 };
 }
 

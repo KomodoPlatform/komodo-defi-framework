@@ -144,7 +144,7 @@ async fn process_json_batch_requests(ctx: MmArc, requests: &[Json], client: Sock
 #[cfg(target_arch = "wasm32")]
 async fn process_json_request(ctx: MmArc, req_json: Json, client: SocketAddr) -> Result<Json, String> {
     if let Some(requests) = req_json.as_array() {
-        return process_json_batch_requests(ctx, &requests, client)
+        return process_json_batch_requests(ctx, requests, client)
             .await
             .map_err(|e| ERRL!("{}", e));
     }

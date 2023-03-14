@@ -1436,6 +1436,7 @@ enum ElectrumConfig {
 }
 
 /// Electrum client configuration
+#[allow(clippy::upper_case_acronyms)]
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug, Serialize)]
 enum ElectrumConfig {

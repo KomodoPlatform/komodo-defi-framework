@@ -33,4 +33,4 @@ js-sys = "0.3.27"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
-gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
+gstuff = { version = "0.7", features = ["nightly"] }

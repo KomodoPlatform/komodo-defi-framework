@@ -130,8 +130,8 @@ impl IdbDatabaseBuilder {
             },
         };
 
-        let db = Self::get_db_from_request(&db_request)?;
-        let transaction = Self::get_transaction_from_request(&db_request)?;
+        let db = Self::get_db_from_request(db_request)?;
+        let transaction = Self::get_transaction_from_request(db_request)?;
 
         let version_event = match event.dyn_into::<IdbVersionChangeEvent>() {
             Ok(version) => version,
@@ -145,9 +145,8 @@ impl IdbDatabaseBuilder {
         let old_version = version_event.old_version() as u32;
         let new_version = version_event
             .new_version()
-            .ok_or(MmError::new(InitDbError::InvalidVersion(
-                "Expected a new_version".to_owned(),
-            )))? as u32;
+            .ok_or_else(|| MmError::new(InitDbError::InvalidVersion("Expected a new_version".to_owned())))?
+            as u32;
 
         let upgrader = DbUpgrader::new(db, transaction);
         for on_upgrade_needed_cb in handlers {

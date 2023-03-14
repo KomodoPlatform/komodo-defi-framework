@@ -55,7 +55,7 @@ mod tests {
 
         for i in 0..peer_no {
             let peer = PeerId::random();
-            peers.push(peer.clone());
+            peers.push(peer);
             <Gossipsub as NetworkBehaviour>::inject_connection_established(
                 &mut gs,
                 &peer,

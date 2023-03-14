@@ -81,6 +81,6 @@ mod tests {
     fn test_timeout() {
         let _err =
             crate::block_on(Timer::sleep(0.4).timeout(Duration::from_secs_f64(0.1))).expect_err("Expected timeout");
-        let _ok = crate::block_on(Timer::sleep(0.1).timeout(Duration::from_secs_f64(0.2))).expect("Expected future");
+        crate::block_on(Timer::sleep(0.1).timeout(Duration::from_secs_f64(0.2))).expect("Expected future");
     }
 }

@@ -444,7 +444,7 @@ impl SwapsContext {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn swap_db(&self) -> InitDbResult<SwapDbLocked<'_>> { Ok(self.swap_db.get_or_initialize().await?) }
+    pub async fn swap_db(&self) -> InitDbResult<SwapDbLocked<'_>> { self.swap_db.get_or_initialize().await }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1448,6 +1448,16 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
         (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
         (_, _) => SecretHashAlgo::DHASH160,
     }
+}
+
+pub struct SwapPubkeys {
+    pub maker: String,
+    pub taker: String,
+}
+
+impl SwapPubkeys {
+    #[inline]
+    fn new(maker: String, taker: String) -> Self { SwapPubkeys { maker, taker } }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
