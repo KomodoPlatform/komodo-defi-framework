@@ -1934,15 +1934,17 @@ impl MakerSavedSwap {
             taker: Default::default(),
         };
 
-        let started = self.swap_data()?;
-        pubkeys.maker = started.my_persistent_pub.to_string();
+        match &self.events.first() {
+            Some(event) => match &event.event {
+                MakerSwapEvent::Started(started) => pubkeys.maker = started.my_persistent_pub.to_string(),
+                _ => return ERR!("First swap event must be Started"),
+            },
+            None => return ERR!("Can't get maker/taker pubkey, events are empty"),
+        };
 
         for event in &self.events {
-            match &event.event {
-                MakerSwapEvent::Negotiated(neg) => {
-                    pubkeys.maker = neg.taker_coin_htlc_pubkey.unwrap_or_default().to_string()
-                },
-                _ => return ERR!("Swap event must be Started and Negotiated"),
+            if let MakerSwapEvent::Negotiated(neg) = &event.event {
+                pubkeys.taker = neg.taker_coin_htlc_pubkey.unwrap_or_default().to_string()
             };
         }
 
