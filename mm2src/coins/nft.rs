@@ -285,7 +285,7 @@ pub(crate) async fn find_wallet_amount(
             return Ok(nft.amount);
         }
     }
-    MmError::err(GetNftInfoError::TokenNotFindInWallet {
+    MmError::err(GetNftInfoError::TokenNotFoundInWallet {
         token_address: token_address_req,
         token_id: token_id_req.to_string(),
     })

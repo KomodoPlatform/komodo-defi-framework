@@ -29,7 +29,7 @@ pub enum GetNftInfoError {
         token_address,
         token_id
     )]
-    TokenNotFindInWallet {
+    TokenNotFoundInWallet {
         token_address: String,
         token_id: String,
     },
@@ -72,7 +72,7 @@ impl HttpStatusCode for GetNftInfoError {
             GetNftInfoError::Transport(_)
             | GetNftInfoError::Internal(_)
             | GetNftInfoError::GetEthAddressError(_)
-            | GetNftInfoError::TokenNotFindInWallet { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | GetNftInfoError::TokenNotFoundInWallet { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
