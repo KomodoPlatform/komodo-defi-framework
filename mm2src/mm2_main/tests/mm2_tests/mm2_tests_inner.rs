@@ -3349,7 +3349,7 @@ fn test_add_delegation_qtum() {
         "pass".into(),
         None,
     )
-    .unwrap();
+        .unwrap();
 
     let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
         "electrum1.cipig.net:10071",
@@ -3434,7 +3434,7 @@ fn test_remove_delegation_qtum() {
         "pass".into(),
         None,
     )
-    .unwrap();
+        .unwrap();
 
     let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
         "electrum1.cipig.net:10071",
@@ -4518,7 +4518,7 @@ fn test_tx_history_tbtc_non_segwit() {
         "mm2": 1,
         "tx_history": true,
     })))
-    .unwrap();
+        .unwrap();
     assert_eq!(
         electrum.0,
         StatusCode::OK,
@@ -6827,9 +6827,9 @@ fn test_sign_verify_message_eth() {
         "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600"
     );
 
-    let response = block_on(verify_message(&mm_bob, "ETH", 
-    "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600",
-    "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"));
+    let response = block_on(verify_message(&mm_bob, "ETH",
+                                           "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600",
+                                           "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"));
     let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
     let response = response.result;
 

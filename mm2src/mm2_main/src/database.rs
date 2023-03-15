@@ -97,6 +97,10 @@ fn migration_7() -> Vec<(&'static str, Vec<String>)> {
     db_common::sqlite::execute_batch(stats_swaps::ADD_COINS_PRICE_INFOMATION)
 }
 
+fn migration_8() -> Vec<(&'static str, Vec<String>)> {
+    db_common::sqlite::execute_batch(stats_swaps::ADD_MAKER_TAKER_PUBKEYS)
+}
+
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
         1 => Some(migration_1(ctx).await),
@@ -106,6 +110,7 @@ async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option
         5 => Some(migration_5()),
         6 => Some(migration_6()),
         7 => Some(migration_7()),
+        8 => Some(migration_8()),
         _ => None,
     }
 }

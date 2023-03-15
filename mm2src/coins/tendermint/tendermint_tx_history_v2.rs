@@ -652,7 +652,7 @@ where
                         }
 
                         let tx_sent_by_me = address == transfer_details.from;
-                        let is_platform_coin_tx = transfer_details.denom == coin.platform_denom();
+                        let is_platform_coin_tx = transfer_details.denom == coin.platform_denom().to_string();
                         let is_self_tx = transfer_details.to == transfer_details.from && tx_sent_by_me;
                         let is_sign_claim_htlc = tx_sent_by_me
                             && matches!(transfer_details.transfer_event_type, TransferEventType::ClaimHtlc);
