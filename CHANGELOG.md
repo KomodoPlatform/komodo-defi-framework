@@ -3,6 +3,7 @@
 **Features:**
 - NFT integration `WIP` [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
   - NFT integration PoC added. Includes ERC721 support for ETH and BSC [#1652](https://github.com/KomodoPlatform/atomicDEX-API/pull/1652)
+  - Withdraw ERC1155 and EVM based chains support added for NFT PoC [#1704](https://github.com/KomodoPlatform/atomicDEX-API/pull/1704)
 - Swap watcher nodes [#1431](https://github.com/KomodoPlatform/atomicDEX-API/issues/1431)
   - Watcher rewards for ETH swaps were added [#1658](https://github.com/KomodoPlatform/atomicDEX-API/pull/1658)
 - Cosmos integration `WIP` [#1432](https://github.com/KomodoPlatform/atomicDEX-API/issues/1432)
