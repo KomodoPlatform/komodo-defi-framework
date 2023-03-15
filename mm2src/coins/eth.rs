@@ -897,8 +897,8 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
 pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, &req.chain.to_ticker()).await?;
-    let (from_addr, to_addr, token_addr, eth_coin) =
-        get_valid_eth_withdraw_addresses(coin, &req.from, &req.to, &req.token_address)?;
+    let (to_addr, token_addr, eth_coin) = get_valid_eth_withdraw_addresses(coin, &req.to, &req.token_address)?;
+    let my_address = eth_coin.my_address()?;
 
     // todo check amount in nft cache, instead of sending new moralis req
     // dont use `get_nft_metadata` for erc1155, it can return info related to other owner.
@@ -932,7 +932,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
                 .map_err(|e| format!("{:?}", e))
                 .map_to_mm(NumConversError::new)?;
             let data = function.encode_input(&[
-                Token::Address(from_addr),
+                Token::Address(eth_coin.my_address),
                 Token::Address(to_addr),
                 Token::Uint(token_id_u256),
                 Token::Uint(amount_u256),
@@ -970,7 +970,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash()),
-        from: vec![req.from],
+        from: vec![my_address],
         to: vec![req.to],
         contract_type: ContractType::Erc1155,
         token_address: req.token_address,
@@ -990,8 +990,8 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
 pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, &req.chain.to_ticker()).await?;
-    let (from_addr, to_addr, token_addr, eth_coin) =
-        get_valid_eth_withdraw_addresses(coin, &req.from, &req.to, &req.token_address)?;
+    let (to_addr, token_addr, eth_coin) = get_valid_eth_withdraw_addresses(coin, &req.to, &req.token_address)?;
+    let my_address = eth_coin.my_address()?;
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC721_CONTRACT.function("safeTransferFrom")?;
@@ -999,7 +999,7 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
                 .map_err(|e| format!("{:?}", e))
                 .map_to_mm(NumConversError::new)?;
             let data = function.encode_input(&[
-                Token::Address(from_addr),
+                Token::Address(eth_coin.my_address),
                 Token::Address(to_addr),
                 Token::Uint(token_id_u256),
             ])?;
@@ -1035,7 +1035,7 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash()),
-        from: vec![req.from],
+        from: vec![my_address],
         to: vec![req.to],
         contract_type: ContractType::Erc721,
         token_address: req.token_address,
@@ -5077,10 +5077,9 @@ pub enum GetValidEthWithdrawAddError {
 #[cfg(feature = "enable-nft-integration")]
 fn get_valid_eth_withdraw_addresses(
     coin_enum: MmCoinEnum,
-    from: &str,
     to: &str,
     token_add: &str,
-) -> MmResult<(Address, Address, Address, EthCoin), GetValidEthWithdrawAddError> {
+) -> MmResult<(Address, Address, EthCoin), GetValidEthWithdrawAddError> {
     let eth_coin = match coin_enum {
         MmCoinEnum::EthCoin(eth_coin) => eth_coin,
         _ => {
@@ -5089,16 +5088,9 @@ fn get_valid_eth_withdraw_addresses(
             })
         },
     };
-    let from_addr = valid_addr_from_str(from).map_err(GetValidEthWithdrawAddError::InvalidAddress)?;
-    if eth_coin.my_address != from_addr {
-        return MmError::err(GetValidEthWithdrawAddError::AddressMismatchError {
-            my_address: eth_coin.my_address.to_string(),
-            from: from.to_string(),
-        });
-    }
     let to_addr = valid_addr_from_str(to).map_err(GetValidEthWithdrawAddError::InvalidAddress)?;
     let token_addr = addr_from_str(token_add).map_err(GetValidEthWithdrawAddError::InvalidAddress)?;
-    Ok((from_addr, to_addr, token_addr, eth_coin))
+    Ok((to_addr, token_addr, eth_coin))
 }
 
 #[cfg(feature = "enable-nft-integration")]

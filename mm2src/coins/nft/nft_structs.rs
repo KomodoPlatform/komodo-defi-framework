@@ -152,7 +152,6 @@ pub struct NftList {
 #[derive(Clone, Deserialize)]
 pub struct WithdrawErc1155 {
     pub(crate) chain: Chain,
-    pub(crate) from: String,
     pub(crate) to: String,
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
@@ -165,7 +164,6 @@ pub struct WithdrawErc1155 {
 #[derive(Clone, Deserialize)]
 pub struct WithdrawErc721 {
     pub(crate) chain: Chain,
-    pub(crate) from: String,
     pub(crate) to: String,
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
