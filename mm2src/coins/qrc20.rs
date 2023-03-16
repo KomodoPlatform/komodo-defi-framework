@@ -1220,11 +1220,7 @@ impl MarketCoinOps for Qrc20Coin {
         utxo_common::send_raw_tx_bytes(&self.utxo, tx)
     }
 
-    fn wait_for_confirmations(
-        &self,
-        // Todo: is checking payment state needed for QRC20?
-        input: ConfirmPaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
         let selfi = self.clone();
         let fut = async move {
