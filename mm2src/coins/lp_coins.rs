@@ -544,6 +544,18 @@ pub enum ValidateOtherPubKeyErr {
 }
 
 #[derive(Clone, Debug)]
+pub struct ConfirmPaymentInput {
+    pub payment_tx: Vec<u8>,
+    pub secret_hash: Vec<u8>,
+    pub swap_contract_address: Option<BytesJson>,
+    pub time_lock: u32,
+    pub confirmations: u64,
+    pub requires_nota: bool,
+    pub wait_until: u64,
+    pub check_every: u64,
+}
+
+#[derive(Clone, Debug)]
 pub struct WatcherValidateTakerFeeInput {
     pub taker_fee_hash: Vec<u8>,
     pub sender_pubkey: Vec<u8>,
@@ -941,14 +953,7 @@ pub trait MarketCoinOps {
     /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
 
-    fn wait_for_confirmations(
-        &self,
-        tx: &[u8],
-        confirmations: u64,
-        requires_nota: bool,
-        wait_until: u64,
-        check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
     fn wait_for_htlc_tx_spend(
         &self,

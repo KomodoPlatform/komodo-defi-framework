@@ -75,22 +75,22 @@ cfg_wasm32! {
 }
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
-            CoinProtocol, CoinTransportMetrics, CoinsContext, EthValidateFeeArgs, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError,
-            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, PaymentInstructions,
-            PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError,
-            RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundError,
-            RefundPaymentArgs, RefundResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
-            SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG,
-            INSUFFICIENT_WATCHER_REWARD_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
-            INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
+            CoinProtocol, CoinTransportMetrics, CoinsContext, ConfirmPaymentInput, EthValidateFeeArgs, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
+            MyAddressError, MyWalletAddress, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
+            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+            RefundError, RefundPaymentArgs, RefundResult, RpcClientType, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
+            VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult,
+            EARLY_CONFIRMATION_ERR_LOG, INSUFFICIENT_WATCHER_REWARD_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
+            INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -100,7 +100,6 @@ mod web3_transport;
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
 #[cfg(feature = "enable-nft-integration")]
 use crate::nft::WithdrawNftResult;
-use crate::MyWalletAddress;
 #[cfg(feature = "enable-nft-integration")]
 use crate::{lp_coinfind_or_err, MmCoinEnum, TransactionType};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
@@ -1726,23 +1725,16 @@ impl MarketCoinOps for EthCoin {
         )
     }
 
-    fn wait_for_confirmations(
-        &self,
-        tx: &[u8],
-        confirmations: u64,
-        _requires_nota: bool,
-        wait_until: u64,
-        check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let ctx = try_fus!(MmArc::from_weak(&self.ctx).ok_or("No context"));
         let mut status = ctx.log.status_handle();
         status.status(&[&self.ticker], "Waiting for confirmations…");
-        status.deadline(wait_until * 1000);
+        status.deadline(input.wait_until * 1000);
 
-        let unsigned: UnverifiedTransaction = try_fus!(rlp::decode(tx));
+        let unsigned: UnverifiedTransaction = try_fus!(rlp::decode(&input.payment_tx));
         let tx = try_fus!(SignedEthTx::new(unsigned));
 
-        let required_confirms = U64::from(confirmations);
+        let required_confirms = U64::from(input.confirmations);
         let selfi = self.clone();
         let fut = async move {
             loop {
@@ -1750,7 +1742,7 @@ impl MarketCoinOps for EthCoin {
                     status.append(" Timed out.");
                     return ERR!(
                         "Waited too long until {} for transaction {:?} confirmation ",
-                        wait_until,
+                        input.wait_until,
                         tx
                     );
                 }
@@ -1764,7 +1756,7 @@ impl MarketCoinOps for EthCoin {
                             selfi.ticker(),
                             tx.tx_hash()
                         );
-                        Timer::sleep(check_every as f64).await;
+                        Timer::sleep(input.check_every as f64).await;
                         continue;
                     },
                 };
@@ -1788,7 +1780,7 @@ impl MarketCoinOps for EthCoin {
                                     e,
                                     selfi.ticker()
                                 );
-                                Timer::sleep(check_every as f64).await;
+                                Timer::sleep(input.check_every as f64).await;
                                 continue;
                             },
                         };
@@ -1799,7 +1791,7 @@ impl MarketCoinOps for EthCoin {
                                     status.append(" Timed out.");
                                     return ERR!(
                                         "Waited too long until {} for transaction {:?} confirmation ",
-                                        wait_until,
+                                        input.wait_until,
                                         tx
                                     );
                                 }
@@ -1808,6 +1800,26 @@ impl MarketCoinOps for EthCoin {
                                 // https://github.com/KomodoPlatform/atomicDEX-API/issues/1630#issuecomment-1401736168
                                 match selfi.web3.eth().transaction(TransactionId::Hash(tx.hash)).await {
                                     Ok(Some(_)) => {
+                                        if let Some(contract) = input.swap_contract_address.clone() {
+                                            let swap_contract_address = match contract.try_to_address() {
+                                                Ok(addr) => addr,
+                                                Err(e) => return ERR!("{}", e),
+                                            };
+                                            let swap_id = selfi.etomic_swap_id(input.time_lock, &input.secret_hash);
+                                            if let Err(e) = selfi
+                                                .wait_for_payment_state_initialization(
+                                                    tx.hash,
+                                                    swap_contract_address,
+                                                    Token::FixedBytes(swap_id.clone()),
+                                                    input.wait_until,
+                                                    input.check_every,
+                                                )
+                                                .compat()
+                                                .await
+                                            {
+                                                return ERR!("{}", e);
+                                            }
+                                        }
                                         status.append(" Confirmed.");
                                         return Ok(());
                                     },
@@ -1815,23 +1827,23 @@ impl MarketCoinOps for EthCoin {
                                         "Didn't find tx: {:02x} for coin: {} on RPC node using eth_getTransactionByHash. Retrying in {} seconds",
                                         tx.hash,
                                         selfi.ticker(),
-                                        check_every
+                                        input.check_every
                                     ),
                                     Err(e) => error!(
                                         "Error {} calling eth_getTransactionByHash for coin: {}, tx: {:02x}. Retrying in {} seconds",
                                         e,
                                         selfi.ticker(),
                                         tx.hash,
-                                        check_every
+                                        input.check_every
                                     ),
                                 }
 
-                                Timer::sleep(check_every as f64).await;
+                                Timer::sleep(input.check_every as f64).await;
                             }
                         }
                     }
                 }
-                Timer::sleep(check_every as f64).await;
+                Timer::sleep(input.check_every as f64).await;
             }
         };
         Box::new(fut.boxed().compat())
@@ -1881,6 +1893,14 @@ impl MarketCoinOps for EthCoin {
 
         let fut = async move {
             loop {
+                if now_ms() / 1000 > wait_until {
+                    return TX_PLAIN_ERR!(
+                        "Waited too long until {} for transaction {:?} to be spent ",
+                        wait_until,
+                        tx,
+                    );
+                }
+
                 let current_block = match selfi.current_block().compat().await {
                     Ok(b) => b,
                     Err(e) => {
@@ -1925,15 +1945,7 @@ impl MarketCoinOps for EthCoin {
                     }
                 }
 
-                if now_ms() / 1000 > wait_until {
-                    return TX_PLAIN_ERR!(
-                        "Waited too long until {} for transaction {:?} to be spent ",
-                        wait_until,
-                        tx,
-                    );
-                }
                 Timer::sleep(5.).await;
-                continue;
             }
         };
         Box::new(fut.boxed().compat())
@@ -3860,6 +3872,57 @@ impl EthCoin {
                 _ => ERR!("Payment status must be uint, got {:?}", state),
             }
         }))
+    }
+
+    fn wait_for_payment_state_initialization(
+        &self,
+        payment_hash: H256,
+        swap_contract_address: H160,
+        token: Token,
+        wait_until: u64,
+        check_every: u64,
+    ) -> Box<dyn Future<Item = U256, Error = String> + Send + 'static> {
+        let selfi = self.clone();
+        let fut = async move {
+            loop {
+                if now_ms() / 1000 > wait_until {
+                    ERRL!("Waited too long until {} for payment state to initialize!", wait_until);
+                }
+
+                let status = match selfi
+                    .payment_status(swap_contract_address, token.clone())
+                    .compat()
+                    .await
+                {
+                    Ok(status) => status,
+                    Err(e) => {
+                        error!(
+                            "Error {} getting payment status tx: {:02x} from swap contract: {} for coin: {}. Retrying in {} seconds",
+                            e,
+                            payment_hash,
+                            swap_contract_address,
+                            selfi.ticker(),
+                            check_every
+                        );
+                        Timer::sleep(check_every as f64).await;
+                        continue;
+                    },
+                };
+                if status == PAYMENT_STATE_UNINITIALIZED.into() {
+                    error!(
+                        "Payment tx: {:02x} is in `uninitialized` state in swap contract: {} for coin: {}. Retrying in {} seconds",
+                        payment_hash,
+                        swap_contract_address,
+                        selfi.ticker(),
+                        check_every
+                    );
+                } else {
+                    break Ok(status);
+                }
+                Timer::sleep(check_every as f64).await;
+            }
+        };
+        Box::new(fut.boxed().compat())
     }
 
     async fn search_for_swap_tx_spend(

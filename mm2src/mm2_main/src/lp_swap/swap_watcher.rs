@@ -2,8 +2,9 @@ use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, min_watcher
             tx_helper_topic, H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
-use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
+use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
+            SendMakerPaymentSpendPreimageInput, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::state_machine::prelude::*;
@@ -216,16 +217,24 @@ impl State for ValidateTakerPayment {
         };
 
         let confirmations = min(watcher_ctx.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
+        let confirm_taker_payment_input = ConfirmPaymentInput {
+            payment_tx: taker_payment_hex.clone(),
+            secret_hash: watcher_ctx.data.secret_hash.clone(),
+            // Todo: waiting for confirmation of evm swap payment state initialization should be checked by watchers too
+            swap_contract_address: None,
+            time_lock: match std::env::var("REFUND_TEST") {
+                Ok(_) => watcher_ctx.data.swap_started_at as u32,
+                Err(_) => watcher_ctx.taker_locktime() as u32,
+            },
+            confirmations,
+            requires_nota: watcher_ctx.data.taker_payment_requires_nota.unwrap_or(false),
+            wait_until: taker_payment_spend_deadline,
+            check_every: WAIT_CONFIRM_INTERVAL,
+        };
 
         let wait_fut = watcher_ctx
             .taker_coin
-            .wait_for_confirmations(
-                &taker_payment_hex,
-                confirmations,
-                watcher_ctx.data.taker_payment_requires_nota.unwrap_or(false),
-                taker_payment_spend_deadline,
-                WAIT_CONFIRM_INTERVAL,
-            )
+            .wait_for_confirmations(confirm_taker_payment_input)
             .compat();
         if let Err(err) = wait_fut.await {
             return Self::change_state(Stopped::from_reason(StopReason::Error(
