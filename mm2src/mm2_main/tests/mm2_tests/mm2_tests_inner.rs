@@ -4533,6 +4533,8 @@ fn test_tx_history_tbtc_non_segwit() {
     );
 
     let expected = vec![
+        // https://live.blockcypher.com/btc-testnet/tx/a41b2e5f0741d1dcbc309ce4c43fde1ad44c5e61bb34778ab0bf9f3d9fd6fb6c/
+        "a41b2e5f0741d1dcbc309ce4c43fde1ad44c5e61bb34778ab0bf9f3d9fd6fb6c",
         // https://live.blockcypher.com/btc-testnet/tx/9c1ca9de9f3a47d71c8113209123410f44048c67951bf49cdfb1a84c2cc6a55b/
         "9c1ca9de9f3a47d71c8113209123410f44048c67951bf49cdfb1a84c2cc6a55b",
         // https://live.blockcypher.com/btc-testnet/tx/ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7/
