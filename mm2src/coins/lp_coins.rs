@@ -201,9 +201,10 @@ use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
 pub mod coins_tests;
 
 pub mod eth;
-use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthTxFeeDetails, GetEthAddressError, SignedEthTx};
 #[cfg(feature = "enable-nft-integration")]
-use eth::{EthNftGasDetailsErr, GetValidEthWithdrawAddError};
+use eth::GetValidEthWithdrawAddError;
+use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
+          GetEthAddressError, SignedEthTx};
 
 pub mod hd_confirm_address;
 pub mod hd_pubkey;
@@ -1904,13 +1905,12 @@ impl From<GetValidEthWithdrawAddError> for WithdrawError {
     }
 }
 
-#[cfg(feature = "enable-nft-integration")]
-impl From<EthNftGasDetailsErr> for WithdrawError {
-    fn from(e: EthNftGasDetailsErr) -> Self {
+impl From<EthGasDetailsErr> for WithdrawError {
+    fn from(e: EthGasDetailsErr) -> Self {
         match e {
-            EthNftGasDetailsErr::InvalidFeePolicy(e) => WithdrawError::InvalidFeePolicy(e),
-            EthNftGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
-            EthNftGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
+            EthGasDetailsErr::InvalidFeePolicy(e) => WithdrawError::InvalidFeePolicy(e),
+            EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
+            EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
         }
     }
 }
