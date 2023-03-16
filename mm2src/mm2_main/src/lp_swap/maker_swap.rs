@@ -970,7 +970,6 @@ impl MakerSwap {
         let confirmations = self.r().data.taker_payment_confirmations;
         let taker_coin_swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
 
-        // Todo: for validate we should get the repeated values outside of this
         let confirm_taker_payment_input = ConfirmPaymentInput {
             payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
             secret_hash: self.secret_hash(),
