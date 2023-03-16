@@ -303,27 +303,31 @@ impl TakerSavedSwap {
         }
     }
 
+    // TODO: Adjust for private coins when/if they are braodcasted
+    // TODO: Adjust for HD wallet when completed
     pub fn swap_pubkeys(&self) -> Result<SwapPubkeys, String> {
-        // TODO: Adjust for private coins when/if they are braodcasted
-        // TODO: Adjust for HD wallet when completed
         let mut pubkeys = SwapPubkeys {
-            maker: Default::default(),
-            taker: Default::default(),
+            maker: None,
+            taker: None,
         };
 
         match &self.events.first() {
             Some(event) => match &event.event {
-                TakerSwapEvent::Started(started) => pubkeys.taker = started.my_persistent_pub.to_string(),
+                TakerSwapEvent::Started(started) => pubkeys.taker = Some(started.my_persistent_pub.to_string()),
                 _ => return ERR!("First swap event must be Started"),
             },
-            None => return ERR!("Can't get maker/taker pubkey, events are empty"),
+            None => return ERR!("Can't get taker's pubkey when events are empty"),
         };
 
-        for event in &self.events {
-            if let TakerSwapEvent::Negotiated(neg) = &event.event {
-                pubkeys.maker = neg.maker_coin_htlc_pubkey.unwrap_or_default().to_string()
-            };
-        }
+        match self.events.get(1) {
+            Some(event) => match &event.event {
+                TakerSwapEvent::Negotiated(neg) => {
+                    pubkeys.maker = neg.maker_coin_htlc_pubkey.map(|key| key.to_string());
+                },
+                _ => return ERR!("Swap must be negotiated to get maker's pubkey"),
+            },
+            None => return ERR!("Can't get maker's pubkey when there's no Negotiated event"),
+        };
 
         Ok(pubkeys)
     }

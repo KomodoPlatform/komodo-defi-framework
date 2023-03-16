@@ -1451,8 +1451,8 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
 }
 
 pub struct SwapPubkeys {
-    pub maker: String,
-    pub taker: String,
+    pub maker: Option<String>,
+    pub taker: Option<String>,
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
