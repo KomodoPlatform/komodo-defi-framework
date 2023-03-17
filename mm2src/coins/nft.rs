@@ -82,10 +82,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
         }
     }
     drop_mutability!(res_list);
-    let nft_list = NftList {
-        count: res_list.len() as u64,
-        nfts: res_list,
-    };
+    let nft_list = NftList { nfts: res_list };
     Ok(nft_list)
 }
 
@@ -201,7 +198,6 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
     }
     drop_mutability!(res_list);
     let transfer_history_list = NftsTransferHistoryList {
-        count: res_list.len() as u64,
         transfer_history: res_list,
     };
     Ok(transfer_history_list)
@@ -279,14 +275,13 @@ pub(crate) async fn find_wallet_amount(
     token_address_req: String,
     token_id_req: BigDecimal,
 ) -> MmResult<BigDecimal, GetNftInfoError> {
-    let nft_list = get_nft_list(ctx, nft_list).await?;
-    for nft in nft_list.nfts {
-        if nft.token_address == token_address_req && nft.token_id == token_id_req {
-            return Ok(nft.amount);
-        }
-    }
-    MmError::err(GetNftInfoError::TokenNotFoundInWallet {
-        token_address: token_address_req,
-        token_id: token_id_req.to_string(),
-    })
+    let nft_list = get_nft_list(ctx, nft_list).await?.nfts;
+    let nft = nft_list
+        .into_iter()
+        .find(|nft| nft.token_address == token_address_req && nft.token_id == token_id_req)
+        .ok_or_else(|| GetNftInfoError::TokenNotFoundInWallet {
+            token_address: token_address_req,
+            token_id: token_id_req.to_string(),
+        })?;
+    Ok(nft.amount)
 }

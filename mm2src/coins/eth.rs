@@ -166,6 +166,7 @@ lazy_static! {
 pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>> + Send>;
 pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
 pub type GasStationResult = Result<GasStationData, MmError<GasStationReqErr>>;
+type GasDetails = (U256, U256);
 
 #[derive(Debug, Display)]
 pub enum GasStationReqErr {
@@ -5083,7 +5084,7 @@ pub async fn get_eth_address(ctx: &MmArc, ticker: &str) -> MmResult<MyWalletAddr
 }
 
 #[cfg(feature = "enable-nft-integration")]
-#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+#[derive(Display)]
 pub enum GetValidEthWithdrawAddError {
     #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
     AddressMismatchError {
@@ -5148,7 +5149,7 @@ async fn get_eth_gas_details(
     call_addr: Address,
     nft: bool,
     fungible_max: Option<bool>,
-) -> MmResult<(U256, U256), EthGasDetailsErr> {
+) -> MmResult<GasDetails, EthGasDetailsErr> {
     match fee {
         Some(WithdrawFee::EthGas { gas_price, gas }) => {
             let gas_price = wei_from_big_decimal(&gas_price, 9)?;

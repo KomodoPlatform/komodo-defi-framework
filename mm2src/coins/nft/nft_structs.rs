@@ -145,7 +145,6 @@ impl<T> std::ops::Deref for SerdeStringWrap<T> {
 
 #[derive(Debug, Serialize)]
 pub struct NftList {
-    pub(crate) count: u64,
     pub(crate) nfts: Vec<Nft>,
 }
 
@@ -254,6 +253,5 @@ pub(crate) struct NftTransferHistoryWrapper {
 
 #[derive(Debug, Serialize)]
 pub struct NftsTransferHistoryList {
-    pub(crate) count: u64,
     pub(crate) transfer_history: Vec<NftTransferHistory>,
 }
