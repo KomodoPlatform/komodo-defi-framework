@@ -4315,6 +4315,7 @@ dependencies = [
  "either",
  "enum-primitive-derive",
  "enum_from",
+ "env_logger 0.7.1",
  "ethereum-types",
  "futures 0.1.29",
  "futures 0.3.15",

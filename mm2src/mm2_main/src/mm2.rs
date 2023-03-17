@@ -456,6 +456,8 @@ pub fn run_lp_main(
     version: String,
     datetime: String,
 ) -> Result<(), String> {
+    env_logger::init();
+
     let conf = get_mm2config(first_arg)?;
 
     let log_filter = LogLevel::from_env();
