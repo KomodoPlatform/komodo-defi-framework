@@ -1455,10 +1455,6 @@ pub struct SwapPubkeys {
     pub taker: String,
 }
 
-impl SwapPubkeys {
-    fn new(maker: String, taker: String) -> Self { SwapPubkeys { maker, taker } }
-}
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod lp_swap_tests {
     use super::*;

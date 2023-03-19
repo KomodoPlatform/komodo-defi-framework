@@ -327,7 +327,7 @@ impl TakerSavedSwap {
             None => return ERR!("Can't get maker's pubkey while there's no Negotiated event"),
         };
 
-        Ok(SwapPubkeys::new(maker, taker))
+        Ok(SwapPubkeys { maker, taker })
     }
 }
 
