@@ -126,6 +126,8 @@ pub enum HwRpcError {
     FailureMessageNotFound,
     #[display(fmt = "User cancelled action")]
     UserCancelled,
+    #[display(fmt = "PONG message mismatch after ping")]
+    PongMessageMismatch,
 }
 
 /// The trait is implemented for those error enumerations that have `HwRpcError` variant.
@@ -161,6 +163,7 @@ where
         HwError::FirmwareError => T::hw_rpc_error(HwRpcError::FirmwareError),
         HwError::FailureMessageNotFound => T::hw_rpc_error(HwRpcError::FailureMessageNotFound),
         HwError::UserCancelled => T::hw_rpc_error(HwRpcError::UserCancelled),
+        HwError::PongMessageMismatch => T::hw_rpc_error(HwRpcError::PongMessageMismatch),
         other => T::internal(other.to_string()),
     }
 }
