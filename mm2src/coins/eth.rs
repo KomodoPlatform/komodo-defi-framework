@@ -1734,6 +1734,15 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        macro_rules! update_status {
+            ($error: ident, $status: ident) => {
+                match $error.get_inner() {
+                    Web3RpcError::Timeout(_) => $status.append(" Timed out."),
+                    _ => $status.append(" Failed."),
+                }
+            };
+        }
+
         let ctx = try_fus!(MmArc::from_weak(&self.ctx).ok_or("No context"));
         let mut status = ctx.log.status_handle();
         status.status(&[&self.ticker], "Waiting for confirmations…");
@@ -1756,10 +1765,7 @@ impl MarketCoinOps for EthCoin {
                 {
                     Ok(c) => c,
                     Err(e) => {
-                        match e.get_inner() {
-                            Web3RpcError::Timeout(_) => status.append(" Timed out."),
-                            _ => status.append(" Failed."),
-                        }
+                        update_status!(e, status);
                         return Err(e.to_string());
                     },
                 };
@@ -1771,22 +1777,25 @@ impl MarketCoinOps for EthCoin {
                     .compat()
                     .await
                 {
-                    match e.get_inner() {
-                        Web3RpcError::Timeout(_) => status.append(" Timed out."),
-                        _ => status.append(" Failed."),
-                    }
+                    update_status!(e, status);
                     return Err(e.to_string());
                 }
 
                 // Make sure that there was no chain reorganization that led to transaction confirmation block to be changed
-                if let Ok(conf) = selfi
+                match selfi
                     .transaction_confirmed_at(tx_hash, input.wait_until, check_every)
                     .compat()
                     .await
                 {
-                    if conf == confirmed_at {
-                        break Ok(());
-                    }
+                    Ok(conf) => {
+                        if conf == confirmed_at {
+                            break Ok(());
+                        }
+                    },
+                    Err(e) => {
+                        update_status!(e, status);
+                        return Err(e.to_string());
+                    },
                 }
 
                 Timer::sleep(check_every).await;
