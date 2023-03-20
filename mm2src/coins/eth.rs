@@ -196,6 +196,8 @@ pub enum Web3RpcError {
     Transport(String),
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
+    #[display(fmt = "Timeout: {}", _0)]
+    Timeout(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
 }
@@ -237,7 +239,9 @@ impl From<Web3RpcError> for RawTransactionError {
     fn from(e: Web3RpcError) -> Self {
         match e {
             Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => RawTransactionError::Transport(tr),
-            Web3RpcError::Internal(internal) => RawTransactionError::InternalError(internal),
+            Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
+                RawTransactionError::InternalError(internal)
+            },
         }
     }
 }
@@ -276,7 +280,9 @@ impl From<Web3RpcError> for WithdrawError {
     fn from(e: Web3RpcError) -> Self {
         match e {
             Web3RpcError::Transport(err) | Web3RpcError::InvalidResponse(err) => WithdrawError::Transport(err),
-            Web3RpcError::Internal(internal) => WithdrawError::InternalError(internal),
+            Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
+                WithdrawError::InternalError(internal)
+            },
         }
     }
 }
@@ -289,7 +295,9 @@ impl From<Web3RpcError> for TradePreimageError {
     fn from(e: Web3RpcError) -> Self {
         match e {
             Web3RpcError::Transport(err) | Web3RpcError::InvalidResponse(err) => TradePreimageError::Transport(err),
-            Web3RpcError::Internal(internal) => TradePreimageError::InternalError(internal),
+            Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
+                TradePreimageError::InternalError(internal)
+            },
         }
     }
 }
@@ -318,7 +326,7 @@ impl From<Web3RpcError> for BalanceError {
     fn from(e: Web3RpcError) -> Self {
         match e {
             Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => BalanceError::Transport(tr),
-            Web3RpcError::Internal(internal) => BalanceError::Internal(internal),
+            Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => BalanceError::Internal(internal),
         }
     }
 }
@@ -1733,99 +1741,58 @@ impl MarketCoinOps for EthCoin {
 
         let unsigned: UnverifiedTransaction = try_fus!(rlp::decode(&input.payment_tx));
         let tx = try_fus!(SignedEthTx::new(unsigned));
+        let tx_hash = tx.hash();
 
         let required_confirms = U64::from(input.confirmations);
+        let check_every = input.check_every as f64;
         let selfi = self.clone();
         let fut = async move {
             loop {
-                if status.ms2deadline().unwrap() < 0 {
-                    status.append(" Timed out.");
-                    return ERR!(
-                        "Waited too long until {} for transaction {:?} confirmation ",
-                        input.wait_until,
-                        tx
-                    );
-                }
-
-                let web3_receipt = match selfi.web3.eth().transaction_receipt(tx.hash()).await {
-                    Ok(r) => r,
+                // Wait for one confirmation and return the transaction confirmation block number
+                let confirmed_at = match selfi
+                    .transaction_confirmed_at(tx_hash, input.wait_until, check_every)
+                    .compat()
+                    .await
+                {
+                    Ok(c) => c,
                     Err(e) => {
-                        error!(
-                            "Error {:?} getting the {} transaction {:?}, retrying in 15 seconds",
-                            e,
-                            selfi.ticker(),
-                            tx.tx_hash()
-                        );
-                        Timer::sleep(input.check_every as f64).await;
-                        continue;
+                        match e.get_inner() {
+                            Web3RpcError::Timeout(_) => status.append(" Timed out."),
+                            _ => status.append(" Failed."),
+                        }
+                        return Err(e.to_string());
                     },
                 };
-                if let Some(receipt) = web3_receipt {
-                    if receipt.status != Some(1.into()) {
-                        status.append(" Failed.");
-                        return ERR!(
-                            "Tx receipt {:?} status of {} tx {:?} is failed",
-                            receipt,
-                            selfi.ticker(),
-                            tx.tx_hash()
-                        );
+
+                // Wait for a block that achieves the required confirmations
+                let confirmation_block_number = confirmed_at + required_confirms;
+                if let Err(e) = selfi
+                    .wait_for_block(confirmation_block_number, input.wait_until, check_every)
+                    .compat()
+                    .await
+                {
+                    match e.get_inner() {
+                        Web3RpcError::Timeout(_) => status.append(" Timed out."),
+                        _ => status.append(" Failed."),
                     }
+                    return Err(e.to_string());
+                }
 
-                    if let Some(confirmed_at) = receipt.block_number {
-                        let current_block = match selfi.web3.eth().block_number().await {
-                            Ok(b) => b,
-                            Err(e) => {
-                                error!(
-                                    "Error {:?} getting the {} block number retrying in 15 seconds",
-                                    e,
-                                    selfi.ticker()
-                                );
-                                Timer::sleep(input.check_every as f64).await;
-                                continue;
-                            },
-                        };
-                        // checking if the current block is above the confirmed_at block prediction for pos chain to prevent overflow
-                        if current_block >= confirmed_at && current_block - confirmed_at + 1 >= required_confirms {
-                            loop {
-                                if status.ms2deadline().unwrap() < 0 {
-                                    status.append(" Timed out.");
-                                    return ERR!(
-                                        "Waited too long until {} for transaction {:?} confirmation ",
-                                        input.wait_until,
-                                        tx
-                                    );
-                                }
-
-                                // Make sure that the transaction is returned by eth_getTransactionByHash too so that swaps don't fail at payment validation
-                                // https://github.com/KomodoPlatform/atomicDEX-API/issues/1630#issuecomment-1401736168
-                                match selfi.web3.eth().transaction(TransactionId::Hash(tx.hash)).await {
-                                    Ok(Some(_)) => {
-                                        status.append(" Confirmed.");
-                                        return Ok(());
-                                    },
-                                    Ok(None) => error!(
-                                        "Didn't find tx: {:02x} for coin: {} on RPC node using eth_getTransactionByHash. Retrying in {} seconds",
-                                        tx.hash,
-                                        selfi.ticker(),
-                                        input.check_every
-                                    ),
-                                    Err(e) => error!(
-                                        "Error {} calling eth_getTransactionByHash for coin: {}, tx: {:02x}. Retrying in {} seconds",
-                                        e,
-                                        selfi.ticker(),
-                                        tx.hash,
-                                        input.check_every
-                                    ),
-                                }
-
-                                Timer::sleep(input.check_every as f64).await;
-                            }
-                        }
+                // Make sure that there was no chain reorganization that led to transaction confirmation block to be changed
+                if let Ok(conf) = selfi
+                    .transaction_confirmed_at(tx_hash, input.wait_until, check_every)
+                    .compat()
+                    .await
+                {
+                    if conf == confirmed_at {
+                        break Ok(());
                     }
                 }
-                Timer::sleep(input.check_every as f64).await;
+
+                Timer::sleep(check_every).await;
             }
         };
+
         Box::new(fut.boxed().compat())
     }
 
@@ -3555,7 +3522,7 @@ impl EthCoin {
         let fut = async move {
             loop {
                 if now_ms() / 1000 > wait_until {
-                    return MmError::err(Web3RpcError::Internal(ERRL!(
+                    return MmError::err(Web3RpcError::Timeout(ERRL!(
                         "Waited too long until {} for allowance to be updated to at least {}",
                         wait_until,
                         required_allowance
@@ -4053,6 +4020,88 @@ impl EthCoin {
             "Couldn't fetch the '{tx_hash:02x}' transaction hex as it hasn't appeared on the RPC node in {timeout_s}s"
         );
         Ok(None)
+    }
+
+    fn transaction_confirmed_at(&self, payment_hash: H256, wait_until: u64, check_every: f64) -> Web3RpcFut<U64> {
+        let selfi = self.clone();
+        let fut = async move {
+            loop {
+                if now_ms() / 1000 > wait_until {
+                    return MmError::err(Web3RpcError::Timeout(ERRL!(
+                        "Waited too long until {} for payment tx: {:02x}, for coin:{}, to be confirmed!",
+                        wait_until,
+                        payment_hash,
+                        selfi.ticker()
+                    )));
+                }
+
+                let web3_receipt = match selfi.web3.eth().transaction_receipt(payment_hash).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        error!(
+                            "Error {:?} getting the {} transaction {:?}, retrying in 15 seconds",
+                            e,
+                            selfi.ticker(),
+                            payment_hash
+                        );
+                        Timer::sleep(check_every).await;
+                        continue;
+                    },
+                };
+
+                if let Some(receipt) = web3_receipt {
+                    if receipt.status != Some(1.into()) {
+                        return MmError::err(Web3RpcError::Internal(ERRL!(
+                            "Tx receipt {:?} status of {} tx {:?} is failed",
+                            receipt,
+                            selfi.ticker(),
+                            payment_hash
+                        )));
+                    }
+
+                    if let Some(confirmed_at) = receipt.block_number {
+                        break Ok(confirmed_at);
+                    }
+                }
+
+                Timer::sleep(check_every).await;
+            }
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    fn wait_for_block(&self, block_number: U64, wait_until: u64, check_every: f64) -> Web3RpcFut<()> {
+        let selfi = self.clone();
+        let fut = async move {
+            loop {
+                if now_ms() / 1000 > wait_until {
+                    return MmError::err(Web3RpcError::Timeout(ERRL!(
+                        "Waited too long until {} for block number: {:02x} to appear on-chain, for coin:{}",
+                        wait_until,
+                        block_number,
+                        selfi.ticker()
+                    )));
+                }
+
+                match selfi.web3.eth().block_number().await {
+                    Ok(current_block) => {
+                        if current_block >= block_number {
+                            break Ok(());
+                        }
+                    },
+                    Err(e) => {
+                        error!(
+                            "Error {:?} getting the {} block number retrying in 15 seconds",
+                            e,
+                            selfi.ticker()
+                        );
+                    },
+                };
+
+                Timer::sleep(check_every).await;
+            }
+        };
+        Box::new(fut.boxed().compat())
     }
 }
 
