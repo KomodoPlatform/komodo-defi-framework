@@ -546,9 +546,6 @@ pub enum ValidateOtherPubKeyErr {
 #[derive(Clone, Debug)]
 pub struct ConfirmPaymentInput {
     pub payment_tx: Vec<u8>,
-    pub secret_hash: Vec<u8>,
-    pub swap_contract_address: Option<BytesJson>,
-    pub time_lock: u32,
     pub confirmations: u64,
     pub requires_nota: bool,
     pub wait_until: u64,

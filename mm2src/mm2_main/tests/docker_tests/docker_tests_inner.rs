@@ -43,9 +43,6 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -68,9 +65,6 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -103,9 +97,6 @@ fn test_for_non_existent_tx_hex_utxo() {
     let tx = hex::decode("0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d87000000000000000016611400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000").unwrap();
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx,
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock: 0,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -140,9 +131,6 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -165,9 +153,6 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -216,9 +201,6 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -242,9 +224,6 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: spend_tx.tx_hex(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -293,9 +272,6 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -319,9 +295,6 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: spend_tx.tx_hex(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -2502,9 +2475,6 @@ fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_
     coin.send_raw_tx(&hex::encode(&withdraw.tx_hex.0)).wait().unwrap();
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: withdraw.tx_hex.0,
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock: 0,
         confirmations: 1,
         requires_nota: false,
         wait_until: (now_ms() / 1000) + 10,

@@ -473,9 +473,6 @@ fn test_watcher_validate_taker_fee_eth() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_fee.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock: 0,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -584,9 +581,6 @@ fn test_watcher_validate_taker_fee_erc20() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_fee.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock: 0,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -723,9 +717,6 @@ fn test_watcher_validate_taker_payment_eth() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_payment.tx_hex(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: taker_coin.swap_contract_address(),
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -862,9 +853,6 @@ fn test_watcher_validate_taker_payment_eth() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_payment_wrong_secret.tx_hex(),
-        secret_hash: wrong_secret_hash.to_vec(),
-        swap_contract_address: taker_coin.swap_contract_address(),
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -1002,9 +990,6 @@ fn test_watcher_validate_taker_payment_erc20() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_payment.tx_hex(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: taker_coin.swap_contract_address(),
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -1141,9 +1126,6 @@ fn test_watcher_validate_taker_payment_erc20() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_payment_wrong_secret.tx_hex(),
-        secret_hash: wrong_secret_hash.to_vec(),
-        swap_contract_address: taker_coin.swap_contract_address(),
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -1479,9 +1461,6 @@ fn test_watcher_validate_taker_fee_utxo() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_fee.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock: 0,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -1617,9 +1596,6 @@ fn test_watcher_validate_taker_payment_utxo() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_payment.tx_hex(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: taker_coin.swap_contract_address(),
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -1796,9 +1772,6 @@ fn test_send_taker_payment_refund_preimage_utxo() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -1826,9 +1799,6 @@ fn test_send_taker_payment_refund_preimage_utxo() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,

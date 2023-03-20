@@ -1800,26 +1800,6 @@ impl MarketCoinOps for EthCoin {
                                 // https://github.com/KomodoPlatform/atomicDEX-API/issues/1630#issuecomment-1401736168
                                 match selfi.web3.eth().transaction(TransactionId::Hash(tx.hash)).await {
                                     Ok(Some(_)) => {
-                                        if let Some(contract) = input.swap_contract_address.clone() {
-                                            let swap_contract_address = match contract.try_to_address() {
-                                                Ok(addr) => addr,
-                                                Err(e) => return ERR!("{}", e),
-                                            };
-                                            let swap_id = selfi.etomic_swap_id(input.time_lock, &input.secret_hash);
-                                            if let Err(e) = selfi
-                                                .wait_for_payment_state_initialization(
-                                                    tx.hash,
-                                                    swap_contract_address,
-                                                    Token::FixedBytes(swap_id.clone()),
-                                                    input.wait_until,
-                                                    input.check_every,
-                                                )
-                                                .compat()
-                                                .await
-                                            {
-                                                return ERR!("{}", e);
-                                            }
-                                        }
                                         status.append(" Confirmed.");
                                         return Ok(());
                                     },
@@ -3872,57 +3852,6 @@ impl EthCoin {
                 _ => ERR!("Payment status must be uint, got {:?}", state),
             }
         }))
-    }
-
-    fn wait_for_payment_state_initialization(
-        &self,
-        payment_hash: H256,
-        swap_contract_address: H160,
-        token: Token,
-        wait_until: u64,
-        check_every: u64,
-    ) -> Box<dyn Future<Item = U256, Error = String> + Send + 'static> {
-        let selfi = self.clone();
-        let fut = async move {
-            loop {
-                if now_ms() / 1000 > wait_until {
-                    ERRL!("Waited too long until {} for payment state to initialize!", wait_until);
-                }
-
-                let status = match selfi
-                    .payment_status(swap_contract_address, token.clone())
-                    .compat()
-                    .await
-                {
-                    Ok(status) => status,
-                    Err(e) => {
-                        error!(
-                            "Error {} getting payment status tx: {:02x} from swap contract: {} for coin: {}. Retrying in {} seconds",
-                            e,
-                            payment_hash,
-                            swap_contract_address,
-                            selfi.ticker(),
-                            check_every
-                        );
-                        Timer::sleep(check_every as f64).await;
-                        continue;
-                    },
-                };
-                if status == PAYMENT_STATE_UNINITIALIZED.into() {
-                    error!(
-                        "Payment tx: {:02x} is in `uninitialized` state in swap contract: {} for coin: {}. Retrying in {} seconds",
-                        payment_hash,
-                        swap_contract_address,
-                        selfi.ticker(),
-                        check_every
-                    );
-                } else {
-                    break Ok(status);
-                }
-                Timer::sleep(check_every as f64).await;
-            }
-        };
-        Box::new(fut.boxed().compat())
     }
 
     async fn search_for_swap_tx_spend(

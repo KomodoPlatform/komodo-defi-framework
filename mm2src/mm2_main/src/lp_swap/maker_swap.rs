@@ -895,9 +895,6 @@ impl MakerSwap {
             wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
         let confirm_maker_payment_input = ConfirmPaymentInput {
             payment_tx: self.r().maker_payment.clone().unwrap().tx_hex.0,
-            secret_hash: self.secret_hash(),
-            swap_contract_address: self.r().data.maker_coin_swap_contract_address.clone(),
-            time_lock: self.r().data.maker_payment_lock as u32,
             confirmations: self.r().data.maker_payment_confirmations,
             requires_nota: self.r().data.maker_payment_requires_nota.unwrap_or(false),
             wait_until: maker_payment_wait_confirm,
@@ -972,9 +969,6 @@ impl MakerSwap {
 
         let confirm_taker_payment_input = ConfirmPaymentInput {
             payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
-            secret_hash: self.secret_hash(),
-            swap_contract_address: taker_coin_swap_contract_address.clone(),
-            time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
             confirmations,
             requires_nota: self.r().data.taker_payment_requires_nota.unwrap_or(false),
             wait_until: wait_taker_payment,
@@ -1122,9 +1116,6 @@ impl MakerSwap {
         let requires_nota = false;
         let confirm_taker_payment_input = ConfirmPaymentInput {
             payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
-            secret_hash: self.secret_hash(),
-            swap_contract_address: self.r().data.taker_coin_swap_contract_address.clone(),
-            time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
             confirmations,
             requires_nota,
             wait_until: self.wait_refund_until(),

@@ -204,9 +204,6 @@ fn test_taker_spends_maker_payment() {
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: payment_tx_hex.clone(),
-        secret_hash: secret_hash.clone(),
-        swap_contract_address: maker_coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -249,9 +246,6 @@ fn test_taker_spends_maker_payment() {
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: spend_tx_hex,
-        secret_hash,
-        swap_contract_address: taker_coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -315,9 +309,6 @@ fn test_maker_spends_taker_payment() {
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: payment_tx_hex.clone(),
-        secret_hash: secret_hash.clone(),
-        swap_contract_address: taker_coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -360,9 +351,6 @@ fn test_maker_spends_taker_payment() {
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: spend_tx_hex,
-        secret_hash,
-        swap_contract_address: maker_coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -415,9 +403,6 @@ fn test_maker_refunds_payment() {
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: payment_tx_hex.clone(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -447,9 +432,6 @@ fn test_maker_refunds_payment() {
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx_hex,
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -494,9 +476,6 @@ fn test_taker_refunds_payment() {
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: payment_tx_hex.clone(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -526,9 +505,6 @@ fn test_taker_refunds_payment() {
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx_hex,
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -570,9 +546,6 @@ fn test_check_if_my_payment_sent() {
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: payment_tx_hex,
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -630,9 +603,6 @@ fn test_search_for_swap_tx_spend_taker_spent() {
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: payment_tx_hex.clone(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: maker_coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -660,9 +630,6 @@ fn test_search_for_swap_tx_spend_taker_spent() {
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: spend_tx_hex,
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: taker_coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -718,9 +685,6 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: payment_tx_hex.clone(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: maker_coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -747,9 +711,6 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx_hex,
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: maker_coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -805,9 +766,6 @@ fn test_search_for_swap_tx_spend_not_spent() {
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: payment_tx_hex.clone(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: maker_coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -865,9 +823,6 @@ fn test_wait_for_tx_spend() {
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: payment_tx_hex.clone(),
-        secret_hash: secret_hash.to_vec(),
-        swap_contract_address: maker_coin.swap_contract_address(),
-        time_lock: timelock,
         confirmations,
         requires_nota,
         wait_until,
@@ -1583,9 +1538,6 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -1608,9 +1560,6 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -1658,9 +1607,6 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -1683,9 +1629,6 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx.tx_hex(),
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,

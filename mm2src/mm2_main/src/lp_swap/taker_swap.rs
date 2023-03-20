@@ -1329,9 +1329,6 @@ impl TakerSwap {
         let confirmations = self.r().data.maker_payment_confirmations;
         let confirm_maker_payment_input = ConfirmPaymentInput {
             payment_tx: self.r().maker_payment.clone().unwrap().tx_hex.0,
-            secret_hash: self.r().secret_hash.0.to_vec(),
-            swap_contract_address: self.r().data.maker_coin_swap_contract_address.clone(),
-            time_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
             confirmations,
             requires_nota: self.r().data.maker_payment_requires_nota.unwrap_or(false),
             wait_until: self.r().data.maker_payment_wait,
@@ -1610,9 +1607,6 @@ impl TakerSwap {
 
         let confirm_taker_payment_input = ConfirmPaymentInput {
             payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
-            secret_hash: self.r().secret_hash.clone().0,
-            swap_contract_address: self.r().data.taker_coin_swap_contract_address.clone(),
-            time_lock: self.r().data.taker_payment_lock as u32,
             confirmations: self.r().data.taker_payment_confirmations,
             requires_nota: self.r().data.taker_payment_requires_nota.unwrap_or(false),
             wait_until: self.r().data.taker_payment_lock,

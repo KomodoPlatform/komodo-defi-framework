@@ -279,9 +279,6 @@ impl BchDockerOps {
             .unwrap();
         let confirm_payment_input = ConfirmPaymentInput {
             payment_tx: slp_genesis_tx.tx_hex(),
-            secret_hash: vec![0; 20],
-            swap_contract_address: None,
-            time_lock: 0,
             confirmations: 1,
             requires_nota: false,
             wait_until: now_ms() / 1000 + 30,
@@ -301,9 +298,6 @@ impl BchDockerOps {
         let tx = block_on(adex_slp.send_slp_outputs(slp_outputs)).unwrap();
         let confirm_payment_input = ConfirmPaymentInput {
             payment_tx: tx.tx_hex(),
-            secret_hash: vec![0; 20],
-            swap_contract_address: None,
-            time_lock: 0,
             confirmations: 1,
             requires_nota: false,
             wait_until: now_ms() / 1000 + 30,
@@ -568,9 +562,6 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
     log!("{:02x}", tx_bytes);
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx_bytes.clone().0,
-        secret_hash: vec![0; 20],
-        swap_contract_address: None,
-        time_lock: 0,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -689,9 +680,6 @@ where
         let tx_bytes = client.get_transaction_bytes(&hash).wait().unwrap();
         let confirm_payment_input = ConfirmPaymentInput {
             payment_tx: tx_bytes.clone().0,
-            secret_hash: vec![0; 20],
-            swap_contract_address: None,
-            time_lock: 0,
             confirmations: 1,
             requires_nota: false,
             wait_until: timeout,

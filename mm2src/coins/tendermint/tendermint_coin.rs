@@ -3444,9 +3444,6 @@ pub mod tendermint_coin_tests {
 
             let confirm_payment_input = ConfirmPaymentInput {
                 payment_tx: tx_bytes,
-                secret_hash: vec![0; 20],
-                swap_contract_address: None,
-                time_lock: 0,
                 confirmations: 0,
                 requires_nota: false,
                 wait_until: wait_until(),
@@ -3462,9 +3459,6 @@ pub mod tendermint_coin_tests {
 
             let confirm_payment_input = ConfirmPaymentInput {
                 payment_tx: tx_bytes,
-                secret_hash: vec![0; 20],
-                swap_contract_address: None,
-                time_lock: 0,
                 confirmations: 0,
                 requires_nota: false,
                 wait_until: wait_until(),
