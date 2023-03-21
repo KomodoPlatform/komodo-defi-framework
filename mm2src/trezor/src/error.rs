@@ -32,14 +32,25 @@ pub enum TrezorError {
     #[display(fmt = "Unexpected interaction request: {:?}", _0)]
     UnexpectedInteractionRequest(TrezorUserInteraction),
     Internal(String),
+    PongMessageMismatch,
 }
 
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display)]
 pub enum OperationFailure {
     InvalidPin,
-    /// TODO expand it to other types.
-    #[display(fmt = "Operation failed due to unknown reason: {}", _0)]
-    Other(String),
+    UnexpectedMessage,
+    ButtonExpected,
+    DataError,
+    PinExpected,
+    InvalidSignature,
+    ProcessError,
+    NotEnoughFunds,
+    NotInitialized,
+    WipeCodeMismatch,
+    InvalidSession,
+    FirmwareError,
+    FailureMessageNotFound,
+    UserCancelled,
 }
 
 impl From<Failure> for OperationFailure {
@@ -48,13 +59,23 @@ impl From<Failure> for OperationFailure {
             Some(FailureType::FailurePinInvalid) | Some(FailureType::FailurePinMismatch) => {
                 OperationFailure::InvalidPin
             },
-            _ => OperationFailure::Other(format!("{:?}", failure)),
+            Some(FailureType::FailureActionCancelled) | Some(FailureType::FailurePinCancelled) => {
+                OperationFailure::UserCancelled
+            },
+            Some(FailureType::FailureUnexpectedMessage) => OperationFailure::UnexpectedMessage,
+            Some(FailureType::FailureButtonExpected) => OperationFailure::ButtonExpected,
+            Some(FailureType::FailureDataError) => OperationFailure::DataError,
+            Some(FailureType::FailurePinExpected) => OperationFailure::PinExpected,
+            Some(FailureType::FailureInvalidSignature) => OperationFailure::InvalidSignature,
+            Some(FailureType::FailureProcessError) => OperationFailure::ProcessError,
+            Some(FailureType::FailureNotEnoughFunds) => OperationFailure::NotEnoughFunds,
+            Some(FailureType::FailureNotInitialized) => OperationFailure::NotInitialized,
+            Some(FailureType::FailureWipeCodeMismatch) => OperationFailure::WipeCodeMismatch,
+            Some(FailureType::FailureInvalidSession) => OperationFailure::InvalidSession,
+            Some(FailureType::FailureFirmwareError) => OperationFailure::FirmwareError,
+            None => OperationFailure::FailureMessageNotFound,
         }
     }
-}
-
-impl From<OperationFailure> for TrezorError {
-    fn from(failure: OperationFailure) -> Self { TrezorError::Failure(failure) }
 }
 
 impl From<DecodeError> for TrezorError {

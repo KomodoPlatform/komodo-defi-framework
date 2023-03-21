@@ -116,11 +116,10 @@ impl<'a> TrezorSession<'a> {
         };
 
         let result_handler = ResultHandler::<()>::new(move |pong: proto_common::Success| {
-            if pong.message == Some(ping_message.clone()) {
+            if pong.message == Some(ping_message) {
                 Ok(())
             } else {
-                let error = format!("Expected '{ping_message}' PONG message, found: {:?}", pong.message);
-                MmError::err(TrezorError::Failure(OperationFailure::Other(error)))
+                MmError::err(TrezorError::PongMessageMismatch)
             }
         });
         self.call(req, result_handler).await
