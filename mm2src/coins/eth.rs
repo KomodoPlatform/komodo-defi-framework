@@ -1770,8 +1770,22 @@ impl MarketCoinOps for EthCoin {
                     },
                 };
 
+                // checking that confirmed_at is greater than zero to prevent overflow.
+                // untrusted RPC nodes might send a zero value to cause overflow if we didn't do this check.
+                // required_confirms should always be more than 0 anyways but we should keep this check nonetheless.
+                if confirmed_at <= U64::from(0) {
+                    error!(
+                        "confirmed_at: {}, for payment tx: {:02x}, for coin:{} should be greater than zero!",
+                        confirmed_at,
+                        tx_hash,
+                        selfi.ticker()
+                    );
+                    Timer::sleep(check_every).await;
+                    continue;
+                }
+
                 // Wait for a block that achieves the required confirmations
-                let confirmation_block_number = confirmed_at + required_confirms;
+                let confirmation_block_number = confirmed_at + required_confirms - 1;
                 if let Err(e) = selfi
                     .wait_for_block(confirmation_block_number, input.wait_until, check_every)
                     .compat()
