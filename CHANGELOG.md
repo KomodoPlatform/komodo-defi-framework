@@ -27,6 +27,8 @@
 - Maker/taker pubkeys were added to new columns in `stats_swaps` table in [#1665](https://github.com/KomodoPlatform/atomicDEX-API/pull/1665)
 - Get rid of unnecessary / old dependencies: `crossterm`, `crossterm_winapi`, `mio 0.7.13`, `miow`, `ntapi`, `signal-hook`, `signal-hook-mio` in [#1710](https://github.com/KomodoPlatform/atomicDEX-API/pull/1710)
 - A bug that caused EVM swap payments validation to fail because the tx was not available yet in the RPC node when calling `eth_getTransactionByHash` was fixed in [#1716](https://github.com/KomodoPlatform/atomicDEX-API/pull/1716). `eth_getTransactionByHash` in now retried in `wait_for_confirmations` until tx is found in the RPC node, this makes sure that the transaction is returned from `eth_getTransactionByHash` later when validating.
+- RPC calls for evm chains was reduced in `wait_for_confirmations` function in [#1724](https://github.com/KomodoPlatform/atomicDEX-API/pull/1724)
+- A possible endless loop in evm `wait_for_htlc_tx_spend` was fixed in [#1724](https://github.com/KomodoPlatform/atomicDEX-API/pull/1724)
 
 
 ## v1.0.0-beta - 2023-03-08
