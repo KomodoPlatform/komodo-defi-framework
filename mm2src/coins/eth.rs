@@ -1734,8 +1734,8 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        macro_rules! update_status {
-            ($error: ident, $status: ident) => {
+        macro_rules! update_status_with_error {
+            ($status: ident, $error: ident) => {
                 match $error.get_inner() {
                     Web3RpcError::Timeout(_) => $status.append(" Timed out."),
                     _ => $status.append(" Failed."),
@@ -1765,7 +1765,7 @@ impl MarketCoinOps for EthCoin {
                 {
                     Ok(c) => c,
                     Err(e) => {
-                        update_status!(e, status);
+                        update_status_with_error!(status, e);
                         return Err(e.to_string());
                     },
                 };
@@ -1777,7 +1777,7 @@ impl MarketCoinOps for EthCoin {
                     .compat()
                     .await
                 {
-                    update_status!(e, status);
+                    update_status_with_error!(status, e);
                     return Err(e.to_string());
                 }
 
@@ -1789,11 +1789,12 @@ impl MarketCoinOps for EthCoin {
                 {
                     Ok(conf) => {
                         if conf == confirmed_at {
+                            status.append(" Confirmed.");
                             break Ok(());
                         }
                     },
                     Err(e) => {
-                        update_status!(e, status);
+                        update_status_with_error!(status, e);
                         return Err(e.to_string());
                     },
                 }
