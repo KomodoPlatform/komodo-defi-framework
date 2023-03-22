@@ -764,7 +764,7 @@ impl MakerSwap {
             {
                 Ok(_) => break,
                 Err(err) => {
-                    if attempts >= 3 {
+                    if attempts >= 6 {
                         return Ok((Some(MakerSwapCommand::Finish), vec![
                             MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", err).into()),
                         ]));
