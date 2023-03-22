@@ -5201,7 +5201,7 @@ impl From<Web3RpcError> for EthGasDetailsErr {
     fn from(e: Web3RpcError) -> Self {
         match e {
             Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => EthGasDetailsErr::Transport(tr),
-            Web3RpcError::Internal(internal) => EthGasDetailsErr::Internal(internal),
+            Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => EthGasDetailsErr::Internal(internal),
         }
     }
 }
