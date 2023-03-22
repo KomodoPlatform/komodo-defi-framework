@@ -763,7 +763,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         data.clone().into(),
         call_addr,
         false,
-        Some(req.max),
+        req.max,
     )
     .await?;
     let total_fee = gas * gas_price;
@@ -880,7 +880,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
 pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, &req.chain.to_ticker()).await?;
-    let (to_addr, token_addr, eth_coin) = get_valid_eth_withdraw_addresses(coin, &req.to, &req.token_address)?;
+    let (to_addr, token_addr, eth_coin) = get_valid_nft_add_to_withdraw(coin, &req.to, &req.token_address)?;
     let my_address = eth_coin.my_address()?;
 
     // todo check amount in nft cache, instead of sending new moralis req
@@ -936,7 +936,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
         data.clone().into(),
         call_addr,
         true,
-        None,
+        false,
     )
     .await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
@@ -981,7 +981,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
 pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, &req.chain.to_ticker()).await?;
-    let (to_addr, token_addr, eth_coin) = get_valid_eth_withdraw_addresses(coin, &req.to, &req.token_address)?;
+    let (to_addr, token_addr, eth_coin) = get_valid_nft_add_to_withdraw(coin, &req.to, &req.token_address)?;
     let my_address = eth_coin.my_address()?;
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
@@ -1009,7 +1009,7 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
         data.clone().into(),
         call_addr,
         true,
-        None,
+        false,
     )
     .await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
@@ -5164,7 +5164,7 @@ pub enum GetValidEthWithdrawAddError {
 }
 
 #[cfg(feature = "enable-nft-integration")]
-fn get_valid_eth_withdraw_addresses(
+fn get_valid_nft_add_to_withdraw(
     coin_enum: MmCoinEnum,
     to: &str,
     token_add: &str,
@@ -5213,7 +5213,7 @@ async fn get_eth_gas_details(
     data: Bytes,
     call_addr: Address,
     nft: bool,
-    fungible_max: Option<bool>,
+    fungible_max: bool,
 ) -> MmResult<GasDetails, EthGasDetailsErr> {
     match fee {
         Some(WithdrawFee::EthGas { gas_price, gas }) => {
@@ -5227,11 +5227,9 @@ async fn get_eth_gas_details(
         None => {
             let gas_price = eth_coin.get_gas_price().compat().await?;
             let mut eth_value_for_estimate = eth_value;
-            if !nft && fungible_max.is_some() {
-                // covering edge case by deducting the standard transfer fee when we want to max withdraw ETH
-                if fungible_max.unwrap() && eth_coin.coin_type == EthCoinType::Eth {
-                    eth_value_for_estimate = eth_value - gas_price * U256::from(21000)
-                }
+            // covering edge case by deducting the standard transfer fee when we want to max withdraw ETH
+            if !nft && fungible_max && eth_coin.coin_type == EthCoinType::Eth {
+                eth_value_for_estimate = eth_value - gas_price * U256::from(21000)
             }
             let estimate_gas_req = CallRequest {
                 value: Some(eth_value_for_estimate),
