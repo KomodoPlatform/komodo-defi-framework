@@ -77,22 +77,22 @@ cfg_wasm32! {
 }
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
-            CoinProtocol, CoinTransportMetrics, CoinsContext, EthValidateFeeArgs, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError,
-            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, PaymentInstructions,
-            PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError,
-            RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundError,
-            RefundPaymentArgs, RefundResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
-            SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG,
-            INSUFFICIENT_WATCHER_REWARD_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
-            INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
+            CoinProtocol, CoinTransportMetrics, CoinsContext, ConfirmPaymentInput, EthValidateFeeArgs, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
+            MyAddressError, MyWalletAddress, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
+            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+            RefundError, RefundPaymentArgs, RefundResult, RpcClientType, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
+            VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult,
+            EARLY_CONFIRMATION_ERR_LOG, INSUFFICIENT_WATCHER_REWARD_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
+            INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -102,7 +102,6 @@ mod web3_transport;
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
 #[cfg(feature = "enable-nft-integration")]
 use crate::nft::{find_wallet_amount, WithdrawNftResult};
-use crate::MyWalletAddress;
 #[cfg(feature = "enable-nft-integration")]
 use crate::{lp_coinfind_or_err, MmCoinEnum, TransactionType};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
@@ -203,6 +202,8 @@ pub enum Web3RpcError {
     Transport(String),
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
+    #[display(fmt = "Timeout: {}", _0)]
+    Timeout(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
 }
@@ -244,7 +245,9 @@ impl From<Web3RpcError> for RawTransactionError {
     fn from(e: Web3RpcError) -> Self {
         match e {
             Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => RawTransactionError::Transport(tr),
-            Web3RpcError::Internal(internal) => RawTransactionError::InternalError(internal),
+            Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
+                RawTransactionError::InternalError(internal)
+            },
         }
     }
 }
@@ -283,7 +286,9 @@ impl From<Web3RpcError> for WithdrawError {
     fn from(e: Web3RpcError) -> Self {
         match e {
             Web3RpcError::Transport(err) | Web3RpcError::InvalidResponse(err) => WithdrawError::Transport(err),
-            Web3RpcError::Internal(internal) => WithdrawError::InternalError(internal),
+            Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
+                WithdrawError::InternalError(internal)
+            },
         }
     }
 }
@@ -296,7 +301,9 @@ impl From<Web3RpcError> for TradePreimageError {
     fn from(e: Web3RpcError) -> Self {
         match e {
             Web3RpcError::Transport(err) | Web3RpcError::InvalidResponse(err) => TradePreimageError::Transport(err),
-            Web3RpcError::Internal(internal) => TradePreimageError::InternalError(internal),
+            Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
+                TradePreimageError::InternalError(internal)
+            },
         }
     }
 }
@@ -325,7 +332,7 @@ impl From<Web3RpcError> for BalanceError {
     fn from(e: Web3RpcError) -> Self {
         match e {
             Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => BalanceError::Transport(tr),
-            Web3RpcError::Internal(internal) => BalanceError::Internal(internal),
+            Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => BalanceError::Internal(internal),
         }
     }
 }
@@ -1764,114 +1771,90 @@ impl MarketCoinOps for EthCoin {
         )
     }
 
-    fn wait_for_confirmations(
-        &self,
-        tx: &[u8],
-        confirmations: u64,
-        _requires_nota: bool,
-        wait_until: u64,
-        check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        macro_rules! update_status_with_error {
+            ($status: ident, $error: ident) => {
+                match $error.get_inner() {
+                    Web3RpcError::Timeout(_) => $status.append(" Timed out."),
+                    _ => $status.append(" Failed."),
+                }
+            };
+        }
+
         let ctx = try_fus!(MmArc::from_weak(&self.ctx).ok_or("No context"));
         let mut status = ctx.log.status_handle();
         status.status(&[&self.ticker], "Waiting for confirmations…");
-        status.deadline(wait_until * 1000);
+        status.deadline(input.wait_until * 1000);
 
-        let unsigned: UnverifiedTransaction = try_fus!(rlp::decode(tx));
+        let unsigned: UnverifiedTransaction = try_fus!(rlp::decode(&input.payment_tx));
         let tx = try_fus!(SignedEthTx::new(unsigned));
+        let tx_hash = tx.hash();
 
-        let required_confirms = U64::from(confirmations);
+        let required_confirms = U64::from(input.confirmations);
+        let check_every = input.check_every as f64;
         let selfi = self.clone();
         let fut = async move {
             loop {
-                if status.ms2deadline().unwrap() < 0 {
-                    status.append(" Timed out.");
-                    return ERR!(
-                        "Waited too long until {} for transaction {:?} confirmation ",
-                        wait_until,
-                        tx
-                    );
-                }
-
-                let web3_receipt = match selfi.web3.eth().transaction_receipt(tx.hash()).await {
-                    Ok(r) => r,
+                // Wait for one confirmation and return the transaction confirmation block number
+                let confirmed_at = match selfi
+                    .transaction_confirmed_at(tx_hash, input.wait_until, check_every)
+                    .compat()
+                    .await
+                {
+                    Ok(c) => c,
                     Err(e) => {
-                        error!(
-                            "Error {:?} getting the {} transaction {:?}, retrying in 15 seconds",
-                            e,
-                            selfi.ticker(),
-                            tx.tx_hash()
-                        );
-                        Timer::sleep(check_every as f64).await;
-                        continue;
+                        update_status_with_error!(status, e);
+                        return Err(e.to_string());
                     },
                 };
-                if let Some(receipt) = web3_receipt {
-                    if receipt.status != Some(1.into()) {
-                        status.append(" Failed.");
-                        return ERR!(
-                            "Tx receipt {:?} status of {} tx {:?} is failed",
-                            receipt,
-                            selfi.ticker(),
-                            tx.tx_hash()
-                        );
-                    }
 
-                    if let Some(confirmed_at) = receipt.block_number {
-                        let current_block = match selfi.web3.eth().block_number().await {
-                            Ok(b) => b,
-                            Err(e) => {
-                                error!(
-                                    "Error {:?} getting the {} block number retrying in 15 seconds",
-                                    e,
-                                    selfi.ticker()
-                                );
-                                Timer::sleep(check_every as f64).await;
-                                continue;
-                            },
-                        };
-                        // checking if the current block is above the confirmed_at block prediction for pos chain to prevent overflow
-                        if current_block >= confirmed_at && current_block - confirmed_at + 1 >= required_confirms {
-                            loop {
-                                if status.ms2deadline().unwrap() < 0 {
-                                    status.append(" Timed out.");
-                                    return ERR!(
-                                        "Waited too long until {} for transaction {:?} confirmation ",
-                                        wait_until,
-                                        tx
-                                    );
-                                }
-
-                                // Make sure that the transaction is returned by eth_getTransactionByHash too so that swaps don't fail at payment validation
-                                // https://github.com/KomodoPlatform/atomicDEX-API/issues/1630#issuecomment-1401736168
-                                match selfi.web3.eth().transaction(TransactionId::Hash(tx.hash)).await {
-                                    Ok(Some(_)) => {
-                                        status.append(" Confirmed.");
-                                        return Ok(());
-                                    },
-                                    Ok(None) => error!(
-                                        "Didn't find tx: {:02x} for coin: {} on RPC node using eth_getTransactionByHash. Retrying in {} seconds",
-                                        tx.hash,
-                                        selfi.ticker(),
-                                        check_every
-                                    ),
-                                    Err(e) => error!(
-                                        "Error {} calling eth_getTransactionByHash for coin: {}, tx: {:02x}. Retrying in {} seconds",
-                                        e,
-                                        selfi.ticker(),
-                                        tx.hash,
-                                        check_every
-                                    ),
-                                }
-
-                                Timer::sleep(check_every as f64).await;
-                            }
-                        }
-                    }
+                // checking that confirmed_at is greater than zero to prevent overflow.
+                // untrusted RPC nodes might send a zero value to cause overflow if we didn't do this check.
+                // required_confirms should always be more than 0 anyways but we should keep this check nonetheless.
+                if confirmed_at <= U64::from(0) {
+                    error!(
+                        "confirmed_at: {}, for payment tx: {:02x}, for coin:{} should be greater than zero!",
+                        confirmed_at,
+                        tx_hash,
+                        selfi.ticker()
+                    );
+                    Timer::sleep(check_every).await;
+                    continue;
                 }
-                Timer::sleep(check_every as f64).await;
+
+                // Wait for a block that achieves the required confirmations
+                let confirmation_block_number = confirmed_at + required_confirms - 1;
+                if let Err(e) = selfi
+                    .wait_for_block(confirmation_block_number, input.wait_until, check_every)
+                    .compat()
+                    .await
+                {
+                    update_status_with_error!(status, e);
+                    return Err(e.to_string());
+                }
+
+                // Make sure that there was no chain reorganization that led to transaction confirmation block to be changed
+                match selfi
+                    .transaction_confirmed_at(tx_hash, input.wait_until, check_every)
+                    .compat()
+                    .await
+                {
+                    Ok(conf) => {
+                        if conf == confirmed_at {
+                            status.append(" Confirmed.");
+                            break Ok(());
+                        }
+                    },
+                    Err(e) => {
+                        update_status_with_error!(status, e);
+                        return Err(e.to_string());
+                    },
+                }
+
+                Timer::sleep(check_every).await;
             }
         };
+
         Box::new(fut.boxed().compat())
     }
 
@@ -1919,6 +1902,14 @@ impl MarketCoinOps for EthCoin {
 
         let fut = async move {
             loop {
+                if now_ms() / 1000 > wait_until {
+                    return TX_PLAIN_ERR!(
+                        "Waited too long until {} for transaction {:?} to be spent ",
+                        wait_until,
+                        tx,
+                    );
+                }
+
                 let current_block = match selfi.current_block().compat().await {
                     Ok(b) => b,
                     Err(e) => {
@@ -1963,15 +1954,7 @@ impl MarketCoinOps for EthCoin {
                     }
                 }
 
-                if now_ms() / 1000 > wait_until {
-                    return TX_PLAIN_ERR!(
-                        "Waited too long until {} for transaction {:?} to be spent ",
-                        wait_until,
-                        tx,
-                    );
-                }
                 Timer::sleep(5.).await;
-                continue;
             }
         };
         Box::new(fut.boxed().compat())
@@ -3601,7 +3584,7 @@ impl EthCoin {
         let fut = async move {
             loop {
                 if now_ms() / 1000 > wait_until {
-                    return MmError::err(Web3RpcError::Internal(ERRL!(
+                    return MmError::err(Web3RpcError::Timeout(ERRL!(
                         "Waited too long until {} for allowance to be updated to at least {}",
                         wait_until,
                         required_allowance
@@ -4099,6 +4082,88 @@ impl EthCoin {
             "Couldn't fetch the '{tx_hash:02x}' transaction hex as it hasn't appeared on the RPC node in {timeout_s}s"
         );
         Ok(None)
+    }
+
+    fn transaction_confirmed_at(&self, payment_hash: H256, wait_until: u64, check_every: f64) -> Web3RpcFut<U64> {
+        let selfi = self.clone();
+        let fut = async move {
+            loop {
+                if now_ms() / 1000 > wait_until {
+                    return MmError::err(Web3RpcError::Timeout(ERRL!(
+                        "Waited too long until {} for payment tx: {:02x}, for coin:{}, to be confirmed!",
+                        wait_until,
+                        payment_hash,
+                        selfi.ticker()
+                    )));
+                }
+
+                let web3_receipt = match selfi.web3.eth().transaction_receipt(payment_hash).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        error!(
+                            "Error {:?} getting the {} transaction {:?}, retrying in 15 seconds",
+                            e,
+                            selfi.ticker(),
+                            payment_hash
+                        );
+                        Timer::sleep(check_every).await;
+                        continue;
+                    },
+                };
+
+                if let Some(receipt) = web3_receipt {
+                    if receipt.status != Some(1.into()) {
+                        return MmError::err(Web3RpcError::Internal(ERRL!(
+                            "Tx receipt {:?} status of {} tx {:?} is failed",
+                            receipt,
+                            selfi.ticker(),
+                            payment_hash
+                        )));
+                    }
+
+                    if let Some(confirmed_at) = receipt.block_number {
+                        break Ok(confirmed_at);
+                    }
+                }
+
+                Timer::sleep(check_every).await;
+            }
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    fn wait_for_block(&self, block_number: U64, wait_until: u64, check_every: f64) -> Web3RpcFut<()> {
+        let selfi = self.clone();
+        let fut = async move {
+            loop {
+                if now_ms() / 1000 > wait_until {
+                    return MmError::err(Web3RpcError::Timeout(ERRL!(
+                        "Waited too long until {} for block number: {:02x} to appear on-chain, for coin:{}",
+                        wait_until,
+                        block_number,
+                        selfi.ticker()
+                    )));
+                }
+
+                match selfi.web3.eth().block_number().await {
+                    Ok(current_block) => {
+                        if current_block >= block_number {
+                            break Ok(());
+                        }
+                    },
+                    Err(e) => {
+                        error!(
+                            "Error {:?} getting the {} block number retrying in 15 seconds",
+                            e,
+                            selfi.ticker()
+                        );
+                    },
+                };
+
+                Timer::sleep(check_every).await;
+            }
+        };
+        Box::new(fut.boxed().compat())
     }
 }
 

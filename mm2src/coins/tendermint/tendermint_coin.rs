@@ -14,14 +14,14 @@ use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin,
-            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, RawTransactionRes, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
-            SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MakerSwapTakerCoin, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError,
+            RawTransactionFut, RawTransactionRequest, RawTransactionRes, RefundError, RefundPaymentArgs, RefundResult,
+            RpcCommonOps, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
             WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
@@ -2127,26 +2127,19 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn wait_for_confirmations(
-        &self,
-        tx_bytes: &[u8],
-        _confirmations: u64,
-        _requires_nota: bool,
-        wait_until: u64,
-        check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         // Sanity check
-        let _: TxRaw = try_fus!(Message::decode(tx_bytes));
+        let _: TxRaw = try_fus!(Message::decode(input.payment_tx.as_slice()));
 
-        let tx_hash = hex::encode_upper(sha256(tx_bytes));
+        let tx_hash = hex::encode_upper(sha256(&input.payment_tx));
 
         let coin = self.clone();
         let fut = async move {
             loop {
-                if now_ms() / 1000 > wait_until {
+                if now_ms() / 1000 > input.wait_until {
                     return ERR!(
                         "Waited too long until {} for payment {} to be received",
-                        wait_until,
+                        input.wait_until,
                         tx_hash.clone()
                     );
                 }
@@ -2163,7 +2156,7 @@ impl MarketCoinOps for TendermintCoin {
                     };
                 };
 
-                Timer::sleep(check_every as f64).await;
+                Timer::sleep(input.check_every as f64).await;
             }
         };
 
@@ -3449,11 +3442,14 @@ pub mod tendermint_coin_tests {
                 .unwrap()
                 .encode_to_vec();
 
-            block_on(
-                coin.wait_for_confirmations(&tx_bytes, 0, false, wait_until(), CHECK_INTERVAL)
-                    .compat(),
-            )
-            .unwrap();
+            let confirm_payment_input = ConfirmPaymentInput {
+                payment_tx: tx_bytes,
+                confirmations: 0,
+                requires_nota: false,
+                wait_until: wait_until(),
+                check_every: CHECK_INTERVAL,
+            };
+            block_on(coin.wait_for_confirmations(confirm_payment_input).compat()).unwrap();
         }
 
         for failed_tx_hash in FAILED_TX_HASH_SAMPLES {
@@ -3461,11 +3457,14 @@ pub mod tendermint_coin_tests {
                 .unwrap()
                 .encode_to_vec();
 
-            block_on(
-                coin.wait_for_confirmations(&tx_bytes, 0, false, wait_until(), CHECK_INTERVAL)
-                    .compat(),
-            )
-            .unwrap_err();
+            let confirm_payment_input = ConfirmPaymentInput {
+                payment_tx: tx_bytes,
+                confirmations: 0,
+                requires_nota: false,
+                wait_until: wait_until(),
+                check_every: CHECK_INTERVAL,
+            };
+            block_on(coin.wait_for_confirmations(confirm_payment_input).compat()).unwrap_err();
         }
     }
 }

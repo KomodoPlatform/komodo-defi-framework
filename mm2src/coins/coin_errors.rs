@@ -60,7 +60,9 @@ impl From<Web3RpcError> for ValidatePaymentError {
         match e {
             Web3RpcError::Transport(tr) => ValidatePaymentError::Transport(tr),
             Web3RpcError::InvalidResponse(resp) => ValidatePaymentError::InvalidRpcResponse(resp),
-            Web3RpcError::Internal(internal) => ValidatePaymentError::InternalError(internal),
+            Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
+                ValidatePaymentError::InternalError(internal)
+            },
         }
     }
 }

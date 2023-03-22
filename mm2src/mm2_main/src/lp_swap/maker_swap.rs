@@ -16,8 +16,8 @@ use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::{broadcast_swap_message, min_watcher_reward, taker_payment_spend_duration,
                           watcher_reward_amount};
-use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
-            PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs, SearchForSwapTxSpendInput,
+use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend,
+            MmCoinEnum, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs, SearchForSwapTxSpendInput,
             SendPaymentArgs, SpendPaymentArgs, TradeFee, TradePreimageValue, TransactionEnum, ValidateFeeArgs,
             ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
@@ -893,13 +893,15 @@ impl MakerSwap {
 
         let maker_payment_wait_confirm =
             wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
-        let f = self.maker_coin.wait_for_confirmations(
-            &self.r().maker_payment.clone().unwrap().tx_hex,
-            self.r().data.maker_payment_confirmations,
-            self.r().data.maker_payment_requires_nota.unwrap_or(false),
-            maker_payment_wait_confirm,
-            WAIT_CONFIRM_INTERVAL,
-        );
+        let confirm_maker_payment_input = ConfirmPaymentInput {
+            payment_tx: self.r().maker_payment.clone().unwrap().tx_hex.0,
+            confirmations: self.r().data.maker_payment_confirmations,
+            requires_nota: self.r().data.maker_payment_requires_nota.unwrap_or(false),
+            wait_until: maker_payment_wait_confirm,
+            check_every: WAIT_CONFIRM_INTERVAL,
+        };
+
+        let f = self.maker_coin.wait_for_confirmations(confirm_maker_payment_input);
         if let Err(err) = f.compat().await {
             return Ok((Some(MakerSwapCommand::PrepareForMakerPaymentRefund), vec![
                 MakerSwapEvent::MakerPaymentWaitConfirmFailed(
@@ -963,16 +965,18 @@ impl MakerSwap {
     async fn validate_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         let wait_taker_payment = taker_payment_spend_deadline(self.r().data.started_at, self.r().data.lock_duration);
         let confirmations = self.r().data.taker_payment_confirmations;
+        let taker_coin_swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
 
+        let confirm_taker_payment_input = ConfirmPaymentInput {
+            payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
+            confirmations,
+            requires_nota: self.r().data.taker_payment_requires_nota.unwrap_or(false),
+            wait_until: wait_taker_payment,
+            check_every: WAIT_CONFIRM_INTERVAL,
+        };
         let wait_f = self
             .taker_coin
-            .wait_for_confirmations(
-                &self.r().taker_payment.clone().unwrap().tx_hex,
-                confirmations,
-                self.r().data.taker_payment_requires_nota.unwrap_or(false),
-                wait_taker_payment,
-                WAIT_CONFIRM_INTERVAL,
-            )
+            .wait_for_confirmations(confirm_taker_payment_input)
             .compat();
         if let Err(err) = wait_f.await {
             return Ok((Some(MakerSwapCommand::PrepareForMakerPaymentRefund), vec![
@@ -1007,7 +1011,7 @@ impl MakerSwap {
             unique_swap_data: self.unique_swap_data(),
             secret_hash: self.secret_hash(),
             amount: self.taker_amount.clone(),
-            swap_contract_address: self.r().data.taker_coin_swap_contract_address.clone(),
+            swap_contract_address: taker_coin_swap_contract_address,
             try_spv_proof_until: wait_taker_payment,
             confirmations,
             min_watcher_reward,
@@ -1110,13 +1114,14 @@ impl MakerSwap {
         // we should wait for only one confirmation to make sure our spend transaction is not failed
         let confirmations = std::cmp::min(1, self.r().data.taker_payment_confirmations);
         let requires_nota = false;
-        let wait_fut = self.taker_coin.wait_for_confirmations(
-            &self.r().taker_payment_spend.clone().unwrap().tx_hex,
+        let confirm_taker_payment_input = ConfirmPaymentInput {
+            payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
             confirmations,
             requires_nota,
-            self.wait_refund_until(),
-            WAIT_CONFIRM_INTERVAL,
-        );
+            wait_until: self.wait_refund_until(),
+            check_every: WAIT_CONFIRM_INTERVAL,
+        };
+        let wait_fut = self.taker_coin.wait_for_confirmations(confirm_taker_payment_input);
         if let Err(err) = wait_fut.compat().await {
             return Ok((Some(MakerSwapCommand::PrepareForMakerPaymentRefund), vec![
                 MakerSwapEvent::TakerPaymentSpendConfirmFailed(
