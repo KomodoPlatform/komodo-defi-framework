@@ -938,10 +938,12 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
         gas,
         gas_price,
     };
+
     let secret = eth_coin.priv_key_policy.key_pair_or_err()?.secret();
     let signed = tx.sign(secret, eth_coin.chain_id);
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
+
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash()),
@@ -967,6 +969,7 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
     let coin = lp_coinfind_or_err(&ctx, &req.chain.to_ticker()).await?;
     let (to_addr, token_addr, eth_coin) = get_valid_nft_add_to_withdraw(coin, &req.to, &req.token_address)?;
     let my_address = eth_coin.my_address()?;
+
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC721_CONTRACT.function("safeTransferFrom")?;
@@ -1003,10 +1006,12 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
         gas,
         gas_price,
     };
+
     let secret = eth_coin.priv_key_policy.key_pair_or_err()?.secret();
     let signed = tx.sign(secret, eth_coin.chain_id);
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
+
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash()),

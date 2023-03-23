@@ -91,7 +91,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 /// Later, after adding caching, metadata lookup can be performed using previously obtained NFTs info without
 /// sending new moralis request. The moralis request can be sent as a fallback, if the data was not found in the cache.
 ///
-/// `Caution`. ERC-1155 token can have a total supply more than 1, which means there could be several owners
+/// **Caution:** ERC-1155 token can have a total supply more than 1, which means there could be several owners
 /// of the same token. `get_nft_metadata` returns NFTs info with the most recent owner.
 /// **Dont** use this function to get specific info about owner address, amount etc, you will get info not related to my_address.
 pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> {
