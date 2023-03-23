@@ -756,16 +756,8 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     };
     let eth_value_dec = u256_to_big_decimal(eth_value, coin.decimals)?;
 
-    let (gas, gas_price) = get_eth_gas_details(
-        &coin,
-        req.fee,
-        eth_value,
-        data.clone().into(),
-        call_addr,
-        false,
-        req.max,
-    )
-    .await?;
+    let (gas, gas_price) =
+        get_eth_gas_details(&coin, req.fee, eth_value, data.clone().into(), call_addr, req.max).await?;
     let total_fee = gas * gas_price;
     let total_fee_dec = u256_to_big_decimal(total_fee, coin.decimals)?;
 
@@ -929,16 +921,8 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
             ))
         },
     };
-    let (gas, gas_price) = get_eth_gas_details(
-        &eth_coin,
-        req.fee,
-        eth_value,
-        data.clone().into(),
-        call_addr,
-        true,
-        false,
-    )
-    .await?;
+    let (gas, gas_price) =
+        get_eth_gas_details(&eth_coin, req.fee, eth_value, data.clone().into(), call_addr, false).await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
     let nonce = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone())
         .compat()
@@ -1002,16 +986,8 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
             ))
         },
     };
-    let (gas, gas_price) = get_eth_gas_details(
-        &eth_coin,
-        req.fee,
-        eth_value,
-        data.clone().into(),
-        call_addr,
-        true,
-        false,
-    )
-    .await?;
+    let (gas, gas_price) =
+        get_eth_gas_details(&eth_coin, req.fee, eth_value, data.clone().into(), call_addr, false).await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
     let nonce = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone())
         .compat()
@@ -5212,7 +5188,6 @@ async fn get_eth_gas_details(
     eth_value: U256,
     data: Bytes,
     call_addr: Address,
-    nft: bool,
     fungible_max: bool,
 ) -> MmResult<GasDetails, EthGasDetailsErr> {
     match fee {
@@ -5227,7 +5202,7 @@ async fn get_eth_gas_details(
         None => {
             let gas_price = eth_coin.get_gas_price().compat().await?;
             // covering edge case by deducting the standard transfer fee when we want to max withdraw ETH
-            let eth_value_for_estimate = if !nft && fungible_max && eth_coin.coin_type == EthCoinType::Eth {
+            let eth_value_for_estimate = if fungible_max && eth_coin.coin_type == EthCoinType::Eth {
                 eth_value - gas_price * U256::from(21000)
             } else {
                 eth_value
