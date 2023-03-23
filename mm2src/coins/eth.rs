@@ -5226,11 +5226,12 @@ async fn get_eth_gas_details(
         },
         None => {
             let gas_price = eth_coin.get_gas_price().compat().await?;
-            let mut eth_value_for_estimate = eth_value;
             // covering edge case by deducting the standard transfer fee when we want to max withdraw ETH
-            if !nft && fungible_max && eth_coin.coin_type == EthCoinType::Eth {
-                eth_value_for_estimate = eth_value - gas_price * U256::from(21000)
-            }
+            let eth_value_for_estimate = if !nft && fungible_max && eth_coin.coin_type == EthCoinType::Eth {
+                eth_value - gas_price * U256::from(21000)
+            } else {
+                eth_value
+            };
             let estimate_gas_req = CallRequest {
                 value: Some(eth_value_for_estimate),
                 data: Some(data),
