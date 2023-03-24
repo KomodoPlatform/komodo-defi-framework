@@ -18,6 +18,7 @@ struct Bar {
 
 #[test]
 fn test_foo_serialize() {
+    #[allow(clippy::disallowed_names)]
     let foo = Foo { a: 1, b: 2, c: 3, d: 4 };
 
     let expected = vec![1u8, 2, 0, 3, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0].into();
@@ -31,6 +32,7 @@ fn test_foo_serialize() {
 
 #[test]
 fn test_bar_serialize() {
+    #[allow(clippy::disallowed_names)]
     let foo = Foo { a: 1, b: 2, c: 3, d: 4 };
 
     let foo2 = Foo { a: 5, b: 6, c: 7, d: 8 };

@@ -101,7 +101,7 @@ impl DbIdentifier {
         }
     }
 
-    pub fn display_rmd160(&self) -> String { hex::encode(&*self.wallet_rmd160) }
+    pub fn display_rmd160(&self) -> String { hex::encode(*self.wallet_rmd160) }
 }
 
 pub struct IndexedDbBuilder {
@@ -310,7 +310,7 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
     /// Adds the given item to the table.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/add
     pub async fn add_item(&self, item: &Table) -> DbTransactionResult<ItemId> {
-        let item = json::to_value(&item).map_to_mm(|e| DbTransactionError::ErrorSerializingItem(e.to_string()))?;
+        let item = json::to_value(item).map_to_mm(|e| DbTransactionError::ErrorSerializingItem(e.to_string()))?;
 
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::AddItem { item, result_tx };
@@ -335,12 +335,10 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
         match ids.len() {
             0 => self.add_item(item).await.map(AddOrIgnoreResult::Added),
             1 => Ok(AddOrIgnoreResult::ExistAlready(ids[0])),
-            got_items => {
-                return MmError::err(DbTransactionError::MultipleItemsByUniqueIndex {
-                    index: index.to_owned(),
-                    got_items,
-                });
-            },
+            got_items => MmError::err(DbTransactionError::MultipleItemsByUniqueIndex {
+                index: index.to_owned(),
+                got_items,
+            }),
         }
     }
 
@@ -528,12 +526,10 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
                 let item_id = ids[0];
                 self.replace_item(item_id, item).await
             },
-            got_items => {
-                return MmError::err(DbTransactionError::MultipleItemsByUniqueIndex {
-                    index: index.to_owned(),
-                    got_items,
-                });
-            },
+            got_items => MmError::err(DbTransactionError::MultipleItemsByUniqueIndex {
+                index: index.to_owned(),
+                got_items,
+            }),
         }
     }
 
@@ -1296,9 +1292,10 @@ mod tests {
             version: u32,
             expected_old_new_versions: Option<(u32, u32)>,
         ) -> Result<(), String> {
-            let mut versions = LAST_VERSIONS.lock().expect("!LAST_VERSIONS.lock()");
-            *versions = None;
-            drop(versions);
+            {
+                let mut versions = LAST_VERSIONS.lock().expect("!LAST_VERSIONS.lock()");
+                *versions = None;
+            }
 
             let _db = IndexedDbBuilder::new(db_identifier)
                 .with_version(version)

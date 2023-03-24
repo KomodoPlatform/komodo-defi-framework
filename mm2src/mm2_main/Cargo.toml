@@ -16,11 +16,11 @@ custom-swap-locktime = [] # only for testing purposes, should never be activated
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
-# TODO
-# Remove this once the solana integration becomes stable/completed.
-disable-solana-tests = []
-default = ["disable-solana-tests"]
 enable-nft-integration = ["coins/enable-nft-integration"]
+run-docker-tests = []
+# TODO
+enable-solana = []
+default = []
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
@@ -34,7 +34,7 @@ coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
 crc32fast = { version = "1.3.2", features = ["std", "nightly"] }
-crossbeam = "0.7"
+crossbeam = "0.8"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"

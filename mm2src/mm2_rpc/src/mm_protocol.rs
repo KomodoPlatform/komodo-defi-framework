@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_mm_rpc_response_serialize() {
         let ok: MmRpcResponse<_, AnError> = MmRpcBuilder::ok(vec![1, 2, 3]).build();
-        let actual = json::to_value(&ok).expect("Couldn't serialize MmRpcResponse");
+        let actual = json::to_value(ok).expect("Couldn't serialize MmRpcResponse");
         let expected = json!({
             "mmrpc": "2.0",
             "result": [1, 2, 3],
@@ -195,7 +195,7 @@ mod tests {
         assert_eq!(actual, expected);
 
         let ok_with_id: MmRpcResponse<_, AnError> = MmRpcBuilder::ok(vec![1, 2, 3]).id(Some(2)).build();
-        let actual = json::to_value(&ok_with_id).expect("Couldn't serialize MmRpcResponse");
+        let actual = json::to_value(ok_with_id).expect("Couldn't serialize MmRpcResponse");
         let expected = json!({
             "mmrpc": "2.0",
             "result": [1, 2, 3],
@@ -206,7 +206,7 @@ mod tests {
         let error_type = AnError::NotSufficientBalance { missing: 123 };
         let err_line = line!() + 1;
         let err: MmRpcResponse<String, _> = MmRpcBuilder::err(MmError::new(error_type)).build();
-        let actual = json::to_value(&err).expect("Couldn't serialize MmRpcResponse");
+        let actual = json::to_value(err).expect("Couldn't serialize MmRpcResponse");
         let expected = json!({
             "mmrpc": "2.0",
             "error": "Not sufficient balance. Top up your balance by 123",

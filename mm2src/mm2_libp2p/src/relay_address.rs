@@ -148,7 +148,7 @@ fn test_relay_address_from_str() {
         ("/memory/71428421981", RelayAddress::Memory(71428421981)),
     ];
     for (s, expected) in valid_addresses {
-        let actual = RelayAddress::from_str(s).expect(&format!("Error parsing '{}'", s));
+        let actual = RelayAddress::from_str(s).unwrap_or_else(|_| panic!("Error parsing '{}'", s));
         assert_eq!(actual, expected);
     }
 

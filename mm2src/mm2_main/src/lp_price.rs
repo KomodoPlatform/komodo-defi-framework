@@ -332,11 +332,11 @@ mod tests {
         assert_eq!(rates.price, MmNumber::from("0.02"));
 
         let usdt_infos = registry.get_infos("USDT-PLG20");
-        assert_eq!(usdt_infos.is_some(), true);
+        assert!(usdt_infos.is_some());
         assert_eq!(usdt_infos.unwrap().last_price, MmNumber::from(1));
 
         let usdt_infos = registry.get_infos("USDT");
-        assert_eq!(usdt_infos.is_some(), true);
+        assert!(usdt_infos.is_some());
         assert_eq!(usdt_infos.unwrap().last_price, MmNumber::from(1));
     }
 }

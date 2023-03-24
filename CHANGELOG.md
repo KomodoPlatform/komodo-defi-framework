@@ -17,7 +17,7 @@
   - 2 issues discovered while executing a KMD/LNBTC swap were fixed in [#1655](https://github.com/KomodoPlatform/atomicDEX-API/pull/1655), these issues were:
     - When electrums were down, if a channel was closed, the channel closing transaction wasn't broadcasted. A check for a network error to rebroadcast the tx after a delay was added.
     - If an invoice payment failed, retring paying the same invoice would cause the payment to not be updated to successful in the DB even if it were successful. A method to update the payment in the DB was added to fix this.
-- `mm2_git` crate was added to provide an abstraction layer on Git for doing query/parse operations over the repositories [#1636](https://github.com/KomodoPlatform/atomicDEX-API/pull/1636)
+  - `mm2_git` crate was added to provide an abstraction layer on Git for doing query/parse operations over the repositories [#1636](https://github.com/KomodoPlatform/atomicDEX-API/pull/1636)
 
 **Enhancements/Fixes:**
 - Use `env_logger` to achieve flexible log filtering [#1725](https://github.com/KomodoPlatform/atomicDEX-API/pull/1725)
@@ -25,10 +25,25 @@
 - Uuid lib was update from v0.7.4 to v1.2.2 in [#1655](https://github.com/KomodoPlatform/atomicDEX-API/pull/1655)
 - A bug was fixed in [#1706](https://github.com/KomodoPlatform/atomicDEX-API/pull/1706) where EVM swap transactions were failing if sent before the approval transaction confirmation.
 - Tendermint account sequence problem due to running multiple instances were fixed in [#1694](https://github.com/KomodoPlatform/atomicDEX-API/pull/1694)
-- Maker/taker pubkeys were added to new columns in `stats_swaps` table in [#1665](https://github.com/KomodoPlatform/atomicDEX-API/pull/1665)
+- Maker/taker pubkeys were added to new columns in `stats_swaps` table in [#1665](https://github.com/KomodoPlatform/atomicDEX-API/pull/1665) and [#1717](https://github.com/KomodoPlatform/atomicDEX-API/pull/1717)
 - Get rid of unnecessary / old dependencies: `crossterm`, `crossterm_winapi`, `mio 0.7.13`, `miow`, `ntapi`, `signal-hook`, `signal-hook-mio` in [#1710](https://github.com/KomodoPlatform/atomicDEX-API/pull/1710)
 - A bug that caused EVM swap payments validation to fail because the tx was not available yet in the RPC node when calling `eth_getTransactionByHash` was fixed in [#1716](https://github.com/KomodoPlatform/atomicDEX-API/pull/1716). `eth_getTransactionByHash` in now retried in `wait_for_confirmations` until tx is found in the RPC node, this makes sure that the transaction is returned from `eth_getTransactionByHash` later when validating.
-
+- CI/CD migrated from Azure to Github runners [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- CI tests are much stabilized [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- Integration and unit tests are seperated on CI stack [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- Jemalloc configuration updated for optimization purposes [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- Codebase is updated in linting rules at wasm and test stack [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- `crossbeam` bumped to `0.8` from `0.7` [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- Un-used/Unstable parts of mm2 excluded from build outputs which avoids mm2 runtime from potential UB [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- Build time optimizations applied such as sharing generics instead of duplicating them in binary (which reduces output sizes) [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- `RUSTSEC-2020-0036`, `RUSTSEC-2021-0139` and `RUSTSEC-2023-0018` resolved [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- Enabled linting checks for wasm and test stack on CI [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- Release container base image updated to debian stable from ubuntu bionic [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- Fix dylib linking error of rusb [#1699](https://github.com/KomodoPlatform/atomicDEX-API/pull/1699)
+- `OperationFailure::Other` error was expanded. New error variants were matched with `HwRpcError`, so error type will be `HwError`, not `InternalError` [#1719](https://github.com/KomodoPlatform/atomicDEX-API/pull/1719)
+- RPC calls for evm chains was reduced in `wait_for_confirmations` function in [#1724](https://github.com/KomodoPlatform/atomicDEX-API/pull/1724)
+- A possible endless loop in evm `wait_for_htlc_tx_spend` was fixed in [#1724](https://github.com/KomodoPlatform/atomicDEX-API/pull/1724)
+- Wait time for taker fee validation was increased from 30 to 60 seconds in [#1730](https://github.com/KomodoPlatform/atomicDEX-API/pull/1730) to give the fee tx more time to appear in most nodes mempools.
 
 ## v1.0.0-beta - 2023-03-08
 

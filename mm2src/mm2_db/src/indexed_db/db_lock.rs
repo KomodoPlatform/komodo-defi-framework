@@ -26,7 +26,7 @@ impl<Db: DbInstance> ConstructibleDb<Db> {
         ConstructibleDb {
             mutex: AsyncMutex::new(None),
             db_namespace: ctx.db_namespace,
-            wallet_rmd160: ctx.rmd160().clone(),
+            wallet_rmd160: *ctx.rmd160(),
         }
     }
 
@@ -37,7 +37,7 @@ impl<Db: DbInstance> ConstructibleDb<Db> {
         ConstructibleDb {
             mutex: AsyncMutex::new(None),
             db_namespace: ctx.db_namespace,
-            wallet_rmd160: ctx.shared_db_id().clone(),
+            wallet_rmd160: *ctx.shared_db_id(),
         }
     }
 
@@ -50,7 +50,7 @@ impl<Db: DbInstance> ConstructibleDb<Db> {
             return Ok(unwrap_db_instance(locked_db));
         }
 
-        let db_id = DbIdentifier::new::<Db>(self.db_namespace, self.wallet_rmd160.clone());
+        let db_id = DbIdentifier::new::<Db>(self.db_namespace, self.wallet_rmd160);
 
         let db = Db::init(db_id).await?;
         *locked_db = Some(db);

@@ -16,8 +16,8 @@ use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::{broadcast_swap_message, min_watcher_reward, taker_payment_spend_duration,
                           watcher_reward_amount};
-use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
-            PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs, SearchForSwapTxSpendInput,
+use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend,
+            MmCoinEnum, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs, SearchForSwapTxSpendInput,
             SendPaymentArgs, SpendPaymentArgs, TradeFee, TradePreimageValue, TransactionEnum, ValidateFeeArgs,
             ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
@@ -764,7 +764,7 @@ impl MakerSwap {
             {
                 Ok(_) => break,
                 Err(err) => {
-                    if attempts >= 3 {
+                    if attempts >= 6 {
                         return Ok((Some(MakerSwapCommand::Finish), vec![
                             MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", err).into()),
                         ]));
@@ -893,13 +893,15 @@ impl MakerSwap {
 
         let maker_payment_wait_confirm =
             wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
-        let f = self.maker_coin.wait_for_confirmations(
-            &self.r().maker_payment.clone().unwrap().tx_hex,
-            self.r().data.maker_payment_confirmations,
-            self.r().data.maker_payment_requires_nota.unwrap_or(false),
-            maker_payment_wait_confirm,
-            WAIT_CONFIRM_INTERVAL,
-        );
+        let confirm_maker_payment_input = ConfirmPaymentInput {
+            payment_tx: self.r().maker_payment.clone().unwrap().tx_hex.0,
+            confirmations: self.r().data.maker_payment_confirmations,
+            requires_nota: self.r().data.maker_payment_requires_nota.unwrap_or(false),
+            wait_until: maker_payment_wait_confirm,
+            check_every: WAIT_CONFIRM_INTERVAL,
+        };
+
+        let f = self.maker_coin.wait_for_confirmations(confirm_maker_payment_input);
         if let Err(err) = f.compat().await {
             return Ok((Some(MakerSwapCommand::PrepareForMakerPaymentRefund), vec![
                 MakerSwapEvent::MakerPaymentWaitConfirmFailed(
@@ -963,16 +965,18 @@ impl MakerSwap {
     async fn validate_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         let wait_taker_payment = taker_payment_spend_deadline(self.r().data.started_at, self.r().data.lock_duration);
         let confirmations = self.r().data.taker_payment_confirmations;
+        let taker_coin_swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
 
+        let confirm_taker_payment_input = ConfirmPaymentInput {
+            payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
+            confirmations,
+            requires_nota: self.r().data.taker_payment_requires_nota.unwrap_or(false),
+            wait_until: wait_taker_payment,
+            check_every: WAIT_CONFIRM_INTERVAL,
+        };
         let wait_f = self
             .taker_coin
-            .wait_for_confirmations(
-                &self.r().taker_payment.clone().unwrap().tx_hex,
-                confirmations,
-                self.r().data.taker_payment_requires_nota.unwrap_or(false),
-                wait_taker_payment,
-                WAIT_CONFIRM_INTERVAL,
-            )
+            .wait_for_confirmations(confirm_taker_payment_input)
             .compat();
         if let Err(err) = wait_f.await {
             return Ok((Some(MakerSwapCommand::PrepareForMakerPaymentRefund), vec![
@@ -1007,7 +1011,7 @@ impl MakerSwap {
             unique_swap_data: self.unique_swap_data(),
             secret_hash: self.secret_hash(),
             amount: self.taker_amount.clone(),
-            swap_contract_address: self.r().data.taker_coin_swap_contract_address.clone(),
+            swap_contract_address: taker_coin_swap_contract_address,
             try_spv_proof_until: wait_taker_payment,
             confirmations,
             min_watcher_reward,
@@ -1110,13 +1114,14 @@ impl MakerSwap {
         // we should wait for only one confirmation to make sure our spend transaction is not failed
         let confirmations = std::cmp::min(1, self.r().data.taker_payment_confirmations);
         let requires_nota = false;
-        let wait_fut = self.taker_coin.wait_for_confirmations(
-            &self.r().taker_payment_spend.clone().unwrap().tx_hex,
+        let confirm_taker_payment_input = ConfirmPaymentInput {
+            payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
             confirmations,
             requires_nota,
-            self.wait_refund_until(),
-            WAIT_CONFIRM_INTERVAL,
-        );
+            wait_until: self.wait_refund_until(),
+            check_every: WAIT_CONFIRM_INTERVAL,
+        };
+        let wait_fut = self.taker_coin.wait_for_confirmations(confirm_taker_payment_input);
         if let Err(err) = wait_fut.compat().await {
             return Ok((Some(MakerSwapCommand::PrepareForMakerPaymentRefund), vec![
                 MakerSwapEvent::TakerPaymentSpendConfirmFailed(
@@ -1769,41 +1774,43 @@ pub struct MakerSavedSwap {
 #[cfg(test)]
 impl MakerSavedSwap {
     pub fn new(maker_amount: &MmNumber, taker_amount: &MmNumber) -> MakerSavedSwap {
-        let mut events: Vec<MakerSavedEvent> = Vec::new();
-        events.push(MakerSavedEvent {
-            timestamp: 0,
-            event: MakerSwapEvent::Started(MakerSwapData {
-                taker_coin: "".to_string(),
-                maker_coin: "".to_string(),
-                taker: Default::default(),
-                secret: Default::default(),
-                secret_hash: None,
-                my_persistent_pub: Default::default(),
-                lock_duration: 0,
-                maker_amount: maker_amount.to_decimal(),
-                taker_amount: taker_amount.to_decimal(),
-                maker_payment_confirmations: 0,
-                maker_payment_requires_nota: None,
-                taker_payment_confirmations: 0,
-                taker_payment_requires_nota: None,
-                maker_payment_lock: 0,
-                uuid: Default::default(),
-                started_at: 0,
-                maker_coin_start_block: 0,
-                taker_coin_start_block: 0,
-                maker_payment_trade_fee: None,
-                taker_payment_spend_trade_fee: None,
-                maker_coin_swap_contract_address: None,
-                taker_coin_swap_contract_address: None,
-                maker_coin_htlc_pubkey: None,
-                taker_coin_htlc_pubkey: None,
-                p2p_privkey: None,
-            }),
-        });
-        events.push(MakerSavedEvent {
-            timestamp: 0,
-            event: MakerSwapEvent::Finished,
-        });
+        let events = vec![
+            MakerSavedEvent {
+                timestamp: 0,
+                event: MakerSwapEvent::Started(MakerSwapData {
+                    taker_coin: "".to_string(),
+                    maker_coin: "".to_string(),
+                    taker: Default::default(),
+                    secret: Default::default(),
+                    secret_hash: None,
+                    my_persistent_pub: Default::default(),
+                    lock_duration: 0,
+                    maker_amount: maker_amount.to_decimal(),
+                    taker_amount: taker_amount.to_decimal(),
+                    maker_payment_confirmations: 0,
+                    maker_payment_requires_nota: None,
+                    taker_payment_confirmations: 0,
+                    taker_payment_requires_nota: None,
+                    maker_payment_lock: 0,
+                    uuid: Default::default(),
+                    started_at: 0,
+                    maker_coin_start_block: 0,
+                    taker_coin_start_block: 0,
+                    maker_payment_trade_fee: None,
+                    taker_payment_spend_trade_fee: None,
+                    maker_coin_swap_contract_address: None,
+                    taker_coin_swap_contract_address: None,
+                    maker_coin_htlc_pubkey: None,
+                    taker_coin_htlc_pubkey: None,
+                    p2p_privkey: None,
+                }),
+            },
+            MakerSavedEvent {
+                timestamp: 0,
+                event: MakerSwapEvent::Finished,
+            },
+        ];
+
         MakerSavedSwap {
             uuid: Default::default(),
             my_order_uuid: None,
@@ -1926,19 +1933,31 @@ impl MakerSavedSwap {
         }
     }
 
+    // TODO: Adjust for private coins when/if they are braodcasted
+    // TODO: Adjust for HD wallet when completed
     pub fn swap_pubkeys(&self) -> Result<SwapPubkeys, String> {
-        match self.events.first() {
+        let maker = match &self.events.first() {
             Some(event) => match &event.event {
-                // TODO: Adjust for private coins when/if they are braodcasted
-                // TODO: Adjust for HD wallet when completed
-                MakerSwapEvent::Started(data) => Ok(SwapPubkeys::new(
-                    data.my_persistent_pub.to_string(),
-                    data.taker.to_string(),
-                )),
-                _ => ERR!("First swap event must be Started"),
+                MakerSwapEvent::Started(started) => started.my_persistent_pub.to_string(),
+                _ => return ERR!("First swap event must be Started"),
             },
-            None => ERR!("Can't get maker/taker pubkey, events are empty"),
-        }
+            None => return ERR!("Can't get maker's pubkey while events are empty"),
+        };
+
+        let taker = match self.events.get(1) {
+            Some(event) => match &event.event {
+                MakerSwapEvent::Negotiated(neg) => {
+                    let Some(key) = neg.taker_coin_htlc_pubkey else {
+                        return ERR!("taker's pubkey is empty");
+                    };
+                    key.to_string()
+                },
+                _ => return ERR!("Swap must be negotiated to get taker's pubkey"),
+            },
+            None => return ERR!("Can't get taker's pubkey while there's no Negotiated event"),
+        };
+
+        Ok(SwapPubkeys { maker, taker })
     }
 }
 

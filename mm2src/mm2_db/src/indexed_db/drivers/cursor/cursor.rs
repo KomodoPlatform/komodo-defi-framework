@@ -125,8 +125,8 @@ impl CursorBoundValue {
 
     pub fn to_js_value(&self) -> CursorResult<JsValue> {
         match self {
-            CursorBoundValue::Uint(uint) => Ok(JsValue::from(*uint as u32)),
-            CursorBoundValue::Int(int) => Ok(JsValue::from(*int as i32)),
+            CursorBoundValue::Uint(uint) => Ok(JsValue::from(*uint)),
+            CursorBoundValue::Int(int) => Ok(JsValue::from(*int)),
             CursorBoundValue::BigUint(int) => serialize_to_js(int).map_to_mm(|e| CursorError::InvalidKeyRange {
                 description: e.to_string(),
             }),
@@ -137,12 +137,13 @@ impl CursorBoundValue {
         // `matches` macro leads to the following error:
         // (CursorBoundValue::Uint(_), CursorBoundValue::Uint(_))
         // ^ no rules expected this token in macro call
-        match (self, other) {
+
+        matches!(
+            (self, other),
             (CursorBoundValue::Int(_), CursorBoundValue::Int(_))
-            | (CursorBoundValue::Uint(_), CursorBoundValue::Uint(_))
-            | (CursorBoundValue::BigUint(_), CursorBoundValue::BigUint(_)) => true,
-            _ => false,
-        }
+                | (CursorBoundValue::Uint(_), CursorBoundValue::Uint(_))
+                | (CursorBoundValue::BigUint(_), CursorBoundValue::BigUint(_))
+        )
     }
 
     fn deserialize_with_expected_type(value: &Json, expected: &Self) -> CursorResult<CursorBoundValue> {
@@ -213,8 +214,8 @@ impl CursorDriver {
             // but without a key range.
             None if reverse => {
                 return MmError::err(CursorError::ErrorOpeningCursor {
-                    description: format!("Direction cannot be specified without a range"),
-                })
+                    description: "Direction cannot be specified without a range".to_owned(),
+                });
             },
             None => db_index.open_cursor(),
         };

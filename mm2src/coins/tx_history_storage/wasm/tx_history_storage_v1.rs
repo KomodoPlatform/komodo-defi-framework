@@ -60,8 +60,10 @@ impl HistoryId {
     fn new(ticker: &str, wallet_address: &str) -> HistoryId { HistoryId(format!("{}_{}", ticker, wallet_address)) }
 
     fn as_str(&self) -> &str { &self.0 }
+}
 
-    fn to_string(&self) -> String { self.0.clone() }
+impl std::fmt::Display for HistoryId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", &self.0) }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -74,13 +76,11 @@ impl TableSignature for TxHistoryTableV1 {
     fn table_name() -> &'static str { "tx_history" }
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        match (old_version, new_version) {
-            (0, 1) => {
-                let table = upgrader.create_table(Self::table_name())?;
-                table.create_index("history_id", true)?;
-            },
-            _ => (),
+        if let (0, 1) = (old_version, new_version) {
+            let table = upgrader.create_table(Self::table_name())?;
+            table.create_index("history_id", true)?;
         }
+
         Ok(())
     }
 }
@@ -94,7 +94,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_tx_history() {
-        const DB_NAME: &'static str = "TEST_TX_HISTORY";
+        const DB_NAME: &str = "TEST_TX_HISTORY";
         let db = TxHistoryDb::init(DbIdentifier::for_test(DB_NAME))
             .await
             .expect("!TxHistoryDb::init_with_fs_path");

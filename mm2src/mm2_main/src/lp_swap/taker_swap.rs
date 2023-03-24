@@ -15,9 +15,10 @@ use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, min_watcher_reward, tx_helper_topic,
                           wait_for_maker_payment_conf_duration, watcher_reward_amount, TakerSwapWatcherData};
-use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
-            PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs, SearchForSwapTxSpendInput,
-            SendPaymentArgs, SpendPaymentArgs, TradeFee, TradePreimageValue, ValidatePaymentInput};
+use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
+            FoundSwapTxSpend, MmCoinEnum, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs,
+            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee, TradePreimageValue,
+            ValidatePaymentInput};
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -303,19 +304,31 @@ impl TakerSavedSwap {
         }
     }
 
+    // TODO: Adjust for private coins when/if they are braodcasted
+    // TODO: Adjust for HD wallet when completed
     pub fn swap_pubkeys(&self) -> Result<SwapPubkeys, String> {
-        match self.events.first() {
+        let taker = match &self.events.first() {
             Some(event) => match &event.event {
-                // TODO: Adjust for private coins when/if they are braodcasted
-                // TODO: Adjust for HD wallet when completed
-                TakerSwapEvent::Started(data) => Ok(SwapPubkeys::new(
-                    data.maker.to_string(),
-                    data.my_persistent_pub.to_string(),
-                )),
-                _ => ERR!("First swap event must be Started"),
+                TakerSwapEvent::Started(started) => started.my_persistent_pub.to_string(),
+                _ => return ERR!("First swap event must be Started"),
             },
-            None => ERR!("Can't get maker/taker pubkey, events are empty"),
-        }
+            None => return ERR!("Can't get taker's pubkey while events are empty"),
+        };
+
+        let maker = match self.events.get(1) {
+            Some(event) => match &event.event {
+                TakerSwapEvent::Negotiated(neg) => {
+                    let Some(key) = neg.maker_coin_htlc_pubkey else {
+                         return ERR!("maker's pubkey is empty");
+                    };
+                    key.to_string()
+                },
+                _ => return ERR!("Swap must be negotiated to get maker's pubkey"),
+            },
+            None => return ERR!("Can't get maker's pubkey while there's no Negotiated event"),
+        };
+
+        Ok(SwapPubkeys { maker, taker })
     }
 }
 
@@ -1326,13 +1339,15 @@ impl TakerSwap {
     async fn validate_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         info!("Before wait confirm");
         let confirmations = self.r().data.maker_payment_confirmations;
-        let f = self.maker_coin.wait_for_confirmations(
-            &self.r().maker_payment.clone().unwrap().tx_hex,
+        let confirm_maker_payment_input = ConfirmPaymentInput {
+            payment_tx: self.r().maker_payment.clone().unwrap().tx_hex.0,
             confirmations,
-            self.r().data.maker_payment_requires_nota.unwrap_or(false),
-            self.r().data.maker_payment_wait,
-            WAIT_CONFIRM_INTERVAL,
-        );
+            requires_nota: self.r().data.maker_payment_requires_nota.unwrap_or(false),
+            wait_until: self.r().data.maker_payment_wait,
+            check_every: WAIT_CONFIRM_INTERVAL,
+        };
+
+        let f = self.maker_coin.wait_for_confirmations(confirm_maker_payment_input);
         if let Err(err) = f.compat().await {
             return Ok((Some(TakerSwapCommand::Finish), vec![
                 TakerSwapEvent::MakerPaymentWaitConfirmFailed(
@@ -1602,15 +1617,16 @@ impl TakerSwap {
             self.p2p_privkey,
         );
 
+        let confirm_taker_payment_input = ConfirmPaymentInput {
+            payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
+            confirmations: self.r().data.taker_payment_confirmations,
+            requires_nota: self.r().data.taker_payment_requires_nota.unwrap_or(false),
+            wait_until: self.r().data.taker_payment_lock,
+            check_every: WAIT_CONFIRM_INTERVAL,
+        };
         let wait_f = self
             .taker_coin
-            .wait_for_confirmations(
-                &self.r().taker_payment.clone().unwrap().tx_hex,
-                self.r().data.taker_payment_confirmations,
-                self.r().data.taker_payment_requires_nota.unwrap_or(false),
-                self.r().data.taker_payment_lock,
-                WAIT_CONFIRM_INTERVAL,
-            )
+            .wait_for_confirmations(confirm_taker_payment_input)
             .compat();
         if let Err(err) = wait_f.await {
             return Ok((Some(TakerSwapCommand::PrepareForTakerPaymentRefund), vec![

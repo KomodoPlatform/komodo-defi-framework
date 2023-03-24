@@ -4,7 +4,7 @@ cmake-build-debug
 # Ignoring the Dockerfile allows us to change it without invalidating the "COPY ." step.
 /Dockerfile
 
-/target
+!/target/release/mm2
 !/target/ci/mm2
 /mm2src/*/target
 

@@ -6,6 +6,10 @@ edition = "2018"
 [lib]
 doctest = false
 
+[features]
+enable-solana = []
+default = []
+
 [dependencies]
 async-trait = "0.1"
 coins = { path = "../coins" }

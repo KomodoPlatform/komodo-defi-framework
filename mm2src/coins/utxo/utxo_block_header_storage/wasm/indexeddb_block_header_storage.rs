@@ -101,7 +101,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             let index_keys = MultiIndex::new(BlockHeaderStorageTable::TICKER_HEIGHT_INDEX)
                 .with_value(&ticker)
                 .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
-                .with_value(&BeBigUint::from(height))
+                .with_value(BeBigUint::from(height))
                 .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
             block_headers_db
@@ -152,7 +152,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
         let index_keys = MultiIndex::new(BlockHeaderStorageTable::TICKER_HEIGHT_INDEX)
             .with_value(&ticker)
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
-            .with_value(&BeBigUint::from(height))
+            .with_value(BeBigUint::from(height))
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
         Ok(block_headers_db
@@ -281,7 +281,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
         let index_keys = MultiIndex::new(BlockHeaderStorageTable::HASH_TICKER_INDEX)
-            .with_value(&hash.to_string())
+            .with_value(hash.to_string())
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
             .with_value(&ticker)
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
@@ -320,7 +320,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             let index_keys = MultiIndex::new(BlockHeaderStorageTable::TICKER_HEIGHT_INDEX)
                 .with_value(&ticker)
                 .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
-                .with_value(&BeBigUint::from(height))
+                .with_value(BeBigUint::from(height))
                 .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
             block_headers_db

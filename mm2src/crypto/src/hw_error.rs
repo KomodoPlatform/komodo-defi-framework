@@ -3,7 +3,7 @@ use hw_common::primitives::Bip32Error;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
 use std::time::Duration;
-use trezor::{TrezorError, TrezorUserInteraction};
+use trezor::{OperationFailure, TrezorError, TrezorUserInteraction};
 
 pub type HwResult<T> = Result<T, MmError<HwError>>;
 
@@ -28,11 +28,25 @@ pub enum HwError {
     },
     #[display(fmt = "Invalid xpub received from a device: '{}'", _0)]
     InvalidXpub(String),
-    Failure(String),
     UnderlyingError(String),
     ProtocolError(String),
     UnexpectedUserInteractionRequest(TrezorUserInteraction),
     Internal(String),
+    InvalidPin,
+    UnexpectedMessage,
+    ButtonExpected,
+    DataError,
+    PinExpected,
+    InvalidSignature,
+    ProcessError,
+    NotEnoughFunds,
+    NotInitialized,
+    WipeCodeMismatch,
+    InvalidSession,
+    FirmwareError,
+    FailureMessageNotFound,
+    UserCancelled,
+    PongMessageMismatch,
 }
 
 impl From<TrezorError> for HwError {
@@ -44,10 +58,25 @@ impl From<TrezorError> for HwError {
             TrezorError::DeviceDisconnected => HwError::DeviceDisconnected,
             TrezorError::UnderlyingError(_) => HwError::UnderlyingError(error),
             TrezorError::ProtocolError(_) | TrezorError::UnexpectedMessageType(_) => HwError::Internal(error),
-            // TODO handle the failure correctly later
-            TrezorError::Failure(_) => HwError::Failure(error),
+            TrezorError::Failure(failure) => match failure {
+                OperationFailure::InvalidPin => HwError::InvalidPin,
+                OperationFailure::UnexpectedMessage => HwError::UnexpectedMessage,
+                OperationFailure::ButtonExpected => HwError::ButtonExpected,
+                OperationFailure::DataError => HwError::DataError,
+                OperationFailure::PinExpected => HwError::PinExpected,
+                OperationFailure::InvalidSignature => HwError::InvalidSignature,
+                OperationFailure::ProcessError => HwError::ProcessError,
+                OperationFailure::NotEnoughFunds => HwError::NotEnoughFunds,
+                OperationFailure::NotInitialized => HwError::NotInitialized,
+                OperationFailure::WipeCodeMismatch => HwError::WipeCodeMismatch,
+                OperationFailure::InvalidSession => HwError::InvalidSession,
+                OperationFailure::FirmwareError => HwError::FirmwareError,
+                OperationFailure::FailureMessageNotFound => HwError::FailureMessageNotFound,
+                OperationFailure::UserCancelled => HwError::UserCancelled,
+            },
             TrezorError::UnexpectedInteractionRequest(req) => HwError::UnexpectedUserInteractionRequest(req),
             TrezorError::Internal(_) => HwError::Internal(error),
+            TrezorError::PongMessageMismatch => HwError::PongMessageMismatch,
         }
     }
 }
@@ -69,6 +98,36 @@ pub enum HwRpcError {
     FoundMultipleDevices,
     #[display(fmt = "Found unexpected device. Please re-initialize Hardware wallet")]
     FoundUnexpectedDevice,
+    #[display(fmt = "Pin is invalid")]
+    InvalidPin,
+    #[display(fmt = "Unexpected message")]
+    UnexpectedMessage,
+    #[display(fmt = "Button expected")]
+    ButtonExpected,
+    #[display(fmt = "Got data error")]
+    DataError,
+    #[display(fmt = "Pin expected")]
+    PinExpected,
+    #[display(fmt = "Invalid signature")]
+    InvalidSignature,
+    #[display(fmt = "Got process error")]
+    ProcessError,
+    #[display(fmt = "Not enough funds")]
+    NotEnoughFunds,
+    #[display(fmt = "Not initialized")]
+    NotInitialized,
+    #[display(fmt = "Wipe code mismatch")]
+    WipeCodeMismatch,
+    #[display(fmt = "Invalid session")]
+    InvalidSession,
+    #[display(fmt = "Got firmware error")]
+    FirmwareError,
+    #[display(fmt = "Failure message not found")]
+    FailureMessageNotFound,
+    #[display(fmt = "User cancelled action")]
+    UserCancelled,
+    #[display(fmt = "PONG message mismatch after ping")]
+    PongMessageMismatch,
 }
 
 /// The trait is implemented for those error enumerations that have `HwRpcError` variant.
@@ -90,6 +149,21 @@ where
         HwError::CannotChooseDevice { .. } => T::hw_rpc_error(HwRpcError::FoundMultipleDevices),
         HwError::ConnectionTimedOut { timeout } => T::timeout(timeout),
         HwError::FoundUnexpectedDevice => T::hw_rpc_error(HwRpcError::FoundUnexpectedDevice),
+        HwError::InvalidPin => T::hw_rpc_error(HwRpcError::InvalidPin),
+        HwError::UnexpectedMessage => T::hw_rpc_error(HwRpcError::UnexpectedMessage),
+        HwError::ButtonExpected => T::hw_rpc_error(HwRpcError::ButtonExpected),
+        HwError::DataError => T::hw_rpc_error(HwRpcError::DataError),
+        HwError::PinExpected => T::hw_rpc_error(HwRpcError::PinExpected),
+        HwError::InvalidSignature => T::hw_rpc_error(HwRpcError::InvalidSignature),
+        HwError::ProcessError => T::hw_rpc_error(HwRpcError::ProcessError),
+        HwError::NotEnoughFunds => T::hw_rpc_error(HwRpcError::NotEnoughFunds),
+        HwError::NotInitialized => T::hw_rpc_error(HwRpcError::NotInitialized),
+        HwError::WipeCodeMismatch => T::hw_rpc_error(HwRpcError::WipeCodeMismatch),
+        HwError::InvalidSession => T::hw_rpc_error(HwRpcError::InvalidSession),
+        HwError::FirmwareError => T::hw_rpc_error(HwRpcError::FirmwareError),
+        HwError::FailureMessageNotFound => T::hw_rpc_error(HwRpcError::FailureMessageNotFound),
+        HwError::UserCancelled => T::hw_rpc_error(HwRpcError::UserCancelled),
+        HwError::PongMessageMismatch => T::hw_rpc_error(HwRpcError::PongMessageMismatch),
         other => T::internal(other.to_string()),
     }
 }

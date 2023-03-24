@@ -18,7 +18,7 @@ async-trait = "0.1"
 backtrace = "0.3"
 bytes = "1.1"
 cfg-if = "1.0"
-crossbeam = "0.7"
+crossbeam = "0.8"
 fnv = "1.0.6"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }

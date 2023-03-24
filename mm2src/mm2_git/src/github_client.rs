@@ -28,6 +28,12 @@ impl RepositoryOperations for GithubClient {
         .await
         .map_err(|e| GitControllerError::HttpError(e.to_string()))?;
 
+        #[cfg(test)]
+        #[allow(unused_must_use)]
+        {
+            dbg!(serde_json::from_slice::<serde_json::Value>(&data_buffer));
+        }
+
         Ok(
             serde_json::from_slice(&data_buffer)
                 .map_err(|e| GitControllerError::DeserializationError(e.to_string()))?,
@@ -52,6 +58,12 @@ impl RepositoryOperations for GithubClient {
         )])
         .await
         .map_err(|e| GitControllerError::HttpError(e.to_string()))?;
+
+        #[cfg(test)]
+        #[allow(unused_must_use)]
+        {
+            dbg!(serde_json::from_slice::<serde_json::Value>(&data_buffer));
+        }
 
         Ok(
             serde_json::from_slice(&data_buffer)
@@ -106,6 +118,12 @@ mod tests {
 
     #[test]
     fn test_metadata_list_and_json_deserialization() {
+        // If we are using shared CI runners,
+        // this test may fail due to rate limiting.
+        if std::env::var("FROM_SHARED_RUNNER").is_ok() {
+            return;
+        }
+
         const REPO_OWNER: &str = "KomodoPlatform";
         const REPO_NAME: &str = "chain-registry";
         const BRANCH: &str = "master";

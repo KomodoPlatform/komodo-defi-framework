@@ -251,7 +251,7 @@ mod tests {
             table
                 .add_item(&item)
                 .await
-                .expect(&format!("Error adding {:?} item", item));
+                .unwrap_or_else(|_| panic!("Error adding {:?} item", item));
         }
     }
 

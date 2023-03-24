@@ -62,7 +62,7 @@ fn test_disable_eth_coin_with_token() {
     });
     let make_test_order = block_on(mm.rpc(&req)).unwrap();
     assert_eq!(make_test_order.0, StatusCode::OK);
-    let order_uuid = Json::from_str(&*make_test_order.1).unwrap();
+    let order_uuid = Json::from_str(&make_test_order.1).unwrap();
     let order_uuid = order_uuid.get("result").unwrap().get("uuid").unwrap().as_str().unwrap();
 
     // Try to disable platform coin, ETH. This should fail due to the dependent tokens.

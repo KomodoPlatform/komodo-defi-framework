@@ -58,7 +58,7 @@ impl MetamaskCtx {
                 .await?;
 
             let sig = sig.strip_prefix("0x").unwrap_or(&sig);
-            let signature = Signature::from_str(&sig)
+            let signature = Signature::from_str(sig)
                 .map_to_mm(|_| MetamaskError::Internal(format!("'{sig}' signature is invalid")))?;
             let pubkey = recover_pubkey(hash, signature).mm_err(|_| {
                 let error = format!("Couldn't recover a public key from the signature: '{sig}'");

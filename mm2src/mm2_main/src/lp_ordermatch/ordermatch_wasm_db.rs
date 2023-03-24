@@ -105,13 +105,10 @@ pub mod tables {
         fn table_name() -> &'static str { "my_filtering_history_orders" }
 
         fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-            match (old_version, new_version) {
-                (0, 1) => {
-                    let table = upgrader.create_table(Self::table_name())?;
-                    table.create_index("uuid", true)?;
-                    // TODO add other indexes during [`MyOrdersStorage::select_orders_by_filter`] implementation.
-                },
-                _ => (),
+            if let (0, 1) = (old_version, new_version) {
+                let table = upgrader.create_table(Self::table_name())?;
+                table.create_index("uuid", true)?;
+                // TODO add other indexes during [`MyOrdersStorage::select_orders_by_filter`] implementation.
             }
             Ok(())
         }
@@ -124,12 +121,9 @@ pub mod tables {
         new_version: u32,
         table_name: &'static str,
     ) -> OnUpgradeResult<()> {
-        match (old_version, new_version) {
-            (0, 1) => {
-                let table = upgrader.create_table(table_name)?;
-                table.create_index("uuid", true)?;
-            },
-            _ => (),
+        if let (0, 1) = (old_version, new_version) {
+            let table = upgrader.create_table(table_name)?;
+            table.create_index("uuid", true)?;
         }
         Ok(())
     }

@@ -150,7 +150,7 @@ mod message_service_tests {
                 "RustTestChatId",
                 true,
             ));
-            assert!(!res.is_err());
+            assert!(res.is_ok());
             assert!(res.unwrap());
         }
     }

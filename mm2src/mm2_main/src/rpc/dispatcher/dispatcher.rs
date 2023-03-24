@@ -32,7 +32,12 @@ use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_infos, remove_delegation, sign_message,
             verify_message, withdraw};
-#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+#[cfg(all(
+    feature = "enable-solana",
+    not(target_os = "ios"),
+    not(target_os = "android"),
+    not(target_arch = "wasm32")
+))]
 use coins::{SolanaCoin, SplToken};
 use coins_activation::{cancel_init_l2, cancel_init_standalone_coin, enable_platform_coin_with_tokens, enable_token,
                        init_l2, init_l2_status, init_l2_user_action, init_standalone_coin,
@@ -199,11 +204,11 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
         #[cfg(not(target_arch = "wasm32"))]
         native_only_methods => match native_only_methods {
-            #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
+            #[cfg(all(feature = "enable-solana", not(target_os = "ios"), not(target_os = "android")))]
             "enable_solana_with_tokens" => {
                 handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<SolanaCoin>).await
             },
-            #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
+            #[cfg(all(feature = "enable-solana", not(target_os = "ios"), not(target_os = "android")))]
             "enable_spl" => handle_mmrpc(ctx, request, enable_token::<SplToken>).await,
             "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
             _ => MmError::err(DispatcherError::NoSuchMethod),

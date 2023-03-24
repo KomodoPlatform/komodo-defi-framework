@@ -194,9 +194,8 @@ mod tests {
         }
 
         let str_reversed = "XXXYYY";
-        match H256::from_str(str_reversed) {
-            Ok(_) => panic!("unexpected"),
-            _ => (),
+        if H256::from_str(str_reversed).is_ok() {
+            panic!("unexpected");
         }
     }
 

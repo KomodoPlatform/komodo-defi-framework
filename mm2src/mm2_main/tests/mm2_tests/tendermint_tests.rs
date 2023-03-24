@@ -33,7 +33,7 @@ fn test_tendermint_activation_and_balance() {
 
     let result: RpcV2Response<TendermintActivationResult> = json::from_value(activation_result).unwrap();
     assert_eq!(result.result.address, expected_address);
-    let expected_balance: BigDecimal = "0.0959".parse().unwrap();
+    let expected_balance: BigDecimal = "8.0959".parse().unwrap();
     assert_eq!(result.result.balance.spendable, expected_balance);
 
     let my_balance = block_on(my_balance(&mm, ATOM_TICKER));
@@ -109,6 +109,12 @@ fn test_tendermint_withdraw() {
         "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v".to_owned()
     ]);
 
+    let tx_details = block_on(withdraw_v1(
+        &mm,
+        ATOM_TICKER,
+        "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v",
+        "0.1",
+    ));
     let send_raw_tx = block_on(send_raw_transaction(&mm, ATOM_TICKER, &tx_details.tx_hex));
     println!("Send raw tx {}", json::to_string(&send_raw_tx).unwrap());
 }
@@ -141,6 +147,7 @@ fn test_tendermint_ibc_withdraw() {
     assert_eq!(tx_details.to, vec![IBC_TARGET_ADDRESS.to_owned()]);
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
+    let tx_details = block_on(ibc_withdraw(&mm, IBC_SOURCE_CHANNEL, token, IBC_TARGET_ADDRESS, "0.1"));
     let send_raw_tx = block_on(send_raw_transaction(&mm, token, &tx_details.tx_hex));
     println!("Send raw tx {}", json::to_string(&send_raw_tx).unwrap());
 }
@@ -220,6 +227,12 @@ fn test_tendermint_token_activation_and_withdraw() {
         "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2".to_owned()
     ]);
 
+    let tx_details = block_on(withdraw_v1(
+        &mm,
+        token,
+        "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2",
+        "0.1",
+    ));
     let send_raw_tx = block_on(send_raw_transaction(&mm, token, &tx_details.tx_hex));
     println!("Send raw tx {}", json::to_string(&send_raw_tx).unwrap());
 }
@@ -255,9 +268,9 @@ fn test_tendermint_tx_history() {
         true,
     ));
 
-    if let Err(_) = block_on(mm.wait_for_log(60., |log| log.contains(TX_FINISHED_LOG))) {
+    if block_on(mm.wait_for_log(60., |log| log.contains(TX_FINISHED_LOG))).is_err() {
         println!("{}", mm.log_as_utf8().unwrap());
-        assert!(false, "Tx history didn't finish which is not expected");
+        panic!("Tx history didn't finish which is not expected");
     }
 
     // testing IRIS-TEST history

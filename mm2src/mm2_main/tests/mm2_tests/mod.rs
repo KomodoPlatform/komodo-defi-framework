@@ -12,4 +12,5 @@ mod z_coin_tests;
 
 // dummy test helping IDE to recognize this as test module
 #[test]
+#[allow(clippy::assertions_on_constants)]
 fn dummy() { assert!(true) }

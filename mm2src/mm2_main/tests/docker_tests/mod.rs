@@ -8,7 +8,7 @@ mod swap_watcher_tests;
 mod swaps_confs_settings_sync_tests;
 mod swaps_file_lock_tests;
 
-#[cfg(not(feature = "disable-solana-tests"))] mod solana_tests;
+#[cfg(feature = "enable-solana")] mod solana_tests;
 
 // dummy test helping IDE to recognize this as test module
 #[test]

@@ -98,7 +98,7 @@ impl Gravity {
     fn flush(&self) {
         let logged_with_log_output = LOG_CALLBACK.lock().is_some();
         let mut tail = self.tail.lock();
-        while let Ok(chunk) = self.landing.pop() {
+        while let Some(chunk) = self.landing.pop() {
             if !logged_with_log_output {
                 writeln(&chunk)
             }

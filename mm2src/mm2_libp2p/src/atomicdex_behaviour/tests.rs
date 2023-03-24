@@ -5,7 +5,8 @@ use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt, StreamExt};
 use libp2p::PeerId;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(not(windows))] use std::sync::Mutex;
 use std::time::Duration;
 
 static TEST_LISTEN_PORT: AtomicU64 = AtomicU64::new(1);
@@ -127,6 +128,7 @@ async fn test_request_response_ok() {
 }
 
 #[tokio::test]
+#[cfg(not(windows))] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 async fn test_request_response_ok_three_peers() {
     let _ = env_logger::try_init();
 
@@ -265,6 +267,7 @@ async fn test_request_response_none() {
 }
 
 #[tokio::test]
+#[cfg(target_os = "linux")] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 async fn test_request_peers_ok_three_peers() {
     let _ = env_logger::try_init();
 

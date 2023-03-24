@@ -36,7 +36,7 @@
        ```
        sudo ln -s $(which podman) /usr/bin/docker
        ```
-9. Try `cargo test --features native --all -- --test-threads=16`.
+9. Try `cargo test --features "native run-docker-tests" --all -- --test-threads=16`.
 
 ## Running WASM tests
 

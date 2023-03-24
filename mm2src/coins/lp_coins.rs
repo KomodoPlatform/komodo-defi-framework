@@ -19,6 +19,13 @@
 //  marketmaker
 //
 
+// `mockable` implementation uses these
+#![allow(
+    clippy::forget_ref,
+    clippy::forget_copy,
+    clippy::swap_ptr_to_ref,
+    clippy::forget_non_drop
+)]
 #![allow(uncommon_codepoints)]
 #![feature(integer_atomics)]
 #![feature(async_closure)]
@@ -237,11 +244,26 @@ pub mod tx_history_storage;
 
 #[doc(hidden)]
 #[allow(unused_variables)]
-#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+#[cfg(all(
+    feature = "enable-solana",
+    not(target_os = "ios"),
+    not(target_os = "android"),
+    not(target_arch = "wasm32")
+))]
 pub mod solana;
-#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+#[cfg(all(
+    feature = "enable-solana",
+    not(target_os = "ios"),
+    not(target_os = "android"),
+    not(target_arch = "wasm32")
+))]
 pub use solana::spl::SplToken;
-#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+#[cfg(all(
+    feature = "enable-solana",
+    not(target_os = "ios"),
+    not(target_os = "android"),
+    not(target_arch = "wasm32")
+))]
 pub use solana::{SolanaActivationParams, SolanaCoin, SolanaFeeDetails};
 
 pub mod utxo;
@@ -541,6 +563,15 @@ pub enum NegotiateSwapContractAddrErr {
 pub enum ValidateOtherPubKeyErr {
     #[display(fmt = "InvalidPubKey: {:?}", _0)]
     InvalidPubKey(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct ConfirmPaymentInput {
+    pub payment_tx: Vec<u8>,
+    pub confirmations: u64,
+    pub requires_nota: bool,
+    pub wait_until: u64,
+    pub check_every: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -941,14 +972,7 @@ pub trait MarketCoinOps {
     /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
 
-    fn wait_for_confirmations(
-        &self,
-        tx: &[u8],
-        confirmations: u64,
-        requires_nota: bool,
-        wait_until: u64,
-        check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
     fn wait_for_htlc_tx_spend(
         &self,
@@ -1143,7 +1167,12 @@ pub enum TxFeeDetails {
     Qrc20(Qrc20FeeDetails),
     Slp(SlpFeeDetails),
     Tendermint(TendermintFeeDetails),
-    #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+    #[cfg(all(
+        feature = "enable-solana",
+        not(target_os = "ios"),
+        not(target_os = "android"),
+        not(target_arch = "wasm32")
+    ))]
     Solana(SolanaFeeDetails),
 }
 
@@ -1159,7 +1188,12 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Utxo(UtxoFeeDetails),
             Eth(EthTxFeeDetails),
             Qrc20(Qrc20FeeDetails),
-            #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+            #[cfg(all(
+                feature = "enable-solana",
+                not(target_os = "ios"),
+                not(target_os = "android"),
+                not(target_arch = "wasm32")
+            ))]
             Solana(SolanaFeeDetails),
             Tendermint(TendermintFeeDetails),
         }
@@ -1168,7 +1202,12 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             TxFeeDetailsUnTagged::Utxo(f) => Ok(TxFeeDetails::Utxo(f)),
             TxFeeDetailsUnTagged::Eth(f) => Ok(TxFeeDetails::Eth(f)),
             TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
-            #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+            #[cfg(all(
+                feature = "enable-solana",
+                not(target_os = "ios"),
+                not(target_os = "android"),
+                not(target_arch = "wasm32")
+            ))]
             TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
             TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
         }
@@ -1187,7 +1226,12 @@ impl From<Qrc20FeeDetails> for TxFeeDetails {
     fn from(qrc20_details: Qrc20FeeDetails) -> Self { TxFeeDetails::Qrc20(qrc20_details) }
 }
 
-#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+#[cfg(all(
+    feature = "enable-solana",
+    not(target_os = "ios"),
+    not(target_os = "android"),
+    not(target_arch = "wasm32")
+))]
 impl From<SolanaFeeDetails> for TxFeeDetails {
     fn from(solana_details: SolanaFeeDetails) -> Self { TxFeeDetails::Solana(solana_details) }
 }
@@ -2189,9 +2233,19 @@ pub enum MmCoinEnum {
     SlpToken(SlpToken),
     Tendermint(TendermintCoin),
     TendermintToken(TendermintToken),
-    #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+    #[cfg(all(
+        feature = "enable-solana",
+        not(target_os = "ios"),
+        not(target_os = "android"),
+        not(target_arch = "wasm32")
+    ))]
     SolanaCoin(SolanaCoin),
-    #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+    #[cfg(all(
+        feature = "enable-solana",
+        not(target_os = "ios"),
+        not(target_os = "android"),
+        not(target_arch = "wasm32")
+    ))]
     SplToken(SplToken),
     #[cfg(not(target_arch = "wasm32"))]
     LightningCoin(LightningCoin),
@@ -2210,12 +2264,22 @@ impl From<TestCoin> for MmCoinEnum {
     fn from(c: TestCoin) -> MmCoinEnum { MmCoinEnum::Test(c) }
 }
 
-#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+#[cfg(all(
+    feature = "enable-solana",
+    not(target_os = "ios"),
+    not(target_os = "android"),
+    not(target_arch = "wasm32")
+))]
 impl From<SolanaCoin> for MmCoinEnum {
     fn from(c: SolanaCoin) -> MmCoinEnum { MmCoinEnum::SolanaCoin(c) }
 }
 
-#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+#[cfg(all(
+    feature = "enable-solana",
+    not(target_os = "ios"),
+    not(target_os = "android"),
+    not(target_arch = "wasm32")
+))]
 impl From<SplToken> for MmCoinEnum {
     fn from(c: SplToken) -> MmCoinEnum { MmCoinEnum::SplToken(c) }
 }
@@ -2272,9 +2336,19 @@ impl Deref for MmCoinEnum {
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::ZCoin(ref c) => c,
             MmCoinEnum::Test(ref c) => c,
-            #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+            #[cfg(all(
+                feature = "enable-solana",
+                not(target_os = "ios"),
+                not(target_os = "android"),
+                not(target_arch = "wasm32")
+            ))]
             MmCoinEnum::SolanaCoin(ref c) => c,
-            #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+            #[cfg(all(
+                feature = "enable-solana",
+                not(target_os = "ios"),
+                not(target_os = "android"),
+                not(target_arch = "wasm32")
+            ))]
             MmCoinEnum::SplToken(ref c) => c,
         }
     }
@@ -2589,9 +2663,9 @@ pub enum CoinProtocol {
         network: BlockchainNetwork,
         confirmation_targets: PlatformCoinConfirmationTargets,
     },
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
     SOLANA,
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
     SPLTOKEN {
         platform: String,
         token_contract_address: String,
@@ -2854,11 +2928,11 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
         CoinProtocol::SOLANA => {
             return ERR!("Solana protocol is not supported by lp_coininit - use enable_solana_with_tokens instead")
         },
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
         CoinProtocol::SPLTOKEN { .. } => {
             return ERR!("SplToken protocol is not supported by lp_coininit - use enable_spl instead")
         },
@@ -3424,7 +3498,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::LIGHTNING { .. } => {
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!")
         },
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
         CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
             ERR!("Solana pubkey is the public address - you do not need to use this rpc call.")
         },

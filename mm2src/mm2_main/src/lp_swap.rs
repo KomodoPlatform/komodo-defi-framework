@@ -444,7 +444,7 @@ impl SwapsContext {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn swap_db(&self) -> InitDbResult<SwapDbLocked<'_>> { Ok(self.swap_db.get_or_initialize().await?) }
+    pub async fn swap_db(&self) -> InitDbResult<SwapDbLocked<'_>> { self.swap_db.get_or_initialize().await }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1455,11 +1455,6 @@ pub struct SwapPubkeys {
     pub taker: String,
 }
 
-impl SwapPubkeys {
-    #[inline]
-    fn new(maker: String, taker: String) -> Self { SwapPubkeys { maker, taker } }
-}
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod lp_swap_tests {
     use super::*;
@@ -1831,7 +1826,7 @@ mod lp_swap_tests {
         UtxoActivationParams {
             mode: UtxoRpcMode::Electrum {
                 servers: electrums
-                    .into_iter()
+                    .iter()
                     .map(|url| ElectrumRpcRequest {
                         url: url.to_string(),
                         protocol: Default::default(),

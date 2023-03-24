@@ -450,7 +450,7 @@ mod wasm_tests {
             // unknown UUID
             from_uuid: Some(from_uuid),
         };
-        let actual = take_according_to_paging_opts(uuids.clone(), &paging)
+        let actual = take_according_to_paging_opts(uuids, &paging)
             .expect_err("'take_according_to_paging_opts' must return an error");
         assert_eq!(actual.into_inner(), MySwapsError::FromUuidNotFound(from_uuid));
     }

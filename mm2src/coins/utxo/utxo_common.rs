@@ -12,8 +12,8 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAccountAddressId,
-            RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundPaymentArgs,
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GetWithdrawSenderAddress,
+            HDAccountAddressId, RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
             SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails,
             TxMarshalingErr, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
@@ -2323,21 +2323,17 @@ pub fn send_raw_tx_bytes(
 
 pub fn wait_for_confirmations(
     coin: &UtxoCoinFields,
-    tx: &[u8],
-    confirmations: u64,
-    requires_nota: bool,
-    wait_until: u64,
-    check_every: u64,
+    input: ConfirmPaymentInput,
 ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-    let mut tx: UtxoTx = try_fus!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
     tx.tx_hash_algo = coin.tx_hash_algo;
     coin.rpc_client.wait_for_confirmations(
         tx.hash().reversed().into(),
         tx.expiry_height,
-        confirmations as u32,
-        requires_nota,
-        wait_until,
-        check_every,
+        input.confirmations as u32,
+        input.requires_nota,
+        input.wait_until,
+        input.check_every,
     )
 }
 

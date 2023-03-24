@@ -11,7 +11,6 @@ wasm_bindgen_test_configure!(run_in_browser);
 fn pass() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let _coins_context = CoinsContext::from_ctx(&ctx).unwrap();
-    assert_eq!(1, 1);
 }
 
 #[wasm_bindgen_test]

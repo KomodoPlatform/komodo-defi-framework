@@ -191,7 +191,7 @@ pub(crate) mod tests {
         BLOCK_HEADERS_MAP
             .get(coin)
             .unwrap()
-            .into_iter()
+            .iter()
             .map(|h| (h.height, h.hex.as_str().into()))
             .collect()
     }

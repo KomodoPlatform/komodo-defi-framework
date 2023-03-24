@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn test_hash_data() {
-        const JSON: &'static str = r#"{
+        const JSON: &str = r#"{
             "primaryType": "Mail",
             "domain": {
                 "name": "Ether Mail",

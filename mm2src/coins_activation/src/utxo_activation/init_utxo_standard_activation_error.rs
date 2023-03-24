@@ -115,7 +115,23 @@ impl InitUtxoStandardError {
             HwError::CannotChooseDevice { .. } => InitUtxoStandardError::HwError(HwRpcError::FoundMultipleDevices),
             HwError::ConnectionTimedOut { timeout } => InitUtxoStandardError::TaskTimedOut { duration: timeout },
             HwError::FoundUnexpectedDevice => InitUtxoStandardError::HwError(HwRpcError::FoundUnexpectedDevice),
-            HwError::Failure(error) => InitUtxoStandardError::CoinCreationError { ticker, error },
+            HwError::InvalidPin
+            | HwError::UnexpectedMessage
+            | HwError::ButtonExpected
+            | HwError::DataError
+            | HwError::PinExpected
+            | HwError::InvalidSignature
+            | HwError::ProcessError
+            | HwError::NotEnoughFunds
+            | HwError::NotInitialized
+            | HwError::WipeCodeMismatch
+            | HwError::InvalidSession
+            | HwError::FirmwareError
+            | HwError::FailureMessageNotFound
+            | HwError::UserCancelled => InitUtxoStandardError::CoinCreationError {
+                ticker,
+                error: hw_error.to_string(),
+            },
             other => InitUtxoStandardError::Internal(other.to_string()),
         }
     }

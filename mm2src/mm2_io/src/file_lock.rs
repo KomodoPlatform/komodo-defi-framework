@@ -127,7 +127,7 @@ mod file_lock_tests {
     fn test_file_lock_should_acquire_if_file_is_empty() {
         let now = now_ms() / 1000;
         let path = Path::new("test4.lock");
-        std::fs::write(&path, &[]).unwrap();
+        std::fs::write(path, []).unwrap();
         let _new_lock = FileLock::lock(&path, 1.).unwrap().unwrap();
         let timestamp = read_timestamp(&path).unwrap().unwrap();
         assert!(timestamp >= now);
@@ -137,7 +137,7 @@ mod file_lock_tests {
     fn test_file_lock_should_acquire_if_file_does_not_contain_parsable_timestamp() {
         let now = now_ms() / 1000;
         let path = Path::new("test5.lock");
-        std::fs::write(&path, &[12, 13]).unwrap();
+        std::fs::write(path, [12, 13]).unwrap();
         let _new_lock = FileLock::lock(&path, 1.).unwrap().unwrap();
         let timestamp = read_timestamp(&path).unwrap().unwrap();
         assert!(timestamp >= now);
