@@ -197,7 +197,7 @@ jobs:
 
   wasm:
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
     - uses: actions/checkout@v3
     - name: Install toolchain
@@ -285,7 +285,7 @@ jobs:
 
   android-aarch64:
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
     - uses: actions/checkout@v3
     - name: Install toolchain
@@ -333,7 +333,7 @@ jobs:
 
   android-armv7:
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
     - uses: actions/checkout@v3
     - name: Install toolchain
@@ -384,7 +384,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: linux-x86-64
     timeout-minutes: 15
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
 
