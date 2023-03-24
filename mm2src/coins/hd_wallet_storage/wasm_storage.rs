@@ -98,18 +98,16 @@ impl TableSignature for HDAccountTable {
     fn table_name() -> &'static str { "hd_account" }
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        match (old_version, new_version) {
-            (0, 1) => {
-                let table = upgrader.create_table(Self::table_name())?;
-                table.create_multi_index(WALLET_ID_INDEX, &["coin", "hd_wallet_rmd160"], false)?;
-                table.create_multi_index(
-                    WALLET_ACCOUNT_ID_INDEX,
-                    &["coin", "hd_wallet_rmd160", "account_id"],
-                    true,
-                )?;
-            },
-            _ => (),
+        if let (0, 1) = (old_version, new_version) {
+            let table = upgrader.create_table(Self::table_name())?;
+            table.create_multi_index(WALLET_ID_INDEX, &["coin", "hd_wallet_rmd160"], false)?;
+            table.create_multi_index(
+                WALLET_ACCOUNT_ID_INDEX,
+                &["coin", "hd_wallet_rmd160", "account_id"],
+                true,
+            )?;
         }
+
         Ok(())
     }
 }
@@ -318,7 +316,7 @@ impl HDWalletIndexedDbStorage {
 
 /// This function is used in `hd_wallet_storage::tests`.
 pub(super) async fn get_all_storage_items(ctx: &MmArc) -> Vec<HDAccountStorageItem> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+    let coins_ctx = CoinsContext::from_ctx(ctx).unwrap();
     let db = coins_ctx.hd_wallet_db.get_or_initialize().await.unwrap();
     let transaction = db.inner.transaction().await.unwrap();
     let table = transaction.table::<HDAccountTable>().await.unwrap();

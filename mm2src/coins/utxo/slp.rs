@@ -2190,7 +2190,7 @@ mod slp_tests {
         let err = block_on(fusd.broadcast_tx(&utxo_tx)).unwrap_err();
         match err.into_inner() {
             BroadcastTxErr::Other(err) => assert!(err.contains("is not valid with reason outputs greater than inputs")),
-            e @ _ => panic!("Unexpected err {:?}", e),
+            e => panic!("Unexpected err {:?}", e),
         };
 
         // The error variant should equal to `TxRecoverable`
@@ -2253,7 +2253,7 @@ mod slp_tests {
         let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {
             ValidatePaymentError::WrongPaymentTx(e) => println!("{:#?}", e),
-            err @ _ => panic!("Unexpected err {:#?}", err),
+            err => panic!("Unexpected err {:#?}", err),
         };
     }
 

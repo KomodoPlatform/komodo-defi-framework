@@ -2931,7 +2931,7 @@ pub mod tendermint_coin_tests {
         // https://nyancat.iobscan.io/#/tx?txHash=565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137
         let expected_spend_hash = "565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137";
         let hash = spend_tx.tx_hash();
-        assert_eq!(hex::encode_upper(&hash.0), expected_spend_hash);
+        assert_eq!(hex::encode_upper(hash.0), expected_spend_hash);
     }
 
     #[test]
@@ -3283,7 +3283,7 @@ pub mod tendermint_coin_tests {
         // https://nyancat.iobscan.io/#/tx?txHash=565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137
         let expected_spend_hash = "565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137";
         let hash = spend_tx.tx_hash();
-        assert_eq!(hex::encode_upper(&hash.0), expected_spend_hash);
+        assert_eq!(hex::encode_upper(hash.0), expected_spend_hash);
     }
 
     #[test]

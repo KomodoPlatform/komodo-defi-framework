@@ -402,7 +402,7 @@ mod tests {
     #[test]
     fn it_does_bitcoin_hash256() {
         test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("hash256", &fixtures);
+            let test_cases = test_utils::get_test_cases("hash256", fixtures);
             for case in test_cases {
                 let input = force_deserialize_hex(case.input.as_str().unwrap());
                 let mut expected = H256::default();
@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn it_computes_hash256_merkle_steps() {
         test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("hash256MerkleStep", &fixtures);
+            let test_cases = test_utils::get_test_cases("hash256MerkleStep", fixtures);
             for case in test_cases {
                 let inputs = case.input.as_array().unwrap();
                 let a = force_deserialize_hex(inputs[0].as_str().unwrap());
@@ -432,7 +432,7 @@ mod tests {
     #[test]
     fn it_determines_input_length() {
         test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("determineInputLength", &fixtures);
+            let test_cases = test_utils::get_test_cases("determineInputLength", fixtures);
             for case in test_cases {
                 let input = force_deserialize_hex(case.input.as_str().unwrap());
                 let expected = case.output.as_u64().unwrap() as usize;
@@ -444,7 +444,7 @@ mod tests {
     #[test]
     fn it_determines_output_length() {
         test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("determineOutputLength", &fixtures);
+            let test_cases = test_utils::get_test_cases("determineOutputLength", fixtures);
             for case in test_cases {
                 let input = force_deserialize_hex(case.input.as_str().unwrap());
                 let expected = case.output.as_u64().unwrap() as usize;
@@ -456,7 +456,7 @@ mod tests {
     #[test]
     fn it_validates_vin_syntax() {
         test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("validateVin", &fixtures);
+            let test_cases = test_utils::get_test_cases("validateVin", fixtures);
             for case in test_cases {
                 let input = force_deserialize_hex(case.input.as_str().unwrap());
                 let expected = case.output.as_bool().unwrap();
@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn it_validates_vout_syntax() {
         test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("validateVout", &fixtures);
+            let test_cases = test_utils::get_test_cases("validateVout", fixtures);
             for case in test_cases {
                 let input = force_deserialize_hex(case.input.as_str().unwrap());
                 let expected = case.output.as_bool().unwrap();
@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn it_verifies_hash256_merkles() {
         test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("verifyHash256Merkle", &fixtures);
+            let test_cases = test_utils::get_test_cases("verifyHash256Merkle", fixtures);
             for case in test_cases {
                 let inputs = case.input.as_object().unwrap();
                 let extended_proof = force_deserialize_hex(inputs.get("proof").unwrap().as_str().unwrap());
@@ -489,12 +489,12 @@ mod tests {
                     continue;
                 }
 
-                let index = inputs.get("index").unwrap().as_u64().unwrap() as u64;
+                let index = inputs.get("index").unwrap().as_u64().unwrap();
                 let expected = case
                     .output
                     .as_bool()
                     .unwrap()
-                    .then(|| ())
+                    .then_some(())
                     .ok_or(SPVError::BadMerkleProof);
 
                 // extract root and txid
@@ -527,7 +527,7 @@ mod tests {
         let tx_id: H256 = H256::from_reversed_str("7e9797a05abafbc1542449766ef9a41838ebbf6d24cd3223d361aa07c51981df");
         let merkle_pos = 1;
         let merkle_root: H256 =
-            H256::from_reversed_str("41f138275d13690e3c5d735e2f88eb6f1aaade1207eb09fa27a65b40711f3ae0").into();
+            H256::from_reversed_str("41f138275d13690e3c5d735e2f88eb6f1aaade1207eb09fa27a65b40711f3ae0");
         let merkle_nodes: Vec<H256> = vec![
             H256::from_reversed_str("73dfb53e6f49854b09d98500d4899d5c4e703c4fa3a2ddadc2cd7f12b72d4182"),
             H256::from_reversed_str("4274d707b2308d39a04f2940024d382fa80d994152a50d4258f5a7feead2a563"),
@@ -543,7 +543,7 @@ mod tests {
         let tx_id: H256 = H256::from_reversed_str("c06fbab289f723c6261d3030ddb6be121f7d2508d77862bb1e484f5cd7f92b25");
         let merkle_pos = 0;
         let merkle_root: H256 =
-            H256::from_reversed_str("8fb300e3fdb6f30a4c67233b997f99fdd518b968b9a3fd65857bfe78b2600719").into();
+            H256::from_reversed_str("8fb300e3fdb6f30a4c67233b997f99fdd518b968b9a3fd65857bfe78b2600719");
         let merkle_nodes: Vec<H256> = vec![H256::from_reversed_str(
             "5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2",
         )];
@@ -558,7 +558,7 @@ mod tests {
         let tx_id: H256 = H256::from_reversed_str("b36bced99cc459506ad2b3af6990920b12f6dc84f9c7ed0dd2c3703f94a4b692");
         let merkle_pos = 680;
         let merkle_root: H256 =
-            H256::from_reversed_str("def7a26d91789069dad448cb4b68658b7ba419f9fbd28dce7fe32ed0010e55df").into();
+            H256::from_reversed_str("def7a26d91789069dad448cb4b68658b7ba419f9fbd28dce7fe32ed0010e55df");
         let merkle_nodes: Vec<H256> = vec![
             H256::from_reversed_str("39141331f2b7133e72913460384927b421ffdef3e24b88521e7ac54d30019409"),
             H256::from_reversed_str("39aeb77571ee0b0cf9feb7e121938b862f3994ff1254b34559378f6f2ed8b1fb"),

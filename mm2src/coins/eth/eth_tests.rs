@@ -48,7 +48,7 @@ fn eth_coin_for_test(
            {"coin":"JST","name":"jst","rpcport":80,"mm2":1,"protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
         ]
     });
-    let ctx = MmCtxBuilder::new().with_conf(conf.clone()).into_mm_arc();
+    let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
     let ticker = match coin_type {
         EthCoinType::Eth => "ETH".to_string(),
         EthCoinType::Erc20 { .. } => "JST".to_string(),
@@ -712,7 +712,7 @@ fn test_withdraw_impl_manual_fee() {
     };
     coin.my_balance().wait().unwrap();
 
-    let tx_details = block_on(withdraw_impl(coin.clone(), withdraw_req)).unwrap();
+    let tx_details = block_on(withdraw_impl(coin, withdraw_req)).unwrap();
     let expected = Some(
         EthTxFeeDetails {
             coin: "ETH".into(),
@@ -756,7 +756,7 @@ fn test_withdraw_impl_fee_details() {
     };
     coin.my_balance().wait().unwrap();
 
-    let tx_details = block_on(withdraw_impl(coin.clone(), withdraw_req)).unwrap();
+    let tx_details = block_on(withdraw_impl(coin, withdraw_req)).unwrap();
     let expected = Some(
         EthTxFeeDetails {
             coin: "ETH".into(),
@@ -995,7 +995,7 @@ fn test_get_fee_to_send_taker_fee() {
         vec!["http://dummy.dummy".into()],
         None,
     );
-    let actual = block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount.clone(), FeeApproxStage::WithoutApprox))
+    let actual = block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount, FeeApproxStage::WithoutApprox))
         .expect("!get_fee_to_send_taker_fee");
     assert_eq!(actual, expected_fee);
 }
@@ -1022,8 +1022,7 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
     );
     let dex_fee_amount = u256_to_big_decimal(DEX_FEE_AMOUNT.into(), 18).expect("!u256_to_big_decimal");
 
-    let error =
-        block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount.clone(), FeeApproxStage::WithoutApprox)).unwrap_err();
+    let error = block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount, FeeApproxStage::WithoutApprox)).unwrap_err();
     log!("{}", error);
     assert!(
         matches!(error.get_inner(), TradePreimageError::NotSufficientBalance { .. }),
@@ -1045,8 +1044,8 @@ fn validate_dex_fee_invalid_sender_eth() {
     let amount: BigDecimal = "0.000526435076465".parse().unwrap();
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
-        expected_sender: &*DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
+        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         amount: &amount,
         min_block_number: 0,
         uuid: &[],
@@ -1079,8 +1078,8 @@ fn validate_dex_fee_invalid_sender_erc() {
     let amount: BigDecimal = "5.548262548262548262".parse().unwrap();
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
-        expected_sender: &*DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
+        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         amount: &amount,
         min_block_number: 0,
         uuid: &[],
@@ -1118,7 +1117,7 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &compressed_public,
-        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         amount: &amount,
         min_block_number: 11784793,
         uuid: &[],
@@ -1155,7 +1154,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &compressed_public,
-        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         amount: &amount,
         min_block_number: 11823975,
         uuid: &[],

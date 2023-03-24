@@ -3441,6 +3441,7 @@ fn test_match_utxo_with_eth_taker_sell() {
 
 #[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/1074
+#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 fn test_match_utxo_with_eth_taker_buy() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());

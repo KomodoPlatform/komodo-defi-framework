@@ -369,8 +369,7 @@ fn test_validate_fee() {
             uuid: &[],
         })
         .wait()
-        .err()
-        .expect("Expected an error")
+        .expect_err("Expected an error")
         .into_inner();
     log!("error: {:?}", err);
     match err {
@@ -388,8 +387,7 @@ fn test_validate_fee() {
             uuid: &[],
         })
         .wait()
-        .err()
-        .expect("Expected an error")
+        .expect_err("Expected an error")
         .into_inner();
     log!("error: {:?}", err);
     match err {
@@ -407,8 +405,7 @@ fn test_validate_fee() {
             uuid: &[],
         })
         .wait()
-        .err()
-        .expect("Expected an error")
+        .expect_err("Expected an error")
         .into_inner();
     log!("error: {:?}", err);
     match err {
@@ -427,8 +424,7 @@ fn test_validate_fee() {
             uuid: &[],
         })
         .wait()
-        .err()
-        .expect("Expected an error")
+        .expect_err("Expected an error")
         .into_inner();
     log!("error: {:?}", err);
     match err {
@@ -451,8 +447,7 @@ fn test_validate_fee() {
             uuid: &[],
         })
         .wait()
-        .err()
-        .expect("Expected an error")
+        .expect_err("Expected an error")
         .into_inner();
     log!("error: {:?}", err);
     match err {
@@ -564,23 +559,19 @@ fn test_generate_token_transfer_script_pubkey() {
     let to_addr: UtxoAddress = "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs".into();
     let to_addr = qtum::contract_addr_from_utxo_addr(to_addr).unwrap();
     let amount: U256 = 1000000000.into();
-    let actual = coin
-        .transfer_output(to_addr.clone(), amount, gas_limit, gas_price)
-        .unwrap();
+    let actual = coin.transfer_output(to_addr, amount, gas_limit, gas_price).unwrap();
     assert_eq!(expected, actual);
 
     assert!(coin
         .transfer_output(
-            to_addr.clone(),
-            amount,
-            0, // gas_limit cannot be zero
+            to_addr, amount, 0, // gas_limit cannot be zero
             gas_price,
         )
         .is_err());
 
     assert!(coin
         .transfer_output(
-            to_addr.clone(),
+            to_addr,
             amount,
             gas_limit,
             0, // gas_price cannot be zero
@@ -601,7 +592,7 @@ fn test_transfer_details_by_hash() {
     let tx_hex:BytesJson = hex::decode("0100000001426d27fde82e12e1ce84e73ca41e2a30420f4c94aaa37b30d4c5b8b4f762c042040000006a473044022032665891693ee732571cefaa6d322ec5114c78259f2adbe03a0d7e6b65fbf40d022035c9319ca41e5423e09a8a613ac749a20b8f5ad6ba4ad6bb60e4a020b085d009012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff050000000000000000625403a08601012844095ea7b30000000000000000000000001549128bbfb33b997949b4105b6a6371c998e212000000000000000000000000000000000000000000000000000000000000000014d362e096e873eb7907e205fadc6175c6fec7bc44c20000000000000000625403a08601012844095ea7b30000000000000000000000001549128bbfb33b997949b4105b6a6371c998e21200000000000000000000000000000000000000000000000000000000000927c014d362e096e873eb7907e205fadc6175c6fec7bc44c20000000000000000835403a0860101284c640c565ae300000000000000000000000000000000000000000000000000000000000493e0000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000000000000000000000000000000000000000000000141549128bbfb33b997949b4105b6a6371c998e212c20000000000000000835403a0860101284c640c565ae300000000000000000000000000000000000000000000000000000000000493e0000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000000000000000000000000000000000000000000001141549128bbfb33b997949b4105b6a6371c998e212c231754b04000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acf7cd8b5f").unwrap().into();
 
     let details = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
-    let mut it = details.into_iter().sorted_by(|(id_x, _), (id_y, _)| id_x.cmp(&id_y));
+    let mut it = details.into_iter().sorted_by(|(id_x, _), (id_y, _)| id_x.cmp(id_y));
 
     let expected_fee_details = |total_gas_fee: &str| -> TxFeeDetails {
         let fee = Qrc20FeeDetails {
@@ -717,7 +708,7 @@ fn test_transfer_details_by_hash() {
 
     let (_id, actual) = it.next().unwrap();
     let expected = TransactionDetails {
-        tx_hex: tx_hex.clone(),
+        tx_hex,
         tx_hash: tx_hash_bytes.to_tx_hash(),
         from: vec!["qKVvtDqpnFGDxsDzck5jmLwdnD2jRH6aM8".into()],
         to: vec!["qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG".into()],
@@ -755,7 +746,7 @@ fn test_get_trade_fee() {
 
     let actual_trade_fee = coin.get_trade_fee().wait().unwrap();
     let expected_trade_fee_amount = big_decimal_from_sat(
-        (2 * CONTRACT_CALL_GAS_FEE + SWAP_PAYMENT_GAS_FEE + EXPECTED_TX_FEE) as i64,
+        2 * CONTRACT_CALL_GAS_FEE + SWAP_PAYMENT_GAS_FEE + EXPECTED_TX_FEE,
         coin.utxo.decimals,
     );
     let expected = TradeFee {
@@ -1084,8 +1075,7 @@ fn test_validate_maker_payment_malicious() {
     let error = coin
         .validate_maker_payment(input)
         .wait()
-        .err()
-        .expect("'erc20Payment' was called from another swap contract, expected an error")
+        .expect_err("'erc20Payment' was called from another swap contract, expected an error")
         .into_inner();
     log!("error: {}", error);
     match error {
@@ -1185,6 +1175,6 @@ fn test_send_contract_calls_recoverable_tx() {
     // The error variant should equal to `TxRecoverable`
     assert_eq!(
         discriminant(&tx_err),
-        discriminant(&TransactionErr::TxRecoverable(TransactionEnum::from(tx), String::new()))
+        discriminant(&TransactionErr::TxRecoverable(tx, String::new()))
     );
 }

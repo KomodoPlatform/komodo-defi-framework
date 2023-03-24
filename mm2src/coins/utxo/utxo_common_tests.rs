@@ -19,9 +19,9 @@ use std::convert::TryFrom;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-pub(super) const TEST_COIN_NAME: &'static str = "RICK";
+pub(super) const TEST_COIN_NAME: &str = "RICK";
 // Made-up hrp for rick to test p2wpkh script
-pub(super) const TEST_COIN_HRP: &'static str = "rck";
+pub(super) const TEST_COIN_HRP: &str = "rck";
 pub(super) const TEST_COIN_DECIMALS: u8 = 8;
 
 const MORTY_HD_TX_HISTORY_STR: &str = include_str!("../for_tests/MORTY_HD_tx_history_fixtures.json");
@@ -185,7 +185,7 @@ pub(super) fn get_morty_hd_transactions_ordered(tx_hashes: &[&str]) -> Vec<Trans
         .map(|tx_hash| {
             MORTY_HD_TX_HISTORY_MAP
                 .get(*tx_hash)
-                .expect(&format!("No such {tx_hash:?} TX in the file"))
+                .unwrap_or_else(|| panic!("No such {:?} TX in the file", tx_hash))
                 .clone()
         })
         .sorted_by(compare_transaction_details)

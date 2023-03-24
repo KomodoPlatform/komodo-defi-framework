@@ -21,7 +21,7 @@ fn start_swap_operation() {
     let pairs = [
         ("USDC-IBC-IRIS", "IRIS-NIMDA"),
         ("IRIS-NIMDA", "RICK"),
-        ("USDC-IBC-IRIS", "tBNB"),
+        // ("USDC-IBC-IRIS", "tBNB"), having fund problems
     ];
     block_on(trade_base_rel_iris(&pairs, 1, 2, 0.008));
 }

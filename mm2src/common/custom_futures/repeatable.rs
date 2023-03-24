@@ -532,6 +532,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
     fn test_until_expired() {
         const ATTEMPTS_TO_FINISH: usize = 10;
         const LOWEST_TIMEOUT: Duration = Duration::from_millis(350);
@@ -566,6 +567,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
     fn test_until_ms() {
         const ATTEMPTS_TO_FINISH: usize = 5;
         const LOWEST_TIMEOUT: u64 = 350;

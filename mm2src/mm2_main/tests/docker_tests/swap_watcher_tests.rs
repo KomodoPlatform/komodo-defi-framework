@@ -452,6 +452,7 @@ fn test_watcher_refunds_taker_payment_eth() {
 }
 
 #[test]
+#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 fn test_watcher_validate_taker_fee_eth() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();

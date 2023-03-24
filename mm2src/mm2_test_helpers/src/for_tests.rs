@@ -20,7 +20,7 @@ use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::env;
-use std::io::Write;
+#[cfg(not(target_arch = "wasm32"))] use std::io::Write;
 use std::net::IpAddr;
 use std::num::NonZeroUsize;
 use std::process::Child;
@@ -1156,7 +1156,8 @@ impl MarketMakerIt {
                 } else {
                     StatusCode::INTERNAL_SERVER_ERROR
                 };
-                let body_str = json::to_string(&body).expect(&format!("Response {:?} is not a valid JSON", body));
+                let body_str =
+                    json::to_string(&body).unwrap_or_else(|_| panic!("Response {:?} is not a valid JSON", body));
                 Ok((status_code, body_str, HeaderMap::new()))
             },
             Err(e) => Ok((StatusCode::INTERNAL_SERVER_ERROR, e, HeaderMap::new())),

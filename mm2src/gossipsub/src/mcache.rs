@@ -131,13 +131,12 @@ mod tests {
         let data: Vec<u8> = vec![u8x];
         let sequence_number = x;
 
-        let m = GossipsubMessage {
+        GossipsubMessage {
             source,
             data,
             sequence_number,
             topics,
-        };
-        m
+        }
     }
 
     #[test]
@@ -160,8 +159,8 @@ mod tests {
     fn test_put_get_one() {
         let mut mc = MessageCache::new_default(10, 15);
 
-        let topic1_hash = Topic::new("topic1".into()).no_hash().clone();
-        let topic2_hash = Topic::new("topic2".into()).no_hash().clone();
+        let topic1_hash = Topic::new("topic1".into()).no_hash();
+        let topic2_hash = Topic::new("topic2".into()).no_hash();
 
         let m = gen_testm(10, vec![topic1_hash, topic2_hash]);
 
@@ -171,13 +170,12 @@ mod tests {
 
         let fetched = mc.get(&(mc.msg_id)(&m));
 
-        assert_eq!(fetched.is_none(), false);
-        assert_eq!(fetched.is_some(), true);
+        assert!(fetched.is_some());
 
         // Make sure it is the same fetched message
         match fetched {
             Some(x) => assert_eq!(*x, m),
-            _ => assert!(false),
+            _ => panic!("expected {:?}", m),
         }
     }
 
@@ -186,17 +184,17 @@ mod tests {
     fn test_get_wrong() {
         let mut mc = MessageCache::new_default(10, 15);
 
-        let topic1_hash = Topic::new("topic1".into()).no_hash().clone();
-        let topic2_hash = Topic::new("topic2".into()).no_hash().clone();
+        let topic1_hash = Topic::new("topic1".into()).no_hash();
+        let topic2_hash = Topic::new("topic2".into()).no_hash();
 
         let m = gen_testm(10, vec![topic1_hash, topic2_hash]);
 
-        mc.put(m.clone());
+        mc.put(m);
 
         // Try to get an incorrect ID
         let wrong_id = MessageId(String::from("wrongid"));
         let fetched = mc.get(&wrong_id);
-        assert_eq!(fetched.is_none(), true);
+        assert!(fetched.is_none());
     }
 
     #[test]
@@ -207,7 +205,7 @@ mod tests {
         // Try to get an incorrect ID
         let wrong_string = MessageId(String::from("imempty"));
         let fetched = mc.get(&wrong_string);
-        assert_eq!(fetched.is_none(), true);
+        assert!(fetched.is_none());
     }
 
     #[test]
@@ -224,7 +222,7 @@ mod tests {
         // Make sure it is the same fetched message
         match fetched {
             Some(x) => assert_eq!(*x, m),
-            _ => assert!(false),
+            _ => panic!("expected {:?}", m),
         }
     }
 
@@ -233,8 +231,8 @@ mod tests {
     fn test_shift() {
         let mut mc = MessageCache::new_default(1, 5);
 
-        let topic1_hash = Topic::new("topic1".into()).no_hash().clone();
-        let topic2_hash = Topic::new("topic2".into()).no_hash().clone();
+        let topic1_hash = Topic::new("topic1".into()).no_hash();
+        let topic2_hash = Topic::new("topic2".into()).no_hash();
 
         // Build the message
         for i in 0..10 {
@@ -245,7 +243,7 @@ mod tests {
         mc.shift();
 
         // Ensure the shift occurred
-        assert!(mc.history[0].len() == 0);
+        assert!(mc.history[0].is_empty());
         assert!(mc.history[1].len() == 10);
 
         // Make sure no messages deleted
@@ -257,8 +255,8 @@ mod tests {
     fn test_empty_shift() {
         let mut mc = MessageCache::new_default(1, 5);
 
-        let topic1_hash = Topic::new("topic1".into()).no_hash().clone();
-        let topic2_hash = Topic::new("topic2".into()).no_hash().clone();
+        let topic1_hash = Topic::new("topic1".into()).no_hash();
+        let topic2_hash = Topic::new("topic2".into()).no_hash();
         // Build the message
         for i in 0..10 {
             let m = gen_testm(i, vec![topic1_hash.clone(), topic2_hash.clone()]);
@@ -268,14 +266,14 @@ mod tests {
         mc.shift();
 
         // Ensure the shift occurred
-        assert!(mc.history[0].len() == 0);
+        assert!(mc.history[0].is_empty());
         assert!(mc.history[1].len() == 10);
 
         mc.shift();
 
         assert!(mc.history[2].len() == 10);
-        assert!(mc.history[1].len() == 0);
-        assert!(mc.history[0].len() == 0);
+        assert!(mc.history[1].is_empty());
+        assert!(mc.history[0].is_empty());
     }
 
     #[test]
@@ -283,8 +281,8 @@ mod tests {
     fn test_remove_last_from_shift() {
         let mut mc = MessageCache::new_default(4, 5);
 
-        let topic1_hash = Topic::new("topic1".into()).no_hash().clone();
-        let topic2_hash = Topic::new("topic2".into()).no_hash().clone();
+        let topic1_hash = Topic::new("topic1".into()).no_hash();
+        let topic2_hash = Topic::new("topic2".into()).no_hash();
         // Build the message
         for i in 0..10 {
             let m = gen_testm(i, vec![topic1_hash.clone(), topic2_hash.clone()]);

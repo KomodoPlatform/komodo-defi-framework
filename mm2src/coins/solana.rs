@@ -46,11 +46,8 @@ pub mod solana_common;
 mod solana_decode_tx_helpers;
 pub mod spl;
 
-#[cfg(all(test, not(feature = "disable-solana-tests")))]
 mod solana_common_tests;
-#[cfg(all(test, not(feature = "disable-solana-tests")))]
 mod solana_tests;
-#[cfg(all(test, not(feature = "disable-solana-tests")))]
 mod spl_tests;
 
 pub const SOLANA_DEFAULT_DECIMALS: u64 = 9;

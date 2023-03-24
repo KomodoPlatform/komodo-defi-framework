@@ -701,9 +701,9 @@ fn test_conf_settings_in_orderbook() {
         "Alice RICK/MORTY orderbook must have exactly 1 ask"
     );
     assert_eq!(alice_orderbook.asks[0].base_confs, 10);
-    assert_eq!(alice_orderbook.asks[0].base_nota, true);
+    assert!(alice_orderbook.asks[0].base_nota);
     assert_eq!(alice_orderbook.asks[0].rel_confs, 5);
-    assert_eq!(alice_orderbook.asks[0].rel_nota, false);
+    assert!(!alice_orderbook.asks[0].rel_nota);
 
     assert_eq!(
         alice_orderbook.bids.len(),
@@ -711,9 +711,9 @@ fn test_conf_settings_in_orderbook() {
         "Alice RICK/MORTY orderbook must have exactly 1 bid"
     );
     assert_eq!(alice_orderbook.bids[0].base_confs, 10);
-    assert_eq!(alice_orderbook.bids[0].base_nota, true);
+    assert!(alice_orderbook.bids[0].base_nota);
     assert_eq!(alice_orderbook.bids[0].rel_confs, 5);
-    assert_eq!(alice_orderbook.bids[0].rel_nota, false);
+    assert!(!alice_orderbook.bids[0].rel_nota);
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
@@ -841,9 +841,9 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
         .find(|entry| entry.pubkey == bob_pubkey)
         .unwrap();
     assert_eq!(bob_order_in_orderbook.base_confs, 10);
-    assert_eq!(bob_order_in_orderbook.base_nota, true);
+    assert!(bob_order_in_orderbook.base_nota);
     assert_eq!(bob_order_in_orderbook.rel_confs, 5);
-    assert_eq!(bob_order_in_orderbook.rel_nota, false);
+    assert!(!bob_order_in_orderbook.rel_nota);
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();

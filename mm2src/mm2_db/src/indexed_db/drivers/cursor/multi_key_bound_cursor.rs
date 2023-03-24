@@ -227,7 +227,7 @@ mod tests {
             let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let (item_action, cursor_action) = cursor
                 .on_iteration(input_index_js_value)
-                .expect(&format!("Error due to the index '{:?}'", input_index));
+                .unwrap_or_else(|_| panic!("Error due to the index '{:?}'", input_index));
 
             let actual_next: Json = match cursor_action {
                 CursorAction::ContinueWithValue(next_index_js_value) => {

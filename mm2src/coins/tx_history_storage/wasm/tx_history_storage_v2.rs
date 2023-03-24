@@ -417,32 +417,29 @@ impl TableSignature for TxHistoryTableV2 {
     fn table_name() -> &'static str { "tx_history_v2" }
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        match (old_version, new_version) {
-            (0, 1) => {
-                let table = upgrader.create_table(Self::table_name())?;
-                table.create_multi_index(TxHistoryTableV2::WALLET_ID_INDEX, &["coin", "hd_wallet_rmd160"], false)?;
-                table.create_multi_index(
-                    TxHistoryTableV2::WALLET_ID_INTERNAL_ID_INDEX,
-                    &["coin", "hd_wallet_rmd160", "internal_id"],
-                    true,
-                )?;
-                table.create_multi_index(
-                    TxHistoryTableV2::WALLET_ID_TX_HASH_INDEX,
-                    &["coin", "hd_wallet_rmd160", "tx_hash"],
-                    false,
-                )?;
-                table.create_multi_index(
-                    TxHistoryTableV2::WALLET_ID_CONFIRMATION_STATUS_INDEX,
-                    &["coin", "hd_wallet_rmd160", "confirmation_status"],
-                    false,
-                )?;
-                table.create_multi_index(
-                    TxHistoryTableV2::WALLET_ID_TOKEN_ID_INDEX,
-                    &["coin", "hd_wallet_rmd160", "token_id"],
-                    false,
-                )?;
-            },
-            _ => (),
+        if let (0, 1) = (old_version, new_version) {
+            let table = upgrader.create_table(Self::table_name())?;
+            table.create_multi_index(TxHistoryTableV2::WALLET_ID_INDEX, &["coin", "hd_wallet_rmd160"], false)?;
+            table.create_multi_index(
+                TxHistoryTableV2::WALLET_ID_INTERNAL_ID_INDEX,
+                &["coin", "hd_wallet_rmd160", "internal_id"],
+                true,
+            )?;
+            table.create_multi_index(
+                TxHistoryTableV2::WALLET_ID_TX_HASH_INDEX,
+                &["coin", "hd_wallet_rmd160", "tx_hash"],
+                false,
+            )?;
+            table.create_multi_index(
+                TxHistoryTableV2::WALLET_ID_CONFIRMATION_STATUS_INDEX,
+                &["coin", "hd_wallet_rmd160", "confirmation_status"],
+                false,
+            )?;
+            table.create_multi_index(
+                TxHistoryTableV2::WALLET_ID_TOKEN_ID_INDEX,
+                &["coin", "hd_wallet_rmd160", "token_id"],
+                false,
+            )?;
         }
         Ok(())
     }
@@ -474,12 +471,9 @@ impl TableSignature for TxCacheTableV2 {
     fn table_name() -> &'static str { "tx_cache_v2" }
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        match (old_version, new_version) {
-            (0, 1) => {
-                let table = upgrader.create_table(Self::table_name())?;
-                table.create_multi_index(TxCacheTableV2::COIN_TX_HASH_INDEX, &["coin", "tx_hash"], true)?;
-            },
-            _ => (),
+        if let (0, 1) = (old_version, new_version) {
+            let table = upgrader.create_table(Self::table_name())?;
+            table.create_multi_index(TxCacheTableV2::COIN_TX_HASH_INDEX, &["coin", "tx_hash"], true)?;
         }
         Ok(())
     }

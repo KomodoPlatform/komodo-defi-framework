@@ -824,7 +824,7 @@ mod tests {
         let expected_id = TxInternalId::new(tx_hash.as_slice().into(), 13, 257);
         let actual_bytes: BytesJson = expected_id.clone().into();
 
-        let mut expected_bytes = tx_hash.clone();
+        let mut expected_bytes = tx_hash;
         expected_bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 13]);
         expected_bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 1, 1]);
         assert_eq!(actual_bytes, expected_bytes.into());
@@ -848,7 +848,7 @@ mod tests {
             .as_slice()
             .into();
         let tx_height = 699545;
-        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash.clone())).unwrap();
+        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
 
         let mut transfer_map = transfer_map_expected.clone();
         assert_eq!(
@@ -880,7 +880,7 @@ mod tests {
             .as_slice()
             .into();
         let tx_height = 699545;
-        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash.clone())).unwrap();
+        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
 
         let mut transfer_map_zero_timestamp = transfer_map_expected
             .clone()
@@ -922,10 +922,9 @@ mod tests {
             .as_slice()
             .into();
         let tx_height = 699545;
-        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash.clone())).unwrap();
+        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
 
         let mut transfer_map_unexpected_tx_id = transfer_map_expected
-            .clone()
             .into_iter()
             .map(|(mut id, tx)| {
                 // just another tx_hash
@@ -963,9 +962,9 @@ mod tests {
             .as_slice()
             .into();
         let tx_height = 681443;
-        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash.clone())).unwrap();
+        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
         let mut history_map_expected = HistoryMapByHash::new();
-        history_map_expected.insert(tx_hash.clone(), transfer_map_expected);
+        history_map_expected.insert(tx_hash, transfer_map_expected);
 
         let tx_ids = vec![(tx_hash, tx_height)];
         let mut history_map = HistoryMapByHash::new();
@@ -988,9 +987,9 @@ mod tests {
             .as_slice()
             .into();
         let tx_height = 699545;
-        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash.clone())).unwrap();
+        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
         let mut history_map_expected = HistoryMapByHash::new();
-        history_map_expected.insert(tx_hash.clone(), transfer_map_expected);
+        history_map_expected.insert(tx_hash, transfer_map_expected);
 
         let tx_ids = vec![(tx_hash, tx_height)];
         let mut history_map = history_map_expected.clone();
@@ -1020,10 +1019,10 @@ mod tests {
             .as_slice()
             .into();
         let tx_height = 699545;
-        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash.clone())).unwrap();
+        let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
         let mut history_map_expected = HistoryMapByHash::new();
         // should contain only valid tx
-        history_map_expected.insert(tx_hash.clone(), transfer_map_expected);
+        history_map_expected.insert(tx_hash, transfer_map_expected);
 
         let tx_ids = vec![(tx_hash, tx_height), (tx_hash_invalid, tx_height)];
         let mut history_map = HistoryMapByHash::default();

@@ -424,6 +424,7 @@ fn test_buy_maker_should_not_use_taker_confs_and_notas_for_maker_payment_if_take
 }
 
 #[test]
+#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 fn test_buy_taker_should_use_maker_confs_and_notas_for_taker_payment_if_maker_requires_less() {
     let maker_settings = OrderConfirmationsSettings {
         base_confs: 1,
@@ -463,6 +464,7 @@ fn test_buy_taker_should_use_maker_confs_and_notas_for_taker_payment_if_maker_re
 }
 
 #[test]
+#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 fn test_buy_taker_should_not_use_maker_confs_and_notas_for_taker_payment_if_maker_requires_more() {
     let maker_settings = OrderConfirmationsSettings {
         base_confs: 1,
@@ -619,6 +621,7 @@ fn test_sell_maker_should_not_use_taker_confs_and_notas_for_maker_payment_if_tak
 }
 
 #[test]
+#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 fn test_sell_taker_should_use_maker_confs_and_notas_for_taker_payment_if_maker_requires_less() {
     let maker_settings = OrderConfirmationsSettings {
         base_confs: 1,
@@ -658,6 +661,7 @@ fn test_sell_taker_should_use_maker_confs_and_notas_for_taker_payment_if_maker_r
 }
 
 #[test]
+#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 fn test_sell_taker_should_not_use_maker_confs_and_notas_for_taker_payment_if_maker_requires_more() {
     let maker_settings = OrderConfirmationsSettings {
         base_confs: 1,

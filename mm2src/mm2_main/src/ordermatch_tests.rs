@@ -1213,13 +1213,15 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
 
     static mut CONNECT_START_CALLED: bool = false;
     lp_connect_start_bob.mock_safe(|_, _, _| {
-        MockResult::Return(unsafe {
+        unsafe {
             CONNECT_START_CALLED = true;
-        })
+        }
+
+        MockResult::Return(())
     });
 
     let connect: TakerConnect = json::from_str(r#"{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connect","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed"}"#).unwrap();
-    block_on(process_taker_connect(ctx, connect.sender_pubkey.clone(), connect));
+    block_on(process_taker_connect(ctx, connect.sender_pubkey, connect));
     assert!(unsafe { !CONNECT_START_CALLED });
 }
 
@@ -1656,7 +1658,7 @@ pub(super) fn make_random_orders(
 fn pubkey_and_secret_for_test(passphrase: &str) -> (String, [u8; 32]) {
     let key_pair = key_pair_from_seed(passphrase).unwrap();
     let pubkey = hex::encode(&**key_pair.public());
-    let secret = *(&*key_pair.private().secret);
+    let secret = *key_pair.private().secret;
     (pubkey, secret)
 }
 
@@ -1706,14 +1708,14 @@ fn test_process_get_orderbook_request() {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-    for order in orders_by_pubkeys.iter().map(|(_pubkey, orders)| orders).flatten() {
+    for order in orders_by_pubkeys.values().flatten() {
         orderbook.insert_or_update_order_update_trie(order.clone());
     }
 
     // avoid dead lock on orderbook as process_get_orderbook_request also acquires it
     drop(orderbook);
 
-    let encoded = process_get_orderbook_request(ctx.clone(), "RICK".into(), "MORTY".into())
+    let encoded = process_get_orderbook_request(ctx, "RICK".into(), "MORTY".into())
         .unwrap()
         .unwrap();
 
@@ -1721,7 +1723,7 @@ fn test_process_get_orderbook_request() {
     for (pubkey, item) in orderbook.pubkey_orders {
         let expected = orders_by_pubkeys
             .get(&pubkey)
-            .expect(&format!("!best_orders_by_pubkeys is expected to contain {:?}", pubkey));
+            .unwrap_or_else(|| panic!("!best_orders_by_pubkeys is expected to contain {:?}", pubkey));
 
         let mut actual: Vec<OrderbookItem> = item
             .orders
@@ -1761,9 +1763,7 @@ fn test_process_get_orderbook_request_limit() {
     // avoid dead lock on orderbook as process_get_orderbook_request also acquires it
     drop(orderbook);
 
-    let err = process_get_orderbook_request(ctx.clone(), "RICK".into(), "MORTY".into())
-        .err()
-        .expect("Expected an error");
+    let err = process_get_orderbook_request(ctx, "RICK".into(), "MORTY".into()).expect_err("Expected an error");
 
     log!("error: {}", err);
     assert!(err.contains("Orderbook too large"));
@@ -1859,19 +1859,10 @@ fn test_request_and_fill_orderbook() {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let orderbook = ordermatch_ctx.orderbook.lock();
 
-    let expected = expected_orders
-        .iter()
-        .map(|(_pubkey, orders)| orders.clone())
-        .flatten()
-        .collect();
+    let expected = expected_orders.values().flatten().cloned().collect();
     assert_eq!(orderbook.order_set, expected);
 
-    let expected = expected_orders
-        .iter()
-        .map(|(_pubkey, orders)| orders)
-        .flatten()
-        .map(|(uuid, _order)| *uuid)
-        .collect();
+    let expected = expected_orders.values().flatten().map(|(uuid, _order)| *uuid).collect();
     let unordered = orderbook
         .unordered
         .get(&("RICK".to_owned(), "MORTY".to_owned()))
@@ -1879,8 +1870,7 @@ fn test_request_and_fill_orderbook() {
     assert_eq!(*unordered, expected);
 
     let expected = expected_orders
-        .iter()
-        .map(|(_pubkey, orders)| orders)
+        .values()
         .flatten()
         .map(|(uuid, order)| OrderedByPriceOrder {
             uuid: *uuid,
@@ -2199,7 +2189,7 @@ fn test_taker_request_can_match_with_maker_pubkey() {
     assert!(order.request.can_match_with_maker_pubkey(&maker_pubkey));
 
     let mut set = HashSet::new();
-    set.insert(maker_pubkey.clone());
+    set.insert(maker_pubkey);
     order.request.match_by = MatchBy::Pubkeys(set);
     assert!(order.request.can_match_with_maker_pubkey(&maker_pubkey));
 
@@ -2322,7 +2312,7 @@ fn test_diff_should_not_be_written_if_hash_not_changed_on_insert() {
 
     let alb_ordered_pair = alb_ordered_pair("C1", "C2");
     let pair_trie_root = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
-    for order in orders.clone() {
+    for order in orders {
         insert_or_update_order(&ctx, order);
     }
 
@@ -2581,7 +2571,7 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
     assert_eq!(full_trie, expected);
 }
 
-fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders: &Vec<OrderbookItem>) {
+fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders: &[OrderbookItem]) {
     let pubkey_state = orderbook.pubkeys_state.get(pubkey).expect("!pubkeys_state");
 
     // order_set
@@ -2717,7 +2707,7 @@ fn test_orderbook_sync_trie_diff_time_cache() {
     let bob_root = bob_state.trie_roots.get(&rick_morty_pair).unwrap();
 
     let bob_history_on_sync = DeltaOrFullTrie::from_history(
-        &rick_morty_history_bob,
+        rick_morty_history_bob,
         *alice_root,
         *bob_root,
         &orderbook_bob.memory_db,
@@ -2768,7 +2758,7 @@ fn test_orderbook_sync_trie_diff_time_cache() {
     let bob_root = bob_state.trie_roots.get(&rick_morty_pair).unwrap();
 
     let bob_history_on_sync = DeltaOrFullTrie::from_history(
-        &rick_morty_history_bob,
+        rick_morty_history_bob,
         *alice_root,
         *bob_root,
         &orderbook_bob.memory_db,

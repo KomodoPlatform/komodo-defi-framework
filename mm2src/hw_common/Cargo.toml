@@ -18,7 +18,7 @@ serde = "1.0"
 serde_derive = "1.0"
 
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))'.dependencies]
-rusb = { version = "0.7.0" }
+rusb = { version = "0.7.0", features = ["vendored"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }

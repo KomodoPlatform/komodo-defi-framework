@@ -258,7 +258,7 @@ mod tests {
         let fut1 = async { Timer::sleep(0.3).await };
         let fut2 = async { Timer::sleep(0.7).await };
         spawner.spawn_with_settings(fut1, settings.clone());
-        spawner.spawn_with_settings(fut2, settings.clone());
+        spawner.spawn_with_settings(fut2, settings);
 
         {
             let inner = abortable_system.inner.lock();
@@ -318,7 +318,7 @@ mod tests {
             Timer::sleep(0.2).await;
             unsafe { F2_FINISHED = true };
         };
-        spawner.spawn_with_settings(fut2, settings.clone());
+        spawner.spawn_with_settings(fut2, settings);
 
         abortable_system.abort_all().unwrap();
 

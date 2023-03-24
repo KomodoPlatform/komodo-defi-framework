@@ -108,7 +108,7 @@ mod event_dispatcher_tests {
 
     impl Deref for ListenerSwapStatusChangedArc {
         type Target = ListenerSwapStatusChanged;
-        fn deref(&self) -> &ListenerSwapStatusChanged { &*self.0 }
+        fn deref(&self) -> &ListenerSwapStatusChanged { &self.0 }
     }
 
     #[async_trait]

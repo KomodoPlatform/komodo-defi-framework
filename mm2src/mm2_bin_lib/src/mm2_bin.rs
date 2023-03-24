@@ -1,6 +1,9 @@
 #[cfg(not(target_arch = "wasm32"))] use mm2_main::mm2::mm2_main;
 
+#[cfg(not(target_arch = "wasm32"))]
 const MM_VERSION: &str = env!("MM_VERSION");
+
+#[cfg(not(target_arch = "wasm32"))]
 const MM_DATETIME: &str = env!("MM_DATETIME");
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]

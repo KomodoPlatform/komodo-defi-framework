@@ -821,9 +821,9 @@ fn test_best_orders_address_and_confirmations() {
     assert_eq!(best_orders[0].coin, "RICK");
     assert_eq!(best_orders[0].address, rick_address);
     assert_eq!(best_orders[0].base_confs, 5);
-    assert_eq!(best_orders[0].base_nota, false);
+    assert!(!best_orders[0].base_nota);
     assert_eq!(best_orders[0].rel_confs, 10);
-    assert_eq!(best_orders[0].rel_nota, true);
+    assert!(best_orders[0].rel_nota);
 
     let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
@@ -840,9 +840,9 @@ fn test_best_orders_address_and_confirmations() {
     assert_eq!(best_orders[0].coin, "tBTC");
     assert_eq!(best_orders[0].address, tbtc_segwit_address);
     assert_eq!(best_orders[0].base_confs, 10);
-    assert_eq!(best_orders[0].base_nota, true);
+    assert!(best_orders[0].base_nota);
     assert_eq!(best_orders[0].rel_confs, 5);
-    assert_eq!(best_orders[0].rel_nota, false);
+    assert!(!best_orders[0].rel_nota);
 
     // checking buy and sell best_orders against ("RICK", "tBTC", "0.7", "0.0002", Some("0.00015"))
     let rc = block_on(mm_alice.rpc(&json! ({
@@ -860,9 +860,9 @@ fn test_best_orders_address_and_confirmations() {
     assert_eq!(best_orders[0].coin, "tBTC");
     assert_eq!(best_orders[0].address, tbtc_segwit_address);
     assert_eq!(best_orders[0].base_confs, 10);
-    assert_eq!(best_orders[0].base_nota, true);
+    assert!(best_orders[0].base_nota);
     assert_eq!(best_orders[0].rel_confs, 5);
-    assert_eq!(best_orders[0].rel_nota, false);
+    assert!(!best_orders[0].rel_nota);
 
     let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
@@ -879,9 +879,9 @@ fn test_best_orders_address_and_confirmations() {
     assert_eq!(best_orders[0].coin, "RICK");
     assert_eq!(best_orders[0].address, rick_address);
     assert_eq!(best_orders[0].base_confs, 5);
-    assert_eq!(best_orders[0].base_nota, false);
+    assert!(!best_orders[0].base_nota);
     assert_eq!(best_orders[0].rel_confs, 10);
-    assert_eq!(best_orders[0].rel_nota, true);
+    assert!(best_orders[0].rel_nota);
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();

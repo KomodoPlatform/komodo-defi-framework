@@ -1,4 +1,12 @@
 #![feature(hash_raw_entry)]
+// `mockable` implementation uses these
+#![allow(
+    clippy::forget_ref,
+    clippy::forget_copy,
+    clippy::swap_ptr_to_ref,
+    clippy::forget_non_drop,
+    clippy::let_unit_value
+)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;

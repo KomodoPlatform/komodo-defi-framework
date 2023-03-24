@@ -457,7 +457,7 @@ mod tests {
         query
             .field("tx_hash")
             .unwrap()
-            .and_where_in_params("height", SEARCHING_HEIGHTS.clone())
+            .and_where_in_params("height", SEARCHING_HEIGHTS)
             .unwrap();
         assert_eq!(
             query.clone().sql().unwrap(),

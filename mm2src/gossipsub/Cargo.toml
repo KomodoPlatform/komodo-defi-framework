@@ -38,4 +38,4 @@ libp2p-yamux = { git = "https://github.com/libp2p/rust-libp2p.git", tag ="v0.45.
 quickcheck = "0.9.2"
 
 [build-dependencies]
-prost-build = "0.10.3"
+prost-build = { version = "0.10.4", default-features = false }

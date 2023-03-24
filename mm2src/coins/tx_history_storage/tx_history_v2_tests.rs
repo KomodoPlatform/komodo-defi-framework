@@ -393,7 +393,7 @@ async fn test_get_raw_tx_bytes_on_add_transactions_impl() {
 
     let tx_hash = "6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69";
 
-    let maybe_tx_hex = storage.tx_bytes_from_cache(&wallet_id, &tx_hash).await.unwrap();
+    let maybe_tx_hex = storage.tx_bytes_from_cache(&wallet_id, tx_hash).await.unwrap();
     assert!(maybe_tx_hex.is_none());
 
     let tx1 = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
@@ -409,11 +409,7 @@ async fn test_get_raw_tx_bytes_on_add_transactions_impl() {
         .await
         .unwrap();
 
-    let tx_hex = storage
-        .tx_bytes_from_cache(&wallet_id, &tx_hash)
-        .await
-        .unwrap()
-        .unwrap();
+    let tx_hex = storage.tx_bytes_from_cache(&wallet_id, tx_hash).await.unwrap().unwrap();
 
     assert_eq!(tx_hex, expected_tx_hex);
 }

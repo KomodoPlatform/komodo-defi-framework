@@ -422,7 +422,7 @@ fn test_enable_lightning() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_connect_to_node() {
     let (mm_node_1, mm_node_2, node_1_id, _) = start_lightning_nodes(false);
-    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip);
 
     let connect = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
@@ -453,7 +453,7 @@ fn test_connect_to_node() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_open_channel() {
     let (mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(false);
-    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip);
 
     block_on(open_channel(
         &mut mm_node_2,
@@ -532,7 +532,7 @@ fn test_open_channel() {
 // This also tests 0_confs_channels
 fn test_send_payment() {
     let (mut mm_node_2, mut mm_node_1, node_2_id, node_1_id) = start_lightning_nodes(true);
-    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip);
 
     block_on(add_trusted_node(&mm_node_1, &node_2_id));
     block_on(open_channel(
@@ -624,7 +624,7 @@ fn test_send_payment() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_mpp() {
     let (mut mm_node_2, mut mm_node_1, node_2_id, node_1_id) = start_lightning_nodes(true);
-    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip);
 
     block_on(add_trusted_node(&mm_node_1, &node_2_id));
 
@@ -686,7 +686,7 @@ fn test_mpp() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_lightning_swaps() {
     let (mut mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(true);
-    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip);
 
     block_on(add_trusted_node(&mm_node_1, &node_2_id));
 
@@ -765,7 +765,7 @@ fn test_lightning_swaps() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_lightning_taker_swap_mpp() {
     let (mut mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(true);
-    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip);
 
     block_on(add_trusted_node(&mm_node_1, &node_2_id));
 
@@ -824,7 +824,7 @@ fn test_lightning_taker_swap_mpp() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_lightning_maker_swap_mpp() {
     let (mut mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(true);
-    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip);
 
     block_on(add_trusted_node(&mm_node_1, &node_2_id));
 
@@ -885,7 +885,7 @@ fn test_lightning_maker_swap_mpp() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_lightning_taker_gets_swap_preimage_onchain() {
     let (mut mm_node_1, mut mm_node_2, node_1_id, _) = start_lightning_nodes(false);
-    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip);
 
     let open_channel = block_on(open_channel(
         &mut mm_node_2,
@@ -941,7 +941,7 @@ fn test_lightning_taker_gets_swap_preimage_onchain() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_lightning_taker_claims_mpp() {
     let (mut mm_node_1, mut mm_node_2, node_1_id, _) = start_lightning_nodes(false);
-    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip);
 
     let open_channel_1 = block_on(open_channel(
         &mut mm_node_2,

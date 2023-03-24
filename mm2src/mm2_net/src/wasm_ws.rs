@@ -313,7 +313,7 @@ impl WebSocketImpl {
         let (tx, rx) = mpsc::channel(1024);
 
         let onopen_closure = construct_ws_event_closure(|_: JsValue| WsTransportEvent::Establish, tx.clone());
-        let onclose_closure = construct_ws_event_closure(|close: CloseEvent| WsTransportEvent::from(close), tx.clone());
+        let onclose_closure = construct_ws_event_closure::<CloseEvent, _>(WsTransportEvent::from, tx.clone());
         let onerror_closure = construct_ws_event_closure(
             |_: JsValue| WsTransportEvent::Error(WsTransportError::UnderlyingError),
             tx.clone(),
@@ -323,7 +323,7 @@ impl WebSocketImpl {
                 Ok(response) => WsTransportEvent::Incoming(response),
                 Err(e) => WsTransportEvent::Error(WsTransportError::ErrorDecodingIncoming(e)),
             },
-            tx.clone(),
+            tx,
         );
 
         ws.set_onopen(Some(onopen_closure.as_ref().unchecked_ref()));

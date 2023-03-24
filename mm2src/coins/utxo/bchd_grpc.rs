@@ -323,7 +323,7 @@ mod bchd_grpc_tests {
         let err = block_on(validate_slp_utxos(BCHD_TESTNET_URLS, &slp_utxos, &token_id)).unwrap_err();
         match err.into_inner().kind {
             ValidateSlpUtxosErrKind::InvalidSlpTxData(_) => (),
-            err @ _ => panic!("Unexpected error {:?}", err),
+            err => panic!("Unexpected error {:?}", err),
         }
     }
 
@@ -365,7 +365,7 @@ mod bchd_grpc_tests {
                 assert_eq!(invalid_utxo, for_unspent);
                 assert_eq!(expected_validity, validity_result);
             },
-            err @ _ => panic!("Unexpected error {:?}", err),
+            err => panic!("Unexpected error {:?}", err),
         }
     }
 
@@ -406,7 +406,7 @@ mod bchd_grpc_tests {
                 assert_eq!(invalid_token_id, expected);
                 assert_eq!(valid_token_id, actual);
             },
-            err @ _ => panic!("Unexpected error {:?}", err),
+            err => panic!("Unexpected error {:?}", err),
         }
     }
 
@@ -426,7 +426,7 @@ mod bchd_grpc_tests {
             CheckSlpTransactionErrKind::InvalidTransaction { reason, .. } => {
                 println!("{}", reason);
             },
-            err @ _ => panic!("Unexpected error {:?}", err),
+            err => panic!("Unexpected error {:?}", err),
         }
     }
 }

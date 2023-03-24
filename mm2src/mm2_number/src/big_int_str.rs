@@ -69,11 +69,11 @@ mod big_int_str_tests {
     fn test_bigint_str_deserialize() {
         let num = r#""1023""#;
         let expected: BigInt = 1023.into();
-        let actual: BigIntStr = json::from_str(&num).unwrap();
+        let actual: BigIntStr = json::from_str(num).unwrap();
         assert_eq!(expected, actual.0);
 
         let err_num = "abc";
-        let res = json::from_str::<BigIntStr>(&err_num);
+        let res = json::from_str::<BigIntStr>(err_num);
         assert!(res.is_err());
     }
 
