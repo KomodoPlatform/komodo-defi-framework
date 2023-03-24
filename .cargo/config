@@ -1,8 +1,8 @@
 [env]
 JEMALLOC_SYS_WITH_MALLOC_CONF = "percpu_arena:percpu,oversize_threshold:0,background_thread:true,metadata_thp:auto,dirty_decay_ms:5000,muzzy_decay_ms:5000"
 
-[target.'cfg(all())']
-rustflags = [ "-Zshare-generics=y" ]
+# [target.'cfg(all())']
+# rustflags = [ "-Zshare-generics=y" ]
 
 # # Install lld using package manager
 # [target.x86_64-unknown-linux-gnu]
