@@ -4,6 +4,10 @@ on:
   release:
     types: [created, edited, released, published]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   virustotal:
     runs-on: ubuntu-latest
