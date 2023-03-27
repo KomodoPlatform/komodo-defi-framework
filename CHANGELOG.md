@@ -1,3 +1,10 @@
+## {inc-release}
+
+**Features:**
+
+**Enhancements/Fixes:**
+- CI/CD workflow logics are improved [#1736](https://github.com/KomodoPlatform/atomicDEX-API/pull/1736)
+
 ## v1.0.1-beta - 2023-03-17
 
 **Features:**
