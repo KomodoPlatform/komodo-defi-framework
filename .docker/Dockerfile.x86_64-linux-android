@@ -1,9 +1,10 @@
-FROM ubuntu:16.04
+FROM docker.io/ubuntu:16.04
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     cmake \
+    lld \
     gcc \
     libc6-dev \
     make \
@@ -23,25 +24,22 @@ RUN apt-get update && \
     libc6-dev-i386 && \
     apt-get clean
 
-COPY android-ndk.sh /
-RUN bash /android-ndk.sh arm 21
+COPY ./scripts/ci/android-ndk.sh /
+RUN bash /android-ndk.sh x86_64 21
 ENV PATH=$PATH:/android-ndk/bin
 ENV RUSTFMT=rustfmt
 
 # Libz is distributed in the android ndk, but for some unknown reason it is not
 # found in the build process of some crates, so we explicit set the DEP_Z_ROOT
-ENV CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang \
-    CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_RUNNER=qemu-arm \
-    CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang \
-    CXX_armv7_linux_androideabi=armv7a-linux-androideabi21-clang++ \
+ENV CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=x86_64-linux-android-clang \
+    CARGO_TARGET_X86_64_LINUX_ANDROID_RUNNER="qemu-x86_64 -cpu qemu64,+mmx,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt" \
+    CC_x86_64_linux_android=x86_64-linux-android-clang \
+    CXX_x86_64_linux_android=x86_64-linux-android-clang++ \
     DEP_Z_INCLUDE=/android-ndk/sysroot/usr/include/ \
-    OPENSSL_STATIC=1 \
-    OPENSSL_DIR=/openssl \
-    OPENSSL_INCLUDE_DIR=/openssl/include \
-    OPENSSL_LIB_DIR=/openssl/lib \
     RUST_TEST_THREADS=1 \
     HOME=/tmp/ \
     TMPDIR=/tmp/ \
     ANDROID_DATA=/ \
     ANDROID_DNS_MODE=local \
     ANDROID_ROOT=/system
+

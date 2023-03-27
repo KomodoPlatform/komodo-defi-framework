@@ -1,4 +1,4 @@
-FROM ubuntu:xenial-20151218.1
+FROM docker.io/ubuntu:xenial-20151218.1
 
 RUN \
     apt-get update &&\

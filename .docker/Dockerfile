@@ -6,7 +6,7 @@
 # docker build --tag mm2 .
 
 # NB: The version here was picked to match the one tested in our CI. The latest Travis has (as of 2018-11) is Xenial.
-FROM ubuntu:xenial
+FROM docker.io/ubuntu:xenial
 
 RUN \
     apt-get update &&\

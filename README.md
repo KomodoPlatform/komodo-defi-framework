@@ -169,7 +169,7 @@ Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic
 
 ## Additional docs for developers
 
-- [Contribution guide](./CONTRIBUTING.md)
+- [Contribution guide](./docs/CONTRIBUTING.md)
 - [Setting up the environment to run the full tests suite](./docs/DEV_ENVIRONMENT.md)
 - [Git flow and general workflow](./docs/GIT_FLOW_AND_WORKING_PROCESS.md)
 - [Komodo Developer Docs](https://developers.komodoplatform.com/basic-docs/atomicdex/introduction-to-atomicdex.html)

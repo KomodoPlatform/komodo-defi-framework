@@ -2,7 +2,7 @@
 
 1. Ensure that your terminal is added to `Developer tools` in MacOS Security & Privacy settings.
 2. The cross-compilation requires Android NDK version 21. Custom brew cask file is located at the root of this repo.
-3. Install android-ndk by `brew install --cask android-ndk.rb` or other preferred way.
+3. Install android-ndk by `brew install --cask ./scripts/ci/android-ndk.rb` or other preferred way.
 4. Add Android targets via rustup
 ```shell
 rustup target add armv7-linux-androideabi

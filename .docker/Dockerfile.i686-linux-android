@@ -1,4 +1,4 @@
-FROM ubuntu:16.04
+FROM docker.io/ubuntu:16.04
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -23,7 +23,7 @@ RUN apt-get update && \
     libc6-dev-i386 && \
     apt-get clean
 
-COPY android-ndk.sh /
+COPY ./scripts/ci/android-ndk.sh /
 RUN bash /android-ndk.sh x86 21
 ENV PATH=$PATH:/android-ndk/bin
 ENV RUSTFMT=rustfmt

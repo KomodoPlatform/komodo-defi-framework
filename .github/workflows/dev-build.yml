@@ -66,7 +66,7 @@ jobs:
       if: github.event_name != 'pull_request'
       run: |
         CONTAINER_TAG="dev-$COMMIT_HASH"
-        docker build -t komodoofficial/atomicdexapi:"$CONTAINER_TAG" -t komodoofficial/atomicdexapi:dev-latest -f Dockerfile.dev-release .
+        docker build -t komodoofficial/atomicdexapi:"$CONTAINER_TAG" -t komodoofficial/atomicdexapi:dev-latest -f .docker/Dockerfile.dev-release .
         docker push komodoofficial/atomicdexapi:"$CONTAINER_TAG"
         docker push komodoofficial/atomicdexapi:dev-latest
 
@@ -296,7 +296,7 @@ jobs:
         rustup target add aarch64-linux-android
 
     - name: Setup NDK
-      run: ./android-ndk.sh x86 21
+      run: ./scripts/ci/android-ndk.sh x86 21
 
     - name: Calculate commit hash for PR commit
       if: github.event_name == 'pull_request'
@@ -344,7 +344,7 @@ jobs:
         rustup target add armv7-linux-androideabi
 
     - name: Setup NDK
-      run: ./android-ndk.sh x86 21
+      run: ./scripts/ci/android-ndk.sh x86 21
 
     - name: Calculate commit hash for PR commit
       if: github.event_name == 'pull_request'

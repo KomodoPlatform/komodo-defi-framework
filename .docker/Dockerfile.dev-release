@@ -1,4 +1,4 @@
-FROM debian:stable-slim
+FROM docker.io/debian:stable-slim
 WORKDIR /mm2
 COPY target/ci/mm2 /usr/local/bin/mm2
 EXPOSE 7783
