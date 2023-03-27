@@ -1,3 +1,10 @@
+## {inc-release}
+
+**Features:**
+
+**Enhancements/Fixes:**
+- Project root is simplified/refactored [#1738](https://github.com/KomodoPlatform/atomicDEX-API/pull/1738)
+
 ## v1.0.1-beta - 2023-03-17
 
 **Features:**
