@@ -2,6 +2,7 @@ use clap::{App, Arg, SubCommand};
 use log::error;
 use std::env;
 
+use crate::api_commands::{get_version, send_stop, set_config, show_config};
 use crate::scenarios::{get_status, init, start_process, stop_process};
 
 enum Command {
@@ -16,6 +17,13 @@ enum Command {
     },
     Stop,
     Status,
+    SendStop,
+    SetConfig {
+        rpc_api_password: Option<String>,
+        rpc_api_uri: Option<String>,
+    },
+    GetConfig,
+    GetVersion,
 }
 
 pub fn process_cli() {
@@ -64,7 +72,30 @@ pub fn process_cli() {
                 ),
         )
         .subcommand(SubCommand::with_name("stop").about("Stop mm2 service"))
-        .subcommand(SubCommand::with_name("status").about("Get mm2 running status"));
+        .subcommand(SubCommand::with_name("status").about("Get mm2 running status"))
+        .subcommand(
+            SubCommand::with_name("send-stop")
+                .about("Stop mm2 through the API")
+                .arg(Arg::with_name("mm-conf-path")),
+        )
+        .subcommand(
+            SubCommand::with_name("set-config")
+                .about("Set adex cli configuration")
+                .arg(
+                    Arg::with_name("rpc-api-password")
+                        .long("password")
+                        .value_name("PASSWORD")
+                        .help("password the use ADex RPC API"),
+                )
+                .arg(
+                    Arg::with_name("rpc-api-uri")
+                        .long("uri")
+                        .value_name("URI")
+                        .help("ADex RPC API Uri"),
+                ),
+        )
+        .subcommand(SubCommand::with_name("get-config").about("Gets komodo adex cli configuration"))
+        .subcommand(SubCommand::with_name("get-version").about("Gets version of intermediary mm2 service"));
 
     let matches = app.clone().get_matches();
 
@@ -89,6 +120,17 @@ pub fn process_cli() {
         },
         ("stop", _) => Command::Stop,
         ("status", _) => Command::Status,
+        ("send-stop", Some(start_stop_matches)) => Command::SendStop,
+        ("set-config", Some(set_config_matches)) => {
+            let rpc_api_password = set_config_matches.value_of("rpc-api-password").map(|s| s.to_owned());
+            let rpc_api_uri = set_config_matches.value_of("rpc-api-uri").map(|s| s.to_owned());
+            Command::SetConfig {
+                rpc_api_password,
+                rpc_api_uri,
+            }
+        },
+        ("get-config", _) => Command::GetConfig,
+        ("get-version", _) => Command::GetVersion,
         _ => {
             let _ = app
                 .print_long_help()
@@ -109,5 +151,12 @@ pub fn process_cli() {
         } => start_process(&mm2_cfg_file, &coins_file, &log_file),
         Command::Stop => stop_process(),
         Command::Status => get_status(),
+        Command::SendStop => send_stop(),
+        Command::SetConfig {
+            rpc_api_password,
+            rpc_api_uri,
+        } => set_config(rpc_api_password, rpc_api_uri),
+        Command::GetConfig => show_config(),
+        Command::GetVersion => get_version(),
     }
 }

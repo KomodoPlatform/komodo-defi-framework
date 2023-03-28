@@ -2,7 +2,7 @@ use common::log::{error, info};
 use derive_more::Display;
 use mm2_net::transport::slurp_url;
 
-use super::helpers::rewrite_data_file;
+use crate::helpers::rewrite_data_file;
 
 #[derive(Clone, Copy, Debug, Display)]
 pub enum CoinSet {

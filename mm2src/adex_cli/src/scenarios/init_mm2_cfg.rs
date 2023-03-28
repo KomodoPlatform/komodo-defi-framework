@@ -1,15 +1,15 @@
 use common::log::{error, info};
+use common::password_policy;
 use inquire::{validator::Validation, Confirm, CustomType, CustomUserError, Text};
 use passwords::PasswordGenerator;
-use serde::Serialize;
 use std::net::Ipv4Addr;
 use std::ops::Not;
 use std::path::Path;
 
-use super::helpers;
 use super::inquire_extentions::{InquireOption, DEFAULT_DEFAULT_OPTION_BOOL_FORMATTER, DEFAULT_OPTION_BOOL_FORMATTER,
                                 OPTION_BOOL_PARSER};
-use common::password_policy;
+use crate::data::Mm2Cfg;
+use crate::helpers;
 
 const DEFAULT_NET_ID: u16 = 7777;
 const DEFAULT_GID: &str = "adex-cli";
@@ -25,29 +25,6 @@ pub fn init_mm2_cfg(cfg_file: &str) -> Result<(), ()> {
     info!("mm2_cfg has been writen into: {cfg_file}");
 
     Ok(())
-}
-
-#[derive(Serialize)]
-pub struct Mm2Cfg {
-    pub gui: Option<String>,
-    pub net_id: Option<u16>,
-    pub rpc_password: Option<String>,
-    pub passphrase: Option<String>,
-    pub allow_weak_password: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dbdir: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rpcip: Option<Ipv4Addr>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rpcport: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rpc_local_only: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub i_am_seed: Option<bool>,
-    #[serde(skip_serializing_if = "Vec::<Ipv4Addr>::is_empty")]
-    pub seednodes: Vec<Ipv4Addr>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hd_account_id: Option<u64>,
 }
 
 impl Mm2Cfg {

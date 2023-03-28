@@ -28,8 +28,10 @@ dependencies = [
  "clap",
  "common",
  "derive_more",
+ "directories 5.0.0",
  "env_logger 0.7.1",
  "fork",
+ "http 0.2.7",
  "inquire",
  "log 0.4.14",
  "mm2_net",
@@ -1921,7 +1923,16 @@ version = "3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e69600ff1703123957937708eb27f7a564e48885c537782722ed0ba3189ce1d7"
 dependencies = [
- "dirs-sys",
+ "dirs-sys 0.3.6",
+]
+
+[[package]]
+name = "directories"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74be3be809c18e089de43bdc504652bb2bc473fca8756131f8689db8cf079ba9"
+dependencies = [
+ "dirs-sys 0.4.0",
 ]
 
 [[package]]
@@ -1954,6 +1965,17 @@ dependencies = [
  "libc",
  "redox_users 0.4.0",
  "winapi",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04414300db88f70d74c5ff54e50f9e1d1737d9a5b90f53fcf2e95ca2a9ab554b"
+dependencies = [
+ "libc",
+ "redox_users 0.4.0",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -9368,7 +9390,7 @@ dependencies = [
  "blake2b_simd",
  "bls12_381",
  "byteorder 1.4.3",
- "directories",
+ "directories 3.0.2",
  "ff 0.8.0",
  "group 0.8.0",
  "jubjub",

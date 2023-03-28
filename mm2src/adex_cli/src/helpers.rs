@@ -1,6 +1,6 @@
 use common::log::error;
 use serde::Serialize;
-use std::fs::OpenOptions;
+use std::fs;
 use std::io::Write;
 use std::ops::Deref;
 
@@ -8,7 +8,7 @@ pub fn rewrite_data_file<T>(data: T, file: &str) -> Result<(), ()>
 where
     T: Deref<Target = [u8]>,
 {
-    let mut writer = OpenOptions::new()
+    let mut writer = fs::OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)

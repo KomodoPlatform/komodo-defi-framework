@@ -1,4 +1,7 @@
+mod api_commands;
 mod cli;
+mod data;
+mod helpers;
 mod log;
 mod scenarios;
 
