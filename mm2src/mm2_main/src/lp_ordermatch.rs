@@ -3962,8 +3962,6 @@ macro_rules! try_get_age_or_default {
         now.checked_sub($created_at)
             .ok_or_else(|| warn!("now - created_at: ({} - {}) caused a u64 underflow.", now, $created_at))
             .unwrap_or_default()
-            .try_into()
-            .expect("Expected default u64 to be converted to i64 without a problem")
     }};
 }
 
@@ -5633,7 +5631,7 @@ pub struct RpcOrderbookEntry {
     min_volume_rat: BigRational,
     min_volume_fraction: Fraction,
     pubkey: String,
-    age: i64,
+    age: u64,
     zcredits: u64,
     uuid: Uuid,
     is_mine: bool,
