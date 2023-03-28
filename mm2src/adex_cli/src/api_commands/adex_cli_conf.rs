@@ -1,6 +1,7 @@
 use directories::ProjectDirs;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,43 +20,24 @@ pub struct AdexCliConf {
     pub(crate) rpc_api_uri: Option<String>,
 }
 
-pub fn show_config() {
-    let Ok(adex_cfg) = AdexCliConf::from_config_path() else { return; };
+impl Display for AdexCliConf {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if !self.is_set() {
+            return writeln!(f, "not set");
+        }
+        if let Some(rpc_api_uri) = &self.rpc_api_uri {
+            writeln!(f, "Adex RPC API Url: {}", rpc_api_uri)?
+        };
 
-    if let Some(rpc_api_uri) = adex_cfg.rpc_api_uri {
-        info!("Adex RPC API Url: {}", rpc_api_uri)
-    };
-
-    if let Some(rpc_api_password) = adex_cfg.rpc_api_password {
-        info!("Adex RPC API pwd: *************")
-    };
-}
-
-pub fn set_config(rpc_api_password: Option<String>, rpc_api_uri: Option<String>) {
-    match AdexCliConf::get_config_dir() {
-        Ok(ref config_dir) => {
-            if let Err(error) = fs::create_dir_all(config_dir) {
-                error!("Failed to create config_dir: {config_dir:?}, error: {error}");
-                return;
-            };
-        },
-        Err(_) => return,
-    }
-
-    let mut adex_cfg = AdexCliConf::from_config_path().unwrap_or_else(|()| AdexCliConf::new());
-    if rpc_api_password.is_some() {
-        adex_cfg.rpc_api_password = rpc_api_password;
-    }
-    if rpc_api_uri.is_some() {
-        adex_cfg.rpc_api_uri = rpc_api_uri;
-    }
-    if let Ok(_) = adex_cfg.write_to_config_path() {
-        info!("Configuration has been set");
+        if let Some(_) = self.rpc_api_password {
+            writeln!(f, "Adex RPC API pwd: *************")?
+        }
+        Ok(())
     }
 }
 
 impl AdexCliConf {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             rpc_api_password: None,
             rpc_api_uri: None,
@@ -67,7 +49,7 @@ impl AdexCliConf {
     pub fn get_config_dir() -> Result<PathBuf, ()> {
         let project_dirs = ProjectDirs::from(PROJECT_QUALIFIER, PROJECT_COMPANY, PROJECT_APP)
             .ok_or_else(|| error!("Failed to get project_dirs"))?;
-        let mut config_path: PathBuf = project_dirs.config_dir().into();
+        let config_path: PathBuf = project_dirs.config_dir().into();
         Ok(config_path)
     }
 

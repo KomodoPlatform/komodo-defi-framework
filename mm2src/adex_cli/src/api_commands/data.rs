@@ -1,7 +1,5 @@
-use common::writeln;
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::fmt::{Display, Formatter, Write};
+use std::fmt::{Display, Formatter};
 
 #[derive(Serialize, Clone, derive_more::Display)]
 #[serde(rename_all = "lowercase")]

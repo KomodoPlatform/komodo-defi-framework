@@ -1,9 +1,10 @@
 use crate::api_commands::data::{Method, SendStopResponse, VersionResponse};
 use http::{HeaderMap, StatusCode};
+use inquire::Password;
 use log::{error, info, warn};
 use mm2_net::transport::slurp_post_json;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
+use std::fs;
 
 use super::adex_cli_conf::AdexCliConf;
 use super::data::Command;
@@ -38,7 +39,7 @@ pub async fn send_stop() {
     };
 }
 
-fn process_answer<T>(status: &StatusCode, headers: &HeaderMap, data: &[u8])
+fn process_answer<T>(status: &StatusCode, _headers: &HeaderMap, data: &[u8])
 where
     T: for<'a> Deserialize<'a> + Serialize,
 {
@@ -86,5 +87,42 @@ pub async fn get_version() {
     };
 }
 
-#[test]
-fn test_stop() {}
+pub fn get_config() {
+    let Ok(adex_cfg) = AdexCliConf::from_config_path() else { return; };
+    info!("{}", adex_cfg)
+}
+
+pub fn set_config(set_password: bool, rpc_api_uri: Option<String>) {
+    match AdexCliConf::get_config_dir() {
+        Ok(ref config_dir) => {
+            if let Err(error) = fs::create_dir_all(config_dir) {
+                error!("Failed to create config_dir: {config_dir:?}, error: {error}");
+                return;
+            };
+        },
+        Err(_) => return,
+    }
+
+    let mut adex_cfg = AdexCliConf::from_config_path().unwrap_or_else(|()| AdexCliConf::new());
+    let mut is_changes_happened = false;
+    if set_password == true {
+        adex_cfg.rpc_api_password = Password::new("Enter RPC API password:")
+            .prompt()
+            .map(|value| {
+                is_changes_happened = true;
+                value
+            })
+            .map_err(|error| error!("Failed to get rpc_api_password: {error}"))
+            .ok();
+    }
+    if rpc_api_uri.is_some() {
+        adex_cfg.rpc_api_uri = rpc_api_uri;
+        is_changes_happened = true;
+    }
+
+    if is_changes_happened == true && adex_cfg.write_to_config_path().is_ok() {
+        info!("Configuration has been set");
+    } else {
+        warn!("Nothing changed");
+    }
+}
