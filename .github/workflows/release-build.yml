@@ -16,9 +16,18 @@ env:
 jobs:
   linux-x86-64:
     timeout-minutes: 60
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
+    container: komodoofficial/ci-container:latest
     steps:
     - uses: actions/checkout@v3
+
+    - name: pre scripts for ci container
+      run: |
+        git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+        echo "/bin" >> $GITHUB_PATH
+        echo "/usr/bin" >> $GITHUB_PATH
+        echo "/root/.cargo/bin" >> $GITHUB_PATH
+
     - name: Install toolchain
       run: |
         rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
@@ -193,9 +202,18 @@ jobs:
 
   wasm:
     timeout-minutes: 60
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
+    container: komodoofficial/ci-container:latest
     steps:
     - uses: actions/checkout@v3
+
+    - name: pre scripts for ci container
+      run: |
+        git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+        echo "/bin" >> $GITHUB_PATH
+        echo "/usr/bin" >> $GITHUB_PATH
+        echo "/root/.cargo/bin" >> $GITHUB_PATH
+
     - name: Install toolchain
       run: |
         rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
@@ -281,9 +299,18 @@ jobs:
 
   android-aarch64:
     timeout-minutes: 60
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
+    container: komodoofficial/ci-container:latest
     steps:
     - uses: actions/checkout@v3
+
+    - name: pre scripts for ci container
+      run: |
+        git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+        echo "/bin" >> $GITHUB_PATH
+        echo "/usr/bin" >> $GITHUB_PATH
+        echo "/root/.cargo/bin" >> $GITHUB_PATH
+
     - name: Install toolchain
       run: |
         rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
@@ -329,9 +356,18 @@ jobs:
 
   android-armv7:
     timeout-minutes: 60
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
+    container: komodoofficial/ci-container:latest
     steps:
     - uses: actions/checkout@v3
+
+    - name: pre scripts for ci container
+      run: |
+        git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+        echo "/bin" >> $GITHUB_PATH
+        echo "/usr/bin" >> $GITHUB_PATH
+        echo "/root/.cargo/bin" >> $GITHUB_PATH
+
     - name: Install toolchain
       run: |
         rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal

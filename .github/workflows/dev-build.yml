@@ -16,9 +16,18 @@ env:
 jobs:
   linux-x86-64:
     timeout-minutes: 30
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
+    container: komodoofficial/ci-container:latest
     steps:
     - uses: actions/checkout@v3
+
+    - name: pre scripts for ci container
+      run: |
+        git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+        echo "/bin" >> $GITHUB_PATH
+        echo "/usr/bin" >> $GITHUB_PATH
+        echo "/root/.cargo/bin" >> $GITHUB_PATH
+
     - name: Install toolchain
       run: |
         rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
@@ -219,9 +228,18 @@ jobs:
 
   wasm:
     timeout-minutes: 30
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
+    container: komodoofficial/ci-container:latest
     steps:
     - uses: actions/checkout@v3
+
+    - name: pre scripts for ci container
+      run: |
+        git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+        echo "/bin" >> $GITHUB_PATH
+        echo "/usr/bin" >> $GITHUB_PATH
+        echo "/root/.cargo/bin" >> $GITHUB_PATH
+
     - name: Install toolchain
       run: |
         rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
@@ -229,7 +247,7 @@ jobs:
         rustup target add wasm32-unknown-unknown
 
     - name: Install wasm-pack
-      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | bash -s -- -y
 
     - name: Calculate commit hash for PR commit
       if: github.event_name == 'pull_request'
@@ -319,9 +337,18 @@ jobs:
 
   android-aarch64:
     timeout-minutes: 30
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
+    container: komodoofficial/ci-container:latest
     steps:
     - uses: actions/checkout@v3
+
+    - name: pre scripts for ci container
+      run: |
+        git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+        echo "/bin" >> $GITHUB_PATH
+        echo "/usr/bin" >> $GITHUB_PATH
+        echo "/root/.cargo/bin" >> $GITHUB_PATH
+
     - name: Install toolchain
       run: |
         rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
@@ -373,9 +400,18 @@ jobs:
 
   android-armv7:
     timeout-minutes: 30
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
+    container: komodoofficial/ci-container:latest
     steps:
     - uses: actions/checkout@v3
+
+    - name: pre scripts for ci container
+      run: |
+        git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+        echo "/bin" >> $GITHUB_PATH
+        echo "/usr/bin" >> $GITHUB_PATH
+        echo "/root/.cargo/bin" >> $GITHUB_PATH
+
     - name: Install toolchain
       run: |
         rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
@@ -430,9 +466,17 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
     needs: linux-x86-64
     timeout-minutes: 15
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
+    container: komodoofficial/ci-container:latest
     steps:
       - uses: actions/checkout@v2
+
+      - name: pre scripts for ci container
+        run: |
+          git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+          echo "/bin" >> $GITHUB_PATH
+          echo "/usr/bin" >> $GITHUB_PATH
+          echo "/root/.cargo/bin" >> $GITHUB_PATH
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
