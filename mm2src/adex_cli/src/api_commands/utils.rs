@@ -1,4 +1,5 @@
-use crate::api_commands::data::{Method, SendStopResponse, VersionResponse};
+use std::fmt::Display;
+use crate::api_commands::api_data::{Method, SendStopResponse, VersionResponse};
 use http::{HeaderMap, StatusCode};
 use inquire::Password;
 use log::{error, info, warn};
@@ -7,30 +8,29 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 
 use super::adex_cli_conf::AdexCliConf;
-use super::data::Command;
+use super::api_data::Command;
+
+#[macro_export]
+macro_rules! get_config {
+    () => {
+        match get_adex_config() {
+            Err(_) => {
+                return;
+            },
+            Ok(AdexCliConf{rpc_password, rpc_uri}) => (rpc_password.unwrap(), rpc_uri.unwrap()),
+        }
+    };
+}
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn send_stop() {
-    let Ok(config) = AdexCliConf::from_config_path() else {
-        error!("Failed to send stop");
-        return;
-    };
-
-    if !config.is_set() {
-        warn!("Failed to send stop, configuration is not fully set");
-        return;
-    }
-    let AdexCliConf{ rpc_api_password: Some(rpc_api_password), rpc_api_uri: Some(rpc_api_uri)} = config
-        else {
-            assert!(false);
-            return;
-        };
+    let (rpc_password, rpc_uri) = get_config!();
     let stop_command = Command {
-        userpass: rpc_api_password,
+        userpass: rpc_password,
         method: Method::Stop,
     };
     let data = serde_json::to_string(&stop_command).expect("Failed to serialize stop_command");
-    match slurp_post_json(&rpc_api_uri, data).await {
+    match slurp_post_json(&rpc_uri, data).await {
         Err(error) => {
             error!("Failed to stop through the API: {error}");
             return;
@@ -39,9 +39,20 @@ pub async fn send_stop() {
     };
 }
 
+fn get_adex_config() -> Result<AdexCliConf, ()> {
+    let config = AdexCliConf::from_config_path().map_err(|_| error!("Failed to send stop"))?;
+    info!("Config: {config:?}");
+    if config.is_set() == false {
+        warn!("Failed to send stop, configuration is not fully set");
+        return Err(());
+    }
+
+    Ok(config)
+}
+
 fn process_answer<T>(status: &StatusCode, _headers: &HeaderMap, data: &[u8])
 where
-    T: for<'a> Deserialize<'a> + Serialize,
+    T: for<'a> Deserialize<'a> + Serialize + Display,
 {
     match status {
         &StatusCode::OK => {
@@ -49,36 +60,23 @@ where
                 error!("Failed to deseialize adex_response from data");
                 return;
             };
-            info!("Got response is: {}", serde_json::to_string(&adex_reponse).unwrap());
+            info!("Got response:\n{}", adex_reponse);
         },
         _ => {
-            warn!("Bad response, status: {status}");
+            warn!("Bad http status: {status}");
         },
     };
 }
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn get_version() {
-    let Ok(config) = AdexCliConf::from_config_path() else {
-        error!("Failed to send stop");
-        return;
-    };
-
-    if !config.is_set() {
-        warn!("Failed to send stop, configuration is not fully set");
-        return;
-    }
-    let AdexCliConf{ rpc_api_password: Some(rpc_api_password), rpc_api_uri: Some(rpc_api_uri)} = config
-        else {
-            assert!(false);
-            return;
-        };
-    let stop_command = Command {
-        userpass: rpc_api_password,
+    let (rpc_password, rpc_uri) = get_config!();
+    let version_command = Command {
+        userpass: rpc_password,
         method: Method::Version,
     };
-    let data = serde_json::to_string(&stop_command).expect("Failed to serialize stop_command");
-    match slurp_post_json(&rpc_api_uri, data).await {
+    let data = serde_json::to_string(&version_command).expect("Failed to serialize stop_command");
+    match slurp_post_json(&rpc_uri, data).await {
         Err(error) => {
             error!("Failed to stop through the API: {error}");
             return;
@@ -89,7 +87,7 @@ pub async fn get_version() {
 
 pub fn get_config() {
     let Ok(adex_cfg) = AdexCliConf::from_config_path() else { return; };
-    info!("{}", adex_cfg)
+    info!("adex config: {}", adex_cfg)
 }
 
 pub fn set_config(set_password: bool, rpc_api_uri: Option<String>) {
@@ -106,7 +104,7 @@ pub fn set_config(set_password: bool, rpc_api_uri: Option<String>) {
     let mut adex_cfg = AdexCliConf::from_config_path().unwrap_or_else(|()| AdexCliConf::new());
     let mut is_changes_happened = false;
     if set_password == true {
-        adex_cfg.rpc_api_password = Password::new("Enter RPC API password:")
+        adex_cfg.rpc_password = Password::new("Enter RPC API password:")
             .prompt()
             .map(|value| {
                 is_changes_happened = true;
@@ -116,7 +114,7 @@ pub fn set_config(set_password: bool, rpc_api_uri: Option<String>) {
             .ok();
     }
     if rpc_api_uri.is_some() {
-        adex_cfg.rpc_api_uri = rpc_api_uri;
+        adex_cfg.rpc_uri = rpc_api_uri;
         is_changes_happened = true;
     }
 

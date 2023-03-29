@@ -12,25 +12,25 @@ const PROJECT_COMPANY: &str = "komodoplatform";
 const PROJECT_APP: &str = "adex-cli";
 const ADEX_CFG: &str = "adex_cfg.json";
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct AdexCliConf {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) rpc_api_password: Option<String>,
+    pub(crate) rpc_password: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) rpc_api_uri: Option<String>,
+    pub(crate) rpc_uri: Option<String>,
 }
 
 impl Display for AdexCliConf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if !self.is_set() {
-            return writeln!(f, "not set");
+        if self.is_set() == false {
+            return writeln!(f, "adex configuration is not set");
         }
-        if let Some(rpc_api_uri) = &self.rpc_api_uri {
-            writeln!(f, "Adex RPC API Url: {}", rpc_api_uri)?
+        if let Some(rpc_api_uri) = &self.rpc_uri {
+            writeln!(f, "adex RPC API Url: {}", rpc_api_uri)?
         };
 
-        if let Some(_) = self.rpc_api_password {
-            writeln!(f, "Adex RPC API pwd: *************")?
+        if let Some(_) = &self.rpc_password {
+            writeln!(f, "adex RPC API pwd: *************")?
         }
         Ok(())
     }
@@ -39,12 +39,12 @@ impl Display for AdexCliConf {
 impl AdexCliConf {
     pub fn new() -> Self {
         Self {
-            rpc_api_password: None,
-            rpc_api_uri: None,
+            rpc_password: None,
+            rpc_uri: None,
         }
     }
 
-    pub fn is_set(&self) -> bool { self.rpc_api_uri.is_some() && self.rpc_api_password.is_some() }
+    pub fn is_set(&self) -> bool { self.rpc_uri.is_some() && self.rpc_password.is_some() }
 
     pub fn get_config_dir() -> Result<PathBuf, ()> {
         let project_dirs = ProjectDirs::from(PROJECT_QUALIFIER, PROJECT_COMPANY, PROJECT_APP)

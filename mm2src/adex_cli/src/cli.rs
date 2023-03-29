@@ -23,11 +23,11 @@ enum Command {
         mm_coins_path: Option<String>,
         mm_log: Option<String>,
     },
-    Stop,
+    Kill,
     Status,
-    SendStop,
+    Stop,
     Config(ConfigSubcommand),
-    GetVersion,
+    Version,
 }
 
 pub fn process_cli() {
@@ -75,28 +75,12 @@ pub fn process_cli() {
                         .help("log file path"),
                 ),
         )
-        .subcommand(SubCommand::with_name("stop").about("Stop mm2 service"))
+        .subcommand(SubCommand::with_name("kill").about("Stop mm2 service"))
         .subcommand(SubCommand::with_name("status").about("Get mm2 running status"))
         .subcommand(
-            SubCommand::with_name("send-stop")
+            SubCommand::with_name("stop")
                 .about("Stop mm2 through the API")
                 .arg(Arg::with_name("mm-conf-path")),
-        )
-        .subcommand(
-            SubCommand::with_name("set-config")
-                .about("Sets adex cli configuration")
-                .arg(
-                    Arg::with_name("rpc-api-password")
-                        .long("password")
-                        .value_name("PASSWORD")
-                        .help("password the use ADex RPC API"),
-                )
-                .arg(
-                    Arg::with_name("rpc-api-uri")
-                        .long("uri")
-                        .value_name("URI")
-                        .help("ADex RPC API Uri"),
-                ),
         )
         .subcommand(
             SubCommand::with_name("config")
@@ -104,10 +88,10 @@ pub fn process_cli() {
                 .subcommand(
                     SubCommand::with_name("set")
                         .arg(
-                            Arg::with_name("rpc-api-uri")
-                                .long("rpc-api-uri")
+                            Arg::with_name("rpc-uri")
+                                .long("rpc-uri")
                                 .value_name("URI")
-                                .help("ADex RPC API Uri"),
+                                .help("ADex RPC API Uri. http://localhost::7783"),
                         )
                         .arg(
                             Arg::with_name("set-password")
@@ -118,8 +102,7 @@ pub fn process_cli() {
                 )
                 .subcommand(SubCommand::with_name("get").about("Gets komodo adex cli configuration")),
         )
-        .subcommand(SubCommand::with_name("get-config").about(""))
-        .subcommand(SubCommand::with_name("get-version").about("Gets version of intermediary mm2 service"));
+        .subcommand(SubCommand::with_name("version").about("Gets version of intermediary mm2 service"));
 
     let matches = app.clone().get_matches();
 
@@ -142,14 +125,14 @@ pub fn process_cli() {
                 mm_log,
             }
         },
-        ("stop", _) => Command::Stop,
+        ("kill", _) => Command::Kill,
         ("status", _) => Command::Status,
-        ("send-stop", _) => Command::SendStop,
+        ("stop", _) => Command::Stop,
 
         ("config", Some(config_matches)) => match config_matches.subcommand() {
             ("get", _) => Command::Config(ConfigSubcommand::Get),
             ("set", Some(config_set_matches)) => {
-                let adex_uri = config_set_matches.value_of("rpc-api-uri").map(|s| s.to_owned());
+                let adex_uri = config_set_matches.value_of("rpc-uri").map(|s| s.to_owned());
                 let set_password = config_set_matches.is_present("set-password");
                 Command::Config(ConfigSubcommand::Set { set_password, adex_uri })
             },
@@ -158,7 +141,7 @@ pub fn process_cli() {
             },
         },
 
-        ("get-version", _) => Command::GetVersion,
+        ("version", _) => Command::Version,
         _ => {
             let _ = app
                 .print_long_help()
@@ -177,10 +160,10 @@ pub fn process_cli() {
             mm_coins_path: coins_file,
             mm_log: log_file,
         } => start_process(&mm2_cfg_file, &coins_file, &log_file),
-        Command::Stop => stop_process(),
+        Command::Kill => stop_process(),
         Command::Status => get_status(),
-        Command::SendStop => send_stop(),
-        Command::GetVersion => get_version(),
+        Command::Stop => send_stop(),
+        Command::Version => get_version(),
         Command::Config(ConfigSubcommand::Get) => get_config(),
         Command::Config(ConfigSubcommand::Set { set_password, adex_uri }) => set_config(set_password, adex_uri),
     }

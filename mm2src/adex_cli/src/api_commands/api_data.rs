@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
+use derive_more::Display;
 
 #[derive(Serialize, Clone, derive_more::Display)]
 #[serde(rename_all = "lowercase")]
@@ -22,11 +23,10 @@ impl Display for Command {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Display)]
 #[serde(rename_all = "lowercase")]
 enum AdexStatus {
-    Success,
-    Failure, //TODO: check if it is really failure)
+    Success
 }
 
 #[derive(Serialize, Deserialize)]
@@ -34,9 +34,23 @@ pub struct SendStopResponse {
     result: AdexStatus,
 }
 
+impl Display for SendStopResponse {
+
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Status: {}", self.result)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct VersionResponse {
     #[serde(rename(deserialize = "result", serialize = "result"))]
     version: String,
     datetime: String,
+}
+
+impl Display for VersionResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Version: {}", self.version)?;
+        writeln!(f, "Datetime: {}", self.datetime)
+    }
 }
