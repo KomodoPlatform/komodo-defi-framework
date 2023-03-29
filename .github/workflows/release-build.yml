@@ -221,7 +221,7 @@ jobs:
         rustup target add wasm32-unknown-unknown
 
     - name: Install wasm-pack
-      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | bash -s -- -y
 
     - name: Calculate commit hash for PR commit
       if: github.event_name == 'pull_request'
