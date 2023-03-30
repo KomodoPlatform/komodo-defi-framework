@@ -1,14 +1,14 @@
-use std::fmt::Display;
 use crate::api_commands::api_data::{Method, SendStopResponse, VersionResponse};
 use http::{HeaderMap, StatusCode};
 use inquire::Password;
 use log::{error, info, warn};
 use mm2_net::transport::slurp_post_json;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use std::fs;
 
-use super::adex_cli_conf::AdexCliConf;
 use super::api_data::Command;
+use crate::adex_config::AdexConfig;
 
 #[macro_export]
 macro_rules! get_config {
@@ -17,12 +17,11 @@ macro_rules! get_config {
             Err(_) => {
                 return;
             },
-            Ok(AdexCliConf{rpc_password, rpc_uri}) => (rpc_password.unwrap(), rpc_uri.unwrap()),
+            Ok(AdexConfig { rpc_password, rpc_uri }) => (rpc_password.unwrap(), rpc_uri.unwrap()),
         }
     };
 }
 
-#[tokio::main(flavor = "current_thread")]
 pub async fn send_stop() {
     let (rpc_password, rpc_uri) = get_config!();
     let stop_command = Command {
@@ -39,8 +38,8 @@ pub async fn send_stop() {
     };
 }
 
-fn get_adex_config() -> Result<AdexCliConf, ()> {
-    let config = AdexCliConf::from_config_path().map_err(|_| error!("Failed to send stop"))?;
+fn get_adex_config() -> Result<AdexConfig, ()> {
+    let config = AdexConfig::from_config_path().map_err(|_| error!("Failed to send stop"))?;
     info!("Config: {config:?}");
     if config.is_set() == false {
         warn!("Failed to send stop, configuration is not fully set");
@@ -68,7 +67,6 @@ where
     };
 }
 
-#[tokio::main(flavor = "current_thread")]
 pub async fn get_version() {
     let (rpc_password, rpc_uri) = get_config!();
     let version_command = Command {
@@ -86,22 +84,17 @@ pub async fn get_version() {
 }
 
 pub fn get_config() {
-    let Ok(adex_cfg) = AdexCliConf::from_config_path() else { return; };
+    let Ok(adex_cfg) = AdexConfig::from_config_path() else { return; };
     info!("adex config: {}", adex_cfg)
 }
 
 pub fn set_config(set_password: bool, rpc_api_uri: Option<String>) {
-    match AdexCliConf::get_config_dir() {
-        Ok(ref config_dir) => {
-            if let Err(error) = fs::create_dir_all(config_dir) {
-                error!("Failed to create config_dir: {config_dir:?}, error: {error}");
-                return;
-            };
-        },
+    match AdexConfig::get_config_dir(true) {
+        Ok(ref config_dir) => {},
         Err(_) => return,
     }
 
-    let mut adex_cfg = AdexCliConf::from_config_path().unwrap_or_else(|()| AdexCliConf::new());
+    let mut adex_cfg = AdexConfig::from_config_path().unwrap_or_else(|()| AdexConfig::new());
     let mut is_changes_happened = false;
     if set_password == true {
         adex_cfg.rpc_password = Password::new("Enter RPC API password:")

@@ -13,14 +13,14 @@ const PROJECT_APP: &str = "adex-cli";
 const ADEX_CFG: &str = "adex_cfg.json";
 
 #[derive(Deserialize, Serialize, Debug)]
-pub struct AdexCliConf {
+pub struct AdexConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) rpc_password: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) rpc_uri: Option<String>,
 }
 
-impl Display for AdexCliConf {
+impl Display for AdexConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.is_set() == false {
             return writeln!(f, "adex configuration is not set");
@@ -36,7 +36,7 @@ impl Display for AdexCliConf {
     }
 }
 
-impl AdexCliConf {
+impl AdexConfig {
     pub fn new() -> Self {
         Self {
             rpc_password: None,
@@ -46,20 +46,22 @@ impl AdexCliConf {
 
     pub fn is_set(&self) -> bool { self.rpc_uri.is_some() && self.rpc_password.is_some() }
 
-    pub fn get_config_dir() -> Result<PathBuf, ()> {
+    pub fn get_config_dir(create: bool) -> Result<PathBuf, ()> {
         let project_dirs = ProjectDirs::from(PROJECT_QUALIFIER, PROJECT_COMPANY, PROJECT_APP)
             .ok_or_else(|| error!("Failed to get project_dirs"))?;
         let config_path: PathBuf = project_dirs.config_dir().into();
+        fs::create_dir_all(&config_path)
+            .map_err(|error| error!("Failed to create config_dir: {config_path:?}, error: {error}"))?;
         Ok(config_path)
     }
 
     pub fn get_config_path() -> Result<PathBuf, ()> {
-        let mut config_path = Self::get_config_dir()?;
+        let mut config_path = Self::get_config_dir(true)?;
         config_path.push(ADEX_CFG);
         Ok(config_path)
     }
 
-    pub fn from_config_path() -> Result<AdexCliConf, ()> {
+    pub fn from_config_path() -> Result<AdexConfig, ()> {
         let config_path = Self::get_config_path()?;
 
         if !config_path.exists() {
@@ -74,7 +76,7 @@ impl AdexCliConf {
         self.write_to(&config_path)
     }
 
-    fn read_from(cfg_path: &Path) -> Result<AdexCliConf, ()> {
+    fn read_from(cfg_path: &Path) -> Result<AdexConfig, ()> {
         let adex_path_str = cfg_path.to_str().unwrap_or("Undefined");
         let adex_cfg_file = fs::File::open(&cfg_path).map_err(|error| {
             error!("Failed to open: {adex_path_str}, error: {error}");

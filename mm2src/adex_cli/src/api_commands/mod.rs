@@ -1,4 +1,3 @@
-mod adex_cli_conf;
 mod api_data;
 mod utils;
 

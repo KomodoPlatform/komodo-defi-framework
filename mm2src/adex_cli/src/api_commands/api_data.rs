@@ -25,17 +25,16 @@ impl Display for Command {
 
 #[derive(Serialize, Deserialize, Display)]
 #[serde(rename_all = "lowercase")]
-enum AdexStatus {
+enum StopStatus {
     Success
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct SendStopResponse {
-    result: AdexStatus,
+    result: StopStatus,
 }
 
 impl Display for SendStopResponse {
-
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Status: {}", self.result)
     }

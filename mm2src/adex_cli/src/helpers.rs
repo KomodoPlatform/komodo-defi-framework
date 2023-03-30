@@ -1,8 +1,10 @@
 use common::log::error;
 use serde::Serialize;
+use serde_json::Value as Json;
 use std::fs;
 use std::io::Write;
 use std::ops::Deref;
+use std::path::Path;
 
 pub fn rewrite_data_file<T>(data: T, file: &str) -> Result<(), ()>
 where
@@ -31,4 +33,9 @@ where
         error!("Failed to serialize data {error}");
     })?;
     rewrite_data_file(data, file)
+}
+
+pub fn read_json_file(file: &Path) -> Result<Json, ()> {
+    let reader = fs::File::open(file).map_err(|error| error!("Failed to open {file:?}"))?;
+    serde_json::from_reader(reader).map_err(|error| error!("Failed to read json from data: {file:?}"))
 }

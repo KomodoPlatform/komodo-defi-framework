@@ -1,8 +1,10 @@
+use crate::helpers::rewrite_data_file;
 use common::log::{error, info};
 use derive_more::Display;
 use mm2_net::transport::slurp_url;
 
-use crate::helpers::rewrite_data_file;
+const FULL_COIN_SET_ADDRESS: &str = "https://raw.githubusercontent.com/KomodoPlatform/coins/master/coins";
+const EMPTY_COIN_SET_DATA: &[u8] = b"[]\n";
 
 #[derive(Clone, Copy, Debug, Display)]
 pub enum CoinSet {
@@ -10,10 +12,7 @@ pub enum CoinSet {
     Full,
 }
 
-#[tokio::main(flavor = "current_thread")]
 pub async fn init_coins(coins_file: &str) -> Result<(), ()> {
-    const FULL_COIN_SET_ADDRESS: &str = "https://raw.githubusercontent.com/KomodoPlatform/coins/master/coins";
-    const EMPTY_COIN_SET_DATA: &[u8] = b"[]\n";
     let coin_set = inquire_coin_set(coins_file)?;
     info!("Start getting mm2 coins");
     let coins_data = match coin_set {

@@ -5,6 +5,9 @@ use std::env;
 use crate::api_commands::{get_config, get_version, send_stop, set_config};
 use crate::scenarios::{get_status, init, start_process, stop_process};
 
+const MM2_CONFIG_FILE_DEFAULT: &str = "MM2.json";
+const COINS_FILE_DEFAULT: &str = "coins";
+
 enum ConfigSubcommand {
     Set {
         set_password: bool,
@@ -30,7 +33,7 @@ enum Command {
     Version,
 }
 
-pub fn process_cli() {
+pub async fn process_cli() {
     let mut app = App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -108,8 +111,14 @@ pub fn process_cli() {
 
     let command = match matches.subcommand() {
         ("init", Some(init_matches)) => {
-            let mm_coins_path = init_matches.value_of("mm-coins-path").unwrap_or("coins").to_owned();
-            let mm_conf_path = init_matches.value_of("mm-conf-path").unwrap_or("MM2.json").to_owned();
+            let mm_coins_path = init_matches
+                .value_of("mm-coins-path")
+                .unwrap_or(COINS_FILE_DEFAULT)
+                .to_owned();
+            let mm_conf_path = init_matches
+                .value_of("mm-conf-path")
+                .unwrap_or(MM2_CONFIG_FILE_DEFAULT)
+                .to_owned();
             Command::Init {
                 mm_coins_path,
                 mm_conf_path,
@@ -154,7 +163,7 @@ pub fn process_cli() {
         Command::Init {
             mm_coins_path: coins_file,
             mm_conf_path: mm2_cfg_file,
-        } => init(&mm2_cfg_file, &coins_file),
+        } => init(&mm2_cfg_file, &coins_file).await,
         Command::Start {
             mm_conf_path: mm2_cfg_file,
             mm_coins_path: coins_file,
@@ -162,8 +171,8 @@ pub fn process_cli() {
         } => start_process(&mm2_cfg_file, &coins_file, &log_file),
         Command::Kill => stop_process(),
         Command::Status => get_status(),
-        Command::Stop => send_stop(),
-        Command::Version => get_version(),
+        Command::Stop => send_stop().await,
+        Command::Version => get_version().await,
         Command::Config(ConfigSubcommand::Get) => get_config(),
         Command::Config(ConfigSubcommand::Set { set_password, adex_uri }) => set_config(set_password, adex_uri),
     }

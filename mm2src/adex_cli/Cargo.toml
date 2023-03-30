@@ -20,7 +20,8 @@ passwords = "3.1"
 serde = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 sysinfo = "0.28"
-tokio = { version = "1.20" }
+thiserror = "1.0"
+tokio = { version = "1.20", features = [ "macros" ] }
 
 [target.'cfg(not(windows))'.dependencies]
 fork = "0.1"
