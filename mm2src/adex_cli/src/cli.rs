@@ -2,7 +2,7 @@ use clap::{App, Arg, SubCommand};
 use log::error;
 use std::env;
 
-use crate::api_commands::{get_config, get_version, send_stop, set_config};
+use crate::api_commands::{activate, balance, get_config, get_version, send_stop, set_config};
 use crate::scenarios::{get_status, init, start_process, stop_process};
 
 const MM2_CONFIG_FILE_DEFAULT: &str = "MM2.json";
@@ -14,6 +14,11 @@ enum ConfigSubcommand {
         adex_uri: Option<String>,
     },
     Get,
+}
+
+enum AssetSubcommand {
+    Activate(String),
+    Balance(String),
 }
 
 enum Command {
@@ -31,6 +36,7 @@ enum Command {
     Stop,
     Config(ConfigSubcommand),
     Version,
+    Asset(AssetSubcommand),
 }
 
 pub async fn process_cli() {
@@ -105,7 +111,22 @@ pub async fn process_cli() {
                 )
                 .subcommand(SubCommand::with_name("get").about("Gets komodo adex cli configuration")),
         )
-        .subcommand(SubCommand::with_name("version").about("Gets version of intermediary mm2 service"));
+        .subcommand(SubCommand::with_name("version").about("Gets version of intermediary mm2 service"))
+        .subcommand(
+            SubCommand::with_name("asset")
+                .about("Assets related operations: activate, balance etc.")
+                .subcommand(
+                    SubCommand::with_name("activate")
+                        .about("Puts an asset to the trading index")
+                        .arg(Arg::with_name("asset").help("Asset to be included into the trading index")),
+                )
+                .subcommand(
+                    SubCommand::with_name("balance")
+                        .about("Puts an asset to the trading index")
+                        .arg(Arg::with_name("asset").help("Asset to get balance of")),
+                ),
+        )
+        .subcommand(SubCommand::with_name("activate"));
 
     let matches = app.clone().get_matches();
 
@@ -151,6 +172,19 @@ pub async fn process_cli() {
         },
 
         ("version", _) => Command::Version,
+        ("asset", Some(coin_matches)) => match coin_matches.subcommand() {
+            ("activate", Some(asset_matches)) => {
+                let asset = asset_matches.value_of("asset").unwrap().to_string();
+                Command::Asset(AssetSubcommand::Activate(asset))
+            },
+            ("balance", Some(asset_matches)) => {
+                let asset = asset_matches.value_of("asset").unwrap().to_string();
+                Command::Asset(AssetSubcommand::Balance(asset))
+            },
+            _ => {
+                return;
+            },
+        },
         _ => {
             let _ = app
                 .print_long_help()
@@ -175,5 +209,7 @@ pub async fn process_cli() {
         Command::Version => get_version().await,
         Command::Config(ConfigSubcommand::Get) => get_config(),
         Command::Config(ConfigSubcommand::Set { set_password, adex_uri }) => set_config(set_password, adex_uri),
+        Command::Asset(AssetSubcommand::Activate(asset)) => activate(asset).await,
+        Command::Asset(AssetSubcommand::Balance(asset)) => balance(asset).await,
     }
 }

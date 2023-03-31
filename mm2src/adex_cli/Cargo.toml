@@ -8,6 +8,7 @@ description = "Provides a CLI interface and facilitates interoperating to komodo
 
 [dependencies]
 clap = "2.33.3"
+cli-table = { version = "0.4", default-features = false, features = ["derive"]}
 common = { path = "../common" }
 derive_more = "0.99"
 directories = "5.0"

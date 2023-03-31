@@ -1,6 +1,5 @@
 use common::log::error;
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::ops::Deref;
@@ -35,7 +34,10 @@ where
     rewrite_data_file(data, file)
 }
 
-pub fn read_json_file(file: &Path) -> Result<Json, ()> {
-    let reader = fs::File::open(file).map_err(|error| error!("Failed to open {file:?}"))?;
-    serde_json::from_reader(reader).map_err(|error| error!("Failed to read json from data: {file:?}"))
+pub fn read_json_file<T>(file: &Path) -> Result<T, ()>
+where
+    T: for<'a> Deserialize<'a>,
+{
+    let reader = fs::File::open(file).map_err(|error| error!("Failed to open {file:?}, error: {error}"))?;
+    serde_json::from_reader(reader).map_err(|error| error!("Failed to read json from data: {file:?}, error: {error}"))
 }

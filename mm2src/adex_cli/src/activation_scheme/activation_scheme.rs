@@ -1,29 +1,13 @@
 use log::{debug, error, warn};
-use std::collections::{BTreeMap, HashMap};
-use std::fs;
-use std::mem::swap;
-// use serde::Serialize;
-use crate::activation_scheme::{activation_scheme, get_activation_scheme_path};
-use crate::helpers::read_json_file;
-use serde_json::Value as Json;
-use thiserror::Error;
+use serde_json::{json, Value as Json};
+use std::collections::HashMap;
 
-// #[derive(Serialize)]
-// pub struct EnableActivation {}
-//
-// #[derive(Serialize)]
-// pub struct ElectrumActivation {}
-//
-// #[derive(Serialize)]
-// pub enum ActivationMethod {
-//     Enable(EnableActivation),
-//     Electrum(ElectrumActivation),
-// }
-//
+use super::get_activation_scheme_path;
+use crate::helpers::read_json_file;
 
 pub trait ActivationScheme {
     type ActivationCommand;
-    fn get_activation_command(&self, coin: &str) -> Option<&Self::ActivationCommand>;
+    fn get_activation_method(&self, coin: &str) -> Option<Self::ActivationCommand>;
     fn get_coins_list(&self) -> Vec<String>;
 }
 
@@ -36,48 +20,39 @@ impl ActivationSchemeJson {
         let mut new = Self {
             scheme: HashMap::<String, Json>::new(),
         };
-        let Json::Array(mut results) = Self::load_json_file().unwrap() else {
+
+        let Ok(Json::Array(mut results)) = Self::load_json_file() else {
             return new;
         };
-
-        let mut scheme: HashMap<String, Json> = results.iter_mut().map(Self::get_coin_pair).collect();
-
-        swap(&mut new.scheme, &mut scheme);
-        // for (k, v) in new.scheme.iter() {
-        //     if *k == "KMD" {
-        //         continue;
-        //     }
-        //     println!("{}:{}", *k, *v);
-        // }
+        new.scheme = results.iter_mut().map(Self::get_coin_pair).collect();
         new
     }
 
     fn get_coin_pair(element: &mut Json) -> (String, Json) {
+        let presence = element.to_string();
         let Ok(result) = Self::get_coin_pair_impl(element) else {
-            warn!("Failed to process: {element}");
+            warn!("Failed to process: {presence}");
             return ("".to_string(), Json::Null)
         };
         result
     }
 
     fn get_coin_pair_impl(element: &mut Json) -> Result<(String, Json), ()> {
-        let mut temp = Json::Null;
-        let command = element.get_mut("command").ok_or(())?;
-        swap(&mut temp, command);
+        let command = element.get_mut("command").ok_or(())?.take();
         let coin = element.get("coin").ok_or(())?.as_str().ok_or(())?.to_string();
-        Ok((coin, temp))
+        Ok((coin, command))
     }
 
     fn load_json_file() -> Result<Json, ()> {
         let activation_scheme_path = get_activation_scheme_path()?;
         debug!("Start reading activation_scheme from: {activation_scheme_path:?}");
 
-        let activation_scheme = read_json_file(&activation_scheme_path)?;
+        let mut activation_scheme: Json = read_json_file(&activation_scheme_path)?;
 
         let results = activation_scheme
-            .get("results")
-            .map(|results| results.clone())
-            .ok_or_else(|| error!("Failed to get results section"))?;
+            .get_mut("results")
+            .ok_or_else(|| error!("Failed to get results section"))?
+            .take();
 
         Ok(results)
     }
@@ -85,7 +60,18 @@ impl ActivationSchemeJson {
 
 impl ActivationScheme for ActivationSchemeJson {
     type ActivationCommand = Json;
-    fn get_activation_command(&self, coin: &str) -> Option<&Self::ActivationCommand> { self.scheme.get(coin) }
+    fn get_activation_method(&self, coin: &str) -> Option<Self::ActivationCommand> {
+        let Some(Json::Object(object)) = self.scheme.get(coin) else { return None };
+        let mut copy = json!({});
+        for (k, v) in object.iter() {
+            // WORKAROUND: serde_json::Value does not support removing key
+            if *k == "userpass" {
+                continue;
+            }
+            copy[k] = v.clone();
+        }
+        Some(copy)
+    }
 
     fn get_coins_list(&self) -> Vec<String> { return vec!["".to_string()] }
 }

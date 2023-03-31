@@ -46,7 +46,7 @@ impl AdexConfig {
 
     pub fn is_set(&self) -> bool { self.rpc_uri.is_some() && self.rpc_password.is_some() }
 
-    pub fn get_config_dir(create: bool) -> Result<PathBuf, ()> {
+    pub fn get_config_dir() -> Result<PathBuf, ()> {
         let project_dirs = ProjectDirs::from(PROJECT_QUALIFIER, PROJECT_COMPANY, PROJECT_APP)
             .ok_or_else(|| error!("Failed to get project_dirs"))?;
         let config_path: PathBuf = project_dirs.config_dir().into();
@@ -56,7 +56,7 @@ impl AdexConfig {
     }
 
     pub fn get_config_path() -> Result<PathBuf, ()> {
-        let mut config_path = Self::get_config_dir(true)?;
+        let mut config_path = Self::get_config_dir()?;
         config_path.push(ADEX_CFG);
         Ok(config_path)
     }

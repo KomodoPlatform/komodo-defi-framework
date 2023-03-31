@@ -9,7 +9,7 @@ mod scenarios;
 
 #[cfg(not(test))]
 #[tokio::main(flavor = "current_thread")]
-fn main() {
+async fn main() {
     log::init_logging();
-    cli::process_cli();
+    cli::process_cli().await;
 }

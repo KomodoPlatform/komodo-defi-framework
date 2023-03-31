@@ -4,9 +4,6 @@ use common::log::{error, info};
 use mm2_net::transport::slurp_url;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::PathBuf;
-
-use crate::adex_config::AdexConfig;
 
 pub const ACTIVATION_SCHEME_FILE: &str = "activation_scheme.json";
 
