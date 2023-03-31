@@ -1,15 +1,21 @@
-mod activation_scheme;
-mod adex_config;
-mod api_commands;
-mod cli;
-mod data;
-mod helpers;
-mod log;
-mod scenarios;
+#[cfg(not(target_arch = "wasm32"))] mod cli;
+#[cfg(not(target_arch = "wasm32"))] mod log;
+#[cfg(not(target_arch = "wasm32"))] mod scenarios;
+#[cfg(not(target_arch = "wasm32"))] mod activation_scheme;
+#[cfg(not(target_arch = "wasm32"))] mod adex_config;
+#[cfg(not(target_arch = "wasm32"))] mod api_commands;
+#[cfg(not(target_arch = "wasm32"))] mod data;
+#[cfg(not(target_arch = "wasm32"))] mod helpers;
 
 #[cfg(not(test))]
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+
+#[cfg(target_arch = "wasm32")]
+fn main() {}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn main() {
     log::init_logging();
     cli::process_cli().await;
 }

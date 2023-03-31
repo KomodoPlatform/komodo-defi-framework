@@ -1,4 +1,4 @@
-FROM rustembedded/cross:armv7-unknown-linux-gnueabihf-0.2.1
+FROM docker.io/rustembedded/cross:armv7-unknown-linux-gnueabihf-0.2.1
 RUN dpkg --add-architecture armhf
 RUN apt-get update && apt-get install -y llvm-3.9-dev libclang-3.9-dev clang-3.9 libc6-dev-i386 libssl-dev:armhf && apt-get install -y g++-arm-linux-gnueabihf && apt-get clean
 ENV CMAKE_FORCE_C_COMPILER=arm-linux-gnueabihf-gcc \

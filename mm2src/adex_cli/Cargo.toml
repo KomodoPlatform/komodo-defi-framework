@@ -6,7 +6,7 @@ authors = ["Rozhkov Dmitrii <rozhkov@komodoplatform.com>"]
 description = "Provides a CLI interface and facilitates interoperating to komodo atomic dex throught the mm2 service"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 clap = "2.33.3"
 cli-table = { version = "0.4", default-features = false, features = ["derive"]}
 common = { path = "../common" }
@@ -21,10 +21,10 @@ passwords = "3.1"
 serde = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 sysinfo = "0.28"
-thiserror = "1.0"
+tiny-bip39 = "0.8.0"
 tokio = { version = "1.20", features = [ "macros" ] }
 
-[target.'cfg(not(windows))'.dependencies]
+[target.'cfg(all(not(target_arch = "wasm32"), not(windows)))'.dependencies]
 fork = "0.1"
 
 [target.'cfg(windows)'.dependencies]

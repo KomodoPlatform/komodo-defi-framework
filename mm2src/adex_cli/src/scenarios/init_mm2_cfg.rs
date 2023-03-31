@@ -1,3 +1,4 @@
+use bip39::{Language, Mnemonic, MnemonicType};
 use common::log::{error, info};
 use common::password_policy;
 use inquire::{validator::Validation, Confirm, CustomType, CustomUserError, Text};
@@ -33,7 +34,7 @@ impl Mm2Cfg {
             gui: None,
             net_id: None,
             rpc_password: None,
-            passphrase: None,
+            seed_phrase: None,
             allow_weak_password: None,
             dbdir: None,
             rpcip: None,
@@ -48,7 +49,7 @@ impl Mm2Cfg {
     fn inquire(&mut self) -> Result<(), ()> {
         self.inquire_gui()?;
         self.inquire_net_id()?;
-        self.inquire_passphrase()?;
+        self.inquire_seed_phrase()?;
         self.inquire_allow_weak_password()?;
         self.inquire_rpc_password()?;
         self.inquire_dbdir()?;
@@ -61,6 +62,7 @@ impl Mm2Cfg {
         Ok(())
     }
 
+    #[inline]
     fn inquire_dbdir(&mut self) -> Result<(), ()> {
         let is_reachable_dir = |dbdir: &InquireOption<String>| -> Result<Validation, CustomUserError> {
             match dbdir {
@@ -89,12 +91,14 @@ impl Mm2Cfg {
         Ok(())
     }
 
+    #[inline]
     fn inquire_gui(&mut self) -> Result<(), ()> {
         self.gui = Some(DEFAULT_GID.into());
         info!("> gui is set by default: {DEFAULT_GID}");
         Ok(())
     }
 
+    #[inline]
     fn inquire_net_id(&mut self) -> Result<(), ()> {
         self.net_id = CustomType::<u16>::new("What is the network `mm2` is going to be a part, net_id:")
                 .with_default(DEFAULT_NET_ID)
@@ -107,12 +111,18 @@ impl Mm2Cfg {
         Ok(())
     }
 
-    fn inquire_passphrase(&mut self) -> Result<(), ()> {
-        let default_password = Self::generate_password()?;
-        self.passphrase = Text::new("What is the passphrase:")
-            .with_default(default_password.as_str())
-            .with_placeholder(default_password.as_str())
-            .with_help_message("Your passphrase; this is the source of each of your coins private keys. KEEP IT SAFE!")
+    #[inline]
+    fn inquire_seed_phrase(&mut self) -> Result<(), ()> {
+        let mnemonic = Mnemonic::new(MnemonicType::Words12, Language::English);
+        let default_password: &str = mnemonic.phrase();
+        self.seed_phrase = Text::new("What is the seed phrase:")
+            .with_default(default_password)
+            .with_validator(|phrase: &str| match Mnemonic::validate(phrase, Language::English) {
+                Ok(_) => Ok(Validation::Valid),
+                Err(error) => Ok(Validation::Invalid(error.into())),
+            })
+            .with_placeholder(default_password)
+            .with_help_message("Your passphrase; this is the source of each of your coins' private keys. KEEP IT SAFE!")
             .prompt()
             .map_err(|error| {
                 error!("Failed to get passphrase: {error}");
@@ -121,6 +131,7 @@ impl Mm2Cfg {
         Ok(())
     }
 
+    #[inline]
     fn inquire_rpc_password(&mut self) -> Result<(), ()> {
         let allow_weak_password = self.allow_weak_password;
         let validator = move |password: &str| {
@@ -156,13 +167,14 @@ impl Mm2Cfg {
             uppercase_letters: true,
             symbols: true,
             spaces: false,
-            exclude_similar_characters: false,
+            exclude_similar_characters: true,
             strict: true,
         };
         pg.generate_one()
             .map_err(|error| error!("Failed to generate password: {error}"))
     }
 
+    #[inline]
     fn inquire_allow_weak_password(&mut self) -> Result<(), ()> {
         self.allow_weak_password = Confirm::new("Allow weak password:")
                 .with_default(false)
@@ -176,6 +188,7 @@ impl Mm2Cfg {
         Ok(())
     }
 
+    #[inline]
     fn inquire_rpcip(&mut self) -> Result<(), ()> {
         self.rpcip = CustomType::<InquireOption<Ipv4Addr>>::new("What is rpcip:")
             .with_placeholder(DEFAULT_OPTION_PLACEHOLDER)
@@ -188,6 +201,7 @@ impl Mm2Cfg {
         Ok(())
     }
 
+    #[inline]
     fn inquire_rpcport(&mut self) -> Result<(), ()> {
         let validator = |value: &InquireOption<u16>| -> Result<Validation, CustomUserError> {
             match value {
@@ -215,6 +229,7 @@ impl Mm2Cfg {
         Ok(())
     }
 
+    #[inline]
     fn inquire_rpc_local_only(&mut self) -> Result<(), ()> {
         self.rpc_local_only = CustomType::<InquireOption<bool>>::new("What is rpc_local_only:")
                 .with_parser(OPTION_BOOL_PARSER)
@@ -229,6 +244,7 @@ impl Mm2Cfg {
         Ok(())
     }
 
+    #[inline]
     fn inquire_i_am_a_seed(&mut self) -> Result<(), ()> {
         self.i_am_seed = CustomType::<InquireOption<bool>>::new("What is i_am_a_seed:")
                 .with_parser(OPTION_BOOL_PARSER)
@@ -243,6 +259,7 @@ impl Mm2Cfg {
         Ok(())
     }
 
+    #[inline]
     fn inquire_seednodes(&mut self) -> Result<(), ()> {
         info!("Reading seed nodes until tap enter is met");
         loop {
@@ -261,6 +278,7 @@ impl Mm2Cfg {
         Ok(())
     }
 
+    #[inline]
     fn inquire_hd_account_id(&mut self) -> Result<(), ()> {
         self.hd_account_id = CustomType::<InquireOption<u64>>::new("What is hd_account_id:")
                 .with_help_message(r#"Optional. If this value is set, the AtomicDEX-API will work in only the HD derivation mode, coins will need to have a coin derivation path entry in the coins file for activation. The hd_account_id value effectively takes its place in the full derivation as follows: m/44'/COIN_ID'/<hd_account_id>'/CHAIN/ADDRESS_ID"#)

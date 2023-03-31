@@ -1,13 +1,16 @@
-## Unreleased - 2023-##-##
+## {inc-release}
 
-### Features:
+**Features:**
+- `adex-cli` command line utility was introduced that supplies commands: `init`, `start`, `stop`, `status` [#1682](https://github.com/KomodoPlatform/atomicDEX-API/issues/1682)
 
-- `adex` command line utility was introduced that supplies commands: `init`, `start`, `stop`, `status` [#1682](https://github.com/KomodoPlatform/atomicDEX-API/issues/1682) 
+**Enhancements/Fixes:**
+- CI/CD workflow logics are improved [#1736](https://github.com/KomodoPlatform/atomicDEX-API/pull/1736)
+- Project root is simplified/refactored [#1738](https://github.com/KomodoPlatform/atomicDEX-API/pull/1738)
+- Created base image to provide more glibc compatible pre-built binaries for linux [#1741](https://github.com/KomodoPlatform/atomicDEX-API/pull/1741)
 
 ## v1.0.1-beta - 2023-03-17
 
-### Features:
-
+**Features:**
 - NFT integration `WIP` [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
   - NFT integration PoC added. Includes ERC721 support for ETH and BSC [#1652](https://github.com/KomodoPlatform/atomicDEX-API/pull/1652)
   - Withdraw ERC1155 and EVM based chains support added for NFT PoC [#1704](https://github.com/KomodoPlatform/atomicDEX-API/pull/1704)
@@ -27,8 +30,7 @@
     - If an invoice payment failed, retring paying the same invoice would cause the payment to not be updated to successful in the DB even if it were successful. A method to update the payment in the DB was added to fix this.
   - `mm2_git` crate was added to provide an abstraction layer on Git for doing query/parse operations over the repositories [#1636](https://github.com/KomodoPlatform/atomicDEX-API/pull/1636)
 
-### Enhancements/Fixes:
-
+**Enhancements/Fixes:**
 - Use `env_logger` to achieve flexible log filtering [#1725](https://github.com/KomodoPlatform/atomicDEX-API/pull/1725)
 - IndexedDB Cursor can now iterate over the items step-by-step [#1678](https://github.com/KomodoPlatform/atomicDEX-API/pull/1678)
 - Uuid lib was update from v0.7.4 to v1.2.2 in [#1655](https://github.com/KomodoPlatform/atomicDEX-API/pull/1655)
@@ -55,8 +57,7 @@
 
 ## v1.0.0-beta - 2023-03-08
 
-### Features:
-
+**Features:**
 - ARRR integration [#927](https://github.com/KomodoPlatform/atomicDEX-API/issues/927):
   - Zcoin native mode support was added [#1438](https://github.com/KomodoPlatform/atomicDEX-API/pull/1438)
   - Multi lightwalletd servers support was added [#1472](https://github.com/KomodoPlatform/atomicDEX-API/pull/1472)
@@ -107,9 +108,8 @@
   - Refactor ETH/ERC20 withdraw taking into account that the only way to sign a transaction is to send it using `eth_sendTransaction` [#1674](https://github.com/KomodoPlatform/atomicDEX-API/pull/1674)
   - Extract address's public key using `eth_singTypedDataV4` [#1674](https://github.com/KomodoPlatform/atomicDEX-API/pull/1674)
   - Perform swaps with coins activated with MetaMask [#1674](https://github.com/KomodoPlatform/atomicDEX-API/pull/1674)
-  
-### Enhancements/Fixes:
-
+   
+**Enhancements/Fixes:**
 - Update `rust-web3` crate [#1674](https://github.com/KomodoPlatform/atomicDEX-API/pull/1674)
 - Custom enum from stringify derive macro to derive From implementations for enums  [#1502](https://github.com/KomodoPlatform/atomicDEX-API/pull/1502)
 - Validate that  `input_tx` is calling `'receiverSpend'` in `eth::extract_secret` [#1596](https://github.com/KomodoPlatform/atomicDEX-API/pull/1596)

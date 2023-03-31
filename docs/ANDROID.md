@@ -27,19 +27,19 @@ The [Android NDK installer](https://github.com/rust-embedded/cross/tree/master/d
 
 #### armeabi-v7a ABI Docker image
 
-    (cd supernet && docker build --tag armv7-linux-androideabi-aga -f Dockerfile.armv7-linux-androideabi .)
+    (cd supernet && docker build --tag armv7-linux-androideabi-aga -f .docker/Dockerfile.armv7-linux-androideabi .)
 
 #### arm64-v8a ABI Docker image
 
-    (cd supernet && docker build --tag aarch64-linux-android-aga -f Dockerfile.aarch64-linux-android .)
+    (cd supernet && docker build --tag aarch64-linux-android-aga -f .docker/Dockerfile.aarch64-linux-android .)
 
 ### x86 ABI Docker image
 
-    (cd supernet && docker build --tag i686-linux-android-aga -f Dockerfile.i686-linux-android .)
+    (cd supernet && docker build --tag i686-linux-android-aga -f .docker/Dockerfile.i686-linux-android .)
 
 ### x86_64 ABI Docker image
 
-    (cd supernet && docker build --tag x86_64-linux-android-aga -f Dockerfile.x86_64-linux-android .)
+    (cd supernet && docker build --tag x86_64-linux-android-aga -f .docker/Dockerfile.x86_64-linux-android .)
 
 ### Setup the NDK_HOME variable
 

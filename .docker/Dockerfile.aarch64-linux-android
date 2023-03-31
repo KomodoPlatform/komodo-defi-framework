@@ -1,10 +1,9 @@
-FROM ubuntu:16.04
+FROM docker.io/ubuntu:16.04
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     cmake \
-    lld \
     gcc \
     libc6-dev \
     make \
@@ -24,17 +23,17 @@ RUN apt-get update && \
     libc6-dev-i386 && \
     apt-get clean
 
-COPY android-ndk.sh /
-RUN bash /android-ndk.sh x86_64 21
+COPY ./scripts/ci/android-ndk.sh /
+RUN bash /android-ndk.sh arm64 21
 ENV PATH=$PATH:/android-ndk/bin
 ENV RUSTFMT=rustfmt
 
 # Libz is distributed in the android ndk, but for some unknown reason it is not
 # found in the build process of some crates, so we explicit set the DEP_Z_ROOT
-ENV CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=x86_64-linux-android-clang \
-    CARGO_TARGET_X86_64_LINUX_ANDROID_RUNNER="qemu-x86_64 -cpu qemu64,+mmx,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt" \
-    CC_x86_64_linux_android=x86_64-linux-android-clang \
-    CXX_x86_64_linux_android=x86_64-linux-android-clang++ \
+ENV CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android-clang \
+    CARGO_TARGET_AARCH64_LINUX_ANDROID_RUNNER=qemu-aarch64 \
+    CC_aarch64_linux_android=aarch64-linux-android-clang \
+    CXX_aarch64_linux_android=aarch64-linux-android-clang++ \
     DEP_Z_INCLUDE=/android-ndk/sysroot/usr/include/ \
     RUST_TEST_THREADS=1 \
     HOME=/tmp/ \

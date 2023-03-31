@@ -1,6 +1,10 @@
+#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 use common::log::{error, info};
+#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 use std::path::PathBuf;
+#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 use std::{env, u32};
+#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 
 #[cfg(windows)]
@@ -16,7 +20,7 @@ mod reexport {
     pub const MM2_BINARY: &str = "mm2.exe";
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 mod reexport {
     pub use fork::{daemon, Fork};
     pub use std::ffi::OsStr;
@@ -26,8 +30,10 @@ mod reexport {
     pub const KILL_CMD: &str = "kill";
 }
 
+#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 use reexport::*;
 
+#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 pub fn get_status() {
     let pids = find_proc_by_name(MM2_BINARY);
     if pids.is_empty() {
@@ -38,6 +44,7 @@ pub fn get_status() {
     });
 }
 
+#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 fn find_proc_by_name(pname: &'_ str) -> Vec<u32> {
     let s = System::new_all();
 
@@ -48,6 +55,7 @@ fn find_proc_by_name(pname: &'_ str) -> Vec<u32> {
         .collect()
 }
 
+#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 fn get_mm2_binary_path() -> Result<PathBuf, ()> {
     let mut dir = env::current_exe().map_err(|error| {
         error!("Failed to get current binary dir: {error}");
@@ -57,7 +65,7 @@ fn get_mm2_binary_path() -> Result<PathBuf, ()> {
     Ok(dir)
 }
 
-#[cfg(all(any(unix, windows), not(macos)))]
+#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>, log_file: &Option<String>) {
     let mm2_binary = match get_mm2_binary_path() {
         Err(_) => return,
@@ -79,7 +87,7 @@ pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>,
     start_process_impl(mm2_binary);
 }
 
-#[cfg(all(unix, not(macos)))]
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn start_process_impl(mm2_binary: PathBuf) {
     let mut command = Command::new(&mm2_binary);
     let program = mm2_binary
@@ -136,7 +144,7 @@ pub fn start_process_impl(mm2_binary: PathBuf) {
     }
 }
 
-#[cfg(all(unix, not(macos)))]
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn stop_process() {
     let pids = find_proc_by_name(MM2_BINARY);
     if pids.is_empty() {
@@ -173,12 +181,17 @@ pub fn stop_process() {
     }
 }
 
-#[cfg(macos)]
-pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>, log_file: &Option<String>) {
+#[cfg(target_os = "macos")]
+pub fn start_process(_mm2_cfg_file: &Option<String>, _coins_file: &Option<String>, _log_file: &Option<String>) {
     unimplemented!();
 }
 
-#[cfg(macos)]
+#[cfg(target_os = "macos")]
 pub fn stop_process() {
+    unimplemented!();
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_status() {
     unimplemented!();
 }
