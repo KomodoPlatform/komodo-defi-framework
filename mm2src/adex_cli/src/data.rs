@@ -6,6 +6,7 @@ pub struct Mm2Cfg {
     pub gui: Option<String>,
     pub net_id: Option<u16>,
     pub rpc_password: Option<String>,
+    #[serde(rename = "passphrase")]
     pub seed_phrase: Option<String>,
     pub allow_weak_password: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
