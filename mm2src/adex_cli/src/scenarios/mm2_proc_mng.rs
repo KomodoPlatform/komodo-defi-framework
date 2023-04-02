@@ -1,11 +1,8 @@
-#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 use common::log::{error, info};
-#[cfg(all(any(unix, windows), not(target_os = "macos")))]
+use std::env;
 use std::path::PathBuf;
-#[cfg(all(any(unix, windows), not(target_os = "macos")))]
-use std::{env, u32};
-#[cfg(all(any(unix, windows), not(target_os = "macos")))]
-use sysinfo::{PidExt, ProcessExt, System, SystemExt};
+#[cfg(not(target_os = "macos"))]
+pub use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 
 #[cfg(windows)]
 mod reexport {
@@ -13,6 +10,7 @@ mod reexport {
     pub use std::mem;
     pub use std::mem::size_of;
     pub use std::ptr::null;
+    pub use std::u32;
     pub use winapi::um::processthreadsapi::{CreateProcessA, OpenProcess, TerminateProcess, PROCESS_INFORMATION,
                                             STARTUPINFOA};
     pub use winapi::um::winnt::{PROCESS_TERMINATE, SYNCHRONIZE};
@@ -20,20 +18,42 @@ mod reexport {
     pub const MM2_BINARY: &str = "mm2.exe";
 }
 
+#[cfg(windows)] use reexport::*;
+
 #[cfg(all(unix, not(target_os = "macos")))]
-mod reexport {
+mod unix_not_macos_reexport {
     pub use fork::{daemon, Fork};
     pub use std::ffi::OsStr;
     pub use std::process::{Command, Stdio};
+    pub use std::u32;
 
-    pub const MM2_BINARY: &str = "mm2";
     pub const KILL_CMD: &str = "kill";
 }
 
-#[cfg(all(any(unix, windows), not(target_os = "macos")))]
-use reexport::*;
+#[cfg(all(unix, not(target_os = "macos")))]
+use unix_not_macos_reexport::*;
 
-#[cfg(all(any(unix, windows), not(target_os = "macos")))]
+#[cfg(unix)]
+mod unix_reexport {
+    pub const MM2_BINARY: &str = "mm2";
+}
+
+#[cfg(unix)] use unix_reexport::*;
+
+#[cfg(target_os = "macos")]
+mod macos_reexport {
+    pub use std::fs;
+    pub const LAUNCH_CTL_COOL_DOWN_TIMEOUT_MS: u64 = 500;
+    pub use std::process::{Command, Stdio};
+    pub use std::thread::sleep;
+    pub use std::time::Duration;
+
+    pub const LAUNCHCTL_MM2_ID: &str = "com.mm2.daemon";
+}
+
+#[cfg(target_os = "macos")] use macos_reexport::*;
+
+#[cfg(not(target_os = "macos"))]
 pub fn get_status() {
     let pids = find_proc_by_name(MM2_BINARY);
     if pids.is_empty() {
@@ -44,7 +64,7 @@ pub fn get_status() {
     });
 }
 
-#[cfg(all(any(unix, windows), not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 fn find_proc_by_name(pname: &'_ str) -> Vec<u32> {
     let s = System::new_all();
 
@@ -55,7 +75,6 @@ fn find_proc_by_name(pname: &'_ str) -> Vec<u32> {
         .collect()
 }
 
-#[cfg(all(any(unix, windows), not(target_os = "macos")))]
 fn get_mm2_binary_path() -> Result<PathBuf, ()> {
     let mut dir = env::current_exe().map_err(|error| {
         error!("Failed to get current binary dir: {error}");
@@ -65,7 +84,7 @@ fn get_mm2_binary_path() -> Result<PathBuf, ()> {
     Ok(dir)
 }
 
-#[cfg(all(any(unix, windows), not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>, log_file: &Option<String>) {
     let mm2_binary = match get_mm2_binary_path() {
         Err(_) => return,
@@ -182,16 +201,112 @@ pub fn stop_process() {
 }
 
 #[cfg(target_os = "macos")]
-pub fn start_process(_mm2_cfg_file: &Option<String>, _coins_file: &Option<String>, _log_file: &Option<String>) {
-    unimplemented!();
+pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>, log_file: &Option<String>) {
+    let mm2_binary = match get_mm2_binary_path() {
+        Err(_) => return,
+        Ok(path) => path,
+    };
+
+    let Ok(current_dir) = env::current_dir() else {
+	error!("Failet to get current_dir");
+	return
+    };
+
+    let Ok(plist_path)  = get_plist_path() else {return;};
+
+    let plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>Label</key>
+            <string>{}</string>
+            <key>ProgramArguments</key>
+            <array>
+                <string>{}</string>
+            </array>
+            <key>WorkingDirectory</key>
+            <string>{}</string>
+            <key>EnvironmentVariables</key>
+            <dict>{}{}{}</dict>
+            <key>RunAtLoad</key>
+            <false/>
+            <key>KeepAlive</key>
+            <false/>
+        </dict>
+        </plist>"#,
+        LAUNCHCTL_MM2_ID,
+        mm2_binary.display(),
+        current_dir.display(),
+        log_file
+            .as_deref()
+            .map(|log_file| format!("<key>MM_LOG</key><string>{log_file}</string>"))
+            .unwrap_or_default(),
+        mm2_cfg_file
+            .as_deref()
+            .map(|cfg_file| format!("<key>MM_CONF_PATH</key><string>{cfg_file}</string>"))
+            .unwrap_or_default(),
+        coins_file
+            .as_deref()
+            .map(|coins_file| format!("<key>MM_COINS_PATH</key><string>{coins_file}</string>"))
+            .unwrap_or_default(),
+    );
+
+    if let Err(error) = fs::write(&plist_path, plist) {
+        error!("Failed to write plist file: {error}");
+        return;
+    }
+
+    match Command::new("launchctl").arg("load").arg(&plist_path).spawn() {
+        Ok(_) => info!("Successfully loaded using launchctl, label: {LAUNCHCTL_MM2_ID}"),
+        Err(error) => error!("Failed to load process: {error}"),
+    }
+
+    match Command::new("launchctl").args(["start", LAUNCHCTL_MM2_ID]).spawn() {
+        Ok(_) => info!("Successfully started using launchctl, label: {LAUNCHCTL_MM2_ID}"),
+        Err(error) => error!("Failed to start process: {error}"),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn get_plist_path() -> Result<PathBuf, ()> {
+    match env::current_dir() {
+        Err(error) => {
+            error!("Failed to get plist_pathcurrent_dir: {error}");
+            Err(())
+        },
+        Ok(mut current_dir) => {
+            current_dir.push(&format!("{LAUNCHCTL_MM2_ID}.plist"));
+            Ok(current_dir)
+        },
+    }
 }
 
 #[cfg(target_os = "macos")]
 pub fn stop_process() {
-    unimplemented!();
+    let Ok(plist_path) = get_plist_path() else { return; };
+
+    if let Err(error) = Command::new("launchctl").arg("unload").arg(&plist_path).spawn() {
+        error!("Failed to unload process using launchctl: {}", error);
+    } else {
+        info!("mm2 successfully stopped by launchctl");
+    }
+    sleep(Duration::from_millis(LAUNCH_CTL_COOL_DOWN_TIMEOUT_MS));
+    if let Err(err) = fs::remove_file(&plist_path) {
+        error!("Failed to remove plist file: {}", err);
+    }
 }
 
 #[cfg(target_os = "macos")]
 pub fn get_status() {
-    unimplemented!();
+    let output = Command::new("launchctl")
+        .args(["list", LAUNCHCTL_MM2_ID])
+        .output()
+        .unwrap();
+
+    if output.status.success() && String::from_utf8_lossy(&output.stdout).contains("PID") {
+        info!("Service '{LAUNCHCTL_MM2_ID}' is running");
+    } else {
+        info!("Service '{LAUNCHCTL_MM2_ID}' is not running");
+    }
 }
