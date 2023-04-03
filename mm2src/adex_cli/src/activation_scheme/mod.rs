@@ -1,10 +1,10 @@
-mod activation_scheme;
+mod activation_scheme_impl;
 mod init_activation_scheme;
 
 use crate::activation_scheme::init_activation_scheme::ACTIVATION_SCHEME_FILE;
 use crate::adex_config::AdexConfig;
 
-pub use activation_scheme::{get_activation_scheme, ActivationScheme};
+pub use activation_scheme_impl::{get_activation_scheme, ActivationScheme};
 pub use init_activation_scheme::init_activation_scheme;
 
 use std::path::PathBuf;

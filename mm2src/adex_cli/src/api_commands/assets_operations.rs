@@ -17,7 +17,7 @@ pub async fn activate(asset: String) {
     };
 
     let (rpc_password, rpc_uri) = macros::get_config!();
-    let command = Command::new()
+    let command = Command::builder()
         .flatten_data(activate_specific_settings.clone())
         .userpass(rpc_password)
         .build();
@@ -26,7 +26,6 @@ pub async fn activate(asset: String) {
     match slurp_post_json(&rpc_uri, command_data).await {
         Err(error) => {
             error!("Failed to activate: {error}");
-            return;
         },
         Ok((status, headers, data)) => process_answer::<Json, _>(
             &status,
@@ -55,7 +54,7 @@ fn print_result_as_talbe(result: Json) {
 
 pub async fn balance(asset: String) {
     let (rpc_password, rpc_uri) = macros::get_config!();
-    let command = Command::new()
+    let command = Command::builder()
         .method(Method::Balance)
         .flatten_data(json!({ "coin": asset }))
         .userpass(rpc_password)
@@ -64,7 +63,6 @@ pub async fn balance(asset: String) {
     match slurp_post_json(&rpc_uri, command_data).await {
         Err(error) => {
             error!("Failed to get balance: {error}");
-            return;
         },
         Ok((status, headers, data)) => process_answer::<Json, _>(
             &status,

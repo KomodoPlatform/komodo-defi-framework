@@ -22,14 +22,14 @@ pub struct AdexConfig {
 
 impl Display for AdexConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.is_set() == false {
+        if !self.is_set() {
             return writeln!(f, "adex configuration is not set");
         }
         if let Some(rpc_api_uri) = &self.rpc_uri {
             writeln!(f, "adex RPC API Url: {}", rpc_api_uri)?
         };
 
-        if let Some(_) = &self.rpc_password {
+        if self.rpc_password.is_some() {
             writeln!(f, "adex RPC API pwd: *************")?
         }
         Ok(())
@@ -78,7 +78,7 @@ impl AdexConfig {
 
     fn read_from(cfg_path: &Path) -> Result<AdexConfig, ()> {
         let adex_path_str = cfg_path.to_str().unwrap_or("Undefined");
-        let adex_cfg_file = fs::File::open(&cfg_path).map_err(|error| {
+        let adex_cfg_file = fs::File::open(cfg_path).map_err(|error| {
             error!("Failed to open: {adex_path_str}, error: {error}");
         })?;
 
@@ -91,6 +91,6 @@ impl AdexConfig {
             error!("Failed to get cfg_path as str");
             return Err(());
         };
-        rewrite_json_file(self, &adex_path_str)
+        rewrite_json_file(self, adex_path_str)
     }
 }

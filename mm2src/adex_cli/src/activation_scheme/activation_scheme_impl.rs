@@ -73,7 +73,7 @@ impl ActivationScheme for ActivationSchemeJson {
         Some(copy)
     }
 
-    fn get_coins_list(&self) -> Vec<String> { return vec!["".to_string()] }
+    fn get_coins_list(&self) -> Vec<String> { vec!["".to_string()] }
 }
 
 pub fn get_activation_scheme() -> Box<dyn ActivationScheme<ActivationCommand = Json>> {

@@ -8,12 +8,11 @@ use crate::adex_config::AdexConfig;
 
 pub async fn send_stop() {
     let (rpc_password, rpc_uri) = macros::get_config!();
-    let stop_command = Command::new().userpass(rpc_password).method(Method::Stop).build();
+    let stop_command = Command::builder().userpass(rpc_password).method(Method::Stop).build();
     let data = serde_json::to_string(&stop_command).expect("Failed to serialize stop_command");
     match slurp_post_json(&rpc_uri, data).await {
         Err(error) => {
             error!("Failed to stop through the API: {error}");
-            return;
         },
         Ok((status, headers, data)) => {
             process_answer::<SendStopResponse, _>(&status, &headers, &data, |result| info!("{result}"), None)
@@ -23,12 +22,14 @@ pub async fn send_stop() {
 
 pub async fn get_version() {
     let (rpc_password, rpc_uri) = macros::get_config!();
-    let version_command = Command::new().userpass(rpc_password).method(Method::Version).build();
+    let version_command = Command::builder()
+        .userpass(rpc_password)
+        .method(Method::Version)
+        .build();
     let data = serde_json::to_string(&version_command).expect("Failed to serialize stop_command");
     match slurp_post_json(&rpc_uri, data).await {
         Err(error) => {
             error!("Failed to stop through the API: {error}");
-            return;
         },
         Ok((status, headers, data)) => {
             process_answer::<VersionResponse, _>(&status, &headers, &data, |result| info!("{result}"), None)
@@ -44,7 +45,7 @@ pub fn get_config() {
 pub fn set_config(set_password: bool, rpc_api_uri: Option<String>) {
     let mut adex_cfg = AdexConfig::from_config_path().unwrap_or_else(|()| AdexConfig::new());
     let mut is_changes_happened = false;
-    if set_password == true {
+    if set_password {
         adex_cfg.rpc_password = Password::new("Enter RPC API password:")
             .prompt()
             .map(|value| {
@@ -59,7 +60,7 @@ pub fn set_config(set_password: bool, rpc_api_uri: Option<String>) {
         is_changes_happened = true;
     }
 
-    if is_changes_happened == true && adex_cfg.write_to_config_path().is_ok() {
+    if is_changes_happened && adex_cfg.write_to_config_path().is_ok() {
         info!("Configuration has been set");
     } else {
         warn!("Nothing changed");

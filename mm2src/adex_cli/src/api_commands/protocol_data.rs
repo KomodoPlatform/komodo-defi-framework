@@ -23,7 +23,7 @@ pub struct Command {
 }
 
 impl Command {
-    pub fn new() -> CommandBuilder { CommandBuilder::new() }
+    pub fn builder() -> CommandBuilder { CommandBuilder::new() }
 }
 
 pub struct CommandBuilder {
@@ -57,7 +57,7 @@ impl CommandBuilder {
     }
 
     pub fn build(&mut self) -> Command {
-        let command = Command {
+        Command {
             userpass: self
                 .userpass
                 .take()
@@ -65,8 +65,7 @@ impl CommandBuilder {
                 .expect("Unexpected error during building api command"),
             method: self.method.take(),
             data: self.data.take(),
-        };
-        command
+        }
     }
 }
 
@@ -74,7 +73,11 @@ impl Display for Command {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut cmd = self.clone();
         cmd.userpass = "***********".to_string();
-        writeln!(f, "{}", serde_json::to_string(&cmd).unwrap_or("Unknown".to_string()))
+        writeln!(
+            f,
+            "{}",
+            serde_json::to_string(&cmd).unwrap_or_else(|_| "Unknown".to_string())
+        )
     }
 }
 

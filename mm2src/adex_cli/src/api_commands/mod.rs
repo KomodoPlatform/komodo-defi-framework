@@ -31,7 +31,7 @@ mod macros {
 
 fn get_adex_config() -> Result<AdexConfig, ()> {
     let config = AdexConfig::from_config_path().map_err(|_| error!("Failed to get adex_config"))?;
-    if config.is_set() == false {
+    if config.is_set() {
         warn!("Failed to process, adex_config is not fully set");
         return Err(());
     }
@@ -43,15 +43,15 @@ where
     T: for<'a> Deserialize<'a> + Serialize + Display,
     F: Fn(T),
 {
-    match status {
-        &StatusCode::OK => match serde_json::from_slice::<T>(data) {
+    match *status {
+        StatusCode::OK => match serde_json::from_slice::<T>(data) {
             Ok(resp_data) => if_ok(resp_data),
             Err(error) => error!("Failed to deserialize adex_response from data: {data:?}, error: {error}"),
         },
-        &StatusCode::INTERNAL_SERVER_ERROR => match serde_json::from_slice::<T>(data) {
+        StatusCode::INTERNAL_SERVER_ERROR => match serde_json::from_slice::<T>(data) {
             Ok(resp_data) if if_err.is_none() => info!("{}", resp_data),
             Ok(resp_data) if if_err.is_some() => if_err.unwrap()(resp_data),
-            Ok(_) => assert!(false, "unreachable code"),
+            Ok(_) => unreachable!("Unreachable case in process_answer"),
             Err(error) => error!("Failed to deserialize adex_response from data: {data:?}, error: {error}"),
         },
         _ => {
