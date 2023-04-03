@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "mm2src/adex_cli",
     "mm2src/coins",
     "mm2src/coins/utxo_signer",
     "mm2src/coins_activation",
@@ -40,6 +39,10 @@ members = [
     "mm2src/rpc_task",
     "mm2src/mm2_test_helpers",
     "mm2src/trezor",
+]
+
+exclude = [
+    "mm2src/adex_cli"
 ]
 
 # https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2

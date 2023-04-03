@@ -115,7 +115,7 @@ For example:
 
 The coins file contains information about the coins and tokens you want to trade. A regularly updated version is maintained in the [Komodo Platform coins repository](https://github.com/KomodoPlatform/coins/blob/master/coins). Pull Requests to add any coins not yet included are welcome.
 
-To facilitate interoperability with the `mm2` service, there is the `adex` command line utility. It provides a questionnaire initialization mode to set up the configuration and obtain the proper coin set through the internet. It can also be used to start or stop the service.
+To facilitate interoperability with the `mm2` service, there is the `adex-cli` command line utility. It provides a questionnaire initialization mode to set up the configuration and obtain the proper coin set through the internet. It can also be used to start or stop the service.
 
 ## Usage
 

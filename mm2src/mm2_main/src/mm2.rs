@@ -140,7 +140,7 @@ pub async fn lp_main(
         if !is_weak_password_accepted && cfg!(not(test)) {
             match password_policy(conf["rpc_password"].as_str().unwrap()) {
                 Ok(_) => {},
-                Err(err) => return Err(format!("rpc_password error: {}", err)),
+                Err(err) => return Err(format!("{}", err)),
             }
         }
     }
