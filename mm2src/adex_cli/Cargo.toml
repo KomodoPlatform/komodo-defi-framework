@@ -13,6 +13,7 @@ common = { path = "../common" }
 derive_more = "0.99"
 directories = "5.0"
 env_logger = "0.7.1"
+gstuff = { version = "=0.7.4" , features = [ "nightly" ]}
 http = "0.2"
 inquire = "0.6"
 log = "0.4"
