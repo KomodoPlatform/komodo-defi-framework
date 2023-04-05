@@ -3,7 +3,7 @@ const COINS_FILE_DEFAULT: &str = "coins";
 
 use clap::{Parser, Subcommand};
 
-use crate::api_commands::{activate, balance, get_config, get_enabled, get_orderbook, get_version, send_stop,
+use crate::api_commands::{enable, get_balance, get_config, get_enabled, get_orderbook, get_version, send_stop,
                           set_config};
 use crate::scenarios::{get_status, init, start_process, stop_process};
 
@@ -16,7 +16,7 @@ enum Command {
         #[arg(long, help = "mm2 configuration file path", default_value = MM2_CONFIG_FILE_DEFAULT)]
         mm_conf_path: String,
     },
-    #[command(about = "Start mm2 service")]
+    #[command(about = "Start mm2 instance")]
     Start {
         #[arg(long, help = "mm2 configuration file path")]
         mm_conf_path: Option<String>,
@@ -25,18 +25,18 @@ enum Command {
         #[arg(long, help = "log file path")]
         mm_log: Option<String>,
     },
-    #[command(about = "Stop mm2 instance")]
+    #[command(about = "Stop mm2 using API")]
     Stop,
+    #[command(about = "Kill mm2 process")]
+    Kill,
     #[command(about = "Get mm2 running status")]
     Status,
-    #[command(subcommand, about = "Gets version of intermediary mm2 service")]
+    #[command(about = "Gets version of intermediary mm2 service")]
     Version,
     #[command(subcommand, about = "Config management command set")]
     Config(ConfigSubcommand),
     #[command(subcommand, about = "Assets related operations: activate, balance etc.")]
     Asset(AssetSubcommand),
-    #[command(subcommand, about = "Kill mm2 processes")]
-    Kill,
     #[command(about = "Gets orderbook")]
     Orderbook {
         #[arg(help = "Base currency of a pair")]
@@ -104,8 +104,8 @@ impl Cli {
                 set_config(*set_password, adex_uri.take())
             },
             Command::Config(ConfigSubcommand::Get) => get_config(),
-            Command::Asset(AssetSubcommand::Enable { asset }) => activate(asset).await,
-            Command::Asset(AssetSubcommand::Balance { asset }) => balance(asset).await,
+            Command::Asset(AssetSubcommand::Enable { asset }) => enable(asset).await,
+            Command::Asset(AssetSubcommand::Balance { asset }) => get_balance(asset).await,
             Command::Asset(AssetSubcommand::GetEnabled) => get_enabled().await,
             Command::Orderbook { base, rel } => get_orderbook(base, rel).await,
         }

@@ -1,6 +1,9 @@
+use cli_table::format::{Border, Separator};
+use cli_table::{print_stdout, Table};
 use http::{HeaderMap, StatusCode};
 use log::{error, info, warn};
 use serde::Deserialize;
+use serde_json::Value as Json;
 use std::fmt::Display;
 
 pub(crate) trait Response {
@@ -42,5 +45,36 @@ impl Response for (StatusCode, HeaderMap, Vec<u8>) {
                 warn!("Bad http status: {status}, data: {data:?}");
             },
         };
+    }
+}
+
+pub(crate) fn print_result_as_table(result: Json) -> Result<(), ()> {
+    let object = result
+        .as_object()
+        .ok_or_else(|| error!("Failed to cast result as object"))?;
+
+    let data: Vec<SimpleCliTable> = object.iter().map(SimpleCliTable::from_pair).collect();
+    let data = data
+        .table()
+        .border(Border::builder().build())
+        .separator(Separator::builder().build());
+
+    print_stdout(data).map_err(|error| error!("Failed to print result: {error}"))
+}
+
+#[derive(Table)]
+struct SimpleCliTable<'a> {
+    #[table(title = "Parameter")]
+    key: &'a String,
+    #[table(title = "Value")]
+    value: &'a Json,
+}
+
+impl<'a> SimpleCliTable<'a> {
+    fn from_pair(pair: (&'a String, &'a Json)) -> Self {
+        SimpleCliTable {
+            key: pair.0,
+            value: pair.1,
+        }
     }
 }
