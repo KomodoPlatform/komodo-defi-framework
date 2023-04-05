@@ -1,4 +1,4 @@
-use common::log::{error, info};
+use common::log::{debug, error, info};
 use std::env;
 use std::path::PathBuf;
 #[cfg(not(target_os = "macos"))]
@@ -86,11 +86,6 @@ fn get_mm2_binary_path() -> Result<PathBuf, ()> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>, log_file: &Option<String>) {
-    let mm2_binary = match get_mm2_binary_path() {
-        Err(_) => return,
-        Ok(path) => path,
-    };
-
     if let Some(mm2_cfg_file) = mm2_cfg_file {
         info!("Set env MM_CONF_PATH as: {mm2_cfg_file}");
         env::set_var("MM_CONF_PATH", mm2_cfg_file);
@@ -103,6 +98,8 @@ pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>,
         info!("Set env MM_LOG as: {log_file}");
         env::set_var("MM_LOG", log_file);
     }
+
+    let Ok(mm2_binary) = get_mm2_binary_path() else { return; };
     start_process_impl(mm2_binary);
 }
 
@@ -202,13 +199,10 @@ pub fn stop_process() {
 
 #[cfg(target_os = "macos")]
 pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>, log_file: &Option<String>) {
-    let mm2_binary = match get_mm2_binary_path() {
-        Err(_) => return,
-        Ok(path) => path,
-    };
+    let Ok(mm2_binary) = get_mm2_binary_path() else { return; };
 
     let Ok(current_dir) = env::current_dir() else {
-	error!("Failet to get current_dir");
+	error!("Failed to get current_dir");
 	return
     };
 
@@ -257,8 +251,17 @@ pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>,
         return;
     }
 
+    match Command::new("launchctl")
+        .arg("enable")
+        .arg(format!("system/{LAUNCHCTL_MM2_ID}").as_str())
+        .spawn()
+    {
+        Ok(_) => debug!("Successfully enabled using launchctl, label: {LAUNCHCTL_MM2_ID}"),
+        Err(error) => error!("Failed to enable process: {error}"),
+    }
+
     match Command::new("launchctl").arg("load").arg(&plist_path).spawn() {
-        Ok(_) => info!("Successfully loaded using launchctl, label: {LAUNCHCTL_MM2_ID}"),
+        Ok(_) => debug!("Successfully loaded using launchctl, label: {LAUNCHCTL_MM2_ID}"),
         Err(error) => error!("Failed to load process: {error}"),
     }
 
@@ -272,7 +275,7 @@ pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>,
 fn get_plist_path() -> Result<PathBuf, ()> {
     match env::current_dir() {
         Err(error) => {
-            error!("Failed to get plist_pathcurrent_dir: {error}");
+            error!("Failed to get current_dir to construct plist_path: {error}");
             Err(())
         },
         Ok(mut current_dir) => {

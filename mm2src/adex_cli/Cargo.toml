@@ -3,7 +3,7 @@ name = "adex-cli"
 version = "0.1.0"
 edition = "2021"
 authors = ["Rozhkov Dmitrii <rozhkov@komodoplatform.com>"]
-description = "Provides a CLI interface and facilitates interoperating to komodo atomic dex throught the mm2 service"
+description = "Provides a CLI interface and facilitates interoperating to komodo atomic dex through the mm2 service"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
