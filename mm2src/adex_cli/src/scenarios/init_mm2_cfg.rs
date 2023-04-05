@@ -193,7 +193,7 @@ impl Mm2Cfg {
         self.allow_weak_password = Confirm::new("Allow weak password:")
                 .with_default(false)
                 .with_placeholder("No")
-                .with_help_message(r#"If true, will allow low entropy rpc_password. If false rpc_password must not have 3 of the same characters in a row, must be between 8-32 characters in length, must contain at least one of each of the following: numeric, uppercase, lowercase, special character (e.g. !#$*). It also can not contain the word "password", or the chars <, >, and &. Defaults to false."#)
+                .with_help_message(r#"If true, will allow low entropy rpc_password. If false rpc_password must not have 3 of the same characters in a row, must be at least 8 characters long, must contain at least one of each of the following: numeric, uppercase, lowercase, special character (e.g. !#$*). It also can not contain the word "password", or the chars <, >, and &. Defaults to false."#)
                 .prompt()
                 .map_err(|error| {
                     error!("Failed to get allow_weak_password: {error}");
