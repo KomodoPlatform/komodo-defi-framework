@@ -10,7 +10,7 @@ where
     T: Serialize,
 {
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub data: Option<T>,
+    pub flatten_data: Option<T>,
     pub userpass: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub method: Option<Method>,
@@ -26,7 +26,7 @@ where
 pub(crate) struct CommandBuilder<T> {
     userpass: Option<String>,
     method: Option<Method>,
-    data: Option<T>,
+    flatten_data: Option<T>,
 }
 
 impl<T> CommandBuilder<T>
@@ -37,7 +37,7 @@ where
         CommandBuilder {
             userpass: None,
             method: None,
-            data: None,
+            flatten_data: None,
         }
     }
 
@@ -52,7 +52,7 @@ where
     }
 
     pub fn flatten_data(&mut self, flatten_data: T) -> &mut Self {
-        self.data = Some(flatten_data);
+        self.flatten_data = Some(flatten_data);
         self
     }
 
@@ -64,7 +64,7 @@ where
                 .ok_or_else(|| error!("Build command failed, no userpass"))
                 .expect("Unexpected error during building api command"),
             method: self.method.take(),
-            data: self.data.take(),
+            flatten_data: self.flatten_data.take(),
         }
     }
 }
@@ -90,7 +90,7 @@ pub(crate) enum Method {
     Stop,
     Version,
     #[serde(rename = "my_balance")]
-    Balance,
+    GetBalance,
     #[serde(rename = "get_enabled_coins")]
     GetEnabledCoins,
     #[serde(rename = "orderbook")]
@@ -98,12 +98,12 @@ pub(crate) enum Method {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub(crate) struct GetOrderbook {
+pub(crate) struct CoinPair {
     base: String,
     rel: String,
 }
 
-impl GetOrderbook {
+impl CoinPair {
     pub fn new(base: &str, rel: &str) -> Self {
         Self {
             base: base.to_string(),
@@ -112,7 +112,7 @@ impl GetOrderbook {
     }
 }
 
-impl Display for GetOrderbook {
+impl Display for CoinPair {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { writeln!(f, "") }
 }
 
@@ -123,11 +123,11 @@ enum StopStatus {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct SendStopResponse {
+pub(crate) struct StopResponse {
     result: StopStatus,
 }
 
-impl Display for SendStopResponse {
+impl Display for StopResponse {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { writeln!(f, "Status: {}", self.result) }
 }
 
@@ -145,10 +145,10 @@ impl Display for VersionResponse {
     }
 }
 
-#[derive(Serialize, Deserialize, Display)]
-pub(crate) struct BalanceCommand {
-    result: StopStatus,
-}
+// #[derive(Serialize, Deserialize, Display)]
+// pub(crate) struct BalanceCommand {
+//     result: StopStatus,
+// }
 
 #[derive(Deserialize, Table)]
 pub(crate) struct GetEnabledResult {

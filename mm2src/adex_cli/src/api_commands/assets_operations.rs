@@ -4,10 +4,11 @@ use log::{error, info, warn};
 use mm2_net::native_http::slurp_post_json;
 use serde_json::{json, Value as Json};
 
-use super::protocol_data::{Command, GetEnabledResponse, GetOrderbook, Method};
-use super::{get_adex_config, macros, process_answer};
+use super::protocol_data::{CoinPair, Command, GetEnabledResponse, Method};
+use super::{get_adex_config, macros};
 use crate::activation_scheme::get_activation_scheme;
 use crate::adex_config::AdexConfig;
+use crate::api_commands::Response;
 
 pub async fn activate(asset: &str) {
     let activation_scheme = get_activation_scheme();
@@ -27,20 +28,14 @@ pub async fn activate(asset: &str) {
         Err(error) => {
             error!("Failed to activate: {error}");
         },
-        Ok((status, headers, data)) => process_answer::<Json, Json, _, _>(
-            &status,
-            &headers,
-            &data,
-            print_result_as_talbe,
-            Some(print_result_as_talbe),
-        ),
+        Ok(resp) => resp.process::<Json, Json, _, _>(print_result_as_talbe, Some(print_result_as_talbe)),
     };
 }
 
 pub async fn balance(asset: &str) {
     let (rpc_password, rpc_uri) = macros::get_config!();
     let command = Command::builder()
-        .method(Method::Balance)
+        .method(Method::GetBalance)
         .flatten_data(json!({ "coin": asset }))
         .userpass(rpc_password)
         .build();
@@ -49,13 +44,7 @@ pub async fn balance(asset: &str) {
         Err(error) => {
             error!("Failed to get balance: {error}");
         },
-        Ok((status, headers, data)) => process_answer::<Json, Json, _, _>(
-            &status,
-            &headers,
-            &data,
-            print_result_as_talbe,
-            Some(print_result_as_talbe),
-        ),
+        Ok(resp) => resp.process::<Json, Json, _, _>(print_result_as_talbe, Some(print_result_as_talbe)),
     };
 }
 
@@ -71,13 +60,9 @@ pub async fn get_enabled() {
         Err(error) => {
             error!("Failed to list activated: {error}");
         },
-        Ok((status, headers, data)) => process_answer::<GetEnabledResponse, Json, _, _>(
-            &status,
-            &headers,
-            &data,
-            print_enabled_coins_result,
-            Some(print_result_as_talbe),
-        ),
+        Ok(resp) => {
+            resp.process::<GetEnabledResponse, Json, _, _>(print_enabled_coins_result, Some(print_result_as_talbe))
+        },
     };
 }
 
@@ -86,7 +71,7 @@ pub async fn get_orderbook(base: &str, rel: &str) {
     let _command = Command::builder()
         .userpass(rpc_password)
         .method(Method::GetOrderbook)
-        .flatten_data(GetOrderbook::new(base, rel))
+        .flatten_data(CoinPair::new(base, rel))
         .build();
 }
 
