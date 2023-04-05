@@ -6,6 +6,7 @@
 - CI/CD workflow logics are improved [#1736](https://github.com/KomodoPlatform/atomicDEX-API/pull/1736)
 - Project root is simplified/refactored [#1738](https://github.com/KomodoPlatform/atomicDEX-API/pull/1738)
 - Created base image to provide more glibc compatible pre-built binaries for linux [#1741](https://github.com/KomodoPlatform/atomicDEX-API/pull/1741)
+- Set default log level as "info" [#1747](https://github.com/KomodoPlatform/atomicDEX-API/pull/1747)
 
 ## v1.0.1-beta - 2023-03-17
 
