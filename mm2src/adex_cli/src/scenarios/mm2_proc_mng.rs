@@ -1,4 +1,4 @@
-use common::log::{debug, error, info};
+use common::log::{error, info};
 use std::env;
 use std::path::PathBuf;
 #[cfg(not(target_os = "macos"))]
@@ -44,10 +44,10 @@ mod unix_reexport {
 mod macos_reexport {
     pub use std::fs;
     pub const LAUNCH_CTL_COOL_DOWN_TIMEOUT_MS: u64 = 500;
+    pub use log::debug;
     pub use std::process::{Command, Stdio};
     pub use std::thread::sleep;
     pub use std::time::Duration;
-
     pub const LAUNCHCTL_MM2_ID: &str = "com.mm2.daemon";
 }
 
