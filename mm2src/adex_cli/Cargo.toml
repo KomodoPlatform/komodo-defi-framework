@@ -7,8 +7,8 @@ description = "Provides a CLI interface and facilitates interoperating to komodo
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-clap = "2.33.3"
-cli-table = { version = "0.4", default-features = false, features = ["derive"]}
+clap = { version = "4.2", features = ["derive"] }
+cli-table = { version = "0.4", default-features = false, features = ["derive", "title"]}
 common = { path = "../common" }
 derive_more = "0.99"
 directories = "5.0"
