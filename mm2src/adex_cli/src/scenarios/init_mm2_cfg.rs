@@ -100,13 +100,13 @@ impl Mm2Cfg {
 
     #[inline]
     fn inquire_net_id(&mut self) -> Result<(), ()> {
-        self.netid = CustomType::<u16>::new("What is the network `mm2` is going to be a part, net_id:")
+        self.netid = CustomType::<u16>::new("What is the network `mm2` is going to be a part, netid:")
                 .with_default(DEFAULT_NET_ID)
                 .with_help_message(r#"Network ID number, telling the AtomicDEX API which network to join. 7777 is the current main network, though alternative netids can be used for testing or "private" trades"#)
                 .with_placeholder(format!("{DEFAULT_NET_ID}").as_str())
                 .prompt()
                 .map_err(|error| {
-                    error!("Failed to get net_id: {error}");
+                    error!("Failed to get netid: {error}");
                 })?.into();
         Ok(())
     }

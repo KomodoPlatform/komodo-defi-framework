@@ -44,7 +44,7 @@ mod unix_reexport {
 mod macos_reexport {
     pub use std::fs;
     pub const LAUNCH_CTL_COOL_DOWN_TIMEOUT_MS: u64 = 500;
-    pub use log::debug;
+    pub use common::log::debug;
     pub use std::process::{Command, Stdio};
     pub use std::thread::sleep;
     pub use std::time::Duration;
