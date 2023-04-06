@@ -5,20 +5,23 @@ use serde::{Deserialize, Serialize};
 pub trait Transport {
     async fn send<ReqT, OkT, ErrT>(&self, req: ReqT) -> Result<OkT, Result<ErrT, ()>>
     where
-        ReqT: Serialize,
-        OkT: for<'a> Deserialize<'a>,
-        ErrT: for<'a> Deserialize<'a>;
+        ReqT: Serialize + Send,
+        OkT: for<'a> Deserialize<'a> + Default,
+        ErrT: for<'a> Deserialize<'a>,
+        Self: Sized + Send + 'static;
 }
 
 pub struct SlurpTransport {}
 
+#[async_trait]
 impl Transport for SlurpTransport {
     async fn send<ReqT, OkT, ErrT>(&self, req: ReqT) -> Result<OkT, Result<ErrT, ()>>
     where
-        ReqT: Serialize,
-        OkT: for<'a> Deserialize<'a>,
+        ReqT: Serialize + Send,
+        OkT: for<'a> Deserialize<'a> + Default,
         ErrT: for<'a> Deserialize<'a>,
+        Self: Sized + Send + 'static,
     {
-        Ok(33)
+        Ok(OkT::default())
     }
 }

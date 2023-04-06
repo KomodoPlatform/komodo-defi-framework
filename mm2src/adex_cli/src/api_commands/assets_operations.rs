@@ -3,7 +3,6 @@ use log::{error, info, warn};
 use mm2_net::native_http::slurp_post_json;
 use response::print_result_as_table;
 use serde_json::{json, Value as Json};
-use std::ops::Deref;
 
 use super::protocol_data::{CoinPair, Command, GetEnabledResponse, Method};
 use super::{get_adex_config, macros};
@@ -14,11 +13,11 @@ use crate::api_commands::{response, Response};
 use crate::transport::Transport;
 
 pub struct AdexProc {
-    pub transport: Box<dyn Transport + 'static>,
+    pub transport: Box<dyn Transport + Send + Sync + 'static>,
 }
 
 impl AdexProc {
-    pub async fn enable(&mut self, asset: &str) {
+    pub async fn enable(&self, asset: String) {
         let activation_scheme = get_activation_scheme();
         let Some(activate_specific_settings) = activation_scheme.get_activation_method(&asset) else {
             warn!("Asset is not known: {asset}");
@@ -31,7 +30,7 @@ impl AdexProc {
             .userpass(rpc_password)
             .build();
 
-        match self.transport.as_ref().send::<_, Json, Json>(command).await {
+        match self.transport.send::<_, Json, Json>(command).await {
             Ok(ok) => {
                 let Ok(_) = print_result_as_table(ok);
             },

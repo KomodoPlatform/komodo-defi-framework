@@ -7,7 +7,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Serialize, Clone)]
 pub(crate) struct Command<T>
 where
-    T: Serialize,
+    T: Serialize + Sized,
 {
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub flatten_data: Option<T>,
@@ -18,7 +18,7 @@ where
 
 impl<T> Command<T>
 where
-    T: Serialize,
+    T: Serialize + Sized,
 {
     pub fn builder() -> CommandBuilder<T> { CommandBuilder::new() }
 }
