@@ -463,7 +463,9 @@ pub fn run_lp_main(
             env::set_var(MM2_LOG_ENV_KEY, "info");
         };
 
-        env_logger::init();
+        if let Err(e) = env_logger::try_init() {
+            common::log::debug!("env_logger is already initialized. {}", e);
+        };
     }
 
     setup_env_logger();
