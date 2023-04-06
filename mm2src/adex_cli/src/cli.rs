@@ -1,10 +1,11 @@
 const MM2_CONFIG_FILE_DEFAULT: &str = "MM2.json";
 const COINS_FILE_DEFAULT: &str = "coins";
 
+use crate::adex_config::AdexConfig;
 use clap::{Parser, Subcommand};
+use log::{error, warn};
 
-use crate::api_commands::{get_balance, get_config, get_enabled, get_orderbook, get_version, sell, send_stop,
-                          set_config, AdexProc};
+use crate::api_commands::{get_config, set_config, AdexProc};
 use crate::scenarios::{get_status, init, start_process, stop_process};
 use crate::transport::SlurpTransport;
 
@@ -94,10 +95,32 @@ pub struct Cli {
     command: Command,
 }
 
+fn get_adex_config() -> Result<AdexConfig, ()> {
+    let config = AdexConfig::from_config_path().map_err(|_| error!("Failed to get adex_config"))?;
+    if !config.is_set() {
+        warn!("Failed to process, adex_config is not fully set");
+        return Err(());
+    }
+    Ok(config)
+}
+
 impl Cli {
-    pub async fn execute() {
+    pub async fn execute() -> Result<(), ()> {
+        let config = match get_adex_config() {
+            config @ Ok(AdexConfig {
+                rpc_password: Some(_),
+                rpc_uri: Some(_),
+            }) => config.unwrap(),
+            _ => {
+                return Err(());
+            },
+        };
+
         let proc = AdexProc {
-            transport: Box::new(SlurpTransport {}),
+            transport: SlurpTransport {
+                uri: config.rpc_uri.unwrap().to_string(),
+            },
+            rpc_password: config.rpc_password.unwrap().to_string(),
         };
         let mut parsed_cli = Self::parse();
         match &mut parsed_cli.command {
@@ -110,24 +133,25 @@ impl Cli {
                 mm_coins_path: coins_file,
                 mm_log: log_file,
             } => start_process(mm2_cfg_file, coins_file, log_file),
-            Command::Version => get_version().await,
+            Command::Version => proc.get_version().await?,
             Command::Kill => stop_process(),
             Command::Status => get_status(),
-            Command::Stop => send_stop().await,
+            Command::Stop => proc.send_stop().await?,
             Command::Config(ConfigSubcommand::Set { set_password, adex_uri }) => {
                 set_config(*set_password, adex_uri.take())
             },
             Command::Config(ConfigSubcommand::Get) => get_config(),
-            Command::Asset(AssetSubcommand::Enable { asset }) => proc.enable(asset.to_string()).await,
-            Command::Asset(AssetSubcommand::Balance { asset }) => get_balance(asset).await,
-            Command::Asset(AssetSubcommand::GetEnabled) => get_enabled().await,
-            Command::Orderbook { base, rel } => get_orderbook(base, rel).await,
+            Command::Asset(AssetSubcommand::Enable { asset }) => proc.enable(asset).await?,
+            Command::Asset(AssetSubcommand::Balance { asset }) => proc.get_balance(asset).await?,
+            Command::Asset(AssetSubcommand::GetEnabled) => proc.get_enabled().await?,
+            Command::Orderbook { base, rel } => proc.get_orderbook(base, rel).await?,
             Command::Sell {
                 base,
                 rel,
                 volume,
                 price,
-            } => sell(base, rel, *volume, *price).await,
+            } => proc.sell(base, rel, *volume, *price).await?,
         }
+        Ok(())
     }
 }

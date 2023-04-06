@@ -15,5 +15,5 @@ fn main() {}
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     log::init_logging();
-    cli::Cli::execute().await;
+    let _ = cli::Cli::execute().await;
 }

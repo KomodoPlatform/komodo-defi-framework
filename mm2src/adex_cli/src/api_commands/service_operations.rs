@@ -1,38 +1,7 @@
 use inquire::Password;
 use log::{error, info, warn};
-use mm2_net::transport::slurp_post_json;
-use serde_json::Value as Json;
 
-use super::protocol_data::{Dummy, Method, StopResponse, VersionResponse};
-use super::{get_adex_config, macros, protocol_data::Command};
 use crate::adex_config::AdexConfig;
-use crate::api_commands::Response;
-
-pub async fn send_stop() {
-    let (rpc_password, rpc_uri) = macros::get_config!();
-    let stop_command = Command::<Dummy>::builder()
-        .userpass(rpc_password)
-        .method(Method::Stop)
-        .build();
-    let data = serde_json::to_string(&stop_command).expect("Failed to serialize stop_command");
-    match slurp_post_json(&rpc_uri, data).await {
-        Err(error) => error!("Failed to stop through the API: {error}"),
-        Ok(resp) => resp.process::<StopResponse, Json, _, _>(|res| Ok(info!("{res}")), Some(|_| Ok(()))),
-    };
-}
-
-pub async fn get_version() {
-    let (rpc_password, rpc_uri) = macros::get_config!();
-    let version_command = Command::<Dummy>::builder()
-        .userpass(rpc_password)
-        .method(Method::Version)
-        .build();
-    let data = serde_json::to_string(&version_command).expect("Failed to serialize get_version");
-    match slurp_post_json(&rpc_uri, data).await {
-        Err(error) => error!("Failed get version through the API: {error}"),
-        Ok(resp) => resp.process::<VersionResponse, Json, _, _>(|r| Ok(info!("{r}")), Some(|_| Ok(()))),
-    };
-}
 
 pub fn get_config() {
     let Ok(adex_cfg) = AdexConfig::from_config_path() else { return; };
