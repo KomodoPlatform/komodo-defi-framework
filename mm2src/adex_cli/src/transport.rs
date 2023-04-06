@@ -1,7 +1,9 @@
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+#[async_trait]
 trait Transport {
-    fn send<ReqT, OkT, ErrT>(req: ReqT) -> Result<OkT, ErrT>
+    async fn send<ReqT, OkT, ErrT>(req: ReqT) -> Result<OkT, ErrT>
     where
         ReqT: Serialize,
         OkT: for<'a> Deserialize<'a>,
