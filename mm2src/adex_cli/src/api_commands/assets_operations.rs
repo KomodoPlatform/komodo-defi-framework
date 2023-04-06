@@ -3,6 +3,7 @@ use log::{error, info, warn};
 use mm2_net::native_http::slurp_post_json;
 use response::print_result_as_table;
 use serde_json::{json, Value as Json};
+use std::ops::Deref;
 
 use super::protocol_data::{CoinPair, Command, GetEnabledResponse, Method};
 use super::{get_adex_config, macros};
@@ -10,6 +11,37 @@ use crate::activation_scheme::get_activation_scheme;
 use crate::adex_config::AdexConfig;
 use crate::api_commands::protocol_data::SellData;
 use crate::api_commands::{response, Response};
+use crate::transport::Transport;
+
+pub struct AdexProc {
+    pub transport: Box<dyn Transport + 'static>,
+}
+
+impl AdexProc {
+    pub async fn enable(&mut self, asset: &str) {
+        let activation_scheme = get_activation_scheme();
+        let Some(activate_specific_settings) = activation_scheme.get_activation_method(&asset) else {
+            warn!("Asset is not known: {asset}");
+            return;
+        };
+
+        let (rpc_password, rpc_uri) = macros::get_config!();
+        let command = Command::builder()
+            .flatten_data(activate_specific_settings.clone())
+            .userpass(rpc_password)
+            .build();
+
+        match self.transport.as_ref().send::<_, Json, Json>(command).await {
+            Ok(ok) => {
+                let Ok(_) = print_result_as_table(ok);
+            },
+            Err(Ok(err)) => {
+                let Ok(_) = print_result_as_table(err);
+            },
+            _ => {},
+        };
+    }
+}
 
 pub async fn enable(asset: &str) {
     let activation_scheme = get_activation_scheme();

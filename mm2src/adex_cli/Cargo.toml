@@ -31,3 +31,5 @@ fork = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.3", features = ["processthreadsapi", "winnt"] }
+
+mockall = "0.11.4"

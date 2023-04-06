@@ -4,8 +4,9 @@ const COINS_FILE_DEFAULT: &str = "coins";
 use clap::{Parser, Subcommand};
 
 use crate::api_commands::{enable, get_balance, get_config, get_enabled, get_orderbook, get_version, sell, send_stop,
-                          set_config};
+                          set_config, AdexProc};
 use crate::scenarios::{get_status, init, start_process, stop_process};
+use crate::transport::{SlurpTransport, Transport};
 
 #[derive(Subcommand)]
 enum Command {
@@ -95,6 +96,9 @@ pub struct Cli {
 
 impl Cli {
     pub async fn execute() {
+        let proc = AdexProc {
+            transport: Box::new(SlurpTransport {}),
+        };
         let mut parsed_cli = Self::parse();
         match &mut parsed_cli.command {
             Command::Init {
@@ -114,7 +118,7 @@ impl Cli {
                 set_config(*set_password, adex_uri.take())
             },
             Command::Config(ConfigSubcommand::Get) => get_config(),
-            Command::Asset(AssetSubcommand::Enable { asset }) => enable(asset).await,
+            Command::Asset(AssetSubcommand::Enable { asset }) => proc.enable(asset).await,
             Command::Asset(AssetSubcommand::Balance { asset }) => get_balance(asset).await,
             Command::Asset(AssetSubcommand::GetEnabled) => get_enabled().await,
             Command::Orderbook { base, rel } => get_orderbook(base, rel).await,

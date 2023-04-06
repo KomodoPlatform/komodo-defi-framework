@@ -8,7 +8,7 @@ use log::{error, warn};
 use crate::adex_config::AdexConfig;
 use response::Response;
 
-pub use assets_operations::{enable, get_balance, get_enabled, get_orderbook, sell};
+pub use assets_operations::{enable, get_balance, get_enabled, get_orderbook, sell, AdexProc};
 pub use service_operations::{get_config, get_version, send_stop, set_config};
 
 mod macros {
