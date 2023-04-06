@@ -3,7 +3,7 @@ const COINS_FILE_DEFAULT: &str = "coins";
 
 use clap::{Parser, Subcommand};
 
-use crate::api_commands::{enable, get_balance, get_config, get_enabled, get_orderbook, get_version, send_stop,
+use crate::api_commands::{enable, get_balance, get_config, get_enabled, get_orderbook, get_version, sell, send_stop,
                           set_config};
 use crate::scenarios::{get_status, init, start_process, stop_process};
 
@@ -44,13 +44,23 @@ enum Command {
         #[arg(help = "Related currency, also can be called \"quote currency\" according to exchange terms")]
         rel: String,
     },
+    Sell {
+        #[arg(help = "Base currency of a pair")]
+        base: String,
+        #[arg(help = "Related currency, also can be called \"quote currency\" according to exchange terms")]
+        rel: String,
+        #[arg(help = "Asset volume to be sold")]
+        volume: f64,
+        #[arg(help = "Price to be sold at")]
+        price: f64,
+    },
 }
 
 #[derive(Subcommand)]
 enum ConfigSubcommand {
     #[command(about = "Sets komodo adex cli configuration")]
     Set {
-        #[arg(long, help = "Adex RPC API Uri. http://localhost::7783")]
+        #[arg(long, help = "Adex RPC API Uri. http://localhost:7783")]
         set_password: bool,
         #[arg(long, name = "URI", help = "Set if you are going to set up a password")]
         adex_uri: Option<String>,
@@ -108,6 +118,12 @@ impl Cli {
             Command::Asset(AssetSubcommand::Balance { asset }) => get_balance(asset).await,
             Command::Asset(AssetSubcommand::GetEnabled) => get_enabled().await,
             Command::Orderbook { base, rel } => get_orderbook(base, rel).await,
+            Command::Sell {
+                base,
+                rel,
+                volume,
+                price,
+            } => sell(base, rel, *volume, *price).await,
         }
     }
 }

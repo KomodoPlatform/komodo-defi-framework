@@ -4,7 +4,7 @@ use std::net::Ipv4Addr;
 #[derive(Serialize)]
 pub struct Mm2Cfg {
     pub gui: Option<String>,
-    pub net_id: Option<u16>,
+    pub netid: Option<u16>,
     pub rpc_password: Option<String>,
     #[serde(rename = "passphrase")]
     pub seed_phrase: Option<String>,

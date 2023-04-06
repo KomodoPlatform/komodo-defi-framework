@@ -27,9 +27,9 @@ pub async fn get_version() {
         .userpass(rpc_password)
         .method(Method::Version)
         .build();
-    let data = serde_json::to_string(&version_command).expect("Failed to serialize stop_command");
+    let data = serde_json::to_string(&version_command).expect("Failed to serialize get_version");
     match slurp_post_json(&rpc_uri, data).await {
-        Err(error) => error!("Failed to stop through the API: {error}"),
+        Err(error) => error!("Failed get version through the API: {error}"),
         Ok(resp) => resp.process::<VersionResponse, Json, _, _>(|r| Ok(info!("{r}")), Some(|_| Ok(()))),
     };
 }

@@ -95,6 +95,7 @@ pub(crate) enum Method {
     GetEnabledCoins,
     #[serde(rename = "orderbook")]
     GetOrderbook,
+    Sell,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -112,14 +113,29 @@ impl CoinPair {
     }
 }
 
-impl Display for CoinPair {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { writeln!(f, "") }
-}
-
 #[derive(Serialize, Deserialize, Display)]
 #[serde(rename_all = "lowercase")]
 enum StopStatus {
     Success,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub(crate) struct SellData {
+    base: String,
+    rel: String,
+    volume: f64,
+    price: f64,
+}
+
+impl SellData {
+    pub fn new(base: &str, rel: &str, volume: f64, price: f64) -> Self {
+        Self {
+            base: base.to_string(),
+            rel: rel.to_string(),
+            volume,
+            price,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -144,11 +160,6 @@ impl Display for VersionResponse {
         writeln!(f, "Datetime: {}", self.datetime)
     }
 }
-
-// #[derive(Serialize, Deserialize, Display)]
-// pub(crate) struct BalanceCommand {
-//     result: StopStatus,
-// }
 
 #[derive(Deserialize, Table)]
 pub(crate) struct GetEnabledResult {
