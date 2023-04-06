@@ -60,9 +60,9 @@ enum Command {
 enum ConfigSubcommand {
     #[command(about = "Sets komodo adex cli configuration")]
     Set {
-        #[arg(long, help = "Adex RPC API Uri. http://localhost:7783")]
+        #[arg(long, help = "Set if you are going to set up a password")]
         set_password: bool,
-        #[arg(long, name = "URI", help = "Set if you are going to set up a password")]
+        #[arg(long, name = "URI", help = "Adex RPC API Uri. http://localhost:7783")]
         adex_uri: Option<String>,
     },
     #[command(about = "Gets komodo adex cli configuration")]

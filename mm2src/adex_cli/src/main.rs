@@ -6,6 +6,7 @@
 #[cfg(not(target_arch = "wasm32"))] mod helpers;
 #[cfg(not(target_arch = "wasm32"))] mod log;
 #[cfg(not(target_arch = "wasm32"))] mod scenarios;
+#[cfg(not(target_arch = "wasm32"))] mod transport;
 
 #[cfg(target_arch = "wasm32")]
 fn main() {}
