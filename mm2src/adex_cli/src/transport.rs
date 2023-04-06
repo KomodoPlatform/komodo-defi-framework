@@ -8,7 +8,7 @@ pub trait Transport {
         ReqT: Serialize + Send,
         OkT: for<'a> Deserialize<'a> + Default,
         ErrT: for<'a> Deserialize<'a>,
-        Self: Sized + Send + 'static;
+        Self: Sized + Sync + Send + 'static;
 }
 
 pub struct SlurpTransport {}
@@ -20,7 +20,7 @@ impl Transport for SlurpTransport {
         ReqT: Serialize + Send,
         OkT: for<'a> Deserialize<'a> + Default,
         ErrT: for<'a> Deserialize<'a>,
-        Self: Sized + Send + 'static,
+        Self: Sized + Sync + Send + 'static,
     {
         Ok(OkT::default())
     }

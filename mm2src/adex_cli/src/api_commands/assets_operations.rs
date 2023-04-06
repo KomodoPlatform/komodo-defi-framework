@@ -17,30 +17,30 @@ pub struct AdexProc {
 }
 
 impl AdexProc {
-    pub async fn enable(&self, asset: String) {
-        let activation_scheme = get_activation_scheme();
-        let Some(activate_specific_settings) = activation_scheme.get_activation_method(&asset) else {
-            warn!("Asset is not known: {asset}");
-            return;
-        };
-
-        let (rpc_password, rpc_uri) = macros::get_config!();
-        let command = Command::builder()
-            .flatten_data(activate_specific_settings.clone())
-            .userpass(rpc_password)
-            .build();
-
-        match self.transport.send::<_, Json, Json>(command).await {
-            Ok(ok) => {
-                let Ok(_) = print_result_as_table(ok);
-            },
-            Err(Ok(err)) => {
-                let Ok(_) = print_result_as_table(err);
-            },
-            _ => {},
-        };
-    }
+    pub async fn enable(&self, asset: String) { let _ = self.transport.send::<_, Json, Json>(1).await; }
 }
+
+// let activation_scheme = get_activation_scheme();
+// let Some(activate_specific_settings) = activation_scheme.get_activation_method(&asset) else {
+//     warn!("Asset is not known: {asset}");
+//     return;
+// };
+//
+// let (rpc_password, rpc_uri) = macros::get_config!();
+// let command = Command::builder()
+//     .flatten_data(activate_specific_settings.clone())
+//     .userpass(rpc_password)
+//     .build();
+//
+// match self.transport.send::<_, Json, Json>(command).await {
+//     Ok(ok) => {
+//         let Ok(_) = print_result_as_table(ok);
+//     },
+//     Err(Ok(err)) => {
+//         let Ok(_) = print_result_as_table(err);
+//     },
+//     _ => {},
+// };
 
 pub async fn enable(asset: &str) {
     let activation_scheme = get_activation_scheme();
