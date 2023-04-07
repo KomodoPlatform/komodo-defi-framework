@@ -97,25 +97,21 @@ pub struct Cli {
 
 fn get_adex_config() -> Result<AdexConfig, ()> {
     let config = AdexConfig::from_config_path().map_err(|_| error!("Failed to get adex_config"))?;
-    if !config.is_set() {
-        warn!("Failed to process, adex_config is not fully set");
-        return Err(());
+    match config {
+        config @ AdexConfig {
+            rpc_password: Some(_),
+            rpc_uri: Some(_),
+        } => Ok(config),
+        _ => {
+            warn!("Failed to process, adex_config is not fully set");
+            Err(())
+        },
     }
-    Ok(config)
 }
 
 impl Cli {
     pub async fn execute() -> Result<(), ()> {
-        let config = match get_adex_config() {
-            config @ Ok(AdexConfig {
-                rpc_password: Some(_),
-                rpc_uri: Some(_),
-            }) => config.unwrap(),
-            _ => {
-                return Err(());
-            },
-        };
-
+        let config = get_adex_config()?;
         let proc = AdexProc {
             transport: SlurpTransport {
                 uri: config.rpc_uri.unwrap().to_string(),
