@@ -124,9 +124,9 @@ impl<T: Transport> AdexProc<T> {
         Ok(())
     }
 
-    pub async fn get_version(&self) -> Result<(), ()> {
+    pub async fn get_version(self) -> Result<(), ()> {
         let version_command = Command::<Dummy>::builder()
-            .userpass(self.rpc_password.clone())
+            .userpass(self.rpc_password)
             .method(Method::Version)
             .build();
 

@@ -1,5 +1,5 @@
 use directories::ProjectDirs;
-use log::{error, info};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::fs;
@@ -12,12 +12,17 @@ const PROJECT_COMPANY: &str = "komodoplatform";
 const PROJECT_APP: &str = "adex-cli";
 const ADEX_CFG: &str = "adex_cfg.json";
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Default)]
 pub struct AdexConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) rpc_password: Option<String>,
+    rpc_password: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) rpc_uri: Option<String>,
+    rpc_uri: Option<String>,
+}
+
+impl AdexConfig {
+    pub fn rpc_password(&self) -> String { self.rpc_password.as_ref().unwrap().clone() }
+    pub fn rpc_uri(&self) -> String { self.rpc_uri.as_ref().unwrap().clone() }
 }
 
 impl Display for AdexConfig {
@@ -37,10 +42,17 @@ impl Display for AdexConfig {
 }
 
 impl AdexConfig {
-    pub fn new() -> Self {
-        Self {
-            rpc_password: None,
-            rpc_uri: None,
+    pub fn read_config() -> Result<AdexConfig, ()> {
+        let config = AdexConfig::from_config_path().map_err(|_| error!("Failed to get adex_config"))?;
+        match config {
+            config @ AdexConfig {
+                rpc_password: Some(_),
+                rpc_uri: Some(_),
+            } => Ok(config),
+            _ => {
+                warn!("Failed to process, adex_config is not fully set");
+                Err(())
+            },
         }
     }
 
@@ -93,4 +105,8 @@ impl AdexConfig {
         };
         rewrite_json_file(self, adex_path_str)
     }
+
+    pub fn set_rpc_password(&mut self, rpc_password: Option<String>) { self.rpc_password = rpc_password; }
+
+    pub fn set_rpc_uri(&mut self, rpc_uri: Option<String>) { self.rpc_uri = rpc_uri; }
 }

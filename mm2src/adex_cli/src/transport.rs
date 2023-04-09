@@ -15,7 +15,7 @@ pub trait Transport {
 }
 
 pub struct SlurpTransport {
-    pub uri: String,
+    pub rpc_uri: String,
 }
 
 #[async_trait]
@@ -27,7 +27,7 @@ impl Transport for &SlurpTransport {
         ErrT: for<'a> Deserialize<'a> + Display,
     {
         let data = serde_json::to_string(&req).expect("Failed to serialize enable request");
-        match slurp_post_json(&self.uri, data).await {
+        match slurp_post_json(&self.rpc_uri, data).await {
             Err(error) => {
                 error!("Failed to send json: {error}");
                 return Err(());

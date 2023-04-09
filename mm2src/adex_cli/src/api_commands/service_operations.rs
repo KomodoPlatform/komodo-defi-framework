@@ -9,10 +9,10 @@ pub fn get_config() {
 }
 
 pub fn set_config(set_password: bool, rpc_api_uri: Option<String>) {
-    let mut adex_cfg = AdexConfig::from_config_path().unwrap_or_else(|()| AdexConfig::new());
+    let mut adex_cfg = AdexConfig::from_config_path().unwrap_or_else(|()| AdexConfig::default());
     let mut is_changes_happened = false;
     if set_password {
-        adex_cfg.rpc_password = Password::new("Enter RPC API password:")
+        let rpc_password = Password::new("Enter RPC API password:")
             .prompt()
             .map(|value| {
                 is_changes_happened = true;
@@ -20,9 +20,10 @@ pub fn set_config(set_password: bool, rpc_api_uri: Option<String>) {
             })
             .map_err(|error| error!("Failed to get rpc_api_password: {error}"))
             .ok();
+        adex_cfg.set_rpc_password(rpc_password);
     }
     if rpc_api_uri.is_some() {
-        adex_cfg.rpc_uri = rpc_api_uri;
+        adex_cfg.set_rpc_uri(rpc_api_uri);
         is_changes_happened = true;
     }
 

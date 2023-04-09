@@ -94,7 +94,11 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn execute(proc: &AdexProc<impl Transport>) -> Result<(), ()> {
+    pub async fn execute(transport: impl Transport, rpc_password: String) -> Result<(), ()> {
+        let proc = AdexProc {
+            transport,
+            rpc_password,
+        };
         let mut parsed_cli = Self::parse();
         match &mut parsed_cli.command {
             Command::Init {
