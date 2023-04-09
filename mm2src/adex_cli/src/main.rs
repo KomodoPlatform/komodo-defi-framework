@@ -36,10 +36,11 @@ async fn main() {
     log::init_logging();
 
     let config = get_adex_config().expect("");
+    let transport = SlurpTransport {
+        uri: config.rpc_uri.unwrap().to_string(),
+    };
     let proc = AdexProc {
-        transport: Box::new(SlurpTransport {
-            uri: config.rpc_uri.unwrap().to_string(),
-        }),
+        transport: &transport,
         rpc_password: config.rpc_password.unwrap().to_string(),
     };
     let _ = cli::Cli::execute(&proc).await;

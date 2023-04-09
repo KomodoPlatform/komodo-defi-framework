@@ -19,7 +19,7 @@ pub struct SlurpTransport {
 }
 
 #[async_trait]
-impl Transport for SlurpTransport {
+impl Transport for &SlurpTransport {
     async fn send<ReqT, OkT, ErrT>(&self, req: ReqT) -> Result<Result<OkT, ErrT>, ()>
     where
         ReqT: Serialize + Send,

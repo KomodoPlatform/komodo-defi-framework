@@ -9,8 +9,8 @@ use crate::api_commands::protocol_data::Dummy;
 use crate::api_commands::protocol_data::SellData;
 use crate::transport::Transport;
 
-pub struct AdexProc<T: Transport> {
-    pub transport: Box<T>,
+pub struct AdexProc<T> {
+    pub transport: T,
     pub rpc_password: String,
 }
 
