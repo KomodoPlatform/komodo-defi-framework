@@ -1,6 +1,7 @@
 use common::log::{error, info};
 use std::env;
 use std::path::PathBuf;
+
 #[cfg(not(target_os = "macos"))]
 pub use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 
@@ -22,12 +23,13 @@ mod reexport {
 
 #[cfg(all(unix, not(target_os = "macos")))]
 mod unix_not_macos_reexport {
-    pub use fork::{daemon, Fork};
-    pub use std::ffi::OsStr;
+    pub use fork::{fork, setsid, Fork};
     pub use std::process::{Command, Stdio};
-    pub use std::u32;
+    pub use std::thread::sleep;
+    pub use std::time::Duration;
 
     pub const KILL_CMD: &str = "kill";
+    pub const START_PROC_COOLDOWN_TIMEOUT_MS: u64 = 10;
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -100,22 +102,30 @@ pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>,
     }
 
     let Ok(mm2_binary) = get_mm2_binary_path() else { return; };
+    if !mm2_binary.exists() {
+        error!("Failed to start mm2, no file: {mm2_binary:?}");
+        return;
+    }
     start_process_impl(mm2_binary);
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn start_process_impl(mm2_binary: PathBuf) {
     let mut command = Command::new(&mm2_binary);
-    let program = mm2_binary
-        .file_name()
-        .map_or("Undefined", |name: &OsStr| name.to_str().unwrap_or("Undefined"));
+    let program = mm2_binary.file_name().expect("No file_name in mm2_binary");
 
-    match daemon(true, true) {
-        Ok(Fork::Child) => {
-            command.output().expect("Failed to execute process");
+    match fork() {
+        Ok(Fork::Parent(_)) => {
+            sleep(Duration::from_millis(START_PROC_COOLDOWN_TIMEOUT_MS));
+            if find_proc_by_name(MM2_BINARY).is_empty() {
+                info!("Failed to start: {mm2_binary:?}");
+            } else {
+                info!("Successfully started: {program:?}");
+            }
         },
-        Ok(Fork::Parent(pid)) => {
-            info!("Successfully started: {program:?}, forked pid: {pid}");
+        Ok(Fork::Child) => {
+            setsid().expect("Failed to setsid");
+            let _ = command.output();
         },
         Err(error) => error!("Failed to fork a process: {error}"),
     }
