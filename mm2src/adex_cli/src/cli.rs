@@ -1,13 +1,11 @@
 const MM2_CONFIG_FILE_DEFAULT: &str = "MM2.json";
 const COINS_FILE_DEFAULT: &str = "coins";
 
-use crate::adex_config::AdexConfig;
 use clap::{Parser, Subcommand};
-use log::{error, warn};
 
 use crate::api_commands::{get_config, set_config, AdexProc};
 use crate::scenarios::{get_status, init, start_process, stop_process};
-use crate::transport::SlurpTransport;
+use crate::transport::Transport;
 
 #[derive(Subcommand)]
 enum Command {
@@ -95,29 +93,8 @@ pub struct Cli {
     command: Command,
 }
 
-fn get_adex_config() -> Result<AdexConfig, ()> {
-    let config = AdexConfig::from_config_path().map_err(|_| error!("Failed to get adex_config"))?;
-    match config {
-        config @ AdexConfig {
-            rpc_password: Some(_),
-            rpc_uri: Some(_),
-        } => Ok(config),
-        _ => {
-            warn!("Failed to process, adex_config is not fully set");
-            Err(())
-        },
-    }
-}
-
 impl Cli {
-    pub async fn execute() -> Result<(), ()> {
-        let config = get_adex_config()?;
-        let proc = AdexProc {
-            transport: SlurpTransport {
-                uri: config.rpc_uri.unwrap().to_string(),
-            },
-            rpc_password: config.rpc_password.unwrap().to_string(),
-        };
+    pub async fn execute(proc: &AdexProc<impl Transport>) -> Result<(), ()> {
         let mut parsed_cli = Self::parse();
         match &mut parsed_cli.command {
             Command::Init {

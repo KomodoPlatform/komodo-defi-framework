@@ -54,27 +54,23 @@ impl Response for (StatusCode, HeaderMap, Vec<u8>) {
 
         match status {
             StatusCode::OK => match serde_json::from_slice::<OkT>(&data) {
-                Ok(resp_data) => {
-                    return Ok(Ok(resp_data));
-                },
+                Ok(resp_data) => Ok(Ok(resp_data)),
                 Err(error) => {
                     error!("Failed to deserialize adex_response from data: {data:?}, error: {error}");
-                    return Err(());
+                    Err(())
                 },
             },
             StatusCode::INTERNAL_SERVER_ERROR => match serde_json::from_slice::<ErrT>(&data) {
-                Ok(resp_data) => {
-                    return Ok(Err(resp_data));
-                },
+                Ok(resp_data) => Ok(Err(resp_data)),
                 Err(error) => {
                     error!("Failed to deserialize adex_response from data: {data:?}, error: {error}");
-                    return Err(());
+                    Err(())
                 },
             },
             _ => {
                 warn!("Bad http status: {status}, data: {data:?}");
-                return Err(());
+                Err(())
             },
-        };
+        }
     }
 }
