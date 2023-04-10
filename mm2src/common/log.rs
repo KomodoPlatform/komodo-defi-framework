@@ -995,7 +995,6 @@ impl LightningLogger for LogState {
         let record = Record::builder()
             .args(record.args)
             .level(level)
-            .target("mm_log")
             .module_path(Some(record.module_path))
             .file(Some(record.file))
             .line(Some(record.line))
