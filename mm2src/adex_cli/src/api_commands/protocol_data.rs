@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
 #[derive(Serialize, Clone)]
-pub(crate) struct Command<T>
+pub struct Command<T>
 where
     T: Serialize + Sized,
 {
@@ -23,7 +23,7 @@ where
     pub fn builder() -> CommandBuilder<T> { CommandBuilder::new() }
 }
 
-pub(crate) struct CommandBuilder<T> {
+pub struct CommandBuilder<T> {
     userpass: Option<String>,
     method: Option<Method>,
     flatten_data: Option<T>,
@@ -82,11 +82,11 @@ impl<T: Serialize + Clone> Display for Command<T> {
 }
 
 #[derive(Serialize, Clone, Copy, derive_more::Display)]
-pub(crate) struct Dummy {}
+pub struct Dummy {}
 
 #[derive(Serialize, Clone, derive_more::Display)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Method {
+pub enum Method {
     Stop,
     Version,
     #[serde(rename = "my_balance")]

@@ -9,12 +9,12 @@ use crate::api_commands::protocol_data::Dummy;
 use crate::api_commands::protocol_data::SellData;
 use crate::transport::Transport;
 
-pub struct AdexProc<T> {
-    pub transport: T,
+pub struct AdexProc<'a, T: Transport> {
+    pub transport: &'a T,
     pub rpc_password: String,
 }
 
-impl<T: Transport> AdexProc<T> {
+impl<T: Transport> AdexProc<'_, T> {
     pub async fn enable(&self, asset: &str) -> Result<(), ()> {
         info!("Enabling asset: {asset}");
         let _ = self.transport.send::<_, i32, Json>(1).await;

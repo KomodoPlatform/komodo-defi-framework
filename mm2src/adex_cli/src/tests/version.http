@@ -1,0 +1,5 @@
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 72
+
+{"result":"1.0.1-beta_824ca36f3","datetime":"2023-04-06T22:35:43+05:00"}

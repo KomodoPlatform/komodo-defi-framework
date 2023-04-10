@@ -1,6 +1,6 @@
 use crate::adex_config::AdexConfig;
 use crate::cli;
-use crate::transport::{SlurpTransport, Transport};
+use crate::transport::SlurpTransport;
 use std::env;
 
 pub struct AdexApp {
@@ -17,6 +17,7 @@ impl AdexApp {
             transport: SlurpTransport { rpc_uri },
         })
     }
-
-    pub async fn execute(&self) { let _ = cli::Cli::execute(&self.transport, self.config.rpc_password()).await; }
+    pub async fn execute(&self) {
+        let _ = cli::Cli::execute(env::args(), &self.transport, self.config.rpc_password()).await;
+    }
 }

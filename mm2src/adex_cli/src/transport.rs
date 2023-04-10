@@ -18,8 +18,14 @@ pub struct SlurpTransport {
     pub rpc_uri: String,
 }
 
+impl SlurpTransport {
+    pub fn ggbb(&self) {
+        println!("asdf");
+    }
+}
+
 #[async_trait]
-impl Transport for &SlurpTransport {
+impl Transport for SlurpTransport {
     async fn send<ReqT, OkT, ErrT>(&self, req: ReqT) -> Result<Result<OkT, ErrT>, ()>
     where
         ReqT: Serialize + Send + 'static,
