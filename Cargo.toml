@@ -41,6 +41,10 @@ members = [
     "mm2src/trezor",
 ]
 
+exclude = [
+    "mm2src/adex_cli"
+]
+
 # https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
 resolver = "2"
 

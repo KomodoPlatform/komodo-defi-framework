@@ -83,7 +83,8 @@ fn build_c_code() {
         return;
     }
 
-    if cfg!(windows) {
+    let target_os = var("CARGO_CFG_TARGET_FAMILY").expect("!CARGO_CFG_TARGET_FAMILY");
+    if target_os == "windows" {
         // Link in the Windows-specific crash handling code.
         let lm_seh = last_modified_sec(&"seh.c").expect("Can't stat seh.c");
         let out_dir = var("OUT_DIR").expect("!OUT_DIR");

@@ -1176,6 +1176,7 @@ dependencies = [
  "chrono",
  "crossbeam 0.8.2",
  "env_logger",
+ "derive_more",
  "findshlibs",
  "fnv",
  "futures 0.1.29",
@@ -1198,6 +1199,7 @@ dependencies = [
  "parking_lot_core 0.6.2",
  "primitive-types",
  "rand 0.7.3",
+ "regex",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -4126,7 +4128,7 @@ dependencies = [
 
 [[package]]
 name = "mm2_bin_lib"
-version = "1.0.1-beta"
+version = "1.0.2-beta"
 dependencies = [
  "chrono",
  "common",
