@@ -236,7 +236,7 @@ pub async fn lp_main(
     let log_filter = params.filter.unwrap_or_default();
     // Logger can be initialized once.
     // If `mm2` is linked as a library, and `mm2` is restarted, `init_logger` returns an error.
-    init_logger(log_filter).ok();
+    init_logger(log_filter, params.conf["silent_console"].as_bool().unwrap_or_default()).ok();
 
     let conf = params.conf;
     if !conf["rpc_password"].is_null() {
@@ -495,15 +495,15 @@ fn on_update_config(args: &[OsString]) -> Result<(), String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn init_logger(_level: LogLevel) -> Result<(), String> {
+fn init_logger(_level: LogLevel, silent_console: bool) -> Result<(), String> {
     common::log::UnifiedLoggerBuilder::default()
-        .silent_console(false)
+        .silent_console(silent_console)
         .init();
 
     Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
-fn init_logger(level: LogLevel) -> Result<(), String> {
+fn init_logger(level: LogLevel, _silent_console: bool) -> Result<(), String> {
     common::log::WasmLoggerBuilder::default().level_filter(level).try_init()
 }

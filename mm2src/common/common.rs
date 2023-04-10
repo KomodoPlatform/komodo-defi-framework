@@ -666,7 +666,7 @@ pub fn temp_dir() -> PathBuf { env::temp_dir() }
 /// Prints a warning to `stdout` if there's a problem opening the file.  
 /// Returns `None` if `MM_LOG` variable is not present or if the specified path can't be opened.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn open_log_file() -> Option<std::fs::File> {
+pub(crate) fn open_log_file() -> Option<std::fs::File> {
     let mm_log = match var("MM_LOG") {
         Ok(v) => v,
         Err(_) => return None,
