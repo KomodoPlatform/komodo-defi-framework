@@ -1,6 +1,7 @@
 use crate::adex_config::AdexConfig;
 use crate::cli;
-use crate::transport::SlurpTransport;
+use crate::transport::{SlurpTransport, Transport};
+use std::env;
 
 pub struct AdexApp {
     config: AdexConfig,

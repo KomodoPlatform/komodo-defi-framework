@@ -19,8 +19,6 @@ fn get_activation_scheme_path() -> Result<PathBuf, ()> {
 
 #[tokio::test]
 async fn test_activation_scheme() {
-    use activation_scheme::get_activation_scheme;
-
     init_activation_scheme();
     let scheme = get_activation_scheme();
     let kmd_scheme = scheme.get_activation_method("KMD");

@@ -9,9 +9,9 @@ use std::fmt::Display;
 pub trait Transport {
     async fn send<ReqT, OkT, ErrT>(&self, req: ReqT) -> Result<Result<OkT, ErrT>, ()>
     where
-        ReqT: Serialize + Send,
-        OkT: for<'a> Deserialize<'a>,
-        ErrT: for<'a> Deserialize<'a> + Display;
+        ReqT: Serialize + Send + 'static,
+        OkT: for<'a> Deserialize<'a> + 'static,
+        ErrT: for<'a> Deserialize<'a> + Display + 'static;
 }
 
 pub struct SlurpTransport {
@@ -22,9 +22,9 @@ pub struct SlurpTransport {
 impl Transport for &SlurpTransport {
     async fn send<ReqT, OkT, ErrT>(&self, req: ReqT) -> Result<Result<OkT, ErrT>, ()>
     where
-        ReqT: Serialize + Send,
-        OkT: for<'a> Deserialize<'a>,
-        ErrT: for<'a> Deserialize<'a> + Display,
+        ReqT: Serialize + Send + 'static,
+        OkT: for<'a> Deserialize<'a> + 'static,
+        ErrT: for<'a> Deserialize<'a> + Display + 'static,
     {
         let data = serde_json::to_string(&req).expect("Failed to serialize enable request");
         match slurp_post_json(&self.rpc_uri, data).await {

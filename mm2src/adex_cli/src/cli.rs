@@ -2,10 +2,12 @@ const MM2_CONFIG_FILE_DEFAULT: &str = "MM2.json";
 const COINS_FILE_DEFAULT: &str = "coins";
 
 use clap::{Parser, Subcommand};
+use std::env::Args;
+use std::ffi::OsString;
 
 use crate::api_commands::{get_config, set_config, AdexProc};
 use crate::scenarios::{get_status, init, start_process, stop_process};
-use crate::transport::Transport;
+use crate::transport::{SlurpTransport, Transport};
 
 #[derive(Subcommand)]
 enum Command {
