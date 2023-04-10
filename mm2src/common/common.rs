@@ -182,9 +182,15 @@ pub const APPLICATION_GRPC_WEB_PROTO: &str = "application/grpc-web+proto";
 pub const SATOSHIS: u64 = 100_000_000;
 
 pub const DEX_FEE_ADDR_PUBKEY: &str = "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06";
+
 lazy_static! {
     pub static ref DEX_FEE_ADDR_RAW_PUBKEY: Vec<u8> =
         hex::decode(DEX_FEE_ADDR_PUBKEY).expect("DEX_FEE_ADDR_PUBKEY is expected to be a hexadecimal string");
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+lazy_static! {
+    pub(crate) static ref LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(open_log_file());
 }
 
 pub auto trait NotSame {}
@@ -660,7 +666,7 @@ pub fn temp_dir() -> PathBuf { env::temp_dir() }
 /// Prints a warning to `stdout` if there's a problem opening the file.  
 /// Returns `None` if `MM_LOG` variable is not present or if the specified path can't be opened.
 #[cfg(not(target_arch = "wasm32"))]
-fn open_log_file() -> Option<std::fs::File> {
+pub fn open_log_file() -> Option<std::fs::File> {
     let mm_log = match var("MM_LOG") {
         Ok(v) => v,
         Err(_) => return None,
@@ -684,10 +690,6 @@ fn open_log_file() -> Option<std::fs::File> {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn writeln(line: &str) {
     use std::panic::catch_unwind;
-
-    lazy_static! {
-        static ref LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(open_log_file());
-    }
 
     // `catch_unwind` protects the tests from error
     //

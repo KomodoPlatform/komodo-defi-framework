@@ -42,7 +42,6 @@ either = "1.6"
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
 enum_from = { path = "../derives/enum_from" }
 enum-primitive-derive = "0.2"
-env_logger = "0.7.1"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
 gstuff = { version = "0.7", features = ["nightly"] }

@@ -456,20 +456,6 @@ pub fn run_lp_main(
     version: String,
     datetime: String,
 ) -> Result<(), String> {
-    fn setup_env_logger() {
-        const MM2_LOG_ENV_KEY: &str = "RUST_LOG";
-
-        if env::var_os(MM2_LOG_ENV_KEY).is_none() {
-            env::set_var(MM2_LOG_ENV_KEY, "info");
-        };
-
-        if let Err(e) = env_logger::try_init() {
-            common::log::debug!("env_logger is already initialized. {}", e);
-        };
-    }
-
-    setup_env_logger();
-
     let conf = get_mm2config(first_arg)?;
 
     let log_filter = LogLevel::from_env();
@@ -509,14 +495,12 @@ fn on_update_config(args: &[OsString]) -> Result<(), String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn init_logger(level: LogLevel) -> Result<(), String> {
-    use common::log::UnifiedLoggerBuilder;
+fn init_logger(_level: LogLevel) -> Result<(), String> {
+    common::log::UnifiedLoggerBuilder::default()
+        .silent_console(false)
+        .init();
 
-    UnifiedLoggerBuilder::default()
-        .level_filter(level)
-        .console(false)
-        .mm_log(true)
-        .try_init()
+    Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]

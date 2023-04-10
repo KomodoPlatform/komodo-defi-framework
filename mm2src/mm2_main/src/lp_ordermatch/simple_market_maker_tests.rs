@@ -49,7 +49,7 @@ mod tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_vwap_single_base_side() {
-        UnifiedLoggerBuilder::default().try_init().unwrap_or(());
+        UnifiedLoggerBuilder::default().init();
         let base_swaps =
             generate_swaps_from_values(vec![(MmNumber::from("29.99997438"), MmNumber::from("222.76277576"))]);
         let rel_swaps = generate_swaps_from_values(vec![]);
@@ -62,7 +62,7 @@ mod tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_vwap_single_base_side_forced_price() {
-        UnifiedLoggerBuilder::default().try_init().unwrap_or(());
+        UnifiedLoggerBuilder::default().init();
         let base_swaps =
             generate_swaps_from_values(vec![(MmNumber::from("29.99997438"), MmNumber::from("222.76277576"))]);
         let rel_swaps = generate_swaps_from_values(vec![]);
@@ -78,7 +78,7 @@ mod tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_vwap_multiple_base_side() {
-        UnifiedLoggerBuilder::default().try_init().unwrap_or(());
+        UnifiedLoggerBuilder::default().init();
         let base_swaps = generate_swaps_from_values(vec![
             (MmNumber::from("29.99997438"), MmNumber::from("222.76277576")),
             (MmNumber::from("14.99998719"), MmNumber::from("105.38138788")),
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_vwap_multiple_base_side_forced_price() {
-        UnifiedLoggerBuilder::default().try_init().unwrap_or(());
+        UnifiedLoggerBuilder::default().init();
         let base_swaps = generate_swaps_from_values(vec![
             (MmNumber::from("29.99997438"), MmNumber::from("222.76277576")),
             (MmNumber::from("29.99997438"), MmNumber::from("190.76277576")),
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_vwap_single_reversed_side() {
-        UnifiedLoggerBuilder::default().try_init().unwrap_or(());
+        UnifiedLoggerBuilder::default().init();
         let base_swaps = generate_swaps_from_values(vec![]);
         let rel_swaps = generate_swaps_from_values(vec![(MmNumber::from("219.4709"), MmNumber::from("29.99999"))]);
         let mut calculated_price = MmNumber::from("7.14455729");
