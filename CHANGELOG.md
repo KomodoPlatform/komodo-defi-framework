@@ -7,6 +7,7 @@
 - Project root is simplified/refactored [#1738](https://github.com/KomodoPlatform/atomicDEX-API/pull/1738)
 - Created base image to provide more glibc compatible pre-built binaries for linux [#1741](https://github.com/KomodoPlatform/atomicDEX-API/pull/1741)
 - Set default log level as "info" [#1747](https://github.com/KomodoPlatform/atomicDEX-API/pull/1747)
+- Refactor `native_log` module, implement stdout/err streaming to persistent file without dependencies [#1751](https://github.com/KomodoPlatform/atomicDEX-API/pull/1751)
 
 ## v1.0.1-beta - 2023-03-17
 
