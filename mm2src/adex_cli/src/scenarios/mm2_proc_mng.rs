@@ -23,13 +23,9 @@ mod reexport {
 
 #[cfg(all(unix, not(target_os = "macos")))]
 mod unix_not_macos_reexport {
-    pub use fork::{fork, setsid, Fork};
     pub use std::process::{Command, Stdio};
-    pub use std::thread::sleep;
-    pub use std::time::Duration;
 
     pub const KILL_CMD: &str = "kill";
-    pub const START_PROC_COOLDOWN_TIMEOUT_MS: u64 = 10;
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -112,23 +108,17 @@ pub fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<String>,
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn start_process_impl(mm2_binary: PathBuf) {
     let mut command = Command::new(&mm2_binary);
-    let program = mm2_binary.file_name().expect("No file_name in mm2_binary");
-
-    match fork() {
-        Ok(Fork::Parent(_)) => {
-            sleep(Duration::from_millis(START_PROC_COOLDOWN_TIMEOUT_MS));
-            if find_proc_by_name(MM2_BINARY).is_empty() {
-                info!("Failed to start: {mm2_binary:?}");
-            } else {
-                info!("Successfully started: {program:?}");
-            }
+    let file_name = mm2_binary.file_name().expect("No file_name in mm2_binary");
+    let process = match command.stdout(Stdio::null()).stdout(Stdio::null()).spawn() {
+        Ok(process) => process,
+        Err(error) => {
+            error!("Failed to start process: {mm2_binary:?}, error: {error}");
+            return;
         },
-        Ok(Fork::Child) => {
-            setsid().expect("Failed to setsid");
-            let _ = command.output();
-        },
-        Err(error) => error!("Failed to fork a process: {error}"),
-    }
+    };
+    let pid = process.id();
+    std::mem::forget(process);
+    info!("Started child process: {file_name:?}, pid: {pid}");
 }
 
 #[cfg(windows)]

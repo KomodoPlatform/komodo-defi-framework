@@ -342,7 +342,19 @@ pub fn run_lp_main(
     version: String,
     datetime: String,
 ) -> Result<(), String> {
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info"));
+    fn setup_env_logger() {
+        const MM2_LOG_ENV_KEY: &str = "RUST_LOG";
+
+        if env::var_os(MM2_LOG_ENV_KEY).is_none() {
+            env::set_var(MM2_LOG_ENV_KEY, "info");
+        };
+
+        if let Err(e) = env_logger::try_init() {
+            common::log::debug!("env_logger is already initialized. {}", e);
+        };
+    }
+
+    setup_env_logger();
 
     let conf = get_mm2config(first_arg)?;
 
