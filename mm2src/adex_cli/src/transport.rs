@@ -15,13 +15,11 @@ pub trait Transport {
 }
 
 pub struct SlurpTransport {
-    pub rpc_uri: String,
+    rpc_uri: String,
 }
 
 impl SlurpTransport {
-    pub fn ggbb(&self) {
-        println!("asdf");
-    }
+    pub fn new(rpc_uri: String) -> SlurpTransport { SlurpTransport { rpc_uri } }
 }
 
 #[async_trait]

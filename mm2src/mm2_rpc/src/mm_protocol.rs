@@ -4,6 +4,7 @@ use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use serde_json::Value as Json;
+use std::fmt::{Display, Formatter};
 
 /// Please note there is no standardized `1.0` version, so this enumeration should not be used in the legacy protocol context.
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -249,5 +250,19 @@ mod tests {
             .expect("Expected 'error' field")
             .contains("Internal error: Couldn't serialize an RPC response: An expected error"));
         assert_eq!(value["error_type"].as_str(), Some("InternalError"));
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct VersionResponse {
+    pub result: String,
+    pub datetime: String,
+}
+
+impl Display for VersionResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Version: {}", self.result)?;
+        writeln!(f, "Datetime: {}", self.datetime)
     }
 }

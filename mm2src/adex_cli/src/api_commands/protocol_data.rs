@@ -99,7 +99,7 @@ pub enum Method {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub(crate) struct CoinPair {
+pub struct CoinPair {
     base: String,
     rel: String,
 }
@@ -120,7 +120,7 @@ enum StopStatus {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub(crate) struct SellData {
+pub struct SellData {
     base: String,
     rel: String,
     volume: f64,
@@ -139,7 +139,7 @@ impl SellData {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct StopResponse {
+pub struct StopResponse {
     result: StopStatus,
 }
 
@@ -147,22 +147,8 @@ impl Display for StopResponse {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { writeln!(f, "Status: {}", self.result) }
 }
 
-#[derive(Serialize, Deserialize)]
-pub(crate) struct VersionResponse {
-    #[serde(rename(deserialize = "result", serialize = "result"))]
-    version: String,
-    datetime: String,
-}
-
-impl Display for VersionResponse {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Version: {}", self.version)?;
-        writeln!(f, "Datetime: {}", self.datetime)
-    }
-}
-
 #[derive(Deserialize, Table)]
-pub(crate) struct GetEnabledResult {
+pub struct GetEnabledResult {
     #[table(title = "Ticker")]
     ticker: String,
     #[table(title = "Address")]
@@ -170,6 +156,13 @@ pub(crate) struct GetEnabledResult {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct GetEnabledResponse {
+pub struct GetEnabledResponse {
     pub result: Vec<GetEnabledResult>,
 }
+
+// pub struct Order {
+//     pub coin: String,
+//     pub address: String,
+//     pub price: String,
+//     pub
+// }

@@ -1,20 +1,23 @@
 use cli_table::format::{Border, Separator};
 use cli_table::{print_stdout, Table, WithTitle};
 use log::{error, info, warn};
+use mm2_rpc::mm_protocol::VersionResponse;
 use serde_json::{json, Value as Json};
 
 use super::protocol_data::{CoinPair, Command, GetEnabledResponse, Method};
 use crate::activation_scheme::get_activation_scheme;
+use crate::api_commands::printer::Printer;
 use crate::api_commands::protocol_data::Dummy;
 use crate::api_commands::protocol_data::SellData;
 use crate::transport::Transport;
 
-pub struct AdexProc<'a, T: Transport> {
+pub struct AdexProc<'a, 'p, T: Transport, P: Printer> {
     pub transport: &'a T,
+    pub printer: &'p P,
     pub rpc_password: String,
 }
 
-impl<T: Transport> AdexProc<'_, T> {
+impl<T: Transport, P: Printer> AdexProc<'_, '_, T, P> {
     pub async fn enable(&self, asset: &str) -> Result<(), ()> {
         info!("Enabling asset: {asset}");
         let _ = self.transport.send::<_, i32, Json>(1).await;
@@ -130,16 +133,18 @@ impl<T: Transport> AdexProc<'_, T> {
             .method(Method::Version)
             .build();
 
-        match self.transport.send::<_, Json, Json>(version_command).await {
-            Ok(Ok(ok)) => info!("{ok}"),
-            Ok(Err(error)) => error!("Failed get version through the API: {error}"),
+        match self.transport.send::<_, VersionResponse, Json>(version_command).await {
+            Ok(Ok(ok)) => self.printer.display_response(ok),
+            Ok(Err(error)) => {
+                error!("Failed get version through the API: {error}");
+                return Err(());
+            },
             _ => return Err(()),
-        };
-        Ok(())
+        }
     }
 }
 
-pub(crate) fn print_result_as_table(result: Json) -> Result<(), ()> {
+pub fn print_result_as_table(result: Json) -> Result<(), ()> {
     let object = result
         .as_object()
         .ok_or_else(|| error!("Failed to cast result as object"))?;

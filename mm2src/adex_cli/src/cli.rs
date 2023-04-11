@@ -1,11 +1,12 @@
 const MM2_CONFIG_FILE_DEFAULT: &str = "MM2.json";
 const COINS_FILE_DEFAULT: &str = "coins";
 
+use crate::adex_config::AdexConfig;
 use clap::{Parser, Subcommand};
 
-use crate::api_commands::{get_config, set_config, AdexProc};
+use crate::api_commands::{get_config, set_config, AdexProc, Printer};
 use crate::scenarios::{get_status, init, start_process, stop_process};
-use crate::transport::Transport;
+use crate::transport::{SlurpTransport, Transport};
 
 #[derive(Subcommand)]
 enum Command {
@@ -94,15 +95,19 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn execute<T: Transport>(
+    pub async fn execute<P: Printer>(
         args: impl Iterator<Item = String>,
-        transport: &T,
-        rpc_password: String,
+        config: &AdexConfig,
+        printer: &P,
     ) -> Result<(), ()> {
+        let transport = SlurpTransport::new(config.rpc_uri());
+
         let proc = AdexProc {
-            transport,
-            rpc_password,
+            transport: &transport,
+            printer,
+            rpc_password: config.rpc_password(),
         };
+
         let mut parsed_cli = Self::parse_from(args);
         match &mut parsed_cli.command {
             Command::Init {

@@ -987,13 +987,6 @@ pub struct UtxoFeeDetails {
     pub amount: BigDecimal,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MmVersion {
-    pub result: String,
-    pub datetime: String,
-}
-
 #[derive(Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields, tag = "address_type", content = "address_data")]
 pub enum OrderbookAddress {
