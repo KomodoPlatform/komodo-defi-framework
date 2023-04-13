@@ -62,7 +62,7 @@ use bitcrypto::{dhash160, sha256};
 use coins::eth::u256_to_big_decimal;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoinEnum, RewardTarget, TradeFee, TransactionEnum,
             WatcherReward};
-use common::custom_futures::repeatable::{Ready, Retry};
+use common::custom_futures::repeatable::RetryOnError;
 use common::log::{debug, warn};
 use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
@@ -762,19 +762,11 @@ pub async fn watcher_reward_amount(
         },
     };
 
-    let gas_price = repeatable!(async {
-        match eth_coin.get_gas_price().compat().await {
-            Ok(gas_price) => Ready(gas_price),
-            Err(err) => {
-                error!("Error getting the gas price: {}", err);
-                Timer::sleep(10.).await;
-                Retry(())
-            },
-        }
-    })
-    .attempts(3)
-    .await
-    .map_err(|_| WatcherRewardError::RPCError("Error getting the gas price".to_string()))?;
+    let gas_price = repeatable!(async { eth_coin.get_gas_price().compat().await.retry_on_err() })
+        .attempts(3)
+        .repeat_every_secs(10.)
+        .await
+        .map_err(|_| WatcherRewardError::RPCError("Error getting the gas price".to_string()))?;
 
     let gas_cost_wei = U256::from(REWARD_GAS_AMOUNT) * gas_price;
     let gas_cost_eth =
