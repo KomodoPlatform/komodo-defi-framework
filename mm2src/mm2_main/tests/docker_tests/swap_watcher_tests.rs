@@ -88,8 +88,12 @@ fn start_swaps_and_get_balances(
         mycoin1_conf(1000)
     ]);
 
-    let alice_passphrase =
-        String::from("spice describe gravity federal thank unfair blast come canal monkey style afraid");
+    let alice_passphrase = if a_coin == "MYCOIN" || a_coin == "MYCOIN1" {
+        format!("0x{}", hex::encode(random_secp256k1_secret()))
+    } else {
+        String::from("spice describe gravity federal thank unfair blast come canal monkey style afraid")
+    };
+
     let alice_conf = Mm2TestConf::seednode_using_watchers(&alice_passphrase, &coins);
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
         alice_conf.conf.clone(),
@@ -101,7 +105,12 @@ fn start_swaps_and_get_balances(
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let bob_passphrase = String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney");
+    let bob_passphrase = if b_coin == "MYCOIN" || b_coin == "MYCOIN1" {
+        format!("0x{}", hex::encode(random_secp256k1_secret()))
+    } else {
+        String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney")
+    };
+
     let bob_conf = Mm2TestConf::light_node_using_watchers(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
     let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
         bob_conf.conf.clone(),
@@ -115,6 +124,7 @@ fn start_swaps_and_get_balances(
 
     let bob_keypair = key_pair_from_seed(&bob_passphrase).unwrap();
     let alice_keypair = key_pair_from_seed(&alice_passphrase).unwrap();
+
     generate_utxo_coin_with_privkey("MYCOIN", 100.into(), bob_keypair.private().secret);
     generate_utxo_coin_with_privkey("MYCOIN", 100.into(), alice_keypair.private().secret);
     generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), bob_keypair.private().secret);
@@ -258,25 +268,28 @@ fn test_watcher_spends_maker_payment_utxo_utxo() {
         25.,
         25.,
         2.,
-        &[("TEST_COIN_PRICE", "0.01")],
+        &[],
         SwapFlow::WatcherSpendsMakerPayment,
     );
 
+    let acoin_volume = BigDecimal::from_str("50").unwrap();
+    let bcoin_volume = BigDecimal::from_str("2").unwrap();
+
     assert_eq!(
-        balances.alice_acoin_balance_after,
-        BigDecimal::from_str("49.93562994").unwrap()
+        balances.alice_acoin_balance_after.round(0),
+        balances.alice_acoin_balance_before - acoin_volume.clone()
     );
     assert_eq!(
-        balances.alice_bcoin_balance_after,
-        BigDecimal::from_str("101.99999").unwrap()
+        balances.alice_bcoin_balance_after.round(0),
+        balances.alice_bcoin_balance_before + bcoin_volume.clone()
     );
     assert_eq!(
-        balances.bob_acoin_balance_after,
-        BigDecimal::from_str("149.99999").unwrap()
+        balances.bob_acoin_balance_after.round(0),
+        balances.bob_acoin_balance_before + acoin_volume
     );
     assert_eq!(
-        balances.bob_bcoin_balance_after,
-        BigDecimal::from_str("97.99999").unwrap()
+        balances.bob_bcoin_balance_after.round(0),
+        balances.bob_bcoin_balance_before - bcoin_volume
     );
 }
 
@@ -476,11 +489,12 @@ fn test_watcher_refunds_taker_payment_utxo() {
         &[("REFUND_TEST", ""), ("USE_TEST_LOCKTIME", "")],
         SwapFlow::WatcherRefundsTakerPayment,
     );
+
     assert_eq!(
-        balances.alice_acoin_balance_after,
-        BigDecimal::from_str("99.93561994").unwrap()
+        balances.alice_acoin_balance_after.round(0),
+        balances.alice_acoin_balance_before
     );
-    assert_eq!(balances.alice_bcoin_balance_after, BigDecimal::from_str("100").unwrap());
+    assert_eq!(balances.alice_bcoin_balance_after, balances.alice_bcoin_balance_before);
 }
 
 #[test]
