@@ -2,11 +2,11 @@ use crate::integration_tests_common::enable_electrum;
 use common::executor::Timer;
 use common::{block_on, log};
 use mm2_number::BigDecimal;
+use mm2_rpc::mm_protocol::OrderbookResponse;
 use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_eth_coin,
                                   enable_tendermint, iris_nimda_testnet_conf, iris_testnet_conf, rick_conf, tbnb_conf,
                                   usdc_ibc_iris_testnet_conf, MarketMakerIt, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
                                   RICK_ELECTRUM_ADDRS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
-use mm2_test_helpers::structs::OrderbookResponse;
 use serde_json::{json, Value as Json};
 use std::convert::TryFrom;
 use std::env;

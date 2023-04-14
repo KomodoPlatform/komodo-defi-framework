@@ -1,15 +1,15 @@
 use inquire::Password;
 use log::{error, info, warn};
 
-use crate::adex_config::AdexConfig;
+use crate::adex_config::AdexConfigImpl;
 
 pub fn get_config() {
-    let Ok(adex_cfg) = AdexConfig::from_config_path() else { return; };
+    let Ok(adex_cfg) = AdexConfigImpl::from_config_path() else { return; };
     info!("adex config: {}", adex_cfg)
 }
 
 pub fn set_config(set_password: bool, rpc_api_uri: Option<String>) {
-    let mut adex_cfg = AdexConfig::from_config_path().unwrap_or_else(|()| AdexConfig::default());
+    let mut adex_cfg = AdexConfigImpl::from_config_path().unwrap_or_else(|()| AdexConfigImpl::default());
     let mut is_changes_happened = false;
     if set_password {
         let rpc_password = Password::new("Enter RPC API password:")

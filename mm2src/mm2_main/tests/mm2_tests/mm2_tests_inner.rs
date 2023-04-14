@@ -6,7 +6,7 @@ use http::{HeaderMap, StatusCode};
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
-use mm2_rpc::mm_protocol::VersionResponse;
+use mm2_rpc::mm_protocol::{OrderbookResponse, VersionResponse};
 use mm2_test_helpers::electrums::*;
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 use mm2_test_helpers::for_tests::init_z_coin_native;

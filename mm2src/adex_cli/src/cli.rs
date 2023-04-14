@@ -1,12 +1,14 @@
 const MM2_CONFIG_FILE_DEFAULT: &str = "MM2.json";
 const COINS_FILE_DEFAULT: &str = "coins";
+const ORDERBOOK_BIDS_LIMIT: &str = "20";
+const ORDERBOOK_ASKS_LIMIT: &str = "20";
 
 use crate::adex_config::AdexConfig;
 use clap::{Parser, Subcommand};
 
-use crate::api_commands::{get_config, set_config, AdexProc, Printer};
+use crate::api_commands::{get_config, set_config, AdexProc, ResponseHandler};
 use crate::scenarios::{get_status, init, start_process, stop_process};
-use crate::transport::{SlurpTransport, Transport};
+use crate::transport::SlurpTransport;
 
 #[derive(Subcommand)]
 enum Command {
@@ -44,6 +46,10 @@ enum Command {
         base: String,
         #[arg(help = "Related currency, also can be called \"quote currency\" according to exchange terms")]
         rel: String,
+        #[arg(long, help = "Orderbook asks count limitation", default_value = ORDERBOOK_ASKS_LIMIT)]
+        asks_limit: Option<usize>,
+        #[arg(long, help = "Orderbook bids count limitation", default_value = ORDERBOOK_BIDS_LIMIT)]
+        bids_limit: Option<usize>,
     },
     Sell {
         #[arg(help = "Base currency of a pair")]
@@ -95,17 +101,17 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn execute<P: Printer>(
+    pub async fn execute<P: ResponseHandler, Cfg: AdexConfig + 'static>(
         args: impl Iterator<Item = String>,
-        config: &AdexConfig,
+        config: &Cfg,
         printer: &P,
     ) -> Result<(), ()> {
         let transport = SlurpTransport::new(config.rpc_uri());
 
         let proc = AdexProc {
             transport: &transport,
-            printer,
-            rpc_password: config.rpc_password(),
+            response_handler: printer,
+            config,
         };
 
         let mut parsed_cli = Self::parse_from(args);
@@ -130,7 +136,12 @@ impl Cli {
             Command::Asset(AssetSubcommand::Enable { asset }) => proc.enable(asset).await?,
             Command::Asset(AssetSubcommand::Balance { asset }) => proc.get_balance(asset).await?,
             Command::Asset(AssetSubcommand::GetEnabled) => proc.get_enabled().await?,
-            Command::Orderbook { base, rel } => proc.get_orderbook(base, rel).await?,
+            Command::Orderbook {
+                base,
+                rel,
+                bids_limit,
+                asks_limit,
+            } => proc.get_orderbook(base, rel, asks_limit, bids_limit).await?,
             Command::Sell {
                 base,
                 rel,

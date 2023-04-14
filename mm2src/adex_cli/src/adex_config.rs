@@ -12,20 +12,36 @@ const PROJECT_COMPANY: &str = "komodoplatform";
 const PROJECT_APP: &str = "adex-cli";
 const ADEX_CFG: &str = "adex_cfg.json";
 
+const PRICE_PRECISION_MIN: usize = 8;
+const PRICE_PRECISION_MAX: usize = 8;
+const VOLUME_PRECISION_MIN: usize = 2;
+const VOLUME_PRECISION_MAX: usize = 5;
+const VOLUME_PRECISION: (usize, usize) = (VOLUME_PRECISION_MIN, VOLUME_PRECISION_MAX);
+const PRICE_PRECISION: (usize, usize) = (PRICE_PRECISION_MIN, PRICE_PRECISION_MAX);
+
+pub trait AdexConfig {
+    fn rpc_password(&self) -> String;
+    fn rpc_uri(&self) -> String;
+    fn orderbook_price_precision(&self) -> &(usize, usize);
+    fn orderbook_volume_precision(&self) -> &(usize, usize);
+}
+
 #[derive(Deserialize, Serialize, Debug, Default)]
-pub struct AdexConfig {
+pub struct AdexConfigImpl {
     #[serde(skip_serializing_if = "Option::is_none")]
     rpc_password: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     rpc_uri: Option<String>,
 }
 
-impl AdexConfig {
-    pub fn rpc_password(&self) -> String { self.rpc_password.as_ref().unwrap().clone() }
-    pub fn rpc_uri(&self) -> String { self.rpc_uri.as_ref().unwrap().clone() }
+impl AdexConfig for AdexConfigImpl {
+    fn rpc_password(&self) -> String { self.rpc_password.as_ref().expect("No rpc_password in config").clone() }
+    fn rpc_uri(&self) -> String { self.rpc_uri.as_ref().expect("No rpc_uri in config").clone() }
+    fn orderbook_price_precision(&self) -> &(usize, usize) { &PRICE_PRECISION }
+    fn orderbook_volume_precision(&self) -> &(usize, usize) { &VOLUME_PRECISION }
 }
 
-impl Display for AdexConfig {
+impl Display for AdexConfigImpl {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if !self.is_set() {
             return writeln!(f, "adex configuration is not set");
@@ -41,11 +57,19 @@ impl Display for AdexConfig {
     }
 }
 
-impl AdexConfig {
-    pub fn read_config() -> Result<AdexConfig, ()> {
-        let config = AdexConfig::from_config_path().map_err(|_| error!("Failed to get adex_config"))?;
+impl AdexConfigImpl {
+    #[cfg(test)]
+    pub fn new(rpc_password: &str, rpc_uri: &str) -> Self {
+        Self {
+            rpc_password: Some(rpc_password.to_string()),
+            rpc_uri: Some(rpc_uri.to_string()),
+        }
+    }
+
+    pub fn read_config() -> Result<AdexConfigImpl, ()> {
+        let config = AdexConfigImpl::from_config_path().map_err(|_| error!("Failed to get adex_config"))?;
         match config {
-            config @ AdexConfig {
+            config @ AdexConfigImpl {
                 rpc_password: Some(_),
                 rpc_uri: Some(_),
             } => Ok(config),
@@ -73,7 +97,7 @@ impl AdexConfig {
         Ok(config_path)
     }
 
-    pub fn from_config_path() -> Result<AdexConfig, ()> {
+    pub fn from_config_path() -> Result<AdexConfigImpl, ()> {
         let config_path = Self::get_config_path()?;
 
         if !config_path.exists() {
@@ -88,7 +112,7 @@ impl AdexConfig {
         self.write_to(&config_path)
     }
 
-    fn read_from(cfg_path: &Path) -> Result<AdexConfig, ()> {
+    fn read_from(cfg_path: &Path) -> Result<AdexConfigImpl, ()> {
         let adex_path_str = cfg_path.to_str().unwrap_or("Undefined");
         let adex_cfg_file = fs::File::open(cfg_path).map_err(|error| {
             error!("Failed to open: {adex_path_str}, error: {error}");

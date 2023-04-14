@@ -148,7 +148,7 @@ impl Display for StopResponse {
 }
 
 #[derive(Deserialize, Table)]
-pub struct GetEnabledResult {
+pub struct GetEnabledEntry {
     #[table(title = "Ticker")]
     ticker: String,
     #[table(title = "Address")]
@@ -157,7 +157,7 @@ pub struct GetEnabledResult {
 
 #[derive(Deserialize)]
 pub struct GetEnabledResponse {
-    pub result: Vec<GetEnabledResult>,
+    pub result: Vec<GetEnabledEntry>,
 }
 
 // pub struct Order {

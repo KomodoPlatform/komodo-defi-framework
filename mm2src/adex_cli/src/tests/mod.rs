@@ -1,33 +1,26 @@
-use crate::api_commands::Printer;
-use crate::api_commands::{Command as AdexCommand, Dummy};
-use crate::cli;
-use crate::transport::{SlurpTransport, Transport};
-use clap::Args;
-use futures_util::{TryFuture, TryFutureExt};
-use mm2_rpc::mm_protocol::VersionResponse;
-use mockall::{automock, mock, predicate, Any};
-use serde::{Deserialize, Serialize};
-use serde_json::Value::String;
-use serde_json::{json, Value as Json};
-use std::env;
-use std::fmt::Display;
+use mm2_rpc::mm_protocol::{OrderbookResponse, VersionResponse};
+
+use mockall::{mock, predicate};
+use serde_json::Value as Json;
+use std::fmt::{Debug, Display};
 use std::fs::File;
-use std::future::Future;
-use std::net::ToSocketAddrs;
-use std::pin::Pin;
 use std::process::{Command, Stdio};
-use std::task::{Context, Poll};
-use std::thread::sleep;
 use std::time::Duration;
-use tokio::runtime;
-use tokio::sync::futures;
+
+use crate::adex_config::{AdexConfig, AdexConfigImpl};
+use crate::api_commands::{GetEnabledResponse, ResponseHandler};
+use crate::cli::Cli;
 
 mock! {
-    Printer {
+    ResponseHandler {
     }
-    impl Printer for Printer {
-        fn print_response(&self, result: Json) -> Result<(), ()>;
-        fn display_response<T: Display + 'static>(&self, result: T) -> Result<(),()>;
+    impl ResponseHandler for ResponseHandler {
+        fn print_response(&self, response: Json) -> Result<(), ()>;
+        fn display_response<T: Display + 'static>(&self, response: &T) -> Result<(), ()>;
+        fn debug_response<T: Debug + 'static>(&self, response: &T) -> Result<(), ()>;
+        fn on_orderbook_response<Cfg: AdexConfig + 'static>(&self, orderbook: OrderbookResponse, config: &Cfg, bids_limit: &Option<usize>,
+        asks_limit: &Option<usize>) -> Result<(), ()>;
+        fn on_get_enabled_response(&self, enabled: &GetEnabledResponse) -> Result<(), ()>;
     }
 }
 
@@ -35,22 +28,22 @@ mock! {
 async fn test_get_version() {
     let file = File::open("src/tests/version.http").unwrap();
     let _ = Command::new("netcat")
-        .args(&["-l", "-q", "1", "-p", "7783"])
+        .args(&["-l", "-q", "1", "-p", "7784"])
         .stdin(Stdio::from(file))
         .spawn()
         .unwrap();
-
-    let mut printer = MockPrinter::new();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut handler = MockResponseHandler::new();
     let version = VersionResponse {
         result: "1.0.1-beta_824ca36f3".to_string(),
         datetime: "2023-04-06T22:35:43+05:00".to_string(),
     };
-    printer
+    handler
         .expect_display_response()
         .with(predicate::eq(version))
         .returning(|_| Ok(()))
         .times(1);
-
+    let config = AdexConfigImpl::new("dummy", "http://127.0.0.1:7784");
     let args = vec!["adex-cli", "version"];
-    let _ = cli::Cli::execute(args.iter().map(|arg| arg.to_string()), "password".to_string(), &printer).await;
+    let _ = Cli::execute(args.iter().map(|arg| arg.to_string()), &config, &handler).await;
 }

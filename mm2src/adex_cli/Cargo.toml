@@ -10,6 +10,7 @@ description = "Provides a CLI interface and facilitates interoperating to komodo
 async-trait = "0.1.68"
 clap = { version = "4.2", features = ["derive"] }
 cli-table = { version = "0.4", default-features = false, features = ["derive", "title"]}
+fraction = "0.13"
 common = { path = "../common" }
 derive_more = "0.99"
 directories = "5.0"
@@ -17,8 +18,10 @@ env_logger = "0.7.1"
 gstuff = { version = "=0.7.4" , features = [ "nightly" ]}
 http = "0.2"
 inquire = "0.6"
+itertools = "0.10"
 log = "0.4"
 mm2_net = { path = "../mm2_net" }
+mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc" }
 passwords = "3.1"
 serde = "1.0"

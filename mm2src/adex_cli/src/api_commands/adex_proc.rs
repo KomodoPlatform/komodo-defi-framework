@@ -1,23 +1,23 @@
-use cli_table::format::{Border, Separator};
-use cli_table::{print_stdout, Table, WithTitle};
 use log::{error, info, warn};
-use mm2_rpc::mm_protocol::VersionResponse;
+use mm2_rpc::mm_protocol::{OrderbookResponse, VersionResponse};
 use serde_json::{json, Value as Json};
 
 use super::protocol_data::{CoinPair, Command, GetEnabledResponse, Method};
 use crate::activation_scheme::get_activation_scheme;
-use crate::api_commands::printer::Printer;
+use crate::adex_config::AdexConfig;
 use crate::api_commands::protocol_data::Dummy;
 use crate::api_commands::protocol_data::SellData;
+use crate::api_commands::response_handler;
+use crate::api_commands::response_handler::ResponseHandler;
 use crate::transport::Transport;
 
-pub struct AdexProc<'a, 'p, T: Transport, P: Printer> {
-    pub transport: &'a T,
-    pub printer: &'p P,
-    pub rpc_password: String,
+pub struct AdexProc<'trp, 'hand, 'cfg, T: Transport, H: ResponseHandler, C: AdexConfig + ?Sized> {
+    pub transport: &'trp T,
+    pub response_handler: &'hand H,
+    pub config: &'cfg C,
 }
 
-impl<T: Transport, P: Printer> AdexProc<'_, '_, T, P> {
+impl<T: Transport, P: ResponseHandler, C: AdexConfig + 'static> AdexProc<'_, '_, '_, T, P, C> {
     pub async fn enable(&self, asset: &str) -> Result<(), ()> {
         info!("Enabling asset: {asset}");
         let _ = self.transport.send::<_, i32, Json>(1).await;
@@ -30,12 +30,12 @@ impl<T: Transport, P: Printer> AdexProc<'_, '_, T, P> {
 
         let command = Command::builder()
             .flatten_data(activate_specific_settings.clone())
-            .userpass(self.rpc_password.clone())
+            .userpass(self.config.rpc_password())
             .build();
 
         match self.transport.send::<_, Json, Json>(command).await {
-            Ok(Ok(ok)) => print_result_as_table(ok),
-            Ok(Err(err)) => print_result_as_table(err),
+            Ok(Ok(ok)) => response_handler::print_result_as_table(ok),
+            Ok(Err(err)) => response_handler::print_result_as_table(err),
             _ => Err(()),
         }
     }
@@ -45,12 +45,12 @@ impl<T: Transport, P: Printer> AdexProc<'_, '_, T, P> {
         let command = Command::builder()
             .method(Method::GetBalance)
             .flatten_data(json!({ "coin": asset }))
-            .userpass(self.rpc_password.clone())
+            .userpass(self.config.rpc_password())
             .build();
 
         match self.transport.send::<_, Json, Json>(command).await {
-            Ok(Ok(ok)) => print_result_as_table(ok),
-            Ok(Err(err)) => print_result_as_table(err),
+            Ok(Ok(ok)) => response_handler::print_result_as_table(ok),
+            Ok(Err(err)) => response_handler::print_result_as_table(err),
             _ => Err(()),
         }
     }
@@ -60,37 +60,36 @@ impl<T: Transport, P: Printer> AdexProc<'_, '_, T, P> {
 
         let command = Command::<i32>::builder()
             .method(Method::GetEnabledCoins)
-            .userpass(self.rpc_password.clone())
+            .userpass(self.config.rpc_password())
             .build();
 
         match self.transport.send::<_, GetEnabledResponse, Json>(command).await {
-            Ok(Ok(ok)) => Self::print_enabled_response(ok),
-            Ok(Err(err)) => print_result_as_table(err),
+            Ok(Ok(ok)) => self.response_handler.on_get_enabled_response(&ok),
+            Ok(Err(err)) => response_handler::print_result_as_table(err),
             _ => Err(()),
         }
     }
 
-    fn print_enabled_response(response: GetEnabledResponse) -> Result<(), ()> {
-        if response.result.is_empty() {
-            info!("Enabled coins list is empty");
-            return Ok(());
-        }
-        print_stdout(response.result.with_title()).map_err(|error| error!("Failed to print result: {error}"))?;
-        Ok(())
-    }
-
-    pub async fn get_orderbook(&self, base: &str, rel: &str) -> Result<(), ()> {
+    pub async fn get_orderbook(
+        &self,
+        base: &str,
+        rel: &str,
+        asks_limit: &Option<usize>,
+        bids_limit: &Option<usize>,
+    ) -> Result<(), ()> {
         info!("Getting orderbook, base: {base}, rel: {rel} ...");
 
         let command = Command::builder()
-            .userpass(self.rpc_password.clone())
+            .userpass(self.config.rpc_password())
             .method(Method::GetOrderbook)
             .flatten_data(CoinPair::new(base, rel))
             .build();
 
-        match self.transport.send::<_, Json, Json>(command).await {
-            Ok(Ok(ok)) => print_result_as_table(ok),
-            Ok(Err(err)) => print_result_as_table(err),
+        match self.transport.send::<_, OrderbookResponse, Json>(command).await {
+            Ok(Ok(ok)) => self
+                .response_handler
+                .on_orderbook_response(ok, self.config, asks_limit, bids_limit),
+            Ok(Err(err)) => response_handler::print_result_as_table(err),
             _ => Err(()),
         }
     }
@@ -98,21 +97,21 @@ impl<T: Transport, P: Printer> AdexProc<'_, '_, T, P> {
     pub async fn sell(&self, base: &str, rel: &str, volume: f64, price: f64) -> Result<(), ()> {
         info!("Sell base: {base}, rel: {rel}, volume: {volume}, price: {price} ...");
         let command = Command::builder()
-            .userpass(self.rpc_password.clone())
+            .userpass(self.config.rpc_password())
             .method(Method::Sell)
             .flatten_data(SellData::new(base, rel, volume, price))
             .build();
 
         match self.transport.send::<_, Json, Json>(command).await {
-            Ok(Ok(ok)) => print_result_as_table(ok),
-            Ok(Err(err)) => print_result_as_table(err),
+            Ok(Ok(ok)) => response_handler::print_result_as_table(ok),
+            Ok(Err(err)) => response_handler::print_result_as_table(err),
             _ => Err(()),
         }
     }
 
     pub async fn send_stop(&self) -> Result<(), ()> {
         let stop_command = Command::<Dummy>::builder()
-            .userpass(self.rpc_password.clone())
+            .userpass(self.config.rpc_password())
             .method(Method::Stop)
             .build();
 
@@ -129,48 +128,17 @@ impl<T: Transport, P: Printer> AdexProc<'_, '_, T, P> {
 
     pub async fn get_version(self) -> Result<(), ()> {
         let version_command = Command::<Dummy>::builder()
-            .userpass(self.rpc_password)
+            .userpass(self.config.rpc_password())
             .method(Method::Version)
             .build();
 
         match self.transport.send::<_, VersionResponse, Json>(version_command).await {
-            Ok(Ok(ok)) => self.printer.display_response(ok),
+            Ok(Ok(ok)) => self.response_handler.display_response(&ok),
             Ok(Err(error)) => {
                 error!("Failed get version through the API: {error}");
                 return Err(());
             },
             _ => return Err(()),
-        }
-    }
-}
-
-pub fn print_result_as_table(result: Json) -> Result<(), ()> {
-    let object = result
-        .as_object()
-        .ok_or_else(|| error!("Failed to cast result as object"))?;
-
-    let data: Vec<SimpleCliTable> = object.iter().map(SimpleCliTable::from_pair).collect();
-    let data = data
-        .table()
-        .border(Border::builder().build())
-        .separator(Separator::builder().build());
-
-    print_stdout(data).map_err(|error| error!("Failed to print result: {error}"))
-}
-
-#[derive(Table)]
-struct SimpleCliTable<'a> {
-    #[table(title = "Parameter")]
-    key: &'a String,
-    #[table(title = "Value")]
-    value: &'a Json,
-}
-
-impl<'a> SimpleCliTable<'a> {
-    fn from_pair(pair: (&'a String, &'a Json)) -> Self {
-        SimpleCliTable {
-            key: pair.0,
-            value: pair.1,
         }
     }
 }
