@@ -1,6 +1,6 @@
 use super::history::TransferHistoryBuilder;
 use super::*;
-use crate::eth::decode_contract_call;
+use crate::eth::{decode_contract_call, PaymentState};
 use bitcrypto::ripemd160;
 use script_pubkey::{extract_contract_addr_from_script, extract_contract_call_from_script, is_contract_call};
 
@@ -81,7 +81,7 @@ impl Qrc20Coin {
         } = try_tx_s!(self.erc20_payment_details_from_tx(&payment_tx).await);
 
         let status = try_tx_s!(self.payment_status(&swap_contract_address, swap_id.clone()).await);
-        if status != eth::PAYMENT_STATE_SENT.into() {
+        if status != U256::from(PaymentState::Sent as u8) {
             return TX_PLAIN_ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
         }
 
@@ -104,7 +104,7 @@ impl Qrc20Coin {
         } = try_tx_s!(self.erc20_payment_details_from_tx(&payment_tx).await);
 
         let status = try_tx_s!(self.payment_status(&swap_contract_address, swap_id.clone()).await);
-        if status != eth::PAYMENT_STATE_SENT.into() {
+        if status != U256::from(PaymentState::Sent as u8) {
             return TX_PLAIN_ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
         }
 
@@ -126,7 +126,7 @@ impl Qrc20Coin {
         let status = self
             .payment_status(&expected_swap_contract_address, expected_swap_id.clone())
             .await?;
-        if status != eth::PAYMENT_STATE_SENT.into() {
+        if status != U256::from(PaymentState::Sent as u8) {
             return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                 "Payment state is not PAYMENT_STATE_SENT, got {}",
                 status
@@ -283,7 +283,7 @@ impl Qrc20Coin {
         search_from_block: u64,
     ) -> Result<Option<TransactionEnum>, String> {
         let status = try_s!(self.payment_status(&swap_contract_address, swap_id.clone()).await);
-        if status == eth::PAYMENT_STATE_UNINITIALIZED.into() {
+        if status == U256::from(PaymentState::Uninitialized as u8) {
             return Ok(None);
         };
 

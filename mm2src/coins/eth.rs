@@ -123,10 +123,12 @@ const ERC721_ABI: &str = include_str!("eth/erc721_abi.json");
 /// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1155.md
 const ERC1155_ABI: &str = include_str!("eth/erc1155_abi.json");
 /// Payment states from etomic swap smart contract: https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol#L5
-pub const PAYMENT_STATE_UNINITIALIZED: u8 = 0;
-pub const PAYMENT_STATE_SENT: u8 = 1;
-const PAYMENT_STATE_SPENT: u8 = 2;
-const _PAYMENT_STATE_REFUNDED: u8 = 3;
+pub enum PaymentState {
+    Uninitialized,
+    Sent,
+    Spent,
+    Refunded,
+}
 // Ethgasstation API returns response in 10^8 wei units. So 10 from their API mean 1 gwei
 const ETH_GAS_STATION_DECIMALS: u8 = 8;
 const GAS_PRICE_PERCENT: u64 = 10;
@@ -1133,7 +1135,7 @@ impl SwapOps for EthCoin {
                     .await
             );
 
-            if status == PAYMENT_STATE_UNINITIALIZED.into() {
+            if status == U256::from(PaymentState::Uninitialized as u8) {
                 return Ok(None);
             };
 
@@ -1484,7 +1486,7 @@ impl WatcherOps for EthCoin {
                 .compat()
                 .await
                 .map_to_mm(ValidatePaymentError::Transport)?;
-            if status != PAYMENT_STATE_SENT.into() && status != PAYMENT_STATE_SPENT.into() {
+            if status != U256::from(PaymentState::Sent as u8) && status != U256::from(PaymentState::Spent as u8) {
                 return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                     "{INVALID_PAYMENT_STATE_ERR_LOG}: Payment state is not PAYMENT_STATE_SENT or PAYMENT_STATE_SPENT, got {status}"
                 )));
@@ -3068,7 +3070,7 @@ impl EthCoin {
                     state_f
                         .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
-                            if state != PAYMENT_STATE_SENT.into() {
+                            if state != U256::from(PaymentState::Sent as u8) {
                                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
@@ -3123,7 +3125,7 @@ impl EthCoin {
                     state_f
                         .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
-                            if state != PAYMENT_STATE_SENT.into() {
+                            if state != U256::from(PaymentState::Sent as u8) {
                                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
@@ -3185,7 +3187,7 @@ impl EthCoin {
                     state_f
                         .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
-                            if state != PAYMENT_STATE_SENT.into() {
+                            if state != U256::from(PaymentState::Sent as u8) {
                                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
@@ -3241,7 +3243,7 @@ impl EthCoin {
                     state_f
                         .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
-                            if state != PAYMENT_STATE_SENT.into() {
+                            if state != U256::from(PaymentState::Sent as u8) {
                                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
@@ -3296,7 +3298,7 @@ impl EthCoin {
                     state_f
                         .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
-                            if state != PAYMENT_STATE_SENT.into() {
+                            if state != U256::from(PaymentState::Sent as u8) {
                                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
@@ -3349,7 +3351,7 @@ impl EthCoin {
                     state_f
                         .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
-                            if state != PAYMENT_STATE_SENT.into() {
+                            if state != U256::from(PaymentState::Sent as u8) {
                                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
@@ -3413,7 +3415,7 @@ impl EthCoin {
                     state_f
                         .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
-                            if state != PAYMENT_STATE_SENT.into() {
+                            if state != U256::from(PaymentState::Sent as u8) {
                                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
@@ -3466,7 +3468,7 @@ impl EthCoin {
                     state_f
                         .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
-                            if state != PAYMENT_STATE_SENT.into() {
+                            if state != U256::from(PaymentState::Sent as u8) {
                                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
@@ -3776,7 +3778,7 @@ impl EthCoin {
                 .compat()
                 .await
                 .map_to_mm(ValidatePaymentError::Transport)?;
-            if status != PAYMENT_STATE_SENT.into() {
+            if status != U256::from(PaymentState::Sent as u8) {
                 return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                     "Payment state is not PAYMENT_STATE_SENT, got {}",
                     status
