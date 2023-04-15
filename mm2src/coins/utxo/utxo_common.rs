@@ -3451,7 +3451,6 @@ where
     T: MarketCoinOps + UtxoCommonOps,
 {
     let decimals = coin.as_ref().decimals;
-    println!("**dex_fee_amount: {}", dex_fee_amount);
     let value = sat_from_big_decimal(&dex_fee_amount, decimals)?;
     let output = TransactionOutput {
         value,
