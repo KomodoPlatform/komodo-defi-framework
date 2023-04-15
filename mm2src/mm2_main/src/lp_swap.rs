@@ -802,6 +802,7 @@ async fn get_price_in_eth(
 
 async fn get_cex_price_in_eth(coin: &MmCoinEnum) -> Result<BigDecimal, WatcherRewardError> {
     // Special case for integration tests
+    #[cfg(feature = "run-docker-tests")]
     if let Ok(test_coin_price) = std::env::var("TEST_COIN_PRICE") {
         let test_coin_price =
             BigDecimal::from_str(&test_coin_price).map_err(|e| WatcherRewardError::InternalError(e.to_string()))?;
