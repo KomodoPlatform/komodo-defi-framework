@@ -88,7 +88,8 @@ fn start_swaps_and_get_balances(
         mycoin1_conf(1000)
     ]);
 
-    let alice_passphrase = if (a_coin == "MYCOIN" || a_coin == "MYCOIN1") && (b_coin == "MYCOIN" || b_coin == "MYCOIN1") {
+    let alice_passphrase = if (a_coin == "MYCOIN" || a_coin == "MYCOIN1") && (b_coin == "MYCOIN" || b_coin == "MYCOIN1")
+    {
         format!("0x{}", hex::encode(random_secp256k1_secret()))
     } else {
         String::from("spice describe gravity federal thank unfair blast come canal monkey style afraid")
