@@ -88,7 +88,7 @@ fn start_swaps_and_get_balances(
         mycoin1_conf(1000)
     ]);
 
-    let alice_passphrase = if a_coin == "MYCOIN" || a_coin == "MYCOIN1" {
+    let alice_passphrase = if (a_coin == "MYCOIN" || a_coin == "MYCOIN1") && (b_coin == "MYCOIN" || b_coin == "MYCOIN1") {
         format!("0x{}", hex::encode(random_secp256k1_secret()))
     } else {
         String::from("spice describe gravity federal thank unfair blast come canal monkey style afraid")
@@ -105,7 +105,7 @@ fn start_swaps_and_get_balances(
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let bob_passphrase = if b_coin == "MYCOIN" || b_coin == "MYCOIN1" {
+    let bob_passphrase = if (a_coin == "MYCOIN" || a_coin == "MYCOIN1") && b_coin == "MYCOIN" || b_coin == "MYCOIN1" {
         format!("0x{}", hex::encode(random_secp256k1_secret()))
     } else {
         String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney")
