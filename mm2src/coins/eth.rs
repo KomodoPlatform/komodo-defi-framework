@@ -1322,10 +1322,7 @@ impl SwapOps for EthCoin {
         &self,
         args: PaymentInstructionArgs<'_>,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        match args.watcher_reward {
-            Some(reward) => Ok(Some(reward.to_string().into_bytes())),
-            None => Ok(None),
-        }
+        Ok(args.watcher_reward.map(|r| r.to_string().into_bytes()))
     }
 
     async fn taker_payment_instructions(
