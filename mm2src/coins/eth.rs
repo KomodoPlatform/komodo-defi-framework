@@ -1337,8 +1337,11 @@ impl SwapOps for EthCoin {
         instructions: &[u8],
         _args: PaymentInstructionArgs,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        let watcher_reward = BigDecimal::from_str(&String::from_utf8_lossy(instructions))
-            .map_err(|err| ValidateInstructionsErr::DeserializationErr(err.to_string()))?;
+        let watcher_reward = BigDecimal::from_str(
+            &String::from_utf8(instructions.to_vec())
+                .map_err(|err| ValidateInstructionsErr::DeserializationErr(err.to_string()))?,
+        )
+        .map_err(|err| ValidateInstructionsErr::DeserializationErr(err.to_string()))?;
 
         // TODO: Reward can be validated here
         Ok(PaymentInstructions::WatcherReward(watcher_reward))
