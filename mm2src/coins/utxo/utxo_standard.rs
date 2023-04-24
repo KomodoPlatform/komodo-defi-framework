@@ -687,7 +687,7 @@ impl MmCoin for UtxoStandardCoin {
         utxo_common::get_sender_trade_fee(self, value, stage).await
     }
 
-    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         utxo_common::get_receiver_trade_fee(self.clone())
     }
 

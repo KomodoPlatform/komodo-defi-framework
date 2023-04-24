@@ -1988,13 +1988,18 @@ impl MmCoin for TendermintCoin {
             .await
     }
 
-    fn get_receiver_trade_fee(&self, send_amount: BigDecimal, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         let coin = self.clone();
         let fut = async move {
             // We can't simulate Claim Htlc without having information about broadcasted htlc tx.
             // Since create and claim htlc fees are almost same, we can simply simulate create htlc tx.
-            coin.get_sender_trade_fee_for_denom(coin.ticker.clone(), coin.denom.clone(), coin.decimals, send_amount)
-                .await
+            coin.get_sender_trade_fee_for_denom(
+                coin.ticker.clone(),
+                coin.denom.clone(),
+                coin.decimals,
+                coin.min_tx_amount(),
+            )
+            .await
         };
         Box::new(fut.boxed().compat())
     }
