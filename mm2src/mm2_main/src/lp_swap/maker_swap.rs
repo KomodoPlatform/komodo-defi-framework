@@ -31,7 +31,6 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::{H256, H264};
-use rand::Rng;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use std::any::TypeId;
 use std::path::PathBuf;
@@ -238,8 +237,11 @@ impl MakerSwap {
     #[inline]
     fn r(&self) -> RwLockReadGuard<MakerSwapMut> { self.mutable.read().unwrap() }
 
-    #[inline]
-    pub fn generate_secret() -> [u8; 32] { rand::thread_rng().gen() }
+    pub fn generate_secret() -> Result<[u8; 32], rand::Error> {
+        let mut sec = [0u8; 32];
+        common::os_rng(&mut sec)?;
+        Ok(sec)
+    }
 
     #[inline]
     fn secret_hash(&self) -> Vec<u8> {
