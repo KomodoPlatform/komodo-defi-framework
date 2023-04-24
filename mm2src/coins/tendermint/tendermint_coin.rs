@@ -1,5 +1,6 @@
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
+use super::iris::ethermint_account::EthermintAccount;
 use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
                         HTLC_STATE_REFUNDED};
 use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
@@ -995,7 +996,22 @@ impl TendermintCoin {
         let account = account_response
             .account
             .or_mm_err(|| TendermintCoinRpcError::InvalidResponse("Account is None".into()))?;
-        Ok(BaseAccount::decode(account.value.as_slice())?)
+
+        let base_account = match BaseAccount::decode(account.value.as_slice()) {
+            Ok(account) => account,
+            Err(err) if &self.account_prefix == "iaa" => {
+                let ethermint_account = EthermintAccount::decode(account.value.as_slice())?;
+
+                ethermint_account
+                    .base_account
+                    .or_mm_err(|| TendermintCoinRpcError::Prost(err))?
+            },
+            Err(err) => {
+                return MmError::err(TendermintCoinRpcError::Prost(err));
+            },
+        };
+
+        Ok(base_account)
     }
 
     pub(super) async fn balance_for_denom(&self, denom: String) -> MmResult<u64, TendermintCoinRpcError> {

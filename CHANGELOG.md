@@ -3,6 +3,7 @@
 **Features:**
 
 **Enhancements/Fixes:**
+- cosmos/iris ethermint account compatibility implemented [#1765](https://github.com/KomodoPlatform/atomicDEX-API/pull/1765)
 - p2p stack is improved [#1755](https://github.com/KomodoPlatform/atomicDEX-API/pull/1755)
 - - Validate topics if they are mixed or not.
 - - Do early return if the message data is not valid (since no point to iterate over and over on the invalid message)
