@@ -92,9 +92,24 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     // Return an error if:
     // 1. There are matching orders or active swaps.
     // 2. A platform coin is to be disabled and there are tokens dependent on it.
-    if !active_swaps.is_empty() || !still_matching_orders.is_empty() || !dependent_tokens.is_empty() {
+    if !active_swaps.is_empty() || !still_matching_orders.is_empty() {
         let err = format!("There are currently matching orders, active swaps, or tokens dependent on '{ticker}'");
         return disable_coin_err(err, &still_matching_orders, &[], &active_swaps, &dependent_tokens);
+    }
+
+    if !dependent_tokens.is_empty() {
+        coin.passive_it();
+
+        let res = json!({
+            "result": {
+                "coin": ticker,
+                "cancelled_orders": [],
+            }
+        });
+
+        return Response::builder()
+            .body(json::to_vec(&res).unwrap())
+            .map_err(|e| ERRL!("{}", e));
     }
 
     // Proceed with diabling the coin/tokens.

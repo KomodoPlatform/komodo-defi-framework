@@ -1285,6 +1285,10 @@ impl MmCoin for BchCoin {
             tokens.remove(ticker);
         };
     }
+
+    fn is_available(&self) -> bool { todo!() }
+
+    fn passive_it(&self) { todo!() }
 }
 
 impl CoinWithDerivationMethod for BchCoin {

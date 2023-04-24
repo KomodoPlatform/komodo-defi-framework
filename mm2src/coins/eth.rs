@@ -4427,6 +4427,10 @@ impl MmCoin for EthCoin {
             tokens.remove(ticker);
         };
     }
+
+    fn is_available(&self) -> bool { todo!() }
+
+    fn passive_it(&self) { todo!() }
 }
 
 pub trait TryToAddress {

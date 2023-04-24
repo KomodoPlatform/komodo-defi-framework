@@ -359,4 +359,8 @@ impl MmCoin for TestCoin {
     fn on_disabled(&self) -> Result<(), AbortedError> { Ok(()) }
 
     fn on_token_deactivated(&self, _ticker: &str) { () }
+
+    fn is_available(&self) -> bool { todo!() }
+
+    fn passive_it(&self) { todo!() }
 }

@@ -2238,6 +2238,19 @@ pub trait MmCoin:
 
     /// For Handling the removal/deactivation of token on platform coin deactivation.
     fn on_token_deactivated(&self, _ticker: &str);
+
+    /// Gets the current state of the parent coin wheter
+    /// it's available for the external requests or not.
+    ///
+    /// Always `true` for child tokens.
+    fn is_available(&self) -> bool;
+
+    /// Makes the coin disabled to the external requests.
+    /// Useful for executing `disable_coin` on parent coins
+    /// that have child tokens enabled.
+    ///
+    /// Noneffective for child tokens.
+    fn passive_it(&self);
 }
 
 /// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
@@ -3062,7 +3075,16 @@ fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
 pub async fn lp_coinfind(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
     let cctx = try_s!(CoinsContext::from_ctx(ctx));
     let coins = cctx.coins.lock().await;
-    Ok(coins.get(ticker).cloned())
+
+    let coin = coins.get(ticker).cloned();
+
+    if let Some(coin) = &coin {
+        if !coin.is_available() {
+            return Ok(None);
+        }
+    };
+
+    Ok(coin)
 }
 
 /// Attempts to find a pair of active coins returning None if one is not enabled

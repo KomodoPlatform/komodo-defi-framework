@@ -1463,6 +1463,10 @@ impl MmCoin for Qrc20Coin {
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
+
+    fn is_available(&self) -> bool { todo!() }
+
+    fn passive_it(&self) { todo!() }
 }
 
 pub fn qrc20_swap_id(time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {

@@ -69,6 +69,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use uuid::Uuid;
@@ -213,6 +214,7 @@ impl RpcCommonOps for TendermintCoin {
 }
 
 pub struct TendermintCoinImpl {
+    is_available: AtomicBool,
     ticker: String,
     /// As seconds
     avg_blocktime: u8,
@@ -502,6 +504,7 @@ impl TendermintCoin {
             })?;
 
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
+            is_available: AtomicBool::new(true),
             ticker,
             account_id,
             account_prefix: protocol_info.account_prefix,
@@ -2039,6 +2042,10 @@ impl MmCoin for TendermintCoin {
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
+
+    fn is_available(&self) -> bool { self.is_available.load(Ordering::SeqCst) }
+
+    fn passive_it(&self) { self.is_available.store(false, Ordering::SeqCst); }
 }
 
 impl MarketCoinOps for TendermintCoin {

@@ -768,4 +768,8 @@ impl MmCoin for SolanaCoin {
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
+
+    fn is_available(&self) -> bool { todo!() }
+
+    fn passive_it(&self) { todo!() }
 }
