@@ -25,7 +25,6 @@ use std::num::NonZeroU64;
 
 const FETCH_BLOCK_HEADERS_ATTEMPTS: u8 = 3;
 const CHUNK_SIZE_REDUCER_VALUE: u64 = 100;
-const REVALIDATE_MISMATCH_HEADER_ATTEMPT: u8 = 20;
 
 pub struct UtxoArcBuilder<'a, F, T>
 where
@@ -538,7 +537,7 @@ async fn retrieve_and_revalidate_mismatching_header(
     let mut current_height = from_height + args.chunk_size;
     let mut from_height = from_height;
 
-    for _ in 0..=REVALIDATE_MISMATCH_HEADER_ATTEMPT {
+    loop {
         // Check if the current height is equal to the height of the preconfigured starting block header.
         // If it is, it indicates a bad chain, and we return an error of type `RetrieveHeadersError::BadStartingHeaderChain`.
         if from_height == spv_conf.starting_block_header.height {
@@ -589,13 +588,6 @@ async fn retrieve_and_revalidate_mismatching_header(
             Err(err) => return Err(err),
         }
     }
-
-    // If the maximum number of attempts has been reached, return an error.
-    Err(RetrieveHeadersError::AttemptsExceeded {
-        err: "Failed to retrieve and validate headers after attempts".to_string(),
-        ticker: coin.to_string(),
-        attempts: REVALIDATE_MISMATCH_HEADER_ATTEMPT,
-    })
 }
 
 #[derive(Display)]
