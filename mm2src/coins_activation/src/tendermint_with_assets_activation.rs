@@ -127,8 +127,10 @@ pub struct TendermintActivationResult {
     ticker: String,
     address: String,
     current_block: u64,
-    balance: CoinBalance,
-    tokens_balances: HashMap<String, CoinBalance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    balance: Option<CoinBalance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens_balances: Option<HashMap<String, CoinBalance>>,
 }
 
 impl CurrentBlock for TendermintActivationResult {
@@ -136,7 +138,7 @@ impl CurrentBlock for TendermintActivationResult {
 }
 
 impl GetPlatformBalance for TendermintActivationResult {
-    fn get_platform_balance(&self) -> BigDecimal { self.balance.spendable.clone() }
+    fn get_platform_balance(&self) -> Option<BigDecimal> { self.balance.as_ref().map(|b| b.spendable.clone()) }
 }
 
 impl From<TendermintInitError> for EnablePlatformCoinWithTokensError {
@@ -198,16 +200,29 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             kind: TendermintInitErrorKind::RpcError(e),
         })?;
 
-        let (balance, tokens_balances) = if activation_request.get_balances {
-            let balances = self.all_balances().await.mm_err(|e| TendermintInitError {
+        if !activation_request.get_balances {
+            return Ok(TendermintActivationResult {
                 ticker: self.ticker().to_owned(),
-                kind: TendermintInitErrorKind::RpcError(e.to_string()),
-            })?;
-            (
-                CoinBalance {
-                    spendable: balances.platform_balance,
-                    unspendable: BigDecimal::default(),
-                },
+                address: self.account_id.to_string(),
+                current_block,
+                balance: None,
+                tokens_balances: None,
+            });
+        }
+
+        let balances = self.all_balances().await.mm_err(|e| TendermintInitError {
+            ticker: self.ticker().to_owned(),
+            kind: TendermintInitErrorKind::RpcError(e.to_string()),
+        })?;
+
+        Ok(TendermintActivationResult {
+            address: self.account_id.to_string(),
+            current_block,
+            balance: Some(CoinBalance {
+                spendable: balances.platform_balance,
+                unspendable: BigDecimal::default(),
+            }),
+            tokens_balances: Some(
                 balances
                     .tokens_balances
                     .into_iter()
@@ -218,16 +233,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
                         })
                     })
                     .collect(),
-            )
-        } else {
-            (CoinBalance::default(), HashMap::default())
-        };
-
-        Ok(TendermintActivationResult {
-            address: self.account_id.to_string(),
-            current_block,
-            balance,
-            tokens_balances,
+            ),
             ticker: self.ticker().to_owned(),
         })
     }

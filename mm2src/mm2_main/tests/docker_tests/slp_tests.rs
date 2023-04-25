@@ -2,7 +2,8 @@ use crate::docker_tests::docker_tests_common::*;
 use crate::integration_tests_common::enable_native;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{assert_coin_not_found_on_balance, disable_coin, disable_coin_err,
-                                  enable_bch_with_tokens, enable_slp, my_balance, UtxoRpcMode};
+                                  enable_bch_with_tokens, enable_bch_with_tokens_without_balance, enable_slp,
+                                  my_balance, UtxoRpcMode};
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableElectrumResponse, EnableSlpResponse, RpcV2Response};
 use serde_json::{self as json};
 use std::time::Duration;
@@ -104,6 +105,7 @@ fn test_bch_and_slp_balance_enable_bch_with_tokens_v2() {
     let (_, bch_balance) = enable_bch_with_tokens
         .result
         .bch_addresses_infos
+        .unwrap()
         .into_iter()
         .next()
         .unwrap();
@@ -114,6 +116,7 @@ fn test_bch_and_slp_balance_enable_bch_with_tokens_v2() {
     let (_, slp_balances) = enable_bch_with_tokens
         .result
         .slp_addresses_infos
+        .unwrap()
         .into_iter()
         .next()
         .unwrap();
@@ -124,6 +127,26 @@ fn test_bch_and_slp_balance_enable_bch_with_tokens_v2() {
     let actual_slp = slp_balances.balances.get("ADEXSLP").unwrap();
     assert_eq!(expected_slp_spendable, actual_slp.spendable);
     assert_eq!(expected_slp_unspendable, actual_slp.unspendable);
+}
+
+#[test]
+fn test_enable_bch_with_tokens_v2_without_balance() {
+    let mm = slp_supplied_node();
+
+    let tx_history = false;
+    let enable_bch_with_tokens = block_on(enable_bch_with_tokens_without_balance(
+        &mm,
+        "FORSLP",
+        &["ADEXSLP"],
+        UtxoRpcMode::Native,
+        tx_history,
+    ));
+
+    let enable_bch_with_tokens: RpcV2Response<EnableBchWithTokensResponse> =
+        json::from_value(enable_bch_with_tokens).unwrap();
+
+    assert!(enable_bch_with_tokens.result.bch_addresses_infos.is_none());
+    assert!(enable_bch_with_tokens.result.slp_addresses_infos.is_none());
 }
 
 #[test]

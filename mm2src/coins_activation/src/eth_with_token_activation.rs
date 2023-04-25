@@ -147,17 +147,19 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
 #[derive(Serialize)]
 pub struct EthWithTokensActivationResult {
     current_block: u64,
-    eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    eth_addresses_infos: Option<HashMap<String, CoinAddressInfo<CoinBalance>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    erc20_addresses_infos: Option<HashMap<String, CoinAddressInfo<TokenBalances>>>,
 }
 
 impl GetPlatformBalance for EthWithTokensActivationResult {
-    fn get_platform_balance(&self) -> BigDecimal {
-        self.eth_addresses_infos
-            .iter()
-            .fold(BigDecimal::from(0), |total, (_, addr_info)| {
+    fn get_platform_balance(&self) -> Option<BigDecimal> {
+        self.eth_addresses_infos.as_ref().map(|infos| {
+            infos.iter().fold(BigDecimal::from(0), |total, (_, addr_info)| {
                 &total + &addr_info.balances.get_total()
             })
+        })
     }
 }
 
@@ -205,50 +207,51 @@ impl PlatformWithTokensActivationOps for EthCoin {
         &self,
         activation_request: &Self::ActivationRequest,
     ) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {
-        let my_address = self.my_address()?;
-        let pubkey = self.get_public_key()?;
-
         let current_block = self
             .current_block()
             .compat()
             .await
             .map_err(EthActivationV2Error::InternalError)?;
 
-        let mut result = EthWithTokensActivationResult {
-            current_block,
-            eth_addresses_infos: HashMap::new(),
-            erc20_addresses_infos: HashMap::new(),
-        };
-
-        if activation_request.get_balances {
-            let eth_balance = self
-                .my_balance()
-                .compat()
-                .await
-                .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
-            let token_balances = self
-                .get_tokens_balance_list()
-                .await
-                .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
-
-            result
-                .eth_addresses_infos
-                .insert(my_address.to_string(), CoinAddressInfo {
-                    derivation_method: DerivationMethod::Iguana,
-                    pubkey: pubkey.clone(),
-                    balances: eth_balance,
-                });
-
-            result
-                .erc20_addresses_infos
-                .insert(my_address.to_string(), CoinAddressInfo {
-                    derivation_method: DerivationMethod::Iguana,
-                    pubkey,
-                    balances: token_balances,
-                });
+        if !activation_request.get_balances {
+            return Ok(EthWithTokensActivationResult {
+                current_block,
+                eth_addresses_infos: None,
+                erc20_addresses_infos: None,
+            });
         }
 
-        Ok(result)
+        let my_address = self.my_address()?;
+        let pubkey = self.get_public_key()?;
+
+        let eth_balance = self
+            .my_balance()
+            .compat()
+            .await
+            .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
+
+        let token_balances = self
+            .get_tokens_balance_list()
+            .await
+            .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
+
+        let eth_addresses_infos = HashMap::from([(my_address.to_string(), CoinAddressInfo {
+            derivation_method: DerivationMethod::Iguana,
+            pubkey: pubkey.clone(),
+            balances: eth_balance,
+        })]);
+
+        let erc20_addresses_infos = HashMap::from([(my_address.to_string(), CoinAddressInfo {
+            derivation_method: DerivationMethod::Iguana,
+            pubkey,
+            balances: token_balances,
+        })]);
+
+        Ok(EthWithTokensActivationResult {
+            current_block,
+            eth_addresses_infos: Some(eth_addresses_infos),
+            erc20_addresses_infos: Some(erc20_addresses_infos),
+        })
     }
 
     fn start_history_background_fetching(

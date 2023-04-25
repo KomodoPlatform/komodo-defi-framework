@@ -147,17 +147,19 @@ impl TryFromCoinProtocol for BchProtocolInfo {
 #[derive(Debug, Serialize)]
 pub struct BchWithTokensActivationResult {
     current_block: u64,
-    bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    slp_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bch_addresses_infos: Option<HashMap<String, CoinAddressInfo<CoinBalance>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slp_addresses_infos: Option<HashMap<String, CoinAddressInfo<TokenBalances>>>,
 }
 
 impl GetPlatformBalance for BchWithTokensActivationResult {
-    fn get_platform_balance(&self) -> BigDecimal {
-        self.bch_addresses_infos
-            .iter()
-            .fold(BigDecimal::from(0), |total, (_, addr_info)| {
+    fn get_platform_balance(&self) -> Option<BigDecimal> {
+        self.bch_addresses_infos.as_ref().map(|infos| {
+            infos.iter().fold(BigDecimal::from(0), |total, (_, addr_info)| {
                 &total + &addr_info.balances.get_total()
             })
+        })
     }
 }
 
@@ -249,6 +251,16 @@ impl PlatformWithTokensActivationOps for BchCoin {
         &self,
         activation_request: &Self::ActivationRequest,
     ) -> Result<BchWithTokensActivationResult, MmError<BchWithTokensActivationError>> {
+        let current_block = self.as_ref().rpc_client.get_block_count().compat().await?;
+
+        if !activation_request.get_balances {
+            return Ok(BchWithTokensActivationResult {
+                current_block,
+                bch_addresses_infos: None,
+                slp_addresses_infos: None,
+            });
+        }
+
         let my_address = self.as_ref().derivation_method.single_addr_or_err()?;
         let my_slp_address = self
             .get_my_slp_address()
@@ -256,40 +268,32 @@ impl PlatformWithTokensActivationOps for BchCoin {
             .encode()
             .map_to_mm(BchWithTokensActivationError::Internal)?;
 
-        let current_block = self.as_ref().rpc_client.get_block_count().compat().await?;
+        let bch_unspents = self.bch_unspents_for_display(my_address).await?;
+        let bch_balance = bch_unspents.platform_balance(self.decimals());
 
-        let mut result = BchWithTokensActivationResult {
-            current_block,
-            bch_addresses_infos: HashMap::new(),
-            slp_addresses_infos: HashMap::new(),
-        };
-
-        if activation_request.get_balances {
-            let bch_unspents = self.bch_unspents_for_display(my_address).await?;
-            let bch_balance = bch_unspents.platform_balance(self.decimals());
-
-            let mut token_balances = HashMap::new();
-            for (token_ticker, info) in self.get_slp_tokens_infos().iter() {
-                let token_balance = bch_unspents.slp_token_balance(&info.token_id, info.decimals);
-                token_balances.insert(token_ticker.clone(), token_balance);
-            }
-
-            result
-                .bch_addresses_infos
-                .insert(my_address.to_string(), CoinAddressInfo {
-                    derivation_method: DerivationMethod::Iguana,
-                    pubkey: self.my_public_key()?.to_string(),
-                    balances: bch_balance,
-                });
-
-            result.slp_addresses_infos.insert(my_slp_address, CoinAddressInfo {
-                derivation_method: DerivationMethod::Iguana,
-                pubkey: self.my_public_key()?.to_string(),
-                balances: token_balances,
-            });
+        let mut token_balances = HashMap::new();
+        for (token_ticker, info) in self.get_slp_tokens_infos().iter() {
+            let token_balance = bch_unspents.slp_token_balance(&info.token_id, info.decimals);
+            token_balances.insert(token_ticker.clone(), token_balance);
         }
 
-        Ok(result)
+        let bch_addresses_infos = HashMap::from([(my_address.to_string(), CoinAddressInfo {
+            derivation_method: DerivationMethod::Iguana,
+            pubkey: self.my_public_key()?.to_string(),
+            balances: bch_balance,
+        })]);
+
+        let slp_addresses_infos = HashMap::from([(my_slp_address, CoinAddressInfo {
+            derivation_method: DerivationMethod::Iguana,
+            pubkey: self.my_public_key()?.to_string(),
+            balances: token_balances,
+        })]);
+
+        Ok(BchWithTokensActivationResult {
+            current_block,
+            bch_addresses_infos: Some(bch_addresses_infos),
+            slp_addresses_infos: Some(slp_addresses_infos),
+        })
     }
 
     fn start_history_background_fetching(

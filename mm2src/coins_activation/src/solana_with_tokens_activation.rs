@@ -92,12 +92,14 @@ impl TxHistory for SolanaWithTokensActivationRequest {
 #[derive(Debug, Serialize)]
 pub struct SolanaWithTokensActivationResult {
     current_block: u64,
-    solana_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    spl_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    solana_addresses_infos: Option<HashMap<String, CoinAddressInfo<CoinBalance>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    spl_addresses_infos: Option<HashMap<String, CoinAddressInfo<TokenBalances>>>,
 }
 
 impl GetPlatformBalance for SolanaWithTokensActivationResult {
-    fn get_platform_balance(&self) -> BigDecimal {
+    fn get_platform_balance(&self) -> Option<BigDecimal> {
         self.solana_addresses_infos
             .iter()
             .fold(BigDecimal::from(0), |total, (_, addr_info)| {
@@ -213,50 +215,52 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         &self,
         activation_request: &Self::ActivationRequest,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
-        let my_address = self.my_address()?;
-
         let current_block = self
             .current_block()
             .compat()
             .await
             .map_to_mm(Self::ActivationError::Internal)?;
 
-        let mut result = SolanaWithTokensActivationResult {
-            current_block,
-            solana_addresses_infos: HashMap::new(),
-            spl_addresses_infos: HashMap::new(),
-        };
-
-        if activation_request.get_balances {
-            let solana_balance = self
-                .my_balance()
-                .compat()
-                .await
-                .map_err(|e| Self::ActivationError::GetBalanceError(e.into_inner()))?;
-
-            let (token_tickers, requests): (Vec<_>, Vec<_>) = self
-                .get_spl_tokens_infos()
-                .into_iter()
-                .map(|(ticker, info)| (ticker, self.my_balance_spl(info)))
-                .unzip();
-            let token_balances = token_tickers.into_iter().zip(try_join_all(requests).await?).collect();
-
-            result
-                .solana_addresses_infos
-                .insert(my_address.clone(), CoinAddressInfo {
-                    derivation_method: DerivationMethod::Iguana,
-                    pubkey: my_address.clone(),
-                    balances: solana_balance,
-                });
-
-            result.spl_addresses_infos.insert(my_address.clone(), CoinAddressInfo {
-                derivation_method: DerivationMethod::Iguana,
-                pubkey: my_address,
-                balances: token_balances,
+        if !activation_request.get_balances {
+            return Ok(SolanaWithTokensActivationResult {
+                current_block,
+                solana_addresses_infos: None,
+                spl_addresses_infos: None,
             });
         }
 
-        Ok(result)
+        let my_address = self.my_address()?;
+
+        let solana_balance = self
+            .my_balance()
+            .compat()
+            .await
+            .map_err(|e| Self::ActivationError::GetBalanceError(e.into_inner()))?;
+
+        let (token_tickers, requests): (Vec<_>, Vec<_>) = self
+            .get_spl_tokens_infos()
+            .into_iter()
+            .map(|(ticker, info)| (ticker, self.my_balance_spl(info)))
+            .unzip();
+        let token_balances = token_tickers.into_iter().zip(try_join_all(requests).await?).collect();
+
+        let solana_addresses_infos = HashMap::from([(my_address.clone(), CoinAddressInfo {
+            derivation_method: DerivationMethod::Iguana,
+            pubkey: my_address.clone(),
+            balances: solana_balance,
+        })]);
+
+        let spl_addresses_infos = HashMap::from([(my_address.clone(), CoinAddressInfo {
+            derivation_method: DerivationMethod::Iguana,
+            pubkey: my_address.clone(),
+            balances: token_balances,
+        })]);
+
+        Ok(SolanaWithTokensActivationResult {
+            current_block,
+            solana_addresses_infos: Some(solana_addresses_infos),
+            spl_addresses_infos: Some(spl_addresses_infos),
+        })
     }
 
     fn start_history_background_fetching(

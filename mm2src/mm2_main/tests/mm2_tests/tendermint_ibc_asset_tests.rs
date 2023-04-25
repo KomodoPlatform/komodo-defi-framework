@@ -32,11 +32,12 @@ fn test_iris_with_usdc_activation_balance_orderbook() {
     assert_eq!(response.result.address, expected_address);
 
     let expected_iris_balance = BigDecimal::from(100);
-    assert_eq!(response.result.balance.spendable, expected_iris_balance);
+    assert_eq!(response.result.balance.unwrap().spendable, expected_iris_balance);
 
     let expected_usdc_balance: BigDecimal = "0.683142".parse().unwrap();
 
-    let actual_usdc_balance = response.result.tokens_balances.get(USDC_IBC_TICKER).unwrap();
+    let tokens_balances = response.result.tokens_balances.unwrap();
+    let actual_usdc_balance = tokens_balances.get(USDC_IBC_TICKER).unwrap();
     assert_eq!(actual_usdc_balance.spendable, expected_usdc_balance);
 
     let actual_usdc_balance = block_on(my_balance(&mm, USDC_IBC_TICKER)).balance;

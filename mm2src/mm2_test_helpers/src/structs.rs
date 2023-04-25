@@ -906,18 +906,26 @@ pub type TokenBalances = HashMap<String, CoinBalance>;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct EnableEthWithTokensResponse {
+    pub current_block: u64,
+    pub eth_addresses_infos: Option<HashMap<String, CoinAddressInfo<CoinBalance>>>,
+    pub erc20_addresses_infos: Option<HashMap<String, CoinAddressInfo<TokenBalances>>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EnableBchWithTokensResponse {
     pub current_block: u64,
-    pub bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    pub slp_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    pub bch_addresses_infos: Option<HashMap<String, CoinAddressInfo<CoinBalance>>>,
+    pub slp_addresses_infos: Option<HashMap<String, CoinAddressInfo<TokenBalances>>>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnableSolanaWithTokensResponse {
     pub current_block: u64,
-    pub solana_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    pub spl_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    pub solana_addresses_infos: Option<HashMap<String, CoinAddressInfo<CoinBalance>>>,
+    pub spl_addresses_infos: Option<HashMap<String, CoinAddressInfo<TokenBalances>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1093,8 +1101,8 @@ pub struct WithdrawResult {}
 pub struct TendermintActivationResult {
     pub address: String,
     pub current_block: u64,
-    pub balance: CoinBalance,
-    pub tokens_balances: HashMap<String, CoinBalance>,
+    pub balance: Option<CoinBalance>,
+    pub tokens_balances: Option<HashMap<String, CoinBalance>>,
     pub ticker: String,
 }
 

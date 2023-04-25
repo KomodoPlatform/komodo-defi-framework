@@ -650,6 +650,7 @@ fn test_bch_and_slp_with_hd_account_id() {
     let (bch_addr, _) = activation_result
         .result
         .bch_addresses_infos
+        .unwrap()
         .into_iter()
         .exactly_one()
         .unwrap();
@@ -658,6 +659,7 @@ fn test_bch_and_slp_with_hd_account_id() {
     let (slp_addr, _) = activation_result
         .result
         .slp_addresses_infos
+        .unwrap()
         .into_iter()
         .exactly_one()
         .unwrap();
@@ -682,6 +684,7 @@ fn test_bch_and_slp_with_hd_account_id() {
     let (bch_addr, _) = activation_result
         .result
         .bch_addresses_infos
+        .unwrap()
         .into_iter()
         .exactly_one()
         .unwrap();
@@ -690,6 +693,7 @@ fn test_bch_and_slp_with_hd_account_id() {
     let (slp_addr, _) = activation_result
         .result
         .slp_addresses_infos
+        .unwrap()
         .into_iter()
         .exactly_one()
         .unwrap();
