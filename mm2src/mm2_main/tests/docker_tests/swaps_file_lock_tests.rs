@@ -25,7 +25,7 @@ fn swap_file_lock_prevents_double_swap_start_on_kick_start(swap_json: &str) {
     let swap_path = swaps_db_folder.join("5acb0e63-8b26-469e-81df-7dd9e4a9ad15.json");
     let swap_lock_path = swaps_db_folder.join("5acb0e63-8b26-469e-81df-7dd9e4a9ad15.lock");
     let lock = FileLock::lock(swap_lock_path, 10.).unwrap().unwrap();
-    std::fs::write(&swap_path, swap_json).unwrap();
+    std::fs::write(swap_path, swap_json).unwrap();
     thread::spawn(move || loop {
         // touch the lock file to simulate that other process is running the swap already
         lock.touch().unwrap();
@@ -176,12 +176,12 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
 fn addr_hash_for_privkey(priv_key: Secp256k1Secret) -> String {
     let private = Private {
         prefix: 1,
-        secret: priv_key.into(),
+        secret: priv_key,
         compressed: true,
         checksum_type: ChecksumType::DSHA256,
     };
     let key_pair = KeyPair::from_private(private).unwrap();
-    hex::encode(&*key_pair.public().address_hash())
+    hex::encode(key_pair.public().address_hash())
 }
 
 fn swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(

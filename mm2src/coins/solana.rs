@@ -46,9 +46,9 @@ pub mod solana_common;
 mod solana_decode_tx_helpers;
 pub mod spl;
 
-mod solana_common_tests;
-mod solana_tests;
-mod spl_tests;
+#[cfg(test)] mod solana_common_tests;
+#[cfg(test)] mod solana_tests;
+#[cfg(test)] mod spl_tests;
 
 pub const SOLANA_DEFAULT_DECIMALS: u64 = 9;
 pub const LAMPORTS_DUMMY_AMOUNT: u64 = 10;

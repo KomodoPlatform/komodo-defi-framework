@@ -89,7 +89,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         })
         .collect();
     let args: Vec<String> = std::env::args().collect();
-    let _exit_code = test_main(&args, owned_tests, None);
+    test_main(&args, owned_tests, None);
 }
 
 fn pull_docker_image(name: &str) {
