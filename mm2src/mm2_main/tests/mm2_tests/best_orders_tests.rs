@@ -1022,6 +1022,7 @@ fn best_orders_must_return_duplicate_for_orderbook_tickers() {
 #[cfg(feature = "zhtlc-native-tests")]
 #[test]
 fn zhtlc_best_orders() {
+    use super::enable_z_coin;
     use mm2_test_helpers::for_tests::zombie_conf;
 
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();

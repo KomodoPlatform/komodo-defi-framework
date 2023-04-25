@@ -1,3 +1,5 @@
+#[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
+use super::enable_z_coin;
 use crate::integration_tests_common::*;
 use common::executor::Timer;
 use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log, new_uuid};
