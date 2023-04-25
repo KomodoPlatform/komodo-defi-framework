@@ -23,8 +23,9 @@ use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 use std::num::NonZeroU64;
 
-const FETCH_BLOCK_HEADERS_ATTEMPTS: u64 = 3;
+const FETCH_BLOCK_HEADERS_ATTEMPTS: u8 = 3;
 const CHUNK_SIZE_REDUCER_VALUE: u64 = 100;
+const REVALIDATE_MISMATCH_HEADER_ATTEMPT: u8 = 20;
 
 pub struct UtxoArcBuilder<'a, F, T>
 where
@@ -248,6 +249,11 @@ impl Default for BlockHeaderUtxoLoopExtraArgs {
     }
 }
 
+// Executes a loop to synchronise block headers using an Electrum client.
+// This function creates a loop that fetches block headers from an Electrum client, validate and save to storage.
+// The loop is managed by a sync_status_loop_handle which allows for notifications of temporary or permanent errors.
+// The block_count parameter specifies the number of blocks to fetch from the Electrum server per chunk.
+// The spv_conf parameter is used to configure the Simplified Payment Verification settings for the Electrum client.
 pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
     weak: UtxoWeak,
     constructor: impl Fn(UtxoArc) -> T,
@@ -409,6 +415,7 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
     }
 }
 
+// Represents the different types of errors that can occur while retrieving block headers from the Electrum client.
 #[derive(Debug, Display)]
 enum RetrieveHeadersError {
     #[display(fmt = "Preconfigured starting_block_header is bad or invalid. Please reconfigure.")]
@@ -416,23 +423,20 @@ enum RetrieveHeadersError {
     #[display(
         fmt = "Unable To Retrieve Headers: {err} on retrieving latest {ticker} headers from rpc after {attempts} attempts"
     )]
-    AttemptsExceeded { err: String, ticker: String, attempts: u64 },
+    AttemptsExceeded { err: String, ticker: String, attempts: u8 },
     #[display(fmt = "Network Error: Will try fetching {} block headers again after 10 secs", _0)]
     NetworkError(String),
     #[display(
         fmt = "Response Too Large: Error {err} on retrieving latest {ticker} headers from rpc! {attempts} attempts left"
     )]
-    ResponseTooLarge { err: String, ticker: String, attempts: u64 },
-    #[display(
-        fmt = "Header downloaded from current electrum are invalid at block height:{height} for {coin} - error: {err}"
-    )]
-    ParentHashMismatch { coin: String, height: u64, err: String },
+    ResponseTooLarge { err: String, ticker: String, attempts: u8 },
     #[display(fmt = "Block Header Storage Error: {_0}")]
     BlockHeaderStorageError(String),
     #[display(fmt = "Validation Error: {}", _0)]
     ValidationError(String),
 }
 
+// Different error kinds expected from `retrieve_headers_helper()` in case of an error.
 #[derive(Debug, Display)]
 enum RetrieveHeadersErrorKind {
     // Theses errors are all retryable from same electrum so we can retry
@@ -448,9 +452,7 @@ enum RetrieveHeadersErrorKind {
 impl RetrieveHeadersError {
     fn kind(&self) -> RetrieveHeadersErrorKind {
         match self {
-            RetrieveHeadersError::ParentHashMismatch { .. } | RetrieveHeadersError::ValidationError(_) => {
-                RetrieveHeadersErrorKind::PossibleBadElectrum
-            },
+            RetrieveHeadersError::ValidationError(_) => RetrieveHeadersErrorKind::PossibleBadElectrum,
             RetrieveHeadersError::NetworkError(_)
             | RetrieveHeadersError::ResponseTooLarge { .. }
             | RetrieveHeadersError::BlockHeaderStorageError(_) => RetrieveHeadersErrorKind::Temporary,
@@ -461,13 +463,14 @@ impl RetrieveHeadersError {
     }
 }
 
+// Retrieves block headers from Electrum client, with error handling and retries.
 async fn retrieve_headers_helper(
     args: &mut BlockHeaderUtxoLoopExtraArgs,
     client: &ElectrumClient,
     from_block_height: u64,
     ticker: &str,
     to_block_height: u64,
-    fetch_blocker_headers_attempts: &mut u64,
+    fetch_blocker_headers_attempts: &mut u8,
 ) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>), RetrieveHeadersError> {
     if *fetch_blocker_headers_attempts >= 1 {
         let (block_registry, block_headers) = match client
@@ -523,15 +526,6 @@ async fn retrieve_headers_helper(
 }
 
 /// Retrieves block headers from the specified client within the given height range and revalidate against [`SPVError::ParentHashMismatch`] .
-///
-/// If the height is equal to the starting block height, the loop will break.
-/// Otherwise, it will attempt to fetch the block headers up to the specified `to_height`
-/// It will continue to attempt fetching headers until there's no [`SPVError::ParentHashMismatch`] or runs out of
-/// attempts.
-///
-/// If there is an error during header retrieval, it will check the error type and
-/// take appropriate action based on whether it is a temporary or permanent error.
-///
 async fn retrieve_and_revalidate_mismatching_header(
     coin: &str,
     client: &ElectrumClient,
@@ -539,50 +533,69 @@ async fn retrieve_and_revalidate_mismatching_header(
     from_height: u64,
     storage: &dyn BlockHeaderStorageOps,
     spv_conf: &SPVConf,
-    fetch_blocker_headers_attempts: &mut u64,
+    fetch_blocker_headers_attempts: &mut u8,
 ) -> Result<(), RetrieveHeadersError> {
-    let to_height = from_height + args.chunk_size;
-    if from_height == spv_conf.starting_block_header.height {
-        // Bad chain for preconfigured starting header detected, reconfigure.
-        return Err(RetrieveHeadersError::BadStartingHeaderChain);
-    };
+    let mut current_height = from_height + args.chunk_size;
+    let mut from_height = from_height;
 
-    match retrieve_headers_helper(
-        args,
-        client,
-        from_height,
-        coin,
-        to_height,
-        fetch_blocker_headers_attempts,
-    )
-    .await
-    {
-        Ok((_, block_headers)) => {
-            return match validate_headers(coin, from_height, &block_headers, storage, spv_conf).await {
-                Ok(_) => {
-                    storage
-                        .remove_headers_from_storage(from_height, to_height)
-                        .await
-                        .map_err(|err| RetrieveHeadersError::BlockHeaderStorageError(err.to_string()))?;
+    for _ in 0..=REVALIDATE_MISMATCH_HEADER_ATTEMPT {
+        // Check if the current height is equal to the height of the preconfigured starting block header.
+        // If it is, it indicates a bad chain, and we return an error of type `RetrieveHeadersError::BadStartingHeaderChain`.
+        if from_height == spv_conf.starting_block_header.height {
+            // Bad chain for preconfigured starting header detected, reconfigure.
+            return Err(RetrieveHeadersError::BadStartingHeaderChain);
+        };
 
-                    Ok(())
-                },
-                Err(err) => {
-                    // Todo: remove thisdd electrum server and use another in this case since the headers from this server can't be retrieved
-                    if let SPVError::ParentHashMismatch { coin: _, height } = &err {
-                        Err(RetrieveHeadersError::ParentHashMismatch {
-                            coin: coin.to_string(),
-                            height: *height,
-                            err: err.to_string(),
-                        })
-                    } else {
-                        Err(RetrieveHeadersError::ValidationError(err.to_string()))
-                    }
-                },
-            };
-        },
-        Err(err) => Err(err),
+        // Attempt to retrieve the headers and validate them.
+        match retrieve_headers_helper(
+            args,
+            client,
+            from_height,
+            coin,
+            current_height,
+            fetch_blocker_headers_attempts,
+        )
+        .await
+        {
+            Ok((_, block_headers)) => {
+                // If the headers are successfully retrieved and validated, remove the headers from storage and continue the outer loop.
+                return match validate_headers(coin, from_height - 1, &block_headers, storage, spv_conf).await {
+                    Ok(_) => {
+                        // Headers are valid, remove saved headers and continue outer loop
+                        storage
+                            .remove_headers_from_storage(from_height, current_height)
+                            .await
+                            .map_err(|err| RetrieveHeadersError::BlockHeaderStorageError(err.to_string()))
+                    },
+                    Err(err) => {
+                        // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
+                        if let SPVError::ParentHashMismatch { coin: _, height } = &err {
+                            // There is another ParentHashMismatch, loop to retrieve previous headers
+                            current_height = *height;
+                            // Calculate the starting height for the next retrieval based on the current height and the chunk size.
+                            // If the current height is below the starting block header height, use the starting block header
+                            // height.
+                            from_height = current_height
+                                .saturating_sub(args.chunk_size)
+                                .max(spv_conf.starting_block_header.height);
+                            continue;
+                        } else {
+                            Err(RetrieveHeadersError::ValidationError(err.to_string()))
+                        }
+                    },
+                };
+            },
+            // If the headers cannot be retrieved, return an error.
+            Err(err) => return Err(err),
+        }
     }
+
+    // If the maximum number of attempts has been reached, return an error.
+    Err(RetrieveHeadersError::AttemptsExceeded {
+        err: "Failed to retrieve and validate headers after attempts".to_string(),
+        ticker: coin.to_string(),
+        attempts: REVALIDATE_MISMATCH_HEADER_ATTEMPT,
+    })
 }
 
 #[derive(Display)]
