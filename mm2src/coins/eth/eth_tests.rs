@@ -957,7 +957,7 @@ fn get_receiver_trade_preimage() {
     };
 
     let actual = coin
-        .get_receiver_trade_fee(Default::default(), FeeApproxStage::WithoutApprox)
+        .get_receiver_trade_fee(FeeApproxStage::WithoutApprox)
         .wait()
         .expect("!get_sender_trade_fee");
     assert_eq!(actual, expected_fee);

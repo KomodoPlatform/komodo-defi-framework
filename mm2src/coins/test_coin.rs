@@ -318,9 +318,7 @@ impl MmCoin for TestCoin {
         unimplemented!()
     }
 
-    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
-        unimplemented!()
-    }
+    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { unimplemented!() }
 
     async fn get_fee_to_send_taker_fee(
         &self,

@@ -916,7 +916,7 @@ fn test_receiver_trade_preimage() {
     check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
     let actual = coin
-        .get_receiver_trade_fee(Default::default(), FeeApproxStage::WithoutApprox)
+        .get_receiver_trade_fee(FeeApproxStage::WithoutApprox)
         .wait()
         .expect("!get_receiver_trade_fee");
     // only one contract call should be included into the expected trade fee

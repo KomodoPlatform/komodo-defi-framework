@@ -1301,7 +1301,7 @@ impl MmCoin for LightningCoin {
     }
 
     // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
-    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         Box::new(futures01::future::ok(TradeFee {
             coin: self.ticker().to_owned(),
             amount: Default::default(),
