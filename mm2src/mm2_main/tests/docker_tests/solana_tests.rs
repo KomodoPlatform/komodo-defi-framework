@@ -23,6 +23,7 @@ fn test_solana_and_spl_balance_enable_spl_v2() {
     let (_, solana_balance) = enable_solana_with_tokens
         .result
         .solana_addresses_infos
+        .unwrap()
         .into_iter()
         .next()
         .unwrap();
@@ -31,6 +32,7 @@ fn test_solana_and_spl_balance_enable_spl_v2() {
     let (_, spl_balances) = enable_solana_with_tokens
         .result
         .spl_addresses_infos
+        .unwrap()
         .into_iter()
         .next()
         .unwrap();

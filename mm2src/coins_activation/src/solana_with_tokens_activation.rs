@@ -100,11 +100,11 @@ pub struct SolanaWithTokensActivationResult {
 
 impl GetPlatformBalance for SolanaWithTokensActivationResult {
     fn get_platform_balance(&self) -> Option<BigDecimal> {
-        self.solana_addresses_infos
-            .iter()
-            .fold(BigDecimal::from(0), |total, (_, addr_info)| {
+        self.solana_addresses_infos.as_ref().map(|infos| {
+            infos.iter().fold(BigDecimal::from(0), |total, (_, addr_info)| {
                 &total + &addr_info.balances.get_total()
             })
+        })
     }
 }
 
