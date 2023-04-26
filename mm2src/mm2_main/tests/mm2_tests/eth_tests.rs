@@ -135,6 +135,19 @@ fn test_disable_eth_coin_with_token_without_balance() {
     let enable_eth_with_tokens: RpcV2Response<EnableEthWithTokensResponse> =
         json::from_value(enable_eth_with_tokens).unwrap();
 
-    assert!(enable_eth_with_tokens.result.eth_addresses_infos.is_none());
-    assert!(enable_eth_with_tokens.result.erc20_addresses_infos.is_none());
+    let (_, eth_balance) = enable_eth_with_tokens
+        .result
+        .eth_addresses_infos
+        .into_iter()
+        .next()
+        .unwrap();
+    assert!(eth_balance.balances.is_none());
+
+    let (_, erc20_balances) = enable_eth_with_tokens
+        .result
+        .erc20_addresses_infos
+        .into_iter()
+        .next()
+        .unwrap();
+    assert!(erc20_balances.balances.is_none());
 }

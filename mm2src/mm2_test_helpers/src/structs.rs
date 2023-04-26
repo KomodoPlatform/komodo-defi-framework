@@ -899,7 +899,7 @@ pub enum DerivationMethod {
 pub struct CoinAddressInfo<Balance> {
     pub derivation_method: DerivationMethod,
     pub pubkey: String,
-    pub balances: Balance,
+    pub balances: Option<Balance>,
 }
 
 pub type TokenBalances = HashMap<String, CoinBalance>;
@@ -908,24 +908,24 @@ pub type TokenBalances = HashMap<String, CoinBalance>;
 #[serde(deny_unknown_fields)]
 pub struct EnableEthWithTokensResponse {
     pub current_block: u64,
-    pub eth_addresses_infos: Option<HashMap<String, CoinAddressInfo<CoinBalance>>>,
-    pub erc20_addresses_infos: Option<HashMap<String, CoinAddressInfo<TokenBalances>>>,
+    pub eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
+    pub erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnableBchWithTokensResponse {
     pub current_block: u64,
-    pub bch_addresses_infos: Option<HashMap<String, CoinAddressInfo<CoinBalance>>>,
-    pub slp_addresses_infos: Option<HashMap<String, CoinAddressInfo<TokenBalances>>>,
+    pub bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
+    pub slp_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnableSolanaWithTokensResponse {
     pub current_block: u64,
-    pub solana_addresses_infos: Option<HashMap<String, CoinAddressInfo<CoinBalance>>>,
-    pub spl_addresses_infos: Option<HashMap<String, CoinAddressInfo<TokenBalances>>>,
+    pub solana_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
+    pub spl_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -44,7 +44,8 @@ pub enum DerivationMethod {
 pub struct CoinAddressInfo<Balance> {
     pub(crate) derivation_method: DerivationMethod,
     pub(crate) pubkey: String,
-    pub(crate) balances: Balance,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) balances: Option<Balance>,
 }
 
 pub type TokenBalances = HashMap<String, CoinBalance>;

@@ -102,29 +102,33 @@ fn test_bch_and_slp_balance_enable_bch_with_tokens_v2() {
     let expected_bch_spendable = BigDecimal::from(1000);
     let expected_bch_unspendable: BigDecimal = "0.00001".parse().unwrap();
 
-    let (_, bch_balance) = enable_bch_with_tokens
+    let bch_balance = enable_bch_with_tokens
         .result
         .bch_addresses_infos
-        .unwrap()
         .into_iter()
         .next()
+        .unwrap()
+        .1
+        .balances
         .unwrap();
 
-    assert_eq!(expected_bch_spendable, bch_balance.balances.spendable);
-    assert_eq!(expected_bch_unspendable, bch_balance.balances.unspendable);
+    assert_eq!(expected_bch_spendable, bch_balance.spendable);
+    assert_eq!(expected_bch_unspendable, bch_balance.unspendable);
 
-    let (_, slp_balances) = enable_bch_with_tokens
+    let slp_balances = enable_bch_with_tokens
         .result
         .slp_addresses_infos
-        .unwrap()
         .into_iter()
         .next()
+        .unwrap()
+        .1
+        .balances
         .unwrap();
 
     let expected_slp_spendable = BigDecimal::from(1000);
     let expected_slp_unspendable: BigDecimal = 0.into();
 
-    let actual_slp = slp_balances.balances.get("ADEXSLP").unwrap();
+    let actual_slp = slp_balances.get("ADEXSLP").unwrap();
     assert_eq!(expected_slp_spendable, actual_slp.spendable);
     assert_eq!(expected_slp_unspendable, actual_slp.unspendable);
 }
@@ -145,8 +149,21 @@ fn test_enable_bch_with_tokens_v2_without_balance() {
     let enable_bch_with_tokens: RpcV2Response<EnableBchWithTokensResponse> =
         json::from_value(enable_bch_with_tokens).unwrap();
 
-    assert!(enable_bch_with_tokens.result.bch_addresses_infos.is_none());
-    assert!(enable_bch_with_tokens.result.slp_addresses_infos.is_none());
+    let (_, bch_balance) = enable_bch_with_tokens
+        .result
+        .bch_addresses_infos
+        .into_iter()
+        .next()
+        .unwrap();
+    assert!(bch_balance.balances.is_none());
+
+    let (_, slp_balances) = enable_bch_with_tokens
+        .result
+        .slp_addresses_infos
+        .into_iter()
+        .next()
+        .unwrap();
+    assert!(slp_balances.balances.is_none());
 }
 
 #[test]
