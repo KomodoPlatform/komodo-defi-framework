@@ -1,5 +1,6 @@
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
+use super::iris::ethermint_account::EthermintAccount;
 use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
                         HTLC_STATE_REFUNDED};
 use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
@@ -93,7 +94,7 @@ const ABCI_REQUEST_PROVE: bool = false;
 /// 0.25 is good average gas price on atom and iris
 const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
-pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
+pub const GAS_LIMIT_DEFAULT: u64 = 125_000;
 pub(crate) const TX_DEFAULT_MEMO: &str = "";
 
 // https://github.com/irisnet/irismod/blob/5016c1be6fdbcffc319943f33713f4a057622f0a/modules/htlc/types/validation.go#L19-L22
@@ -1003,7 +1004,22 @@ impl TendermintCoin {
         let account = account_response
             .account
             .or_mm_err(|| TendermintCoinRpcError::InvalidResponse("Account is None".into()))?;
-        Ok(BaseAccount::decode(account.value.as_slice())?)
+
+        let base_account = match BaseAccount::decode(account.value.as_slice()) {
+            Ok(account) => account,
+            Err(err) if &self.account_prefix == "iaa" => {
+                let ethermint_account = EthermintAccount::decode(account.value.as_slice())?;
+
+                ethermint_account
+                    .base_account
+                    .or_mm_err(|| TendermintCoinRpcError::Prost(err))?
+            },
+            Err(err) => {
+                return MmError::err(TendermintCoinRpcError::Prost(err));
+            },
+        };
+
+        Ok(base_account)
     }
 
     pub(super) async fn balance_for_denom(&self, denom: String) -> MmResult<u64, TendermintCoinRpcError> {
@@ -1996,13 +2012,18 @@ impl MmCoin for TendermintCoin {
             .await
     }
 
-    fn get_receiver_trade_fee(&self, send_amount: BigDecimal, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         let coin = self.clone();
         let fut = async move {
             // We can't simulate Claim Htlc without having information about broadcasted htlc tx.
             // Since create and claim htlc fees are almost same, we can simply simulate create htlc tx.
-            coin.get_sender_trade_fee_for_denom(coin.ticker.clone(), coin.denom.clone(), coin.decimals, send_amount)
-                .await
+            coin.get_sender_trade_fee_for_denom(
+                coin.ticker.clone(),
+                coin.denom.clone(),
+                coin.decimals,
+                coin.min_tx_amount(),
+            )
+            .await
         };
         Box::new(fut.boxed().compat())
     }

@@ -30,7 +30,7 @@ use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, Adex
                                       AdexResponseChannel};
 use mm2_libp2p::peers_exchange::PeerAddresses;
 use mm2_libp2p::{decode_message, encode_message, DecodingError, GossipsubMessage, Libp2pPublic, Libp2pSecpPublic,
-                 MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR};
+                 MessageId, NetworkPorts, PeerId, TopicHash, TOPIC_SEPARATOR};
 use mm2_metrics::{mm_label, mm_timing};
 #[cfg(test)] use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
@@ -39,7 +39,8 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use wasm_timer::Instant;
 
-use crate::mm2::{lp_ordermatch, lp_stats, lp_swap};
+use crate::mm2::lp_ordermatch;
+use crate::mm2::{lp_stats, lp_swap};
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
 
@@ -138,36 +139,99 @@ async fn process_p2p_message(
     mut message: GossipsubMessage,
     i_am_relay: bool,
 ) {
+    fn is_valid(topics: &[TopicHash]) -> Result<(), String> {
+        if topics.is_empty() {
+            return Err("At least one topic must be provided.".to_string());
+        }
+
+        let first_topic_prefix = topics[0].as_str().split(TOPIC_SEPARATOR).next().unwrap_or_default();
+        for item in topics.iter().skip(1) {
+            if !item.as_str().starts_with(first_topic_prefix) {
+                return Err(format!(
+                    "Topics are invalid, received more than one topic kind. Topics '{:?}",
+                    topics
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     let mut to_propagate = false;
-    let mut orderbook_pairs = vec![];
 
     message.topics.dedup();
     drop_mutability!(message);
 
-    for topic in message.topics {
+    if let Err(err) = is_valid(&message.topics) {
+        log::error!("{}", err);
+        return;
+    }
+
+    let inform_about_break = |used: &str, all: &[TopicHash]| {
+        log::debug!(
+            "Topic '{}' proceed and loop is killed. Whole topic list was '{:?}'",
+            used,
+            all
+        );
+    };
+
+    for topic in message.topics.iter() {
         let mut split = topic.as_str().split(TOPIC_SEPARATOR);
+
         match split.next() {
             Some(lp_ordermatch::ORDERBOOK_PREFIX) => {
-                if let Some(pair) = split.next() {
-                    orderbook_pairs.push(pair.to_string());
+                let fut = lp_ordermatch::handle_orderbook_msg(
+                    ctx.clone(),
+                    &message.topics,
+                    peer_id.to_string(),
+                    &message.data,
+                    i_am_relay,
+                );
+
+                if let Err(e) = fut.await {
+                    if e.get_inner().is_warning() {
+                        log::warn!("{}", e);
+                    } else {
+                        log::error!("{}", e);
+                    }
+                    return;
                 }
+
+                to_propagate = true;
+                break;
             },
             Some(lp_swap::SWAP_PREFIX) => {
-                lp_swap::process_msg(ctx.clone(), split.next().unwrap_or_default(), &message.data).await;
+                if let Err(e) =
+                    lp_swap::process_swap_msg(ctx.clone(), split.next().unwrap_or_default(), &message.data).await
+                {
+                    log::error!("{}", e);
+                    return;
+                }
+
                 to_propagate = true;
+
+                inform_about_break(topic.as_str(), &message.topics);
+                break;
             },
             Some(lp_swap::WATCHER_PREFIX) => {
                 if ctx.is_watcher() {
-                    lp_swap::process_watcher_msg(ctx.clone(), &message.data).await;
+                    if let Err(e) = lp_swap::process_watcher_msg(ctx.clone(), &message.data) {
+                        log::error!("{}", e);
+                        return;
+                    }
                 }
+
                 to_propagate = true;
+
+                inform_about_break(topic.as_str(), &message.topics);
+                break;
             },
             Some(lp_swap::TX_HELPER_PREFIX) => {
                 if let Some(pair) = split.next() {
                     if let Ok(Some(coin)) = lp_coinfind(&ctx, pair).await {
                         if let Err(e) = coin.tx_enum_from_bytes(&message.data) {
                             log::error!("Message cannot continue the process due to: {:?}", e);
-                            continue;
+                            return;
                         };
 
                         let fut = coin.send_raw_tx_bytes(&message.data);
@@ -182,22 +246,11 @@ async fn process_p2p_message(
                         })
                     }
                 }
+
+                inform_about_break(topic.as_str(), &message.topics);
+                break;
             },
             None | Some(_) => (),
-        }
-    }
-
-    if !orderbook_pairs.is_empty() {
-        let process_fut = lp_ordermatch::process_msg(
-            ctx.clone(),
-            orderbook_pairs,
-            peer_id.to_string(),
-            &message.data,
-            i_am_relay,
-        );
-
-        if process_fut.await {
-            to_propagate = true;
         }
     }
 

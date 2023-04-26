@@ -57,7 +57,8 @@
 //  marketmaker
 //
 
-use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
+use super::lp_network::P2PRequestResult;
+use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PRequestError};
 use bitcrypto::{dhash160, sha256};
 use coins::eth::Web3RpcError;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoinEnum, TradeFee, TransactionEnum};
@@ -97,7 +98,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "lp_swap/recreate_swap_data.rs"] mod recreate_swap_data;
 #[path = "lp_swap/saved_swap.rs"] mod saved_swap;
 #[path = "lp_swap/swap_lock.rs"] mod swap_lock;
-#[path = "lp_swap/swap_watcher.rs"] mod swap_watcher;
+#[path = "lp_swap/swap_watcher.rs"] pub(crate) mod swap_watcher;
 #[path = "lp_swap/taker_swap.rs"] mod taker_swap;
 #[path = "lp_swap/trade_preimage.rs"] mod trade_preimage;
 
@@ -236,31 +237,35 @@ pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p
     broadcast_p2p_msg(ctx, vec![topic], encoded_msg, from);
 }
 
-pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
-    let uuid = match Uuid::from_str(topic) {
-        Ok(u) => u,
-        Err(_) => return,
-    };
+pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequestResult<()> {
+    let uuid = Uuid::from_str(topic).map_to_mm(|e| P2PRequestError::DecodeError(e.to_string()))?;
 
     let msg = match decode_signed::<SwapMsg>(msg) {
         Ok(m) => m,
         Err(swap_msg_err) => {
             #[cfg(not(target_arch = "wasm32"))]
-            match json::from_slice::<SwapStatus>(msg) {
+            return match json::from_slice::<SwapStatus>(msg) {
                 Ok(mut status) => {
                     status.data.fetch_and_set_usd_prices().await;
                     if let Err(e) = save_stats_swap(&ctx, &status.data).await {
                         error!("Error saving the swap {} status: {}", status.data.uuid(), e);
                     }
+                    Ok(())
                 },
                 Err(swap_status_err) => {
-                    error!("Couldn't deserialize 'SwapMsg': {:?}", swap_msg_err);
-                    error!("Couldn't deserialize 'SwapStatus': {:?}", swap_status_err);
+                    let error = format!(
+                        "Couldn't deserialize swap msg to either 'SwapMsg': {} or to 'SwapStatus': {}",
+                        swap_msg_err, swap_status_err
+                    );
+                    MmError::err(P2PRequestError::DecodeError(error))
                 },
             };
-            // Drop it to avoid dead_code warning
-            drop(swap_msg_err);
-            return;
+
+            #[cfg(target_arch = "wasm32")]
+            return MmError::err(P2PRequestError::DecodeError(format!(
+                "Couldn't deserialize 'SwapMsg': {}",
+                swap_msg_err
+            )));
         },
     };
 
@@ -280,7 +285,9 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
         } else {
             warn!("Received message from unexpected sender for swap {}", uuid);
         }
-    }
+    };
+
+    Ok(())
 }
 
 pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }

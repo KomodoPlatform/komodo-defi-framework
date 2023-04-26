@@ -285,6 +285,11 @@ impl ZCoin {
     pub fn consensus_params_ref(&self) -> &ZcoinConsensusParams { &self.z_fields.consensus_params }
 
     #[inline]
+    pub async fn is_sapling_state_synced(&self) -> bool {
+        matches!(self.sync_status().await, Ok(SyncStatus::Finished { block_number: _ }))
+    }
+
+    #[inline]
     pub async fn sync_status(&self) -> Result<SyncStatus, MmError<BlockchainScanStopped>> {
         self.z_fields
             .sync_state_connector
@@ -1618,7 +1623,7 @@ impl MmCoin for ZCoin {
         })
     }
 
-    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         utxo_common::get_receiver_trade_fee(self.clone())
     }
 

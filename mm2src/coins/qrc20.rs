@@ -1375,7 +1375,7 @@ impl MmCoin for Qrc20Coin {
         })
     }
 
-    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         let selfi = self.clone();
         let fut = async move {
             // pass the dummy params

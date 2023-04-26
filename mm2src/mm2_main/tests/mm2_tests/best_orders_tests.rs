@@ -1019,13 +1019,16 @@ fn best_orders_must_return_duplicate_for_orderbook_tickers() {
     assert_eq!(best_orders[0].coin, "tBTC-Segwit");
 }
 
-#[cfg(feature = "zhtlc-native-tests")]
 #[test]
+#[cfg(feature = "zhtlc-native-tests")]
 fn zhtlc_best_orders() {
+    use super::enable_z_coin;
     use mm2_test_helpers::for_tests::zombie_conf;
 
-    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
-    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+    use mm2_test_helpers::electrums::rick_electrums;
+
+    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
+    let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
 
     let coins = json!([rick_conf(), zombie_conf()]);
 
@@ -1042,10 +1045,7 @@ fn zhtlc_best_orders() {
             "i_am_seed": true,
         }),
         "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "bob" => Some(local_start()),
-            _ => None,
-        },
+        None,
     )
     .unwrap();
 
@@ -1087,10 +1087,7 @@ fn zhtlc_best_orders() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "alice" => Some(local_start()),
-            _ => None,
-        },
+        None,
     )
     .unwrap();
 
