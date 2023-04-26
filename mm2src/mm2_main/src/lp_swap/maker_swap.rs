@@ -5,16 +5,16 @@ use super::swap_lock::{SwapLock, SwapLockOps};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
 use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_message_every,
             check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
-            get_locked_amount, get_watcher_reward, recv_swap_msg, swap_topic, taker_payment_spend_deadline,
-            tx_helper_topic, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo,
-            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
-            SavedSwapIo, SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys,
-            SwapTxDataMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            get_locked_amount, recv_swap_msg, swap_topic, taker_payment_spend_deadline, tx_helper_topic,
+            wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
+            NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
+            SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
+            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
-use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration};
+use coins::lp_price::fetch_swap_coins_price;
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend,
             MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee, TradePreimageValue,
@@ -818,18 +818,18 @@ impl MakerSwap {
             })
             .compat();
 
-        let watcher_reward = if self.r().watcher_reward && self.maker_coin.is_eth() {
-            match get_watcher_reward(
-                &self.maker_coin,
-                &self.taker_coin,
-                Some(self.maker_amount.clone()),
-                Some(self.taker_amount.clone()),
-                false,
-                self.watcher_reward_amount(),
-            )
-            .await
+        let watcher_reward = if self.r().watcher_reward {
+            match self
+                .maker_coin
+                .get_maker_watcher_reward(
+                    &self.taker_coin,
+                    Some(self.maker_amount.clone()),
+                    Some(self.taker_amount.clone()),
+                    self.watcher_reward_amount(),
+                )
+                .await
             {
-                Ok(reward) => Some(reward),
+                Ok(reward) => reward,
                 Err(err) => {
                     return Ok((Some(MakerSwapCommand::Finish), vec![
                         MakerSwapEvent::MakerPaymentTransactionFailed(err.into_inner().to_string().into()),
@@ -1006,17 +1006,17 @@ impl MakerSwap {
         }
 
         let watcher_reward = if self.r().watcher_reward {
-            match get_watcher_reward(
-                &self.taker_coin,
-                &self.maker_coin,
-                Some(self.taker_amount.clone()),
-                Some(self.maker_amount.clone()),
-                true,
-                self.watcher_reward_amount(),
-            )
-            .await
+            match self
+                .taker_coin
+                .get_taker_watcher_reward(
+                    &self.maker_coin,
+                    Some(self.taker_amount.clone()),
+                    Some(self.maker_amount.clone()),
+                    self.watcher_reward_amount(),
+                )
+                .await
             {
-                Ok(reward) => Some(reward),
+                Ok(reward) => reward,
                 Err(err) => {
                     return Ok((Some(MakerSwapCommand::Finish), vec![
                         MakerSwapEvent::MakerPaymentTransactionFailed(err.into_inner().to_string().into()),

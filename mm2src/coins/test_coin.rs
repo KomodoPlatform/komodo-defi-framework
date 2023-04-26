@@ -3,15 +3,15 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
-            ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MakerSwapTakerCoin, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs, RefundResult,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureResult,
-            SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
-            WithdrawRequest};
+            ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MakerSwapTakerCoin, MmCoinEnum,
+            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignatureResult, SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use common::executor::AbortedError;
 use futures01::Future;
@@ -264,6 +264,26 @@ impl WatcherOps for TestCoin {
         input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
+    }
+
+    async fn get_taker_watcher_reward(
+        &self,
+        other_coin: &MmCoinEnum,
+        coin_amount: Option<BigDecimal>,
+        other_coin_amount: Option<BigDecimal>,
+        reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        unimplemented!()
+    }
+
+    async fn get_maker_watcher_reward(
+        &self,
+        other_coin: &MmCoinEnum,
+        coin_amount: Option<BigDecimal>,
+        other_coin_amount: Option<BigDecimal>,
+        reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        unimplemented!()
     }
 }
 

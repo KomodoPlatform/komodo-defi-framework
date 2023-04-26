@@ -16,7 +16,7 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
+            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RawTransactionError, RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs,
             RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
@@ -25,8 +25,8 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, C
             TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
             ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
             ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFut, WithdrawRequest};
+            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
@@ -994,6 +994,26 @@ impl WatcherOps for LightningCoin {
         _input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
+    }
+
+    async fn get_taker_watcher_reward(
+        &self,
+        _other_coin: &MmCoinEnum,
+        _coin_amount: Option<BigDecimal>,
+        _other_coin_amount: Option<BigDecimal>,
+        _reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        unimplemented!()
+    }
+
+    async fn get_maker_watcher_reward(
+        &self,
+        _other_coin: &MmCoinEnum,
+        _coin_amount: Option<BigDecimal>,
+        _other_coin_amount: Option<BigDecimal>,
+        _reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        unimplemented!()
     }
 }
 

@@ -10,7 +10,7 @@ use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinProtocol,
-            CoinWithDerivationMethod, ConfirmPaymentInput, IguanaPrivKey, MakerSwapTakerCoin,
+            CoinWithDerivationMethod, ConfirmPaymentInput, IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs,
             RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
@@ -18,7 +18,8 @@ use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBal
             TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
             ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFut};
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
 use derive_more::Display;
@@ -1090,6 +1091,26 @@ impl WatcherOps for BchCoin {
         input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         utxo_common::watcher_search_for_swap_tx_spend(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
+    }
+
+    async fn get_taker_watcher_reward(
+        &self,
+        other_coin: &MmCoinEnum,
+        coin_amount: Option<BigDecimal>,
+        other_coin_amount: Option<BigDecimal>,
+        reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        utxo_common::get_taker_watcher_reward(self, other_coin, coin_amount, other_coin_amount, reward_amount).await
+    }
+
+    async fn get_maker_watcher_reward(
+        &self,
+        other_coin: &MmCoinEnum,
+        coin_amount: Option<BigDecimal>,
+        other_coin_amount: Option<BigDecimal>,
+        reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        utxo_common::get_maker_watcher_reward(self, other_coin, coin_amount, other_coin_amount, reward_amount).await
     }
 }
 

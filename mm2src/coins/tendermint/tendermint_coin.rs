@@ -15,18 +15,18 @@ use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
             CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MakerSwapTakerCoin, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
-            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
-            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RefundError,
-            RefundPaymentArgs, RefundResult, RpcCommonOps, SearchForSwapTxSpendInput,
+            MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
+            RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps, SearchForSwapTxSpendInput,
             SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs,
             SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType,
             TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFut, WithdrawRequest};
+            VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
+            WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
@@ -2570,6 +2570,26 @@ impl WatcherOps for TendermintCoin {
         _input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
+    }
+
+    async fn get_taker_watcher_reward(
+        &self,
+        _other_coin: &MmCoinEnum,
+        _coin_amount: Option<BigDecimal>,
+        _other_coin_amount: Option<BigDecimal>,
+        _reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        unimplemented!()
+    }
+
+    async fn get_maker_watcher_reward(
+        &self,
+        _other_coin: &MmCoinEnum,
+        _coin_amount: Option<BigDecimal>,
+        _other_coin_amount: Option<BigDecimal>,
+        _reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        unimplemented!()
     }
 }
 

@@ -199,6 +199,7 @@ macro_rules! ok_or_continue_after_sleep {
 }
 
 pub mod coin_balance;
+pub mod lp_price;
 
 pub mod coin_errors;
 use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
@@ -310,6 +311,8 @@ pub type RawTransactionFut<'a> =
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
+
+const REWARD_GAS_AMOUNT: u64 = 70000;
 
 // Constants for logs used in tests
 pub const INVALID_SENDER_ERR_LOG: &str = "Invalid sender";
@@ -768,7 +771,7 @@ pub struct PaymentInstructionArgs<'a> {
     pub amount: BigDecimal,
     pub maker_lock_duration: u64,
     pub expires_in: u64,
-    pub watcher_reward: Option<BigDecimal>,
+    pub watcher_reward: bool,
 }
 
 #[derive(Display)]
@@ -800,6 +803,13 @@ pub enum RefundError {
     DbError(String),
     Timeout(String),
     Internal(String),
+}
+
+#[derive(Debug, Display)]
+pub enum WatcherRewardError {
+    RPCError(String),
+    InvalidCoinType(String),
+    InternalError(String),
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
@@ -965,6 +975,22 @@ pub trait WatcherOps {
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
+
+    async fn get_taker_watcher_reward(
+        &self,
+        other_coin: &MmCoinEnum,
+        coin_amount: Option<BigDecimal>,
+        other_coin_amount: Option<BigDecimal>,
+        reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
+
+    async fn get_maker_watcher_reward(
+        &self,
+        other_coin: &MmCoinEnum,
+        coin_amount: Option<BigDecimal>,
+        other_coin_amount: Option<BigDecimal>,
+        reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
 }
 
 /// Operations that coins have independently from the MarketMaker.

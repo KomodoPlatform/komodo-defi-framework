@@ -12,9 +12,9 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_mes
             SwapTxDataMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
-use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, get_watcher_reward, tx_helper_topic,
-                          wait_for_maker_payment_conf_duration, TakerSwapWatcherData};
+use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, wait_for_maker_payment_conf_duration,
+                          TakerSwapWatcherData};
+use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
             FoundSwapTxSpend, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee,
@@ -941,27 +941,7 @@ impl TakerSwap {
             (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
         let expires_in = wait_for_maker_payment_conf_duration(self.r().data.lock_duration);
 
-        let watcher_reward = if self.r().watcher_reward && self.taker_coin.is_eth() && self.maker_coin.is_eth() {
-            match get_watcher_reward(
-                &self.taker_coin,
-                &self.maker_coin,
-                Some(self.taker_amount.clone().into()),
-                Some(self.maker_amount.clone().into()),
-                true,
-                None,
-            )
-            .await
-            {
-                Ok(reward) => {
-                    self.w().reward_amount = Some(reward.amount.clone());
-                    Some(reward)
-                },
-                Err(err) => return Err(PaymentInstructionsErr::WatcherRewardErr(err.to_string()).into()),
-            }
-        } else {
-            None
-        };
-
+        let watcher_reward = self.r().watcher_reward && self.maker_coin.is_eth();
         let instructions = self
             .maker_coin
             .maker_payment_instructions(PaymentInstructionArgs {
@@ -969,7 +949,7 @@ impl TakerSwap {
                 amount: maker_amount,
                 maker_lock_duration,
                 expires_in,
-                watcher_reward: watcher_reward.map(|reward| reward.amount),
+                watcher_reward,
             })
             .await?;
         Ok(SwapTxDataMsg::new(taker_fee_data, instructions))
@@ -1390,18 +1370,18 @@ impl TakerSwap {
         info!("After wait confirm");
 
         let reward_amount = self.r().reward_amount.clone();
-        let watcher_reward = if self.r().watcher_reward && self.maker_coin.is_eth() {
-            match get_watcher_reward(
-                &self.maker_coin,
-                &self.taker_coin,
-                Some(self.maker_amount.clone().into()),
-                Some(self.taker_amount.clone().into()),
-                false,
-                reward_amount,
-            )
-            .await
+        let watcher_reward = if self.r().watcher_reward {
+            match self
+                .maker_coin
+                .get_maker_watcher_reward(
+                    &self.taker_coin,
+                    Some(self.maker_amount.clone().into()),
+                    Some(self.taker_amount.clone().into()),
+                    reward_amount,
+                )
+                .await
             {
-                Ok(reward) => Some(reward),
+                Ok(reward) => reward,
                 Err(err) => {
                     return Ok((Some(TakerSwapCommand::Finish), vec![
                         TakerSwapEvent::TakerPaymentTransactionFailed(err.into_inner().to_string().into()),
@@ -1494,17 +1474,17 @@ impl TakerSwap {
 
         let reward_amount = self.r().reward_amount.clone();
         let watcher_reward = if self.r().watcher_reward {
-            match get_watcher_reward(
-                &self.taker_coin,
-                &self.maker_coin,
-                Some(self.taker_amount.clone().into()),
-                Some(self.maker_amount.clone().into()),
-                true,
-                reward_amount,
-            )
-            .await
+            match self
+                .taker_coin
+                .get_taker_watcher_reward(
+                    &self.maker_coin,
+                    Some(self.taker_amount.clone().into()),
+                    Some(self.maker_amount.clone().into()),
+                    reward_amount,
+                )
+                .await
             {
-                Ok(reward) => Some(reward),
+                Ok(reward) => reward,
                 Err(err) => {
                     return Ok((Some(TakerSwapCommand::Finish), vec![
                         TakerSwapEvent::TakerPaymentTransactionFailed(

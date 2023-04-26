@@ -1,5 +1,5 @@
-use super::{broadcast_p2p_tx_msg, get_payment_locktime, get_watcher_reward, lp_coinfind, taker_payment_spend_deadline,
-            tx_helper_topic, H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL};
+use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
+            H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
@@ -237,8 +237,12 @@ impl State for ValidateTakerPayment {
         }
 
         let watcher_reward = if watcher_ctx.watcher_reward {
-            match get_watcher_reward(&watcher_ctx.taker_coin, &watcher_ctx.maker_coin, None, None, true, None).await {
-                Ok(reward) => Some(reward),
+            match watcher_ctx
+                .taker_coin
+                .get_taker_watcher_reward(&watcher_ctx.maker_coin, None, None, None)
+                .await
+            {
+                Ok(reward) => reward,
                 Err(err) => {
                     return Self::change_state(Stopped::from_reason(StopReason::Error(
                         WatcherError::InternalError(err.into_inner().to_string()).into(),
@@ -641,8 +645,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
         );
 
         let conf = json::from_value::<WatcherConf>(ctx.conf["watcher_conf"].clone()).unwrap_or_default();
-        //let watcher_reward = taker_coin.is_eth() || maker_coin.is_eth();
-        let watcher_reward = false;
+        let watcher_reward = taker_coin.is_eth() || maker_coin.is_eth();
         let watcher_ctx = WatcherContext {
             ctx,
             maker_coin,

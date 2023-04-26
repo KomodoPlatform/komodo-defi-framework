@@ -1,27 +1,29 @@
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::eth::EthCoinType;
 use crate::hd_confirm_address::HDConfirmAddress;
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, HDAccountsMap,
                        NewAccountCreatingError, NewAddressDeriveConfirmError, NewAddressDerivingError};
 use crate::hd_wallet_storage::{HDWalletCoinWithStorageOps, HDWalletStorageResult};
+use crate::lp_price::get_base_price_in_rel;
 use crate::rpc_command::init_withdraw::WithdrawTaskHandle;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
                                UtxoRpcClientOps, UtxoRpcResult};
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
-use crate::WatcherReward;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GetWithdrawSenderAddress,
             HDAccountAddressId, RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
-            SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails,
-            TxMarshalingErr, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
-            EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
-            INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut,
+            TxFeeDetails, TxMarshalingErr, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult,
+            WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
+            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
 use chain::constants::SEQUENCE_FINAL;
@@ -50,6 +52,7 @@ use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, C
                     SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
+use std::ops::Div;
 use std::str::FromStr;
 use std::sync::atomic::Ordering as AtomicOrdering;
 use utxo_signer::with_key_pair::p2sh_spend;
@@ -2190,6 +2193,69 @@ pub async fn search_for_swap_tx_spend_other<T: AsRef<UtxoCoinFields> + SwapOps>(
         input.search_from_block,
     )
     .await
+}
+
+pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps>(
+    coin: &T,
+    other_coin: &MmCoinEnum,
+    coin_amount: Option<BigDecimal>,
+    other_coin_amount: Option<BigDecimal>,
+    reward_amount: Option<BigDecimal>,
+) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+    let reward_target = RewardTarget::PaymentReceiver;
+    let is_exact_amount = reward_amount.is_some();
+
+    let other_coin = match other_coin {
+        MmCoinEnum::EthCoin(coin) => coin,
+        _ => {
+            return Err(WatcherRewardError::InvalidCoinType(
+                "At least one coin must be Ethereum to use watcher rewards".to_string(),
+            )
+            .into())
+        },
+    };
+
+    let amount = match reward_amount {
+        Some(amount) => amount,
+        None => {
+            let gas_cost_eth = other_coin.get_watcher_reward_amount().await?;
+            let price_in_eth = if let (EthCoinType::Eth, Some(coin_amount), Some(other_coin_amount)) =
+                (&other_coin.coin_type, coin_amount, other_coin_amount)
+            {
+                other_coin_amount.div(coin_amount)
+            } else {
+                get_base_price_in_rel(Some(coin.ticker().to_string()), Some("ETH".to_string()))
+                    .await
+                    .ok_or_else(|| {
+                        WatcherRewardError::RPCError(format!(
+                            "Price of coin {} in ETH could not be found",
+                            coin.ticker()
+                        ))
+                    })?
+            };
+
+            gas_cost_eth.div(price_in_eth)
+        },
+    };
+
+    let send_contract_reward_on_spend = false;
+
+    Ok(Some(WatcherReward {
+        amount,
+        is_exact_amount,
+        reward_target,
+        send_contract_reward_on_spend,
+    }))
+}
+
+pub async fn get_maker_watcher_reward<T: UtxoCommonOps + SwapOps>(
+    _coin: &T,
+    _other_coin: &MmCoinEnum,
+    _coin_amount: Option<BigDecimal>,
+    _other_coin_amount: Option<BigDecimal>,
+    _reward_amount: Option<BigDecimal>,
+) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+    Ok(None)
 }
 
 /// Extract a secret from the `spend_tx`.

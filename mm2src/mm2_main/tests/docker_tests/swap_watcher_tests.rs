@@ -13,7 +13,7 @@ use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
 use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, dex_fee_threshold, get_payment_locktime,
-                             get_watcher_reward, MakerSwap, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
+                             MakerSwap, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
                              MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
@@ -1236,17 +1236,13 @@ fn test_watcher_validate_taker_payment_eth() {
     let taker_amount = BigDecimal::from_str("0.01").unwrap();
     let maker_amount = BigDecimal::from_str("0.01").unwrap();
     let secret_hash = dhash160(&MakerSwap::generate_secret());
-    let watcher_reward = Some(
-        block_on(get_watcher_reward(
-            &MmCoinEnum::from(taker_coin.clone()),
-            &MmCoinEnum::from(taker_coin.clone()),
-            Some(taker_amount.clone()),
-            Some(maker_amount.clone()),
-            true,
-            None,
-        ))
-        .unwrap(),
-    );
+    let watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
+        &MmCoinEnum::from(taker_coin.clone()),
+        Some(taker_amount.clone()),
+        Some(maker_amount.clone()),
+        None,
+    ))
+    .unwrap();
 
     let taker_payment = taker_coin
         .send_taker_payment(SendPaymentArgs {
@@ -1461,17 +1457,13 @@ fn test_watcher_validate_taker_payment_eth() {
         ),
     }
 
-    let wrong_watcher_reward = Some(
-        block_on(get_watcher_reward(
-            &MmCoinEnum::from(taker_coin.clone()),
-            &MmCoinEnum::from(taker_coin.clone()),
-            Some(taker_amount.clone()),
-            Some(maker_amount.clone()),
-            true,
-            Some(watcher_reward.clone().unwrap().amount.double()),
-        ))
-        .unwrap(),
-    );
+    let wrong_watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
+        &MmCoinEnum::from(taker_coin.clone()),
+        Some(taker_amount.clone()),
+        Some(maker_amount.clone()),
+        Some(watcher_reward.clone().unwrap().amount.double()),
+    ))
+    .unwrap();
 
     let error = taker_coin
         .watcher_validate_taker_payment(WatcherValidatePaymentInput {
@@ -1522,17 +1514,13 @@ fn test_watcher_validate_taker_payment_erc20() {
     let taker_amount = BigDecimal::from(10);
     let maker_amount = BigDecimal::from(10);
 
-    let watcher_reward = Some(
-        block_on(get_watcher_reward(
-            &MmCoinEnum::from(taker_coin.clone()),
-            &MmCoinEnum::from(taker_coin.clone()),
-            Some(taker_amount.clone()),
-            Some(maker_amount.clone()),
-            true,
-            None,
-        ))
-        .unwrap(),
-    );
+    let watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
+        &MmCoinEnum::from(taker_coin.clone()),
+        Some(taker_amount.clone()),
+        Some(maker_amount.clone()),
+        None,
+    ))
+    .unwrap();
 
     let taker_payment = taker_coin
         .send_taker_payment(SendPaymentArgs {
@@ -1747,17 +1735,13 @@ fn test_watcher_validate_taker_payment_erc20() {
         ),
     }
 
-    let wrong_watcher_reward = Some(
-        block_on(get_watcher_reward(
-            &MmCoinEnum::from(taker_coin.clone()),
-            &MmCoinEnum::from(taker_coin.clone()),
-            Some(taker_amount.clone()),
-            Some(maker_amount.clone()),
-            true,
-            Some(watcher_reward.clone().unwrap().amount.double()),
-        ))
-        .unwrap(),
-    );
+    let wrong_watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
+        &MmCoinEnum::from(taker_coin.clone()),
+        Some(taker_amount.clone()),
+        Some(maker_amount.clone()),
+        Some(watcher_reward.clone().unwrap().amount.double()),
+    ))
+    .unwrap();
 
     let error = taker_coin
         .watcher_validate_taker_payment(WatcherValidatePaymentInput {

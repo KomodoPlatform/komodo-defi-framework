@@ -21,13 +21,14 @@
 //  Copyright © 2022 AtomicDEX. All rights reserved.
 //
 use super::eth::Action::{Call, Create};
+use crate::lp_price::get_base_price_in_rel;
 #[cfg(feature = "enable-nft-integration")]
 use crate::nft::nft_structs::{ContractType, ConvertChain, NftListReq, TransactionNftDetails, WithdrawErc1155,
                               WithdrawErc721};
-use crate::{PaymentInstructionArgs, RewardTarget};
+use crate::{PaymentInstructionArgs, RewardTarget, REWARD_GAS_AMOUNT};
 use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
-use common::custom_futures::repeatable::{Ready, Retry};
+use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
 use common::log::{debug, error, info, warn};
@@ -52,6 +53,7 @@ use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
+use num_traits::Zero;
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
@@ -60,7 +62,7 @@ use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::ops::Deref;
+use std::ops::{Deref, Div};
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -79,7 +81,7 @@ cfg_wasm32! {
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
             CoinProtocol, CoinTransportMetrics, CoinsContext, ConfirmPaymentInput, EthValidateFeeArgs, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
+            FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
             MyAddressError, MyWalletAddress, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
             PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
             RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
@@ -90,11 +92,11 @@ use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSen
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG, INSUFFICIENT_WATCHER_REWARD_ERR_LOG,
-            INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG,
+            INSUFFICIENT_WATCHER_REWARD_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
+            INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -440,7 +442,7 @@ impl EthPrivKeyPolicy {
 /// pImpl idiom.
 pub struct EthCoinImpl {
     ticker: String,
-    coin_type: EthCoinType,
+    pub coin_type: EthCoinType,
     priv_key_policy: EthPrivKeyPolicy,
     my_address: Address,
     sign_message_prefix: Option<String>,
@@ -1322,7 +1324,18 @@ impl SwapOps for EthCoin {
         &self,
         args: PaymentInstructionArgs<'_>,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(args.watcher_reward.map(|r| r.to_string().into_bytes()))
+        let watcher_reward = if args.watcher_reward {
+            Some(
+                self.get_watcher_reward_amount()
+                    .await
+                    .map_err(|err| PaymentInstructionsErr::WatcherRewardErr(err.get_inner().to_string()))?
+                    .to_string()
+                    .into_bytes(),
+            )
+        } else {
+            None
+        };
+        Ok(watcher_reward)
     }
 
     async fn taker_payment_instructions(
@@ -1691,6 +1704,86 @@ impl WatcherOps for EthCoin {
             input.watcher_reward,
         )
         .await
+    }
+
+    async fn get_taker_watcher_reward(
+        &self,
+        other_coin: &MmCoinEnum,
+        _coin_amount: Option<BigDecimal>,
+        _other_coin_amount: Option<BigDecimal>,
+        reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        let reward_target = if other_coin.is_eth() {
+            RewardTarget::Contract
+        } else {
+            RewardTarget::PaymentSender
+        };
+
+        let is_exact_amount = reward_amount.is_some();
+        let amount = match reward_amount {
+            Some(amount) => amount,
+            None => self.get_watcher_reward_amount().await?,
+        };
+
+        let send_contract_reward_on_spend = false;
+
+        Ok(Some(WatcherReward {
+            amount,
+            is_exact_amount,
+            reward_target,
+            send_contract_reward_on_spend,
+        }))
+    }
+
+    async fn get_maker_watcher_reward(
+        &self,
+        other_coin: &MmCoinEnum,
+        _coin_amount: Option<BigDecimal>,
+        _other_coin_amount: Option<BigDecimal>,
+        reward_amount: Option<BigDecimal>,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        let reward_target = if other_coin.is_eth() {
+            RewardTarget::None
+        } else {
+            RewardTarget::PaymentSpender
+        };
+
+        let is_exact_amount = reward_amount.is_some();
+        let amount = match reward_amount {
+            Some(amount) => amount,
+            None => {
+                if other_coin.is_eth() {
+                    BigDecimal::zero()
+                } else {
+                    let gas_cost_eth = self.get_watcher_reward_amount().await?;
+
+                    match &self.coin_type {
+                        EthCoinType::Eth => gas_cost_eth,
+                        EthCoinType::Erc20 { .. } => {
+                            let price_in_eth =
+                                get_base_price_in_rel(Some(self.ticker().to_string()), Some("ETH".to_string()))
+                                    .await
+                                    .ok_or_else(|| {
+                                        WatcherRewardError::RPCError(format!(
+                                            "Price of coin {} in ETH could not be found",
+                                            self.ticker()
+                                        ))
+                                    })?;
+                            gas_cost_eth.div(price_in_eth)
+                        },
+                    }
+                }
+            },
+        };
+
+        let send_contract_reward_on_spend = true;
+
+        Ok(Some(WatcherReward {
+            amount,
+            is_exact_amount,
+            reward_target,
+            send_contract_reward_on_spend,
+        }))
     }
 }
 
@@ -4124,6 +4217,19 @@ impl EthCoin {
         }
 
         Ok(None)
+    }
+
+    pub async fn get_watcher_reward_amount(&self) -> Result<BigDecimal, MmError<WatcherRewardError>> {
+        let gas_price = repeatable!(async { self.get_gas_price().compat().await.retry_on_err() })
+            .attempts(3)
+            .repeat_every_secs(10.)
+            .await
+            .map_err(|_| WatcherRewardError::RPCError("Error getting the gas price".to_string()))?;
+
+        let gas_cost_wei = U256::from(REWARD_GAS_AMOUNT) * gas_price;
+        let gas_cost_eth =
+            u256_to_big_decimal(gas_cost_wei, 18).map_err(|e| WatcherRewardError::InternalError(e.to_string()))?;
+        Ok(gas_cost_eth)
     }
 
     /// Get gas price
