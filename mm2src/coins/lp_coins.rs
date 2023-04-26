@@ -200,6 +200,7 @@ macro_rules! ok_or_continue_after_sleep {
 
 pub mod coin_balance;
 pub mod lp_price;
+pub mod watcher_common;
 
 pub mod coin_errors;
 use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
@@ -311,8 +312,6 @@ pub type RawTransactionFut<'a> =
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
-
-const REWARD_GAS_AMOUNT: u64 = 70000;
 
 // Constants for logs used in tests
 pub const INVALID_SENDER_ERR_LOG: &str = "Invalid sender";

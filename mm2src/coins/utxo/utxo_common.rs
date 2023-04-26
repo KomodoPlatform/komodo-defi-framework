@@ -14,6 +14,7 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
+use crate::watcher_common::validate_watcher_reward;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GetWithdrawSenderAddress,
             HDAccountAddressId, RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundPaymentArgs,
             RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
@@ -3871,14 +3872,9 @@ pub fn validate_payment<T: UtxoCommonOps>(
         }
 
         if let Some(watcher_reward) = watcher_reward {
-            let watcher_reward = sat_from_big_decimal(&watcher_reward.amount, coin.as_ref().decimals)?;
-            let min_expected_amount = (watcher_reward / 100) * 95 + amount;
-            if actual_output.value < min_expected_amount {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Provided payment tx output value is less than expected {:?} {:?}",
-                    actual_output.value, min_expected_amount
-                )));
-            }
+            let expected_reward = sat_from_big_decimal(&watcher_reward.amount, coin.as_ref().decimals)?;
+            let actual_reward = actual_output.value - amount;
+            validate_watcher_reward(expected_reward, actual_reward, false)?;
         } else if actual_output.value != amount {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Provided payment tx output value doesn't match expected {:?} {:?}",

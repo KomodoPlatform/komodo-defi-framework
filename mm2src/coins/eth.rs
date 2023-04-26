@@ -25,7 +25,6 @@ use crate::lp_price::get_base_price_in_rel;
 #[cfg(feature = "enable-nft-integration")]
 use crate::nft::nft_structs::{ContractType, ConvertChain, NftListReq, TransactionNftDetails, WithdrawErc1155,
                               WithdrawErc721};
-use crate::{PaymentInstructionArgs, RewardTarget, REWARD_GAS_AMOUNT};
 use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
@@ -79,23 +78,24 @@ cfg_wasm32! {
     use web3::types::TransactionRequest;
 }
 
+use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
             CoinProtocol, CoinTransportMetrics, CoinsContext, ConfirmPaymentInput, EthValidateFeeArgs, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
             MyAddressError, MyWalletAddress, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
-            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
-            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
-            RefundError, RefundPaymentArgs, RefundResult, RpcClientType, RpcTransportEventHandler,
-            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG,
-            INSUFFICIENT_WATCHER_REWARD_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
+            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RewardTarget, RpcClientType,
+            RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
+            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs,
+            SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult,
+            EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
             INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
 pub use rlp;
 
@@ -1582,7 +1582,7 @@ impl WatcherOps for EthCoin {
                             ValidatePaymentError::WrongPaymentTx("Invalid type for reward amount argument".to_string())
                         })?;
 
-                    validate_watcher_reward(expected_reward_amount, reward_amount_input, false)?;
+                    validate_watcher_reward(expected_reward_amount.as_u64(), reward_amount_input.as_u64(), false)?;
 
                     // TODO: Validate the value
                 },
@@ -1669,7 +1669,7 @@ impl WatcherOps for EthCoin {
                             ValidatePaymentError::WrongPaymentTx("Invalid type for reward amount argument".to_string())
                         })?;
 
-                    validate_watcher_reward(expected_reward_amount, reward_amount_input, false)?;
+                    validate_watcher_reward(expected_reward_amount.as_u64(), reward_amount_input.as_u64(), false)?;
 
                     if tx_from_rpc.value != reward_amount_input {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -3961,8 +3961,8 @@ impl EthCoin {
                         })?;
 
                         validate_watcher_reward(
-                            expected_reward_amount,
-                            actual_reward_amount,
+                            expected_reward_amount.as_u64(),
+                            actual_reward_amount.as_u64(),
                             watcher_reward.is_exact_amount,
                         )?;
 
@@ -4066,8 +4066,8 @@ impl EthCoin {
                             })?;
 
                         validate_watcher_reward(
-                            expected_reward_amount,
-                            actual_reward_amount,
+                            expected_reward_amount.as_u64(),
+                            actual_reward_amount.as_u64(),
                             watcher_reward.is_exact_amount,
                         )?;
 
@@ -4894,32 +4894,6 @@ fn get_function_name(name: &str, watcher_reward: bool) -> String {
         format!("{}{}", name, "Reward")
     } else {
         name.to_owned()
-    }
-}
-
-fn validate_watcher_reward(
-    expected_reward: U256,
-    actual_reward: U256,
-    is_exact: bool,
-) -> Result<(), MmError<ValidatePaymentError>> {
-    if is_exact {
-        if actual_reward != expected_reward {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Payment tx reward_amount arg {} is invalid, expected {}",
-                actual_reward, expected_reward,
-            )));
-        }
-        Ok(())
-    } else {
-        let min_acceptable_reward = (expected_reward / 100) * 95;
-        if actual_reward < min_acceptable_reward {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "{INSUFFICIENT_WATCHER_REWARD_ERR_LOG}: Provided watcher reward {} is less than the minimum required amount {}",
-                actual_reward,
-                min_acceptable_reward,
-            )));
-        }
-        Ok(())
     }
 }
 
