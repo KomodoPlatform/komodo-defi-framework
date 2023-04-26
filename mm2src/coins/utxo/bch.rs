@@ -31,6 +31,7 @@ use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, CoinVariant};
+use std::sync::atomic::Ordering;
 use std::sync::MutexGuard;
 
 pub type BchUnspentMap = HashMap<Address, BchUnspents>;
@@ -1286,9 +1287,9 @@ impl MmCoin for BchCoin {
         };
     }
 
-    fn is_available(&self) -> bool { todo!() }
+    fn is_available(&self) -> bool { self.as_ref().is_available.load(Ordering::SeqCst) }
 
-    fn passive_it(&self) { todo!() }
+    fn update_is_available(&self, to: bool) { self.as_ref().is_available.store(to, Ordering::SeqCst); }
 }
 
 impl CoinWithDerivationMethod for BchCoin {

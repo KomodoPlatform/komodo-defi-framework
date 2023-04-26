@@ -2237,7 +2237,7 @@ pub trait MmCoin:
     fn on_disabled(&self) -> Result<(), AbortedError>;
 
     /// For Handling the removal/deactivation of token on platform coin deactivation.
-    fn on_token_deactivated(&self, _ticker: &str);
+    fn on_token_deactivated(&self, ticker: &str);
 
     /// Gets the current state of the parent coin wheter
     /// it's available for the external requests or not.
@@ -2250,7 +2250,7 @@ pub trait MmCoin:
     /// that have child tokens enabled.
     ///
     /// Noneffective for child tokens.
-    fn passive_it(&self);
+    fn update_is_available(&self, to: bool);
 }
 
 /// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout

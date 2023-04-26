@@ -12,7 +12,7 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
-use common::executor::AbortedError;
+use common::{executor::AbortedError, log::warn};
 use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
@@ -360,7 +360,9 @@ impl MmCoin for TestCoin {
 
     fn on_token_deactivated(&self, _ticker: &str) { () }
 
-    fn is_available(&self) -> bool { todo!() }
+    fn is_available(&self) -> bool { true }
 
-    fn passive_it(&self) { todo!() }
+    fn update_is_available(&self, _to: bool) {
+        warn!("`update_is_available` is ineffective for test coin");
+    }
 }

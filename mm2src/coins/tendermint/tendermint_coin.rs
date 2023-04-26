@@ -214,7 +214,6 @@ impl RpcCommonOps for TendermintCoin {
 }
 
 pub struct TendermintCoinImpl {
-    is_available: AtomicBool,
     ticker: String,
     /// As seconds
     avg_blocktime: u8,
@@ -233,6 +232,8 @@ pub struct TendermintCoinImpl {
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
     chain_registry_name: Option<String>,
+    /// A flag used for controlling the parent coin's mode(active/passive).
+    is_available: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -504,7 +505,6 @@ impl TendermintCoin {
             })?;
 
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
-            is_available: AtomicBool::new(true),
             ticker,
             account_id,
             account_prefix: protocol_info.account_prefix,
@@ -519,6 +519,7 @@ impl TendermintCoin {
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
             chain_registry_name: protocol_info.chain_registry_name,
+            is_available: AtomicBool::new(true),
         })))
     }
 
@@ -2045,7 +2046,7 @@ impl MmCoin for TendermintCoin {
 
     fn is_available(&self) -> bool { self.is_available.load(Ordering::SeqCst) }
 
-    fn passive_it(&self) { self.is_available.store(false, Ordering::SeqCst); }
+    fn update_is_available(&self, to: bool) { self.is_available.store(to, Ordering::SeqCst); }
 }
 
 impl MarketCoinOps for TendermintCoin {

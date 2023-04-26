@@ -62,7 +62,7 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId, U64};
@@ -463,6 +463,8 @@ pub struct EthCoinImpl {
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
+    /// A flag used for controlling the parent coin's mode(active/passive).
+    is_available: AtomicBool,
 }
 
 #[derive(Clone, Debug)]
@@ -4428,9 +4430,9 @@ impl MmCoin for EthCoin {
         };
     }
 
-    fn is_available(&self) -> bool { todo!() }
+    fn is_available(&self) -> bool { self.is_available.load(AtomicOrdering::SeqCst) }
 
-    fn passive_it(&self) { todo!() }
+    fn update_is_available(&self, to: bool) { self.is_available.store(to, AtomicOrdering::SeqCst); }
 }
 
 pub trait TryToAddress {
@@ -4976,6 +4978,7 @@ pub async fn eth_coin_from_conf_and_request(
         nonce_lock,
         erc20_tokens_infos: Default::default(),
         abortable_system,
+        is_available: AtomicBool::new(true),
     };
     Ok(EthCoin(Arc::new(coin)))
 }

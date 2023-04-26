@@ -56,6 +56,7 @@ use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use zcash_client_backend::data_api::WalletRead;
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
@@ -1670,9 +1671,9 @@ impl MmCoin for ZCoin {
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 
-    fn is_available(&self) -> bool { todo!() }
+    fn is_available(&self) -> bool { self.as_ref().is_available.load(Ordering::SeqCst) }
 
-    fn passive_it(&self) { todo!() }
+    fn update_is_available(&self, to: bool) { self.as_ref().is_available.store(to, Ordering::SeqCst); }
 }
 
 #[async_trait]

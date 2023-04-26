@@ -55,6 +55,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, Neg};
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{sign_tx, UtxoSignWithKeyPairError};
 
@@ -1464,9 +1465,9 @@ impl MmCoin for Qrc20Coin {
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 
-    fn is_available(&self) -> bool { todo!() }
+    fn is_available(&self) -> bool { self.as_ref().is_available.load(Ordering::SeqCst) }
 
-    fn passive_it(&self) { todo!() }
+    fn update_is_available(&self, to: bool) { self.as_ref().is_available.store(to, Ordering::SeqCst); }
 }
 
 pub fn qrc20_swap_id(time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {

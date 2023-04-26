@@ -215,6 +215,7 @@ impl EthCoin {
             nonce_lock: self.nonce_lock.clone(),
             erc20_tokens_infos: Default::default(),
             abortable_system,
+            is_available: AtomicBool::new(true),
         };
 
         Ok(EthCoin(Arc::new(token)))
@@ -311,6 +312,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         nonce_lock,
         erc20_tokens_infos: Default::default(),
         abortable_system,
+        is_available: AtomicBool::new(true),
     };
 
     Ok(EthCoin(Arc::new(coin)))

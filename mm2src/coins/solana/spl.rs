@@ -562,7 +562,9 @@ impl MmCoin for SplToken {
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 
-    fn is_available(&self) -> bool { todo!() }
+    fn is_available(&self) -> bool { true }
 
-    fn passive_it(&self) { todo!() }
+    fn update_is_available(&self, _to: bool) {
+        warn!("child token {} can't be passive", self.ticker());
+    }
 }

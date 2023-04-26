@@ -97,19 +97,23 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         return disable_coin_err(err, &still_matching_orders, &[], &active_swaps, &dependent_tokens);
     }
 
-    if !dependent_tokens.is_empty() {
-        coin.passive_it();
-
+    let response = |ticker: &str, cancelled_orders: Vec<Uuid>| {
         let res = json!({
             "result": {
                 "coin": ticker,
-                "cancelled_orders": [],
+                "cancelled_orders": cancelled_orders,
             }
         });
 
-        return Response::builder()
+        Response::builder()
             .body(json::to_vec(&res).unwrap())
-            .map_err(|e| ERRL!("{}", e));
+            .map_err(|e| ERRL!("{}", e))
+    };
+
+    if !dependent_tokens.is_empty() {
+        coin.update_is_available(false);
+
+        return response(&ticker, Vec::default());
     }
 
     // Proceed with diabling the coin/tokens.
@@ -129,15 +133,8 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     }
 
     coins_ctx.remove_coin(coin).await;
-    let res = json!({
-        "result": {
-            "coin": ticker,
-            "cancelled_orders": cancelled_orders,
-        }
-    });
-    Response::builder()
-        .body(json::to_vec(&res).unwrap())
-        .map_err(|e| ERRL!("{}", e))
+
+    response(&ticker, cancelled_orders)
 }
 
 #[derive(Serialize)]

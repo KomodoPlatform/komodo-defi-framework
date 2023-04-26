@@ -34,7 +34,7 @@ use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{AbortableSystem, AbortedError, Timer};
-use common::log::{error, info, LogOnError, LogState};
+use common::log::{error, info, warn, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
 use futures::{FutureExt, TryFutureExt};
@@ -1428,7 +1428,9 @@ impl MmCoin for LightningCoin {
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 
-    fn is_available(&self) -> bool { todo!() }
+    fn is_available(&self) -> bool { true }
 
-    fn passive_it(&self) { todo!() }
+    fn update_is_available(&self, _to: bool) {
+        warn!("`update_is_available` is ineffective for lightning protocol");
+    }
 }

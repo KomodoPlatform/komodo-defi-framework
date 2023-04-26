@@ -602,6 +602,8 @@ pub struct UtxoCoinFields {
     /// This abortable system is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
+    /// A flag used for controlling the parent coin's mode(active/passive).
+    pub(crate) is_available: AtomicBool,
 }
 
 #[derive(Debug, Display)]

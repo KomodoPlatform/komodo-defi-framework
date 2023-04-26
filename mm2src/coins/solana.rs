@@ -39,6 +39,7 @@ use solana_sdk::{pubkey::Pubkey,
                  signature::{Keypair, Signer}};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::{convert::TryFrom, fmt::Debug, ops::Deref, sync::Arc};
 
@@ -207,6 +208,7 @@ pub async fn solana_coin_with_policy(
         decimals,
         spl_tokens_infos,
         abortable_system,
+        is_available: AtomicBool::new(true),
     }));
     Ok(solana_coin)
 }
@@ -222,6 +224,8 @@ pub struct SolanaCoinImpl {
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
+    /// A flag used for controlling the parent coin's mode(active/passive).
+    is_available: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -769,7 +773,7 @@ impl MmCoin for SolanaCoin {
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 
-    fn is_available(&self) -> bool { todo!() }
+    fn is_available(&self) -> bool { self.is_available.load(Ordering::SeqCst) }
 
-    fn passive_it(&self) { todo!() }
+    fn update_is_available(&self, to: bool) { self.is_available.store(to, Ordering::SeqCst); }
 }
