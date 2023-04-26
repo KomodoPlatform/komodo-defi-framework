@@ -338,25 +338,18 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
         .await
         {
             Ok(res) => res,
-            Err(err) => match err.kind() {
-                RetrieveHeadersErrorKind::PossibleBadElectrum => {
+            Err(err) => {
+                if err.is_temp_error() {
                     error!("{err:?}");
                     sync_status_loop_handle.notify_on_temp_error(err);
                     Timer::sleep(args.error_sleep).await;
                     continue;
-                },
-                RetrieveHeadersErrorKind::Temporary => {
-                    error!("{err:?}");
-                    sync_status_loop_handle.notify_on_temp_error(err);
-                    Timer::sleep(args.error_sleep).await;
-                    continue;
-                },
-                RetrieveHeadersErrorKind::Permanent => {
+                } else {
                     error!("{err:?}");
                     sync_status_loop_handle.notify_on_permanent_error(err);
                     Timer::sleep(args.error_sleep).await;
                     break;
-                },
+                }
             },
         };
 
@@ -380,25 +373,18 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
                 .await
                 {
                     Ok(_) => continue,
-                    Err(err) => match err.kind() {
-                        RetrieveHeadersErrorKind::PossibleBadElectrum => {
+                    Err(err) => {
+                        if err.is_temp_error() {
                             error!("{err:?}");
                             sync_status_loop_handle.notify_on_temp_error(err);
                             Timer::sleep(args.error_sleep).await;
                             continue;
-                        },
-                        RetrieveHeadersErrorKind::Temporary => {
-                            error!("{err:?}");
-                            sync_status_loop_handle.notify_on_temp_error(err);
-                            Timer::sleep(args.error_sleep).await;
-                            continue;
-                        },
-                        RetrieveHeadersErrorKind::Permanent => {
+                        } else {
                             error!("{err:?}");
                             sync_status_loop_handle.notify_on_permanent_error(err);
                             Timer::sleep(args.error_sleep).await;
                             break;
-                        },
+                        }
                     },
                 }
             }
@@ -435,30 +421,14 @@ enum RetrieveHeadersError {
     ValidationError(String),
 }
 
-// Different error kinds expected from `retrieve_headers_helper()` in case of an error.
-#[derive(Debug, Display)]
-enum RetrieveHeadersErrorKind {
-    // Theses errors are all retryable from same electrum so we can retry
-    // fetching block headers again.
-    Temporary,
-    // Non retryable errors, hence, we break the loop and notify_on_permanent_error.
-    Permanent,
-    // Theses errors are all retryable but with different electrum so we can retry
-    // fetching block headers again.
-    PossibleBadElectrum,
-}
-
 impl RetrieveHeadersError {
-    fn kind(&self) -> RetrieveHeadersErrorKind {
-        match self {
-            RetrieveHeadersError::ValidationError(_) => RetrieveHeadersErrorKind::PossibleBadElectrum,
+    fn is_temp_error(&self) -> bool {
+        matches!(
+            self,
             RetrieveHeadersError::NetworkError(_)
-            | RetrieveHeadersError::ResponseTooLarge { .. }
-            | RetrieveHeadersError::BlockHeaderStorageError(_) => RetrieveHeadersErrorKind::Temporary,
-            RetrieveHeadersError::BadStartingHeaderChain | RetrieveHeadersError::AttemptsExceeded { .. } => {
-                RetrieveHeadersErrorKind::Permanent
-            },
-        }
+                | RetrieveHeadersError::ResponseTooLarge { .. }
+                | RetrieveHeadersError::BlockHeaderStorageError(_)
+        )
     }
 }
 
