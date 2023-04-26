@@ -1121,6 +1121,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
+ "wasm-timer",
  "web-sys",
  "web3",
  "webpki-roots",
