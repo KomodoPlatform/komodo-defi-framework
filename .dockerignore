@@ -5,7 +5,7 @@ cmake-build-debug
 /Dockerfile
 
 !/target/release/mm2
-!/target/ci/mm2
+!/target/debug/mm2
 /mm2src/*/target
 
 /build

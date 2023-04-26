@@ -19,11 +19,17 @@ jobs:
         rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal --component rustfmt clippy
         rustup default nightly-2022-10-29
 
+    - name: Install OS dependencies
+      run: |
+        sudo apt-get update 
+        sudo apt-get -y install libudev-dev
+      if: matrix.os == 'ubuntu-latest'
+
     - name: fmt check
       run: cargo fmt -- --check
 
     - name: x86-64 code lint
-      run: cargo clippy --all-targets --profile ci -- --D warnings
+      run: cargo clippy --all-targets --all-features -- --D warnings
 
   wasm-lint:
     timeout-minutes: 45
@@ -37,4 +43,4 @@ jobs:
         rustup target add wasm32-unknown-unknown
 
     - name: wasm code lint
-      run: cargo clippy --target wasm32-unknown-unknown --profile ci -- --D warnings
+      run: cargo clippy --target wasm32-unknown-unknown -- --D warnings

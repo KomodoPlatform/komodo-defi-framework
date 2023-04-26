@@ -654,7 +654,7 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
     assert_eq!(alice_jst_balance_before - volume.clone(), alice_jst_balance_after);
     assert_eq!(bob_jst_balance_before + volume.clone(), bob_jst_balance_after);
     assert_eq!(alice_eth_balance_before + volume.clone(), alice_eth_balance_after);
-    assert_eq!(bob_eth_balance_before - volume.clone(), bob_eth_balance_after);
+    assert_eq!(bob_eth_balance_before - volume, bob_eth_balance_after);
     if watcher1_eth_balance_after > watcher1_eth_balance_before {
         assert_eq!(watcher2_eth_balance_after, watcher2_eth_balance_after);
     }
@@ -805,11 +805,7 @@ fn test_watcher_validate_taker_fee_eth() {
     let taker_amount = MmNumber::from((10, 1));
     let fee_amount = dex_fee_amount_from_taker_coin(&MmCoinEnum::EthCoin(taker_coin.clone()), "ETH", &taker_amount);
     let taker_fee = taker_coin
-        .send_taker_fee(
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            fee_amount.clone().into(),
-            Uuid::new_v4().as_bytes(),
-        )
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), Uuid::new_v4().as_bytes())
         .wait()
         .unwrap();
 
@@ -913,11 +909,7 @@ fn test_watcher_validate_taker_fee_erc20() {
     let taker_amount = MmNumber::from((10, 1));
     let fee_amount = dex_fee_amount_from_taker_coin(&MmCoinEnum::EthCoin(taker_coin.clone()), "ETH", &taker_amount);
     let taker_fee = taker_coin
-        .send_taker_fee(
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            fee_amount.clone().into(),
-            Uuid::new_v4().as_bytes(),
-        )
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), Uuid::new_v4().as_bytes())
         .wait()
         .unwrap();
 
@@ -1829,7 +1821,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: &*coin.my_public_key().unwrap(),
+        other_pub: coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,

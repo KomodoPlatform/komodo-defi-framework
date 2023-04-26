@@ -44,7 +44,7 @@ use ethereum_types::{Address, H160, H256, U256};
 use ethkey::{public_to_address, KeyPair, Public, Signature};
 use ethkey::{sign, verify_address};
 use futures::compat::Future01CompatExt;
-use futures::future::{join_all, Either, FutureExt, TryFutureExt};
+use futures::future::{join_all, select_ok, Either, FutureExt, TryFutureExt};
 use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
@@ -781,7 +781,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     let (tx_hash, tx_hex) = match coin.priv_key_policy {
         EthPrivKeyPolicy::KeyPair(ref key_pair) => {
             let _nonce_lock = coin.nonce_lock.lock().await;
-            let nonce = get_addr_nonce(coin.my_address, coin.web3_instances.clone())
+            let (nonce, _) = get_addr_nonce(coin.my_address, coin.web3_instances.clone())
                 .compat()
                 .timeout_secs(30.)
                 .await?
@@ -930,7 +930,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, req: WithdrawErc1155) -> WithdrawNftRe
     let (gas, gas_price) =
         get_eth_gas_details(&eth_coin, req.fee, eth_value, data.clone().into(), call_addr, false).await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
-    let nonce = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone())
+    let (nonce, _) = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone())
         .compat()
         .timeout_secs(30.)
         .await?
@@ -998,7 +998,7 @@ pub async fn withdraw_erc721(ctx: MmArc, req: WithdrawErc721) -> WithdrawNftResu
     let (gas, gas_price) =
         get_eth_gas_details(&eth_coin, req.fee, eth_value, data.clone().into(), call_addr, false).await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
-    let nonce = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone())
+    let (nonce, _) = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone())
         .compat()
         .timeout_secs(30.)
         .await?
@@ -2140,7 +2140,7 @@ async fn sign_and_send_transaction_with_keypair(
     }
     let _nonce_lock = coin.nonce_lock.lock().await;
     status.status(tags!(), "get_addr_nonce…");
-    let nonce = try_tx_s!(
+    let (nonce, web3_instances_with_latest_nonce) = try_tx_s!(
         get_addr_nonce(coin.my_address, coin.web3_instances.clone())
             .compat()
             .await
@@ -2161,14 +2161,10 @@ async fn sign_and_send_transaction_with_keypair(
     let bytes = Bytes(rlp::encode(&signed).to_vec());
     status.status(tags!(), "send_raw_transaction…");
 
-    try_tx_s!(
-        coin.web3
-            .eth()
-            .send_raw_transaction(bytes)
-            .await
-            .map_err(|e| ERRL!("{}", e)),
-        signed
-    );
+    let futures = web3_instances_with_latest_nonce
+        .into_iter()
+        .map(|web3_instance| web3_instance.web3.eth().send_raw_transaction(bytes.clone()));
+    try_tx_s!(select_ok(futures).await.map_err(|e| ERRL!("{}", e)), signed);
 
     status.status(tags!(), "get_addr_nonce…");
     coin.wait_for_addr_nonce_increase(coin.my_address, nonce).await;
@@ -4286,7 +4282,7 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    /// Checks every second till ETH nodes recognize that nonce is increased.
+    /// Checks every second till at least one ETH node recognizes that nonce is increased.
     /// Parity has reliable "nextNonce" method that always returns correct nonce for address.
     /// But we can't expect that all nodes will always be Parity.
     /// Some of ETH forks use Geth only so they don't have Parity nodes at all.
@@ -4299,8 +4295,8 @@ impl EthCoin {
     async fn wait_for_addr_nonce_increase(&self, addr: Address, prev_nonce: U256) {
         repeatable!(async {
             match get_addr_nonce(addr, self.web3_instances.clone()).compat().await {
-                Ok(new_nonce) if new_nonce > prev_nonce => Ready(()),
-                Ok(_nonce) => Retry(()),
+                Ok((new_nonce, _)) if new_nonce > prev_nonce => Ready(()),
+                Ok((_nonce, _)) => Retry(()),
                 Err(e) => {
                     error!("Error getting {} {} nonce: {}", self.ticker(), self.my_address, e);
                     Retry(())
@@ -4598,7 +4594,7 @@ impl MmCoin for EthCoin {
         })
     }
 
-    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         let coin = self.clone();
         let fut = async move {
             let gas_price = coin.get_gas_price().compat().await?;
@@ -5289,31 +5285,37 @@ fn checksum_address(addr: &str) -> String {
 /// The input must be 0x prefixed hex string
 fn is_valid_checksum_addr(addr: &str) -> bool { addr == checksum_address(addr) }
 
-/// Requests the nonce from all available nodes and checks that returned results equal.
-/// Nodes might need some time to sync and there can be other coins that use same nodes in different order.
-/// We need to be sure that nonce is updated on all of them before and after transaction is sent.
+/// Requests the nonce from all available nodes and returns the highest nonce available with the list of nodes that returned the highest nonce.
+/// Transactions will be sent using the nodes that returned the highest nonce.
 #[cfg_attr(test, mockable)]
-fn get_addr_nonce(addr: Address, web3s: Vec<Web3Instance>) -> Box<dyn Future<Item = U256, Error = String> + Send> {
+fn get_addr_nonce(
+    addr: Address,
+    web3s: Vec<Web3Instance>,
+) -> Box<dyn Future<Item = (U256, Vec<Web3Instance>), Error = String> + Send> {
     let fut = async move {
         let mut errors: u32 = 0;
         loop {
-            let futures: Vec<_> = web3s
+            let (futures, web3s): (Vec<_>, Vec<_>) = web3s
                 .iter()
                 .map(|web3| {
                     if web3.is_parity {
                         let parity: ParityNonce<_> = web3.web3.api();
-                        Either::Left(parity.parity_next_nonce(addr))
+                        (Either::Left(parity.parity_next_nonce(addr)), web3.clone())
                     } else {
-                        Either::Right(web3.web3.eth().transaction_count(addr, Some(BlockNumber::Pending)))
+                        (
+                            Either::Right(web3.web3.eth().transaction_count(addr, Some(BlockNumber::Pending))),
+                            web3.clone(),
+                        )
                     }
                 })
-                .collect();
+                .unzip();
 
             let nonces: Vec<_> = join_all(futures)
                 .await
                 .into_iter()
-                .filter_map(|nonce_res| match nonce_res {
-                    Ok(n) => Some(n),
+                .zip(web3s.into_iter())
+                .filter_map(|(nonce_res, web3)| match nonce_res {
+                    Ok(n) => Some((n, web3)),
                     Err(e) => {
                         error!("Error getting nonce for addr {:?}: {}", addr, e);
                         None
@@ -5327,13 +5329,18 @@ fn get_addr_nonce(addr: Address, web3s: Vec<Web3Instance>) -> Box<dyn Future<Ite
                     return ERR!("Couldn't get nonce after 5 errored attempts, aborting");
                 }
             } else {
-                let max = nonces.iter().max().unwrap();
-                let min = nonces.iter().min().unwrap();
-                if max == min {
-                    return Ok(*max);
-                } else {
-                    warn!("Max nonce {} != {} min nonce", max, min);
-                }
+                let max = nonces
+                    .iter()
+                    .map(|(n, _)| *n)
+                    .max()
+                    .expect("nonces should not be empty!");
+                break Ok((
+                    max,
+                    nonces
+                        .into_iter()
+                        .filter_map(|(n, web3)| if n == max { Some(web3) } else { None })
+                        .collect(),
+                ));
             }
             Timer::sleep(1.).await
         }

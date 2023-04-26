@@ -1,3 +1,5 @@
+#[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
+use super::enable_z_coin;
 use crate::integration_tests_common::*;
 use common::executor::Timer;
 use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log, new_uuid};
@@ -7,19 +9,19 @@ use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::electrums::*;
-#[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
-use mm2_test_helpers::for_tests::init_z_coin_native;
 use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
-                                  check_recent_swaps, check_stats_swap_status, enable_eth_coin, enable_qrc20,
-                                  eth_jst_testnet_conf, eth_testnet_conf, find_metrics_in_json, from_env_file,
-                                  get_shared_db_id, mm_spat, morty_conf, rick_conf, sign_message, start_swaps,
-                                  tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf, verify_message,
+                                  check_recent_swaps, enable_eth_coin, enable_qrc20, eth_jst_testnet_conf,
+                                  eth_testnet_conf, find_metrics_in_json, from_env_file, get_shared_db_id, mm_spat,
+                                  morty_conf, rick_conf, sign_message, start_swaps, tbtc_with_spv_conf,
+                                  test_qrc20_history_impl, tqrc20_conf, verify_message,
                                   wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
                                   wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
                                   ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT,
-                                  MAKER_SUCCESS_EVENTS, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
-                                  TAKER_SUCCESS_EVENTS};
+                                  MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS};
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
+use mm2_test_helpers::for_tests::{check_stats_swap_status, MAKER_SUCCESS_EVENTS, TAKER_SUCCESS_EVENTS};
+
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -41,30 +43,6 @@ cfg_wasm32! {
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
-}
-
-#[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
-async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> CoinActivationResult {
-    use common::now_ms;
-    use mm2_test_helpers::for_tests::init_z_coin_status;
-
-    let init = init_z_coin_native(mm, coin).await;
-    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = now_ms() + 120000;
-
-    loop {
-        if gstuff::now_ms() > timeout {
-            panic!("{} initialization timed out", coin);
-        }
-
-        let status = init_z_coin_status(mm, init.result.task_id).await;
-        let status: RpcV2Response<InitZcoinStatus> = json::from_value(status).unwrap();
-        match status.result {
-            InitZcoinStatus::Ok(result) => break result,
-            InitZcoinStatus::Error(e) => panic!("{} initialization error {:?}", coin, e),
-            _ => Timer::sleep(1.).await,
-        }
-    }
 }
 
 /// Integration test for RPC server.
@@ -788,12 +766,14 @@ async fn trade_base_rel_electrum(
 
     #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
     {
+        let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
         Timer::sleep(1.).await;
         let rmd = rmd160_from_passphrase(&bob_passphrase);
         let bob_zombie_cache_path = mm_bob.folder.join("DB").join(hex::encode(rmd)).join("ZOMBIE_CACHE.db");
         log!("bob_zombie_cache_path {}", bob_zombie_cache_path.display());
         std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
 
+        let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
         let rmd = rmd160_from_passphrase(&alice_passphrase);
         let alice_zombie_cache_path = mm_alice
             .folder
@@ -894,7 +874,14 @@ fn trade_test_electrum_and_eth_coins() {
     let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
     let alice_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount(0);
     let pairs = &[("ETH", "JST")];
-    block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1., 2., 0.1));
+    block_on(trade_base_rel_electrum(
+        bob_policy,
+        alice_policy,
+        pairs,
+        1.,
+        2.,
+        0.000001,
+    ));
 }
 
 #[test]

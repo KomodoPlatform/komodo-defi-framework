@@ -331,7 +331,7 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
         "-v".into(),
         format!("{}:/root/.zcash-params", zcash_params_path().display()),
         "-p".into(),
-        format!("{}:{}", port, port).into(),
+        format!("{}:{}", port, port),
     ];
     let image = GenericImage::new(UTXO_ASSET_DOCKER_IMAGE)
         .with_args(args)
@@ -398,19 +398,13 @@ where
 pub fn qrc20_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmArc, Qrc20Coin) {
     let (contract_address, swap_contract_address) = unsafe {
         let contract_address = match ticker {
-            "QICK" => QICK_TOKEN_ADDRESS
-                .expect("QICK_TOKEN_ADDRESS must be set already")
-                .clone(),
-            "QORTY" => QORTY_TOKEN_ADDRESS
-                .expect("QORTY_TOKEN_ADDRESS must be set already")
-                .clone(),
+            "QICK" => QICK_TOKEN_ADDRESS.expect("QICK_TOKEN_ADDRESS must be set already"),
+            "QORTY" => QORTY_TOKEN_ADDRESS.expect("QORTY_TOKEN_ADDRESS must be set already"),
             _ => panic!("Expected QICK or QORTY ticker"),
         };
         (
             contract_address,
-            QRC20_SWAP_CONTRACT_ADDRESS
-                .expect("QRC20_SWAP_CONTRACT_ADDRESS must be set already")
-                .clone(),
+            QRC20_SWAP_CONTRACT_ADDRESS.expect("QRC20_SWAP_CONTRACT_ADDRESS must be set already"),
         )
     };
     let platform = "QTUM";
@@ -453,12 +447,8 @@ pub fn qrc20_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmAr
 fn qrc20_coin_conf_item(ticker: &str) -> Json {
     let contract_address = unsafe {
         match ticker {
-            "QICK" => QICK_TOKEN_ADDRESS
-                .expect("QICK_TOKEN_ADDRESS must be set already")
-                .clone(),
-            "QORTY" => QORTY_TOKEN_ADDRESS
-                .expect("QORTY_TOKEN_ADDRESS must be set already")
-                .clone(),
+            "QICK" => QICK_TOKEN_ADDRESS.expect("QICK_TOKEN_ADDRESS must be set already"),
+            "QORTY" => QORTY_TOKEN_ADDRESS.expect("QORTY_TOKEN_ADDRESS must be set already"),
             _ => panic!("Expected either QICK or QORTY ticker, found {}", ticker),
         }
     };
@@ -560,7 +550,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
     let tx_bytes = client.get_transaction_bytes(&hash).wait().unwrap();
     log!("{:02x}", tx_bytes);
     let confirm_payment_input = ConfirmPaymentInput {
-        payment_tx: tx_bytes.clone().0,
+        payment_tx: tx_bytes.0,
         confirmations: 1,
         requires_nota: false,
         wait_until: timeout,
@@ -740,11 +730,8 @@ pub fn wait_for_estimate_smart_fee(timeout: u64) -> Result<(), String> {
 }
 
 pub async fn enable_qrc20_native(mm: &MarketMakerIt, coin: &str) -> Json {
-    let swap_contract_address = unsafe {
-        QRC20_SWAP_CONTRACT_ADDRESS
-            .expect("QRC20_SWAP_CONTRACT_ADDRESS must be set already")
-            .clone()
-    };
+    let swap_contract_address =
+        unsafe { QRC20_SWAP_CONTRACT_ADDRESS.expect("QRC20_SWAP_CONTRACT_ADDRESS must be set already") };
 
     let native = mm
         .rpc(&json! ({
@@ -983,7 +970,7 @@ pub fn _solana_supplied_node() -> MarketMakerIt {
         {"coin":"ADEX-SOL-DEVNET","protocol":{"type":"SPLTOKEN","protocol_data":{"decimals":9,"token_contract_address":"5tSm6PqMosy1rz1AqV3kD28yYT5XqZW3QYmZommuFiPJ","platform":"SOL-DEVNET"}},"mm2": 1},
     ]);
 
-    let mm = MarketMakerIt::start(
+    MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -996,9 +983,7 @@ pub fn _solana_supplied_node() -> MarketMakerIt {
         "pass".to_string(),
         None,
     )
-    .unwrap();
-
-    mm
+    .unwrap()
 }
 
 pub fn get_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
