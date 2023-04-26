@@ -242,7 +242,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         &self,
         ctx: MmArc,
         storage: impl TxHistoryStorage,
-        initial_balance: BigDecimal,
+        initial_balance: Option<BigDecimal>,
     ) {
         let fut = tendermint_history_loop(self.clone(), storage, ctx, initial_balance);
 

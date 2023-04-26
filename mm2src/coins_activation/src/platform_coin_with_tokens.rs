@@ -159,7 +159,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         &self,
         ctx: MmArc,
         storage: impl TxHistoryStorage,
-        initial_balance: BigDecimal,
+        initial_balance: Option<BigDecimal>,
     );
 }
 
@@ -207,8 +207,6 @@ pub enum EnablePlatformCoinWithTokensError {
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[display(fmt = "Unexpected derivation method: {}", _0)]
     UnexpectedDerivationMethod(String),
-    #[display(fmt = "Activation request error: {}", _0)]
-    ActivationRequestError(String),
     Transport(String),
     AtLeastOneNodeRequired(String),
     InvalidPayload(String),
@@ -279,7 +277,6 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
             | EnablePlatformCoinWithTokensError::InvalidPayload { .. }
-            | EnablePlatformCoinWithTokensError::ActivationRequestError(_)
             | EnablePlatformCoinWithTokensError::AtLeastOneNodeRequired(_)
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
         }
@@ -321,18 +318,11 @@ where
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     if req.request.tx_history() {
-        match activation_result.get_platform_balance() {
-            Some(initial_balance) =>
-                platform_coin.start_history_background_fetching(
-                    ctx.clone(),
-                    TxHistoryStorageBuilder::new(&ctx).build()?,
-                    initial_balance,
-                ),
-            None => return MmError::err(EnablePlatformCoinWithTokensError::ActivationRequestError(
-                "Tx history fetching requires getting balances on activation, current request parameters: `tx_history`=true, `get_balances`=false"
-                    .to_string(),
-            )),
-        }
+        platform_coin.start_history_background_fetching(
+            ctx.clone(),
+            TxHistoryStorageBuilder::new(&ctx).build()?,
+            activation_result.get_platform_balance(),
+        );
     }
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();

@@ -300,7 +300,7 @@ impl PlatformWithTokensActivationOps for BchCoin {
         &self,
         ctx: MmArc,
         storage: impl TxHistoryStorage + Send + 'static,
-        initial_balance: BigDecimal,
+        initial_balance: Option<BigDecimal>,
     ) {
         let fut = bch_and_slp_history_loop(self.clone(), storage, ctx.metrics.clone(), initial_balance);
 

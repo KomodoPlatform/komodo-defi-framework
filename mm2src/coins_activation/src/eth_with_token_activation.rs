@@ -258,7 +258,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
         &self,
         _ctx: MmArc,
         _storage: impl TxHistoryStorage + Send + 'static,
-        _initial_balance: BigDecimal,
+        _initial_balance: Option<BigDecimal>,
     ) {
     }
 }
