@@ -49,7 +49,7 @@ struct BalanceResult {
 
 fn enable_coin(mm_node: &MarketMakerIt, coin: &str) {
     if coin == "MYCOIN" {
-        log!("{:?}", block_on(enable_native(&mm_node, coin, &[])));
+        log!("{:?}", block_on(enable_native(mm_node, coin, &[])));
     } else {
         enable_eth(mm_node, coin);
     }
@@ -66,6 +66,7 @@ fn enable_eth(mm_node: &MarketMakerIt, coin: &str) {
     )));
 }
 
+#[allow(clippy::enum_variant_names)]
 enum SwapFlow {
     WatcherSpendsMakerPayment,
     WatcherRefundsTakerPayment,
@@ -115,7 +116,7 @@ fn start_swaps_and_get_balances(
     let bob_conf = Mm2TestConf::light_node_using_watchers(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
     let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
         bob_conf.conf.clone(),
-        bob_conf.rpc_password.clone(),
+        bob_conf.rpc_password,
         None,
         envs,
     ))
@@ -312,11 +313,11 @@ fn test_watcher_spends_maker_payment_utxo_eth() {
 
     assert_eq!(
         balances.alice_bcoin_balance_after.round(0),
-        balances.alice_bcoin_balance_before + mycoin_volume.clone()
+        balances.alice_bcoin_balance_before + mycoin_volume
     );
     assert_eq!(
         balances.bob_acoin_balance_after.with_scale(2),
-        balances.bob_acoin_balance_before.with_scale(2) + eth_volume.clone()
+        balances.bob_acoin_balance_before.with_scale(2) + eth_volume
     );
     assert!(balances.alice_acoin_balance_after > balances.alice_acoin_balance_middle);
 }
@@ -352,7 +353,7 @@ fn test_watcher_spends_maker_payment_eth_utxo() {
 
     assert_eq!(
         balances.alice_bcoin_balance_after,
-        balances.alice_bcoin_balance_middle + eth_volume.clone()
+        balances.alice_bcoin_balance_middle + eth_volume
     );
     assert_eq!(
         balances.bob_acoin_balance_after.round(2),
@@ -379,7 +380,7 @@ fn test_watcher_spends_maker_payment_eth_erc20() {
 
     assert_eq!(
         balances.alice_bcoin_balance_after,
-        balances.alice_bcoin_balance_middle + eth_volume.clone()
+        balances.alice_bcoin_balance_middle + eth_volume
     );
     assert_eq!(
         balances.bob_acoin_balance_after,
@@ -398,11 +399,11 @@ fn test_watcher_spends_maker_payment_erc20_eth() {
 
     assert_eq!(
         balances.alice_bcoin_balance_after,
-        balances.alice_bcoin_balance_before + jst_volume.clone()
+        balances.alice_bcoin_balance_before + jst_volume
     );
     assert_eq!(
         balances.bob_acoin_balance_after.with_scale(2),
-        balances.bob_acoin_balance_before.with_scale(2) + eth_volume.clone()
+        balances.bob_acoin_balance_before.with_scale(2) + eth_volume
     );
     assert!(balances.watcher_acoin_balance_after > balances.watcher_acoin_balance_before);
 }
@@ -425,11 +426,11 @@ fn test_watcher_spends_maker_payment_utxo_erc20() {
 
     assert_eq!(
         balances.alice_bcoin_balance_after.round(0),
-        balances.alice_bcoin_balance_before + mycoin_volume.clone()
+        balances.alice_bcoin_balance_before + mycoin_volume
     );
     assert_eq!(
         balances.bob_acoin_balance_after,
-        balances.bob_acoin_balance_before + jst_volume.clone()
+        balances.bob_acoin_balance_before + jst_volume
     );
     assert!(balances.alice_eth_balance_after > balances.alice_eth_balance_middle);
 }
@@ -467,7 +468,7 @@ fn test_watcher_spends_maker_payment_erc20_utxo() {
 
     assert_eq!(
         balances.alice_bcoin_balance_after,
-        balances.alice_bcoin_balance_before + jst_volume.clone()
+        balances.alice_bcoin_balance_before + jst_volume
     );
     assert_eq!(
         balances.bob_acoin_balance_after.round(2),
@@ -639,7 +640,7 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
     block_on(mm_watcher2.wait_for_log(180., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
     thread::sleep(Duration::from_secs(25));
 
-    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password, None).unwrap();
     enable_eth(&mm_alice, "ETH");
     enable_eth(&mm_alice, "JST");
 
@@ -679,11 +680,7 @@ fn test_watcher_validate_taker_fee_utxo() {
     );
 
     let taker_fee = taker_coin
-        .send_taker_fee(
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            fee_amount.clone().into(),
-            Uuid::new_v4().as_bytes(),
-        )
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), Uuid::new_v4().as_bytes())
         .wait()
         .unwrap();
 
@@ -1451,9 +1448,9 @@ fn test_watcher_validate_taker_payment_eth() {
 
     let wrong_watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
         &MmCoinEnum::from(taker_coin.clone()),
-        Some(taker_amount.clone()),
-        Some(maker_amount.clone()),
-        Some(watcher_reward.clone().unwrap().amount.double()),
+        Some(taker_amount),
+        Some(maker_amount),
+        Some(watcher_reward.unwrap().amount.double()),
     ))
     .unwrap();
 
@@ -1467,7 +1464,7 @@ fn test_watcher_validate_taker_payment_eth() {
             secret_hash: secret_hash.to_vec(),
             try_spv_proof_until: timeout,
             confirmations: 1,
-            watcher_reward: wrong_watcher_reward.clone(),
+            watcher_reward: wrong_watcher_reward,
         })
         .wait()
         .unwrap_err()
@@ -1729,9 +1726,9 @@ fn test_watcher_validate_taker_payment_erc20() {
 
     let wrong_watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
         &MmCoinEnum::from(taker_coin.clone()),
-        Some(taker_amount.clone()),
-        Some(maker_amount.clone()),
-        Some(watcher_reward.clone().unwrap().amount.double()),
+        Some(taker_amount),
+        Some(maker_amount),
+        Some(watcher_reward.unwrap().amount.double()),
     ))
     .unwrap();
 

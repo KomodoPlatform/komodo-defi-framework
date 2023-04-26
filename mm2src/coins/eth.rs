@@ -107,7 +107,7 @@ mod web3_transport;
 #[cfg(feature = "enable-nft-integration")]
 use crate::nft::{find_wallet_amount, WithdrawNftResult};
 #[cfg(feature = "enable-nft-integration")]
-use crate::{lp_coinfind_or_err, MmCoinEnum, TransactionType};
+use crate::{lp_coinfind_or_err, TransactionType};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod nonce;
