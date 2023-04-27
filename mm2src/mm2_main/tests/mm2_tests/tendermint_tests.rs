@@ -1,12 +1,12 @@
 use common::block_on;
+use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_err, enable_tendermint,
-                                  enable_tendermint_token, enable_tendermint_without_balance,
-                                  get_tendermint_my_tx_history, ibc_withdraw, iris_nimda_testnet_conf,
-                                  iris_testnet_conf, my_balance, send_raw_transaction, withdraw_v1, MarketMakerIt,
-                                  Mm2TestConf};
+                                  enable_tendermint_token, get_tendermint_my_tx_history, ibc_withdraw,
+                                  iris_nimda_testnet_conf, iris_testnet_conf, my_balance, send_raw_transaction,
+                                  withdraw_v1, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::{RpcV2Response, TendermintActivationResult, TransactionDetails};
-use serde_json::{self as json, json};
+use serde_json::{self as json, json, Value as Json};
 
 const IRIS_TEST_SEED: &str = "iris test seed";
 const ATOM_TEST_BALANCE_SEED: &str = "atom test seed";
@@ -15,6 +15,43 @@ const ATOM_TICKER: &str = "ATOM";
 const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["https://rpc.sentry-02.theta-testnet.polypore.xyz"];
 
 const IRIS_TESTNET_RPC_URLS: &[&str] = &["http://34.80.202.172:26657"];
+
+async fn enable_tendermint_without_balance(
+    mm: &MarketMakerIt,
+    coin: &str,
+    ibc_assets: &[&str],
+    rpc_urls: &[&str],
+    tx_history: bool,
+) -> Json {
+    let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "enable_tendermint_with_assets",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": coin,
+            "tokens_params": ibc_requests,
+            "rpc_urls": rpc_urls,
+            "tx_history": tx_history,
+            "get_balances": false
+        }
+    });
+    println!(
+        "enable_tendermint_with_assets request {}",
+        json::to_string(&request).unwrap()
+    );
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'enable_tendermint_with_assets' failed: {}",
+        request.1
+    );
+    println!("enable_tendermint_with_assets response {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
 
 #[test]
 fn test_tendermint_activation_and_balance() {

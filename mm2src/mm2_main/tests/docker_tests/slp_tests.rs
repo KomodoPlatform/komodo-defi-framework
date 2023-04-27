@@ -1,12 +1,47 @@
 use crate::docker_tests::docker_tests_common::*;
 use crate::integration_tests_common::enable_native;
+use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{assert_coin_not_found_on_balance, disable_coin, disable_coin_err,
-                                  enable_bch_with_tokens, enable_bch_with_tokens_without_balance, enable_slp,
-                                  my_balance, UtxoRpcMode};
+                                  enable_bch_with_tokens, enable_slp, my_balance, UtxoRpcMode};
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableElectrumResponse, EnableSlpResponse, RpcV2Response};
-use serde_json::{self as json};
+use serde_json::{self as json, json, Value as Json};
 use std::time::Duration;
+
+async fn enable_bch_with_tokens_without_balance(
+    mm: &MarketMakerIt,
+    platform_coin: &str,
+    tokens: &[&str],
+    mode: UtxoRpcMode,
+    tx_history: bool,
+) -> Json {
+    let slp_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+
+    let enable = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "enable_bch_with_tokens",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": platform_coin,
+                "allow_slp_unsafe_conf": true,
+                "bchd_urls": [],
+                "mode": mode,
+                "tx_history": tx_history,
+                "slp_tokens_requests": slp_requests,
+                "get_balances": false,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_bch_with_tokens' failed: {}",
+        enable.1
+    );
+    json::from_str(&enable.1).unwrap()
+}
 
 #[test]
 fn trade_test_with_maker_slp() { trade_base_rel(("ADEXSLP", "FORSLP")); }
