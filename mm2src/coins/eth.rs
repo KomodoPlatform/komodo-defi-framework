@@ -3430,12 +3430,11 @@ impl EthCoin {
     }
 
     pub async fn get_tokens_balance_list(&self) -> Result<HashMap<String, CoinBalance>, MmError<BalanceError>> {
-        let selfi = self.clone();
+        let coin = || self;
         let mut requests = Vec::new();
         for (token_ticker, info) in self.get_erc_tokens_infos() {
-            let coin = selfi.clone();
             let fut = async move {
-                let balance_as_u256 = coin.get_token_balance_by_address(info.token_address).await?;
+                let balance_as_u256 = coin().get_token_balance_by_address(info.token_address).await?;
                 let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;
                 let balance = CoinBalance {
                     spendable: balance_as_big_decimal,
