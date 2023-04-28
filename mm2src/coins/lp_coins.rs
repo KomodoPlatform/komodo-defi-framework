@@ -2522,14 +2522,16 @@ impl CoinsContext {
         let mut coins = self.coins.lock().await;
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
 
-        if coins.contains_key(platform.ticker()) {
+        let platform_ticker = platform.ticker().to_owned();
+        if platform.is_available() && coins.contains_key(&platform_ticker) {
             return MmError::err(PlatformIsAlreadyActivatedErr {
                 ticker: platform.ticker().into(),
             });
         }
 
-        let platform_ticker = platform.ticker().to_string();
-        coins.insert(platform_ticker.clone(), platform);
+        if platform.is_available() {
+            coins.insert(platform_ticker.clone(), platform);
+        }
 
         // Tokens can't be activated without platform coin so we can safely insert them without checking prior existence
         let mut token_tickers = Vec::with_capacity(tokens.len());
@@ -2539,8 +2541,10 @@ impl CoinsContext {
         // We try to activate ETH coin and USDT token via enable_eth_with_tokens
         for token in tokens {
             token_tickers.push(token.ticker().to_string());
-            coins.insert(token.ticker().into(), token);
+            coins.entry(token.ticker().into()).or_insert(token);
         }
+
+        token_tickers.dedup();
 
         platform_coin_tokens
             .entry(platform_ticker)
@@ -3085,6 +3089,14 @@ pub async fn lp_coinfind(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>
     };
 
     Ok(coin)
+}
+
+/// Returns coins even if they are on the passive mode
+pub async fn lp_coinfind_any(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
+    let cctx = try_s!(CoinsContext::from_ctx(ctx));
+    let coins = cctx.coins.lock().await;
+
+    Ok(coins.get(ticker).cloned())
 }
 
 /// Attempts to find a pair of active coins returning None if one is not enabled
