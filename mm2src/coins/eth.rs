@@ -3436,11 +3436,8 @@ impl EthCoin {
             let fut = async move {
                 let balance_as_u256 = coin().get_token_balance_by_address(info.token_address).await?;
                 let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;
-                let balance = CoinBalance {
-                    spendable: balance_as_big_decimal,
-                    unspendable: BigDecimal::from(0),
-                };
-                Ok::<_, MmError<BalanceError>>((token_ticker.clone(), balance))
+                let balance = CoinBalance::new(balance_as_big_decimal);
+                Ok((token_ticker, balance))
             };
             requests.push(fut);
         }
