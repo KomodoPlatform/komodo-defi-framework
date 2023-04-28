@@ -138,6 +138,7 @@ use futures01::{future, Future};
 use http::header::CONTENT_TYPE;
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
+use rand::RngCore;
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
 use serde_json::{self as json, Value as Json};
@@ -746,6 +747,9 @@ pub fn writeln(line: &str) {
 }
 
 pub fn small_rng() -> SmallRng { SmallRng::seed_from_u64(now_ms()) }
+
+#[inline(always)]
+pub fn os_rng(dest: &mut [u8]) -> Result<(), rand::Error> { rand::rngs::OsRng.try_fill_bytes(dest) }
 
 #[derive(Debug, Clone)]
 /// Ordered from low to height inclusive range.
