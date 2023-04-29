@@ -943,7 +943,7 @@ impl TakerSwap {
 
         let watcher_reward = self.r().watcher_reward && self.maker_coin.is_eth();
         let instructions = self
-            .maker_coin
+            .taker_coin
             .maker_payment_instructions(PaymentInstructionArgs {
                 secret_hash: &secret_hash,
                 amount: maker_amount,

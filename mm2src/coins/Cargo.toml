@@ -17,6 +17,7 @@ enable-solana = [
 ]
 enable-nft-integration = []
 default = []
+run-docker-tests = []
 
 [lib]
 name = "coins"

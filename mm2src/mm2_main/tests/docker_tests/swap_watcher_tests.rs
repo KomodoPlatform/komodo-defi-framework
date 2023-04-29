@@ -5,9 +5,9 @@ use coins::coin_errors::ValidatePaymentError;
 use coins::utxo::{dhash160, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SwapOps, WatcherOps, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INSUFFICIENT_WATCHER_REWARD_ERR_LOG,
-            INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
+            WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
+            INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
+            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, INVALID_WATCHER_REWARD_ERR_LOG,
             OLD_TRANSACTION_ERR_LOG};
 use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
@@ -17,9 +17,9 @@ use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, dex
                              MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
-use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_conf, eth_testnet_conf, mm_dump, my_balance, mycoin1_conf,
-                                  mycoin_conf, start_swaps, MarketMakerIt, Mm2TestConf, DEFAULT_RPC_PASSWORD,
-                                  ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT, ETH_SEPOLIA_TOKEN_CONTRACT};
+use mm2_test_helpers::for_tests::{enable_eth_coin, eth_sepolia_conf, jst_sepolia_conf, mm_dump, my_balance,
+                                  mycoin1_conf, mycoin_conf, start_swaps, MarketMakerIt, Mm2TestConf,
+                                  DEFAULT_RPC_PASSWORD, ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT};
 use mm2_test_helpers::structs::WatcherConf;
 use num_traits::Zero;
 use std::str::FromStr;
@@ -83,8 +83,8 @@ fn start_swaps_and_get_balances(
     swap_flow: SwapFlow,
 ) -> BalanceResult {
     let coins = json!([
-        eth_testnet_conf(),
-        eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT),
+        eth_sepolia_conf(),
+        jst_sepolia_conf(),
         mycoin_conf(1000),
         mycoin1_conf(1000)
     ]);
@@ -296,7 +296,7 @@ fn test_watcher_spends_maker_payment_utxo_utxo() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_utxo_eth() {
     let balances = start_swaps_and_get_balances(
         "ETH",
@@ -323,7 +323,7 @@ fn test_watcher_spends_maker_payment_utxo_eth() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_eth_utxo() {
     let balances = start_swaps_and_get_balances(
         "MYCOIN",
@@ -363,7 +363,7 @@ fn test_watcher_spends_maker_payment_eth_utxo() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_eth_erc20() {
     let balances = start_swaps_and_get_balances(
         "JST",
@@ -390,7 +390,7 @@ fn test_watcher_spends_maker_payment_eth_erc20() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_erc20_eth() {
     let balances = start_swaps_and_get_balances("ETH", "JST", 0.01, 0.01, 1., &[], SwapFlow::WatcherSpendsMakerPayment);
 
@@ -409,7 +409,7 @@ fn test_watcher_spends_maker_payment_erc20_eth() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_utxo_erc20() {
     let balances = start_swaps_and_get_balances(
         "JST",
@@ -436,7 +436,7 @@ fn test_watcher_spends_maker_payment_utxo_erc20() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_spends_maker_payment_erc20_utxo() {
     let balances = start_swaps_and_get_balances(
         "MYCOIN",
@@ -500,7 +500,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_refunds_taker_payment_eth() {
     let balances = start_swaps_and_get_balances(
         "ETH",
@@ -520,7 +520,7 @@ fn test_watcher_refunds_taker_payment_eth() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_refunds_taker_payment_erc20() {
     let balances = start_swaps_and_get_balances(
         "JST",
@@ -559,7 +559,7 @@ fn test_watcher_waits_for_taker_utxo() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_waits_for_taker_eth() {
     start_swaps_and_get_balances(
         "JST",
@@ -573,9 +573,9 @@ fn test_watcher_waits_for_taker_eth() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_two_watchers_spend_maker_payment_eth_erc20() {
-    let coins = json!([eth_testnet_conf(), eth_jst_conf(ETH_SEPOLIA_TOKEN_CONTRACT)]);
+    let coins = json!([eth_sepolia_conf(), jst_sepolia_conf()]);
 
     let alice_passphrase =
         String::from("spice describe gravity federal blast come thank unfair canal monkey style afraid");
@@ -790,7 +790,7 @@ fn test_watcher_validate_taker_fee_utxo() {
 }
 
 #[test]
-#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
+//#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 fn test_watcher_validate_taker_fee_eth() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
@@ -893,7 +893,7 @@ fn test_watcher_validate_taker_fee_eth() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_validate_taker_fee_erc20() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
@@ -1207,7 +1207,7 @@ fn test_watcher_validate_taker_payment_utxo() {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_validate_taker_payment_eth() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
 
@@ -1472,17 +1472,17 @@ fn test_watcher_validate_taker_payment_eth() {
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains(INSUFFICIENT_WATCHER_REWARD_ERR_LOG))
+            assert!(err.contains(INVALID_WATCHER_REWARD_ERR_LOG))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
-            INSUFFICIENT_WATCHER_REWARD_ERR_LOG, error
+            INVALID_WATCHER_REWARD_ERR_LOG, error
         ),
     }
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn test_watcher_validate_taker_payment_erc20() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
 
@@ -1750,11 +1750,11 @@ fn test_watcher_validate_taker_payment_erc20() {
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains(INSUFFICIENT_WATCHER_REWARD_ERR_LOG))
+            assert!(err.contains(INVALID_WATCHER_REWARD_ERR_LOG))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
-            INSUFFICIENT_WATCHER_REWARD_ERR_LOG, error
+            INVALID_WATCHER_REWARD_ERR_LOG, error
         ),
     }
 }

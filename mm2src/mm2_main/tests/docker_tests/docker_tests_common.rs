@@ -1,8 +1,9 @@
 pub use common::{block_on, now_ms};
 pub use mm2_number::MmNumber;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                      enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS,
-                                      MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+                                      enable_native_bch, eth_sepolia_conf, jst_sepolia_conf, mm_dump, MarketMakerIt,
+                                      MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
+                                      TAKER_SUCCESS_EVENTS};
 use mm2_test_helpers::for_tests::{ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT, ETH_SEPOLIA_TOKEN_CONTRACT};
 pub use secp256k1::{PublicKey, SecretKey};
 pub use std::env;
@@ -30,8 +31,7 @@ use http::StatusCode;
 use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{enable_native, eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES,
-                                  ETH_DEV_SWAP_CONTRACT};
+use mm2_test_helpers::for_tests::{enable_native, eth_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::structs::{MyBalanceResponse, TransactionDetails};
 use primitives::hash::{H160, H256};
 use script::Builder;
@@ -177,7 +177,7 @@ pub fn generate_eth_coin_with_seed(seed: &str) -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "ETH",
-        &eth_testnet_conf(),
+        &eth_sepolia_conf(),
         &req,
         CoinProtocol::ETH,
         priv_key_policy,
@@ -198,7 +198,7 @@ pub fn generate_jst_with_seed(seed: &str) -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "JST",
-        &eth_jst_testnet_conf(),
+        &jst_sepolia_conf(),
         &req,
         CoinProtocol::ERC20 {
             platform: "ETH".into(),

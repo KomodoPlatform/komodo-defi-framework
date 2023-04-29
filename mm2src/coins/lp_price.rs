@@ -5,6 +5,7 @@ use mm2_net::transport::SlurpError;
 use mm2_number::{BigDecimal, MmNumber};
 use std::collections::HashMap;
 use std::ops::Div;
+#[cfg(feature = "run-docker-tests")] use std::str::FromStr;
 use std::str::Utf8Error;
 
 const PRICE_ENDPOINTS: [&str; 2] = [
@@ -230,7 +231,7 @@ pub async fn get_base_price_in_rel(base: Option<String>, rel: Option<String>) ->
     // Special case for integration tests
     #[cfg(feature = "run-docker-tests")]
     if let Ok(test_coin_price) = std::env::var("TEST_COIN_PRICE") {
-        BigDecimal::from_str(&test_coin_price).map_err(|e| WatcherRewardError::InternalError(e.to_string()))?
+        return Some(BigDecimal::from_str(&test_coin_price).expect("TEST_COIN_PRICE should be set to a valid number"));
     }
     let cex_rates = fetch_swap_coins_price(base, rel).await;
     cex_rates.map(|rates| rates.base.div(rates.rel))

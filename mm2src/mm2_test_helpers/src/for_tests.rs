@@ -146,7 +146,7 @@ pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd80
 pub const ETH_DEV_NODES: &[&str] = &["http://195.201.0.6:8565"];
 pub const ETH_DEV_SWAP_CONTRACT: &str = "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd";
 
-pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc-sepolia.rockx.com/"];
+pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc2.sepolia.org"];
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C88293F19";
 
@@ -643,6 +643,18 @@ pub fn eth_testnet_conf() -> Json {
     })
 }
 
+pub fn eth_sepolia_conf() -> Json {
+    json!({
+        "coin": "ETH",
+        "name": "ethereum",
+        "derivation_path": "m/44'/60'",
+        "chain_id": 11155111,
+        "protocol": {
+            "type": "ETH"
+        }
+    })
+}
+
 pub fn eth_jst_testnet_conf() -> Json {
     json!({
         "coin": "JST",
@@ -658,15 +670,17 @@ pub fn eth_jst_testnet_conf() -> Json {
     })
 }
 
-pub fn eth_jst_conf(contract_address: &str) -> Json {
+pub fn jst_sepolia_conf() -> Json {
     json!({
         "coin": "JST",
         "name": "jst",
+        "chain_id": 11155111,
         "protocol": {
             "type": "ERC20",
             "protocol_data": {
                 "platform": "ETH",
-                "contract_address": contract_address
+                "chain_id": 11155111,
+                "contract_address": ETH_SEPOLIA_TOKEN_CONTRACT
             }
         }
     })
@@ -1602,6 +1616,7 @@ pub async fn enable_eth_coin(
             "method": "enable",
             "coin": coin,
             "urls": urls,
+            "chain_id": 5,
             "swap_contract_address": swap_contract_address,
             "fallback_swap_contract": fallback_swap_contract,
             "mm2": 1,

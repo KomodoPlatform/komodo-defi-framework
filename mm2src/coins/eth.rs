@@ -52,7 +52,6 @@ use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
-use num_traits::Zero;
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
@@ -1335,6 +1334,7 @@ impl SwapOps for EthCoin {
         } else {
             None
         };
+        println!("**taker_fee_data_watcher_reward: {:?}", watcher_reward);
         Ok(watcher_reward)
     }
 
@@ -1752,14 +1752,14 @@ impl WatcherOps for EthCoin {
         let amount = match reward_amount {
             Some(amount) => amount,
             None => {
-                if other_coin.is_eth() {
-                    BigDecimal::zero()
-                } else {
-                    let gas_cost_eth = self.get_watcher_reward_amount().await?;
+                let gas_cost_eth = self.get_watcher_reward_amount().await?;
 
-                    match &self.coin_type {
-                        EthCoinType::Eth => gas_cost_eth,
-                        EthCoinType::Erc20 { .. } => {
+                match &self.coin_type {
+                    EthCoinType::Eth => gas_cost_eth,
+                    EthCoinType::Erc20 { .. } => {
+                        if other_coin.is_eth() {
+                            gas_cost_eth
+                        } else {
                             let price_in_eth =
                                 get_base_price_in_rel(Some(self.ticker().to_string()), Some("ETH".to_string()))
                                     .await
@@ -1770,8 +1770,8 @@ impl WatcherOps for EthCoin {
                                         ))
                                     })?;
                             gas_cost_eth.div(price_in_eth)
-                        },
-                    }
+                        }
+                    },
                 }
             },
         };
@@ -2132,6 +2132,7 @@ async fn sign_and_send_transaction_with_keypair(
     data: Vec<u8>,
     gas: U256,
 ) -> Result<SignedEthTx, TransactionErr> {
+    println!("**sign_and_send_transaction_with_keypair");
     let mut status = ctx.log.status_handle();
     macro_rules! tags {
         () => {
@@ -2157,6 +2158,7 @@ async fn sign_and_send_transaction_with_keypair(
         data,
     };
 
+    println!("**chain_id: {:?}", coin.chain_id);
     let signed = tx.sign(key_pair.secret(), coin.chain_id);
     let bytes = Bytes(rlp::encode(&signed).to_vec());
     status.status(tags!(), "send_raw_transaction…");
@@ -5110,6 +5112,7 @@ pub async fn eth_coin_from_conf_and_request(
     protocol: CoinProtocol,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<EthCoin, String> {
+    println!("**eth_coin_from_conf_and_request");
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
     let priv_key_policy = try_s!(EthPrivKeyBuildPolicy::try_from(priv_key_policy));
 
@@ -5222,6 +5225,11 @@ pub async fn eth_coin_from_conf_and_request(
     // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
     // all spawned futures related to `ETH` coin will be aborted as well.
     let abortable_system = try_s!(ctx.abortable_system.create_subsystem());
+
+    println!("**conf: {:?}", conf);
+    println!("****conf_chain_id: {}", conf["chain_id"]);
+    println!("**conf_chain_id_asu64: {:?}", conf["chain_id"].as_u64());
+    println!("**conf_");
 
     let coin = EthCoinImpl {
         priv_key_policy: key_pair,
