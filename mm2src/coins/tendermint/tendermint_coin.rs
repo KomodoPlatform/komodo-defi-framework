@@ -64,7 +64,6 @@ use mm2_number::MmNumber;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
 use prost::{DecodeError, Message};
-use rand::{thread_rng, Rng};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
@@ -1478,7 +1477,11 @@ impl TendermintCoin {
         amount: BigDecimal,
     ) -> TradePreimageResult<TradeFee> {
         const TIME_LOCK: u64 = 1750;
-        let sec: [u8; 32] = thread_rng().gen();
+
+        let mut sec = [0u8; 32];
+        common::os_rng(&mut sec).map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
+        drop_mutability!(sec);
+
         let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.into_inner().to_string())))?;
 
@@ -2654,7 +2657,6 @@ pub mod tendermint_coin_tests {
     use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
-    use rand::{thread_rng, Rng};
     use std::mem::discriminant;
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
@@ -2758,7 +2760,11 @@ pub mod tendermint_coin_tests {
         const UAMOUNT: u64 = 1;
         let amount: cosmrs::Decimal = UAMOUNT.into();
         let amount_dec = big_decimal_from_sat_unsigned(UAMOUNT, coin.decimals);
-        let sec: [u8; 32] = thread_rng().gen();
+
+        let mut sec = [0u8; 32];
+        common::os_rng(&mut sec).unwrap();
+        drop_mutability!(sec);
+
         let time_lock = 1000;
 
         let create_htlc_tx = coin

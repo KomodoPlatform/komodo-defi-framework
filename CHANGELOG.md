@@ -1,4 +1,4 @@
-## ${next-version} - ${release-date}
+## v1.0.3-beta - 2023-04-28
 
 **Features:**
 
@@ -12,6 +12,7 @@
 - optimized dev and release compilation profiles and removed ci [#1759](https://github.com/KomodoPlatform/atomicDEX-API/pull/1759)
 - fix receiver trade fee for cosmos swaps [#1767](https://github.com/KomodoPlatform/atomicDEX-API/pull/1767)
 - All features were enabled to be checked under x86-64 code lint CI step with `--all-features` option [#1760](https://github.com/KomodoPlatform/atomicDEX-API/pull/1760)
+- use OS generated secrets for cryptographically secure randomness in `maker_swap` and `tendermint_coin::get_sender_trade_fee_for_denom` [#1753](https://github.com/KomodoPlatform/atomicDEX-API/pull/1753)
 
 
 ## v1.0.2-beta - 2023-04-11

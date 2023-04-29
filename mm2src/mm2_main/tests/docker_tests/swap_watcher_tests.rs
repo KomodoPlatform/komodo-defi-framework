@@ -1009,7 +1009,7 @@ fn test_watcher_validate_taker_payment_utxo() {
     let (_ctx, maker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let maker_pubkey = maker_coin.my_public_key().unwrap();
 
-    let secret_hash = dhash160(&MakerSwap::generate_secret());
+    let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
 
     let taker_payment = taker_coin
         .send_taker_payment(SendPaymentArgs {
@@ -1086,7 +1086,8 @@ fn test_watcher_validate_taker_payment_utxo() {
         _ => panic!("Expected `WrongPaymentTx` {INVALID_SENDER_ERR_LOG}, found {:?}", error),
     }
 
-    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret());
+    // Used to get wrong swap id
+    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
     let error = taker_coin
         .watcher_validate_taker_payment(WatcherValidatePaymentInput {
             payment_tx: taker_payment.tx_hex(),
@@ -1207,7 +1208,7 @@ fn test_watcher_validate_taker_payment_utxo() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_validate_taker_payment_eth() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
 
@@ -1224,7 +1225,7 @@ fn test_watcher_validate_taker_payment_eth() {
     let time_lock = wait_for_confirmation_until as u32;
     let taker_amount = BigDecimal::from_str("0.01").unwrap();
     let maker_amount = BigDecimal::from_str("0.01").unwrap();
-    let secret_hash = dhash160(&MakerSwap::generate_secret());
+    let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
     let watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
         &MmCoinEnum::from(taker_coin.clone()),
         Some(taker_amount.clone()),
@@ -1342,7 +1343,7 @@ fn test_watcher_validate_taker_payment_eth() {
     }
 
     // Used to get wrong swap id
-    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret());
+    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
     let error = taker_coin
         .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
             payment_tx: taker_payment.tx_hex(),
@@ -1498,7 +1499,7 @@ fn test_watcher_validate_taker_payment_erc20() {
     let wait_for_confirmation_until = now_ms() / 1000 + time_lock_duration;
     let time_lock = wait_for_confirmation_until as u32;
 
-    let secret_hash = dhash160(&MakerSwap::generate_secret());
+    let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
 
     let taker_amount = BigDecimal::from(10);
     let maker_amount = BigDecimal::from(10);
@@ -1620,7 +1621,7 @@ fn test_watcher_validate_taker_payment_erc20() {
     }
 
     // Used to get wrong swap id
-    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret());
+    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
     let error = taker_coin
         .watcher_validate_taker_payment(WatcherValidatePaymentInput {
             payment_tx: taker_payment.tx_hex(),
