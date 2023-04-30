@@ -8,6 +8,7 @@ use http::{HeaderMap, StatusCode};
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
+use mm2_rpc::mm_protocol::{OrderbookResponse, VersionResponse};
 use mm2_test_helpers::electrums::*;
 use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
                                   check_recent_swaps, enable_eth_coin, enable_qrc20, eth_jst_testnet_conf,
@@ -81,7 +82,7 @@ fn test_rpc() {
     .unwrap();
     assert_eq!(version.0, StatusCode::OK);
     assert_eq!((version.2)[ACCESS_CONTROL_ALLOW_ORIGIN], "http://localhost:4000");
-    let _version: MmVersion = json::from_str(&version.1).unwrap();
+    let _version: VersionResponse = json::from_str(&version.1).unwrap();
 
     let help = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,

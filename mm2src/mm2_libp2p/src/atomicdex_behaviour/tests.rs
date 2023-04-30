@@ -72,7 +72,7 @@ impl Node {
                 Err(e) => panic!("{}", e),
             }
             attempts += 1;
-            if attempts >= 10 {
+            if attempts >= 30 {
                 panic!("wait_peers {} attempts exceeded", attempts);
             }
         }

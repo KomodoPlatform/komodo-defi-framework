@@ -1,14 +1,15 @@
 use common::log::error;
-use serde::Serialize;
-use std::fs::OpenOptions;
+use serde::{Deserialize, Serialize};
+use std::fs;
 use std::io::Write;
 use std::ops::Deref;
+use std::path::Path;
 
 pub fn rewrite_data_file<T>(data: T, file: &str) -> Result<(), ()>
 where
     T: Deref<Target = [u8]>,
 {
-    let mut writer = OpenOptions::new()
+    let mut writer = fs::OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
@@ -31,4 +32,12 @@ where
         error!("Failed to serialize data {error}");
     })?;
     rewrite_data_file(data, file)
+}
+
+pub fn read_json_file<T>(file: &Path) -> Result<T, ()>
+where
+    T: for<'a> Deserialize<'a>,
+{
+    let reader = fs::File::open(file).map_err(|error| error!("Failed to open {file:?}, error: {error}"))?;
+    serde_json::from_reader(reader).map_err(|error| error!("Failed to read json from data: {file:?}, error: {error}"))
 }

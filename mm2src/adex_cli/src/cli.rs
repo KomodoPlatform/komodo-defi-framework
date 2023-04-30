@@ -1,113 +1,154 @@
-use clap::{App, Arg, SubCommand};
-use log::error;
-use std::env;
+const MM2_CONFIG_FILE_DEFAULT: &str = "MM2.json";
+const COINS_FILE_DEFAULT: &str = "coins";
+const ORDERBOOK_BIDS_LIMIT: &str = "20";
+const ORDERBOOK_ASKS_LIMIT: &str = "20";
 
+use crate::adex_config::AdexConfig;
+use clap::{Parser, Subcommand};
+
+use crate::api_commands::{get_config, set_config, AdexProc, ResponseHandler};
 use crate::scenarios::{get_status, init, start_process, stop_process};
+use crate::transport::SlurpTransport;
 
+#[derive(Subcommand)]
 enum Command {
+    #[command(about = "Initialize predefined mm2 coin set and configuration")]
     Init {
+        #[arg(long, help = "coin set file path", default_value = COINS_FILE_DEFAULT)]
         mm_coins_path: String,
+        #[arg(long, help = "mm2 configuration file path", default_value = MM2_CONFIG_FILE_DEFAULT)]
         mm_conf_path: String,
     },
+    #[command(about = "Start mm2 instance")]
     Start {
+        #[arg(long, help = "mm2 configuration file path")]
         mm_conf_path: Option<String>,
+        #[arg(long, help = "coin set file path")]
         mm_coins_path: Option<String>,
+        #[arg(long, help = "log file path")]
         mm_log: Option<String>,
     },
+    #[command(about = "Stop mm2 using API")]
     Stop,
+    #[command(about = "Kill mm2 process")]
+    Kill,
+    #[command(about = "Get mm2 running status")]
     Status,
+    #[command(about = "Gets version of intermediary mm2 service")]
+    Version,
+    #[command(subcommand, about = "Config management command set")]
+    Config(ConfigSubcommand),
+    #[command(subcommand, about = "Assets related operations: activate, balance etc.")]
+    Asset(AssetSubcommand),
+    #[command(about = "Gets orderbook")]
+    Orderbook {
+        #[arg(help = "Base currency of a pair")]
+        base: String,
+        #[arg(help = "Related currency, also can be called \"quote currency\" according to exchange terms")]
+        rel: String,
+        #[arg(long, help = "Orderbook asks count limitation", default_value = ORDERBOOK_ASKS_LIMIT)]
+        asks_limit: Option<usize>,
+        #[arg(long, help = "Orderbook bids count limitation", default_value = ORDERBOOK_BIDS_LIMIT)]
+        bids_limit: Option<usize>,
+    },
+    Sell {
+        #[arg(help = "Base currency of a pair")]
+        base: String,
+        #[arg(help = "Related currency, also can be called \"quote currency\" according to exchange terms")]
+        rel: String,
+        #[arg(help = "Asset volume to be sold")]
+        volume: f64,
+        #[arg(help = "Price to be sold at")]
+        price: f64,
+    },
 }
 
-pub fn process_cli() {
-    let mut app = App::new(env!("CARGO_PKG_NAME"))
-        .version(env!("CARGO_PKG_VERSION"))
-        .author(env!("CARGO_PKG_AUTHORS"))
-        .about(env!("CARGO_PKG_DESCRIPTION"))
-        .subcommand(
-            SubCommand::with_name("init")
-                .about("Initialize predefined mm2 coin set and configuration")
-                .arg(
-                    Arg::with_name("mm-coins-path")
-                        .long("mm-coins-path")
-                        .value_name("FILE")
-                        .help("coin set file path")
-                        .default_value("coins"),
-                )
-                .arg(
-                    Arg::with_name("mm-conf-path")
-                        .long("mm-conf-path")
-                        .value_name("FILE")
-                        .help("mm2 configuration file path")
-                        .default_value("MM2.json"),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("start")
-                .about("Start mm2 service")
-                .arg(
-                    Arg::with_name("mm-conf-path")
-                        .long("mm-conf-path")
-                        .value_name("FILE")
-                        .help("mm2 configuration file path"),
-                )
-                .arg(
-                    Arg::with_name("mm-coins-path")
-                        .long("mm-coins-path")
-                        .value_name("FILE")
-                        .help("coin set file path"),
-                )
-                .arg(
-                    Arg::with_name("mm-log")
-                        .long("mm-log")
-                        .value_name("FILE")
-                        .help("log file path"),
-                ),
-        )
-        .subcommand(SubCommand::with_name("stop").about("Stop mm2 instance"))
-        .subcommand(SubCommand::with_name("status").about("Get mm2 running status"));
+#[derive(Subcommand)]
+enum ConfigSubcommand {
+    #[command(about = "Sets komodo adex cli configuration")]
+    Set {
+        #[arg(long, help = "Set if you are going to set up a password")]
+        set_password: bool,
+        #[arg(long, name = "URI", help = "Adex RPC API Uri. http://localhost:7783")]
+        adex_uri: Option<String>,
+    },
+    #[command(about = "Gets komodo adex cli configuration")]
+    Get,
+}
 
-    let matches = app.clone().get_matches();
+#[derive(Subcommand)]
+enum AssetSubcommand {
+    #[command(about = "Puts an asset to the trading index")]
+    Enable {
+        #[arg(name = "ASSET", help = "Asset to be included into the trading index")]
+        asset: String,
+    },
 
-    let command = match matches.subcommand() {
-        ("init", Some(init_matches)) => {
-            let mm_coins_path = init_matches.value_of("mm-coins-path").unwrap_or("coins").to_owned();
-            let mm_conf_path = init_matches.value_of("mm-conf-path").unwrap_or("MM2.json").to_owned();
+    #[command(about = "Gets balance of an asset")]
+    Balance {
+        #[arg(name = "ASSET", help = "Asset to get balance of")]
+        asset: String,
+    },
+    #[command(about = "Lists activated assets")]
+    GetEnabled,
+}
+
+#[derive(Parser)]
+#[clap(author, version, about, long_about = None)]
+pub struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+impl Cli {
+    pub async fn execute<P: ResponseHandler, Cfg: AdexConfig + 'static>(
+        args: impl Iterator<Item = String>,
+        config: &Cfg,
+        printer: &P,
+    ) -> Result<(), ()> {
+        let transport = SlurpTransport::new(config.rpc_uri());
+
+        let proc = AdexProc {
+            transport: &transport,
+            response_handler: printer,
+            config,
+        };
+
+        let mut parsed_cli = Self::parse_from(args);
+        match &mut parsed_cli.command {
             Command::Init {
-                mm_coins_path,
-                mm_conf_path,
-            }
-        },
-        ("start", Some(start_matches)) => {
-            let mm_conf_path = start_matches.value_of("mm-conf-path").map(|s| s.to_owned());
-            let mm_coins_path = start_matches.value_of("mm-coins-path").map(|s| s.to_owned());
-            let mm_log = start_matches.value_of("mm-log").map(|s| s.to_owned());
+                mm_coins_path: coins_file,
+                mm_conf_path: mm2_cfg_file,
+            } => init(mm2_cfg_file, coins_file).await,
             Command::Start {
-                mm_conf_path,
-                mm_coins_path,
-                mm_log,
-            }
-        },
-        ("stop", _) => Command::Stop,
-        ("status", _) => Command::Status,
-        _ => {
-            let _ = app
-                .print_long_help()
-                .map_err(|error| error!("Failed to print_long_help: {error}"));
-            return;
-        },
-    };
-
-    match command {
-        Command::Init {
-            mm_coins_path: coins_file,
-            mm_conf_path: mm2_cfg_file,
-        } => init(&mm2_cfg_file, &coins_file),
-        Command::Start {
-            mm_conf_path: mm2_cfg_file,
-            mm_coins_path: coins_file,
-            mm_log: log_file,
-        } => start_process(&mm2_cfg_file, &coins_file, &log_file),
-        Command::Stop => stop_process(),
-        Command::Status => get_status(),
+                mm_conf_path: mm2_cfg_file,
+                mm_coins_path: coins_file,
+                mm_log: log_file,
+            } => start_process(mm2_cfg_file, coins_file, log_file),
+            Command::Version => proc.get_version().await?,
+            Command::Kill => stop_process(),
+            Command::Status => get_status(),
+            Command::Stop => proc.send_stop().await?,
+            Command::Config(ConfigSubcommand::Set { set_password, adex_uri }) => {
+                set_config(*set_password, adex_uri.take())
+            },
+            Command::Config(ConfigSubcommand::Get) => get_config(),
+            Command::Asset(AssetSubcommand::Enable { asset }) => proc.enable(asset).await?,
+            Command::Asset(AssetSubcommand::Balance { asset }) => proc.get_balance(asset).await?,
+            Command::Asset(AssetSubcommand::GetEnabled) => proc.get_enabled().await?,
+            Command::Orderbook {
+                base,
+                rel,
+                bids_limit,
+                asks_limit,
+            } => proc.get_orderbook(base, rel, asks_limit, bids_limit).await?,
+            Command::Sell {
+                base,
+                rel,
+                volume,
+                price,
+            } => proc.sell(base, rel, *volume, *price).await?,
+        }
+        Ok(())
     }
 }

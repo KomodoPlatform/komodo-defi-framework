@@ -1,10 +1,12 @@
 use common::{HttpStatusCode, SerializationError};
 use http::{Response, StatusCode};
 use mm2_err_handle::prelude::*;
+use mm2_number::{BigDecimal, BigRational, Fraction};
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use serde_json::Value as Json;
-
+use std::fmt::{Display, Formatter};
+use uuid::Uuid;
 /// Please note there is no standardized `1.0` version, so this enumeration should not be used in the legacy protocol context.
 #[derive(Clone, Copy, Deserialize, Serialize)]
 pub enum MmRpcVersion {
@@ -163,6 +165,95 @@ where
             .body(encoded)
             .expect("ResponseBuilder::body has not to fail")
     }
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct VersionResponse {
+    pub result: String,
+    pub datetime: String,
+}
+
+impl Display for VersionResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Version: {}", self.result)?;
+        writeln!(f, "Datetime: {}", self.datetime)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderbookResponse {
+    pub base: String,
+    pub rel: String,
+    #[serde(rename = "askdepth")]
+    pub ask_depth: usize,
+    #[serde(rename = "biddepth")]
+    pub bid_depth: usize,
+    #[serde(rename = "numasks")]
+    num_asks: usize,
+    #[serde(rename = "numbids")]
+    num_bids: usize,
+    pub netid: u16,
+    timestamp: u64,
+    pub total_asks_base_vol: BigDecimal,
+    pub total_asks_base_vol_rat: BigRational,
+    pub total_asks_base_vol_fraction: Fraction,
+    pub total_asks_rel_vol: BigDecimal,
+    pub total_asks_rel_vol_rat: BigRational,
+    pub total_asks_rel_vol_fraction: Fraction,
+    pub total_bids_base_vol: BigDecimal,
+    pub total_bids_base_vol_rat: BigRational,
+    pub total_bids_base_vol_fraction: Fraction,
+    pub total_bids_rel_vol: BigDecimal,
+    pub total_bids_rel_vol_rat: BigRational,
+    pub total_bids_rel_vol_fraction: Fraction,
+    pub asks: Vec<OrderbookEntryAggregate>,
+    pub bids: Vec<OrderbookEntryAggregate>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderbookEntryAggregate {
+    pub coin: String,
+    pub address: String,
+    pub price: BigDecimal,
+    pub price_rat: BigRational,
+    pub price_fraction: Fraction,
+    #[serde(rename = "maxvolume")]
+    pub max_volume: BigDecimal,
+    pub max_volume_rat: BigRational,
+    pub max_volume_fraction: Fraction,
+    pub base_max_volume: BigDecimal,
+    pub base_max_volume_rat: BigRational,
+    pub base_max_volume_fraction: Fraction,
+    pub base_min_volume: BigDecimal,
+    pub base_min_volume_rat: BigRational,
+    pub base_min_volume_fraction: Fraction,
+    pub rel_max_volume: BigDecimal,
+    pub rel_max_volume_rat: BigRational,
+    pub rel_max_volume_fraction: Fraction,
+    pub rel_min_volume: BigDecimal,
+    pub rel_min_volume_rat: BigRational,
+    pub rel_min_volume_fraction: Fraction,
+    pub min_volume: BigDecimal,
+    pub min_volume_rat: BigRational,
+    pub min_volume_fraction: Fraction,
+    pub pubkey: String,
+    pub age: i64,
+    pub zcredits: u64,
+    pub uuid: Uuid,
+    pub is_mine: bool,
+    pub base_max_volume_aggr: BigDecimal,
+    pub base_max_volume_aggr_rat: BigRational,
+    pub base_max_volume_aggr_fraction: Fraction,
+    pub rel_max_volume_aggr: BigDecimal,
+    pub rel_max_volume_aggr_rat: BigRational,
+    pub rel_max_volume_aggr_fraction: Fraction,
+    pub base_confs: u64,
+    pub base_nota: bool,
+    pub rel_confs: u64,
+    pub rel_nota: bool,
 }
 
 #[cfg(test)]

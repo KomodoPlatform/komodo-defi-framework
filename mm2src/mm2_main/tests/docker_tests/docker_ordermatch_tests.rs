@@ -2,9 +2,10 @@ use crate::generate_utxo_coin_with_random_privkey;
 use crate::integration_tests_common::enable_native;
 use common::block_on;
 use mm2_number::BigDecimal;
+use mm2_rpc::mm_protocol::OrderbookResponse;
 use mm2_test_helpers::for_tests::{mm_dump, MarketMakerIt};
 use mm2_test_helpers::structs::{BestOrdersResponse, BestOrdersV2Response, BuyOrSellRpcResult, MyOrdersRpcResult,
-                                OrderbookDepthResponse, OrderbookResponse, RpcV2Response, SetPriceResponse};
+                                OrderbookDepthResponse, RpcV2Response, SetPriceResponse};
 use serde_json::Value as Json;
 use std::thread;
 use std::time::Duration;
