@@ -2435,11 +2435,12 @@ pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
     RpcResponse::new("max_maker_vol", rc)
 }
 
-pub async fn disable_coin(mm: &MarketMakerIt, coin: &str) -> DisableResult {
+pub async fn disable_coin(mm: &MarketMakerIt, coin: &str, force_disable: bool) -> DisableResult {
     let req = json! ({
         "userpass": mm.userpass,
         "method": "disable_coin",
         "coin": coin,
+        "force_disable": force_disable,
     });
     let disable = mm.rpc(&req).await.unwrap();
     assert_eq!(disable.0, StatusCode::OK, "!disable_coin: {}", disable.1);
@@ -2449,12 +2450,13 @@ pub async fn disable_coin(mm: &MarketMakerIt, coin: &str) -> DisableResult {
 
 /// Checks whether the `disable_coin` RPC fails.
 /// Returns a `DisableCoinError` error.
-pub async fn disable_coin_err(mm: &MarketMakerIt, coin: &str) -> DisableCoinError {
+pub async fn disable_coin_err(mm: &MarketMakerIt, coin: &str, force_disable: bool) -> DisableCoinError {
     let disable = mm
         .rpc(&json! ({
             "userpass": mm.userpass,
             "method": "disable_coin",
             "coin": coin,
+            "force_disable": force_disable,
         }))
         .await
         .unwrap();

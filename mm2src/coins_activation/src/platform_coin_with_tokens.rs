@@ -325,8 +325,9 @@ where
 {
     if let Ok(Some(coin)) = lp_coinfind_any(&ctx, &req.ticker).await {
         if !coin.is_available() {
-            let platform_coin = Platform::try_from_mm_coin(coin).unwrap();
-            return re_enable_passive_platform_coin_with_tokens(ctx, platform_coin, req).await;
+            if let Some(platform_coin) = Platform::try_from_mm_coin(coin) {
+                return re_enable_passive_platform_coin_with_tokens(ctx, platform_coin, req).await;
+            }
         }
 
         return MmError::err(EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(

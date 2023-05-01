@@ -1,9 +1,9 @@
 use common::block_on;
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_err, enable_tendermint,
-                                  enable_tendermint_token, get_tendermint_my_tx_history, ibc_withdraw,
-                                  iris_nimda_testnet_conf, iris_testnet_conf, my_balance, send_raw_transaction,
-                                  withdraw_v1, MarketMakerIt, Mm2TestConf};
+use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, enable_tendermint, enable_tendermint_token,
+                                  get_tendermint_my_tx_history, ibc_withdraw, iris_nimda_testnet_conf,
+                                  iris_testnet_conf, my_balance, send_raw_transaction, withdraw_v1, MarketMakerIt,
+                                  Mm2TestConf};
 use mm2_test_helpers::structs::{RpcV2Response, TendermintActivationResult, TransactionDetails};
 use serde_json::{self as json, json};
 
@@ -329,12 +329,13 @@ fn test_disable_tendermint_platform_coin_with_token() {
     let activation_res = block_on(enable_tendermint_token(&mm, token));
     assert!(&activation_res.get("result").unwrap().get("balances").is_some());
 
-    // Try to disable platform coin, IRIS-TEST. This should fail due to the dependent tokens.
-    let error = block_on(disable_coin_err(&mm, "IRIS-TEST"));
-    assert_eq!(error.dependent_tokens, ["IRIS-NIMDA"]);
+    // Try to passive platform coin, IRIS-TEST.
+    block_on(disable_coin(&mm, "IRIS-TEST", false));
 
-    // Try to disable IRIS-NIMDA token first.
-    block_on(disable_coin(&mm, "IRIS-NIMDA"));
-    // Then try to disable IRIS-TEST platform coin.
-    block_on(disable_coin(&mm, "IRIS-TEST"));
+    // Try to disable IRIS-NIMDA token when platform coin is passived.
+    // This should work, because platform coin is still in the memory.
+    block_on(disable_coin(&mm, "IRIS-NIMDA", false));
+
+    // Then try to force disable IRIS-TEST platform coin.
+    block_on(disable_coin(&mm, "IRIS-TEST", true));
 }

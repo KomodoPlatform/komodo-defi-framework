@@ -19,13 +19,12 @@
 //  marketmaker
 //
 
-use coins::{lp_coinfind, lp_coininit, CoinsContext, MmCoinEnum};
+use coins::{lp_coinfind, lp_coinfind_any, lp_coininit, CoinsContext, MmCoinEnum};
 use common::executor::Timer;
 use common::log::error;
 use common::{rpc_err_response, rpc_response, HyRes};
 use futures::compat::Future01CompatExt;
 use http::Response;
-use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_metrics::MetricsOps;
 use mm2_number::{construct_detailed, BigDecimal};
@@ -49,7 +48,6 @@ pub fn disable_coin_err(
     matching: &[Uuid],
     cancelled: &[Uuid],
     active_swaps: &[Uuid],
-    dependent_tokens: &[String],
 ) -> Result<Response<Vec<u8>>, String> {
     let err = json!({
         "error": error,
@@ -57,8 +55,7 @@ pub fn disable_coin_err(
             "matching": matching,
             "cancelled": cancelled
         },
-        "active_swaps": active_swaps,
-        "dependent_tokens": dependent_tokens,
+        "active_swaps": active_swaps
     });
     Response::builder()
         .status(INTERNAL_SERVER_ERROR_CODE)
@@ -69,10 +66,13 @@ pub fn disable_coin_err(
 /// Attempts to disable the coin
 pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind(&ctx, &ticker).await {
-        Ok(Some(t)) => t,
-        Ok(None) => return ERR!("No such coin: {}", ticker),
+    let force_disable = req["force_disable"].as_bool().unwrap_or_default();
+
+    let coin = match lp_coinfind_any(&ctx, &ticker).await {
+        Ok(Some(t)) if t.is_available() => t,
+        Ok(Some(t)) if !t.is_available() && force_disable => t,
         Err(err) => return ERR!("!lp_coinfind({}): ", err),
+        _ => return ERR!("No such coin: {}", ticker),
     };
 
     // Get all matching orders and active swaps.
@@ -81,20 +81,17 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let still_matching_orders = try_s!(get_matching_orders(&ctx, &coins_to_disable).await);
 
     let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
-    // Convert `HashSet<String>` into the sorted `Vec<String>`.
-    let dependent_tokens: Vec<_> = coins_ctx
-        .get_dependent_tokens(&ticker)
-        .await
-        .into_iter()
-        .sorted()
-        .collect();
 
     // Return an error if:
     // 1. There are matching orders or active swaps.
     // 2. A platform coin is to be disabled and there are tokens dependent on it.
     if !active_swaps.is_empty() || !still_matching_orders.is_empty() {
-        let err = format!("There are currently matching orders, active swaps, or tokens dependent on '{ticker}'");
-        return disable_coin_err(err, &still_matching_orders, &[], &active_swaps, &dependent_tokens);
+        return disable_coin_err(
+            String::from("There are currently matching orders, active swaps"),
+            &still_matching_orders,
+            &[],
+            &active_swaps,
+        );
     }
 
     let response = |ticker: &str, cancelled_orders: Vec<Uuid>| {
@@ -110,7 +107,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
             .map_err(|e| ERRL!("{}", e))
     };
 
-    if !dependent_tokens.is_empty() {
+    if !coins_ctx.get_dependent_tokens(&ticker).await.is_empty() && !force_disable {
         coin.update_is_available(false);
 
         return response(&ticker, Vec::default());
@@ -128,7 +125,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
             cancelled_orders.extend(cancelled);
         },
         Err(err) => {
-            return disable_coin_err(err, &still_matching_orders, &cancelled_orders, &active_swaps, &[]);
+            return disable_coin_err(err, &still_matching_orders, &cancelled_orders, &active_swaps);
         },
     }
 
