@@ -176,7 +176,7 @@ fn test_disable_platform_coin_with_tokens() {
         UtxoRpcMode::Native,
         false,
     ));
-    // Try to disable platform coin, FORSLP. This should fail due to the dependent tokens.
-    let error = block_on(disable_coin_err(&mm, "FORSLP"));
-    assert_eq!(error.dependent_tokens, ["ADEXSLP"]);
+
+    // Try to force disable platform coin, FORSLP.
+    block_on(disable_coin(&mm, "FORSLP", true));
 }

@@ -125,14 +125,14 @@ fn test_disable_solana_platform_coin_with_tokens() {
     ));
     block_on(enable_spl(&mm, "ADEX-SOL-DEVNET"));
 
-    // Try to disable platform coin, SOL-DEVNET. This should fail due to the dependent tokens.
-    let error = block_on(disable_coin_err(&mm, "SOL-DEVNET"));
-    assert_eq!(error.dependent_tokens, ["ADEX-SOL-DEVNET", "USDC-SOL-DEVNET"]);
+    // Try to passive platform coin, SOL-DEVNET.
+    block_on(disable_coin(&mm, "SOL-DEVNET", false));
 
-    // Try to disable ADEX-SOL-DEVNET token first.
-    block_on(disable_coin(&mm, "ADEX-SOL-DEVNET"));
-    // Try to disable USDC-SOL-DEVNET token first.
-    block_on(disable_coin(&mm, "USDC-SOL-DEVNET"));
-    // Then try to disable SOL-DEVNET platform coin.
-    block_on(disable_coin(&mm, "SOL-DEVNET"));
+    // Try to disable ADEX-SOL-DEVNET and USDC-SOL-DEVNET
+    // This should work, because platform coin is still in the memory.
+    block_on(disable_coin(&mm, "ADEX-SOL-DEVNET", false));
+    block_on(disable_coin(&mm, "USDC-SOL-DEVNET", false));
+
+    // Then try to force disable SOL-DEVNET platform coin.
+    block_on(disable_coin(&mm, "SOL-DEVNET", true));
 }
