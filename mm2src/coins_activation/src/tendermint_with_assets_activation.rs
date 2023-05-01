@@ -17,7 +17,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl TokenOf for TendermintToken {
     type PlatformCoin = TendermintCoin;
@@ -131,6 +131,8 @@ pub struct TendermintActivationResult {
     balance: Option<CoinBalance>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tokens_balances: Option<HashMap<String, CoinBalance>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens_tickers: Option<HashSet<String>>,
 }
 
 impl CurrentBlock for TendermintActivationResult {
@@ -207,6 +209,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
                 current_block,
                 balance: None,
                 tokens_balances: None,
+                tokens_tickers: Some(self.tokens_info.lock().clone().into_keys().collect()),
             });
         }
 
@@ -235,6 +238,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
                     .collect(),
             ),
             ticker: self.ticker().to_owned(),
+            tokens_tickers: None,
         })
     }
 

@@ -6,6 +6,7 @@ use mm2_test_helpers::for_tests::{assert_coin_not_found_on_balance, disable_coin
                                   enable_bch_with_tokens, enable_slp, my_balance, UtxoRpcMode};
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableElectrumResponse, EnableSlpResponse, RpcV2Response};
 use serde_json::{self as json, json, Value as Json};
+use std::collections::HashSet;
 use std::time::Duration;
 
 async fn enable_bch_with_tokens_without_balance(
@@ -191,6 +192,7 @@ fn test_enable_bch_with_tokens_v2_without_balance() {
         .next()
         .unwrap();
     assert!(bch_balance.balances.is_none());
+    assert!(bch_balance.tickers.is_none());
 
     let (_, slp_balances) = enable_bch_with_tokens
         .result
@@ -199,6 +201,7 @@ fn test_enable_bch_with_tokens_v2_without_balance() {
         .next()
         .unwrap();
     assert!(slp_balances.balances.is_none());
+    assert_eq!(slp_balances.tickers.unwrap(), HashSet::from(["ADEXSLP".to_string()]));
 }
 
 #[test]

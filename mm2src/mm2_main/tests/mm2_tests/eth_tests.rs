@@ -4,6 +4,8 @@ use mm2_test_helpers::for_tests::{disable_coin, disable_coin_err, get_passphrase
                                   ETH_DEV_NODES};
 use mm2_test_helpers::structs::{EnableEthWithTokensResponse, RpcV2Response};
 use serde_json::{self as json, json, Value as Json};
+use std::collections::HashSet;
+use std::iter::FromIterator;
 use std::str::FromStr;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -142,6 +144,7 @@ fn test_disable_eth_coin_with_token_without_balance() {
         .next()
         .unwrap();
     assert!(eth_balance.balances.is_none());
+    assert!(eth_balance.tickers.is_none());
 
     let (_, erc20_balances) = enable_eth_with_tokens
         .result
@@ -150,4 +153,8 @@ fn test_disable_eth_coin_with_token_without_balance() {
         .next()
         .unwrap();
     assert!(erc20_balances.balances.is_none());
+    assert_eq!(
+        erc20_balances.tickers.unwrap(),
+        HashSet::from_iter(vec!["JST".to_string()])
+    );
 }

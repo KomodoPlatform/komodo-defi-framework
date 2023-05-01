@@ -900,6 +900,7 @@ pub struct CoinAddressInfo<Balance> {
     pub derivation_method: DerivationMethod,
     pub pubkey: String,
     pub balances: Option<Balance>,
+    pub tickers: Option<HashSet<String>>,
 }
 
 pub type TokenBalances = HashMap<String, CoinBalance>;
@@ -1104,6 +1105,7 @@ pub struct TendermintActivationResult {
     pub balance: Option<CoinBalance>,
     pub tokens_balances: Option<HashMap<String, CoinBalance>>,
     pub ticker: String,
+    pub tokens_tickers: Option<HashSet<String>>,
 }
 
 #[derive(Debug, Deserialize)]

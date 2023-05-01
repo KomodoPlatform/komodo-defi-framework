@@ -11,15 +11,15 @@ use coins::utxo::UtxoCommonOps;
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
             UnexpectedDerivationMethod};
 use common::executor::{AbortSettings, SpawnAbortable};
-use common::true_f;
 use common::Future01CompatExt;
+use common::{drop_mutability, true_f};
 use crypto::CryptoCtxError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 impl From<EnableSlpError> for InitTokensAsMmCoinsError {
@@ -259,40 +259,52 @@ impl PlatformWithTokensActivationOps for BchCoin {
             .map_to_mm(BchWithTokensActivationError::Internal)?;
         let pubkey = self.my_public_key()?.to_string();
 
-        let (bch_balance, token_balances) = if activation_request.get_balances {
-            let bch_unspents = self.bch_unspents_for_display(my_address).await?;
-            let token_balances = self
-                .get_slp_tokens_infos()
-                .iter()
-                .map(|(token_ticker, info)| {
-                    let token_balance = bch_unspents.slp_token_balance(&info.token_id, info.decimals);
-                    (token_ticker.clone(), token_balance)
-                })
-                .collect();
-            (
-                Some(bch_unspents.platform_balance(self.decimals())),
-                Some(token_balances),
-            )
-        } else {
-            (None, None)
-        };
-
-        let bch_addresses_infos = HashMap::from([(my_address.to_string(), CoinAddressInfo {
+        let mut bch_address_info = CoinAddressInfo {
             derivation_method: DerivationMethod::Iguana,
             pubkey: pubkey.clone(),
-            balances: bch_balance,
-        })]);
+            balances: None,
+            tickers: None,
+        };
 
-        let slp_addresses_infos = HashMap::from([(my_slp_address, CoinAddressInfo {
+        let mut slp_address_info = CoinAddressInfo {
             derivation_method: DerivationMethod::Iguana,
-            pubkey,
-            balances: token_balances,
-        })]);
+            pubkey: pubkey.clone(),
+            balances: None,
+            tickers: None,
+        };
+
+        if !activation_request.get_balances {
+            drop_mutability!(bch_address_info);
+            let tickers: HashSet<_> = self.get_slp_tokens_infos().keys().cloned().collect();
+            slp_address_info.tickers = Some(tickers);
+            drop_mutability!(slp_address_info);
+
+            return Ok(BchWithTokensActivationResult {
+                current_block,
+                bch_addresses_infos: HashMap::from([(my_address.to_string(), bch_address_info)]),
+                slp_addresses_infos: HashMap::from([(my_slp_address, slp_address_info)]),
+            });
+        }
+
+        let bch_unspents = self.bch_unspents_for_display(my_address).await?;
+        bch_address_info.balances = Some(bch_unspents.platform_balance(self.decimals()));
+        drop_mutability!(bch_address_info);
+
+        let token_balances: HashMap<_, _> = self
+            .get_slp_tokens_infos()
+            .iter()
+            .map(|(token_ticker, info)| {
+                let token_balance = bch_unspents.slp_token_balance(&info.token_id, info.decimals);
+                (token_ticker.clone(), token_balance)
+            })
+            .collect();
+        slp_address_info.balances = Some(token_balances);
+        drop_mutability!(slp_address_info);
 
         Ok(BchWithTokensActivationResult {
             current_block,
-            bch_addresses_infos,
-            slp_addresses_infos,
+            bch_addresses_infos: HashMap::from([(my_address.to_string(), bch_address_info)]),
+            slp_addresses_infos: HashMap::from([(my_slp_address, slp_address_info)]),
         })
     }
 

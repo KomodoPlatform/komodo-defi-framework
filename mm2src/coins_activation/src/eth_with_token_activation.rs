@@ -11,8 +11,8 @@ use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protoc
                   Erc20TokenInfo, EthCoin, EthCoinType},
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
-use common::true_f;
 use common::Future01CompatExt;
+use common::{drop_mutability, true_f};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 #[cfg(target_arch = "wasm32")]
@@ -20,7 +20,7 @@ use mm2_metamask::MetamaskRpcError;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {
@@ -214,43 +214,52 @@ impl PlatformWithTokensActivationOps for EthCoin {
         let my_address = self.my_address()?;
         let pubkey = self.get_public_key()?;
 
-        let eth_balance = if activation_request.get_balances {
-            Some(
-                self.my_balance()
-                    .compat()
-                    .await
-                    .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?,
-            )
-        } else {
-            None
-        };
-
-        let token_balances = if activation_request.get_balances {
-            Some(
-                self.get_tokens_balance_list()
-                    .await
-                    .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?,
-            )
-        } else {
-            None
-        };
-
-        let eth_addresses_infos = HashMap::from([(my_address.clone(), CoinAddressInfo {
+        let mut eth_address_info = CoinAddressInfo {
             derivation_method: DerivationMethod::Iguana,
             pubkey: pubkey.clone(),
-            balances: eth_balance,
-        })]);
+            balances: None,
+            tickers: None,
+        };
 
-        let erc20_addresses_infos = HashMap::from([(my_address, CoinAddressInfo {
+        let mut erc20_address_info = CoinAddressInfo {
             derivation_method: DerivationMethod::Iguana,
             pubkey,
-            balances: token_balances,
-        })]);
+            balances: None,
+            tickers: None,
+        };
+
+        if !activation_request.get_balances {
+            drop_mutability!(eth_address_info);
+            let tickers: HashSet<_> = self.get_erc_tokens_infos().into_keys().collect();
+            erc20_address_info.tickers = Some(tickers);
+            drop_mutability!(erc20_address_info);
+
+            return Ok(EthWithTokensActivationResult {
+                current_block,
+                eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
+                erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
+            });
+        }
+
+        let eth_balance = self
+            .my_balance()
+            .compat()
+            .await
+            .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
+        eth_address_info.balances = Some(eth_balance);
+        drop_mutability!(eth_address_info);
+
+        let token_balances = self
+            .get_tokens_balance_list()
+            .await
+            .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
+        erc20_address_info.balances = Some(token_balances);
+        drop_mutability!(erc20_address_info);
 
         Ok(EthWithTokensActivationResult {
             current_block,
-            eth_addresses_infos,
-            erc20_addresses_infos,
+            eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
+            erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
         })
     }
 
