@@ -372,7 +372,10 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
                 )
                 .await
                 {
-                    Ok(_) => continue,
+                    Ok(_) => {
+                        log!("Chain reorg detected and resolved!");
+                        continue;
+                    },
                     Err(err) => {
                         if err.is_temp_error() {
                             error!("{err:?}");
@@ -412,9 +415,13 @@ enum RetrieveHeadersError {
     #[display(fmt = "Network Error: Will try fetching {} block headers again after 10 secs", _0)]
     NetworkError(String),
     #[display(
-        fmt = "Response Too Large: Error {err} on retrieving latest {ticker} headers from rpc! {attempts} attempts left"
+        fmt = "Got response too large error while retrieving latest {ticker} headers from rpc!, current chunk_size: {current_chunk_size} - {attempts} attempts left"
     )]
-    ResponseTooLarge { err: String, ticker: String, attempts: u8 },
+    ResponseTooLarge {
+        current_chunk_size: u64,
+        ticker: String,
+        attempts: u8,
+    },
     #[display(fmt = "Block Header Storage Error: {_0}")]
     BlockHeaderStorageError(String),
     #[display(fmt = "Validation Error: {}", _0)]
@@ -457,21 +464,16 @@ async fn retrieve_headers_helper(
                 // If electrum returns response too large error, we will reduce the requested headers by CHUNK_SIZE_REDUCER_VALUE in every loop until we arrive at a reasonable value.
                 if err_inner.is_response_too_large() && args.chunk_size > CHUNK_SIZE_REDUCER_VALUE {
                     args.chunk_size -= CHUNK_SIZE_REDUCER_VALUE;
-                    return Err(RetrieveHeadersError::ResponseTooLarge {
-                        err: err.to_string(),
-                        ticker: ticker.to_string(),
-                        attempts: *fetch_blocker_headers_attempts,
-                    });
-                }
 
-                if *fetch_blocker_headers_attempts > 0 {
-                    *fetch_blocker_headers_attempts -= 1;
-                    return Err(RetrieveHeadersError::ResponseTooLarge {
-                        err: err.to_string(),
-                        ticker: ticker.to_string(),
-                        attempts: *fetch_blocker_headers_attempts,
-                    });
-                };
+                    if *fetch_blocker_headers_attempts > 0 {
+                        *fetch_blocker_headers_attempts -= 1;
+                        return Err(RetrieveHeadersError::ResponseTooLarge {
+                            current_chunk_size: args.chunk_size,
+                            ticker: ticker.to_string(),
+                            attempts: *fetch_blocker_headers_attempts,
+                        });
+                    };
+                }
 
                 // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
                 return Err(RetrieveHeadersError::AttemptsExceeded {
@@ -516,7 +518,7 @@ async fn retrieve_and_revalidate_mismatching_header(
         };
 
         // Attempt to retrieve the headers and validate them.
-        match retrieve_headers_helper(
+        return match retrieve_headers_helper(
             args,
             client,
             from_height,
@@ -528,7 +530,7 @@ async fn retrieve_and_revalidate_mismatching_header(
         {
             Ok((_, block_headers)) => {
                 // If the headers are successfully retrieved and validated, remove the headers from storage and continue the outer loop.
-                return match validate_headers(coin, from_height - 1, &block_headers, storage, spv_conf).await {
+                match validate_headers(coin, from_height - 1, &block_headers, storage, spv_conf).await {
                     Ok(_) => {
                         // Headers are valid, remove saved headers and continue outer loop
                         storage
@@ -540,7 +542,7 @@ async fn retrieve_and_revalidate_mismatching_header(
                         // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
                         if let SPVError::ParentHashMismatch { coin: _, height } = &err {
                             // There is another ParentHashMismatch, loop to retrieve previous headers
-                            current_height = *height;
+                            current_height = *height - 1;
                             // Calculate the starting height for the next retrieval based on the current height and the chunk size.
                             // If the current height is below the starting block header height, use the starting block header
                             // height.
@@ -552,11 +554,11 @@ async fn retrieve_and_revalidate_mismatching_header(
                             Err(RetrieveHeadersError::ValidationError(err.to_string()))
                         }
                     },
-                };
+                }
             },
             // If the headers cannot be retrieved, return an error.
-            Err(err) => return Err(err),
-        }
+            Err(err) => Err(err),
+        };
     }
 }
 
