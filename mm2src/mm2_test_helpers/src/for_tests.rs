@@ -150,7 +150,7 @@ pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc-sepolia.rockx.com/"];
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0x5BCC05dD32a87fABEDBcbbfeb77476eaD1F7051C";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x948BF5172383F1Bc0Fdf3aBe0630b855694A5D2c";
 
-pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
+pub const BCHD_TESTNET_URLS: &[&str] = &["https://ryzen.electroncash.de:18335"];
 
 pub struct Mm2TestConf {
     pub conf: Json,
