@@ -20,7 +20,7 @@ enable-nft-integration = ["coins/enable-nft-integration"]
 run-docker-tests = []
 # TODO
 enable-solana = []
-default = []
+default = ["enable-nft-integration"]
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
