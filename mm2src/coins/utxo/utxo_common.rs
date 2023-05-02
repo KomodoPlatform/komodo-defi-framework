@@ -2252,8 +2252,6 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
 pub async fn get_maker_watcher_reward<T: UtxoCommonOps + SwapOps>(
     _coin: &T,
     _other_coin: &MmCoinEnum,
-    _coin_amount: Option<BigDecimal>,
-    _other_coin_amount: Option<BigDecimal>,
     _reward_amount: Option<BigDecimal>,
 ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
     Ok(None)

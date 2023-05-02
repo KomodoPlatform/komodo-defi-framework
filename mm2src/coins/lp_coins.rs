@@ -986,8 +986,6 @@ pub trait WatcherOps {
     async fn get_maker_watcher_reward(
         &self,
         other_coin: &MmCoinEnum,
-        coin_amount: Option<BigDecimal>,
-        other_coin_amount: Option<BigDecimal>,
         reward_amount: Option<BigDecimal>,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
 }

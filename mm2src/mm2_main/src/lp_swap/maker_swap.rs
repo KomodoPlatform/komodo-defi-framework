@@ -821,12 +821,7 @@ impl MakerSwap {
         let watcher_reward = if self.r().watcher_reward {
             match self
                 .maker_coin
-                .get_maker_watcher_reward(
-                    &self.taker_coin,
-                    Some(self.maker_amount.clone()),
-                    Some(self.taker_amount.clone()),
-                    self.watcher_reward_amount(),
-                )
+                .get_maker_watcher_reward(&self.taker_coin, self.watcher_reward_amount())
                 .await
             {
                 Ok(reward) => reward,

@@ -1737,8 +1737,6 @@ impl WatcherOps for EthCoin {
     async fn get_maker_watcher_reward(
         &self,
         other_coin: &MmCoinEnum,
-        _coin_amount: Option<BigDecimal>,
-        _other_coin_amount: Option<BigDecimal>,
         reward_amount: Option<BigDecimal>,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
         let reward_target = if other_coin.is_eth() {

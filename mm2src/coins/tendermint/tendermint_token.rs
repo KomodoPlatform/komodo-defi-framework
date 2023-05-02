@@ -487,8 +487,6 @@ impl WatcherOps for TendermintToken {
     async fn get_maker_watcher_reward(
         &self,
         _other_coin: &MmCoinEnum,
-        _coin_amount: Option<BigDecimal>,
-        _other_coin_amount: Option<BigDecimal>,
         _reward_amount: Option<BigDecimal>,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
         unimplemented!()

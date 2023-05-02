@@ -1371,12 +1371,7 @@ impl TakerSwap {
         let watcher_reward = if self.r().watcher_reward {
             match self
                 .maker_coin
-                .get_maker_watcher_reward(
-                    &self.taker_coin,
-                    Some(self.maker_amount.clone().into()),
-                    Some(self.taker_amount.clone().into()),
-                    reward_amount,
-                )
+                .get_maker_watcher_reward(&self.taker_coin, reward_amount)
                 .await
             {
                 Ok(reward) => reward,
