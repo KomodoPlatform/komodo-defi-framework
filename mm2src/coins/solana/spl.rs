@@ -219,7 +219,7 @@ impl SplToken {
         let coin = self.clone();
         let fut = async move {
             coin.platform_coin
-                .my_balance_spl(&SplTokenInfo {
+                .my_balance_spl(SplTokenInfo {
                     token_contract_address: coin.conf.token_contract_address,
                     decimals: coin.conf.decimals,
                 })

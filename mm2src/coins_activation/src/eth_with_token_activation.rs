@@ -12,6 +12,7 @@ use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protoc
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
 use common::Future01CompatExt;
+use common::{drop_mutability, true_f};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 #[cfg(target_arch = "wasm32")]
@@ -19,7 +20,7 @@ use mm2_metamask::MetamaskRpcError;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {
@@ -122,6 +123,8 @@ pub struct EthWithTokensActivationRequest {
     #[serde(flatten)]
     platform_request: EthActivationV2Request,
     erc20_tokens_requests: Vec<TokenActivationRequest<Erc20TokenActivationRequest>>,
+    #[serde(default = "true_f")]
+    pub get_balances: bool,
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
@@ -149,11 +152,11 @@ pub struct EthWithTokensActivationResult {
 }
 
 impl GetPlatformBalance for EthWithTokensActivationResult {
-    fn get_platform_balance(&self) -> BigDecimal {
+    fn get_platform_balance(&self) -> Option<BigDecimal> {
         self.eth_addresses_infos
             .iter()
-            .fold(BigDecimal::from(0), |total, (_, addr_info)| {
-                &total + &addr_info.balances.get_total()
+            .fold(Some(BigDecimal::from(0)), |total, (_, addr_info)| {
+                total.and_then(|t| addr_info.balances.as_ref().map(|b| t + b.get_total()))
             })
     }
 }
@@ -198,56 +201,73 @@ impl PlatformWithTokensActivationOps for EthCoin {
         })]
     }
 
-    async fn get_activation_result(&self) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {
-        let my_address = self.my_address()?;
-        let pubkey = self.get_public_key()?;
-
+    async fn get_activation_result(
+        &self,
+        activation_request: &Self::ActivationRequest,
+    ) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {
         let current_block = self
             .current_block()
             .compat()
             .await
             .map_err(EthActivationV2Error::InternalError)?;
 
+        let my_address = self.my_address()?;
+        let pubkey = self.get_public_key()?;
+
+        let mut eth_address_info = CoinAddressInfo {
+            derivation_method: DerivationMethod::Iguana,
+            pubkey: pubkey.clone(),
+            balances: None,
+            tickers: None,
+        };
+
+        let mut erc20_address_info = CoinAddressInfo {
+            derivation_method: DerivationMethod::Iguana,
+            pubkey,
+            balances: None,
+            tickers: None,
+        };
+
+        if !activation_request.get_balances {
+            drop_mutability!(eth_address_info);
+            let tickers: HashSet<_> = self.get_erc_tokens_infos().into_keys().collect();
+            erc20_address_info.tickers = Some(tickers);
+            drop_mutability!(erc20_address_info);
+
+            return Ok(EthWithTokensActivationResult {
+                current_block,
+                eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
+                erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
+            });
+        }
+
         let eth_balance = self
             .my_balance()
             .compat()
             .await
             .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
+        eth_address_info.balances = Some(eth_balance);
+        drop_mutability!(eth_address_info);
+
         let token_balances = self
             .get_tokens_balance_list()
             .await
             .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
+        erc20_address_info.balances = Some(token_balances);
+        drop_mutability!(erc20_address_info);
 
-        let mut result = EthWithTokensActivationResult {
+        Ok(EthWithTokensActivationResult {
             current_block,
-            eth_addresses_infos: HashMap::new(),
-            erc20_addresses_infos: HashMap::new(),
-        };
-
-        result
-            .eth_addresses_infos
-            .insert(my_address.to_string(), CoinAddressInfo {
-                derivation_method: DerivationMethod::Iguana,
-                pubkey: pubkey.clone(),
-                balances: eth_balance,
-            });
-
-        result
-            .erc20_addresses_infos
-            .insert(my_address.to_string(), CoinAddressInfo {
-                derivation_method: DerivationMethod::Iguana,
-                pubkey,
-                balances: token_balances,
-            });
-
-        Ok(result)
+            eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
+            erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
+        })
     }
 
     fn start_history_background_fetching(
         &self,
         _ctx: MmArc,
         _storage: impl TxHistoryStorage + Send + 'static,
-        _initial_balance: BigDecimal,
+        _initial_balance: Option<BigDecimal>,
     ) {
     }
 }

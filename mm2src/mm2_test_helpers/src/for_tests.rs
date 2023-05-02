@@ -2511,6 +2511,43 @@ pub async fn enable_tendermint(
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn enable_tendermint_without_balance(
+    mm: &MarketMakerIt,
+    coin: &str,
+    ibc_assets: &[&str],
+    rpc_urls: &[&str],
+    tx_history: bool,
+) -> Json {
+    let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "enable_tendermint_with_assets",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": coin,
+            "tokens_params": ibc_requests,
+            "rpc_urls": rpc_urls,
+            "tx_history": tx_history,
+            "get_balances": false
+        }
+    });
+    println!(
+        "enable_tendermint_with_assets request {}",
+        serde_json::to_string(&request).unwrap()
+    );
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'enable_tendermint_with_assets' failed: {}",
+        request.1
+    );
+    println!("enable_tendermint_with_assets response {}", request.1);
+    serde_json::from_str(&request.1).unwrap()
+}
+
 pub async fn get_tendermint_my_tx_history(mm: &MarketMakerIt, coin: &str, limit: usize, page_number: usize) -> Json {
     let request = json!({
         "userpass": mm.userpass,

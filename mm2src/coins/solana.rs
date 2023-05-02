@@ -320,10 +320,9 @@ impl SolanaCoin {
         Ok((hash, fees))
     }
 
-    pub async fn my_balance_spl(&self, infos: &SplTokenInfo) -> Result<CoinBalance, MmError<BalanceError>> {
+    pub async fn my_balance_spl(&self, infos: SplTokenInfo) -> Result<CoinBalance, MmError<BalanceError>> {
         let token_accounts = async_blocking({
             let coin = self.clone();
-            let infos = infos.clone();
             move || {
                 coin.rpc().get_token_accounts_by_owner(
                     &coin.key_pair.pubkey(),
