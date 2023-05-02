@@ -1,3 +1,11 @@
+## v1.0.4-beta -
+
+**Features:**
+- NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
+  - Proxy support was added [#1775](https://github.com/KomodoPlatform/atomicDEX-API/pull/1775)
+
+**Enhancements/Fixes:**
+
 ## v1.0.3-beta - 2023-04-28
 
 **Features:**
