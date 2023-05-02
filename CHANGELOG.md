@@ -1,3 +1,13 @@
+## v1.0.4-beta - 2023-05-12
+
+**Features:**
+
+**Enhancements/Fixes:**
+- Some enhancements were done for `enable_bch_with_tokens`,`enable_eth_with_tokens`,`enable_tendermint_with_assets` RPCs in [#1762](https://github.com/KomodoPlatform/atomicDEX-API/pull/1762)
+  - A new parameter `get_balances` was added to the above methods requests, when this parameter is set to `false`, balances will not be returned in the response. The default value for this parameter is `true` to ensure backward compatibility.
+  - Token balances requests are now performed concurrently for the above methods.
+
+
 ## v1.0.3-beta - 2023-04-28
 
 **Features:**
@@ -13,9 +23,6 @@
 - fix receiver trade fee for cosmos swaps [#1767](https://github.com/KomodoPlatform/atomicDEX-API/pull/1767)
 - All features were enabled to be checked under x86-64 code lint CI step with `--all-features` option [#1760](https://github.com/KomodoPlatform/atomicDEX-API/pull/1760)
 - use OS generated secrets for cryptographically secure randomness in `maker_swap` and `tendermint_coin::get_sender_trade_fee_for_denom` [#1753](https://github.com/KomodoPlatform/atomicDEX-API/pull/1753)
-- Some enhancements were done for `enable_bch_with_tokens`,`enable_eth_with_tokens`,`enable_tendermint_with_assets` RPCs in [#1762](https://github.com/KomodoPlatform/atomicDEX-API/pull/1762)
-  - A new parameter `get_balances` was added to the above methods requests, when this parameter is set to `false`, balances will not be returned in the response. The default value for this parameter is `true` to ensure backward compatibility.
-  - Token balances requests are now performed concurrently for the above methods.
 
 
 ## v1.0.2-beta - 2023-04-11
