@@ -1334,7 +1334,6 @@ impl SwapOps for EthCoin {
         } else {
             None
         };
-        println!("**taker_fee_data_watcher_reward: {:?}", watcher_reward);
         Ok(watcher_reward)
     }
 
@@ -2132,7 +2131,6 @@ async fn sign_and_send_transaction_with_keypair(
     data: Vec<u8>,
     gas: U256,
 ) -> Result<SignedEthTx, TransactionErr> {
-    println!("**sign_and_send_transaction_with_keypair");
     let mut status = ctx.log.status_handle();
     macro_rules! tags {
         () => {
@@ -2158,7 +2156,6 @@ async fn sign_and_send_transaction_with_keypair(
         data,
     };
 
-    println!("**chain_id: {:?}", coin.chain_id);
     let signed = tx.sign(key_pair.secret(), coin.chain_id);
     let bytes = Bytes(rlp::encode(&signed).to_vec());
     status.status(tags!(), "send_raw_transaction…");
@@ -5112,7 +5109,6 @@ pub async fn eth_coin_from_conf_and_request(
     protocol: CoinProtocol,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<EthCoin, String> {
-    println!("**eth_coin_from_conf_and_request");
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
     let priv_key_policy = try_s!(EthPrivKeyBuildPolicy::try_from(priv_key_policy));
 
@@ -5225,11 +5221,6 @@ pub async fn eth_coin_from_conf_and_request(
     // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
     // all spawned futures related to `ETH` coin will be aborted as well.
     let abortable_system = try_s!(ctx.abortable_system.create_subsystem());
-
-    println!("**conf: {:?}", conf);
-    println!("****conf_chain_id: {}", conf["chain_id"]);
-    println!("**conf_chain_id_asu64: {:?}", conf["chain_id"].as_u64());
-    println!("**conf_");
 
     let coin = EthCoinImpl {
         priv_key_policy: key_pair,
