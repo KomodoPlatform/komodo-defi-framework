@@ -16,7 +16,6 @@ pub fn validate_watcher_reward(
                 actual_reward, expected_reward,
             )));
         }
-        Ok(())
     } else {
         let min_acceptable_reward = get_reward_lower_boundary(expected_reward);
         let max_acceptable_reward = get_reward_upper_boundary(expected_reward);
@@ -28,8 +27,8 @@ pub fn validate_watcher_reward(
                 max_acceptable_reward
             )));
         }
-        Ok(())
     }
+    Ok(())
 }
 
 fn get_reward_lower_boundary(reward: u64) -> u64 { (reward as f64 * (1. - REWARD_MARGIN)) as u64 }
