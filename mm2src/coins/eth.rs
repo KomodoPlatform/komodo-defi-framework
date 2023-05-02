@@ -1711,7 +1711,7 @@ impl WatcherOps for EthCoin {
         _coin_amount: Option<BigDecimal>,
         _other_coin_amount: Option<BigDecimal>,
         reward_amount: Option<BigDecimal>,
-    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
         let reward_target = if other_coin.is_eth() {
             RewardTarget::Contract
         } else {
@@ -1726,12 +1726,12 @@ impl WatcherOps for EthCoin {
 
         let send_contract_reward_on_spend = false;
 
-        Ok(Some(WatcherReward {
+        Ok(WatcherReward {
             amount,
             is_exact_amount,
             reward_target,
             send_contract_reward_on_spend,
-        }))
+        })
     }
 
     async fn get_maker_watcher_reward(

@@ -272,7 +272,7 @@ impl WatcherOps for TestCoin {
         coin_amount: Option<BigDecimal>,
         other_coin_amount: Option<BigDecimal>,
         reward_amount: Option<BigDecimal>,
-    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
         unimplemented!()
     }
 

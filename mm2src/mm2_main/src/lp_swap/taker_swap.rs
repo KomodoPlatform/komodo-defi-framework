@@ -1477,7 +1477,7 @@ impl TakerSwap {
                 )
                 .await
             {
-                Ok(reward) => reward,
+                Ok(reward) => Some(reward),
                 Err(err) => {
                     return Ok((Some(TakerSwapCommand::Finish), vec![
                         TakerSwapEvent::TakerPaymentTransactionFailed(

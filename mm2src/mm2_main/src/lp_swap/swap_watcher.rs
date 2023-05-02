@@ -244,7 +244,7 @@ impl State for ValidateTakerPayment {
                 .get_taker_watcher_reward(&watcher_ctx.maker_coin, None, None, None)
                 .await
             {
-                Ok(reward) => reward,
+                Ok(reward) => Some(reward),
                 Err(err) => {
                     return Self::change_state(Stopped::from_reason(StopReason::Error(
                         WatcherError::InternalError(err.into_inner().to_string()).into(),

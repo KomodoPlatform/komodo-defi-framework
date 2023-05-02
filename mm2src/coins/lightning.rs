@@ -1002,7 +1002,7 @@ impl WatcherOps for LightningCoin {
         _coin_amount: Option<BigDecimal>,
         _other_coin_amount: Option<BigDecimal>,
         _reward_amount: Option<BigDecimal>,
-    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
         unimplemented!()
     }
 

@@ -2202,7 +2202,7 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
     coin_amount: Option<BigDecimal>,
     other_coin_amount: Option<BigDecimal>,
     reward_amount: Option<BigDecimal>,
-) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+) -> Result<WatcherReward, MmError<WatcherRewardError>> {
     let reward_target = RewardTarget::PaymentReceiver;
     let is_exact_amount = reward_amount.is_some();
 
@@ -2241,12 +2241,12 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
 
     let send_contract_reward_on_spend = false;
 
-    Ok(Some(WatcherReward {
+    Ok(WatcherReward {
         amount,
         is_exact_amount,
         reward_target,
         send_contract_reward_on_spend,
-    }))
+    })
 }
 
 pub async fn get_maker_watcher_reward<T: UtxoCommonOps + SwapOps>(

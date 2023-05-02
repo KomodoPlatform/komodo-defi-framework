@@ -556,7 +556,7 @@ impl WatcherOps for UtxoStandardCoin {
         coin_amount: Option<BigDecimal>,
         other_coin_amount: Option<BigDecimal>,
         reward_amount: Option<BigDecimal>,
-    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
         utxo_common::get_taker_watcher_reward(self, other_coin, coin_amount, other_coin_amount, reward_amount).await
     }
 

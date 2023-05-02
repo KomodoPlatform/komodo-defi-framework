@@ -1011,7 +1011,7 @@ impl MakerSwap {
                 )
                 .await
             {
-                Ok(reward) => reward,
+                Ok(reward) => Some(reward),
                 Err(err) => {
                     return Ok((Some(MakerSwapCommand::Finish), vec![
                         MakerSwapEvent::MakerPaymentTransactionFailed(err.into_inner().to_string().into()),
