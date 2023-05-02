@@ -679,18 +679,37 @@ pub async fn bch_and_slp_history_loop(
     coin: BchCoin,
     storage: impl TxHistoryStorage,
     metrics: MetricsArc,
-    current_balance: BigDecimal,
+    current_balance: Option<BigDecimal>,
 ) {
-    let my_address = match coin.my_address() {
-        Ok(my_address) => my_address,
-        Err(e) => {
-            error!("{}", e);
-            return;
+    let balances = match current_balance {
+        Some(current_balance) => {
+            let my_address = match coin.my_address() {
+                Ok(my_address) => my_address,
+                Err(e) => {
+                    error!("{}", e);
+                    return;
+                },
+            };
+            HashMap::from([(my_address, current_balance)])
+        },
+        None => {
+            let ticker = coin.ticker().to_string();
+            match retry_on_err!(async { coin.my_addresses_balances().await })
+                .until_ready()
+                .repeat_every_secs(30.)
+                .inspect_err(move |e| {
+                    error!("Error {e:?} on balance fetching for the coin {}", ticker);
+                })
+                .await
+            {
+                Ok(addresses_balances) => addresses_balances,
+                Err(e) => {
+                    error!("{}", e);
+                    return;
+                },
+            }
         },
     };
-    let mut balances = HashMap::new();
-    balances.insert(my_address, current_balance);
-    drop_mutability!(balances);
 
     let ctx = UtxoTxHistoryCtx {
         coin,

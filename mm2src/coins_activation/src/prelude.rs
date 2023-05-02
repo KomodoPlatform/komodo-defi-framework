@@ -7,7 +7,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde_derive::Serialize;
 use serde_json::{self as json, Value as Json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub trait CurrentBlock {
     fn current_block(&self) -> u64;
@@ -44,7 +44,10 @@ pub enum DerivationMethod {
 pub struct CoinAddressInfo<Balance> {
     pub(crate) derivation_method: DerivationMethod,
     pub(crate) pubkey: String,
-    pub(crate) balances: Balance,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) balances: Option<Balance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tickers: Option<HashSet<String>>,
 }
 
 pub type TokenBalances = HashMap<String, CoinBalance>;

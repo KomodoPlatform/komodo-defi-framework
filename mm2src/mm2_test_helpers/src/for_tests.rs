@@ -150,7 +150,7 @@ pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc2.sepolia.org"];
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C88293F19";
 
-pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
+pub const BCHD_TESTNET_URLS: &[&str] = &["https://ryzen.electroncash.de:18335"];
 
 pub struct Mm2TestConf {
     pub conf: Json,
@@ -2524,6 +2524,43 @@ pub async fn enable_tendermint(
     );
     println!("enable_tendermint_with_assets response {}", request.1);
     json::from_str(&request.1).unwrap()
+}
+
+pub async fn enable_tendermint_without_balance(
+    mm: &MarketMakerIt,
+    coin: &str,
+    ibc_assets: &[&str],
+    rpc_urls: &[&str],
+    tx_history: bool,
+) -> Json {
+    let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "enable_tendermint_with_assets",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": coin,
+            "tokens_params": ibc_requests,
+            "rpc_urls": rpc_urls,
+            "tx_history": tx_history,
+            "get_balances": false
+        }
+    });
+    println!(
+        "enable_tendermint_with_assets request {}",
+        serde_json::to_string(&request).unwrap()
+    );
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'enable_tendermint_with_assets' failed: {}",
+        request.1
+    );
+    println!("enable_tendermint_with_assets response {}", request.1);
+    serde_json::from_str(&request.1).unwrap()
 }
 
 pub async fn get_tendermint_my_tx_history(mm: &MarketMakerIt, coin: &str, limit: usize, page_number: usize) -> Json {

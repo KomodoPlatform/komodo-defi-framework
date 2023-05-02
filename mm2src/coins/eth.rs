@@ -44,7 +44,7 @@ use ethereum_types::{Address, H160, H256, U256};
 use ethkey::{public_to_address, KeyPair, Public, Signature};
 use ethkey::{sign, verify_address};
 use futures::compat::Future01CompatExt;
-use futures::future::{join_all, select_ok, Either, FutureExt, TryFutureExt};
+use futures::future::{join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
 use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
@@ -3630,19 +3630,19 @@ impl EthCoin {
     }
 
     pub async fn get_tokens_balance_list(&self) -> Result<HashMap<String, CoinBalance>, MmError<BalanceError>> {
-        let coin = self.clone();
-        let mut token_balances = HashMap::new();
-        for (token_ticker, info) in self.get_erc_tokens_infos().iter() {
-            let balance_as_u256 = coin.get_token_balance_by_address(info.token_address).await?;
-            let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;
-            let balance = CoinBalance {
-                spendable: balance_as_big_decimal,
-                unspendable: BigDecimal::from(0),
+        let coin = || self;
+        let mut requests = Vec::new();
+        for (token_ticker, info) in self.get_erc_tokens_infos() {
+            let fut = async move {
+                let balance_as_u256 = coin().get_token_balance_by_address(info.token_address).await?;
+                let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;
+                let balance = CoinBalance::new(balance_as_big_decimal);
+                Ok((token_ticker, balance))
             };
-            token_balances.insert(token_ticker.clone(), balance);
+            requests.push(fut);
         }
 
-        Ok(token_balances)
+        try_join_all(requests).await.map(|res| res.into_iter().collect())
     }
 
     async fn get_token_balance_by_address(&self, token_address: Address) -> Result<U256, MmError<BalanceError>> {
