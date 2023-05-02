@@ -1226,13 +1226,15 @@ fn test_watcher_validate_taker_payment_eth() {
     let taker_amount = BigDecimal::from_str("0.01").unwrap();
     let maker_amount = BigDecimal::from_str("0.01").unwrap();
     let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
-    let watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
-        &MmCoinEnum::from(taker_coin.clone()),
-        Some(taker_amount.clone()),
-        Some(maker_amount.clone()),
-        None,
-    ))
-    .unwrap();
+    let watcher_reward = Some(
+        block_on(taker_coin.get_taker_watcher_reward(
+            &MmCoinEnum::from(taker_coin.clone()),
+            Some(taker_amount.clone()),
+            Some(maker_amount.clone()),
+            None,
+        ))
+        .unwrap(),
+    );
 
     let taker_payment = taker_coin
         .send_taker_payment(SendPaymentArgs {
@@ -1447,13 +1449,15 @@ fn test_watcher_validate_taker_payment_eth() {
         ),
     }
 
-    let wrong_watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
-        &MmCoinEnum::from(taker_coin.clone()),
-        Some(taker_amount),
-        Some(maker_amount),
-        Some(watcher_reward.unwrap().amount.double()),
-    ))
-    .unwrap();
+    let wrong_watcher_reward = Some(
+        block_on(taker_coin.get_taker_watcher_reward(
+            &MmCoinEnum::from(taker_coin.clone()),
+            Some(taker_amount),
+            Some(maker_amount),
+            Some(watcher_reward.unwrap().amount.double()),
+        ))
+        .unwrap(),
+    );
 
     let error = taker_coin
         .watcher_validate_taker_payment(WatcherValidatePaymentInput {
@@ -1504,13 +1508,15 @@ fn test_watcher_validate_taker_payment_erc20() {
     let taker_amount = BigDecimal::from(10);
     let maker_amount = BigDecimal::from(10);
 
-    let watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
-        &MmCoinEnum::from(taker_coin.clone()),
-        Some(taker_amount.clone()),
-        Some(maker_amount.clone()),
-        None,
-    ))
-    .unwrap();
+    let watcher_reward = Some(
+        block_on(taker_coin.get_taker_watcher_reward(
+            &MmCoinEnum::from(taker_coin.clone()),
+            Some(taker_amount.clone()),
+            Some(maker_amount.clone()),
+            None,
+        ))
+        .unwrap(),
+    );
 
     let taker_payment = taker_coin
         .send_taker_payment(SendPaymentArgs {
@@ -1725,13 +1731,15 @@ fn test_watcher_validate_taker_payment_erc20() {
         ),
     }
 
-    let wrong_watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
-        &MmCoinEnum::from(taker_coin.clone()),
-        Some(taker_amount),
-        Some(maker_amount),
-        Some(watcher_reward.unwrap().amount.double()),
-    ))
-    .unwrap();
+    let wrong_watcher_reward = Some(
+        block_on(taker_coin.get_taker_watcher_reward(
+            &MmCoinEnum::from(taker_coin.clone()),
+            Some(taker_amount),
+            Some(maker_amount),
+            Some(watcher_reward.unwrap().amount.double()),
+        ))
+        .unwrap(),
+    );
 
     let error = taker_coin
         .watcher_validate_taker_payment(WatcherValidatePaymentInput {
