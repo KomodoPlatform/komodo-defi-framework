@@ -12,7 +12,7 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
-use common::{executor::AbortedError, log::warn};
+use common::executor::AbortedError;
 use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
@@ -21,20 +21,43 @@ use mm2_number::{BigDecimal, MmNumber};
 use mocktopus::macros::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
+use std::ops::Deref;
+use std::sync::{atomic::{AtomicBool, Ordering},
+                Arc};
 
 /// Dummy coin struct used in tests which functions are unimplemented but then mocked
 /// in specific test to emulate the required behaviour
 #[derive(Clone, Debug)]
-pub struct TestCoin {
+pub struct TestCoin(Arc<TestCoinImpl>);
+
+impl Deref for TestCoin {
+    type Target = TestCoinImpl;
+
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+
+#[derive(Debug)]
+pub struct TestCoinImpl {
     ticker: String,
+    is_available: AtomicBool,
 }
 
 impl Default for TestCoin {
-    fn default() -> Self { TestCoin { ticker: "test".into() } }
+    fn default() -> Self {
+        TestCoin(Arc::new(TestCoinImpl {
+            ticker: "test".into(),
+            is_available: AtomicBool::new(true),
+        }))
+    }
 }
 
 impl TestCoin {
-    pub fn new(ticker: &str) -> TestCoin { TestCoin { ticker: ticker.into() } }
+    pub fn new(ticker: &str) -> TestCoin {
+        TestCoin(Arc::new(TestCoinImpl {
+            ticker: ticker.into(),
+            is_available: AtomicBool::new(true),
+        }))
+    }
 }
 
 #[mockable]
@@ -57,7 +80,7 @@ impl MarketCoinOps for TestCoin {
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
 
-    fn platform_ticker(&self) -> &str { unimplemented!() }
+    fn platform_ticker(&self) -> &str { &self.ticker }
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
@@ -358,9 +381,7 @@ impl MmCoin for TestCoin {
 
     fn on_token_deactivated(&self, _ticker: &str) { () }
 
-    fn is_available(&self) -> bool { true }
+    fn is_available(&self) -> bool { self.is_available.load(Ordering::SeqCst) }
 
-    fn update_is_available(&self, _to: bool) {
-        warn!("`update_is_available` is ineffective for test coin");
-    }
+    fn update_is_available(&self, to: bool) { self.is_available.store(to, Ordering::SeqCst); }
 }

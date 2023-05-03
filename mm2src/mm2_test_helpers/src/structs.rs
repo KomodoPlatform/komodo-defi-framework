@@ -1173,6 +1173,7 @@ pub struct WatcherConf {
 pub struct DisableResult {
     pub coin: String,
     pub cancelled_orders: HashSet<String>,
+    pub passivized: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

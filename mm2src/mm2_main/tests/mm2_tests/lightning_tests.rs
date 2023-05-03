@@ -405,12 +405,16 @@ fn test_enable_lightning() {
     );
 
     // Try to passive tBTC-TEST-segwit platform coin.
-    block_on(disable_coin(&mm, "tBTC-TEST-segwit", false));
+    let res = block_on(disable_coin(&mm, "tBTC-TEST-segwit", false));
+    assert!(res.passivized);
+
     // Try to disable tBTC-TEST-lightning token
     // This should work, because platform coin is still in the memory.
-    block_on(disable_coin(&mm, "tBTC-TEST-lightning", false));
+    let res = block_on(disable_coin(&mm, "tBTC-TEST-lightning", false));
+    assert!(!res.passivized);
     // Try to force disable tBTC-TEST-segwit platform coin.
-    block_on(disable_coin(&mm, "tBTC-TEST-segwit", true));
+    let res = block_on(disable_coin(&mm, "tBTC-TEST-segwit", true));
+    assert!(!res.passivized);
 
     // Stop mm2
     block_on(mm.stop()).unwrap();

@@ -105,18 +105,21 @@ fn test_disable_eth_coin_with_token() {
     let order_uuid = order_uuid.get("result").unwrap().get("uuid").unwrap().as_str().unwrap();
 
     // Passive ETH while having tokens enabled
-    block_on(disable_coin(&mm, "ETH", false));
+    let res = block_on(disable_coin(&mm, "ETH", false));
+    assert!(res.passivized);
 
     // Try to disable JST token.
     // This should work, because platform coin is still in the memory.
     let res = block_on(disable_coin(&mm, "JST", false));
     // We expected make_test_order to be cancelled
+    assert!(!res.passivized);
     assert!(res.cancelled_orders.contains(order_uuid));
 
     // Because it's currently passive, default `disable_coin` should fail.
     block_on(disable_coin_err(&mm, "ETH", false));
     // And forced `disable_coin` should not fail
-    block_on(disable_coin(&mm, "ETH", true));
+    let res = block_on(disable_coin(&mm, "ETH", true));
+    assert!(!res.passivized);
 }
 
 #[test]

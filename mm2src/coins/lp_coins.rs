@@ -2249,7 +2249,7 @@ pub trait MmCoin:
     /// Useful for executing `disable_coin` on parent coins
     /// that have child tokens enabled.
     ///
-    /// Noneffective for child tokens.
+    /// Ineffective for child tokens.
     fn update_is_available(&self, to: bool);
 }
 
@@ -3873,4 +3873,56 @@ fn coins_conf_check(ctx: &MmArc, coins_en: &Json, ticker: &str, req: Option<&Jso
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use mm2_test_helpers::for_tests::RICK;
+
+    #[test]
+    fn test_lp_coinfind() {
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+        let coin = MmCoinEnum::Test(TestCoin::new(RICK));
+
+        // Add test coin to coins context
+        common::block_on(coins_ctx.add_token(coin.clone())).unwrap();
+
+        // Try to find RICK from coins context that was added above
+        let _found = common::block_on(lp_coinfind(&ctx, RICK)).unwrap();
+
+        assert!(matches!(Some(coin.clone()), _found));
+
+        coin.update_is_available(false);
+
+        // Try to find RICK from coins context after making it passive
+        let found = common::block_on(lp_coinfind(&ctx, RICK)).unwrap();
+
+        assert!(found.is_none());
+    }
+
+    #[test]
+    #[ignore]
+    fn test_lp_coinfind_any() {
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+        let coin = MmCoinEnum::Test(TestCoin::new(RICK));
+
+        // Add test coin to coins context
+        common::block_on(coins_ctx.add_token(coin.clone())).unwrap();
+
+        // Try to find RICK from coins context that was added above
+        let _found = common::block_on(lp_coinfind_any(&ctx, RICK)).unwrap();
+
+        assert!(matches!(Some(coin.clone()), _found));
+
+        coin.update_is_available(false);
+
+        // Try to find RICK from coins context after making it passive
+        let _found = common::block_on(lp_coinfind_any(&ctx, RICK)).unwrap();
+
+        assert!(matches!(Some(coin), _found));
+    }
 }

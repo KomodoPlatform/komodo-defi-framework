@@ -238,13 +238,15 @@ fn test_disable_platform_coin_with_tokens() {
         false,
     ));
     // Try to disable ADEXSLP token.
-    block_on(disable_coin(&mm, "ADEXSLP", false));
+    let res = block_on(disable_coin(&mm, "ADEXSLP", false));
+    assert!(!res.passivized);
     // Check if platform_coin FORSLP is still enabled.
     block_on(my_balance(&mm, "FORSLP"));
     // Check if ADEXSLP token still enabled.
     block_on(assert_coin_not_found_on_balance(&mm, "ADEXSLP"));
     // Try to disable patform_coin.
-    block_on(disable_coin(&mm, "FORSLP", false));
+    let res = block_on(disable_coin(&mm, "FORSLP", false));
+    assert!(!res.passivized);
 
     // Enable enable_bch_with_tokens again to restart the process
     let _ = block_on(enable_bch_with_tokens(
@@ -256,5 +258,6 @@ fn test_disable_platform_coin_with_tokens() {
     ));
 
     // Try to force disable platform coin, FORSLP.
-    block_on(disable_coin(&mm, "FORSLP", true));
+    let res = block_on(disable_coin(&mm, "FORSLP", true));
+    assert!(!res.passivized);
 }
