@@ -1254,9 +1254,12 @@ impl MarketCoinOps for Qrc20Coin {
         let tx: UtxoTx = try_tx_fus!(deserialize(args.tx_bytes).map_err(|e| ERRL!("{:?}", e)));
 
         let selfi = self.clone();
-        let check_every = args.check_every;
-        let from_block = args.from_block;
-        let wait_until = args.wait_until;
+        let WaitForHTLCTxSpendArgs {
+            check_every,
+            from_block,
+            wait_until,
+            ..
+        } = args;
         let fut = async move {
             selfi
                 .wait_for_tx_spend_impl(tx, wait_until, from_block, check_every)

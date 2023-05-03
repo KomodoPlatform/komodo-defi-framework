@@ -272,8 +272,8 @@ impl MakerSwap {
 
     #[inline]
     fn watcher_reward_amount(&self) -> Option<BigDecimal> {
-        match self.r().payment_instructions.clone() {
-            Some(PaymentInstructions::WatcherReward(reward)) => Some(reward),
+        match &self.r().payment_instructions {
+            Some(PaymentInstructions::WatcherReward(reward)) => Some(reward.clone()),
             _ => None,
         }
     }
