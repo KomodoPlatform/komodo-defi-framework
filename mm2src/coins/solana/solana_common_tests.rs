@@ -32,7 +32,6 @@ pub fn generate_key_pair_from_seed(seed: String) -> Keypair {
         .unwrap()
         .derive(&derivation_path)
         .unwrap();
-    let ref priv_key = ext.secret_key;
     let pub_key = ext.public_key();
     let pair = ed25519_dalek::Keypair {
         secret: ext.secret_key,
@@ -59,7 +58,7 @@ pub fn spl_coin_for_test(
     decimals: u8,
     token_contract_address: Pubkey,
 ) -> SplToken {
-    let spl_coin = SplToken {
+    SplToken {
         conf: Arc::new(SplTokenFields {
             decimals,
             ticker,
@@ -67,8 +66,7 @@ pub fn spl_coin_for_test(
             abortable_system: AbortableQueue::default(),
         }),
         platform_coin: solana_coin,
-    };
-    spl_coin
+    }
 }
 
 pub fn solana_coin_for_test(seed: String, net_type: SolanaNet) -> (MmArc, SolanaCoin) {
@@ -81,7 +79,7 @@ pub fn solana_coin_for_test(seed: String, net_type: SolanaNet) -> (MmArc, Solana
            {"coin":"SOL","name":"solana","protocol":{"type":"SOL"},"rpcport":80,"mm2":1}
         ]
     });
-    let ctx = MmCtxBuilder::new().with_conf(conf.clone()).into_mm_arc();
+    let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
     let (ticker, decimals) = ("SOL".to_string(), 8);
     let key_pair = generate_key_pair_from_iguana_seed(seed);
     let my_address = key_pair.pubkey().to_string();

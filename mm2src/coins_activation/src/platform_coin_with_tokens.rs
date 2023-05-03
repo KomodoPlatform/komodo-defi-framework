@@ -127,7 +127,7 @@ where
 }
 
 pub trait GetPlatformBalance {
-    fn get_platform_balance(&self) -> BigDecimal;
+    fn get_platform_balance(&self) -> Option<BigDecimal>;
 }
 
 #[async_trait]
@@ -154,13 +154,16 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         &self,
     ) -> Vec<Box<dyn TokenAsMmCoinInitializer<PlatformCoin = Self, ActivationRequest = Self::ActivationRequest>>>;
 
-    async fn get_activation_result(&self) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>;
+    async fn get_activation_result(
+        &self,
+        activation_request: &Self::ActivationRequest,
+    ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>;
 
     fn start_history_background_fetching(
         &self,
         ctx: MmArc,
         storage: impl TxHistoryStorage,
-        initial_balance: BigDecimal,
+        initial_balance: Option<BigDecimal>,
     );
 }
 
@@ -300,7 +303,7 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let activation_result = platform_coin.get_activation_result().await?;
+    let activation_result = platform_coin.get_activation_result(&req.request).await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -352,7 +355,7 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let activation_result = platform_coin.get_activation_result().await?;
+    let activation_result = platform_coin.get_activation_result(&req.request).await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     if req.request.tx_history() {

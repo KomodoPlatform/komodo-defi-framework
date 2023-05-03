@@ -899,10 +899,19 @@ pub enum DerivationMethod {
 pub struct CoinAddressInfo<Balance> {
     pub derivation_method: DerivationMethod,
     pub pubkey: String,
-    pub balances: Balance,
+    pub balances: Option<Balance>,
+    pub tickers: Option<HashSet<String>>,
 }
 
 pub type TokenBalances = HashMap<String, CoinBalance>;
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnableEthWithTokensResponse {
+    pub current_block: u64,
+    pub eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
+    pub erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1093,9 +1102,10 @@ pub struct WithdrawResult {}
 pub struct TendermintActivationResult {
     pub address: String,
     pub current_block: u64,
-    pub balance: CoinBalance,
-    pub tokens_balances: HashMap<String, CoinBalance>,
+    pub balance: Option<CoinBalance>,
+    pub tokens_balances: Option<HashMap<String, CoinBalance>>,
     pub ticker: String,
+    pub tokens_tickers: Option<HashSet<String>>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -877,7 +877,7 @@ pub async fn tendermint_history_loop(
     coin: TendermintCoin,
     storage: impl TxHistoryStorage,
     _ctx: MmArc,
-    _current_balance: BigDecimal,
+    _current_balance: Option<BigDecimal>,
 ) {
     let balances = match coin.all_balances().await {
         Ok(balances) => balances,

@@ -4128,7 +4128,7 @@ dependencies = [
 
 [[package]]
 name = "mm2_bin_lib"
-version = "1.0.2-beta"
+version = "1.0.3-beta"
 dependencies = [
  "chrono",
  "common",

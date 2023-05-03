@@ -1,11 +1,48 @@
 use crate::docker_tests::docker_tests_common::*;
 use crate::integration_tests_common::enable_native;
+use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{assert_coin_not_found_on_balance, disable_coin, disable_coin_err,
                                   enable_bch_with_tokens, enable_slp, my_balance, UtxoRpcMode};
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableElectrumResponse, EnableSlpResponse, RpcV2Response};
-use serde_json::{self as json};
+use serde_json::{self as json, json, Value as Json};
+use std::collections::HashSet;
 use std::time::Duration;
+
+async fn enable_bch_with_tokens_without_balance(
+    mm: &MarketMakerIt,
+    platform_coin: &str,
+    tokens: &[&str],
+    mode: UtxoRpcMode,
+    tx_history: bool,
+) -> Json {
+    let slp_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+
+    let enable = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "enable_bch_with_tokens",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": platform_coin,
+                "allow_slp_unsafe_conf": true,
+                "bchd_urls": [],
+                "mode": mode,
+                "tx_history": tx_history,
+                "slp_tokens_requests": slp_requests,
+                "get_balances": false,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_bch_with_tokens' failed: {}",
+        enable.1
+    );
+    json::from_str(&enable.1).unwrap()
+}
 
 #[test]
 fn trade_test_with_maker_slp() { trade_base_rel(("ADEXSLP", "FORSLP")); }
@@ -101,15 +138,61 @@ fn test_bch_and_slp_balance_enable_bch_with_tokens_v2() {
     let expected_bch_spendable = BigDecimal::from(1000);
     let expected_bch_unspendable: BigDecimal = "0.00001".parse().unwrap();
 
+    let bch_balance = enable_bch_with_tokens
+        .result
+        .bch_addresses_infos
+        .into_iter()
+        .next()
+        .unwrap()
+        .1
+        .balances
+        .unwrap();
+
+    assert_eq!(expected_bch_spendable, bch_balance.spendable);
+    assert_eq!(expected_bch_unspendable, bch_balance.unspendable);
+
+    let slp_balances = enable_bch_with_tokens
+        .result
+        .slp_addresses_infos
+        .into_iter()
+        .next()
+        .unwrap()
+        .1
+        .balances
+        .unwrap();
+
+    let expected_slp_spendable = BigDecimal::from(1000);
+    let expected_slp_unspendable: BigDecimal = 0.into();
+
+    let actual_slp = slp_balances.get("ADEXSLP").unwrap();
+    assert_eq!(expected_slp_spendable, actual_slp.spendable);
+    assert_eq!(expected_slp_unspendable, actual_slp.unspendable);
+}
+
+#[test]
+fn test_enable_bch_with_tokens_v2_without_balance() {
+    let mm = slp_supplied_node();
+
+    let tx_history = false;
+    let enable_bch_with_tokens = block_on(enable_bch_with_tokens_without_balance(
+        &mm,
+        "FORSLP",
+        &["ADEXSLP"],
+        UtxoRpcMode::Native,
+        tx_history,
+    ));
+
+    let enable_bch_with_tokens: RpcV2Response<EnableBchWithTokensResponse> =
+        json::from_value(enable_bch_with_tokens).unwrap();
+
     let (_, bch_balance) = enable_bch_with_tokens
         .result
         .bch_addresses_infos
         .into_iter()
         .next()
         .unwrap();
-
-    assert_eq!(expected_bch_spendable, bch_balance.balances.spendable);
-    assert_eq!(expected_bch_unspendable, bch_balance.balances.unspendable);
+    assert!(bch_balance.balances.is_none());
+    assert!(bch_balance.tickers.is_none());
 
     let (_, slp_balances) = enable_bch_with_tokens
         .result
@@ -117,13 +200,8 @@ fn test_bch_and_slp_balance_enable_bch_with_tokens_v2() {
         .into_iter()
         .next()
         .unwrap();
-
-    let expected_slp_spendable = BigDecimal::from(1000);
-    let expected_slp_unspendable: BigDecimal = 0.into();
-
-    let actual_slp = slp_balances.balances.get("ADEXSLP").unwrap();
-    assert_eq!(expected_slp_spendable, actual_slp.spendable);
-    assert_eq!(expected_slp_unspendable, actual_slp.unspendable);
+    assert!(slp_balances.balances.is_none());
+    assert_eq!(slp_balances.tickers.unwrap(), HashSet::from(["ADEXSLP".to_string()]));
 }
 
 #[test]

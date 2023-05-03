@@ -1199,7 +1199,7 @@ fn test_trade_preimage_not_sufficient_base_coin_balance_for_ticker() {
     // fill QTUM balance with 0.005 QTUM which is will be than expected transaction fee just to get our desired output for this test.
     let qick_balance = MmNumber::from("10").to_decimal();
     let qtum_balance = MmNumber::from("0.005").to_decimal();
-    let (_, _, priv_key) = generate_qrc20_coin_with_random_privkey("QICK", qtum_balance.clone(), qick_balance.clone());
+    let (_, _, priv_key) = generate_qrc20_coin_with_random_privkey("QICK", qtum_balance.clone(), qick_balance);
 
     let qick_contract_address = format!("{:#02x}", unsafe { QICK_TOKEN_ADDRESS.expect("!QICK_TOKEN_ADDRESS") });
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
@@ -1569,7 +1569,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: &*coin.my_public_key().unwrap(),
+        other_pub: coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -1638,7 +1638,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: &*coin.my_public_key().unwrap(),
+        other_pub: coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,

@@ -1788,7 +1788,7 @@ impl MmCoin for SlpToken {
         })
     }
 
-    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         let coin = self.clone();
 
         let fut = async move {
