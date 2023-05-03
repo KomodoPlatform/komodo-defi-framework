@@ -4,7 +4,7 @@ use mm2_err_handle::prelude::{MmError, OrMmError};
 use mm2_net::transport::SlurpError;
 use mm2_number::{BigDecimal, MmNumber};
 use std::collections::HashMap;
-use std::ops::Div;
+#[cfg(not(feature = "run-docker-tests"))] use std::ops::Div;
 #[cfg(feature = "run-docker-tests")] use std::str::FromStr;
 use std::str::Utf8Error;
 
@@ -227,14 +227,20 @@ async fn try_price_fetcher_endpoint(
     })
 }
 
+#[cfg(feature = "run-docker-tests")]
+#[inline]
+pub async fn get_base_price_in_rel(_base: Option<String>, _rel: Option<String>) -> Option<BigDecimal> {
+    std::env::var("TEST_COIN_PRICE")
+        .ok()
+        .map(|price| BigDecimal::from_str(&price).expect("TEST_COIN_PRICE should be set to a valid number"))
+}
+
+#[cfg(not(feature = "run-docker-tests"))]
+#[inline]
 pub async fn get_base_price_in_rel(base: Option<String>, rel: Option<String>) -> Option<BigDecimal> {
-    // Special case for integration tests
-    #[cfg(feature = "run-docker-tests")]
-    if let Ok(test_coin_price) = std::env::var("TEST_COIN_PRICE") {
-        return Some(BigDecimal::from_str(&test_coin_price).expect("TEST_COIN_PRICE should be set to a valid number"));
-    }
-    let cex_rates = fetch_swap_coins_price(base, rel).await;
-    cex_rates.map(|rates| rates.base.div(rates.rel))
+    fetch_swap_coins_price(base, rel)
+        .await
+        .map(|rates| rates.base.div(rates.rel))
 }
 
 /// Consume `try_price_fetcher_endpoint` result here using different endpoints.
