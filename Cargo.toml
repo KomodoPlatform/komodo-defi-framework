@@ -41,6 +41,10 @@ members = [
     "mm2src/trezor",
 ]
 
+exclude = [
+    "mm2src/adex_cli"
+]
+
 # https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
 resolver = "2"
 
@@ -50,6 +54,10 @@ debug-assertions = false
 # For some reason, opt-level 3 started causing infinite Windows builds after Cosmos integration
 # TODO troubleshoot it
 opt-level = 2
+# strip = true
+codegen-units = 1
+# lto = true
+panic = "abort"
 
 [profile.test]
 # required to avoid a long running process of librustcash additional chain validation that is enabled with debug assertions
@@ -59,8 +67,10 @@ debug-assertions = false
 # Turns debugging symbols off for the out-of-workspace dependencies.
 debug = false
 
-[profile.ci]
-inherits = "dev"
-# full debug info is not required
+[profile.dev]
+opt-level = 0
 debug = 1
 debug-assertions = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256

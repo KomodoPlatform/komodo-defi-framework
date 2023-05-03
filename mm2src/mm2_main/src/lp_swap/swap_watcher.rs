@@ -1,5 +1,6 @@
 use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, min_watcher_reward, taker_payment_spend_deadline,
             tx_helper_topic, H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL};
+use crate::mm2::lp_network::{P2PRequestError, P2PRequestResult};
 use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
@@ -11,6 +12,7 @@ use common::state_machine::prelude::*;
 use common::{now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::MapToMmResult;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
 use serde::{Deserialize, Serialize};
 use serde_json as json;
@@ -513,16 +515,8 @@ impl LastState for Stopped {
     async fn on_changed(self: Box<Self>, _watcher_ctx: &mut Self::Ctx) -> Self::Result {}
 }
 
-pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
-    let msg = match decode_signed::<SwapWatcherMsg>(msg) {
-        Ok(m) => m,
-        Err(watcher_msg_err) => {
-            error!("Couldn't deserialize 'SwapWatcherMsg': {:?}", watcher_msg_err);
-            // Drop it to avoid dead_code warning
-            drop(watcher_msg_err);
-            return;
-        },
-    };
+pub fn process_watcher_msg(ctx: MmArc, msg: &[u8]) -> P2PRequestResult<()> {
+    let msg = decode_signed::<SwapWatcherMsg>(msg).map_to_mm(|e| P2PRequestError::DecodeError(e.to_string()))?;
 
     let watcher_data = msg.0;
     let verified_pubkey = msg.2;
@@ -530,7 +524,9 @@ pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
         SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => {
             spawn_taker_swap_watcher(ctx, watcher_data, verified_pubkey.to_bytes())
         },
-    }
+    };
+
+    Ok(())
 }
 
 /// Currently, Taker Swap Watcher is supported only.

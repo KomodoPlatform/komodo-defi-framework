@@ -31,7 +31,6 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::{H256, H264};
-use rand::Rng;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use std::any::TypeId;
 use std::path::PathBuf;
@@ -238,8 +237,11 @@ impl MakerSwap {
     #[inline]
     fn r(&self) -> RwLockReadGuard<MakerSwapMut> { self.mutable.read().unwrap() }
 
-    #[inline]
-    pub fn generate_secret() -> [u8; 32] { rand::thread_rng().gen() }
+    pub fn generate_secret() -> Result<[u8; 32], rand::Error> {
+        let mut sec = [0u8; 32];
+        common::os_rng(&mut sec)?;
+        Ok(sec)
+    }
 
     #[inline]
     fn secret_hash(&self) -> Vec<u8> {
@@ -475,9 +477,7 @@ impl MakerSwap {
                 )]))
             },
         };
-        let taker_payment_spend_trade_fee_fut = self
-            .taker_coin
-            .get_receiver_trade_fee(self.maker_amount.clone(), stage.clone());
+        let taker_payment_spend_trade_fee_fut = self.taker_coin.get_receiver_trade_fee(stage.clone());
         let taker_payment_spend_trade_fee = match taker_payment_spend_trade_fee_fut.compat().await {
             Ok(fee) => fee,
             Err(e) => {
@@ -2149,7 +2149,7 @@ pub async fn check_balance_for_maker_swap(
                 .await
                 .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
             let taker_payment_spend_trade_fee = other_coin
-                .get_receiver_trade_fee(volume.to_decimal(), stage)
+                .get_receiver_trade_fee(stage)
                 .compat()
                 .await
                 .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
@@ -2203,7 +2203,7 @@ pub async fn maker_swap_trade_preimage(
         .await
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, base_coin_ticker))?;
     let rel_coin_fee = rel_coin
-        .get_receiver_trade_fee(volume.to_decimal(), FeeApproxStage::TradePreimage)
+        .get_receiver_trade_fee(FeeApproxStage::TradePreimage)
         .compat()
         .await
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, rel_coin_ticker))?;

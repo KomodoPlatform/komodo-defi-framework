@@ -28,7 +28,7 @@ jobs:
     - name: Test
       run: |
         # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-        cargo test --bins --lib --profile ci
+        cargo test --bins --lib
 
   mac-x86-64-unit:
     timeout-minutes: 90
@@ -50,7 +50,7 @@ jobs:
     - name: Test
       run: |
         # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-        cargo test --bins --lib --target x86_64-apple-darwin --profile ci
+        cargo test --bins --lib --target x86_64-apple-darwin
 
   win-x86-64-unit:
     timeout-minutes: 90
@@ -86,7 +86,7 @@ jobs:
         # Restart-Service docker
         # Get-Service docker
 
-        cargo test --bins --lib --profile ci
+        cargo test --bins --lib
           
   linux-x86-64-mm2-integration:
     timeout-minutes: 90
@@ -105,7 +105,7 @@ jobs:
         rustup default nightly-2022-10-29
 
     - name: Test
-      run: cargo test --test 'mm2_tests_main' --profile ci
+      run: cargo test --test 'mm2_tests_main'
 
   # https://docs.github.com/en/actions/learn-github-actions/usage-limits-billing-and-administration#usage-limits
   # https://github.com/KomodoPlatform/atomicDEX-API/actions/runs/4419618128/jobs/7748266141#step:4:1790
@@ -127,7 +127,7 @@ jobs:
   #       rustup target add x86_64-apple-darwin
 
   #   - name: Test
-  #     run: cargo test --test 'mm2_tests_main' --target x86_64-apple-darwin --profile ci
+  #     run: cargo test --test 'mm2_tests_main' --target x86_64-apple-darwin
 
   win-x86-64-mm2-integration:
     timeout-minutes: 90
@@ -146,7 +146,7 @@ jobs:
         rustup default nightly-2022-10-29
 
     - name: Test
-      run: cargo test --test 'mm2_tests_main' --profile ci
+      run: cargo test --test 'mm2_tests_main'
 
   docker-tests:
     timeout-minutes: 90
@@ -167,7 +167,7 @@ jobs:
     - name: Test
       run: |
         wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-        cargo test --test 'docker_tests_main' --features run-docker-tests --profile ci
+        cargo test --test 'docker_tests_main' --features run-docker-tests
 
   wasm:
     timeout-minutes: 90

@@ -219,7 +219,7 @@ impl SplToken {
         let coin = self.clone();
         let fut = async move {
             coin.platform_coin
-                .my_balance_spl(&SplTokenInfo {
+                .my_balance_spl(SplTokenInfo {
                     token_contract_address: coin.conf.token_contract_address,
                     decimals: coin.conf.decimals,
                 })
@@ -520,9 +520,7 @@ impl MmCoin for SplToken {
         unimplemented!()
     }
 
-    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
-        unimplemented!()
-    }
+    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { unimplemented!() }
 
     async fn get_fee_to_send_taker_fee(
         &self,

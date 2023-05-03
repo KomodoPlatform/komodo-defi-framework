@@ -11,13 +11,13 @@ use coins::tendermint::{TendermintCoin, TendermintCommons, TendermintConf, Tende
                         TendermintTokenActivationParams, TendermintTokenInitError, TendermintTokenProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
-use common::Future01CompatExt;
+use common::{true_f, Future01CompatExt};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl TokenOf for TendermintToken {
     type PlatformCoin = TendermintCoin;
@@ -35,6 +35,8 @@ pub struct TendermintActivationParams {
     pub tokens_params: Vec<TokenActivationRequest<TendermintTokenActivationParams>>,
     #[serde(default)]
     tx_history: bool,
+    #[serde(default = "true_f")]
+    pub get_balances: bool,
 }
 
 impl TxHistory for TendermintActivationParams {
@@ -125,8 +127,12 @@ pub struct TendermintActivationResult {
     ticker: String,
     address: String,
     current_block: u64,
-    balance: CoinBalance,
-    tokens_balances: HashMap<String, CoinBalance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    balance: Option<CoinBalance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens_balances: Option<HashMap<String, CoinBalance>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens_tickers: Option<HashSet<String>>,
 }
 
 impl CurrentBlock for TendermintActivationResult {
@@ -134,7 +140,7 @@ impl CurrentBlock for TendermintActivationResult {
 }
 
 impl GetPlatformBalance for TendermintActivationResult {
-    fn get_platform_balance(&self) -> BigDecimal { self.balance.spendable.clone() }
+    fn get_platform_balance(&self) -> Option<BigDecimal> { self.balance.as_ref().map(|b| b.spendable.clone()) }
 }
 
 impl From<TendermintInitError> for EnablePlatformCoinWithTokensError {
@@ -187,11 +193,25 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         })]
     }
 
-    async fn get_activation_result(&self) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
+    async fn get_activation_result(
+        &self,
+        activation_request: &Self::ActivationRequest,
+    ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
         let current_block = self.current_block().compat().await.map_to_mm(|e| TendermintInitError {
             ticker: self.ticker().to_owned(),
             kind: TendermintInitErrorKind::RpcError(e),
         })?;
+
+        if !activation_request.get_balances {
+            return Ok(TendermintActivationResult {
+                ticker: self.ticker().to_owned(),
+                address: self.account_id.to_string(),
+                current_block,
+                balance: None,
+                tokens_balances: None,
+                tokens_tickers: Some(self.tokens_info.lock().clone().into_keys().collect()),
+            });
+        }
 
         let balances = self.all_balances().await.mm_err(|e| TendermintInitError {
             ticker: self.ticker().to_owned(),
@@ -201,21 +221,24 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         Ok(TendermintActivationResult {
             address: self.account_id.to_string(),
             current_block,
-            balance: CoinBalance {
+            balance: Some(CoinBalance {
                 spendable: balances.platform_balance,
                 unspendable: BigDecimal::default(),
-            },
-            tokens_balances: balances
-                .tokens_balances
-                .into_iter()
-                .map(|(ticker, balance)| {
-                    (ticker, CoinBalance {
-                        spendable: balance,
-                        unspendable: BigDecimal::default(),
+            }),
+            tokens_balances: Some(
+                balances
+                    .tokens_balances
+                    .into_iter()
+                    .map(|(ticker, balance)| {
+                        (ticker, CoinBalance {
+                            spendable: balance,
+                            unspendable: BigDecimal::default(),
+                        })
                     })
-                })
-                .collect(),
+                    .collect(),
+            ),
             ticker: self.ticker().to_owned(),
+            tokens_tickers: None,
         })
     }
 
@@ -223,7 +246,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         &self,
         ctx: MmArc,
         storage: impl TxHistoryStorage,
-        initial_balance: BigDecimal,
+        initial_balance: Option<BigDecimal>,
     ) {
         let fut = tendermint_history_loop(self.clone(), storage, ctx, initial_balance);
 

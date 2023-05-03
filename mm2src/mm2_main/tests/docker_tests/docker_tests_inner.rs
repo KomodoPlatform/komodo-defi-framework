@@ -74,7 +74,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: &*coin.my_public_key().unwrap(),
+        other_pub: coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -162,7 +162,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: &*coin.my_public_key().unwrap(),
+        other_pub: coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -233,7 +233,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: &*coin.my_public_key().unwrap(),
+        other_pub: coin.my_public_key().unwrap(),
         secret_hash: &*dhash160(&secret),
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -304,7 +304,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: &*coin.my_public_key().unwrap(),
+        other_pub: coin.my_public_key().unwrap(),
         secret_hash: &*dhash160(&secret),
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -2955,7 +2955,7 @@ fn test_utxo_merge() {
 
     thread::sleep(Duration::from_secs(2));
     let (unspents, _) =
-        block_on(coin.get_unspent_ordered_list(&coin.as_ref().derivation_method.unwrap_single_addr())).unwrap();
+        block_on(coin.get_unspent_ordered_list(coin.as_ref().derivation_method.unwrap_single_addr())).unwrap();
     assert_eq!(unspents.len(), 1);
 }
 
@@ -3009,7 +3009,7 @@ fn test_utxo_merge_max_merge_at_once() {
 
     thread::sleep(Duration::from_secs(2));
     let (unspents, _) =
-        block_on(coin.get_unspent_ordered_list(&coin.as_ref().derivation_method.unwrap_single_addr())).unwrap();
+        block_on(coin.get_unspent_ordered_list(coin.as_ref().derivation_method.unwrap_single_addr())).unwrap();
     // 4 utxos are merged of 5 so the resulting unspents len must be 2
     assert_eq!(unspents.len(), 2);
 }

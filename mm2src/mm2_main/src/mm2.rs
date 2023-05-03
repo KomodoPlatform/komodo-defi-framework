@@ -28,6 +28,7 @@
 use common::crash_reports::init_crash_reports;
 use common::double_panic_crash;
 use common::log::LogLevel;
+use common::password_policy::password_policy;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
 #[cfg(feature = "custom-swap-locktime")] use common::log::warn;
@@ -36,10 +37,7 @@ use lp_swap::PAYMENT_LOCKTIME;
 #[cfg(feature = "custom-swap-locktime")]
 use std::sync::atomic::Ordering;
 
-use derive_more::Display;
 use gstuff::slurp;
-use lazy_static::lazy_static;
-use regex::Regex;
 
 use serde::ser::Serialize;
 use serde_json::{self as json, Value as Json};
@@ -99,117 +97,6 @@ impl LpMainParams {
     }
 }
 
-#[derive(Debug, Display, PartialEq)]
-pub enum PasswordPolicyError {
-    #[display(fmt = "Password can't contain the word password")]
-    ContainsTheWordPassword,
-    #[display(fmt = "Password length should be at least 8 characters long")]
-    PasswordLength,
-    #[display(fmt = "Password should contain at least 1 digit")]
-    PasswordMissDigit,
-    #[display(fmt = "Password should contain at least 1 lowercase character")]
-    PasswordMissLowercase,
-    #[display(fmt = "Password should contain at least 1 uppercase character")]
-    PasswordMissUppercase,
-    #[display(fmt = "Password should contain at least 1 special character")]
-    PasswordMissSpecialCharacter,
-    #[display(fmt = "Password can't contain the same character 3 times in a row")]
-    PasswordConsecutiveCharactersExceeded,
-}
-
-pub fn password_policy(password: &str) -> Result<(), MmError<PasswordPolicyError>> {
-    lazy_static! {
-        static ref REGEX_NUMBER: Regex = Regex::new(".*[0-9].*").unwrap();
-        static ref REGEX_LOWERCASE: Regex = Regex::new(".*[a-z].*").unwrap();
-        static ref REGEX_UPPERCASE: Regex = Regex::new(".*[A-Z].*").unwrap();
-        static ref REGEX_SPECIFIC_CHARS: Regex = Regex::new(".*[^A-Za-z0-9].*").unwrap();
-    }
-    if password.to_lowercase().contains("password") {
-        return MmError::err(PasswordPolicyError::ContainsTheWordPassword);
-    }
-    let password_len = password.chars().count();
-    if (0..8).contains(&password_len) {
-        return MmError::err(PasswordPolicyError::PasswordLength);
-    }
-    if !REGEX_NUMBER.is_match(password) {
-        return MmError::err(PasswordPolicyError::PasswordMissDigit);
-    }
-    if !REGEX_LOWERCASE.is_match(password) {
-        return MmError::err(PasswordPolicyError::PasswordMissLowercase);
-    }
-    if !REGEX_UPPERCASE.is_match(password) {
-        return MmError::err(PasswordPolicyError::PasswordMissUppercase);
-    }
-    if !REGEX_SPECIFIC_CHARS.is_match(password) {
-        return MmError::err(PasswordPolicyError::PasswordMissSpecialCharacter);
-    }
-    if !common::is_acceptable_input_on_repeated_characters(password, PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS) {
-        return MmError::err(PasswordPolicyError::PasswordConsecutiveCharactersExceeded);
-    }
-    Ok(())
-}
-
-#[test]
-fn check_password_policy() {
-    // Length
-    assert_eq!(
-        password_policy("1234567").unwrap_err().into_inner(),
-        PasswordPolicyError::PasswordLength
-    );
-
-    // Miss special character
-    assert_eq!(
-        password_policy("pass123worD").unwrap_err().into_inner(),
-        PasswordPolicyError::PasswordMissSpecialCharacter
-    );
-
-    // Miss digit
-    assert_eq!(
-        password_policy("SecretPassSoStrong$*").unwrap_err().into_inner(),
-        PasswordPolicyError::PasswordMissDigit
-    );
-
-    // Miss lowercase
-    assert_eq!(
-        password_policy("SECRETPASS-SOSTRONG123*").unwrap_err().into_inner(),
-        PasswordPolicyError::PasswordMissLowercase
-    );
-
-    // Miss uppercase
-    assert_eq!(
-        password_policy("secretpass-sostrong123*").unwrap_err().into_inner(),
-        PasswordPolicyError::PasswordMissUppercase
-    );
-
-    // Contains the same character 3 times in a row
-    assert_eq!(
-        password_policy("SecretPassSoStrong123*aaa").unwrap_err().into_inner(),
-        PasswordPolicyError::PasswordConsecutiveCharactersExceeded
-    );
-
-    // Contains Password uppercase
-    assert_eq!(
-        password_policy("Password123*$").unwrap_err().into_inner(),
-        PasswordPolicyError::ContainsTheWordPassword
-    );
-
-    // Contains Password lowercase
-    assert_eq!(
-        password_policy("Foopassword123*$").unwrap_err().into_inner(),
-        PasswordPolicyError::ContainsTheWordPassword
-    );
-
-    // Check valid long password
-    let long_pass = "SecretPassSoStrong*!1234567891012";
-    assert!(long_pass.len() > 32);
-    assert!(password_policy(long_pass).is_ok());
-
-    // Valid passwords
-    password_policy("StrongPass123*").unwrap();
-    password_policy(r#"StrongPass123[]\± "#).unwrap();
-    password_policy("StrongPass123£StrongPass123£Pass").unwrap();
-}
-
 #[cfg(feature = "custom-swap-locktime")]
 /// Reads `payment_locktime` from conf arg and assigns it into `PAYMENT_LOCKTIME` in lp_swap.
 /// Assigns 900 if `payment_locktime` is invalid or not provided.
@@ -236,7 +123,7 @@ pub async fn lp_main(
     let log_filter = params.filter.unwrap_or_default();
     // Logger can be initialized once.
     // If `mm2` is linked as a library, and `mm2` is restarted, `init_logger` returns an error.
-    init_logger(log_filter).ok();
+    init_logger(log_filter, params.conf["silent_console"].as_bool().unwrap_or_default()).ok();
 
     let conf = params.conf;
     if !conf["rpc_password"].is_null() {
@@ -312,7 +199,6 @@ Some (but not all) of the JSON configuration parameters (* - required):
   seednodes      ..  Seednode IPs that node will use.
                      At least one seed IP must be present if the node is not a seed itself.
   stderr         ..  Print a message to stderr and exit.
-  userhome       ..  System home directory of a user ('/root' by default).
   wif            ..  `1` to add WIFs to the information we provide about a coin.
 
 Environment variables:
@@ -456,20 +342,6 @@ pub fn run_lp_main(
     version: String,
     datetime: String,
 ) -> Result<(), String> {
-    fn setup_env_logger() {
-        const MM2_LOG_ENV_KEY: &str = "RUST_LOG";
-
-        if env::var_os(MM2_LOG_ENV_KEY).is_none() {
-            env::set_var(MM2_LOG_ENV_KEY, "info");
-        };
-
-        if let Err(e) = env_logger::try_init() {
-            common::log::debug!("env_logger is already initialized. {}", e);
-        };
-    }
-
-    setup_env_logger();
-
     let conf = get_mm2config(first_arg)?;
 
     let log_filter = LogLevel::from_env();
@@ -509,17 +381,15 @@ fn on_update_config(args: &[OsString]) -> Result<(), String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn init_logger(level: LogLevel) -> Result<(), String> {
-    use common::log::UnifiedLoggerBuilder;
+fn init_logger(_level: LogLevel, silent_console: bool) -> Result<(), String> {
+    common::log::UnifiedLoggerBuilder::default()
+        .silent_console(silent_console)
+        .init();
 
-    UnifiedLoggerBuilder::default()
-        .level_filter(level)
-        .console(false)
-        .mm_log(true)
-        .try_init()
+    Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
-fn init_logger(level: LogLevel) -> Result<(), String> {
+fn init_logger(level: LogLevel, _silent_console: bool) -> Result<(), String> {
     common::log::WasmLoggerBuilder::default().level_filter(level).try_init()
 }

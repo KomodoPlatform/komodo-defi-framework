@@ -696,7 +696,7 @@ fn test_withdraw_impl_manual_fee() {
         let balance = wei_from_big_decimal(&1000000000.into(), 18).unwrap();
         MockResult::Return(Box::new(futures01::future::ok(balance)))
     });
-    get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(0.into()))));
+    get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok((0.into(), vec![])))));
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
@@ -740,7 +740,7 @@ fn test_withdraw_impl_fee_details() {
         let balance = wei_from_big_decimal(&1000000000.into(), 18).unwrap();
         MockResult::Return(Box::new(futures01::future::ok(balance)))
     });
-    get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(0.into()))));
+    get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok((0.into(), vec![])))));
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
@@ -957,7 +957,7 @@ fn get_receiver_trade_preimage() {
     };
 
     let actual = coin
-        .get_receiver_trade_fee(Default::default(), FeeApproxStage::WithoutApprox)
+        .get_receiver_trade_fee(FeeApproxStage::WithoutApprox)
         .wait()
         .expect("!get_sender_trade_fee");
     assert_eq!(actual, expected_fee);

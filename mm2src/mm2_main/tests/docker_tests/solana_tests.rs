@@ -26,15 +26,18 @@ fn test_solana_and_spl_balance_enable_spl_v2() {
         .into_iter()
         .next()
         .unwrap();
-    assert!(solana_balance.balances.spendable > 0.into());
+    assert!(solana_balance.balances.unwrap().spendable > 0.into());
 
-    let (_, spl_balances) = enable_solana_with_tokens
+    let spl_balances = enable_solana_with_tokens
         .result
         .spl_addresses_infos
         .into_iter()
         .next()
+        .unwrap()
+        .1
+        .balances
         .unwrap();
-    let usdc_spl = spl_balances.balances.get("USDC-SOL-DEVNET").unwrap();
+    let usdc_spl = spl_balances.get("USDC-SOL-DEVNET").unwrap();
     assert!(usdc_spl.spendable.is_zero());
 
     let enable_spl = block_on(enable_spl(&mm, "ADEX-SOL-DEVNET"));

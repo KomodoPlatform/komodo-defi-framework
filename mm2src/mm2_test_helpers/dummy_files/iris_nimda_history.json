@@ -16,7 +16,7 @@
             "type": "Tendermint",
             "coin": "IRIS-TEST",
             "amount": "0.027385",
-            "gas_limit": 100000
+            "gas_limit": 125000
         },
         "coin": "IRIS-NIMDA",
         "internal_id": "3930374535314439384537304239343431413230443630420000000000000000",
@@ -45,7 +45,7 @@
             "type": "Tendermint",
             "coin": "IRIS-TEST",
             "amount": "0.028433",
-            "gas_limit": 100000
+            "gas_limit": 125000
         },
         "coin": "IRIS-NIMDA",
         "internal_id": "4138433845353931363133303743353941344143374536320000000000000000",
@@ -74,7 +74,7 @@
             "type": "Tendermint",
             "coin": "IRIS-TEST",
             "amount": "0.026403",
-            "gas_limit": 100000
+            "gas_limit": 125000
         },
         "coin": "IRIS-NIMDA",
         "internal_id": "3436313245464444363537373544434341433838463935340000000000000000",
@@ -103,7 +103,7 @@
             "type": "Tendermint",
             "coin": "IRIS-TEST",
             "amount": "0.028433",
-            "gas_limit": 100000
+            "gas_limit": 125000
         },
         "coin": "IRIS-NIMDA",
         "internal_id": "3931453345363544374341333833394331463141394435320000000000000000",
@@ -134,7 +134,7 @@
             "type": "Tendermint",
             "coin": "IRIS-TEST",
             "amount": "0.025763",
-            "gas_limit": 100000
+            "gas_limit": 125000
         },
         "coin": "IRIS-NIMDA",
         "internal_id": "3643343243423346353232433844414333343138443338440000000000000000",
@@ -162,7 +162,7 @@
             "type": "Tendermint",
             "coin": "IRIS-TEST",
             "amount": "0.022114",
-            "gas_limit": 100000
+            "gas_limit": 125000
         },
         "coin": "IRIS-NIMDA",
         "internal_id": "4631313139343742323142303344373639303343333441370000000000000000",
@@ -190,7 +190,7 @@
             "type": "Tendermint",
             "coin": "IRIS-TEST",
             "amount": "0.026861",
-            "gas_limit": 100000
+            "gas_limit": 125000
         },
         "coin": "IRIS-NIMDA",
         "internal_id": "3236413546344639343144434531363135373046373530330000000000000000",
@@ -218,7 +218,7 @@
             "type": "Tendermint",
             "coin": "IRIS-TEST",
             "amount": "0.026861",
-            "gas_limit": 100000
+            "gas_limit": 125000
         },
         "coin": "IRIS-NIMDA",
         "internal_id": "4344413036444433353735413332323330363430414634310000000000000000",
@@ -246,7 +246,7 @@
             "type": "Tendermint",
             "coin": "IRIS-TEST",
             "amount": "0.022114",
-            "gas_limit": 100000
+            "gas_limit": 125000
         },
         "coin": "IRIS-NIMDA",
         "internal_id": "4339384239303045393643333738453237333945314344330000000000000000",
@@ -274,7 +274,7 @@
             "type": "Tendermint",
             "coin": "IRIS-TEST",
             "amount": "0.02316",
-            "gas_limit": 100000
+            "gas_limit": 125000
         },
         "coin": "IRIS-NIMDA",
         "internal_id": "4136303630343838314237323638453734433246453537450000000000000000",

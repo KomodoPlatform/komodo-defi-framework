@@ -95,7 +95,7 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     block_on(mm_watcher.wait_for_log(180., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
     thread::sleep(Duration::from_secs(25));
 
-    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password, None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
     let alice_eth_balance_after = block_on(my_balance(&mm_alice, "ETH")).balance.with_scale(2);
@@ -108,7 +108,7 @@ fn test_watcher_spends_maker_payment_spend_eth_erc20() {
     assert_eq!(alice_jst_balance_before - volume.clone(), alice_jst_balance_after);
     assert_eq!(bob_jst_balance_before + volume.clone(), bob_jst_balance_after);
     assert_eq!(alice_eth_balance_before + volume.clone(), alice_eth_balance_after);
-    assert_eq!(bob_eth_balance_before - volume.clone(), bob_eth_balance_after);
+    assert_eq!(bob_eth_balance_before - volume, bob_eth_balance_after);
     assert!(watcher_eth_balance_after > watcher_eth_balance_before);
 }
 
@@ -176,7 +176,7 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
     block_on(mm_watcher2.wait_for_log(180., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
     thread::sleep(Duration::from_secs(25));
 
-    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password, None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
     let alice_eth_balance_after = block_on(my_balance(&mm_alice, "ETH")).balance.with_scale(2);
@@ -190,7 +190,7 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
     assert_eq!(alice_jst_balance_before - volume.clone(), alice_jst_balance_after);
     assert_eq!(bob_jst_balance_before + volume.clone(), bob_jst_balance_after);
     assert_eq!(alice_eth_balance_before + volume.clone(), alice_eth_balance_after);
-    assert_eq!(bob_eth_balance_before - volume.clone(), bob_eth_balance_after);
+    assert_eq!(bob_eth_balance_before - volume, bob_eth_balance_after);
     if watcher1_eth_balance_after > watcher1_eth_balance_before {
         assert_eq!(watcher2_eth_balance_after, watcher2_eth_balance_after);
     }
@@ -248,7 +248,7 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     block_on(mm_watcher.wait_for_log(180., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
     thread::sleep(Duration::from_secs(25));
 
-    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password, None).unwrap();
     enable_eth_and_jst(&mm_alice);
 
     let alice_eth_balance_after = block_on(my_balance(&mm_alice, "ETH")).balance.with_scale(2);
@@ -262,7 +262,7 @@ fn test_watcher_spends_maker_payment_spend_erc20_eth() {
     assert_eq!(alice_jst_balance_before + volume.clone(), alice_jst_balance_after);
     assert_eq!(bob_jst_balance_before - volume.clone(), bob_jst_balance_after);
     assert_eq!(alice_eth_balance_before - volume.clone(), alice_eth_balance_after);
-    assert_eq!(bob_eth_balance_before + volume.clone(), bob_eth_balance_after);
+    assert_eq!(bob_eth_balance_before + volume, bob_eth_balance_after);
     assert!(watcher_eth_balance_after > watcher_eth_balance_before);
 }
 
@@ -274,7 +274,7 @@ fn test_watcher_waits_for_taker_eth() {
     let alice_passphrase =
         String::from("spice describe gravity federal blast come thank unfair canal monkey style afraid");
     let alice_conf = Mm2TestConf::seednode_using_watchers(&alice_passphrase, &coins);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password, None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
@@ -464,11 +464,7 @@ fn test_watcher_validate_taker_fee_eth() {
     let taker_amount = MmNumber::from((10, 1));
     let fee_amount = dex_fee_amount_from_taker_coin(&MmCoinEnum::EthCoin(taker_coin.clone()), "ETH", &taker_amount);
     let taker_fee = taker_coin
-        .send_taker_fee(
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            fee_amount.clone().into(),
-            Uuid::new_v4().as_bytes(),
-        )
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), Uuid::new_v4().as_bytes())
         .wait()
         .unwrap();
 
@@ -572,11 +568,7 @@ fn test_watcher_validate_taker_fee_erc20() {
     let taker_amount = MmNumber::from((10, 1));
     let fee_amount = dex_fee_amount_from_taker_coin(&MmCoinEnum::EthCoin(taker_coin.clone()), "ETH", &taker_amount);
     let taker_fee = taker_coin
-        .send_taker_fee(
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            fee_amount.clone().into(),
-            Uuid::new_v4().as_bytes(),
-        )
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), Uuid::new_v4().as_bytes())
         .wait()
         .unwrap();
 
@@ -683,7 +675,7 @@ fn test_watcher_validate_taker_payment_eth() {
     let wait_for_confirmation_until = now_ms() / 1000 + time_lock_duration;
     let time_lock = wait_for_confirmation_until as u32;
     let amount = BigDecimal::from_str("0.01").unwrap();
-    let secret_hash = dhash160(&MakerSwap::generate_secret());
+    let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
     let watcher_reward = Some(
         block_on(watcher_reward_amount(
             &MmCoinEnum::from(taker_coin.clone()),
@@ -809,7 +801,7 @@ fn test_watcher_validate_taker_payment_eth() {
     }
 
     // Used to get wrong swap id
-    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret());
+    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
     let error = taker_coin
         .watcher_validate_taker_payment(coins::WatcherValidatePaymentInput {
             payment_tx: taker_payment.tx_hex(),
@@ -957,7 +949,7 @@ fn test_watcher_validate_taker_payment_erc20() {
     let wait_for_confirmation_until = now_ms() / 1000 + time_lock_duration;
     let time_lock = wait_for_confirmation_until as u32;
 
-    let secret_hash = dhash160(&MakerSwap::generate_secret());
+    let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
     let watcher_reward = Some(
         block_on(watcher_reward_amount(
             &MmCoinEnum::from(taker_coin.clone()),
@@ -1082,7 +1074,7 @@ fn test_watcher_validate_taker_payment_erc20() {
     }
 
     // Used to get wrong swap id
-    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret());
+    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
     let error = taker_coin
         .watcher_validate_taker_payment(WatcherValidatePaymentInput {
             payment_tx: taker_payment.tx_hex(),
@@ -1306,7 +1298,7 @@ fn test_watcher_waits_for_taker_utxo() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
     let alice_conf = Mm2TestConf::seednode_using_watchers(&format!("0x{}", hex::encode(alice_priv_key)), &coins).conf;
-    let mut mm_alice = MarketMakerIt::start(alice_conf.clone(), DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
+    let mut mm_alice = MarketMakerIt::start(alice_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
     let bob_conf =
@@ -1452,11 +1444,7 @@ fn test_watcher_validate_taker_fee_utxo() {
     );
 
     let taker_fee = taker_coin
-        .send_taker_fee(
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            fee_amount.clone().into(),
-            Uuid::new_v4().as_bytes(),
-        )
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), Uuid::new_v4().as_bytes())
         .wait()
         .unwrap();
 
@@ -1577,7 +1565,7 @@ fn test_watcher_validate_taker_payment_utxo() {
     let (_ctx, maker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let maker_pubkey = maker_coin.my_public_key().unwrap();
 
-    let secret_hash = dhash160(&MakerSwap::generate_secret());
+    let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
 
     let taker_payment = taker_coin
         .send_taker_payment(SendPaymentArgs {
@@ -1654,7 +1642,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         _ => panic!("Expected `WrongPaymentTx` {INVALID_SENDER_ERR_LOG}, found {:?}", error),
     }
 
-    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret());
+    let wrong_secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
     let error = taker_coin
         .watcher_validate_taker_payment(WatcherValidatePaymentInput {
             payment_tx: taker_payment.tx_hex(),
@@ -1809,7 +1797,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: &*coin.my_public_key().unwrap(),
+        other_pub: coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,

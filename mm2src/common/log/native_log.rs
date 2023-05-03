@@ -1,12 +1,8 @@
-use super::{chunk2log, format_record, LevelFilter, LogCallback};
-use log::Record;
-use log4rs::encode::pattern;
-use log4rs::{append, config};
+use super::{format_record, LogCallback};
+use std::env;
+use std::io::Write;
 use std::os::raw::c_char;
 use std::str::FromStr;
-
-const DEFAULT_CONSOLE_FORMAT: &str = "[{d(%Y-%m-%d %H:%M:%S %Z)(utc)} {h({l})} {M}:{f}:{L}] {m}\n";
-const DEFAULT_LEVEL_FILTER: LogLevel = LogLevel::Info;
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum LogLevel {
@@ -32,7 +28,7 @@ impl LogLevel {
 }
 
 impl Default for LogLevel {
-    fn default() -> Self { DEFAULT_LEVEL_FILTER }
+    fn default() -> Self { LogLevel::Info }
 }
 
 pub struct FfiCallback {
@@ -52,84 +48,47 @@ impl LogCallback for FfiCallback {
     }
 }
 
+#[derive(Default)]
 pub struct UnifiedLoggerBuilder {
-    console_format: String,
-    filter: LogLevel,
-    console: bool,
-    mm_log: bool,
-}
-
-impl Default for UnifiedLoggerBuilder {
-    fn default() -> UnifiedLoggerBuilder {
-        UnifiedLoggerBuilder {
-            console_format: DEFAULT_CONSOLE_FORMAT.to_owned(),
-            filter: LogLevel::default(),
-            console: true,
-            mm_log: false,
-        }
-    }
+    /// Prevents writing to stdout/err
+    silent_console: bool,
 }
 
 impl UnifiedLoggerBuilder {
     pub fn new() -> UnifiedLoggerBuilder { UnifiedLoggerBuilder::default() }
 
-    pub fn console_format(mut self, console_format: &str) -> UnifiedLoggerBuilder {
-        self.console_format = console_format.to_owned();
+    pub fn silent_console(mut self, silent_console: bool) -> UnifiedLoggerBuilder {
+        self.silent_console = silent_console;
         self
     }
 
-    pub fn level_filter(mut self, filter: LogLevel) -> UnifiedLoggerBuilder {
-        self.filter = filter;
-        self
+    pub fn init(self) {
+        const MM2_LOG_ENV_KEY: &str = "RUST_LOG";
+
+        if env::var_os(MM2_LOG_ENV_KEY).is_none() {
+            env::set_var(MM2_LOG_ENV_KEY, "info");
+        };
+
+        let mut logger = env_logger::builder();
+
+        logger.format(move |buf, record| {
+            let log = format_record(record);
+
+            if let Ok(mut log_file) = crate::LOG_FILE.lock() {
+                if let Some(ref mut log_file) = *log_file {
+                    writeln!(log_file, "{}", log)?;
+                }
+            }
+
+            if !self.silent_console {
+                writeln!(buf, "{}", log)?;
+            }
+
+            Ok(())
+        });
+
+        if let Err(e) = logger.try_init() {
+            log::error!("env_logger is already initialized. {}", e);
+        };
     }
-
-    pub fn console(mut self, console: bool) -> UnifiedLoggerBuilder {
-        self.console = console;
-        self
-    }
-
-    pub fn mm_log(mut self, mm_log: bool) -> UnifiedLoggerBuilder {
-        self.mm_log = mm_log;
-        self
-    }
-
-    pub fn try_init(self) -> Result<(), String> {
-        let mut appenders = Vec::new();
-
-        if self.mm_log {
-            appenders.push(config::Appender::builder().build("mm_log", Box::new(MmLogAppender)));
-        }
-
-        if self.console {
-            let encoder = Box::new(pattern::PatternEncoder::new(&self.console_format));
-            let appender = append::console::ConsoleAppender::builder()
-                .encoder(encoder)
-                .target(append::console::Target::Stdout)
-                .build();
-            appenders.push(config::Appender::builder().build("console", Box::new(appender)));
-        }
-
-        let app_names: Vec<_> = appenders.iter().map(|app| app.name()).collect();
-        let root = config::Root::builder()
-            .appenders(app_names)
-            .build(LevelFilter::from(self.filter));
-        let config = try_s!(config::Config::builder().appenders(appenders).build(root));
-
-        try_s!(log4rs::init_config(config));
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct MmLogAppender;
-
-impl append::Append for MmLogAppender {
-    fn append(&self, record: &Record) -> anyhow::Result<()> {
-        let as_string = format_record(record);
-        let level = LogLevel::from(record.metadata().level());
-        chunk2log(as_string, level);
-        Ok(())
-    }
-
-    fn flush(&self) {}
 }

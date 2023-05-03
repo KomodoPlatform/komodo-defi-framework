@@ -42,7 +42,8 @@ use http::Response;
 use keys::{AddressFormat, KeyPair};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, TopicPrefix, TOPIC_SEPARATOR};
+use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, TopicHash, TopicPrefix,
+                 TOPIC_SEPARATOR};
 use mm2_metrics::mm_gauge;
 use mm2_number::{construct_detailed, BigDecimal, BigRational, Fraction, MmNumber, MmNumberMultiRepr};
 #[cfg(test)] use mocktopus::macros::*;
@@ -61,7 +62,8 @@ use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
-use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest};
+use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest,
+                             P2PRequestError};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
                           check_other_coin_balance_for_swap, get_max_maker_vol, insert_new_swap_to_db,
                           is_pubkey_banned, lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
@@ -122,6 +124,39 @@ const TRIE_STATE_HISTORY_TIMEOUT: u64 = 3;
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
+
+pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
+
+#[derive(Display)]
+pub enum OrderbookP2PHandlerError {
+    #[display(fmt = "'{}' is an invalid topic for the orderbook handler.", _0)]
+    InvalidTopic(String),
+
+    #[display(fmt = "Message decoding was failed. Error: {}", _0)]
+    DecodeError(String),
+
+    #[display(fmt = "Pubkey '{}' is not allowed.", _0)]
+    PubkeyNotAllowed(String),
+
+    #[display(fmt = "P2P request error: {}", _0)]
+    P2PRequestError(String),
+
+    #[display(
+        fmt = "Couldn't find an order {}, ignoring, it will be synced upon pubkey keep alive",
+        _0
+    )]
+    OrderNotFound(Uuid),
+
+    Internal(String),
+}
+
+impl OrderbookP2PHandlerError {
+    pub(crate) fn is_warning(&self) -> bool { matches!(self, OrderbookP2PHandlerError::OrderNotFound(_)) }
+}
+
+impl From<P2PRequestError> for OrderbookP2PHandlerError {
+    fn from(e: P2PRequestError) -> Self { OrderbookP2PHandlerError::P2PRequestError(e.to_string()) }
+}
 
 /// Alphabetically ordered orderbook pair
 type AlbOrderedOrderbookPair = String;
@@ -247,7 +282,7 @@ async fn process_orders_keep_alive(
     from_pubkey: String,
     keep_alive: new_protocol::PubkeyKeepAlive,
     i_am_relay: bool,
-) -> bool {
+) -> OrderbookP2PHandlerResult {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
     let to_request = ordermatch_ctx
         .orderbook
@@ -257,17 +292,21 @@ async fn process_orders_keep_alive(
     let req = match to_request {
         Some(req) => req,
         // The message was processed, simply forward it
-        None => return true,
+        None => return Ok(()),
     };
 
-    let resp =
-        request_one_peer::<SyncPubkeyOrderbookStateRes>(ctx.clone(), P2PRequest::Ordermatch(req), propagated_from_peer)
-            .await;
-
-    let response = match resp {
-        Ok(Some(resp)) => resp,
-        _ => return false,
-    };
+    let response = request_one_peer::<SyncPubkeyOrderbookStateRes>(
+        ctx.clone(),
+        P2PRequest::Ordermatch(req),
+        propagated_from_peer.clone(),
+    )
+    .await?
+    .ok_or_else(|| {
+        MmError::new(OrderbookP2PHandlerError::P2PRequestError(format!(
+            "No response was received from peer {} for SyncPubkeyOrderbookState request!",
+            propagated_from_peer
+        )))
+    })?;
 
     let mut orderbook = ordermatch_ctx.orderbook.lock();
     for (pair, diff) in response.pair_orders_diff {
@@ -282,27 +321,27 @@ async fn process_orders_keep_alive(
             DeltaOrFullTrie::FullTrie(values) => process_pubkey_full_trie(&mut orderbook, values, params),
         };
     }
-    true
+
+    Ok(())
 }
 
-fn process_maker_order_updated(ctx: MmArc, from_pubkey: String, updated_msg: new_protocol::MakerOrderUpdated) -> bool {
+fn process_maker_order_updated(
+    ctx: MmArc,
+    from_pubkey: String,
+    updated_msg: new_protocol::MakerOrderUpdated,
+) -> OrderbookP2PHandlerResult {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
     let uuid = updated_msg.uuid();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
-    match orderbook.find_order_by_uuid_and_pubkey(&uuid, &from_pubkey) {
-        Some(mut order) => {
-            order.apply_updated(&updated_msg);
-            orderbook.insert_or_update_order_update_trie(order);
-            true
-        },
-        None => {
-            log::warn!(
-                "Couldn't find an order {}, ignoring, it will be synced upon pubkey keep alive",
-                uuid
-            );
-            false
-        },
-    }
+
+    let mut order = orderbook
+        .find_order_by_uuid_and_pubkey(&uuid, &from_pubkey)
+        .ok_or_else(|| MmError::new(OrderbookP2PHandlerError::OrderNotFound(uuid)))?;
+    order.apply_updated(&updated_msg);
+    drop_mutability!(order);
+    orderbook.insert_or_update_order_update_trie(order);
+
+    Ok(())
 }
 
 // fn verify_pubkey_orderbook(orderbook: &GetOrderbookPubkeyItem) -> Result<(), String> {
@@ -468,19 +507,52 @@ fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: 
     pubkey_state.trie_roots.remove(alb_pair);
 }
 
+pub async fn handle_orderbook_msg(
+    ctx: MmArc,
+    topics: &[TopicHash],
+    from_peer: String,
+    msg: &[u8],
+    i_am_relay: bool,
+) -> OrderbookP2PHandlerResult {
+    if let Err(e) = decode_signed::<new_protocol::OrdermatchMessage>(msg) {
+        return MmError::err(OrderbookP2PHandlerError::DecodeError(e.to_string()));
+    };
+
+    let mut orderbook_pairs = vec![];
+
+    for topic in topics {
+        let mut split = topic.as_str().split(TOPIC_SEPARATOR);
+        match (split.next(), split.next()) {
+            (Some(ORDERBOOK_PREFIX), Some(pair)) => {
+                orderbook_pairs.push(pair.to_string());
+            },
+            _ => {
+                return MmError::err(OrderbookP2PHandlerError::InvalidTopic(topic.as_str().to_owned()));
+            },
+        };
+    }
+
+    drop_mutability!(orderbook_pairs);
+
+    if !orderbook_pairs.is_empty() {
+        process_msg(ctx, from_peer, msg, i_am_relay).await?;
+    }
+
+    Ok(())
+}
+
 /// Attempts to decode a message and process it returning whether the message is valid and worth rebroadcasting
-pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, msg: &[u8], i_am_relay: bool) -> bool {
+pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: bool) -> OrderbookP2PHandlerResult {
     match decode_signed::<new_protocol::OrdermatchMessage>(msg) {
         Ok((message, _sig, pubkey)) => {
             if is_pubkey_banned(&ctx, &pubkey.unprefixed().into()) {
-                log::warn!("Pubkey {} is banned", pubkey.to_hex());
-                return false;
+                return MmError::err(OrderbookP2PHandlerError::PubkeyNotAllowed(pubkey.to_hex()));
             }
             match message {
                 new_protocol::OrdermatchMessage::MakerOrderCreated(created_msg) => {
                     let order: OrderbookItem = (created_msg, hex::encode(pubkey.to_bytes().as_slice())).into();
                     insert_or_update_order(&ctx, order);
-                    true
+                    Ok(())
                 },
                 new_protocol::OrdermatchMessage::PubkeyKeepAlive(keep_alive) => {
                     process_orders_keep_alive(ctx, from_peer, pubkey.to_hex(), keep_alive, i_am_relay).await
@@ -488,36 +560,33 @@ pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, ms
                 new_protocol::OrdermatchMessage::TakerRequest(taker_request) => {
                     let msg = TakerRequest::from_new_proto_and_pubkey(taker_request, pubkey.unprefixed().into());
                     process_taker_request(ctx, pubkey.unprefixed().into(), msg).await;
-                    true
+                    Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerReserved(maker_reserved) => {
                     let msg = MakerReserved::from_new_proto_and_pubkey(maker_reserved, pubkey.unprefixed().into());
                     // spawn because process_maker_reserved may take significant time to run
                     let spawner = ctx.spawner();
                     spawner.spawn(process_maker_reserved(ctx, pubkey.unprefixed().into(), msg));
-                    true
+                    Ok(())
                 },
                 new_protocol::OrdermatchMessage::TakerConnect(taker_connect) => {
                     process_taker_connect(ctx, pubkey.unprefixed().into(), taker_connect.into()).await;
-                    true
+                    Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerConnected(maker_connected) => {
                     process_maker_connected(ctx, pubkey.unprefixed().into(), maker_connected.into()).await;
-                    true
+                    Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerOrderCancelled(cancelled_msg) => {
                     delete_order(&ctx, &pubkey.to_hex(), cancelled_msg.uuid.into());
-                    true
+                    Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerOrderUpdated(updated_msg) => {
                     process_maker_order_updated(ctx, pubkey.to_hex(), updated_msg)
                 },
             }
         },
-        Err(e) => {
-            error!("Error {} while decoding signed message", e);
-            false
-        },
+        Err(e) => MmError::err(OrderbookP2PHandlerError::DecodeError(e.to_string())),
     }
 }
 
@@ -2923,6 +2992,15 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         if let Err(e) = insert_new_swap_to_db(ctx.clone(), maker_coin.ticker(), taker_coin.ticker(), uuid, now).await {
             error!("Error {} on new swap insertion", e);
         }
+
+        let secret = match MakerSwap::generate_secret() {
+            Ok(s) => s.into(),
+            Err(e) => {
+                error!("Error {} on secret generation", e);
+                return;
+            },
+        };
+
         let maker_swap = MakerSwap::new(
             ctx.clone(),
             alice,
@@ -2936,7 +3014,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             taker_coin,
             lock_time,
             maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-            MakerSwap::generate_secret().into(),
+            secret,
         );
         run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
     };
@@ -4476,13 +4554,9 @@ async fn cancel_orders_on_error<T, E>(ctx: &MmArc, req: &SetPriceReq, error: E) 
     Err(error)
 }
 
-pub async fn check_other_coin_balance_for_order_issue(
-    ctx: &MmArc,
-    other_coin: &MmCoinEnum,
-    my_coin_volume: BigDecimal,
-) -> CheckBalanceResult<()> {
+pub async fn check_other_coin_balance_for_order_issue(ctx: &MmArc, other_coin: &MmCoinEnum) -> CheckBalanceResult<()> {
     let trade_fee = other_coin
-        .get_receiver_trade_fee(my_coin_volume, FeeApproxStage::OrderIssue)
+        .get_receiver_trade_fee(FeeApproxStage::OrderIssue)
         .compat()
         .await
         .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
@@ -4536,7 +4610,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
                 .or_else(|e| cancel_orders_on_error(ctx, &req, e))
                 .await
         );
-        try_s!(check_other_coin_balance_for_order_issue(ctx, &rel_coin, volume.to_decimal()).await);
+        try_s!(check_other_coin_balance_for_order_issue(ctx, &rel_coin).await);
         (volume, balance.to_decimal())
     } else {
         let balance = try_s!(
@@ -4710,7 +4784,7 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
     // Calculate order volume and add to update_msg if new_volume is found in the request
     let new_volume = if req.max.unwrap_or(false) {
         let max_volume = try_s!(get_max_maker_vol(ctx, &base_coin).await).volume + reserved_amount.clone();
-        try_s!(check_other_coin_balance_for_order_issue(ctx, &rel_coin, max_volume.to_decimal()).await);
+        try_s!(check_other_coin_balance_for_order_issue(ctx, &rel_coin).await);
         update_msg.with_new_max_volume(max_volume.clone().into());
         max_volume
     } else if Option::is_some(&req.volume_delta) {

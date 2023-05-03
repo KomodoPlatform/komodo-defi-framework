@@ -19,6 +19,8 @@ backtrace = "0.3"
 bytes = "1.1"
 cfg-if = "1.0"
 crossbeam = "0.8"
+env_logger = "0.9.0"
+derive_more = "0.99"
 fnv = "1.0.6"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
@@ -33,6 +35,7 @@ parking_lot = { version = "0.12.0", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
 primitive-types = "0.11.1"
 rand = { version = "0.7", features = ["std", "small_rng"] }
+regex = "1"
 serde = "1"
 serde_derive = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
@@ -65,7 +68,6 @@ hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 libc = { version = "0.2" }
 lightning = "0.0.113"
-log4rs = { version = "1.0", default-features = false, features = ["console_appender", "pattern_encoder"] }
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]

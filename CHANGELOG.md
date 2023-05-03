@@ -1,13 +1,45 @@
-## {inc-release}
+## v1.0.4-beta - 2023-05-12
 
 **Features:**
+
+**Enhancements/Fixes:**
+- Some enhancements were done for `enable_bch_with_tokens`,`enable_eth_with_tokens`,`enable_tendermint_with_assets` RPCs in [#1762](https://github.com/KomodoPlatform/atomicDEX-API/pull/1762)
+  - A new parameter `get_balances` was added to the above methods requests, when this parameter is set to `false`, balances will not be returned in the response. The default value for this parameter is `true` to ensure backward compatibility.
+  - Token balances requests are now performed concurrently for the above methods.
+- Detect a chain reorganization, if it occurs, redownload and revalidate the new best chain headers for SPV  [#1728](https://github.com/KomodoPlatform/atomicDEX-API/pull/1728)
+
+
+## v1.0.3-beta - 2023-04-28
+
+**Features:**
+
+**Enhancements/Fixes:**
+- cosmos/iris ethermint account compatibility implemented [#1765](https://github.com/KomodoPlatform/atomicDEX-API/pull/1765)
+- p2p stack is improved [#1755](https://github.com/KomodoPlatform/atomicDEX-API/pull/1755)
+  - Validate topics if they are mixed or not.
+  - Do early return if the message data is not valid (since no point to iterate over and over on the invalid message)
+  - Break the loop right after processing any of `SWAP_PREFIX`, `WATCHER_PREFIX`, `TX_HELPER_PREFIX` topic.
+- An issue was fixed where we don't have to wait for all EVM nodes to sync the latest account nonce [#1757](https://github.com/KomodoPlatform/atomicDEX-API/pull/1757)
+- optimized dev and release compilation profiles and removed ci [#1759](https://github.com/KomodoPlatform/atomicDEX-API/pull/1759)
+- fix receiver trade fee for cosmos swaps [#1767](https://github.com/KomodoPlatform/atomicDEX-API/pull/1767)
+- All features were enabled to be checked under x86-64 code lint CI step with `--all-features` option [#1760](https://github.com/KomodoPlatform/atomicDEX-API/pull/1760)
+- use OS generated secrets for cryptographically secure randomness in `maker_swap` and `tendermint_coin::get_sender_trade_fee_for_denom` [#1753](https://github.com/KomodoPlatform/atomicDEX-API/pull/1753)
+
+
+## v1.0.2-beta - 2023-04-11
+
+**Features:**
+- `adex-cli` command line utility was introduced that supplies commands: `init`, `start`, `stop`, `status` [#1729](https://github.com/KomodoPlatform/atomicDEX-API/pull/1729)
 
 **Enhancements/Fixes:**
 - CI/CD workflow logics are improved [#1736](https://github.com/KomodoPlatform/atomicDEX-API/pull/1736)
 - Project root is simplified/refactored [#1738](https://github.com/KomodoPlatform/atomicDEX-API/pull/1738)
 - Created base image to provide more glibc compatible pre-built binaries for linux [#1741](https://github.com/KomodoPlatform/atomicDEX-API/pull/1741)
 - Set default log level as "info" [#1747](https://github.com/KomodoPlatform/atomicDEX-API/pull/1747)
-- Detect a chain reorganization, if it occurs, redownload and revalidate the new best chain headers for SPV  [#1728](https://github.com/KomodoPlatform/atomicDEX-API/pull/1728)
+- Refactor `native_log` module  [#1751](https://github.com/KomodoPlatform/atomicDEX-API/pull/1751)
+  - implement stdout/err streaming to persistent file without dependencies
+  - Add new parameter `silent_console` to mm conf
+
 
 ## v1.0.1-beta - 2023-03-17
 

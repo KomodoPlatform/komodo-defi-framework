@@ -995,7 +995,6 @@ impl LightningLogger for LogState {
         let record = Record::builder()
             .args(record.args)
             .level(level)
-            .target("mm_log")
             .module_path(Some(record.module_path))
             .file(Some(record.file))
             .line(Some(record.line))
@@ -1094,30 +1093,16 @@ impl fmt::Display for LogLevel {
 pub fn format_record(record: &Record) -> String {
     const DATE_FORMAT: &str = "%d %H:%M:%S";
 
-    fn extract_crate_name(module_path: &str) -> &str {
-        match module_path.find("::") {
-            Some(ofs) => &module_path[0..ofs],
-            None => module_path,
-        }
-    }
-
     let metadata = record.metadata();
     let level = metadata.level();
     let date = Utc::now().format(DATE_FORMAT);
     let line = record.line().unwrap_or(0);
-    let file = record.file().map(filename).unwrap_or("???");
-    let module = record.module_path().unwrap_or("");
     let message = record.args();
 
-    let file = if module.contains("mm2") {
-        file.to_owned()
-    } else {
-        format!("{}:{}", extract_crate_name(module), file)
-    };
     format!(
-        "{d}, {f}:{L}] {l} {m}",
+        "{d}, {p}:{L}] {l} {m}",
         d = date,
-        f = file,
+        p = record.module_path().unwrap_or(""),
         L = line,
         l = level,
         m = message
