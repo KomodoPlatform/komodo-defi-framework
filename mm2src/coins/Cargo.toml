@@ -15,8 +15,7 @@ enable-solana = [
 	"dep:spl-token",
 	"dep:spl-associated-token-account"
 ]
-enable-nft-integration = []
-default = ["enable-nft-integration"]
+default = []
 
 [lib]
 name = "coins"

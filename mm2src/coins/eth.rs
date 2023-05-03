@@ -21,7 +21,6 @@
 //  Copyright © 2022 AtomicDEX. All rights reserved.
 //
 use super::eth::Action::{Call, Create};
-#[cfg(feature = "enable-nft-integration")]
 use crate::nft::nft_structs::{ContractType, ConvertChain, NftListReq, TransactionNftDetails, WithdrawErc1155,
                               WithdrawErc721};
 use async_trait::async_trait;
@@ -100,9 +99,7 @@ pub use rlp;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
-#[cfg(feature = "enable-nft-integration")]
 use crate::nft::{find_wallet_amount, WithdrawNftResult};
-#[cfg(feature = "enable-nft-integration")]
 use crate::{lp_coinfind_or_err, MmCoinEnum, TransactionType};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
@@ -867,7 +864,6 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     })
 }
 
-#[cfg(feature = "enable-nft-integration")]
 /// `withdraw_erc1155` function returns details of `ERC-1155` transaction including tx hex,
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
 pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155, url: String) -> WithdrawNftResult {
@@ -977,7 +973,6 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155, url: S
     })
 }
 
-#[cfg(feature = "enable-nft-integration")]
 /// `withdraw_erc721` function returns details of `ERC-721` transaction including tx hex,
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
 pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> WithdrawNftResult {
@@ -5159,7 +5154,6 @@ pub async fn get_eth_address(ctx: &MmArc, ticker: &str) -> MmResult<MyWalletAddr
     })
 }
 
-#[cfg(feature = "enable-nft-integration")]
 #[derive(Display)]
 pub enum GetValidEthWithdrawAddError {
     #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
@@ -5174,7 +5168,6 @@ pub enum GetValidEthWithdrawAddError {
     InvalidAddress(String),
 }
 
-#[cfg(feature = "enable-nft-integration")]
 fn get_valid_nft_add_to_withdraw(
     coin_enum: MmCoinEnum,
     to: &str,
