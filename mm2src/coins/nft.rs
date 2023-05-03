@@ -17,8 +17,7 @@ use http::header::ACCEPT;
 use mm2_number::BigDecimal;
 use serde_json::Value as Json;
 
-/// path for moralis-poxy url
-const PATH_PROXY: &str = "/api/v2/";
+const MORALIS_API_ENDPOINT: &str = "/api/v2/";
 /// query parameter for moralis request: The format of the token ID
 const FORMAT_DECIMAL_MORALIS: &str = "format=decimal";
 /// query parameter for moralis request: The transfer direction
@@ -34,7 +33,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
         let my_address = get_eth_address(&ctx, &coin_str).await?;
         let uri_without_cursor = format!(
             "{}{}{}/nft?chain={}&{}",
-            req.url, PATH_PROXY, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS
+            req.url, MORALIS_API_ENDPOINT, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS
         );
 
         // The cursor returned in the previous response (used for getting the next page).
@@ -101,7 +100,7 @@ pub async fn get_nft_metadata(_ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft,
     };
     let uri = format!(
         "{}{}nft/{}/{}?chain={}&{}",
-        req.url, PATH_PROXY, req.token_address, req.token_id, chain_str, FORMAT_DECIMAL_MORALIS
+        req.url, MORALIS_API_ENDPOINT, req.token_address, req.token_id, chain_str, FORMAT_DECIMAL_MORALIS
     );
     let response = send_moralis_request(uri.as_str()).await?;
     let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string())?;
@@ -143,7 +142,12 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
         let my_address = get_eth_address(&ctx, coin_str).await?;
         let uri_without_cursor = format!(
             "{}{}{}/nft/transfers?chain={}&{}&{}",
-            req.url, PATH_PROXY, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS, DIRECTION_BOTH_MORALIS
+            req.url,
+            MORALIS_API_ENDPOINT,
+            my_address.wallet_address,
+            chain_str,
+            FORMAT_DECIMAL_MORALIS,
+            DIRECTION_BOTH_MORALIS
         );
 
         // The cursor returned in the previous response (used for getting the next page).
