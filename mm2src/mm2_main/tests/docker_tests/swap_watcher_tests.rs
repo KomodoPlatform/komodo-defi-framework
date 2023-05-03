@@ -1232,6 +1232,7 @@ fn test_watcher_validate_taker_payment_eth() {
             Some(taker_amount.clone()),
             Some(maker_amount.clone()),
             None,
+            wait_for_confirmation_until,
         ))
         .unwrap(),
     );
@@ -1455,6 +1456,7 @@ fn test_watcher_validate_taker_payment_eth() {
             Some(taker_amount),
             Some(maker_amount),
             Some(watcher_reward.unwrap().amount.double()),
+            timeout,
         ))
         .unwrap(),
     );
@@ -1514,6 +1516,7 @@ fn test_watcher_validate_taker_payment_erc20() {
             Some(taker_amount.clone()),
             Some(maker_amount.clone()),
             None,
+            wait_for_confirmation_until,
         ))
         .unwrap(),
     );
@@ -1737,6 +1740,7 @@ fn test_watcher_validate_taker_payment_erc20() {
             Some(taker_amount),
             Some(maker_amount),
             Some(watcher_reward.unwrap().amount.double()),
+            timeout,
         ))
         .unwrap(),
     );

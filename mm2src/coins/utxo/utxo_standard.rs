@@ -556,14 +556,24 @@ impl WatcherOps for UtxoStandardCoin {
         coin_amount: Option<BigDecimal>,
         other_coin_amount: Option<BigDecimal>,
         reward_amount: Option<BigDecimal>,
+        wait_until: u64,
     ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
-        utxo_common::get_taker_watcher_reward(self, other_coin, coin_amount, other_coin_amount, reward_amount).await
+        utxo_common::get_taker_watcher_reward(
+            self,
+            other_coin,
+            coin_amount,
+            other_coin_amount,
+            reward_amount,
+            wait_until,
+        )
+        .await
     }
 
     async fn get_maker_watcher_reward(
         &self,
         other_coin: &MmCoinEnum,
         reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
         utxo_common::get_maker_watcher_reward(self, other_coin, reward_amount).await
     }

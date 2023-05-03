@@ -1543,6 +1543,7 @@ impl WatcherOps for ZCoin {
         _coin_amount: Option<BigDecimal>,
         _other_coin_amount: Option<BigDecimal>,
         _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
     ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
         unimplemented!()
     }
@@ -1551,6 +1552,7 @@ impl WatcherOps for ZCoin {
         &self,
         _other_coin: &MmCoinEnum,
         _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
         unimplemented!()
     }

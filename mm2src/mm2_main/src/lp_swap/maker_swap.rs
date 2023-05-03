@@ -818,10 +818,12 @@ impl MakerSwap {
             })
             .compat();
 
+        let wait_maker_payment_until =
+            wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
         let watcher_reward = if self.r().watcher_reward {
             match self
                 .maker_coin
-                .get_maker_watcher_reward(&self.taker_coin, self.watcher_reward_amount())
+                .get_maker_watcher_reward(&self.taker_coin, self.watcher_reward_amount(), wait_maker_payment_until)
                 .await
             {
                 Ok(reward) => reward,
@@ -839,8 +841,6 @@ impl MakerSwap {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
-                    let maker_payment_wait_confirm =
-                        wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
                     let payment_fut = self.maker_coin.send_maker_payment(SendPaymentArgs {
                         time_lock_duration: self.r().data.lock_duration,
                         time_lock: self.r().data.maker_payment_lock as u32,
@@ -851,7 +851,7 @@ impl MakerSwap {
                         swap_unique_data: &unique_data,
                         payment_instructions: &self.r().payment_instructions,
                         watcher_reward,
-                        wait_for_confirmation_until: maker_payment_wait_confirm,
+                        wait_for_confirmation_until: wait_maker_payment_until,
                     });
 
                     match payment_fut.compat().await {
@@ -1008,6 +1008,7 @@ impl MakerSwap {
                     Some(self.taker_amount.clone()),
                     Some(self.maker_amount.clone()),
                     self.watcher_reward_amount(),
+                    wait_taker_payment,
                 )
                 .await
             {

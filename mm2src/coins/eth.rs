@@ -1325,7 +1325,7 @@ impl SwapOps for EthCoin {
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         let watcher_reward = if args.watcher_reward {
             Some(
-                self.get_watcher_reward_amount()
+                self.get_watcher_reward_amount(args.wait_until)
                     .await
                     .map_err(|err| PaymentInstructionsErr::WatcherRewardErr(err.get_inner().to_string()))?
                     .to_string()
@@ -1711,6 +1711,7 @@ impl WatcherOps for EthCoin {
         _coin_amount: Option<BigDecimal>,
         _other_coin_amount: Option<BigDecimal>,
         reward_amount: Option<BigDecimal>,
+        wait_until: u64,
     ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
         let reward_target = if other_coin.is_eth() {
             RewardTarget::Contract
@@ -1721,7 +1722,7 @@ impl WatcherOps for EthCoin {
         let is_exact_amount = reward_amount.is_some();
         let amount = match reward_amount {
             Some(amount) => amount,
-            None => self.get_watcher_reward_amount().await?,
+            None => self.get_watcher_reward_amount(wait_until).await?,
         };
 
         let send_contract_reward_on_spend = false;
@@ -1738,6 +1739,7 @@ impl WatcherOps for EthCoin {
         &self,
         other_coin: &MmCoinEnum,
         reward_amount: Option<BigDecimal>,
+        wait_until: u64,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
         let reward_target = if other_coin.is_eth() {
             RewardTarget::None
@@ -1749,7 +1751,7 @@ impl WatcherOps for EthCoin {
         let amount = match reward_amount {
             Some(amount) => amount,
             None => {
-                let gas_cost_eth = self.get_watcher_reward_amount().await?;
+                let gas_cost_eth = self.get_watcher_reward_amount(wait_until).await?;
 
                 match &self.coin_type {
                     EthCoinType::Eth => gas_cost_eth,
@@ -4212,9 +4214,9 @@ impl EthCoin {
         Ok(None)
     }
 
-    pub async fn get_watcher_reward_amount(&self) -> Result<BigDecimal, MmError<WatcherRewardError>> {
+    pub async fn get_watcher_reward_amount(&self, wait_until: u64) -> Result<BigDecimal, MmError<WatcherRewardError>> {
         let gas_price = repeatable!(async { self.get_gas_price().compat().await.retry_on_err() })
-            .attempts(3)
+            .until_s(wait_until)
             .repeat_every_secs(10.)
             .await
             .map_err(|_| WatcherRewardError::RPCError("Error getting the gas price".to_string()))?;

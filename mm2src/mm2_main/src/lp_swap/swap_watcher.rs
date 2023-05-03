@@ -241,7 +241,7 @@ impl State for ValidateTakerPayment {
         let watcher_reward = if watcher_ctx.watcher_reward {
             match watcher_ctx
                 .taker_coin
-                .get_taker_watcher_reward(&watcher_ctx.maker_coin, None, None, None)
+                .get_taker_watcher_reward(&watcher_ctx.maker_coin, None, None, None, taker_payment_spend_deadline)
                 .await
             {
                 Ok(reward) => Some(reward),

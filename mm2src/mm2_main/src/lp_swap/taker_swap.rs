@@ -942,6 +942,7 @@ impl TakerSwap {
         let expires_in = wait_for_maker_payment_conf_duration(self.r().data.lock_duration);
 
         let watcher_reward = self.r().watcher_reward && self.maker_coin.is_eth();
+        let wait_until = wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
         let instructions = self
             .taker_coin
             .maker_payment_instructions(PaymentInstructionArgs {
@@ -950,6 +951,7 @@ impl TakerSwap {
                 maker_lock_duration,
                 expires_in,
                 watcher_reward,
+                wait_until,
             })
             .await?;
         Ok(SwapTxDataMsg::new(taker_fee_data, instructions))
@@ -1368,10 +1370,11 @@ impl TakerSwap {
         info!("After wait confirm");
 
         let reward_amount = self.r().reward_amount.clone();
+        let wait_maker_payment_until = self.r().data.maker_payment_wait;
         let watcher_reward = if self.r().watcher_reward {
             match self
                 .maker_coin
-                .get_maker_watcher_reward(&self.taker_coin, reward_amount)
+                .get_maker_watcher_reward(&self.taker_coin, reward_amount, wait_maker_payment_until)
                 .await
             {
                 Ok(reward) => reward,
@@ -1466,6 +1469,7 @@ impl TakerSwap {
         });
 
         let reward_amount = self.r().reward_amount.clone();
+        let wait_until = self.r().data.taker_payment_lock;
         let watcher_reward = if self.r().watcher_reward {
             match self
                 .taker_coin
@@ -1474,6 +1478,7 @@ impl TakerSwap {
                     Some(self.taker_amount.clone().into()),
                     Some(self.maker_amount.clone().into()),
                     reward_amount,
+                    wait_until,
                 )
                 .await
             {

@@ -2202,6 +2202,7 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
     coin_amount: Option<BigDecimal>,
     other_coin_amount: Option<BigDecimal>,
     reward_amount: Option<BigDecimal>,
+    wait_until: u64,
 ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
     let reward_target = RewardTarget::PaymentReceiver;
     let is_exact_amount = reward_amount.is_some();
@@ -2219,7 +2220,7 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
     let amount = match reward_amount {
         Some(amount) => amount,
         None => {
-            let gas_cost_eth = other_coin.get_watcher_reward_amount().await?;
+            let gas_cost_eth = other_coin.get_watcher_reward_amount(wait_until).await?;
             let price_in_eth = if let (EthCoinType::Eth, Some(coin_amount), Some(other_coin_amount)) =
                 (&other_coin.coin_type, coin_amount, other_coin_amount)
             {

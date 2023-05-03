@@ -1148,6 +1148,7 @@ impl WatcherOps for Qrc20Coin {
         _coin_amount: Option<BigDecimal>,
         _other_coin_amount: Option<BigDecimal>,
         _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
     ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
         unimplemented!()
     }
@@ -1156,6 +1157,7 @@ impl WatcherOps for Qrc20Coin {
         &self,
         _other_coin: &MmCoinEnum,
         _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
         unimplemented!()
     }

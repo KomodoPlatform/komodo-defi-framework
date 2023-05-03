@@ -652,6 +652,7 @@ impl WatcherOps for SolanaCoin {
         coin_amount: Option<BigDecimal>,
         other_coin_amount: Option<BigDecimal>,
         reward_amount: Option<BigDecimal>,
+        wait_until: u64,
     ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
         unimplemented!();
     }
@@ -660,6 +661,7 @@ impl WatcherOps for SolanaCoin {
         &self,
         other_coin: &MmCoinEnum,
         reward_amount: Option<BigDecimal>,
+        wait_until: u64,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
         unimplemented!();
     }

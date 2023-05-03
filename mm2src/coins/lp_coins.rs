@@ -771,6 +771,7 @@ pub struct PaymentInstructionArgs<'a> {
     pub maker_lock_duration: u64,
     pub expires_in: u64,
     pub watcher_reward: bool,
+    pub wait_until: u64,
 }
 
 #[derive(Display)]
@@ -981,12 +982,14 @@ pub trait WatcherOps {
         coin_amount: Option<BigDecimal>,
         other_coin_amount: Option<BigDecimal>,
         reward_amount: Option<BigDecimal>,
+        wait_until: u64,
     ) -> Result<WatcherReward, MmError<WatcherRewardError>>;
 
     async fn get_maker_watcher_reward(
         &self,
         other_coin: &MmCoinEnum,
         reward_amount: Option<BigDecimal>,
+        wait_until: u64,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
 }
 
