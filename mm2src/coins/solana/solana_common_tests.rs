@@ -94,6 +94,7 @@ pub fn solana_coin_for_test(seed: String, net_type: SolanaNet) -> (MmArc, Solana
         client,
         spl_tokens_infos,
         abortable_system: spawner,
+        is_available: AtomicBool::new(true),
     }));
     (ctx, solana_coin)
 }

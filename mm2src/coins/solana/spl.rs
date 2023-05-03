@@ -15,6 +15,7 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, ConfirmPayment
 use async_trait::async_trait;
 use bincode::serialize;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
+use common::log::warn;
 use common::{async_blocking, now_ms};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
