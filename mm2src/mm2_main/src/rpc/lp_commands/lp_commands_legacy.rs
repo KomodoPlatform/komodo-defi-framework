@@ -112,13 +112,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
             .map_err(|e| ERRL!("{}", e))
     };
 
-    if !coins_ctx.get_dependent_tokens(&ticker).await.is_empty() && !force_disable {
-        coin.update_is_available(false);
-
-        return response(&ticker, Vec::default(), true);
-    }
-
-    // Proceed with diabling the coin/tokens.
+    // Proceed with disabling the coin/tokens.
     let mut cancelled_orders = vec![];
     log!("disabling {ticker} coin");
     let cancelled_and_matching_orders = cancel_orders_by(&ctx, CancelBy::Coin {
@@ -132,6 +126,11 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         Err(err) => {
             return disable_coin_err(err, &still_matching_orders, &cancelled_orders, &active_swaps);
         },
+    }
+
+    if !coins_ctx.get_dependent_tokens(&ticker).await.is_empty() && !force_disable {
+        coin.update_is_available(false);
+        return response(&ticker, cancelled_orders, true);
     }
 
     coins_ctx.remove_coin(coin).await;
