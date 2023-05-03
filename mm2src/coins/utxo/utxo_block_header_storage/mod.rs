@@ -240,7 +240,7 @@ mod block_headers_storage_tests {
         storage.init().await.unwrap();
 
         // test remove headers from height.
-        let mut headers = HashMap::with_capacity(3);
+        let mut headers = HashMap::with_capacity(5);
 
         // https://live.blockcypher.com/btc-testnet/block/00000000016a2f4a57ff9b9422ddc09adb753b689324899fcdc56172f55480f7/
         let block_header: BlockHeader = "02000000f2a57f6b614df598ff8dff068292bd862c2bb0c12e4e380638db5700000000002349f389569e582d42cb51aa584f5a74f977c3cf86d2c2ac63b1bbde7fc95dc7f1e61353ab80011c8585405d".into();
@@ -265,10 +265,11 @@ mod block_headers_storage_tests {
         storage.add_block_headers_to_storage(headers).await.unwrap();
         assert!(storage.is_table_empty().await.is_err());
 
-        // Remove 2 headers from storage.(201593 - 201594)
+        // Remove 4 headers from storage
         storage.remove_headers_from_storage(201593, 201596).await.unwrap();
 
-        // Validate that blockers 201593..201597 are removed from storage.
+        // Validate that block headers 201593 to 201596 are removed from storage
+        // Note that 201593..201597 is exclusive meaning it includes the first value 201593 but excludes the last value 201597
         for h in 201593..201597 {
             let block_header = storage.get_block_header(h).await.unwrap();
             assert!(block_header.is_none());

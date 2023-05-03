@@ -9,7 +9,7 @@ use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::{BlockHeader, TransactionOutput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
-use common::log::{error, info, warn};
+use common::log::{debug, error, info, warn};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -23,7 +23,6 @@ use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 use std::num::NonZeroU64;
 
-const FETCH_BLOCK_HEADERS_ATTEMPTS: u8 = 3;
 const CHUNK_SIZE_REDUCER_VALUE: u64 = 100;
 
 pub struct UtxoArcBuilder<'a, F, T>
@@ -248,11 +247,10 @@ impl Default for BlockHeaderUtxoLoopExtraArgs {
     }
 }
 
-// Executes a loop to synchronise block headers using an Electrum client.
-// This function creates a loop that fetches block headers from an Electrum client, validate and save to storage.
-// The loop is managed by a sync_status_loop_handle which allows for notifications of temporary or permanent errors.
-// The block_count parameter specifies the number of blocks to fetch from the Electrum server per chunk.
-// The spv_conf parameter is used to configure the Simplified Payment Verification settings for the Electrum client.
+/// This function executes a loop to fetch, validate and store block headers from the connected electrum servers.
+/// sync_status_loop_handle notifies the coin activation function of errors and if the error is temporary or not.
+/// block_count is the current block count of the coin. This is used to determine if the coin is synced or not.
+/// spv_conf is passed from the coin configuration and it determines how headers are validated and stored.
 pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
     weak: UtxoWeak,
     constructor: impl Fn(UtxoArc) -> T,
@@ -270,7 +268,7 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
         };
 
         let storage = client.block_headers_storage();
-        let from_block_height = match storage.get_last_block_height().await {
+        let last_height_in_storage = match storage.get_last_block_height().await {
             Ok(Some(height)) => height,
             Ok(None) => {
                 if let Err(err) = validate_and_store_starting_header(client, ticker, storage, &spv_conf).await {
@@ -287,8 +285,9 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
             },
         };
 
-        let mut to_block_height = from_block_height + args.chunk_size;
-        if to_block_height > block_count {
+        let mut retrieve_to = last_height_in_storage + args.chunk_size;
+        if retrieve_to > block_count {
+            // Todo: Need to fix the case of if a malicious electrum keeps giving us the same header height, get_block_count should probably check all electrums for the latest height
             block_count = match coin.as_ref().rpc_client.get_block_count().compat().await {
                 Ok(h) => h,
                 Err(err) => {
@@ -301,15 +300,15 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
             // More than `chunk_size` blocks could have appeared since the last `get_block_count` RPC.
             // So reset `to_block_height` if only `from_block_height + chunk_size > actual_block_count`.
-            if to_block_height > block_count {
-                to_block_height = block_count;
+            if retrieve_to > block_count {
+                retrieve_to = block_count;
             }
         }
-        drop_mutability!(to_block_height);
+        drop_mutability!(retrieve_to);
 
         // Todo: Add code for the case if a chain reorganization happens
-        if from_block_height == block_count {
-            sync_status_loop_handle.notify_sync_finished(to_block_height);
+        if last_height_in_storage == block_count {
+            sync_status_loop_handle.notify_sync_finished(block_count);
             Timer::sleep(args.success_sleep).await;
             continue;
         }
@@ -317,65 +316,45 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
         // Check if there should be a limit on the number of headers stored in storage.
         if let Some(max_stored_block_headers) = spv_conf.max_stored_block_headers {
             if let Err(err) =
-                remove_excessive_headers_from_storage(storage, to_block_height, max_stored_block_headers).await
+                remove_excessive_headers_from_storage(storage, retrieve_to, max_stored_block_headers).await
             {
                 sync_status_loop_handle.notify_on_temp_error(err);
                 Timer::sleep(args.error_sleep).await;
             };
         }
 
-        sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
+        sync_status_loop_handle.notify_blocks_headers_sync_status(last_height_in_storage + 1, retrieve_to);
 
-        let mut fetch_blocker_headers_attempts = FETCH_BLOCK_HEADERS_ATTEMPTS;
-        let (block_registry, block_headers) = match retrieve_headers_helper(
-            &mut args,
-            client,
-            from_block_height + 1,
-            ticker,
-            to_block_height,
-            &mut fetch_blocker_headers_attempts,
-        )
-        .await
-        {
-            Ok(res) => res,
-            Err(err) => {
-                if err.is_temp_error() {
-                    error!("{err:?}");
-                    sync_status_loop_handle.notify_on_temp_error(err);
-                    Timer::sleep(args.error_sleep).await;
-                    continue;
-                } else {
-                    error!("{err:?}");
-                    sync_status_loop_handle.notify_on_permanent_error(err);
-                    Timer::sleep(args.error_sleep).await;
-                    break;
-                }
-            },
-        };
+        let (block_registry, block_headers) =
+            try_to_retrieve_headers_until_success(&mut args, client, last_height_in_storage + 1, retrieve_to).await;
 
         // Validate retrieved block headers.
-        if let Err(err) = validate_headers(ticker, from_block_height, &block_headers, storage, &spv_conf).await {
+        if let Err(err) = validate_headers(ticker, last_height_in_storage, &block_headers, storage, &spv_conf).await {
             // This code block handles a specific error scenario where a parent hash mismatch(chain re-org) is
             // detected in the SPV client.
             // If this error occurs, the code retrieves and revalidates the mismatching header from the SPV client..
-            if let SPVError::ParentHashMismatch { coin, height } = &err {
-                info!("Headers downloaded from current electrum are invalid at block height {height} for {coin}");
+            if let SPVError::ParentHashMismatch {
+                coin,
+                mismatched_block_height,
+            } = err
+            {
                 // Todo: Switch electrum and retry fetching and validating headers again.
-                match retrieve_and_revalidate_mismatching_header(
-                    coin,
+                match resolve_possible_chain_reorg(
+                    &coin,
                     client,
                     &mut args,
-                    *height,
+                    last_height_in_storage,
+                    mismatched_block_height,
                     storage,
                     &spv_conf,
-                    &mut fetch_blocker_headers_attempts,
                 )
                 .await
                 {
                     Ok(_) => {
-                        log!("Chain reorg detected and resolved!");
+                        info!("Chain reorg detected and resolved for coin: {}", coin);
                         continue;
                     },
+                    // Todo: these errors should be handled differently
                     Err(err) => {
                         if err.is_temp_error() {
                             error!("{err:?}");
@@ -405,160 +384,103 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
 // Represents the different types of errors that can occur while retrieving block headers from the Electrum client.
 #[derive(Debug, Display)]
-enum RetrieveHeadersError {
+enum PossibleChainReorgError {
     #[display(fmt = "Preconfigured starting_block_header is bad or invalid. Please reconfigure.")]
     BadStartingHeaderChain,
-    #[display(
-        fmt = "Unable To Retrieve Headers: {err} on retrieving latest {ticker} headers from rpc after {attempts} attempts"
-    )]
-    AttemptsExceeded { err: String, ticker: String, attempts: u8 },
-    #[display(fmt = "Network Error: Will try fetching {} block headers again after 10 secs", _0)]
-    NetworkError(String),
-    #[display(
-        fmt = "Got response too large error while retrieving latest {ticker} headers from rpc!, current chunk_size: {current_chunk_size} - {attempts} attempts left"
-    )]
-    ResponseTooLarge {
-        current_chunk_size: u64,
-        ticker: String,
-        attempts: u8,
-    },
     #[display(fmt = "Block Header Storage Error: {_0}")]
     BlockHeaderStorageError(String),
     #[display(fmt = "Validation Error: {}", _0)]
     ValidationError(String),
 }
 
-impl RetrieveHeadersError {
-    fn is_temp_error(&self) -> bool {
-        matches!(
-            self,
-            RetrieveHeadersError::NetworkError(_)
-                | RetrieveHeadersError::ResponseTooLarge { .. }
-                | RetrieveHeadersError::BlockHeaderStorageError(_)
-        )
-    }
+impl PossibleChainReorgError {
+    fn is_temp_error(&self) -> bool { matches!(self, PossibleChainReorgError::BlockHeaderStorageError(_)) }
 }
 
-// Retrieves block headers from Electrum client, with error handling and retries.
-async fn retrieve_headers_helper(
+/// Loops until the headers are retrieved successfully.
+async fn try_to_retrieve_headers_until_success(
     args: &mut BlockHeaderUtxoLoopExtraArgs,
     client: &ElectrumClient,
-    from_block_height: u64,
-    ticker: &str,
-    to_block_height: u64,
-    fetch_blocker_headers_attempts: &mut u8,
-) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>), RetrieveHeadersError> {
-    if *fetch_blocker_headers_attempts >= 1 {
-        let (block_registry, block_headers) = match client
-            .retrieve_headers(from_block_height, to_block_height)
-            .compat()
-            .await
-        {
-            Ok(res) => res,
+    retrieve_from: u64,
+    retrieve_to: u64,
+) -> (HashMap<u64, BlockHeader>, Vec<BlockHeader>) {
+    loop {
+        match client.retrieve_headers(retrieve_from, retrieve_to).compat().await {
+            Ok(res) => break res,
             Err(err) => {
                 let err_inner = err.get_inner();
                 if err_inner.is_network_error() {
-                    return Err(RetrieveHeadersError::NetworkError(err.to_string()));
+                    continue;
                 };
 
                 // If electrum returns response too large error, we will reduce the requested headers by CHUNK_SIZE_REDUCER_VALUE in every loop until we arrive at a reasonable value.
                 if err_inner.is_response_too_large() && args.chunk_size > CHUNK_SIZE_REDUCER_VALUE {
                     args.chunk_size -= CHUNK_SIZE_REDUCER_VALUE;
-
-                    if *fetch_blocker_headers_attempts > 0 {
-                        *fetch_blocker_headers_attempts -= 1;
-                        return Err(RetrieveHeadersError::ResponseTooLarge {
-                            current_chunk_size: args.chunk_size,
-                            ticker: ticker.to_string(),
-                            attempts: *fetch_blocker_headers_attempts,
-                        });
-                    };
+                    continue;
                 }
 
-                // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
-                return Err(RetrieveHeadersError::AttemptsExceeded {
-                    err: err.to_string(),
-                    ticker: ticker.to_string(),
-                    attempts: *fetch_blocker_headers_attempts,
-                });
+                // Todo: If the error is not a network error or response too large error, this means there are a problem with all electrums not related to connections and we need to find a way to deal with this.
             },
-        };
-
-        return Ok((block_registry, block_headers));
+        }
     }
-
-    Err(RetrieveHeadersError::AttemptsExceeded {
-        err: format!(
-            "Error on retrieving latest {ticker} headers from rpc after {FETCH_BLOCK_HEADERS_ATTEMPTS} attempts"
-        ),
-        ticker: ticker.to_string(),
-        attempts: *fetch_blocker_headers_attempts,
-    })
 }
 
 /// Retrieves block headers from the specified client within the given height range and revalidate against [`SPVError::ParentHashMismatch`] .
-async fn retrieve_and_revalidate_mismatching_header(
+async fn resolve_possible_chain_reorg(
     coin: &str,
     client: &ElectrumClient,
     args: &mut BlockHeaderUtxoLoopExtraArgs,
-    from_height: u64,
+    last_height_in_storage: u64,
+    mismatched_block_height: u64,
     storage: &dyn BlockHeaderStorageOps,
     spv_conf: &SPVConf,
-    fetch_blocker_headers_attempts: &mut u8,
-) -> Result<(), RetrieveHeadersError> {
-    let mut current_height = from_height + args.chunk_size;
-    let mut from_height = from_height;
+) -> Result<(), PossibleChainReorgError> {
+    let mut retrieve_from = mismatched_block_height;
+    let mut retrieve_to = retrieve_from + args.chunk_size;
 
     loop {
-        // Check if the current height is equal to the height of the preconfigured starting block header.
-        // If it is, it indicates a bad chain, and we return an error of type `RetrieveHeadersError::BadStartingHeaderChain`.
-        if from_height == spv_conf.starting_block_header.height {
-            // Bad chain for preconfigured starting header detected, reconfigure.
-            return Err(RetrieveHeadersError::BadStartingHeaderChain);
-        };
-
+        debug!(
+            "Possible chain reorganization for coin:{} at block height {}!",
+            coin, retrieve_from
+        );
         // Attempt to retrieve the headers and validate them.
-        return match retrieve_headers_helper(
-            args,
-            client,
-            from_height,
-            coin,
-            current_height,
-            fetch_blocker_headers_attempts,
-        )
-        .await
-        {
-            Ok((_, block_headers)) => {
-                // If the headers are successfully retrieved and validated, remove the headers from storage and continue the outer loop.
-                match validate_headers(coin, from_height - 1, &block_headers, storage, spv_conf).await {
-                    Ok(_) => {
-                        // Headers are valid, remove saved headers and continue outer loop
-                        storage
-                            .remove_headers_from_storage(from_height, current_height)
-                            .await
-                            .map_err(|err| RetrieveHeadersError::BlockHeaderStorageError(err.to_string()))
-                    },
-                    Err(err) => {
-                        // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
-                        if let SPVError::ParentHashMismatch { coin: _, height } = &err {
-                            // There is another ParentHashMismatch, loop to retrieve previous headers
-                            current_height = *height - 1;
-                            // Calculate the starting height for the next retrieval based on the current height and the chunk size.
-                            // If the current height is below the starting block header height, use the starting block header
-                            // height.
-                            from_height = current_height
-                                .saturating_sub(args.chunk_size)
-                                .max(spv_conf.starting_block_header.height);
-                            continue;
-                        } else {
-                            Err(RetrieveHeadersError::ValidationError(err.to_string()))
-                        }
-                    },
+        let (_, headers_to_validate) =
+            try_to_retrieve_headers_until_success(args, client, retrieve_from, retrieve_to).await;
+        // If the headers are successfully retrieved and validated, remove the headers from storage and continue the outer loop.
+        match validate_headers(coin, retrieve_from - 1, &headers_to_validate, storage, spv_conf).await {
+            Ok(_) => {
+                // Headers are valid, remove saved headers and continue outer loop
+                return storage
+                    .remove_headers_from_storage(retrieve_from, last_height_in_storage)
+                    .await
+                    .map_err(|err| PossibleChainReorgError::BlockHeaderStorageError(err.to_string()));
+            },
+            Err(err) => {
+                if let SPVError::ParentHashMismatch {
+                    mismatched_block_height,
+                    ..
+                } = err
+                {
+                    // There is another parent hash mismatch, retrieve the chunk right before this mismatched block height.
+                    retrieve_to = mismatched_block_height - 1;
+                    // Check if the height to retrieve up to is equal to the height of the preconfigured starting block header.
+                    // If it is, it indicates a bad chain, and we return an error of type `RetrieveHeadersError::BadStartingHeaderChain`.
+                    if retrieve_to == spv_conf.starting_block_header.height {
+                        // Bad chain for preconfigured starting header detected, reconfigure.
+                        // Todo: There is still a possibility that the electrum is malicious, this error should only be returned if all electrums have a mismatching header earlier than the preconfigured starting header.
+                        return Err(PossibleChainReorgError::BadStartingHeaderChain);
+                    };
+                    // Calculate the height to retrieve from on next iteration based on the the height we will retrieve up to and the chunk size.
+                    // If the current height is below or equal to the starting block header height, use the block header
+                    // height after the starting one.
+                    retrieve_from = retrieve_to
+                        .saturating_sub(args.chunk_size)
+                        .max(spv_conf.starting_block_header.height + 1);
+                } else {
+                    return Err(PossibleChainReorgError::ValidationError(err.to_string()));
                 }
             },
-            // If the headers cannot be retrieved, return an error.
-            Err(err) => Err(err),
-        };
+        }
     }
 }
 

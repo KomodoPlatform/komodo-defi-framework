@@ -59,8 +59,12 @@ pub enum SPVError {
     WrongRetargetHeight { coin: String, expected_height: u64 },
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
-    #[display(fmt = "Parent Hash Mismatch - coin:{coin} - height:{height}")]
-    ParentHashMismatch { coin: String, height: u64 },
+    #[display(
+        fmt = "Parent Hash Mismatch - coin:{} - mismatched_block_height:{}",
+        coin,
+        mismatched_block_height
+    )]
+    ParentHashMismatch { coin: String, mismatched_block_height: u64 },
 }
 
 impl From<RawHeaderError> for SPVError {
@@ -332,56 +336,62 @@ fn validate_header_prev_hash(actual: &H256, to_compare_with: &H256) -> bool { ac
 /// Wrapper inspired by `bitcoin_spv::validatespv::validate_header_chain`
 pub async fn validate_headers(
     coin: &str,
-    previous_height: u64,
-    headers: &[BlockHeader],
+    last_validated_height: u64,
+    headers_to_validate: &[BlockHeader],
     storage: &dyn BlockHeaderStorageOps,
     conf: &SPVConf,
 ) -> Result<(), SPVError> {
-    let mut previous_header =
-        if previous_height == conf.starting_block_header.height {
-            conf.starting_block_header.clone()
-        } else {
-            let header = storage.get_block_header(previous_height).await?.ok_or(
-                BlockHeaderStorageError::GetFromStorageError {
-                    coin: coin.to_string(),
-                    reason: format!("Header with height {previous_height} is not found in storage"),
-                },
-            )?;
-            SPVBlockHeader::from_block_header_and_height(&header, previous_height)
-        };
-    let mut previous_height = previous_height;
-    let mut previous_hash = previous_header.hash;
-    let mut prev_bits = previous_header.bits.clone();
+    let mut last_validated_header = if last_validated_height == conf.starting_block_header.height {
+        conf.starting_block_header.clone()
+    } else {
+        let header = storage.get_block_header(last_validated_height).await?.ok_or(
+            BlockHeaderStorageError::GetFromStorageError {
+                coin: coin.to_string(),
+                reason: format!("Header with height {} is not found in storage", last_validated_height),
+            },
+        )?;
+        SPVBlockHeader::from_block_header_and_height(&header, last_validated_height)
+    };
+    let mut last_validated_height = last_validated_height;
+    let mut last_validated_hash = last_validated_header.hash;
+    let mut last_validated_bits = last_validated_header.bits.clone();
 
-    for header in headers.iter() {
-        if !validate_header_prev_hash(&header.previous_header_hash, &previous_hash) {
+    for header_to_validate in headers_to_validate.iter() {
+        if !validate_header_prev_hash(&header_to_validate.previous_header_hash, &last_validated_hash) {
             // Detect for chain reorganization and return the last header(previous_height + 1).
             return Err(SPVError::ParentHashMismatch {
                 coin: coin.to_string(),
-                height: previous_height + 1,
+                mismatched_block_height: last_validated_height + 1,
             });
         }
 
-        let current_block_bits = header.bits.clone();
+        let block_bits_to_validate = header_to_validate.bits.clone();
         if let Some(params) = &conf.validation_params {
-            if params.constant_difficulty && params.difficulty_check && current_block_bits != prev_bits {
+            if params.constant_difficulty && params.difficulty_check && block_bits_to_validate != last_validated_bits {
                 return Err(SPVError::UnexpectedDifficultyChange);
             }
 
             if let Some(algorithm) = &params.difficulty_algorithm {
-                let next_block_bits =
-                    next_block_bits(coin, header.time, previous_header.clone(), storage, algorithm).await?;
+                let next_block_bits = next_block_bits(
+                    coin,
+                    header_to_validate.time,
+                    last_validated_header.clone(),
+                    storage,
+                    algorithm,
+                )
+                .await?;
 
-                if !params.constant_difficulty && params.difficulty_check && current_block_bits != next_block_bits {
+                if !params.constant_difficulty && params.difficulty_check && block_bits_to_validate != next_block_bits {
                     return Err(SPVError::InsufficientWork);
                 }
             }
         }
 
-        prev_bits = current_block_bits;
-        previous_header = SPVBlockHeader::from_block_header_and_height(header, previous_height + 1);
-        previous_hash = previous_header.hash;
-        previous_height += 1;
+        last_validated_bits = block_bits_to_validate;
+        last_validated_header =
+            SPVBlockHeader::from_block_header_and_height(header_to_validate, last_validated_height + 1);
+        last_validated_hash = last_validated_header.hash;
+        last_validated_height += 1;
     }
     Ok(())
 }
