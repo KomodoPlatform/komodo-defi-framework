@@ -1,4 +1,4 @@
-use crate::{ValidatePaymentError, INVALID_WATCHER_REWARD_ERR_LOG};
+use crate::ValidatePaymentError;
 use mm2_err_handle::prelude::MmError;
 
 pub const REWARD_GAS_AMOUNT: u64 = 70000;
@@ -21,10 +21,8 @@ pub fn validate_watcher_reward(
         let max_acceptable_reward = get_reward_upper_boundary(expected_reward);
         if actual_reward < min_acceptable_reward || actual_reward > max_acceptable_reward {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "{INVALID_WATCHER_REWARD_ERR_LOG}: Provided watcher reward {} is not within the expected interval {} - {}",
-                actual_reward,
-                min_acceptable_reward,
-                max_acceptable_reward
+                "Provided watcher reward {} is not within the expected interval {} - {}",
+                actual_reward, min_acceptable_reward, max_acceptable_reward
             )));
         }
     }

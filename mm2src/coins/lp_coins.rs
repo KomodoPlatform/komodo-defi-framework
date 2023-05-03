@@ -323,7 +323,6 @@ pub const INVALID_PAYMENT_STATE_ERR_LOG: &str = "Invalid payment state";
 pub const INVALID_SWAP_ID_ERR_LOG: &str = "Invalid swap id";
 pub const INVALID_SCRIPT_ERR_LOG: &str = "Invalid script";
 pub const INVALID_REFUND_TX_ERR_LOG: &str = "Invalid refund transaction";
-pub const INVALID_WATCHER_REWARD_ERR_LOG: &str = "Invalid watcher reward amount";
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -590,7 +589,7 @@ pub struct WatcherValidateTakerFeeInput {
     pub lock_duration: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct WatcherValidatePaymentInput {
     pub payment_tx: Vec<u8>,
     pub taker_payment_refund_preimage: Vec<u8>,
@@ -598,9 +597,9 @@ pub struct WatcherValidatePaymentInput {
     pub taker_pub: Vec<u8>,
     pub maker_pub: Vec<u8>,
     pub secret_hash: Vec<u8>,
-    pub try_spv_proof_until: u64,
+    pub wait_until: u64,
     pub confirmations: u64,
-    pub watcher_reward: Option<WatcherReward>,
+    pub maker_coin: MmCoinEnum,
 }
 
 #[derive(Clone, Debug)]

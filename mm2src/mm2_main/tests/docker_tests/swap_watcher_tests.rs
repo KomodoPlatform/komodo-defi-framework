@@ -7,8 +7,7 @@ use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoin
             SearchForSwapTxSpendInput, SendPaymentArgs, SwapOps, WatcherOps, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
             INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
-            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, INVALID_WATCHER_REWARD_ERR_LOG,
-            OLD_TRANSACTION_ERR_LOG};
+            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
@@ -296,7 +295,7 @@ fn test_watcher_spends_maker_payment_utxo_utxo() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_spends_maker_payment_utxo_eth() {
     let balances = start_swaps_and_get_balances(
         "ETH",
@@ -323,7 +322,7 @@ fn test_watcher_spends_maker_payment_utxo_eth() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_spends_maker_payment_eth_utxo() {
     let balances = start_swaps_and_get_balances(
         "MYCOIN",
@@ -363,7 +362,7 @@ fn test_watcher_spends_maker_payment_eth_utxo() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_spends_maker_payment_eth_erc20() {
     let balances = start_swaps_and_get_balances(
         "JST",
@@ -390,7 +389,7 @@ fn test_watcher_spends_maker_payment_eth_erc20() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_spends_maker_payment_erc20_eth() {
     let balances = start_swaps_and_get_balances("ETH", "JST", 0.01, 0.01, 1., &[], SwapFlow::WatcherSpendsMakerPayment);
 
@@ -409,7 +408,7 @@ fn test_watcher_spends_maker_payment_erc20_eth() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_spends_maker_payment_utxo_erc20() {
     let balances = start_swaps_and_get_balances(
         "JST",
@@ -436,7 +435,7 @@ fn test_watcher_spends_maker_payment_utxo_erc20() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_spends_maker_payment_erc20_utxo() {
     let balances = start_swaps_and_get_balances(
         "MYCOIN",
@@ -500,7 +499,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_refunds_taker_payment_eth() {
     let balances = start_swaps_and_get_balances(
         "ETH",
@@ -520,7 +519,7 @@ fn test_watcher_refunds_taker_payment_eth() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_refunds_taker_payment_erc20() {
     let balances = start_swaps_and_get_balances(
         "JST",
@@ -559,7 +558,7 @@ fn test_watcher_waits_for_taker_utxo() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_waits_for_taker_eth() {
     start_swaps_and_get_balances(
         "JST",
@@ -573,7 +572,7 @@ fn test_watcher_waits_for_taker_eth() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_two_watchers_spend_maker_payment_eth_erc20() {
     let coins = json!([eth_sepolia_conf(), jst_sepolia_conf()]);
 
@@ -790,7 +789,7 @@ fn test_watcher_validate_taker_fee_utxo() {
 }
 
 #[test]
-//#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
+#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 fn test_watcher_validate_taker_fee_eth() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
@@ -893,7 +892,7 @@ fn test_watcher_validate_taker_fee_eth() {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_validate_taker_fee_erc20() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
@@ -1055,9 +1054,9 @@ fn test_watcher_validate_taker_payment_utxo() {
             taker_pub: taker_pubkey.to_vec(),
             maker_pub: maker_pubkey.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: None,
+            maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
         })
         .wait();
     assert!(validate_taker_payment_res.is_ok());
@@ -1070,9 +1069,9 @@ fn test_watcher_validate_taker_payment_utxo() {
             taker_pub: maker_pubkey.to_vec(),
             maker_pub: maker_pubkey.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: None,
+            maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1096,9 +1095,9 @@ fn test_watcher_validate_taker_payment_utxo() {
             taker_pub: taker_pubkey.to_vec(),
             maker_pub: maker_pubkey.to_vec(),
             secret_hash: wrong_secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: None,
+            maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1148,9 +1147,9 @@ fn test_watcher_validate_taker_payment_utxo() {
             taker_pub: taker_pubkey.to_vec(),
             maker_pub: maker_pubkey.to_vec(),
             secret_hash: wrong_secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: None,
+            maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1187,9 +1186,9 @@ fn test_watcher_validate_taker_payment_utxo() {
             taker_pub: taker_pubkey.to_vec(),
             maker_pub: maker_pubkey.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: None,
+            maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1230,7 +1229,7 @@ fn test_watcher_validate_taker_payment_eth() {
         block_on(taker_coin.get_taker_watcher_reward(
             &MmCoinEnum::from(taker_coin.clone()),
             Some(taker_amount.clone()),
-            Some(maker_amount.clone()),
+            Some(maker_amount),
             None,
             wait_for_confirmation_until,
         ))
@@ -1270,9 +1269,9 @@ fn test_watcher_validate_taker_payment_eth() {
             taker_pub: taker_pub.to_vec(),
             maker_pub: maker_pub.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait();
     assert!(validate_taker_payment_res.is_ok());
@@ -1285,9 +1284,9 @@ fn test_watcher_validate_taker_payment_eth() {
             taker_pub: maker_pub.to_vec(),
             maker_pub: maker_pub.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1327,9 +1326,9 @@ fn test_watcher_validate_taker_payment_eth() {
             taker_pub: taker_pub.to_vec(),
             maker_pub: maker_pub.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1355,9 +1354,9 @@ fn test_watcher_validate_taker_payment_eth() {
             taker_pub: taker_pub.to_vec(),
             maker_pub: maker_pub.to_vec(),
             secret_hash: wrong_secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1379,11 +1378,11 @@ fn test_watcher_validate_taker_payment_eth() {
             time_lock,
             other_pubkey: maker_pub,
             secret_hash: wrong_secret_hash.as_slice(),
-            amount: taker_amount.clone(),
+            amount: taker_amount,
             swap_contract_address: &taker_coin.swap_contract_address(),
             swap_unique_data: &[],
             payment_instructions: &None,
-            watcher_reward: watcher_reward.clone(),
+            watcher_reward,
             wait_for_confirmation_until,
         })
         .wait()
@@ -1406,9 +1405,9 @@ fn test_watcher_validate_taker_payment_eth() {
             taker_pub: taker_pub.to_vec(),
             maker_pub: maker_pub.to_vec(),
             secret_hash: wrong_secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1432,9 +1431,9 @@ fn test_watcher_validate_taker_payment_eth() {
             taker_pub: taker_pub.to_vec(),
             maker_pub: taker_pub.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1449,47 +1448,10 @@ fn test_watcher_validate_taker_payment_eth() {
             INVALID_RECEIVER_ERR_LOG, error
         ),
     }
-
-    let wrong_watcher_reward = Some(
-        block_on(taker_coin.get_taker_watcher_reward(
-            &MmCoinEnum::from(taker_coin.clone()),
-            Some(taker_amount),
-            Some(maker_amount),
-            Some(watcher_reward.unwrap().amount.double()),
-            timeout,
-        ))
-        .unwrap(),
-    );
-
-    let error = taker_coin
-        .watcher_validate_taker_payment(WatcherValidatePaymentInput {
-            payment_tx: taker_payment.tx_hex(),
-            taker_payment_refund_preimage: Vec::new(),
-            time_lock,
-            taker_pub: taker_pub.to_vec(),
-            maker_pub: maker_pub.to_vec(),
-            secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
-            confirmations: 1,
-            watcher_reward: wrong_watcher_reward,
-        })
-        .wait()
-        .unwrap_err()
-        .into_inner();
-    log!("error: {:?}", error);
-    match error {
-        ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains(INVALID_WATCHER_REWARD_ERR_LOG))
-        },
-        _ => panic!(
-            "Expected `WrongPaymentTx` {}, found {:?}",
-            INVALID_WATCHER_REWARD_ERR_LOG, error
-        ),
-    }
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn test_watcher_validate_taker_payment_erc20() {
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
 
@@ -1513,8 +1475,8 @@ fn test_watcher_validate_taker_payment_erc20() {
     let watcher_reward = Some(
         block_on(taker_coin.get_taker_watcher_reward(
             &MmCoinEnum::from(taker_coin.clone()),
-            Some(taker_amount.clone()),
-            Some(maker_amount.clone()),
+            Some(taker_amount),
+            Some(maker_amount),
             None,
             wait_for_confirmation_until,
         ))
@@ -1554,9 +1516,9 @@ fn test_watcher_validate_taker_payment_erc20() {
             taker_pub: taker_pub.to_vec(),
             maker_pub: maker_pub.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait();
     assert!(validate_taker_payment_res.is_ok());
@@ -1569,9 +1531,9 @@ fn test_watcher_validate_taker_payment_erc20() {
             taker_pub: maker_pub.to_vec(),
             maker_pub: maker_pub.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1611,9 +1573,9 @@ fn test_watcher_validate_taker_payment_erc20() {
             taker_pub: taker_pub.to_vec(),
             maker_pub: maker_pub.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1639,9 +1601,9 @@ fn test_watcher_validate_taker_payment_erc20() {
             taker_pub: taker_pub.to_vec(),
             maker_pub: maker_pub.to_vec(),
             secret_hash: wrong_secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1667,7 +1629,7 @@ fn test_watcher_validate_taker_payment_erc20() {
             swap_contract_address: &taker_coin.swap_contract_address(),
             swap_unique_data: &[],
             payment_instructions: &None,
-            watcher_reward: watcher_reward.clone(),
+            watcher_reward,
             wait_for_confirmation_until,
         })
         .wait()
@@ -1690,9 +1652,9 @@ fn test_watcher_validate_taker_payment_erc20() {
             taker_pub: taker_pub.to_vec(),
             maker_pub: maker_pub.to_vec(),
             secret_hash: wrong_secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1716,9 +1678,9 @@ fn test_watcher_validate_taker_payment_erc20() {
             taker_pub: taker_pub.to_vec(),
             maker_pub: taker_pub.to_vec(),
             secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
+            wait_until: timeout,
             confirmations: 1,
-            watcher_reward: watcher_reward.clone(),
+            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
         })
         .wait()
         .unwrap_err()
@@ -1731,43 +1693,6 @@ fn test_watcher_validate_taker_payment_erc20() {
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
             INVALID_RECEIVER_ERR_LOG, error
-        ),
-    }
-
-    let wrong_watcher_reward = Some(
-        block_on(taker_coin.get_taker_watcher_reward(
-            &MmCoinEnum::from(taker_coin.clone()),
-            Some(taker_amount),
-            Some(maker_amount),
-            Some(watcher_reward.unwrap().amount.double()),
-            timeout,
-        ))
-        .unwrap(),
-    );
-
-    let error = taker_coin
-        .watcher_validate_taker_payment(WatcherValidatePaymentInput {
-            payment_tx: taker_payment.tx_hex(),
-            taker_payment_refund_preimage: Vec::new(),
-            time_lock,
-            taker_pub: taker_pub.to_vec(),
-            maker_pub: maker_pub.to_vec(),
-            secret_hash: secret_hash.to_vec(),
-            try_spv_proof_until: timeout,
-            confirmations: 1,
-            watcher_reward: wrong_watcher_reward,
-        })
-        .wait()
-        .unwrap_err()
-        .into_inner();
-    log!("error: {:?}", error);
-    match error {
-        ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains(INVALID_WATCHER_REWARD_ERR_LOG))
-        },
-        _ => panic!(
-            "Expected `WrongPaymentTx` {}, found {:?}",
-            INVALID_WATCHER_REWARD_ERR_LOG, error
         ),
     }
 }

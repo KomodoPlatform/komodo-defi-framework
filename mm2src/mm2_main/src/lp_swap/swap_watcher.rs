@@ -144,7 +144,6 @@ enum WatcherError {
     MakerPaymentSpendFailed(String),
     MakerPaymentCouldNotBeFound(String),
     TakerPaymentRefundFailed(String),
-    InternalError(String),
 }
 
 impl Stopped {
@@ -238,23 +237,6 @@ impl State for ValidateTakerPayment {
             )));
         }
 
-        let watcher_reward = if watcher_ctx.watcher_reward {
-            match watcher_ctx
-                .taker_coin
-                .get_taker_watcher_reward(&watcher_ctx.maker_coin, None, None, None, taker_payment_spend_deadline)
-                .await
-            {
-                Ok(reward) => Some(reward),
-                Err(err) => {
-                    return Self::change_state(Stopped::from_reason(StopReason::Error(
-                        WatcherError::InternalError(err.into_inner().to_string()).into(),
-                    )))
-                },
-            }
-        } else {
-            None
-        };
-
         let validate_input = WatcherValidatePaymentInput {
             payment_tx: taker_payment_hex.clone(),
             taker_payment_refund_preimage: watcher_ctx.data.taker_payment_refund_preimage.clone(),
@@ -265,9 +247,9 @@ impl State for ValidateTakerPayment {
             taker_pub: watcher_ctx.verified_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
             secret_hash: watcher_ctx.data.secret_hash.clone(),
-            try_spv_proof_until: taker_payment_spend_deadline,
+            wait_until: taker_payment_spend_deadline,
             confirmations,
-            watcher_reward,
+            maker_coin: watcher_ctx.maker_coin.clone(),
         };
 
         let validated_f = watcher_ctx
@@ -641,7 +623,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
         );
 
         let conf = json::from_value::<WatcherConf>(ctx.conf["watcher_conf"].clone()).unwrap_or_default();
-        let watcher_reward = taker_coin.is_eth() || maker_coin.is_eth();
+        let watcher_reward = maker_coin.is_eth();
         let watcher_ctx = WatcherContext {
             ctx,
             maker_coin,

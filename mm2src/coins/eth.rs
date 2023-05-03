@@ -1466,6 +1466,7 @@ impl WatcherOps for EthCoin {
         let expected_swap_contract_address = self.swap_contract_address;
         let fallback_swap_contract = self.fallback_swap_contract;
         let decimals = self.decimals;
+
         let fut = async move {
             let tx_from_rpc = selfi.web3.eth().transaction(TransactionId::Hash(tx.hash)).await?;
 
@@ -1504,10 +1505,10 @@ impl WatcherOps for EthCoin {
                 )));
             }
 
-            let watcher_reward = input
-                .watcher_reward
-                .clone()
-                .ok_or_else(|| ValidatePaymentError::InvalidParameter("Watcher reward is not provided".to_string()))?;
+            let watcher_reward = selfi
+                .get_taker_watcher_reward(&input.maker_coin, None, None, None, input.wait_until)
+                .await
+                .map_err(|err| ValidatePaymentError::WatcherRewardError(err.into_inner().to_string()))?;
             let expected_reward_amount = wei_from_big_decimal(&watcher_reward.amount, decimals)?;
 
             match &selfi.coin_type {

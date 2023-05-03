@@ -2044,9 +2044,7 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
 
         if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
             if coin.as_ref().conf.spv_conf.is_some() && input.confirmations != 0 {
-                client
-                    .validate_spv_proof(&taker_payment_tx, input.try_spv_proof_until)
-                    .await?;
+                client.validate_spv_proof(&taker_payment_tx, input.wait_until).await?;
             }
         }
         Ok(())
