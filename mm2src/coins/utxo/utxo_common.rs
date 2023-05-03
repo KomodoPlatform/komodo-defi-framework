@@ -2250,14 +2250,6 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
     })
 }
 
-pub async fn get_maker_watcher_reward<T: UtxoCommonOps + SwapOps>(
-    _coin: &T,
-    _other_coin: &MmCoinEnum,
-    _reward_amount: Option<BigDecimal>,
-) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
-    Ok(None)
-}
-
 /// Extract a secret from the `spend_tx`.
 /// Note spender could generate the spend with several inputs where the only one input is the p2sh script.
 pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {

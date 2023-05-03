@@ -1114,11 +1114,11 @@ impl WatcherOps for BchCoin {
 
     async fn get_maker_watcher_reward(
         &self,
-        other_coin: &MmCoinEnum,
-        reward_amount: Option<BigDecimal>,
+        _other_coin: &MmCoinEnum,
+        _reward_amount: Option<BigDecimal>,
         _wait_until: u64,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
-        utxo_common::get_maker_watcher_reward(self, other_coin, reward_amount).await
+        Ok(None)
     }
 }
 
