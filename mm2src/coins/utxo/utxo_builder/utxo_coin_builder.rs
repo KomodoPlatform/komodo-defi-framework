@@ -35,7 +35,6 @@ use serde_json::{self as json, Value as Json};
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, Weak};
 
 cfg_native! {
@@ -226,7 +225,6 @@ where
         block_headers_status_notifier,
         block_headers_status_watcher,
         abortable_system,
-        is_available: AtomicBool::new(true),
     };
     Ok(coin)
 }
@@ -300,7 +298,6 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             block_headers_status_notifier,
             block_headers_status_watcher,
             abortable_system,
-            is_available: AtomicBool::new(true),
         };
         Ok(coin)
     }

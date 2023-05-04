@@ -48,7 +48,6 @@ async fn test_send() {
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     }));
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,

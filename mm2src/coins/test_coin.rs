@@ -22,8 +22,7 @@ use mocktopus::macros::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
 use std::ops::Deref;
-use std::sync::{atomic::{AtomicBool, Ordering},
-                Arc};
+use std::sync::Arc;
 
 /// Dummy coin struct used in tests which functions are unimplemented but then mocked
 /// in specific test to emulate the required behaviour
@@ -39,25 +38,14 @@ impl Deref for TestCoin {
 #[derive(Debug)]
 pub struct TestCoinImpl {
     ticker: String,
-    is_available: AtomicBool,
 }
 
 impl Default for TestCoin {
-    fn default() -> Self {
-        TestCoin(Arc::new(TestCoinImpl {
-            ticker: "test".into(),
-            is_available: AtomicBool::new(true),
-        }))
-    }
+    fn default() -> Self { TestCoin(Arc::new(TestCoinImpl { ticker: "test".into() })) }
 }
 
 impl TestCoin {
-    pub fn new(ticker: &str) -> TestCoin {
-        TestCoin(Arc::new(TestCoinImpl {
-            ticker: ticker.into(),
-            is_available: AtomicBool::new(true),
-        }))
-    }
+    pub fn new(ticker: &str) -> TestCoin { TestCoin(Arc::new(TestCoinImpl { ticker: ticker.into() })) }
 }
 
 #[mockable]
@@ -380,8 +368,4 @@ impl MmCoin for TestCoin {
     fn on_disabled(&self) -> Result<(), AbortedError> { Ok(()) }
 
     fn on_token_deactivated(&self, _ticker: &str) { () }
-
-    fn is_available(&self) -> bool { self.is_available.load(Ordering::SeqCst) }
-
-    fn update_is_available(&self, to: bool) { self.is_available.store(to, Ordering::SeqCst); }
 }

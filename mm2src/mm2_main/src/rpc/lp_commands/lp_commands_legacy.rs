@@ -133,7 +133,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         return response(&ticker, cancelled_orders, true);
     }
 
-    coins_ctx.remove_coin(coin).await;
+    coins_ctx.remove_coin(coin.inner).await;
 
     response(&ticker, cancelled_orders, false)
 }

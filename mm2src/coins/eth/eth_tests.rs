@@ -80,7 +80,6 @@ fn eth_coin_for_test(
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     }));
     (ctx, eth_coin)
 }
@@ -252,7 +251,6 @@ fn send_and_refund_erc20_payment() {
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     }));
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
@@ -324,7 +322,6 @@ fn send_and_refund_eth_payment() {
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     }));
     let send_maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
@@ -414,7 +411,6 @@ fn test_nonce_several_urls() {
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     }));
 
     log!("My address {:?}", coin.my_address);
@@ -467,7 +463,6 @@ fn test_wait_for_payment_spend_timeout() {
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     };
 
     let coin = EthCoin(Arc::new(coin));
@@ -539,7 +534,6 @@ fn test_search_for_swap_tx_spend_was_spent() {
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     }));
 
     // raw transaction bytes of https://etherscan.io/tx/0x2814718945e90fe4301e2a74eaaa46b4fdbdba1536e1d94e3b0bd665b2dd091d
@@ -653,7 +647,6 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     }));
 
     // raw transaction bytes of https://etherscan.io/tx/0x02c261dcb1c8615c029b9abc712712b80ef8c1ef20d2cbcdd9bde859e7913476
@@ -1327,7 +1320,6 @@ fn test_message_hash() {
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     }));
 
     let message_hash = coin.sign_message_hash("test").unwrap();
@@ -1373,7 +1365,6 @@ fn test_sign_verify_message() {
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     }));
 
     let message = "test";
@@ -1426,7 +1417,6 @@ fn test_eth_extract_secret() {
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
-        is_available: AtomicBool::new(true),
     }));
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xcb7c14d3ff309996d582400369393b6fa42314c52245115d4a3f77f072c36da9

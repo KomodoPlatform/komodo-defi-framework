@@ -43,7 +43,6 @@ use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
 use serde::Serialize;
 use serialization::CoinVariant;
-use std::sync::atomic::Ordering;
 use utxo_signer::UtxoSignerOps;
 
 #[derive(Debug, Display)]
@@ -972,10 +971,6 @@ impl MmCoin for QtumCoin {
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
-
-    fn is_available(&self) -> bool { self.as_ref().is_available.load(Ordering::SeqCst) }
-
-    fn update_is_available(&self, to: bool) { self.as_ref().is_available.store(to, Ordering::SeqCst); }
 }
 
 #[async_trait]

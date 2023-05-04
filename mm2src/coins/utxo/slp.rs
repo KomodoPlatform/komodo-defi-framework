@@ -1872,12 +1872,6 @@ impl MmCoin for SlpToken {
     fn on_disabled(&self) -> Result<(), AbortedError> { self.conf.abortable_system.abort_all() }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
-
-    fn is_available(&self) -> bool { true }
-
-    fn update_is_available(&self, _to: bool) {
-        warn!("child token {} can't be passive", self.ticker());
-    }
 }
 
 #[async_trait]

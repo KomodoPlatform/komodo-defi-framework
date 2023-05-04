@@ -70,7 +70,6 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use uuid::Uuid;
@@ -233,8 +232,6 @@ pub struct TendermintCoinImpl {
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
     chain_registry_name: Option<String>,
-    /// A flag used for controlling the parent coin's mode(active/passive).
-    is_available: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -527,7 +524,6 @@ impl TendermintCoin {
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
             chain_registry_name: protocol_info.chain_registry_name,
-            is_available: AtomicBool::new(true),
         })))
     }
 
@@ -2075,10 +2071,6 @@ impl MmCoin for TendermintCoin {
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
-
-    fn is_available(&self) -> bool { self.is_available.load(Ordering::SeqCst) }
-
-    fn update_is_available(&self, to: bool) { self.is_available.store(to, Ordering::SeqCst); }
 }
 
 impl MarketCoinOps for TendermintCoin {

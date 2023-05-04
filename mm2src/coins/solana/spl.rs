@@ -15,7 +15,6 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, ConfirmPayment
 use async_trait::async_trait;
 use bincode::serialize;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
-use common::log::warn;
 use common::{async_blocking, now_ms};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -560,10 +559,4 @@ impl MmCoin for SplToken {
     fn on_disabled(&self) -> Result<(), AbortedError> { self.conf.abortable_system.abort_all() }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
-
-    fn is_available(&self) -> bool { true }
-
-    fn update_is_available(&self, _to: bool) {
-        warn!("child token {} can't be passive", self.ticker());
-    }
 }
