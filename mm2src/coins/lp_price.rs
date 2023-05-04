@@ -2,9 +2,10 @@ use common::log::{debug, error};
 use common::StatusCode;
 use mm2_err_handle::prelude::{MmError, OrMmError};
 use mm2_net::transport::SlurpError;
+#[cfg(not(feature = "run-docker-tests"))]
+use mm2_number::big_decimal::CheckedDiv;
 use mm2_number::{BigDecimal, MmNumber};
 use std::collections::HashMap;
-#[cfg(not(feature = "run-docker-tests"))] use std::ops::Div;
 #[cfg(feature = "run-docker-tests")] use std::str::FromStr;
 use std::str::Utf8Error;
 
@@ -240,7 +241,7 @@ pub async fn get_base_price_in_rel(_base: Option<String>, _rel: Option<String>) 
 pub async fn get_base_price_in_rel(base: Option<String>, rel: Option<String>) -> Option<BigDecimal> {
     fetch_swap_coins_price(base, rel)
         .await
-        .map(|rates| rates.base.div(rates.rel))
+        .and_then(|rates| rates.base.checked_div(rates.rel))
 }
 
 /// Consume `try_price_fetcher_endpoint` result here using different endpoints.

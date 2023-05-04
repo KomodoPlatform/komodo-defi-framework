@@ -50,6 +50,7 @@ use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
+use mm2_number::big_decimal::CheckedDiv;
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
@@ -60,7 +61,7 @@ use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::ops::{Deref, Div};
+use std::ops::Deref;
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -1760,16 +1761,15 @@ impl WatcherOps for EthCoin {
                         if other_coin.is_eth() {
                             gas_cost_eth
                         } else {
-                            let price_in_eth =
-                                get_base_price_in_rel(Some(self.ticker().to_string()), Some("ETH".to_string()))
-                                    .await
-                                    .ok_or_else(|| {
-                                        WatcherRewardError::RPCError(format!(
-                                            "Price of coin {} in ETH could not be found",
-                                            self.ticker()
-                                        ))
-                                    })?;
-                            gas_cost_eth.div(price_in_eth)
+                            get_base_price_in_rel(Some(self.ticker().to_string()), Some("ETH".to_string()))
+                                .await
+                                .and_then(|price_in_eth| gas_cost_eth.checked_div(price_in_eth))
+                                .ok_or_else(|| {
+                                    WatcherRewardError::RPCError(format!(
+                                        "Price of coin {} in ETH could not be found",
+                                        self.ticker()
+                                    ))
+                                })?
                         }
                     },
                 }

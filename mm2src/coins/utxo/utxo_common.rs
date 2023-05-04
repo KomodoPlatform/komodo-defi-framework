@@ -43,6 +43,7 @@ use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Compact
            Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::big_decimal::CheckedDiv;
 use mm2_number::{BigDecimal, MmNumber};
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
@@ -53,7 +54,6 @@ use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, C
                     SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
-use std::ops::Div;
 use std::str::FromStr;
 use std::sync::atomic::Ordering as AtomicOrdering;
 use utxo_signer::with_key_pair::p2sh_spend;
@@ -2222,19 +2222,16 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
             let price_in_eth = if let (EthCoinType::Eth, Some(coin_amount), Some(other_coin_amount)) =
                 (&other_coin.coin_type, coin_amount, other_coin_amount)
             {
-                other_coin_amount.div(coin_amount)
+                other_coin_amount.checked_div(coin_amount)
             } else {
-                get_base_price_in_rel(Some(coin.ticker().to_string()), Some("ETH".to_string()))
-                    .await
-                    .ok_or_else(|| {
-                        WatcherRewardError::RPCError(format!(
-                            "Price of coin {} in ETH could not be found",
-                            coin.ticker()
-                        ))
-                    })?
+                get_base_price_in_rel(Some(coin.ticker().to_string()), Some("ETH".to_string())).await
             };
 
-            gas_cost_eth.div(price_in_eth)
+            price_in_eth
+                .and_then(|price_in_eth| gas_cost_eth.checked_div(price_in_eth))
+                .ok_or_else(|| {
+                    WatcherRewardError::RPCError(format!("Price of coin {} in ETH could not be found", coin.ticker()))
+                })?
         },
     };
 
