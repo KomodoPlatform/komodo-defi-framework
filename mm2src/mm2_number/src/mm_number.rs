@@ -4,6 +4,7 @@ use bigdecimal::BigDecimal;
 use core::ops::{Add, AddAssign, Div, Mul, Sub};
 use num_bigint::BigInt;
 use num_rational::BigRational;
+use num_traits::CheckedDiv;
 use num_traits::Zero;
 use serde::Serialize;
 use serde::{de, Deserialize, Deserializer};
@@ -192,6 +193,10 @@ impl Div for &MmNumber {
         let rhs = &rhs.0;
         MmNumber(lhs / rhs)
     }
+}
+
+impl CheckedDiv for MmNumber {
+    fn checked_div(&self, rhs: &MmNumber) -> Option<MmNumber> { self.0.checked_div(&rhs.0).map(MmNumber) }
 }
 
 impl PartialOrd<BigDecimal> for MmNumber {

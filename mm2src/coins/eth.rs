@@ -49,7 +49,7 @@ use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
-use mm2_number::big_decimal::CheckedDiv;
+use mm2_number::big_decimal::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;

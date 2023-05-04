@@ -3,8 +3,9 @@ use common::StatusCode;
 use mm2_err_handle::prelude::{MmError, OrMmError};
 use mm2_net::transport::SlurpError;
 #[cfg(not(feature = "run-docker-tests"))]
-use mm2_number::big_decimal::CheckedDiv;
+use mm2_number::big_decimal::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
+use num_traits::CheckedDiv;
 use std::collections::HashMap;
 #[cfg(feature = "run-docker-tests")] use std::str::FromStr;
 use std::str::Utf8Error;
@@ -166,7 +167,16 @@ impl TickerInfosRegistry {
                     };
                 rate_infos.base_price = base_price_infos.last_price.clone();
                 rate_infos.rel_price = rel_price_infos.last_price.clone();
-                rate_infos.price = &base_price_infos.last_price / &rel_price_infos.last_price;
+                rate_infos.price = match base_price_infos.last_price.checked_div(&rel_price_infos.last_price) {
+                    Some(res) => res,
+                    None => {
+                        debug!(
+                            "Invalid division ({}/{})",
+                            base_price_infos.last_price, rel_price_infos.last_price
+                        );
+                        return None;
+                    },
+                };
                 Some(rate_infos)
             },
             None => None,
