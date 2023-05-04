@@ -31,10 +31,10 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
     for chain in req.chains {
         let (coin_str, chain_str) = chain.to_ticker_chain();
         let my_address = get_eth_address(&ctx, &coin_str).await?;
-        let uri_without_cursor = format!(
-            "{}{}{}/nft?chain={}&{}",
-            req.url, MORALIS_API_ENDPOINT, my_address.wallet_address, chain_str, FORMAT_DECIMAL_MORALIS
-        );
+        let req_url = &req.url;
+        let wallet_address = my_address.wallet_address;
+        let uri_without_cursor =
+            format!("{req_url}{MORALIS_API_ENDPOINT}{wallet_address}/nft?chain={chain_str}&{FORMAT_DECIMAL_MORALIS}");
 
         // The cursor returned in the previous response (used for getting the next page).
         let mut cursor = String::new();
@@ -98,9 +98,11 @@ pub async fn get_nft_metadata(_ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft,
         Chain::Fantom => "fantom",
         Chain::Polygon => "polygon",
     };
+    let req_url = &req.url;
+    let token_address = &req.token_address;
+    let token_id = &req.token_id;
     let uri = format!(
-        "{}{}nft/{}/{}?chain={}&{}",
-        req.url, MORALIS_API_ENDPOINT, req.token_address, req.token_id, chain_str, FORMAT_DECIMAL_MORALIS
+        "{req_url}{MORALIS_API_ENDPOINT}nft/{token_address}/{token_id}?chain={chain_str}&{FORMAT_DECIMAL_MORALIS}"
     );
     let response = send_moralis_request(uri.as_str()).await?;
     let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string())?;
@@ -140,14 +142,11 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
             Chain::Polygon => ("MATIC", "polygon"),
         };
         let my_address = get_eth_address(&ctx, coin_str).await?;
+        let req_url = &req.url;
+        let wallet_address = my_address.wallet_address;
         let uri_without_cursor = format!(
-            "{}{}{}/nft/transfers?chain={}&{}&{}",
-            req.url,
-            MORALIS_API_ENDPOINT,
-            my_address.wallet_address,
-            chain_str,
-            FORMAT_DECIMAL_MORALIS,
-            DIRECTION_BOTH_MORALIS
+            "{req_url}{MORALIS_API_ENDPOINT}{wallet_address}/nft/transfers?chain={chain_str}&{FORMAT_DECIMAL_MORALIS}&{DIRECTION_BOTH_MORALIS}",
+
         );
 
         // The cursor returned in the previous response (used for getting the next page).
