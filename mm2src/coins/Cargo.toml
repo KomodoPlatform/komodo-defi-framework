@@ -15,7 +15,6 @@ enable-solana = [
 	"dep:spl-token",
 	"dep:spl-associated-token-account"
 ]
-enable-nft-integration = []
 default = []
 run-docker-tests = []
 

@@ -1,6 +1,8 @@
 ## v1.0.4-beta - 2023-05-12
 
 **Features:**
+- NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
+  - Proxy support was added [#1775](https://github.com/KomodoPlatform/atomicDEX-API/pull/1775)
 
 **Enhancements/Fixes:**
 - Some enhancements were done for `enable_bch_with_tokens`,`enable_eth_with_tokens`,`enable_tendermint_with_assets` RPCs in [#1762](https://github.com/KomodoPlatform/atomicDEX-API/pull/1762)
