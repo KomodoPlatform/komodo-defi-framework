@@ -9,7 +9,7 @@ use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::{BlockHeader, TransactionOutput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
-use common::log::{debug, error, info, warn};
+use common::log::{debug, error, info, warn, LogOnError};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -306,7 +306,6 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
         }
         drop_mutability!(retrieve_to);
 
-        // Todo: Add code for the case if a chain reorganization happens
         if last_height_in_storage == block_count {
             sync_status_loop_handle.notify_sync_finished(block_count);
             Timer::sleep(args.success_sleep).await;
@@ -330,54 +329,44 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
         // Validate retrieved block headers.
         if let Err(err) = validate_headers(ticker, last_height_in_storage, &block_headers, storage, &spv_conf).await {
+            error!("Error {} on validating the latest headers for {}!", err, ticker);
             // This code block handles a specific error scenario where a parent hash mismatch(chain re-org) is
             // detected in the SPV client.
             // If this error occurs, the code retrieves and revalidates the mismatching header from the SPV client..
             if let SPVError::ParentHashMismatch {
                 coin,
                 mismatched_block_height,
-            } = err
+            } = &err
             {
-                // Todo: Switch electrum and retry fetching and validating headers again.
-                match resolve_possible_chain_reorg(
-                    &coin,
+                // Todo: pass only one electrum to this function
+                if resolve_possible_chain_reorg(
+                    coin,
                     client,
                     &mut args,
                     last_height_in_storage,
-                    mismatched_block_height,
+                    *mismatched_block_height,
                     storage,
                     &spv_conf,
                 )
                 .await
+                .error_log_passthrough()
+                .is_ok()
                 {
-                    Ok(_) => {
-                        info!("Chain reorg detected and resolved for coin: {}", coin);
-                        continue;
-                    },
-                    // Todo: these errors should be handled differently
-                    Err(err) => {
-                        if err.is_temp_error() {
-                            error!("{err:?}");
-                            sync_status_loop_handle.notify_on_temp_error(err);
-                            Timer::sleep(args.error_sleep).await;
-                            continue;
-                        } else {
-                            error!("{err:?}");
-                            sync_status_loop_handle.notify_on_permanent_error(err);
-                            Timer::sleep(args.error_sleep).await;
-                            break;
-                        }
-                    },
+                    info!(
+                        "Chain reorg detected and resolved for coin: {}, re-syncing reorganized headers!",
+                        coin
+                    );
+                    continue;
                 }
             }
 
-            // Todo: remove this electrum server and use another in this case since the headers from this server are invalid
-            error!("Error {err:?} on validating the latest headers for {ticker}!");
+            // Todo: remove the electrum server that returned a permanent error and continue the loop, if all electrums are tried and failed, then notify on permanent error
+            // Todo: Permanent error notification should lead to deactivation of coin after applying some fail-safe measures if there are on-going swaps
             sync_status_loop_handle.notify_on_permanent_error(err);
             break;
         };
 
-        let sleep = args.success_sleep;
+        let sleep = args.error_sleep;
         ok_or_continue_after_sleep!(storage.add_block_headers_to_storage(block_registry).await, sleep);
     }
 }
@@ -387,14 +376,8 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
 enum PossibleChainReorgError {
     #[display(fmt = "Preconfigured starting_block_header is bad or invalid. Please reconfigure.")]
     BadStartingHeaderChain,
-    #[display(fmt = "Block Header Storage Error: {_0}")]
-    BlockHeaderStorageError(String),
     #[display(fmt = "Validation Error: {}", _0)]
     ValidationError(String),
-}
-
-impl PossibleChainReorgError {
-    fn is_temp_error(&self) -> bool { matches!(self, PossibleChainReorgError::BlockHeaderStorageError(_)) }
 }
 
 /// Loops until the headers are retrieved successfully.
@@ -410,6 +393,11 @@ async fn try_to_retrieve_headers_until_success(
             Err(err) => {
                 let err_inner = err.get_inner();
                 if err_inner.is_network_error() {
+                    error!(
+                        "Network Error: {}, Will try fetching block headers again after 10 secs",
+                        err
+                    );
+                    Timer::sleep(args.error_sleep).await;
                     continue;
                 };
 
@@ -450,10 +438,13 @@ async fn resolve_possible_chain_reorg(
         match validate_headers(coin, retrieve_from - 1, &headers_to_validate, storage, spv_conf).await {
             Ok(_) => {
                 // Headers are valid, remove saved headers and continue outer loop
-                return storage
-                    .remove_headers_from_storage(retrieve_from, last_height_in_storage)
-                    .await
-                    .map_err(|err| PossibleChainReorgError::BlockHeaderStorageError(err.to_string()));
+                let sleep = args.error_sleep;
+                ok_or_continue_after_sleep!(
+                    storage
+                        .remove_headers_from_storage(retrieve_from, last_height_in_storage)
+                        .await,
+                    sleep
+                )
             },
             Err(err) => {
                 if let SPVError::ParentHashMismatch {
@@ -467,7 +458,6 @@ async fn resolve_possible_chain_reorg(
                     // If it is, it indicates a bad chain, and we return an error of type `RetrieveHeadersError::BadStartingHeaderChain`.
                     if retrieve_to == spv_conf.starting_block_header.height {
                         // Bad chain for preconfigured starting header detected, reconfigure.
-                        // Todo: There is still a possibility that the electrum is malicious, this error should only be returned if all electrums have a mismatching header earlier than the preconfigured starting header.
                         return Err(PossibleChainReorgError::BadStartingHeaderChain);
                     };
                     // Calculate the height to retrieve from on next iteration based on the the height we will retrieve up to and the chunk size.
