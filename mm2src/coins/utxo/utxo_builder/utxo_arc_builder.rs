@@ -439,12 +439,12 @@ async fn resolve_possible_chain_reorg(
             Ok(_) => {
                 // Headers are valid, remove saved headers and continue outer loop
                 let sleep = args.error_sleep;
-                ok_or_continue_after_sleep!(
+                return Ok(ok_or_continue_after_sleep!(
                     storage
                         .remove_headers_from_storage(retrieve_from, last_height_in_storage)
                         .await,
                     sleep
-                )
+                ));
             },
             Err(err) => {
                 if let SPVError::ParentHashMismatch {
