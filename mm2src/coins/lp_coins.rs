@@ -2456,11 +2456,7 @@ impl MmCoinStruct {
     pub fn is_available(&self) -> bool {
         // Tokens are always active or disabled
         // Check if we are processing the platform coin
-        if self.inner.ticker() == self.inner.platform_ticker() {
-            self.is_available.load(AtomicOrdering::SeqCst)
-        } else {
-            true
-        }
+        self.inner.ticker() != self.inner.platform_ticker() || self.is_available.load(AtomicOrdering::SeqCst)
     }
 
     /// Makes the coin disabled to the external requests.
