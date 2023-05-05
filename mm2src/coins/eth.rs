@@ -31,7 +31,7 @@ use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
 use common::log::{debug, error, info, warn};
 use common::number_type_casting::SafeTypeCastingNumbers;
-use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{get_utc_timestamp, now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
 use derive_more::Display;
@@ -863,7 +863,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         fee_details: Some(fee_details.into()),
         coin: coin.ticker.clone(),
         internal_id: vec![].into(),
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
         kmd_rewards: None,
         transaction_type: Default::default(),
         memo: None,
@@ -973,7 +973,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155, url: S
         fee_details: Some(fee_details.into()),
         coin: eth_coin.ticker.clone(),
         block_height: 0,
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
         internal_id: 0,
         transaction_type: TransactionType::NftTransfer,
     })
@@ -1048,7 +1048,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         fee_details: Some(fee_details.into()),
         coin: eth_coin.ticker.clone(),
         block_height: 0,
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
         internal_id: 0,
         transaction_type: TransactionType::NftTransfer,
     })
@@ -2036,7 +2036,7 @@ impl MarketCoinOps for EthCoin {
         let check_every = args.check_every;
         let fut = async move {
             loop {
-                if now_ms() / 1000 > wait_until {
+                if now_sec() > wait_until {
                     return TX_PLAIN_ERR!(
                         "Waited too long until {} for transaction {:?} to be spent ",
                         wait_until,
@@ -3776,7 +3776,7 @@ impl EthCoin {
         let selfi = self.clone();
         let fut = async move {
             loop {
-                if now_ms() / 1000 > wait_until {
+                if now_sec() > wait_until {
                     return MmError::err(Web3RpcError::Timeout(ERRL!(
                         "Waited too long until {} for allowance to be updated to at least {}",
                         wait_until,
@@ -4335,7 +4335,7 @@ impl EthCoin {
         wait_rpc_timeout_ms: u64,
         check_every: f64,
     ) -> Web3RpcResult<Option<SignedEthTx>> {
-        let wait_until = now_ms() + wait_rpc_timeout_ms;
+        let wait_until = wait_until_ms(wait_rpc_timeout_ms);
         while now_ms() < wait_until {
             let maybe_tx = self.web3.eth().transaction(TransactionId::Hash(tx_hash)).await?;
             if let Some(tx) = maybe_tx {
@@ -4357,7 +4357,7 @@ impl EthCoin {
         let selfi = self.clone();
         let fut = async move {
             loop {
-                if now_ms() / 1000 > wait_until {
+                if now_sec() > wait_until {
                     return MmError::err(Web3RpcError::Timeout(ERRL!(
                         "Waited too long until {} for payment tx: {:02x}, for coin:{}, to be confirmed!",
                         wait_until,
@@ -4405,7 +4405,7 @@ impl EthCoin {
         let selfi = self.clone();
         let fut = async move {
             loop {
-                if now_ms() / 1000 > wait_until {
+                if now_sec() > wait_until {
                     return MmError::err(Web3RpcError::Timeout(ERRL!(
                         "Waited too long until {} for block number: {:02x} to appear on-chain, for coin:{}",
                         wait_until,

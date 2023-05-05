@@ -47,7 +47,7 @@ use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
 use common::log::LogOnError;
-use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
+use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy,
              Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
@@ -860,7 +860,7 @@ pub trait SwapOps {
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
     /// locktime < MTP
     fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
-        let now = now_ms() / 1000;
+        let now = now_sec();
         let result = if now > locktime {
             CanRefundHtlc::CanRefundNow
         } else {

@@ -5,7 +5,7 @@ use crate::structs::*;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
-use common::{cfg_native, now_float, now_ms, repeatable, PagingOptionsEnum};
+use common::{cfg_native, now_float, now_ms, repeatable, wait_until_ms, PagingOptionsEnum};
 use common::{get_utc_timestamp, log};
 use crypto::CryptoCtx;
 use gstuff::{try_s, ERR, ERRL};
@@ -2085,7 +2085,7 @@ pub async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {
 pub async fn wait_till_history_has_records(mm: &MarketMakerIt, coin: &str, expected_len: usize) {
     // give 2 second max to fetch a single transaction
     let to_wait = expected_len as u64 * 2;
-    let wait_until = now_ms() + to_wait * 1000;
+    let wait_until = wait_until_ms(to_wait * 1000);
     loop {
         let tx_history = mm
             .rpc(&json!({

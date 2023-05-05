@@ -1,5 +1,6 @@
+use common::now_sec;
 use derive_more::Display;
-use gstuff::{now_float, now_ms};
+use gstuff::now_float;
 use mm2_err_handle::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -80,7 +81,7 @@ impl<T: AsRef<Path>> FileLock<T> {
         }
     }
 
-    pub fn touch(&self) -> FileLockResult<()> { touch(&self.lock_path, now_ms() / 1000) }
+    pub fn touch(&self) -> FileLockResult<()> { touch(&self.lock_path, now_sec()) }
 }
 
 impl<T: AsRef<Path>> Drop for FileLock<T> {
@@ -94,7 +95,7 @@ mod file_lock_tests {
 
     #[test]
     fn test_file_lock_should_create_file_and_record_timestamp_and_then_delete_on_drop() {
-        let now = now_ms() / 1000;
+        let now = now_sec();
         let path = Path::new("test1.lock");
         let lock = FileLock::lock(&path, 1000.).unwrap().unwrap();
         assert!(path.exists());
@@ -125,7 +126,7 @@ mod file_lock_tests {
 
     #[test]
     fn test_file_lock_should_acquire_if_file_is_empty() {
-        let now = now_ms() / 1000;
+        let now = now_sec();
         let path = Path::new("test4.lock");
         std::fs::write(path, []).unwrap();
         let _new_lock = FileLock::lock(&path, 1.).unwrap().unwrap();
@@ -135,7 +136,7 @@ mod file_lock_tests {
 
     #[test]
     fn test_file_lock_should_acquire_if_file_does_not_contain_parsable_timestamp() {
-        let now = now_ms() / 1000;
+        let now = now_sec();
         let path = Path::new("test5.lock");
         std::fs::write(path, [12, 13]).unwrap();
         let _new_lock = FileLock::lock(&path, 1.).unwrap().unwrap();

@@ -8,7 +8,7 @@ use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoin
             WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
             INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
             INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
-use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{block_on, now_sec_u32, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
 use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, dex_fee_threshold, get_payment_locktime,
@@ -661,7 +661,7 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
 
 #[test]
 fn test_watcher_validate_taker_fee_utxo() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
     let (_ctx, taker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let (_ctx, maker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
@@ -787,7 +787,7 @@ fn test_watcher_validate_taker_fee_utxo() {
 #[test]
 #[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 fn test_watcher_validate_taker_fee_eth() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
 
     let taker_coin = eth_distributor();
@@ -890,7 +890,7 @@ fn test_watcher_validate_taker_fee_eth() {
 #[test]
 #[ignore]
 fn test_watcher_validate_taker_fee_erc20() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
 
     let seed = String::from("spice describe gravity federal thank unfair blast come canal monkey style afraid");
@@ -993,9 +993,9 @@ fn test_watcher_validate_taker_fee_erc20() {
 
 #[test]
 fn test_watcher_validate_taker_payment_utxo() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let time_lock_duration = get_payment_locktime();
-    let wait_for_confirmation_until = now_ms() / 1000 + time_lock_duration;
+    let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
     let time_lock = wait_for_confirmation_until as u32;
 
     let (_ctx, taker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
@@ -1205,7 +1205,7 @@ fn test_watcher_validate_taker_payment_utxo() {
 #[test]
 #[ignore]
 fn test_watcher_validate_taker_payment_eth() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
 
     let seed = String::from("spice describe gravity federal thank unfair blast come canal monkey style afraid");
     let taker_coin = generate_eth_coin_with_seed(&seed);
@@ -1216,7 +1216,7 @@ fn test_watcher_validate_taker_payment_eth() {
     let maker_pub = maker_keypair.public();
 
     let time_lock_duration = get_payment_locktime();
-    let wait_for_confirmation_until = now_ms() / 1000 + time_lock_duration;
+    let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
     let time_lock = wait_for_confirmation_until as u32;
     let taker_amount = BigDecimal::from_str("0.01").unwrap();
     let maker_amount = BigDecimal::from_str("0.01").unwrap();
@@ -1449,7 +1449,7 @@ fn test_watcher_validate_taker_payment_eth() {
 #[test]
 #[ignore]
 fn test_watcher_validate_taker_payment_erc20() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
 
     let seed = String::from("spice describe gravity federal thank unfair blast come canal monkey style afraid");
     let taker_coin = generate_jst_with_seed(&seed);
@@ -1460,7 +1460,7 @@ fn test_watcher_validate_taker_payment_erc20() {
     let maker_pub = maker_keypair.public();
 
     let time_lock_duration = get_payment_locktime();
-    let wait_for_confirmation_until = now_ms() / 1000 + time_lock_duration;
+    let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
     let time_lock = wait_for_confirmation_until as u32;
 
     let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
@@ -1695,11 +1695,11 @@ fn test_watcher_validate_taker_payment_erc20() {
 
 #[test]
 fn test_send_taker_payment_refund_preimage_utxo() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let my_public_key = coin.my_public_key().unwrap();
 
-    let time_lock = (now_ms() / 1000) as u32 - 3600;
+    let time_lock = now_sec_u32() - 3600;
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,

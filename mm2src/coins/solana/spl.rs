@@ -16,7 +16,7 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, ConfirmPayment
 use async_trait::async_trait;
 use bincode::serialize;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
-use common::{async_blocking, now_ms};
+use common::{async_blocking, now_sec};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
@@ -157,7 +157,7 @@ async fn withdraw_spl_token_impl(coin: SplToken, req: WithdrawRequest) -> Withdr
         my_balance_change: &received_by_me - &res.to_send,
         received_by_me,
         block_height: 0,
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
         fee_details: Some(
             SolanaFeeDetails {
                 amount: res.sol_required,

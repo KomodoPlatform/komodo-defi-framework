@@ -2,7 +2,7 @@ use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilt
                               DBPaymentsFilter, GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, LightningDB,
                               PaymentInfo, PaymentType};
 use async_trait::async_trait;
-use common::{async_blocking, PagingOptionsEnum};
+use common::{async_blocking, now_sec_i64, PagingOptionsEnum};
 use db_common::owned_named_params;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{params, Error as SqlError, Row, ToSql, NO_PARAMS};
@@ -10,7 +10,6 @@ use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,
                         sql_text_conversion_err, string_from_row, validate_table_name, AsSqlNamedParams,
                         OwnedSqlNamedParams, SqlNamedParams, SqliteConnShared, CHECK_TABLE_EXISTS_SQL};
-use gstuff::now_ms;
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use secp256k1v24::PublicKey;
 use std::convert::TryInto;
@@ -881,7 +880,7 @@ impl LightningDB for SqliteLightningDB {
     ) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
         let preimage = hex::encode(preimage.0);
-        let last_updated = (now_ms() / 1000) as i64;
+        let last_updated = now_sec_i64();
         let payment_hash = hex::encode(hash.0);
 
         let sqlite_connection = self.sqlite_connection.clone();
@@ -899,7 +898,7 @@ impl LightningDB for SqliteLightningDB {
     async fn update_payment_status_in_db(&self, hash: PaymentHash, status: &HTLCStatus) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
         let status = status.to_string();
-        let last_updated = (now_ms() / 1000) as i64;
+        let last_updated = now_sec_i64();
         let payment_hash = hex::encode(hash.0);
 
         let sqlite_connection = self.sqlite_connection.clone();
@@ -922,7 +921,7 @@ impl LightningDB for SqliteLightningDB {
         let for_coin = self.db_ticker.clone();
         let preimage = hex::encode(preimage.0);
         let status = HTLCStatus::Claimable.to_string();
-        let last_updated = (now_ms() / 1000) as i64;
+        let last_updated = now_sec_i64();
         let payment_hash = hex::encode(hash.0);
 
         let sqlite_connection = self.sqlite_connection.clone();
@@ -947,7 +946,7 @@ impl LightningDB for SqliteLightningDB {
         let preimage = hex::encode(preimage.0);
         let fee_paid_msat = fee_paid_msat.map(|f| f as i64);
         let status = HTLCStatus::Succeeded.to_string();
-        let last_updated = (now_ms() / 1000) as i64;
+        let last_updated = now_sec_i64();
         let payment_hash = hex::encode(hash.0);
 
         let sqlite_connection = self.sqlite_connection.clone();
@@ -1045,7 +1044,7 @@ impl LightningDB for SqliteLightningDB {
 mod tests {
     use super::*;
     use crate::lightning::ln_db::DBChannelDetails;
-    use common::{block_on, new_uuid, now_ms};
+    use common::{block_on, new_uuid};
     use db_common::sqlite::rusqlite::Connection;
     use rand::distributions::Alphanumeric;
     use rand::{Rng, RngCore};
@@ -1224,7 +1223,7 @@ mod tests {
         let actual_channel_details = block_on(db.get_channel_from_db(uuid_2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
-        let current_time = (now_ms() / 1000) as i64;
+        let current_time = now_sec_i64();
         block_on(db.update_channel_to_closed(uuid_2, "the channel was cooperatively closed".into(), current_time))
             .unwrap();
         expected_channel_details.closure_reason = Some("the channel was cooperatively closed".into());
@@ -1239,12 +1238,8 @@ mod tests {
         assert_eq!(closed_channels.channels.len(), 1);
         assert_eq!(expected_channel_details, closed_channels.channels[0]);
 
-        block_on(db.update_channel_to_closed(
-            uuid_1,
-            "the channel was cooperatively closed".into(),
-            (now_ms() / 1000) as i64,
-        ))
-        .unwrap();
+        block_on(db.update_channel_to_closed(uuid_1, "the channel was cooperatively closed".into(), now_sec_i64()))
+            .unwrap();
         let closed_channels =
             block_on(db.get_closed_channels_by_filter(None, PagingOptionsEnum::default(), 10)).unwrap();
         assert_eq!(closed_channels.channels.len(), 2);
@@ -1300,8 +1295,8 @@ mod tests {
             amt_msat: Some(2000),
             fee_paid_msat: Some(100),
             status: HTLCStatus::Failed,
-            created_at: (now_ms() / 1000) as i64,
-            last_updated: (now_ms() / 1000) as i64,
+            created_at: now_sec_i64(),
+            last_updated: now_sec_i64(),
         };
         block_on(db.add_payment_to_db(&expected_payment_info)).unwrap();
 
@@ -1323,7 +1318,7 @@ mod tests {
                 .unwrap(),
         };
         expected_payment_info.amt_msat = None;
-        expected_payment_info.last_updated = (now_ms() / 1000) as i64;
+        expected_payment_info.last_updated = now_sec_i64();
         block_on(db.add_payment_to_db(&expected_payment_info)).unwrap();
 
         let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([1; 32]))).unwrap().unwrap();

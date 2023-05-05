@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
-use common::{async_blocking, now_ms};
+use common::{async_blocking, now_sec};
 use crypto::StandardHDPathToCoin;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -278,7 +278,7 @@ async fn withdraw_base_coin_impl(coin: SolanaCoin, req: WithdrawRequest) -> With
         spent_by_me,
         received_by_me,
         block_height: 0,
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
         fee_details: Some(
             SolanaFeeDetails {
                 amount: res.sol_required,

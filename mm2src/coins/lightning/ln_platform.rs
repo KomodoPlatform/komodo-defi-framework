@@ -15,6 +15,7 @@ use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, SpawnFuture, Timer};
 use common::log::{debug, error, info};
+use common::wait_until_sec;
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;
 use keys::hash::H256;
@@ -357,7 +358,7 @@ impl Platform {
                 if is_spv_enabled {
                     client
                         // TODO: Should log the spv error if height > 0
-                        .validate_spv_proof(&transaction, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
+                        .validate_spv_proof(&transaction, wait_until_sec(TRY_SPV_PROOF_INTERVAL))
                         .await
                         .map_err(GetConfirmedTxError::SPVError)
                 } else {
@@ -427,7 +428,7 @@ impl Platform {
                 if is_spv_enabled {
                     client
                         // TODO: Should log the spv error if height > 0
-                        .validate_spv_proof(&output.spending_tx, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
+                        .validate_spv_proof(&output.spending_tx, wait_until_sec(TRY_SPV_PROOF_INTERVAL))
                         .await
                         .map_err(GetConfirmedTxError::SPVError)
                 } else {
@@ -534,7 +535,7 @@ impl Platform {
             .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
                 tx_bytes: &funding_tx_bytes.into_vec(),
                 secret_hash: &[],
-                wait_until: (now_ms() / 1000) + 3600,
+                wait_until: wait_until_sec(3600),
                 from_block,
                 swap_contract_address: &None,
                 check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,

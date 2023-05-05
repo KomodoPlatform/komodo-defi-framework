@@ -21,6 +21,7 @@ use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApp
             TransactionEnum, ValidateFeeArgs, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
 use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{now_sec, wait_until_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::CryptoCtx;
 use futures::{compat::Future01CompatExt, select, FutureExt};
@@ -330,7 +331,7 @@ impl MakerSwap {
             MakerSwapEvent::MakerPaymentRefunded(tx) => self.w().maker_payment_refund = tx,
             MakerSwapEvent::MakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::MakerPaymentRefundFinished => (),
-            MakerSwapEvent::Finished => self.finished_at.store(now_ms() / 1000, Ordering::Relaxed),
+            MakerSwapEvent::Finished => self.finished_at.store(now_sec(), Ordering::Relaxed),
         }
     }
 
@@ -518,7 +519,7 @@ impl MakerSwap {
             },
         };
 
-        let started_at = now_ms() / 1000;
+        let started_at = now_sec();
         let maker_coin_start_block = match self.maker_coin.current_block().compat().await {
             Ok(b) => b,
             Err(e) => {
@@ -795,7 +796,7 @@ impl MakerSwap {
 
     async fn maker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         let timeout = self.r().data.started_at + self.r().data.lock_duration / 3;
-        let now = now_ms() / 1000;
+        let now = now_sec();
         if now > timeout {
             return Ok((Some(MakerSwapCommand::Finish), vec![
                 MakerSwapEvent::MakerPaymentTransactionFailed(ERRL!("Timeout {} > {}", now, timeout).into()),
@@ -1062,7 +1063,7 @@ impl MakerSwap {
         }
 
         let timeout = taker_payment_spend_deadline(self.r().data.started_at, self.r().data.lock_duration);
-        let now = now_ms() / 1000;
+        let now = now_sec();
         if now > timeout {
             return Ok((Some(MakerSwapCommand::PrepareForMakerPaymentRefund), vec![
                 MakerSwapEvent::TakerPaymentSpendFailed(ERRL!("Timeout {} > {}", now, timeout).into()),
@@ -1511,7 +1512,7 @@ impl MakerSwap {
                         .await
                 );
                 if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund_htlc {
-                    return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
+                    return ERR!("Too early to refund, wait until {}", wait_until_sec(seconds_to_wait));
                 }
                 let fut = self.maker_coin.send_maker_refunds_payment(RefundPaymentArgs {
                     payment_tx: &maker_payment,

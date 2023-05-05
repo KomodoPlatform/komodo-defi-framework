@@ -32,7 +32,7 @@ use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::{error, warn};
-use common::{now_ms, one_hundred, ten_f64};
+use common::{one_hundred, ten_f64};
 use crypto::{Bip32DerPathOps, Bip44Chain, RpcDerivationPath, StandardHDPath, StandardHDPathError};
 use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
@@ -1085,7 +1085,7 @@ pub async fn calc_interest_if_required<T: UtxoCommonOps>(
         };
     } else {
         // if interest is zero attempt to set the lowest possible lock_time to claim it later
-        unsigned.lock_time = (now_ms() / 1000) as u32 - 3600 + 777 * 2;
+        unsigned.lock_time = now_sec_u32() - 3600 + 777 * 2;
     }
     let rewards_amount = big_decimal_from_sat_unsigned(interest, coin.as_ref().decimals);
     data.kmd_rewards = Some(KmdRewardsDetails::claimed_by_me(rewards_amount));
@@ -1108,7 +1108,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
     }
     let lock_time = try_s!(coin.p2sh_tx_locktime(input.lock_time).await);
     let n_time = if coin.as_ref().conf.is_pos {
-        Some((now_ms() / 1000) as u32)
+        Some(now_sec_u32())
     } else {
         None
     };
@@ -1826,7 +1826,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                 )));
             }
 
-            if (now_ms() / 1000) as u32 - taker_fee_tx.lock_time > lock_duration as u32 {
+            if now_sec_u32() - taker_fee_tx.lock_time > lock_duration as u32 {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "{}: Taker fee {:?} is too old",
                     OLD_TRANSACTION_ERR_LOG, taker_fee_tx
@@ -2431,7 +2431,7 @@ pub fn wait_for_output_spend(
                 Err(e) => error!("Error on find_output_spend_of_tx: {}", e),
             };
 
-            if now_ms() / 1000 > wait_until {
+            if now_sec() > wait_until {
                 return TX_PLAIN_ERR!(
                     "Waited too long until {} for transaction {:?} {} to be spent ",
                     wait_until,
@@ -3461,7 +3461,7 @@ where
     };
 
     // pass the dummy params
-    let time_lock = (now_ms() / 1000) as u32;
+    let time_lock = now_sec_u32();
     let my_pub = &[0; 33]; // H264 is 33 bytes
     let other_pub = &[0; 33]; // H264 is 33 bytes
     let secret_hash = &[0; 20]; // H160 is 20 bytes
@@ -4173,7 +4173,7 @@ pub async fn can_refund_htlc<T>(coin: &T, locktime: u64) -> Result<CanRefundHtlc
 where
     T: UtxoCommonOps,
 {
-    let now = now_ms() / 1000;
+    let now = now_sec();
     if now < locktime {
         let to_wait = locktime - now + 1;
         return Ok(CanRefundHtlc::HaveToWait(to_wait.min(3600)));
@@ -4195,7 +4195,7 @@ where
     T: UtxoCommonOps,
 {
     let lock_time = if ticker == "KMD" {
-        (now_ms() / 1000) as u32 - 3600 + 2 * 777
+        now_sec_u32() - 3600 + 2 * 777
     } else {
         coin.get_current_mtp().await? - 1
     };

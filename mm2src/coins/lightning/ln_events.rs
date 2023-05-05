@@ -7,7 +7,7 @@ use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::serialize_hex;
 use common::executor::{AbortSettings, SpawnAbortable, SpawnFuture, Timer};
 use common::log::{error, info};
-use common::{new_uuid, now_ms};
+use common::{new_uuid, now_sec_i64};
 use core::time::Duration;
 use futures::compat::Future01CompatExt;
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
@@ -238,8 +238,7 @@ async fn save_channel_closing_details(
     uuid: Uuid,
     reason: String,
 ) -> SaveChannelClosingResult<()> {
-    db.update_channel_to_closed(uuid, reason, (now_ms() / 1000) as i64)
-        .await?;
+    db.update_channel_to_closed(uuid, reason, now_sec_i64()).await?;
 
     let channel_details = db
         .get_channel_from_db(uuid)

@@ -12,7 +12,7 @@ mod z_coin_tests;
 
 mod zhtlc_native_reexport {
     pub use common::executor::Timer;
-    pub use common::now_ms;
+    pub use common::{now_ms, wait_until_ms};
     pub use mm2_test_helpers::for_tests::MarketMakerIt;
     pub use mm2_test_helpers::for_tests::{init_z_coin_native, init_z_coin_status};
     pub use mm2_test_helpers::structs::{CoinActivationResult, InitTaskResult, InitZcoinStatus, RpcV2Response};
@@ -25,7 +25,7 @@ use zhtlc_native_reexport::*;
 async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> CoinActivationResult {
     let init = init_z_coin_native(mm, coin).await;
     let init: RpcV2Response<InitTaskResult> = serde_json::from_value(init).unwrap();
-    let timeout = now_ms() + 120000;
+    let timeout = wait_until_ms(120000);
 
     loop {
         if gstuff::now_ms() > timeout {

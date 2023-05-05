@@ -1,7 +1,7 @@
 use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum};
 use coins::lightning::ln_events::{CHANNEL_READY_LOG, PAYMENT_CLAIMABLE_LOG, SUCCESSFUL_CLAIM_LOG, SUCCESSFUL_SEND_LOG};
 use common::executor::Timer;
-use common::{block_on, log};
+use common::{block_on, log, wait_until_ms};
 use gstuff::now_ms;
 use http::StatusCode;
 use mm2_number::BigDecimal;
@@ -24,7 +24,7 @@ const T_BTC_ELECTRUMS: &[&str] = &[
 async fn enable_lightning(mm: &MarketMakerIt, coin: &str, timeout: u64) -> LightningActivationResult {
     let init = init_lightning(mm, coin).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = now_ms() + (timeout * 1000);
+    let timeout = wait_until_ms(timeout * 1000);
 
     loop {
         if now_ms() > timeout {

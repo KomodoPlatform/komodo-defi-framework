@@ -15,7 +15,7 @@ use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcCl
                              JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
 use common::log::LogOnError;
 use common::log::{error, info, warn};
-use common::{median, now_float, now_ms, OrdRange};
+use common::{median, now_float, now_ms, now_sec, OrdRange};
 use derive_more::Display;
 use futures::channel::oneshot as async_oneshot;
 use futures::compat::{Future01CompatExt, Stream01CompatExt};
@@ -153,7 +153,7 @@ impl UtxoRpcClientEnum {
         let mut tx_not_found_retries = TX_NOT_FOUND_RETRIES;
         let fut = async move {
             loop {
-                if now_ms() / 1000 > wait_until {
+                if now_sec() > wait_until {
                     return ERR!(
                         "Waited too long until {} for transaction {:?} to be confirmed {} times",
                         wait_until,

@@ -1,6 +1,6 @@
 use crate::integration_tests_common::*;
 use common::executor::Timer;
-use common::{block_on, log, now_ms};
+use common::{block_on, log, now_ms, wait_until_ms};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::electrums::rick_electrums;
 use mm2_test_helpers::for_tests::{init_withdraw, pirate_conf, rick_conf, send_raw_transaction, withdraw_status,
@@ -28,7 +28,7 @@ const ZOMBIE_TRADE_ALICE_SEED: &str = "RICK ZOMBIE ALICE";
 async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> TransactionDetails {
     let init = init_withdraw(mm, coin, to, amount).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = now_ms() + 150000;
+    let timeout = wait_until_ms(150000);
 
     loop {
         if now_ms() > timeout {

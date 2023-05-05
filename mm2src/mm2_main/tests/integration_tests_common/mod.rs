@@ -1,6 +1,6 @@
 use common::executor::Timer;
 use common::log::LogLevel;
-use common::{block_on, log, now_ms};
+use common::{block_on, log, now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_seed;
 use mm2_main::mm2::{lp_main, LpMainParams};
 use mm2_test_helpers::electrums::{morty_electrums, rick_electrums};
@@ -79,7 +79,7 @@ pub async fn enable_z_coin_light(
 ) -> CoinActivationResult {
     let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = now_ms() + 12000000;
+    let timeout = wait_until_ms(12000000);
 
     loop {
         if now_ms() > timeout {
@@ -105,7 +105,7 @@ pub async fn enable_utxo_v2_electrum(
 ) -> UtxoStandardActivationResult {
     let init = init_utxo_electrum(mm, coin, servers).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = now_ms() + (timeout * 1000);
+    let timeout = wait_until_ms(timeout * 1000);
 
     loop {
         if now_ms() > timeout {

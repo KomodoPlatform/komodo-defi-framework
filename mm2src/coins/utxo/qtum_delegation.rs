@@ -10,7 +10,7 @@ use crate::utxo::{PrivKeyPolicyNotAllowed, UTXO_LOCK};
 use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfos, StakingInfosError,
             StakingInfosFut, StakingInfosResult, TransactionDetails, TransactionType};
 use bitcrypto::dhash256;
-use common::now_ms;
+use common::now_sec;
 use derive_more::Display;
 use ethabi::{Contract, Token};
 use ethereum_types::H160;
@@ -331,7 +331,7 @@ impl QtumCoin {
             received_by_me,
             my_balance_change,
             block_height: 0,
-            timestamp: now_ms() / 1000,
+            timestamp: now_sec(),
             fee_details: Some(fee_details.into()),
             coin: self.ticker().to_string(),
             internal_id: vec![].into(),

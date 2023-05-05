@@ -34,7 +34,7 @@ use chain::TransactionOutput;
 use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest, RpcRes};
 use common::log::{error, warn};
-use common::now_ms;
+use common::{now_sec, now_sec_u32};
 use derive_more::Display;
 use ethabi::{Function, Token};
 use ethereum_types::{H160, U256};
@@ -1343,7 +1343,7 @@ impl MmCoin for Qrc20Coin {
     ) -> TradePreimageResult<TradeFee> {
         let decimals = self.utxo.decimals;
         // pass the dummy params
-        let timelock = (now_ms() / 1000) as u32;
+        let timelock = now_sec_u32();
         let secret_hash = vec![0; 20];
         let swap_id = qrc20_swap_id(timelock, &secret_hash);
         let receiver_addr = H160::default();
@@ -1390,7 +1390,7 @@ impl MmCoin for Qrc20Coin {
         let selfi = self.clone();
         let fut = async move {
             // pass the dummy params
-            let timelock = (now_ms() / 1000) as u32;
+            let timelock = now_sec_u32();
             let secret = vec![0; 32];
             let swap_id = qrc20_swap_id(timelock, &secret[0..20]);
             let sender_addr = H160::default();
@@ -1589,7 +1589,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         block_height: 0,
         coin: conf.ticker.clone(),
         internal_id: vec![].into(),
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
         kmd_rewards: None,
         transaction_type: TransactionType::StandardTransfer,
         memo: None,

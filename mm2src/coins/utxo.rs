@@ -49,7 +49,7 @@ use common::executor::abortable_queue::AbortableQueue;
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::log::LogOnError;
-use common::now_ms;
+use common::{now_sec, now_sec_u32};
 use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey,
              StandardHDPathError, StandardHDPathToAccount, StandardHDPathToCoin};
 use derive_more::Display;
@@ -763,9 +763,9 @@ impl From<AddrFromStrError> for WithdrawError {
 impl UtxoCoinFields {
     pub fn transaction_preimage(&self) -> TransactionInputSigner {
         let lock_time = if self.conf.ticker == "KMD" {
-            (now_ms() / 1000) as u32 - 3600 + 777 * 2
+            now_sec_u32() - 3600 + 777 * 2
         } else {
-            (now_ms() / 1000) as u32
+            now_sec_u32()
         };
 
         let str_d_zeel = if self.conf.ticker == "NAV" {
@@ -774,11 +774,7 @@ impl UtxoCoinFields {
             None
         };
 
-        let n_time = if self.conf.is_pos {
-            Some((now_ms() / 1000) as u32)
-        } else {
-            None
-        };
+        let n_time = if self.conf.is_pos { Some(now_sec_u32()) } else { None };
 
         TransactionInputSigner {
             version: self.conf.tx_version,

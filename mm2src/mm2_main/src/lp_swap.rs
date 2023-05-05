@@ -62,11 +62,12 @@ use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PRequestError};
 use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
+use common::now_sec;
 use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
              executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
              log::{error, info},
-             now_ms, var, HttpStatusCode, PagingOptions, StatusCode};
+             var, HttpStatusCode, PagingOptions, StatusCode};
 use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
@@ -306,7 +307,7 @@ async fn recv_swap_msg<T>(
     uuid: &Uuid,
     timeout: u64,
 ) -> Result<T, String> {
-    let started = now_ms() / 1000;
+    let started = now_sec();
     let timeout = BASIC_COMM_TIMEOUT + timeout;
     let wait_until = started + timeout;
     loop {
@@ -318,7 +319,7 @@ async fn recv_swap_msg<T>(
                 return Ok(msg);
             }
         }
-        let now = now_ms() / 1000;
+        let now = now_sec();
         if now > wait_until {
             return ERR!("Timeout ({} > {})", now - started, timeout);
         }

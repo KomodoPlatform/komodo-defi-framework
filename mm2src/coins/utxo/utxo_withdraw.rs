@@ -7,7 +7,7 @@ use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, T
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
-use common::now_ms;
+use common::now_sec;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
 use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, DerivationPath, HwError, HwProcessingError, HwRpcError};
 use keys::{Public as PublicKey, Type as ScriptType};
@@ -209,7 +209,7 @@ where
             block_height: 0,
             coin: ticker,
             internal_id: vec![].into(),
-            timestamp: now_ms() / 1000,
+            timestamp: now_sec(),
             kmd_rewards: data.kmd_rewards,
             transaction_type: Default::default(),
             memo: None,

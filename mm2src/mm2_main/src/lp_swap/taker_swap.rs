@@ -21,7 +21,7 @@ use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPayment
             TradePreimageValue, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
-use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{bits256, now_ms, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::SerializableSecp256k1Keypair, CryptoCtx};
 use futures::{compat::Future01CompatExt, future::try_join, select, FutureExt};
 use http::Response;
@@ -810,7 +810,7 @@ impl TakerSwap {
             TakerSwapEvent::TakerPaymentRefunded(tx) => self.w().taker_payment_refund = tx,
             TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::TakerPaymentRefundFinished => (),
-            TakerSwapEvent::Finished => self.finished_at.store(now_ms() / 1000, Ordering::Relaxed),
+            TakerSwapEvent::Finished => self.finished_at.store(now_sec(), Ordering::Relaxed),
         }
     }
 
@@ -1014,7 +1014,7 @@ impl TakerSwap {
             )]));
         }
 
-        let started_at = now_ms() / 1000;
+        let started_at = now_sec();
 
         let maker_coin_start_block = match self.maker_coin.current_block().compat().await {
             Ok(b) => b,
@@ -1228,7 +1228,7 @@ impl TakerSwap {
 
     async fn send_taker_fee(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let timeout = self.r().data.started_at + self.r().data.lock_duration / 3;
-        let now = now_ms() / 1000;
+        let now = now_sec();
         if now > timeout {
             return Ok((Some(TakerSwapCommand::Finish), vec![
                 TakerSwapEvent::TakerFeeSendFailed(ERRL!("Timeout {} > {}", now, timeout).into()),
@@ -1449,7 +1449,7 @@ impl TakerSwap {
         }
 
         let timeout = self.r().data.maker_payment_wait;
-        let now = now_ms() / 1000;
+        let now = now_sec();
         if now > timeout {
             return Ok((Some(TakerSwapCommand::Finish), vec![
                 TakerSwapEvent::TakerPaymentTransactionFailed(ERRL!("Timeout {} > {}", now, timeout).into()),
@@ -2165,7 +2165,7 @@ impl TakerSwap {
 
                 let can_refund = try_s!(self.taker_coin.can_refund_htlc(taker_payment_lock).compat().await);
                 if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund {
-                    return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
+                    return ERR!("Too early to refund, wait until {}", wait_until_sec(seconds_to_wait));
                 }
 
                 let fut = self.taker_coin.send_taker_refunds_payment(RefundPaymentArgs {

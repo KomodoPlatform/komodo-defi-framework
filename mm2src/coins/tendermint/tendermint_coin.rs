@@ -34,7 +34,7 @@ use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::{debug, warn};
-use common::{get_utc_timestamp, now_ms, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
+use common::{get_utc_timestamp, now_sec, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
@@ -2169,7 +2169,7 @@ impl MarketCoinOps for TendermintCoin {
         let coin = self.clone();
         let fut = async move {
             loop {
-                if now_ms() / 1000 > input.wait_until {
+                if now_sec() > input.wait_until {
                     return ERR!(
                         "Waited too long until {} for payment {} to be received",
                         input.wait_until,
@@ -2662,7 +2662,7 @@ pub(crate) fn secret_from_priv_key_policy(
 pub mod tendermint_coin_tests {
     use super::*;
 
-    use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
+    use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
     use std::mem::discriminant;
@@ -3477,7 +3477,7 @@ pub mod tendermint_coin_tests {
         ))
         .unwrap();
 
-        let wait_until = || now_ms() + 45;
+        let wait_until = || wait_until_ms(45);
 
         for succeed_tx_hash in SUCCEED_TX_HASH_SAMPLES {
             let tx_bytes = block_on(coin.request_tx(succeed_tx_hash.to_string()))

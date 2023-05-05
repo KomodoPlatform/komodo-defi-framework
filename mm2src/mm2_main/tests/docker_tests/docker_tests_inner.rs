@@ -7,7 +7,7 @@ use coins::utxo::rpc_clients::UnspentInfo;
 use coins::utxo::{GetUtxoListOps, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, TransactionEnum, WithdrawRequest};
-use common::{block_on, now_ms};
+use common::{block_on, now_sec_u32, wait_until_sec};
 use futures01::Future;
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf, get_locked_amount, kmd_conf,
@@ -22,11 +22,11 @@ use std::time::Duration;
 
 #[test]
 fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let my_public_key = coin.my_public_key().unwrap();
 
-    let time_lock = (now_ms() / 1000) as u32 - 3600;
+    let time_lock = now_sec_u32() - 3600;
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
@@ -91,7 +91,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
 #[test]
 fn test_for_non_existent_tx_hex_utxo() {
     // This test shouldn't wait till timeout!
-    let timeout = (now_ms() / 1000) + 120;
+    let timeout = wait_until_sec(120);
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     // bad transaction hex
     let tx = hex::decode("0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d87000000000000000016611400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000").unwrap();
@@ -110,11 +110,11 @@ fn test_for_non_existent_tx_hex_utxo() {
 
 #[test]
 fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let my_public_key = coin.my_public_key().unwrap();
 
-    let time_lock = (now_ms() / 1000) as u32 - 3600;
+    let time_lock = now_sec_u32() - 3600;
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
@@ -178,13 +178,13 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
 
 #[test]
 fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let secret = [0; 32];
     let my_pubkey = coin.my_public_key().unwrap();
 
     let secret_hash = dhash160(&secret);
-    let time_lock = (now_ms() / 1000) as u32 - 3600;
+    let time_lock = now_sec_u32() - 3600;
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
@@ -249,12 +249,12 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
 
 #[test]
 fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
-    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let secret = [0; 32];
     let my_pubkey = coin.my_public_key().unwrap();
 
-    let time_lock = (now_ms() / 1000) as u32 - 3600;
+    let time_lock = now_sec_u32() - 3600;
     let secret_hash = dhash160(&secret);
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
@@ -326,7 +326,7 @@ fn test_one_hundred_maker_payments_in_a_row_native() {
     let secret = [0; 32];
     let my_pubkey = coin.my_public_key().unwrap();
 
-    let time_lock = (now_ms() / 1000) as u32 - 3600;
+    let time_lock = now_sec_u32() - 3600;
     let mut unspents = vec![];
     let mut sent_tx = vec![];
     for i in 0..100 {
@@ -2477,7 +2477,7 @@ fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_
         payment_tx: withdraw.tx_hex.0,
         confirmations: 1,
         requires_nota: false,
-        wait_until: (now_ms() / 1000) + 10,
+        wait_until: wait_until_sec(10),
         check_every: 1,
     };
     coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();

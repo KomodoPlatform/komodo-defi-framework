@@ -36,7 +36,7 @@ use bitcrypto::{dhash256, ripemd160};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::{error, info, LogOnError, LogState};
-use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
+use common::{async_blocking, get_local_duration_since_epoch, log, now_sec, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -1104,7 +1104,7 @@ impl MarketCoinOps for LightningCoin {
         let coin = self.clone();
         let fut = async move {
             loop {
-                if now_ms() / 1000 > input.wait_until {
+                if now_sec() > input.wait_until {
                     return ERR!(
                         "Waited too long until {} for payment {} to be received",
                         input.wait_until,
@@ -1157,7 +1157,7 @@ impl MarketCoinOps for LightningCoin {
         let wait_until = args.wait_until;
         let fut = async move {
             loop {
-                if now_ms() / 1000 > wait_until {
+                if now_sec() > wait_until {
                     return Err(TransactionErr::Plain(ERRL!(
                         "Waited too long until {} for payment {} to be spent",
                         wait_until,

@@ -9,7 +9,7 @@ use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, Re
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::state_machine::prelude::*;
-use common::{now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MapToMmResult;
@@ -286,7 +286,7 @@ impl State for WaitForTakerPaymentSpend {
         };
 
         loop {
-            if now_ms() / 1000 > wait_until {
+            if now_sec() > wait_until {
                 info!(
                     "Waited too long until {} for transaction {:?} to be spent",
                     wait_until, self.taker_payment_hex
@@ -321,7 +321,7 @@ impl State for WaitForTakerPaymentSpend {
                 },
             };
 
-            let now = now_ms() / 1000;
+            let now = now_sec();
             if now < watcher_ctx.taker_locktime() {
                 let wait_until = watcher_ctx.wait_for_maker_payment_spend_deadline();
                 let maker_payment_hex_fut = watcher_ctx

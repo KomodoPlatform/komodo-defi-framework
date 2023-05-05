@@ -32,7 +32,7 @@ use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
 use common::log::warn;
-use common::now_ms;
+use common::{now_sec, wait_until_sec};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
@@ -506,7 +506,7 @@ impl SlpToken {
             self.platform_dust_dec(),
             None,
             input.time_lock,
-            now_ms() / 1000 + 60,
+            wait_until_sec(60),
             input.confirmations,
         );
         validate_fut.compat().await
@@ -1702,7 +1702,7 @@ impl MmCoin for SlpToken {
                 received_by_me,
                 my_balance_change,
                 block_height: 0,
-                timestamp: now_ms() / 1000,
+                timestamp: now_sec(),
                 fee_details: Some(fee_details.into()),
                 coin: coin.ticker().into(),
                 kmd_rewards: None,
@@ -2116,7 +2116,7 @@ mod slp_tests {
             secret_hash,
             amount,
             confirmations: 1,
-            try_spv_proof_until: now_ms() / 1000 + 60,
+            try_spv_proof_until: wait_until_sec(60),
             unique_swap_data: Vec::new(),
             swap_contract_address: None,
             watcher_reward: None,
@@ -2238,7 +2238,7 @@ mod slp_tests {
             fusd.platform_dust_dec(),
             None,
             lock_time,
-            now_ms() / 1000 + 60,
+            wait_until_sec(60),
             1,
         )
         .wait()
@@ -2252,7 +2252,7 @@ mod slp_tests {
             secret_hash,
             amount,
             swap_contract_address: None,
-            try_spv_proof_until: now_ms() / 1000 + 60,
+            try_spv_proof_until: wait_until_sec(60),
             confirmations: 1,
             unique_swap_data: Vec::new(),
             watcher_reward: None,
