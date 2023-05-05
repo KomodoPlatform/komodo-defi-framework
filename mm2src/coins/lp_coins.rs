@@ -79,6 +79,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
+use zcash_primitives::transaction::Transaction as ZTransaction;
 
 cfg_native! {
     use crate::lightning::LightningCoin;
@@ -89,7 +90,6 @@ cfg_native! {
     use lightning_invoice::{Invoice, ParseOrSemanticError};
     use std::io;
     use std::path::PathBuf;
-    use zcash_primitives::transaction::Transaction as ZTransaction;
     use z_coin::ZcoinProtocolInfo;
 }
 
@@ -283,8 +283,8 @@ use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 pub mod nft;
 use nft::nft_errors::GetNftInfoError;
 
-#[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
-#[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
+pub mod z_coin;
+use z_coin::ZCoin;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
@@ -464,7 +464,6 @@ pub trait Transaction: fmt::Debug + 'static {
 pub enum TransactionEnum {
     UtxoTx(UtxoTx),
     SignedEthTx(SignedEthTx),
-    #[cfg(not(target_arch = "wasm32"))]
     ZTransaction(ZTransaction),
     CosmosTransaction(CosmosTransaction),
     #[cfg(not(target_arch = "wasm32"))]
@@ -473,7 +472,6 @@ pub enum TransactionEnum {
 
 ifrom!(TransactionEnum, UtxoTx);
 ifrom!(TransactionEnum, SignedEthTx);
-#[cfg(not(target_arch = "wasm32"))]
 ifrom!(TransactionEnum, ZTransaction);
 #[cfg(not(target_arch = "wasm32"))]
 ifrom!(TransactionEnum, LightningPayment);
@@ -493,7 +491,6 @@ impl Deref for TransactionEnum {
         match self {
             TransactionEnum::UtxoTx(ref t) => t,
             TransactionEnum::SignedEthTx(ref t) => t,
-            #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::ZTransaction(ref t) => t,
             TransactionEnum::CosmosTransaction(ref t) => t,
             #[cfg(not(target_arch = "wasm32"))]

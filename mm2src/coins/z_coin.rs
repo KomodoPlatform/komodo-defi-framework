@@ -1,42 +1,37 @@
 use crate::coin_errors::MyAddressError;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
-use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
-                                UtxoFieldsWithIguanaSecretBuilder};
-use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
-                               payment_script};
+use crate::utxo::utxo_builder::{UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
+                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaSecretBuilder};
+use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address,
                   BroadcastTxErr, FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
-                  UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
-                  VerboseTransactionFrom};
+                  UtxoCommonOps, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyActivationPolicy, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut,
-            RawTransactionRequest, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs,
-            SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
+            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, PrivKeyActivationPolicy,
+            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs,
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::executor::{AbortableSystem, AbortedError};
-use common::{async_blocking, calc_total_pages, log, one_thousand_u32, sha256_digest, PagingOptionsEnum};
+use common::{log, one_thousand_u32};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
-use crypto::{Bip32DerPathOps, GlobalHDAccountArc, StandardHDPathToCoin};
-use db_common::sqlite::offset_by_id;
-use db_common::sqlite::rusqlite::{Error as SqlError, Row, NO_PARAMS};
-use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
+use crypto::StandardHDPathToCoin;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -47,34 +42,25 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
-use parking_lot::Mutex;
 use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
-use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
-use zcash_client_backend::data_api::WalletRead;
+use z_rpc::{SaplingSyncConnector, SaplingSyncGuard};
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
-use zcash_client_backend::wallet::{AccountId, SpendableNote};
-use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
-use zcash_client_sqlite::error::SqliteClientError;
-use zcash_client_sqlite::wallet::get_balance;
-use zcash_client_sqlite::wallet::transact::get_spendable_notes;
+use zcash_client_backend::wallet::SpendableNote;
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters, H0};
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::keys::OutgoingViewingKey;
 use zcash_primitives::sapling::note_encryption::try_sapling_output_recovery;
-use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
-use zcash_primitives::zip32::ChildIndex as Zip32Child;
-use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
+use zcash_primitives::{constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
-use zcash_proofs::default_params_folder;
 use zcash_proofs::prover::LocalTxProver;
 
 mod z_htlc;
@@ -82,10 +68,37 @@ use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
 pub use z_rpc::SyncStatus;
-use z_rpc::{init_light_client, init_native_client, SaplingSyncConnector, SaplingSyncGuard, WalletDbShared};
+
+cfg_native!(
+    use crate::{NumConversError, PrivKeyPolicyNotAllowed, TransactionDetails, TxFeeDetails}
+    use crate::utxo::UtxoFeeDetails;
+    use crate::utxo::utxo_builder::{UtxoCoinBuildError};
+    use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat};
+
+    use common::{async_blocking, calc_total_pages, sha256_digest, PagingOptionsEnum};
+    use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
+    use db_common::sqlite::offset_by_id;
+    use db_common::sqlite::rusqlite::{Error as SqlError, Row, NO_PARAMS};
+    use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
+    use parking_lot::Mutex;
+    use std::iter;
+    use zcash_client_backend::data_api::WalletRead;
+    use zcash_client_backend::wallet::{AccountId};
+    use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
+    use zcash_client_sqlite::error::SqliteClientError;
+    use zcash_client_sqlite::wallet::{get_balance};
+    use zcash_client_sqlite::wallet::transact::get_spendable_notes;
+    use zcash_primitives::consensus;
+    use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
+    use zcash_primitives::zip32::ChildIndex as Zip32Child;
+    use zcash_proofs::default_params_folder;
+
+    use z_rpc::{init_native_client, init_light_client, WalletDbShared};
+
+    use crate::z_coin::z_rpc::{create_wallet_db, BlockDb};
+);
 
 mod z_coin_errors;
-use crate::z_coin::z_rpc::{create_wallet_db, BlockDb};
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -111,13 +124,15 @@ macro_rules! try_ztx_s {
 }
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
-const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
-const TRANSACTIONS_TABLE: &str = "transactions";
-const BLOCKS_TABLE: &str = "blocks";
-const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
-const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
-const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
-const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
+cfg_native!(
+    const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
+    const TRANSACTIONS_TABLE: &str = "transactions";
+    const BLOCKS_TABLE: &str = "blocks";
+    const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
+    const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
+    const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
+    const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
+);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinConsensusParams {
@@ -176,6 +191,7 @@ impl Parameters for ZcoinConsensusParams {
     fn b58_script_address_prefix(&self) -> [u8; 2] { self.b58_script_address_prefix }
 }
 
+#[allow(unused)]
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,
     my_z_addr: PaymentAddress,
@@ -183,6 +199,7 @@ pub struct ZCoinFields {
     z_spending_key: ExtendedSpendingKey,
     evk: ExtendedFullViewingKey,
     z_tx_prover: Arc<LocalTxProver>,
+    #[cfg(not(target_arch = "wasm32"))]
     light_wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
     sync_state_connector: AsyncMutex<SaplingSyncConnector>,
@@ -215,6 +232,7 @@ pub struct ZOutput {
     pub memo: Option<MemoBytes>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct ZCoinSqlTxHistoryItem {
     tx_hash: Vec<u8>,
     internal_id: i64,
@@ -224,6 +242,7 @@ struct ZCoinSqlTxHistoryItem {
     spent_amount: i64,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl ZCoinSqlTxHistoryItem {
     fn try_from_sql_row(row: &Row<'_>) -> Result<Self, SqlError> {
         let mut tx_hash: Vec<u8> = row.get(0)?;
@@ -239,6 +258,7 @@ impl ZCoinSqlTxHistoryItem {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct SqlTxHistoryRes {
     transactions: Vec<ZCoinSqlTxHistoryItem>,
     total_tx_count: u32,
@@ -316,6 +336,7 @@ impl ZCoin {
         })
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn my_balance_sat(&self) -> Result<u64, MmError<ZcashClientError>> {
         let db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
@@ -325,6 +346,10 @@ impl ZCoin {
         .await
     }
 
+    #[cfg(target_arch = "wasm32")]
+    async fn my_balance_sat(&self) -> Result<u64, MmError<String>> { todo!() }
+
+    #[cfg(not(target_arch = "wasm32"))]
     async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<ZcashClientError>> {
         let db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
@@ -338,7 +363,12 @@ impl ZCoin {
         .await
     }
 
+    #[cfg(target_arch = "wasm32")]
+    #[allow(unused)]
+    async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<String>> { todo!() }
+
     /// Returns spendable notes
+    #[cfg(not(target_arch = "wasm32"))]
     async fn spendable_notes_ordered(&self) -> Result<Vec<SpendableNote>, MmError<SqliteClientError>> {
         let mut unspents = self.get_spendable_notes().await?;
 
@@ -356,6 +386,7 @@ impl ZCoin {
     }
 
     /// Generates a tx sending outputs from our address
+    #[cfg(not(target_arch = "wasm32"))]
     async fn gen_tx(
         &self,
         t_outputs: Vec<TxOut>,
@@ -455,6 +486,16 @@ impl ZCoin {
         Ok((tx, additional_data, sync_guard))
     }
 
+    #[cfg(target_arch = "wasm32")]
+    #[allow(unused)]
+    async fn gen_tx(
+        &self,
+        _t_outputs: Vec<TxOut>,
+        _z_outputs: Vec<ZOutput>,
+    ) -> Result<(ZTransaction, AdditionalTxData, SaplingSyncGuard<'_>), MmError<GenTxError>> {
+        todo!()
+    }
+
     pub async fn send_outputs(
         &self,
         t_outputs: Vec<TxOut>,
@@ -473,6 +514,7 @@ impl ZCoin {
         Ok(tx)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn tx_history_from_sql(
         &self,
         limit: usize,
@@ -537,6 +579,7 @@ impl ZCoin {
         .await
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn z_transactions_from_cache_or_rpc(
         &self,
         hashes: HashSet<H256Json>,
@@ -552,6 +595,7 @@ impl ZCoin {
             .map_to_mm(|e| UtxoRpcError::InvalidResponse(e.to_string()))
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn tx_details_from_sql_item(
         &self,
         sql_item: ZCoinSqlTxHistoryItem,
@@ -647,6 +691,7 @@ impl ZCoin {
         })
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn tx_history(
         &self,
         request: MyTxHistoryRequestV2<i64>,
@@ -725,6 +770,7 @@ pub struct ZcoinActivationParams {
     pub scan_interval_ms: u64,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn z_coin_from_conf_and_params(
     ctx: &MmArc,
     ticker: &str,
@@ -748,12 +794,14 @@ pub async fn z_coin_from_conf_and_params(
     builder.build().await
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn verify_checksum_zcash_params(spend_path: &PathBuf, output_path: &PathBuf) -> Result<bool, ZCoinBuildError> {
     let spend_hash = sha256_digest(spend_path)?;
     let out_hash = sha256_digest(output_path)?;
     Ok(spend_hash == SAPLING_SPEND_EXPECTED_HASH && out_hash == SAPLING_OUTPUT_EXPECTED_HASH)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCoinBuildError> {
     if !params_dir.exists() {
         return Err(ZCoinBuildError::ZCashParamsNotFound);
@@ -767,6 +815,7 @@ fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCo
     Ok((spend_path, output_path))
 }
 
+#[allow(unused)]
 pub struct ZCoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
@@ -798,6 +847,7 @@ impl<'a> UtxoFieldsWithGlobalHDBuilder for ZCoinBuilder<'a> {}
 /// `UtxoCoinBuilder` trait requires `UtxoFieldsWithHardwareWalletBuilder` to be implemented.
 impl<'a> UtxoFieldsWithHardwareWalletBuilder for ZCoinBuilder<'a> {}
 
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
     type ResultCoin = ZCoin;
@@ -909,6 +959,17 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
 
         Ok(z_coin)
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[async_trait]
+impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
+    type ResultCoin = ZCoin;
+    type Error = ZCoinBuildError;
+
+    fn priv_key_policy(&self) -> PrivKeyBuildPolicy { todo!() }
+
+    async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> { todo!() }
 }
 
 impl<'a> ZCoinBuilder<'a> {
@@ -1403,10 +1464,6 @@ impl SwapOps for ZCoin {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
-    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        unimplemented!();
-    }
-
     #[inline]
     async fn extract_secret(
         &self,
@@ -1415,6 +1472,10 @@ impl SwapOps for ZCoin {
         _watcher_reward: bool,
     ) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
+    }
+
+    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
+        unimplemented!();
     }
 
     fn is_auto_refundable(&self) -> bool { false }
@@ -1829,6 +1890,7 @@ impl UtxoCommonOps for ZCoin {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl InitWithdrawCoin for ZCoin {
     async fn init_withdraw(
@@ -1919,6 +1981,7 @@ pub fn interpret_memo_string(memo_str: &str) -> MmResult<MemoBytes, WithdrawErro
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn extended_spending_key_from_protocol_info_and_policy(
     protocol_info: &ZcoinProtocolInfo,
     priv_key_policy: &PrivKeyBuildPolicy,
@@ -1937,6 +2000,7 @@ fn extended_spending_key_from_protocol_info_and_policy(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn extended_spending_key_from_global_hd_account(
     protocol_info: &ZcoinProtocolInfo,
     global_hd: &GlobalHDAccountArc,
