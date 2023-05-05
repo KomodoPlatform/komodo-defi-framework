@@ -487,7 +487,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
         25.,
         25.,
         2.,
-        &[("REFUND_TEST", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         SwapFlow::WatcherRefundsTakerPayment,
     );
 
@@ -507,7 +507,7 @@ fn test_watcher_refunds_taker_payment_eth() {
         0.01,
         0.01,
         1.,
-        &[("REFUND_TEST", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         SwapFlow::WatcherRefundsTakerPayment,
     );
     assert_eq!(
@@ -527,11 +527,7 @@ fn test_watcher_refunds_taker_payment_erc20() {
         100.,
         100.,
         0.01,
-        &[
-            ("REFUND_TEST", ""),
-            ("USE_TEST_LOCKTIME", ""),
-            ("TEST_COIN_PRICE", "0.01"),
-        ],
+        &[("USE_TEST_LOCKTIME", ""), ("TEST_COIN_PRICE", "0.01")],
         SwapFlow::WatcherRefundsTakerPayment,
     );
     let jst_volume = BigDecimal::from_str("1").unwrap();

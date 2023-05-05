@@ -240,7 +240,7 @@ impl State for ValidateTakerPayment {
         let validate_input = WatcherValidatePaymentInput {
             payment_tx: taker_payment_hex.clone(),
             taker_payment_refund_preimage: watcher_ctx.data.taker_payment_refund_preimage.clone(),
-            time_lock: match std::env::var("REFUND_TEST") {
+            time_lock: match std::env::var("USE_TEST_LOCKTIME") {
                 Ok(_) => watcher_ctx.data.swap_started_at as u32,
                 Err(_) => watcher_ctx.taker_locktime() as u32,
             },
@@ -430,7 +430,7 @@ impl State for RefundTakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        if std::env::var("REFUND_TEST").is_err() {
+        if std::env::var("USE_TEST_LOCKTIME").is_err() {
             loop {
                 match watcher_ctx
                     .taker_coin
