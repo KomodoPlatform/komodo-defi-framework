@@ -1757,6 +1757,9 @@ impl ElectrumClientImpl {
         false
     }
 
+    /// Check if all connections have been removed.
+    pub async fn is_connections_pool_empty(&self) -> bool { self.connections.lock().await.is_empty() }
+
     pub async fn count_connections(&self) -> usize { self.connections.lock().await.len() }
 
     /// Check if the protocol version was checked for one of the spawned connections.

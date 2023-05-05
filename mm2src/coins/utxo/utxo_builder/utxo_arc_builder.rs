@@ -9,7 +9,7 @@ use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::{BlockHeader, TransactionOutput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
-use common::log::{debug, error, info, warn, LogOnError};
+use common::log::{debug, error, info, warn};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -26,6 +26,7 @@ use std::num::NonZeroU64;
 use std::sync::{Arc, Weak};
 
 const CHUNK_SIZE_REDUCER_VALUE: u64 = 100;
+const TRY_TO_RETRIEVE_HEADERS_ATTEMPTS: u8 = 10;
 
 pub struct UtxoArcBuilder<'a, F, T>
 where
@@ -236,14 +237,30 @@ impl Default for BlockHeaderUtxoLoopExtraArgs {
 
 /// This function executes a loop to fetch, validate and store block headers from the connected electrum servers.
 /// sync_status_loop_handle notifies the coin activation function of errors and if the error is temporary or not.
-/// block_count is the current block count of the coin. This is used to determine if the coin is synced or not.
 /// spv_conf is passed from the coin configuration and it determines how headers are validated and stored.
 pub(crate) async fn block_header_utxo_loop(
     weak: Weak<ElectrumClientImpl>,
     mut sync_status_loop_handle: UtxoSyncStatusLoopHandle,
     spv_conf: SPVConf,
 ) {
-    // Todo: move this to the outside function
+    macro_rules! remove_server_and_break_if_no_servers_left {
+        ($client:expr, $server_address:expr, $ticker:expr, $sync_status_loop_handle:expr) => {
+            if let Err(e) = $client.remove_server($server_address).await {
+                let msg = format!("Error {} on removing server {}!", e, $server_address);
+                // Todo: Permanent error notification should lead to deactivation of coin after applying some fail-safe measures if there are on-going swaps
+                $sync_status_loop_handle.notify_on_permanent_error(msg);
+                break;
+            }
+
+            if $client.is_connections_pool_empty().await {
+                // Todo: Permanent error notification should lead to deactivation of coin after applying some fail-safe measures if there are on-going swaps
+                let msg = format!("All servers are removed for {}!", $ticker);
+                $sync_status_loop_handle.notify_on_permanent_error(msg);
+                break;
+            }
+        };
+    }
+
     let (mut electrum_addresses, mut block_count) = match weak.upgrade() {
         Some(client) => {
             let client = ElectrumClient(client);
@@ -276,7 +293,10 @@ pub(crate) async fn block_header_utxo_loop(
                 spv_conf.starting_block_header.height
             },
             Err(err) => {
-                error!("Error {err:?} on getting the height of the last stored {ticker} header in DB!",);
+                error!(
+                    "Error {} on getting the height of the last stored {} header in DB!",
+                    err, ticker
+                );
                 sync_status_loop_handle.notify_on_temp_error(err);
                 Timer::sleep(args.error_sleep).await;
                 continue;
@@ -288,7 +308,10 @@ pub(crate) async fn block_header_utxo_loop(
             (electrum_addresses, block_count) = match client.get_servers_with_latest_block_count().compat().await {
                 Ok((electrum_addresses, block_count)) => (electrum_addresses, block_count),
                 Err(e) => {
-                    let msg = format!("Error {e} on getting the height of the latest {ticker} block from rpc!");
+                    let msg = format!(
+                        "Error {} on getting the height of the latest {} block from rpc!",
+                        e, ticker
+                    );
                     error!("{}", msg);
                     sync_status_loop_handle.notify_on_temp_error(msg);
                     Timer::sleep(args.error_sleep).await;
@@ -315,6 +338,7 @@ pub(crate) async fn block_header_utxo_loop(
             if let Err(err) =
                 remove_excessive_headers_from_storage(storage, retrieve_to, max_stored_block_headers).await
             {
+                error!("Error {} on removing excessive {} headers from storage!", err, ticker);
                 sync_status_loop_handle.notify_on_temp_error(err);
                 Timer::sleep(args.error_sleep).await;
             };
@@ -333,14 +357,34 @@ pub(crate) async fn block_header_utxo_loop(
                 continue;
             },
         };
-        let (block_registry, block_headers) = try_to_retrieve_headers_until_success(
+        let (block_registry, block_headers) = match try_to_retrieve_headers_until_success(
             &mut args,
             client,
             server_address,
             last_height_in_storage + 1,
             retrieve_to,
         )
-        .await;
+        .await
+        {
+            Ok((block_registry, block_headers)) => (block_registry, block_headers),
+            Err(err) => match err.get_inner() {
+                TryToRetrieveHeadersUntilSuccessError::NetworkError { .. } => {
+                    error!("{}", err);
+                    sync_status_loop_handle.notify_on_temp_error(err.to_string());
+                    continue;
+                },
+                TryToRetrieveHeadersUntilSuccessError::PermanentError { .. } => {
+                    error!("{}", err);
+                    remove_server_and_break_if_no_servers_left!(
+                        client,
+                        server_address,
+                        ticker,
+                        sync_status_loop_handle
+                    );
+                    continue;
+                },
+            },
+        };
 
         // Validate retrieved block headers.
         if let Err(err) = validate_headers(ticker, last_height_in_storage, &block_headers, storage, &spv_conf).await {
@@ -353,7 +397,7 @@ pub(crate) async fn block_header_utxo_loop(
                 mismatched_block_height,
             } = &err
             {
-                if resolve_possible_chain_reorg(
+                match resolve_possible_chain_reorg(
                     client,
                     server_address,
                     &mut args,
@@ -363,35 +407,53 @@ pub(crate) async fn block_header_utxo_loop(
                     &spv_conf,
                 )
                 .await
-                .error_log_passthrough()
-                .is_ok()
                 {
-                    info!(
-                        "Chain reorg detected and resolved for coin: {}, re-syncing reorganized headers!",
-                        coin
-                    );
-                    continue;
+                    Ok(()) => {
+                        info!(
+                            "Chain reorg detected and resolved for coin: {}, re-syncing reorganized headers!",
+                            coin
+                        );
+                        continue;
+                    },
+                    Err(err) => {
+                        error!("Error {} on resolving chain reorg for coin: {}!", err, coin);
+                        if err.get_inner().is_network_error() {
+                            sync_status_loop_handle.notify_on_temp_error(err.to_string());
+                        } else {
+                            remove_server_and_break_if_no_servers_left!(
+                                client,
+                                server_address,
+                                ticker,
+                                sync_status_loop_handle
+                            );
+                        }
+                        continue;
+                    },
                 }
             }
-
-            // Todo: remove the electrum server that returned a permanent error and continue the loop, if all electrums are tried and failed, then notify on permanent error
-            // Todo: Permanent error notification should lead to deactivation of coin after applying some fail-safe measures if there are on-going swaps
-            sync_status_loop_handle.notify_on_permanent_error(err);
-            break;
-        };
+            remove_server_and_break_if_no_servers_left!(client, server_address, ticker, sync_status_loop_handle);
+            continue;
+        }
 
         let sleep = args.error_sleep;
         ok_or_continue_after_sleep!(storage.add_block_headers_to_storage(block_registry).await, sleep);
     }
 }
 
-// Represents the different types of errors that can occur while retrieving block headers from the Electrum client.
 #[derive(Debug, Display)]
-enum PossibleChainReorgError {
-    #[display(fmt = "Preconfigured starting_block_header is bad or invalid. Please reconfigure.")]
-    BadStartingHeaderChain,
-    #[display(fmt = "Validation Error: {}", _0)]
-    ValidationError(String),
+enum TryToRetrieveHeadersUntilSuccessError {
+    #[display(
+        fmt = "Network error: {}, on retrieving headers from server {}",
+        error,
+        server_address
+    )]
+    NetworkError { error: String, server_address: String },
+    #[display(
+        fmt = "Permanent Error: {}, on retrieving headers from server {}",
+        error,
+        server_address
+    )]
+    PermanentError { error: String, server_address: String },
 }
 
 /// Loops until the headers are retrieved successfully.
@@ -401,21 +463,31 @@ async fn try_to_retrieve_headers_until_success(
     server_address: &str,
     retrieve_from: u64,
     retrieve_to: u64,
-) -> (HashMap<u64, BlockHeader>, Vec<BlockHeader>) {
-    // Todo: add attempts again since it's one server
+) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>), MmError<TryToRetrieveHeadersUntilSuccessError>> {
+    let mut attempts: u8 = TRY_TO_RETRIEVE_HEADERS_ATTEMPTS;
     loop {
         match client
             .retrieve_headers_from(server_address, retrieve_from, retrieve_to)
             .compat()
             .await
         {
-            Ok(res) => break res,
+            Ok(res) => break Ok(res),
             Err(err) => {
                 let err_inner = err.get_inner();
                 if err_inner.is_network_error() {
+                    if attempts == 0 {
+                        break Err(MmError::new(TryToRetrieveHeadersUntilSuccessError::NetworkError {
+                            error: format!(
+                                "Max attempts of {} reached, will try to retrieve headers from a random server again!",
+                                TRY_TO_RETRIEVE_HEADERS_ATTEMPTS
+                            ),
+                            server_address: server_address.to_string(),
+                        }));
+                    }
+                    attempts -= 1;
                     error!(
-                        "Network Error: {}, Will try fetching block headers again after 10 secs",
-                        err
+                        "Network Error: {}, Will try fetching block headers again from {} after 10 secs",
+                        err, server_address,
                     );
                     Timer::sleep(args.error_sleep).await;
                     continue;
@@ -427,9 +499,32 @@ async fn try_to_retrieve_headers_until_success(
                     continue;
                 }
 
-                // Todo: If the error is not a network error or response too large error, this means there are is problem with this electrum not related to connections and we need to find a way to deal with this.
+                break Err(MmError::new(TryToRetrieveHeadersUntilSuccessError::PermanentError {
+                    error: err.to_string(),
+                    server_address: server_address.to_string(),
+                }));
             },
         }
+    }
+}
+
+// Represents the different types of errors that can occur while retrieving block headers from the Electrum client.
+#[derive(Debug, Display)]
+enum PossibleChainReorgError {
+    #[display(fmt = "Preconfigured starting_block_header is bad or invalid. Please reconfigure.")]
+    BadStartingHeaderChain,
+    #[display(fmt = "Validation Error: {}", _0)]
+    ValidationError(String),
+    #[display(fmt = "Error retrieving headers: {}", _0)]
+    HeadersRetrievalError(TryToRetrieveHeadersUntilSuccessError),
+}
+
+impl PossibleChainReorgError {
+    fn is_network_error(&self) -> bool {
+        matches!(
+            self,
+            PossibleChainReorgError::HeadersRetrievalError(TryToRetrieveHeadersUntilSuccessError::NetworkError { .. })
+        )
     }
 }
 
@@ -442,7 +537,7 @@ async fn resolve_possible_chain_reorg(
     mismatched_block_height: u64,
     storage: &dyn BlockHeaderStorageOps,
     spv_conf: &SPVConf,
-) -> Result<(), PossibleChainReorgError> {
+) -> Result<(), MmError<PossibleChainReorgError>> {
     let ticker = client.coin_name();
     let mut retrieve_from = mismatched_block_height;
     let mut retrieve_to = retrieve_from + args.chunk_size;
@@ -454,7 +549,15 @@ async fn resolve_possible_chain_reorg(
         );
         // Attempt to retrieve the headers and validate them.
         let (_, headers_to_validate) =
-            try_to_retrieve_headers_until_success(args, client, server_address, retrieve_from, retrieve_to).await;
+            match try_to_retrieve_headers_until_success(args, client, server_address, retrieve_from, retrieve_to).await
+            {
+                Ok(res) => res,
+                Err(err) => {
+                    break Err(MmError::new(PossibleChainReorgError::HeadersRetrievalError(
+                        err.into_inner(),
+                    )))
+                },
+            };
         // If the headers are successfully retrieved and validated, remove the headers from storage and continue the outer loop.
         match validate_headers(ticker, retrieve_from - 1, &headers_to_validate, storage, spv_conf).await {
             Ok(_) => {
@@ -477,10 +580,9 @@ async fn resolve_possible_chain_reorg(
                     retrieve_to = mismatched_block_height - 1;
                     // Check if the height to retrieve up to is equal to the height of the preconfigured starting block header.
                     // If it is, it indicates a bad chain, and we return an error of type `RetrieveHeadersError::BadStartingHeaderChain`.
-                    // Todo: should go back to genesis block if possible, but should we include it in config then?
                     if retrieve_to == spv_conf.starting_block_header.height {
                         // Bad chain for preconfigured starting header detected, reconfigure.
-                        return Err(PossibleChainReorgError::BadStartingHeaderChain);
+                        return Err(MmError::new(PossibleChainReorgError::BadStartingHeaderChain));
                     };
                     // Calculate the height to retrieve from on next iteration based on the the height we will retrieve up to and the chunk size.
                     // If the current height is below or equal to the starting block header height, use the block header
@@ -489,7 +591,7 @@ async fn resolve_possible_chain_reorg(
                         .saturating_sub(args.chunk_size)
                         .max(spv_conf.starting_block_header.height + 1);
                 } else {
-                    return Err(PossibleChainReorgError::ValidationError(err.to_string()));
+                    return Err(MmError::new(PossibleChainReorgError::ValidationError(err.to_string())));
                 }
             },
         }
