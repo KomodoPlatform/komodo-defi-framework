@@ -1,4 +1,4 @@
-use crate::utxo::rpc_clients::{ElectrumClient, UtxoRpcClientEnum};
+use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, UtxoJsonRpcClientInfo, UtxoRpcClientEnum};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
@@ -14,6 +14,7 @@ use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
+use rand::Rng;
 use script::Builder;
 use serde_json::Value as Json;
 use serialization::Reader;
@@ -22,6 +23,7 @@ use spv_validation::helpers_validation::{validate_headers, SPVError};
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 use std::num::NonZeroU64;
+use std::sync::{Arc, Weak};
 
 const CHUNK_SIZE_REDUCER_VALUE: u64 = 100;
 
@@ -112,15 +114,7 @@ where
 
         if let (Some(spv_conf), Some(sync_handle)) = (spv_conf, sync_status_loop_handle) {
             spv_conf.validate(self.ticker).map_to_mm(UtxoCoinBuildError::SPVError)?;
-
-            let block_count = result_coin
-                .as_ref()
-                .rpc_client
-                .get_block_count()
-                .compat()
-                .await
-                .map_err(|err| UtxoCoinBuildError::CantGetBlockCount(err.to_string()))?;
-            self.spawn_block_header_utxo_loop(&utxo_arc, self.constructor.clone(), sync_handle, block_count, spv_conf);
+            spawn_block_header_utxo_loop(self.ticker, &utxo_arc, sync_handle, spv_conf);
         }
 
         Ok(result_coin)
@@ -131,13 +125,6 @@ impl<'a, F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     T: UtxoCommonOps + GetUtxoListOps,
-{
-}
-
-impl<'a, F, T> BlockHeaderUtxoArcOps<T> for UtxoArcBuilder<'a, F, T>
-where
-    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
-    T: UtxoCommonOps,
 {
 }
 
@@ -251,21 +238,32 @@ impl Default for BlockHeaderUtxoLoopExtraArgs {
 /// sync_status_loop_handle notifies the coin activation function of errors and if the error is temporary or not.
 /// block_count is the current block count of the coin. This is used to determine if the coin is synced or not.
 /// spv_conf is passed from the coin configuration and it determines how headers are validated and stored.
-pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
-    weak: UtxoWeak,
-    constructor: impl Fn(UtxoArc) -> T,
+pub(crate) async fn block_header_utxo_loop(
+    weak: Weak<ElectrumClientImpl>,
     mut sync_status_loop_handle: UtxoSyncStatusLoopHandle,
-    mut block_count: u64,
     spv_conf: SPVConf,
 ) {
+    // Todo: move this to the outside function
+    let (mut electrum_addresses, mut block_count) = match weak.upgrade() {
+        Some(client) => {
+            let client = ElectrumClient(client);
+            match client.get_servers_with_latest_block_count().compat().await {
+                Ok((electrum_addresses, block_count)) => (electrum_addresses, block_count),
+                Err(err) => {
+                    sync_status_loop_handle.notify_on_permanent_error(err);
+                    return;
+                },
+            }
+        },
+        None => {
+            sync_status_loop_handle.notify_on_permanent_error("Electrum client dropped!".to_string());
+            return;
+        },
+    };
     let mut args = BlockHeaderUtxoLoopExtraArgs::default();
-    while let Some(arc) = weak.upgrade() {
-        let coin = constructor(arc);
-        let ticker = coin.as_ref().conf.ticker.as_str();
-        let client = match &coin.as_ref().rpc_client {
-            UtxoRpcClientEnum::Native(_) => break,
-            UtxoRpcClientEnum::Electrum(client) => client,
-        };
+    while let Some(client) = weak.upgrade() {
+        let client = &ElectrumClient(client);
+        let ticker = client.coin_name();
 
         let storage = client.block_headers_storage();
         let last_height_in_storage = match storage.get_last_block_height().await {
@@ -287,12 +285,12 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
         let mut retrieve_to = last_height_in_storage + args.chunk_size;
         if retrieve_to > block_count {
-            // Todo: Need to fix the case of if a malicious electrum keeps giving us the same header height, get_block_count should probably check all electrums for the latest height
-            block_count = match coin.as_ref().rpc_client.get_block_count().compat().await {
-                Ok(h) => h,
-                Err(err) => {
-                    error!("Error {err:} on getting the height of the latest {ticker} block from rpc!");
-                    sync_status_loop_handle.notify_on_temp_error(err);
+            (electrum_addresses, block_count) = match client.get_servers_with_latest_block_count().compat().await {
+                Ok((electrum_addresses, block_count)) => (electrum_addresses, block_count),
+                Err(e) => {
+                    let msg = format!("Error {e} on getting the height of the latest {ticker} block from rpc!");
+                    error!("{}", msg);
+                    sync_status_loop_handle.notify_on_temp_error(msg);
                     Timer::sleep(args.error_sleep).await;
                     continue;
                 },
@@ -324,8 +322,25 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
         sync_status_loop_handle.notify_blocks_headers_sync_status(last_height_in_storage + 1, retrieve_to);
 
-        let (block_registry, block_headers) =
-            try_to_retrieve_headers_until_success(&mut args, client, last_height_in_storage + 1, retrieve_to).await;
+        let index = rand::thread_rng().gen_range(0, electrum_addresses.len());
+        let server_address = match electrum_addresses.get(index) {
+            Some(address) => address,
+            None => {
+                let msg = "Electrum addresses are empty when there should be at least one electrum returned from get_servers_with_latest_block_count!";
+                error!("{}", msg);
+                sync_status_loop_handle.notify_on_temp_error(msg.to_string());
+                Timer::sleep(args.error_sleep).await;
+                continue;
+            },
+        };
+        let (block_registry, block_headers) = try_to_retrieve_headers_until_success(
+            &mut args,
+            client,
+            server_address,
+            last_height_in_storage + 1,
+            retrieve_to,
+        )
+        .await;
 
         // Validate retrieved block headers.
         if let Err(err) = validate_headers(ticker, last_height_in_storage, &block_headers, storage, &spv_conf).await {
@@ -338,10 +353,9 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
                 mismatched_block_height,
             } = &err
             {
-                // Todo: pass only one electrum to this function
                 if resolve_possible_chain_reorg(
-                    coin,
                     client,
+                    server_address,
                     &mut args,
                     last_height_in_storage,
                     *mismatched_block_height,
@@ -384,11 +398,17 @@ enum PossibleChainReorgError {
 async fn try_to_retrieve_headers_until_success(
     args: &mut BlockHeaderUtxoLoopExtraArgs,
     client: &ElectrumClient,
+    server_address: &str,
     retrieve_from: u64,
     retrieve_to: u64,
 ) -> (HashMap<u64, BlockHeader>, Vec<BlockHeader>) {
+    // Todo: add attempts again since it's one server
     loop {
-        match client.retrieve_headers(retrieve_from, retrieve_to).compat().await {
+        match client
+            .retrieve_headers_from(server_address, retrieve_from, retrieve_to)
+            .compat()
+            .await
+        {
             Ok(res) => break res,
             Err(err) => {
                 let err_inner = err.get_inner();
@@ -407,7 +427,7 @@ async fn try_to_retrieve_headers_until_success(
                     continue;
                 }
 
-                // Todo: If the error is not a network error or response too large error, this means there are a problem with all electrums not related to connections and we need to find a way to deal with this.
+                // Todo: If the error is not a network error or response too large error, this means there are is problem with this electrum not related to connections and we need to find a way to deal with this.
             },
         }
     }
@@ -415,27 +435,28 @@ async fn try_to_retrieve_headers_until_success(
 
 /// Retrieves block headers from the specified client within the given height range and revalidate against [`SPVError::ParentHashMismatch`] .
 async fn resolve_possible_chain_reorg(
-    coin: &str,
     client: &ElectrumClient,
+    server_address: &str,
     args: &mut BlockHeaderUtxoLoopExtraArgs,
     last_height_in_storage: u64,
     mismatched_block_height: u64,
     storage: &dyn BlockHeaderStorageOps,
     spv_conf: &SPVConf,
 ) -> Result<(), PossibleChainReorgError> {
+    let ticker = client.coin_name();
     let mut retrieve_from = mismatched_block_height;
     let mut retrieve_to = retrieve_from + args.chunk_size;
 
     loop {
         debug!(
             "Possible chain reorganization for coin:{} at block height {}!",
-            coin, retrieve_from
+            ticker, retrieve_from
         );
         // Attempt to retrieve the headers and validate them.
         let (_, headers_to_validate) =
-            try_to_retrieve_headers_until_success(args, client, retrieve_from, retrieve_to).await;
+            try_to_retrieve_headers_until_success(args, client, server_address, retrieve_from, retrieve_to).await;
         // If the headers are successfully retrieved and validated, remove the headers from storage and continue the outer loop.
-        match validate_headers(coin, retrieve_from - 1, &headers_to_validate, storage, spv_conf).await {
+        match validate_headers(ticker, retrieve_from - 1, &headers_to_validate, storage, spv_conf).await {
             Ok(_) => {
                 // Headers are valid, remove saved headers and continue outer loop
                 let sleep = args.error_sleep;
@@ -456,6 +477,7 @@ async fn resolve_possible_chain_reorg(
                     retrieve_to = mismatched_block_height - 1;
                     // Check if the height to retrieve up to is equal to the height of the preconfigured starting block header.
                     // If it is, it indicates a bad chain, and we return an error of type `RetrieveHeadersError::BadStartingHeaderChain`.
+                    // Todo: should go back to genesis block if possible, but should we include it in config then?
                     if retrieve_to == spv_conf.starting_block_header.height {
                         // Bad chain for preconfigured starting header detected, reconfigure.
                         return Err(PossibleChainReorgError::BadStartingHeaderChain);
@@ -539,28 +561,24 @@ async fn remove_excessive_headers_from_storage(
     Ok(())
 }
 
-pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
-    fn spawn_block_header_utxo_loop<F>(
-        &self,
-        utxo_arc: &UtxoArc,
-        constructor: F,
-        sync_status_loop_handle: UtxoSyncStatusLoopHandle,
-        block_count: u64,
-        spv_conf: SPVConf,
-    ) where
-        F: Fn(UtxoArc) -> T + Send + Sync + 'static,
-        T: UtxoCommonOps,
-    {
-        let ticker = self.ticker();
-        info!("Starting UTXO block header loop for coin {ticker}");
+fn spawn_block_header_utxo_loop(
+    ticker: &str,
+    utxo_arc: &UtxoArc,
+    sync_status_loop_handle: UtxoSyncStatusLoopHandle,
+    spv_conf: SPVConf,
+) {
+    let client = match &utxo_arc.rpc_client {
+        UtxoRpcClientEnum::Native(_) => return,
+        UtxoRpcClientEnum::Electrum(client) => client,
+    };
+    info!("Starting UTXO block header loop for coin {ticker}");
 
-        let utxo_weak = utxo_arc.downgrade();
-        let fut = block_header_utxo_loop(utxo_weak, constructor, sync_status_loop_handle, block_count, spv_conf);
+    let electrum_weak = Arc::downgrade(&client.0);
+    let fut = block_header_utxo_loop(electrum_weak, sync_status_loop_handle, spv_conf);
 
-        let settings = AbortSettings::info_on_abort(format!("spawn_block_header_utxo_loop stopped for {ticker}"));
-        utxo_arc
-            .abortable_system
-            .weak_spawner()
-            .spawn_with_settings(fut, settings);
-    }
+    let settings = AbortSettings::info_on_abort(format!("spawn_block_header_utxo_loop stopped for {ticker}"));
+    utxo_arc
+        .abortable_system
+        .weak_spawner()
+        .spawn_with_settings(fut, settings);
 }

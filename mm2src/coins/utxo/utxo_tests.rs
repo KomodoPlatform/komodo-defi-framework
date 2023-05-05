@@ -4325,17 +4325,21 @@ fn test_block_header_utxo_loop() {
 
     static mut CURRENT_BLOCK_COUNT: u64 = 13;
 
-    ElectrumClient::get_block_count
-        .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
+    ElectrumClient::get_servers_with_latest_block_count.mock_safe(move |_| {
+        let servers = RICK_ELECTRUM_ADDRS.into_iter().map(|url| url.to_string()).collect();
+        MockResult::Return(Box::new(futures01::future::ok((servers, unsafe {
+            CURRENT_BLOCK_COUNT
+        }))))
+    });
     let expected_steps: Arc<Mutex<Vec<(u64, u64)>>> = Arc::new(Mutex::new(Vec::with_capacity(14)));
 
-    ElectrumClient::retrieve_headers.mock_safe({
+    ElectrumClient::retrieve_headers_from.mock_safe({
         let expected_steps = expected_steps.clone();
-        move |this, from, to| {
+        move |this, server_address, from_height, to_height| {
             let (expected_from, expected_to) = expected_steps.lock().unwrap().remove(0);
-            assert_eq!(from, expected_from);
-            assert_eq!(to, expected_to);
-            MockResult::Continue((this, from, to))
+            assert_eq!(from_height, expected_from);
+            assert_eq!(to_height, expected_to);
+            MockResult::Continue((this, server_address, from_height, to_height))
         }
     });
 
@@ -4376,16 +4380,8 @@ fn test_block_header_utxo_loop() {
         "max_stored_block_headers": 15
     }));
 
-    let loop_fut = async move {
-        block_header_utxo_loop(
-            arc.downgrade(),
-            UtxoStandardCoin::from,
-            loop_handle,
-            unsafe { CURRENT_BLOCK_COUNT },
-            spv_conf.unwrap(),
-        )
-        .await
-    };
+    let weak_client = Arc::downgrade(&client.0);
+    let loop_fut = async move { block_header_utxo_loop(weak_client, loop_handle, spv_conf.unwrap()).await };
 
     let test_fut = async move {
         *expected_steps.lock().unwrap() = vec![(2, 5), (6, 9), (10, 13), (14, 14)];
@@ -4526,25 +4522,29 @@ fn test_block_header_utxo_loop_with_reorg() {
         );
     }
 
-    ElectrumClient::get_block_count
-        .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
+    ElectrumClient::get_servers_with_latest_block_count.mock_safe(move |_| {
+        let servers = RICK_ELECTRUM_ADDRS.into_iter().map(|url| url.to_string()).collect();
+        MockResult::Return(Box::new(futures01::future::ok((servers, unsafe {
+            CURRENT_BLOCK_COUNT
+        }))))
+    });
 
     let mut rick_headers_map_clone = rick_headers_map.clone();
-    ElectrumClient::retrieve_headers.mock_safe(move |_this, from, to| unsafe {
+    ElectrumClient::retrieve_headers_from.mock_safe(move |_this, _server_addr, from_height, to_height| unsafe {
         let header_map = rick_headers_map_clone
             .clone()
             .into_iter()
-            .filter(|(index, _)| index >= &from && index <= &to)
+            .filter(|(index, _)| index >= &from_height && index <= &to_height)
             .collect::<HashMap<_, _>>();
 
         let mut header_vec = vec![];
 
-        for i in from..=to {
+        for i in from_height..=to_height {
             header_vec.push(header_map.get(&i).unwrap().clone());
         }
         // the first time headers from 5 is requested, we expected chain reorg error so we switch the bad header at
         // height 5 with a valid header so the next retrieval can validate it.
-        if from == 5 && IS_MISMATCH_HEADER {
+        if from_height == 5 && IS_MISMATCH_HEADER {
             IS_MISMATCH_HEADER = false;
             if let Some(header) = rick_headers_map_clone.get_mut(&5) {
                 *header = rick_blocker_5();
@@ -4599,16 +4599,8 @@ fn test_block_header_utxo_loop_with_reorg() {
         "max_stored_block_headers": 100
     }));
 
-    let loop_fut = async move {
-        block_header_utxo_loop(
-            arc.downgrade(),
-            UtxoStandardCoin::from,
-            loop_handle,
-            unsafe { CURRENT_BLOCK_COUNT },
-            spv_conf.unwrap(),
-        )
-        .await
-    };
+    let weak_client = Arc::downgrade(&client.0);
+    let loop_fut = async move { block_header_utxo_loop(weak_client, loop_handle, spv_conf.unwrap()).await };
 
     let test_fut = async move {
         Timer::sleep(2.).await;
