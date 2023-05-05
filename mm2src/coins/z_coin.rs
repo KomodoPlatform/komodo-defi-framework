@@ -29,6 +29,7 @@ use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::executor::{AbortableSystem, AbortedError};
+use common::sha256_digest;
 use common::{log, one_thousand_u32};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use crypto::StandardHDPathToCoin;
@@ -75,7 +76,7 @@ cfg_native!(
     use crate::utxo::utxo_builder::{UtxoCoinBuildError};
     use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat};
 
-    use common::{async_blocking, calc_total_pages, sha256_digest, PagingOptionsEnum};
+    use common::{async_blocking, calc_total_pages, PagingOptionsEnum};
     use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
     use db_common::sqlite::offset_by_id;
     use db_common::sqlite::rusqlite::{Error as SqlError, Row, NO_PARAMS};
@@ -124,14 +125,15 @@ macro_rules! try_ztx_s {
 }
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
+const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
+const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
+const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
+const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
+
 cfg_native!(
     const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
     const TRANSACTIONS_TABLE: &str = "transactions";
     const BLOCKS_TABLE: &str = "blocks";
-    const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
-    const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
-    const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
-    const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
 );
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -794,14 +796,12 @@ pub async fn z_coin_from_conf_and_params(
     builder.build().await
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn verify_checksum_zcash_params(spend_path: &PathBuf, output_path: &PathBuf) -> Result<bool, ZCoinBuildError> {
     let spend_hash = sha256_digest(spend_path)?;
     let out_hash = sha256_digest(output_path)?;
     Ok(spend_hash == SAPLING_SPEND_EXPECTED_HASH && out_hash == SAPLING_OUTPUT_EXPECTED_HASH)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCoinBuildError> {
     if !params_dir.exists() {
         return Err(ZCoinBuildError::ZCashParamsNotFound);
@@ -847,7 +847,6 @@ impl<'a> UtxoFieldsWithGlobalHDBuilder for ZCoinBuilder<'a> {}
 /// `UtxoCoinBuilder` trait requires `UtxoFieldsWithHardwareWalletBuilder` to be implemented.
 impl<'a> UtxoFieldsWithHardwareWalletBuilder for ZCoinBuilder<'a> {}
 
-#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
     type ResultCoin = ZCoin;
@@ -855,6 +854,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
 
     fn priv_key_policy(&self) -> PrivKeyBuildPolicy { self.priv_key_policy.clone() }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
         let utxo_arc = UtxoArc::new(utxo);
@@ -959,16 +959,8 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
 
         Ok(z_coin)
     }
-}
 
-#[cfg(target_arch = "wasm32")]
-#[async_trait]
-impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
-    type ResultCoin = ZCoin;
-    type Error = ZCoinBuildError;
-
-    fn priv_key_policy(&self) -> PrivKeyBuildPolicy { todo!() }
-
+    #[cfg(target_arch = "wasm32")]
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> { todo!() }
 }
 
@@ -1567,18 +1559,11 @@ impl MakerSwapTakerCoin for ZCoin {
 
 #[async_trait]
 impl WatcherOps for ZCoin {
-    fn create_maker_payment_spend_preimage(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
+    fn send_maker_payment_spend_preimage(&self, _input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
         unimplemented!();
     }
 
-    fn send_maker_payment_spend_preimage(&self, _input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
         unimplemented!();
     }
 
@@ -1594,7 +1579,14 @@ impl WatcherOps for ZCoin {
         unimplemented!();
     }
 
-    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
+    fn create_maker_payment_spend_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
         unimplemented!();
     }
 

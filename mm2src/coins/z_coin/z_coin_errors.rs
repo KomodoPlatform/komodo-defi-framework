@@ -1,11 +1,12 @@
+use crate::utxo::rpc_clients::UtxoRpcError;
+use crate::NumConversError;
 use derive_more::Display;
 
 cfg_native!(
     use crate::my_tx_history_v2::MyTxHistoryErrorV2;
-    use crate::utxo::rpc_clients::UtxoRpcError;
     use crate::utxo::utxo_builder::UtxoCoinBuildError;
     use crate::WithdrawError;
-    use crate::{NumConversError, PrivKeyPolicyNotAllowed};
+    use crate::{PrivKeyPolicyNotAllowed};
 
     use db_common::sqlite::rusqlite::Error as SqliteError;
     use db_common::sqlite::rusqlite::Error as SqlError;
@@ -268,11 +269,34 @@ cfg_wasm32!(
 
     #[allow(clippy::large_enum_variant)]
     #[derive(Debug)]
-    pub enum SendOutputsErr {}
+    pub enum SendOutputsErr {
+        GenTxError(GenTxError),
+        NumConversion(NumConversError),
+        Rpc(UtxoRpcError),
+    }
+
+     impl From<GenTxError> for SendOutputsErr {
+        fn from(err: GenTxError) -> SendOutputsErr { SendOutputsErr::GenTxError(err) }
+    }
+
+    impl From<UtxoRpcError> for SendOutputsErr {
+        fn from(err: UtxoRpcError) -> SendOutputsErr { SendOutputsErr::Rpc(err) }
+    }
+
+     impl From<NumConversError> for SendOutputsErr {
+        fn from(err: NumConversError) -> SendOutputsErr { SendOutputsErr::NumConversion(err) }
+    }
 
     #[derive(Debug, Display)]
     pub enum GetUnspentWitnessErr {}
 
     #[derive(Debug, Display)]
-    pub enum ZCoinBuildError {}
+    pub enum ZCoinBuildError {
+        Io(std::io::Error),
+        ZCashParamsNotFound
+    }
+
+    impl From<std::io::Error> for ZCoinBuildError {
+        fn from(err: std::io::Error) -> ZCoinBuildError { ZCoinBuildError::Io(err) }
+    }
 );

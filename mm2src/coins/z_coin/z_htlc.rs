@@ -6,40 +6,37 @@
 // maker payment spend - https://rick.explorer.dexstats.info/tx/6a2dcc866ad75cebecb780a02320073a88bcf5e57ddccbe2657494e7747d591e
 
 use super::ZCoin;
-use crate::utxo::rpc_clients::UtxoRpcError;
+use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
+use crate::utxo::utxo_common::payment_script;
+use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
 use crate::z_coin::SendOutputsErr;
+use crate::z_coin::{ZOutput, DEX_FEE_OVK};
+use crate::NumConversError;
 use crate::{PrivKeyPolicyNotAllowed, TransactionEnum};
+use bitcrypto::dhash160;
 use derive_more::Display;
+use futures::compat::Future01CompatExt;
+use keys::Address;
 use keys::{KeyPair, Public};
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use script::Script;
+use script::{Builder as ScriptBuilder, Opcode};
+use zcash_primitives::legacy::Script as ZCashScript;
+use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
+use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
 
 cfg_native!(
-    use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-    use crate::utxo::utxo_common::payment_script;
-
-    use bitcrypto::dhash160;
     use common::async_blocking;
-    use futures::compat::Future01CompatExt;
-    use keys::Address;
-    use script::{Builder as ScriptBuilder, Opcode};
     use secp256k1::SecretKey;
     use zcash_primitives::consensus;
-    use zcash_primitives::legacy::Script as ZCashScript;
-    use zcash_primitives::memo::MemoBytes;
     use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
-    use zcash_primitives::transaction::components::{Amount, OutPoint as ZCashOutpoint, TxOut};
-
-    use crate::NumConversError;
-    use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
-    use crate::z_coin::{ZOutput, DEX_FEE_OVK};
+    use zcash_primitives::transaction::components::OutPoint as ZCashOutpoint;
 );
 
 /// Sends HTLC output from the coin's my_z_addr
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn z_send_htlc(
     coin: &ZCoin,
     time_lock: u32,
@@ -85,20 +82,7 @@ pub async fn z_send_htlc(
     Ok(mm_tx)
 }
 
-#[cfg(target_arch = "wasm32")]
-pub async fn z_send_htlc(
-    _coin: &ZCoin,
-    _time_lock: u32,
-    _my_pub: &Public,
-    _other_pub: &Public,
-    _secret_hash: &[u8],
-    _amount: BigDecimal,
-) -> Result<ZTransaction, MmError<SendOutputsErr>> {
-    todo!()
-}
-
 /// Sends HTLC output from the coin's my_z_addr
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn z_send_dex_fee(
     coin: &ZCoin,
     amount: BigDecimal,
@@ -115,16 +99,6 @@ pub async fn z_send_dex_fee(
     let tx = coin.send_outputs(vec![], vec![dex_fee_out]).await?;
 
     Ok(tx)
-}
-
-/// Sends HTLC output from the coin's my_z_addr
-#[cfg(target_arch = "wasm32")]
-pub async fn z_send_dex_fee(
-    _coin: &ZCoin,
-    _amount: BigDecimal,
-    _uuid: &[u8],
-) -> Result<ZTransaction, MmError<SendOutputsErr>> {
-    todo!()
 }
 
 #[derive(Debug, Display)]
