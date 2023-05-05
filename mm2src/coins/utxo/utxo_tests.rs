@@ -4326,7 +4326,7 @@ fn test_block_header_utxo_loop() {
     static mut CURRENT_BLOCK_COUNT: u64 = 13;
 
     ElectrumClient::get_servers_with_latest_block_count.mock_safe(move |_| {
-        let servers = RICK_ELECTRUM_ADDRS.into_iter().map(|url| url.to_string()).collect();
+        let servers = RICK_ELECTRUM_ADDRS.iter().map(|url| url.to_string()).collect();
         MockResult::Return(Box::new(futures01::future::ok((servers, unsafe {
             CURRENT_BLOCK_COUNT
         }))))
@@ -4523,7 +4523,7 @@ fn test_block_header_utxo_loop_with_reorg() {
     }
 
     ElectrumClient::get_servers_with_latest_block_count.mock_safe(move |_| {
-        let servers = RICK_ELECTRUM_ADDRS.into_iter().map(|url| url.to_string()).collect();
+        let servers = RICK_ELECTRUM_ADDRS.iter().map(|url| url.to_string()).collect();
         MockResult::Return(Box::new(futures01::future::ok((servers, unsafe {
             CURRENT_BLOCK_COUNT
         }))))
