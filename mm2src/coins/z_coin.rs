@@ -70,7 +70,7 @@ mod z_rpc;
 pub use z_rpc::SyncStatus;
 
 cfg_native!(
-    use crate::{NumConversError, PrivKeyPolicyNotAllowed, TransactionDetails, TxFeeDetails}
+    use crate::{NumConversError, PrivKeyPolicyNotAllowed, TransactionDetails, TxFeeDetails};
     use crate::utxo::UtxoFeeDetails;
     use crate::utxo::utxo_builder::{UtxoCoinBuildError};
     use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat};
