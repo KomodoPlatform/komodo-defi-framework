@@ -43,7 +43,7 @@ use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Compact
            Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_number::big_decimal::CheckedDivision;
+use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};

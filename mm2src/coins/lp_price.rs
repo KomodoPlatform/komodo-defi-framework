@@ -3,7 +3,7 @@ use common::StatusCode;
 use mm2_err_handle::prelude::{MmError, OrMmError};
 use mm2_net::transport::SlurpError;
 #[cfg(not(feature = "run-docker-tests"))]
-use mm2_number::big_decimal::CheckedDivision;
+use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
 use num_traits::CheckedDiv;
 use std::collections::HashMap;
