@@ -4,6 +4,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use uuid::Uuid;
 
+#[cfg(target_arch = "wasm32")] use common::now_sec;
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_lock::SwapLock;
 #[cfg(target_arch = "wasm32")] pub use wasm_lock::SwapLock;
