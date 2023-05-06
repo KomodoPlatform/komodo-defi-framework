@@ -647,7 +647,6 @@ pub fn eth_sepolia_conf() -> Json {
     json!({
         "coin": "ETH",
         "name": "ethereum",
-        "derivation_path": "m/44'/60'",
         "chain_id": 11155111,
         "protocol": {
             "type": "ETH"
