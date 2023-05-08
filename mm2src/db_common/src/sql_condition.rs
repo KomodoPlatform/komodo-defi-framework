@@ -184,4 +184,23 @@ pub trait SqlCondition: Sized {
         self.sql_builder().or_where_in(field.to_valid_sql_ident()?, &param_ids);
         Ok(self)
     }
+
+    /// Add WHERE field BETWEEN from AND to.
+    /// For more details see [`SqlBuilder::and_where_between`].
+    ///
+    /// Please note the function validates the given `field`,
+    /// and `values` are considered valid as they're able to be converted into `SqlValue`.
+    #[inline]
+    fn and_where_between<S, T>(&mut self, field: S, from: T, to: T) -> SqlResult<&mut Self>
+    where
+        S: ToValidSqlIdent,
+        SqlValue: From<T>,
+    {
+        self.sql_builder().and_where_between(
+            field.to_valid_sql_ident()?,
+            &SqlValue::value_to_string(from),
+            &SqlValue::value_to_string(to),
+        );
+        Ok(self)
+    }
 }
