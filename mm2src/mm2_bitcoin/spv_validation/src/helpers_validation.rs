@@ -388,10 +388,9 @@ pub async fn validate_headers(
         }
 
         last_validated_bits = block_bits_to_validate;
-        last_validated_header =
-            SPVBlockHeader::from_block_header_and_height(header_to_validate, last_validated_height + 1);
-        last_validated_hash = last_validated_header.hash;
         last_validated_height += 1;
+        last_validated_header = SPVBlockHeader::from_block_header_and_height(header_to_validate, last_validated_height);
+        last_validated_hash = last_validated_header.hash
     }
     Ok(())
 }
