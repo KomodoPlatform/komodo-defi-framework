@@ -2141,7 +2141,6 @@ impl ElectrumClient {
     }
 
     pub(crate) fn get_servers_with_latest_block_count(&self) -> UtxoRpcFut<(Vec<String>, u64)> {
-        let ticker = self.coin_ticker.clone();
         let selfi = self.clone();
         let fut = async move {
             let connections = selfi.connections.lock().await;
@@ -2180,7 +2179,7 @@ impl ElectrumClient {
 
             return Err(MmError::new(UtxoRpcError::Internal(format!(
                 "Couldn't get block count from any server for {}, responses: {:?}",
-                ticker, responses
+                &selfi.coin_ticker, responses
             ))));
         };
 
