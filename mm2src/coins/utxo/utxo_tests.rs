@@ -4386,7 +4386,7 @@ fn test_block_header_utxo_loop() {
     let test_fut = async move {
         *expected_steps.lock().unwrap() = vec![(2, 5), (6, 9), (10, 13), (14, 14)];
         unsafe { CURRENT_BLOCK_COUNT = 14 }
-        Timer::sleep(4.).await;
+        Timer::sleep(3.).await;
         let get_headers_count = client
             .block_headers_storage()
             .get_last_block_height()

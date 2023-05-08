@@ -2144,16 +2144,17 @@ impl ElectrumClient {
         let ticker = self.coin_ticker.clone();
         let selfi = self.clone();
         let fut = async move {
-            let mut futures = vec![];
             let connections = selfi.connections.lock().await;
-            for connection in connections.iter() {
-                let addr = connection.addr.clone();
-                let fut = selfi
-                    .get_block_count_from(&addr)
-                    .map(|response| (addr, response))
-                    .compat();
-                futures.push(fut)
-            }
+            let futures = connections
+                .iter()
+                .map(|connection| {
+                    let addr = connection.addr.clone();
+                    selfi
+                        .get_block_count_from(&addr)
+                        .map(|response| (addr, response))
+                        .compat()
+                })
+                .collect::<Vec<_>>();
             drop(connections);
 
             let responses = join_all(futures).await;
