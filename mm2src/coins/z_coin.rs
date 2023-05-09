@@ -55,6 +55,8 @@ use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(target_arch = "wasm32")]
+use z_coin_errors::ZCoinBalanceError;
 use z_rpc::{SaplingSyncConnector, SaplingSyncGuard};
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
 use zcash_client_backend::wallet::SpendableNote;
@@ -350,7 +352,7 @@ impl ZCoin {
     }
 
     #[cfg(target_arch = "wasm32")]
-    async fn my_balance_sat(&self) -> Result<u64, MmError<String>> { todo!() }
+    async fn my_balance_sat(&self) -> Result<u64, MmError<ZCoinBalanceError>> { todo!() }
 
     #[cfg(not(target_arch = "wasm32"))]
     async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<ZcashClientError>> {

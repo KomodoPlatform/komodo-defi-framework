@@ -261,6 +261,9 @@ cfg_wasm32!(
     pub enum GetUnspentWitnessErr {}
 
     #[derive(Debug, Display)]
+    pub enum ZCoinBalanceError {}
+
+    #[derive(Debug, Display)]
     pub enum ZCoinBuildError {
         GetAddressError,
         Io(std::io::Error),
