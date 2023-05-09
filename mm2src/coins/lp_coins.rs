@@ -3119,15 +3119,13 @@ pub async fn lp_coinfind(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>
     let cctx = try_s!(CoinsContext::from_ctx(ctx));
     let coins = cctx.coins.lock().await;
 
-    let coin = coins.get(ticker).cloned();
-
-    if let Some(coin) = &coin {
-        if !coin.is_available() {
-            return Ok(None);
+    if let Some(coin) = coins.get(ticker) {
+        if coin.is_available() {
+            return Ok(Some(coin.inner.clone()));
         }
     };
 
-    Ok(coin.map(|c| c.inner))
+    Ok(None)
 }
 
 /// Returns coins even if they are on the passive mode
