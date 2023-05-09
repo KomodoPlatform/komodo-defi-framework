@@ -2428,6 +2428,8 @@ impl MmCoinEnum {
     }
 
     pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoin(_)) }
+
+    fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
 }
 
 #[async_trait]
@@ -2454,9 +2456,8 @@ impl MmCoinStruct {
     ///
     /// Always `true` for child tokens.
     pub fn is_available(&self) -> bool {
-        // Tokens are always active or disabled
-        // Check if we are processing the platform coin
-        self.inner.ticker() != self.inner.platform_ticker() || self.is_available.load(AtomicOrdering::SeqCst)
+        !self.inner.is_platform_coin() // Tokens are always active or disabled
+            || self.is_available.load(AtomicOrdering::SeqCst)
     }
 
     /// Makes the coin disabled to the external requests.
@@ -2465,7 +2466,7 @@ impl MmCoinStruct {
     ///
     /// Ineffective for child tokens.
     pub fn update_is_available(&self, to: bool) {
-        if self.inner.ticker() != self.inner.platform_ticker() {
+        if !self.inner.is_platform_coin() {
             warn!(
                 "`update_is_available` is ineffective for tokens. Current token: {}",
                 self.inner.ticker()
@@ -3096,7 +3097,7 @@ pub async fn lp_register_coin(
         RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), MmCoinStruct::new(coin.clone())),
     };
 
-    if coin.ticker() == coin.platform_ticker() {
+    if coin.is_platform_coin() {
         let mut platform_coin_tokens = cctx.platform_coin_tokens.lock();
         platform_coin_tokens
             .entry(coin.ticker().to_string())
