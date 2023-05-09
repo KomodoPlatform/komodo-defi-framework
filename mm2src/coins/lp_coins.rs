@@ -283,8 +283,8 @@ use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 pub mod nft;
 use nft::nft_errors::GetNftInfoError;
 
-pub mod z_coin;
-use z_coin::ZCoin;
+#[allow(unused)] pub mod z_coin;
+#[allow(unused)] use z_coin::ZCoin;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;

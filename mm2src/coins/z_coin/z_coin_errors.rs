@@ -1,10 +1,10 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
+use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::NumConversError;
 use derive_more::Display;
 
 cfg_native!(
     use crate::my_tx_history_v2::MyTxHistoryErrorV2;
-    use crate::utxo::utxo_builder::UtxoCoinBuildError;
     use crate::WithdrawError;
     use crate::{PrivKeyPolicyNotAllowed};
 
@@ -157,18 +157,6 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
         fn from(err: PrivKeyPolicyNotAllowed) -> Self { SendOutputsErr::PrivKeyPolicyNotAllowed(err) }
     }
 
-    impl From<GenTxError> for SendOutputsErr {
-        fn from(err: GenTxError) -> SendOutputsErr { SendOutputsErr::GenTxError(err) }
-    }
-
-    impl From<NumConversError> for SendOutputsErr {
-        fn from(err: NumConversError) -> SendOutputsErr { SendOutputsErr::NumConversion(err) }
-    }
-
-    impl From<UtxoRpcError> for SendOutputsErr {
-        fn from(err: UtxoRpcError) -> SendOutputsErr { SendOutputsErr::Rpc(err) }
-    }
-
     #[derive(Debug, Display)]
     pub enum GetUnspentWitnessErr {
         EmptyDbResult,
@@ -206,17 +194,11 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
         fn from(err: UtxoRpcError) -> ZCoinBuildError { ZCoinBuildError::Rpc(err) }
     }
 
-    impl From<UtxoCoinBuildError> for ZCoinBuildError {
-        fn from(err: UtxoCoinBuildError) -> Self { ZCoinBuildError::UtxoBuilderError(err) }
-    }
 
     impl From<std::io::Error> for ZCoinBuildError {
         fn from(err: std::io::Error) -> ZCoinBuildError { ZCoinBuildError::Io(err) }
     }
 
-    impl From<ZcoinClientInitError> for ZCoinBuildError {
-        fn from(err: ZcoinClientInitError) -> Self { ZCoinBuildError::RpcClientInitErr(err) }
-    }
 
 
     pub(super) enum SqlTxHistoryError {
@@ -275,28 +257,40 @@ cfg_wasm32!(
         Rpc(UtxoRpcError),
     }
 
-     impl From<GenTxError> for SendOutputsErr {
-        fn from(err: GenTxError) -> SendOutputsErr { SendOutputsErr::GenTxError(err) }
-    }
-
-    impl From<UtxoRpcError> for SendOutputsErr {
-        fn from(err: UtxoRpcError) -> SendOutputsErr { SendOutputsErr::Rpc(err) }
-    }
-
-     impl From<NumConversError> for SendOutputsErr {
-        fn from(err: NumConversError) -> SendOutputsErr { SendOutputsErr::NumConversion(err) }
-    }
-
     #[derive(Debug, Display)]
     pub enum GetUnspentWitnessErr {}
 
     #[derive(Debug, Display)]
     pub enum ZCoinBuildError {
+        GetAddressError,
         Io(std::io::Error),
-        ZCashParamsNotFound
+        UtxoBuilderError(UtxoCoinBuildError),
+        ZCashParamsNotFound,
+        RpcClientInitErr(ZcoinClientInitError),
+        ZDerivationPathNotSet,
     }
 
     impl From<std::io::Error> for ZCoinBuildError {
         fn from(err: std::io::Error) -> ZCoinBuildError { ZCoinBuildError::Io(err) }
     }
 );
+
+impl From<UtxoCoinBuildError> for ZCoinBuildError {
+    fn from(err: UtxoCoinBuildError) -> Self { ZCoinBuildError::UtxoBuilderError(err) }
+}
+
+impl From<GenTxError> for SendOutputsErr {
+    fn from(err: GenTxError) -> SendOutputsErr { SendOutputsErr::GenTxError(err) }
+}
+
+impl From<UtxoRpcError> for SendOutputsErr {
+    fn from(err: UtxoRpcError) -> SendOutputsErr { SendOutputsErr::Rpc(err) }
+}
+
+impl From<NumConversError> for SendOutputsErr {
+    fn from(err: NumConversError) -> SendOutputsErr { SendOutputsErr::NumConversion(err) }
+}
+
+impl From<ZcoinClientInitError> for ZCoinBuildError {
+    fn from(err: ZcoinClientInitError) -> Self { ZCoinBuildError::RpcClientInitErr(err) }
+}

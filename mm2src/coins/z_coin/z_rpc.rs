@@ -57,6 +57,8 @@ cfg_native!(
 
 #[cfg(not(target_arch = "wasm32"))]
 pub type WalletDbShared = Arc<Mutex<WalletDb<ZcoinConsensusParams>>>;
+#[cfg(target_arch = "wasm32")]
+pub type WalletDbShared = Arc<Mutex<String>>;
 
 #[allow(unused)]
 struct CompactBlockRow {
@@ -295,6 +297,8 @@ impl ZRpcOps for NativeClient {
 /// A wrapper for the SQLite connection to the block cache database.
 #[cfg(not(target_arch = "wasm32"))]
 pub struct BlockDb(Connection);
+#[cfg(target_arch = "wasm32")]
+pub struct BlockDb(String);
 
 #[cfg(not(target_arch = "wasm32"))]
 impl BlockDb {
@@ -498,11 +502,13 @@ pub(super) async fn init_light_client(
     ))
 }
 
-#[cfg(target_arch = "wasm32")]
 #[allow(unused)]
+#[cfg(target_arch = "wasm32")]
 pub(super) async fn init_light_client(
     _coin: String,
     _lightwalletd_urls: Vec<String>,
+    _blocks_db: BlockDb,
+    _wallet_db: WalletDbShared,
     _consensus_params: ZcoinConsensusParams,
     _scan_blocks_per_iteration: u32,
     _scan_interval_ms: u64,
