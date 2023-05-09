@@ -73,7 +73,8 @@ mod z_htlc;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
-use z_rpc::{init_light_client, BlockDb, SyncStatus};
+pub use z_rpc::SyncStatus;
+use z_rpc::{init_light_client, BlockDb};
 
 cfg_native!(
     use crate::{NumConversError, TransactionDetails, TxFeeDetails};
@@ -366,7 +367,6 @@ impl ZCoin {
     }
 
     #[cfg(target_arch = "wasm32")]
-    #[allow(unused)]
     async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<String>> { todo!() }
 
     /// Returns spendable notes
@@ -489,7 +489,6 @@ impl ZCoin {
     }
 
     #[cfg(target_arch = "wasm32")]
-    #[allow(unused)]
     async fn gen_tx(
         &self,
         _t_outputs: Vec<TxOut>,
