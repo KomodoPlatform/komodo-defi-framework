@@ -46,7 +46,7 @@ use base58::FromBase58Error;
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
-use common::log::LogOnError;
+use common::log::{warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy,
              Secp256k1Secret, WithHwRpcError};
@@ -76,6 +76,8 @@ use std::future::Future as Future03;
 use std::num::NonZeroUsize;
 use std::ops::{Add, Deref};
 use std::str::FromStr;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::Arc;
 use std::time::Duration;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
@@ -2292,7 +2294,7 @@ pub trait MmCoin:
     fn on_disabled(&self) -> Result<(), AbortedError>;
 
     /// For Handling the removal/deactivation of token on platform coin deactivation.
-    fn on_token_deactivated(&self, _ticker: &str);
+    fn on_token_deactivated(&self, ticker: &str);
 }
 
 /// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
@@ -2481,6 +2483,8 @@ impl MmCoinEnum {
     }
 
     pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoin(_)) }
+
+    fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
 }
 
 #[async_trait]
@@ -2488,10 +2492,51 @@ pub trait BalanceTradeFeeUpdatedHandler {
     async fn balance_updated(&self, coin: &MmCoinEnum, new_balance: &BigDecimal);
 }
 
+#[derive(Clone)]
+pub struct MmCoinStruct {
+    pub inner: MmCoinEnum,
+    is_available: Arc<AtomicBool>,
+}
+
+impl MmCoinStruct {
+    fn new(coin: MmCoinEnum) -> Self {
+        Self {
+            inner: coin,
+            is_available: AtomicBool::new(true).into(),
+        }
+    }
+
+    /// Gets the current state of the parent coin whether
+    /// it's available for the external requests or not.
+    ///
+    /// Always `true` for child tokens.
+    pub fn is_available(&self) -> bool {
+        !self.inner.is_platform_coin() // Tokens are always active or disabled
+            || self.is_available.load(AtomicOrdering::SeqCst)
+    }
+
+    /// Makes the coin disabled to the external requests.
+    /// Useful for executing `disable_coin` on parent coins
+    /// that have child tokens enabled.
+    ///
+    /// Ineffective for child tokens.
+    pub fn update_is_available(&self, to: bool) {
+        if !self.inner.is_platform_coin() {
+            warn!(
+                "`update_is_available` is ineffective for tokens. Current token: {}",
+                self.inner.ticker()
+            );
+            return;
+        }
+
+        self.is_available.store(to, AtomicOrdering::SeqCst);
+    }
+}
+
 pub struct CoinsContext {
     /// A map from a currency ticker symbol to the corresponding coin.
     /// Similar to `LP_coins`.
-    coins: AsyncMutex<HashMap<String, MmCoinEnum>>,
+    coins: AsyncMutex<HashMap<String, MmCoinStruct>>,
     balance_update_handlers: AsyncMutex<Vec<Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>>>,
     account_balance_task_manager: AccountBalanceTaskManagerShared,
     create_account_manager: CreateAccountTaskManagerShared,
@@ -2538,6 +2583,7 @@ impl CoinsContext {
                 coin: coin.ticker().into(),
             });
         }
+
         let ticker = coin.ticker();
 
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
@@ -2546,7 +2592,8 @@ impl CoinsContext {
             platform.insert(ticker.to_owned());
         }
 
-        coins.insert(ticker.into(), coin);
+        coins.insert(ticker.into(), MmCoinStruct::new(coin));
+
         Ok(())
     }
 
@@ -2564,14 +2611,19 @@ impl CoinsContext {
         let mut coins = self.coins.lock().await;
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
 
-        if coins.contains_key(platform.ticker()) {
-            return MmError::err(PlatformIsAlreadyActivatedErr {
-                ticker: platform.ticker().into(),
-            });
-        }
+        let platform_ticker = platform.ticker().to_owned();
 
-        let platform_ticker = platform.ticker().to_string();
-        coins.insert(platform_ticker.clone(), platform);
+        if let Some(coin) = coins.get(&platform_ticker) {
+            if coin.is_available() {
+                return MmError::err(PlatformIsAlreadyActivatedErr {
+                    ticker: platform.ticker().into(),
+                });
+            }
+
+            coin.update_is_available(true);
+        } else {
+            coins.insert(platform_ticker.clone(), MmCoinStruct::new(platform));
+        }
 
         // Tokens can't be activated without platform coin so we can safely insert them without checking prior existence
         let mut token_tickers = Vec::with_capacity(tokens.len());
@@ -2581,8 +2633,12 @@ impl CoinsContext {
         // We try to activate ETH coin and USDT token via enable_eth_with_tokens
         for token in tokens {
             token_tickers.push(token.ticker().to_string());
-            coins.insert(token.ticker().into(), token);
+            coins
+                .entry(token.ticker().into())
+                .or_insert_with(|| MmCoinStruct::new(token));
         }
+
+        token_tickers.dedup();
 
         platform_coin_tokens
             .entry(platform_ticker)
@@ -2610,6 +2666,7 @@ impl CoinsContext {
                     if let Some(token) = coins_storage.remove(token) {
                         // Abort all token related futures on token deactivation
                         token
+                            .inner
                             .on_disabled()
                             .error_log_with_msg(&format!("Error aborting coin({ticker}) futures"));
                     }
@@ -2620,7 +2677,7 @@ impl CoinsContext {
                 tokens.remove(ticker);
             }
             if let Some(platform_coin) = coins_storage.get(platform_ticker) {
-                platform_coin.on_token_deactivated(ticker);
+                platform_coin.inner.on_token_deactivated(ticker);
             }
         };
 
@@ -3092,10 +3149,10 @@ pub async fn lp_register_coin(
         RawEntryMut::Occupied(_oe) => {
             return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() })
         },
-        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), coin.clone()),
+        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), MmCoinStruct::new(coin.clone())),
     };
 
-    if coin.ticker() == coin.platform_ticker() {
+    if coin.is_platform_coin() {
         let mut platform_coin_tokens = cctx.platform_coin_tokens.lock();
         platform_coin_tokens
             .entry(coin.ticker().to_string())
@@ -3117,6 +3174,21 @@ fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
 pub async fn lp_coinfind(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
     let cctx = try_s!(CoinsContext::from_ctx(ctx));
     let coins = cctx.coins.lock().await;
+
+    if let Some(coin) = coins.get(ticker) {
+        if coin.is_available() {
+            return Ok(Some(coin.inner.clone()));
+        }
+    };
+
+    Ok(None)
+}
+
+/// Returns coins even if they are on the passive mode
+pub async fn lp_coinfind_any(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinStruct>, String> {
+    let cctx = try_s!(CoinsContext::from_ctx(ctx));
+    let coins = cctx.coins.lock().await;
+
     Ok(coins.get(ticker).cloned())
 }
 
@@ -3410,7 +3482,7 @@ pub async fn get_enabled_coins(ctx: MmArc) -> Result<Response<Vec<u8>>, String> 
     let enabled_coins: Vec<_> = try_s!(coins
         .iter()
         .map(|(ticker, coin)| {
-            let address = try_s!(coin.my_address());
+            let address = try_s!(coin.inner.my_address());
             Ok(EnabledCoin {
                 ticker: ticker.clone(),
                 address,
@@ -3894,4 +3966,62 @@ fn coins_conf_check(ctx: &MmArc, coins_en: &Json, ticker: &str, req: Option<&Jso
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use common::block_on;
+    use mm2_test_helpers::for_tests::RICK;
+
+    #[test]
+    fn test_lp_coinfind() {
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+        let coin = MmCoinEnum::Test(TestCoin::new(RICK));
+
+        // Add test coin to coins context
+        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![])).unwrap();
+
+        // Try to find RICK from coins context that was added above
+        let _found = common::block_on(lp_coinfind(&ctx, RICK)).unwrap();
+
+        assert!(matches!(Some(coin), _found));
+
+        block_on(coins_ctx.coins.lock())
+            .get(RICK)
+            .unwrap()
+            .update_is_available(false);
+
+        // Try to find RICK from coins context after making it passive
+        let found = common::block_on(lp_coinfind(&ctx, RICK)).unwrap();
+
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn test_lp_coinfind_any() {
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+        let coin = MmCoinEnum::Test(TestCoin::new(RICK));
+
+        // Add test coin to coins context
+        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![])).unwrap();
+
+        // Try to find RICK from coins context that was added above
+        let _found = common::block_on(lp_coinfind_any(&ctx, RICK)).unwrap();
+
+        assert!(matches!(Some(coin.clone()), _found));
+
+        block_on(coins_ctx.coins.lock())
+            .get(RICK)
+            .unwrap()
+            .update_is_available(false);
+
+        // Try to find RICK from coins context after making it passive
+        let _found = common::block_on(lp_coinfind_any(&ctx, RICK)).unwrap();
+
+        assert!(matches!(Some(coin), _found));
+    }
 }

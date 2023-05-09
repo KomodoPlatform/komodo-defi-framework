@@ -22,20 +22,31 @@ use mm2_number::{BigDecimal, MmNumber};
 use mocktopus::macros::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
+use std::ops::Deref;
+use std::sync::Arc;
 
 /// Dummy coin struct used in tests which functions are unimplemented but then mocked
 /// in specific test to emulate the required behaviour
 #[derive(Clone, Debug)]
-pub struct TestCoin {
+pub struct TestCoin(Arc<TestCoinImpl>);
+
+impl Deref for TestCoin {
+    type Target = TestCoinImpl;
+
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+
+#[derive(Debug)]
+pub struct TestCoinImpl {
     ticker: String,
 }
 
 impl Default for TestCoin {
-    fn default() -> Self { TestCoin { ticker: "test".into() } }
+    fn default() -> Self { TestCoin(Arc::new(TestCoinImpl { ticker: "test".into() })) }
 }
 
 impl TestCoin {
-    pub fn new(ticker: &str) -> TestCoin { TestCoin { ticker: ticker.into() } }
+    pub fn new(ticker: &str) -> TestCoin { TestCoin(Arc::new(TestCoinImpl { ticker: ticker.into() })) }
 }
 
 #[mockable]
@@ -58,7 +69,7 @@ impl MarketCoinOps for TestCoin {
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
 
-    fn platform_ticker(&self) -> &str { unimplemented!() }
+    fn platform_ticker(&self) -> &str { &self.ticker }
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }

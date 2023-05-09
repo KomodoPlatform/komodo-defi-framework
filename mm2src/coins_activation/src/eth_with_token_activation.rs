@@ -4,8 +4,8 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
                                         TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
-use coins::eth::v2_activation::EthPrivKeyActivationPolicy;
 use coins::eth::EthPrivKeyBuildPolicy;
+use coins::{eth::v2_activation::EthPrivKeyActivationPolicy, MmCoinEnum};
 use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
                                   Erc20TokenActivationRequest, EthActivationV2Error, EthActivationV2Request},
                   Erc20TokenInfo, EthCoin, EthCoinType},
@@ -191,6 +191,16 @@ impl PlatformWithTokensActivationOps for EthCoin {
         .await?;
 
         Ok(platform_coin)
+    }
+
+    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match coin {
+            MmCoinEnum::EthCoin(coin) => Some(coin),
+            _ => None,
+        }
     }
 
     fn token_initializers(

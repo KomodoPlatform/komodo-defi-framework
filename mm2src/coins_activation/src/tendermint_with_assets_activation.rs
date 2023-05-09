@@ -9,7 +9,7 @@ use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
 use coins::tendermint::{TendermintCoin, TendermintCommons, TendermintConf, TendermintInitError,
                         TendermintInitErrorKind, TendermintProtocolInfo, TendermintToken,
                         TendermintTokenActivationParams, TendermintTokenInitError, TendermintTokenProtocolInfo};
-use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy};
+use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::{true_f, Future01CompatExt};
 use mm2_core::mm_ctx::MmArc;
@@ -183,6 +183,16 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             priv_key_policy,
         )
         .await
+    }
+
+    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match coin {
+            MmCoinEnum::Tendermint(coin) => Some(coin),
+            _ => None,
+        }
     }
 
     fn token_initializers(

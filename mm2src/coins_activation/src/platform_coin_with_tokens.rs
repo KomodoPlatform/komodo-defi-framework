@@ -2,7 +2,7 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum, PrivKeyPolicyNotAllowed};
+use coins::{lp_coinfind_any, CoinProtocol, CoinsContext, MmCoin, MmCoinEnum, PrivKeyPolicyNotAllowed};
 use common::{log, HttpStatusCode, StatusCode};
 use crypto::CryptoCtxError;
 use derive_more::Display;
@@ -135,7 +135,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
     type ActivationRequest: Clone + Send + Sync + TxHistory;
     type PlatformProtocolInfo: TryFromCoinProtocol;
     type ActivationResult: GetPlatformBalance + CurrentBlock;
-    type ActivationError: NotMmError;
+    type ActivationError: NotMmError + std::fmt::Debug;
 
     /// Initializes the platform coin itself
     async fn enable_platform_coin(
@@ -145,6 +145,10 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>>;
+
+    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
+    where
+        Self: Sized;
 
     fn token_initializers(
         &self,
@@ -283,16 +287,50 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
     }
 }
 
+pub async fn re_enable_passive_platform_coin_with_tokens<Platform>(
+    ctx: MmArc,
+    platform_coin: Platform,
+    req: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
+) -> Result<Platform::ActivationResult, MmError<EnablePlatformCoinWithTokensError>>
+where
+    Platform: PlatformWithTokensActivationOps + MmCoin + Clone,
+    EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
+    (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
+{
+    let mut mm_tokens = Vec::new();
+    for initializer in platform_coin.token_initializers() {
+        let tokens = initializer.enable_tokens_as_mm_coins(ctx.clone(), &req.request).await?;
+        mm_tokens.extend(tokens);
+    }
+
+    let activation_result = platform_coin.get_activation_result(&req.request).await?;
+    log::info!("{} current block {}", req.ticker, activation_result.current_block());
+
+    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+    coins_ctx
+        .add_platform_with_tokens(platform_coin.clone().into(), mm_tokens)
+        .await
+        .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
+
+    Ok(activation_result)
+}
+
 pub async fn enable_platform_coin_with_tokens<Platform>(
     ctx: MmArc,
     req: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
 ) -> Result<Platform::ActivationResult, MmError<EnablePlatformCoinWithTokensError>>
 where
-    Platform: PlatformWithTokensActivationOps,
+    Platform: PlatformWithTokensActivationOps + MmCoin + Clone,
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
     (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
 {
-    if let Ok(Some(_)) = lp_coinfind(&ctx, &req.ticker).await {
+    if let Ok(Some(coin)) = lp_coinfind_any(&ctx, &req.ticker).await {
+        if !coin.is_available() {
+            if let Some(platform_coin) = Platform::try_from_mm_coin(coin.inner) {
+                return re_enable_passive_platform_coin_with_tokens(ctx, platform_coin, req).await;
+            }
+        }
+
         return MmError::err(EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(
             req.ticker,
         ));
@@ -308,6 +346,7 @@ where
         platform_protocol,
     )
     .await?;
+
     let mut mm_tokens = Vec::new();
     for initializer in platform_coin.token_initializers() {
         let tokens = initializer.enable_tokens_as_mm_coins(ctx.clone(), &req.request).await?;
