@@ -104,17 +104,22 @@ fn test_disable_eth_coin_with_token() {
     let order_uuid = Json::from_str(&make_test_order.1).unwrap();
     let order_uuid = order_uuid.get("result").unwrap().get("uuid").unwrap().as_str().unwrap();
 
-    // Try to disable platform coin, ETH. This should fail due to the dependent tokens.
-    let error = block_on(disable_coin_err(&mm, "ETH"));
-    assert_eq!(error.dependent_tokens, ["JST"]);
-
-    // Try to disable JST token first.
-    // ETH and JST should be deactivated at once.
-    let res = block_on(disable_coin(&mm, "JST"));
-    // We expected make_test_order to be cancelled
+    // Passive ETH while having tokens enabled
+    let res = block_on(disable_coin(&mm, "ETH", false));
+    assert!(res.passivized);
     assert!(res.cancelled_orders.contains(order_uuid));
-    // Then try to disable ETH platform coin.
-    block_on(disable_coin(&mm, "ETH"));
+
+    // Try to disable JST token.
+    // This should work, because platform coin is still in the memory.
+    let res = block_on(disable_coin(&mm, "JST", false));
+    // We expected make_test_order to be cancelled
+    assert!(!res.passivized);
+
+    // Because it's currently passive, default `disable_coin` should fail.
+    block_on(disable_coin_err(&mm, "ETH", false));
+    // And forced `disable_coin` should not fail
+    let res = block_on(disable_coin(&mm, "ETH", true));
+    assert!(!res.passivized);
 }
 
 #[test]

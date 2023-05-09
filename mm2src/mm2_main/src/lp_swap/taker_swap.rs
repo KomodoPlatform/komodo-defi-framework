@@ -12,16 +12,16 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_mes
             SwapTxDataMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
-use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, min_watcher_reward, tx_helper_topic,
-                          wait_for_maker_payment_conf_duration, watcher_reward_amount, TakerSwapWatcherData};
+use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, wait_for_maker_payment_conf_duration,
+                          TakerSwapWatcherData};
+use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, MmCoinEnum, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee, TradePreimageValue,
-            ValidatePaymentInput};
+            FoundSwapTxSpend, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee,
+            TradePreimageValue, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
-use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{bits256, now_ms, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::SerializableSecp256k1Keypair, CryptoCtx};
 use futures::{compat::Future01CompatExt, future::try_join, select, FutureExt};
 use http::Response;
@@ -539,6 +539,7 @@ pub struct TakerSwapMut {
     secret_hash: BytesJson,
     secret: H256Json,
     watcher_reward: bool,
+    reward_amount: Option<BigDecimal>,
     payment_instructions: Option<PaymentInstructions>,
 }
 
@@ -809,7 +810,7 @@ impl TakerSwap {
             TakerSwapEvent::TakerPaymentRefunded(tx) => self.w().taker_payment_refund = tx,
             TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::TakerPaymentRefundFinished => (),
-            TakerSwapEvent::Finished => self.finished_at.store(now_ms() / 1000, Ordering::Relaxed),
+            TakerSwapEvent::Finished => self.finished_at.store(now_sec(), Ordering::Relaxed),
         }
     }
 
@@ -879,6 +880,7 @@ impl TakerSwap {
                 secret_hash: BytesJson::default(),
                 secret: H256Json::default(),
                 watcher_reward: false,
+                reward_amount: None,
                 payment_instructions: None,
             }),
             ctx,
@@ -938,9 +940,19 @@ impl TakerSwap {
         let maker_lock_duration =
             (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
         let expires_in = wait_for_maker_payment_conf_duration(self.r().data.lock_duration);
+
+        let watcher_reward = self.r().watcher_reward && self.maker_coin.is_eth();
+        let wait_until = wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
         let instructions = self
-            .maker_coin
-            .maker_payment_instructions(&secret_hash, &maker_amount, maker_lock_duration, expires_in)
+            .taker_coin
+            .maker_payment_instructions(PaymentInstructionArgs {
+                secret_hash: &secret_hash,
+                amount: maker_amount,
+                maker_lock_duration,
+                expires_in,
+                watcher_reward,
+                wait_until,
+            })
             .await?;
         Ok(SwapTxDataMsg::new(taker_fee_data, instructions))
     }
@@ -1002,7 +1014,7 @@ impl TakerSwap {
             )]));
         }
 
-        let started_at = now_ms() / 1000;
+        let started_at = now_sec();
 
         let maker_coin_start_block = match self.maker_coin.current_block().compat().await {
             Ok(b) => b,
@@ -1057,9 +1069,7 @@ impl TakerSwap {
             p2p_privkey: self.p2p_privkey.map(SerializableSecp256k1Keypair::from),
         };
 
-        // This value will be true if both sides support & want to use watchers and either the taker or the maker coin is ETH.
-        // This requires a communication between the parties before the swap starts, which will be done during the ordermatch phase
-        // or via negotiation messages in the next sprint.
+        // This will be done during order match
         self.w().watcher_reward = false;
 
         Ok((Some(TakerSwapCommand::Negotiate), vec![TakerSwapEvent::Started(data)]))
@@ -1218,7 +1228,7 @@ impl TakerSwap {
 
     async fn send_taker_fee(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let timeout = self.r().data.started_at + self.r().data.lock_duration / 3;
-        let now = now_ms() / 1000;
+        let now = now_sec();
         if now > timeout {
             return Ok((Some(TakerSwapCommand::Finish), vec![
                 TakerSwapEvent::TakerFeeSendFailed(ERRL!("Timeout {} > {}", now, timeout).into()),
@@ -1294,17 +1304,21 @@ impl TakerSwap {
 
         let mut swap_events = vec![];
         let instructions = match payload.instructions() {
-            Some(instructions) => match self.taker_coin.validate_taker_payment_instructions(
-                instructions,
-                &self.r().secret_hash.0,
-                self.taker_amount.clone().into(),
-            ) {
-                Ok(instructions) => Some(instructions),
-                Err(e) => {
-                    return Ok((Some(TakerSwapCommand::Finish), vec![
-                        TakerSwapEvent::MakerPaymentValidateFailed(e.to_string().into()),
-                    ]))
-                },
+            Some(instructions) => {
+                match self
+                    .taker_coin
+                    .validate_taker_payment_instructions(instructions, PaymentInstructionArgs {
+                        secret_hash: &self.r().secret_hash.0,
+                        amount: self.taker_amount.to_decimal(),
+                        ..Default::default()
+                    }) {
+                    Ok(instructions) => Some(instructions),
+                    Err(e) => {
+                        return Ok((Some(TakerSwapCommand::Finish), vec![
+                            TakerSwapEvent::MakerPaymentValidateFailed(e.to_string().into()),
+                        ]))
+                    },
+                }
             },
             None => None,
         };
@@ -1355,16 +1369,21 @@ impl TakerSwap {
         }
         info!("After wait confirm");
 
-        let min_watcher_reward = if self.r().watcher_reward {
-            let reward = match min_watcher_reward(&self.maker_coin, &self.taker_coin).await {
+        let reward_amount = self.r().reward_amount.clone();
+        let wait_maker_payment_until = self.r().data.maker_payment_wait;
+        let watcher_reward = if self.r().watcher_reward {
+            match self
+                .maker_coin
+                .get_maker_watcher_reward(&self.taker_coin, reward_amount, wait_maker_payment_until)
+                .await
+            {
                 Ok(reward) => reward,
                 Err(err) => {
                     return Ok((Some(TakerSwapCommand::Finish), vec![
                         TakerSwapEvent::TakerPaymentTransactionFailed(err.into_inner().to_string().into()),
                     ]))
                 },
-            };
-            Some(reward)
+            }
         } else {
             None
         };
@@ -1380,7 +1399,7 @@ impl TakerSwap {
             try_spv_proof_until: self.r().data.maker_payment_wait,
             confirmations,
             unique_swap_data: self.unique_swap_data(),
-            min_watcher_reward,
+            watcher_reward,
         };
         let validated = self.maker_coin.validate_maker_payment(validate_input).compat().await;
 
@@ -1430,7 +1449,7 @@ impl TakerSwap {
         }
 
         let timeout = self.r().data.maker_payment_wait;
-        let now = now_ms() / 1000;
+        let now = now_sec();
         if now > timeout {
             return Ok((Some(TakerSwapCommand::Finish), vec![
                 TakerSwapEvent::TakerPaymentTransactionFailed(ERRL!("Timeout {} > {}", now, timeout).into()),
@@ -1449,16 +1468,29 @@ impl TakerSwap {
             payment_instructions: &self.r().payment_instructions,
         });
 
-        let reward_amount = if self.r().watcher_reward {
-            let reward = match watcher_reward_amount(&self.taker_coin, &self.maker_coin).await {
-                Ok(reward) => reward,
+        let reward_amount = self.r().reward_amount.clone();
+        let wait_until = self.r().data.taker_payment_lock;
+        let watcher_reward = if self.r().watcher_reward {
+            match self
+                .taker_coin
+                .get_taker_watcher_reward(
+                    &self.maker_coin,
+                    Some(self.taker_amount.clone().into()),
+                    Some(self.maker_amount.clone().into()),
+                    reward_amount,
+                    wait_until,
+                )
+                .await
+            {
+                Ok(reward) => Some(reward),
                 Err(err) => {
                     return Ok((Some(TakerSwapCommand::Finish), vec![
-                        TakerSwapEvent::TakerPaymentTransactionFailed(err.into_inner().to_string().into()),
+                        TakerSwapEvent::TakerPaymentTransactionFailed(
+                            ERRL!("Watcher reward error: {}", err.to_string()).into(),
+                        ),
                     ]))
                 },
-            };
-            Some(reward)
+            }
         } else {
             None
         };
@@ -1480,7 +1512,7 @@ impl TakerSwap {
                         swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
                         swap_unique_data: &unique_data,
                         payment_instructions: &self.r().payment_instructions,
-                        watcher_reward: reward_amount,
+                        watcher_reward,
                         wait_for_confirmation_until: self.r().data.taker_payment_lock,
                     });
 
@@ -1516,7 +1548,7 @@ impl TakerSwap {
             && self.taker_coin.is_supported_by_watchers()
             && self.maker_coin.is_supported_by_watchers()
         {
-            let maker_payment_spend_preimage_fut = self.taker_coin.create_maker_payment_spend_preimage(
+            let maker_payment_spend_preimage_fut = self.maker_coin.create_maker_payment_spend_preimage(
                 &self.r().maker_payment.as_ref().unwrap().tx_hex,
                 self.maker_payment_lock.load(Ordering::Relaxed) as u32,
                 self.r().other_maker_coin_htlc_pub.as_slice(),
@@ -1637,14 +1669,16 @@ impl TakerSwap {
             ]));
         }
 
-        let f = self.taker_coin.wait_for_htlc_tx_spend(
-            &self.r().taker_payment.clone().unwrap().tx_hex,
-            &self.r().secret_hash.0,
-            self.r().data.taker_payment_lock,
-            self.r().data.taker_coin_start_block,
-            &self.r().data.taker_coin_swap_contract_address,
-            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-        );
+        info!("Taker payment confirmed");
+        let f = self.taker_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+            tx_bytes: &self.r().taker_payment.clone().unwrap().tx_hex,
+            secret_hash: &self.r().secret_hash.0,
+            wait_until: self.r().data.taker_payment_lock,
+            from_block: self.r().data.taker_coin_start_block,
+            swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
+            check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+            watcher_reward: self.r().watcher_reward,
+        });
         let tx = match f.compat().await {
             Ok(t) => t,
             Err(err) => {
@@ -2131,7 +2165,7 @@ impl TakerSwap {
 
                 let can_refund = try_s!(self.taker_coin.can_refund_htlc(taker_payment_lock).compat().await);
                 if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund {
-                    return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
+                    return ERR!("Too early to refund, wait until {}", wait_until_sec(seconds_to_wait));
                 }
 
                 let fut = self.taker_coin.send_taker_refunds_payment(RefundPaymentArgs {

@@ -46,8 +46,8 @@ use base58::FromBase58Error;
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
-use common::log::LogOnError;
-use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
+use common::log::{warn, LogOnError};
+use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy,
              Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
@@ -76,6 +76,8 @@ use std::future::Future as Future03;
 use std::num::NonZeroUsize;
 use std::ops::{Add, Deref};
 use std::str::FromStr;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::Arc;
 use std::time::Duration;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
@@ -199,6 +201,8 @@ macro_rules! ok_or_continue_after_sleep {
 }
 
 pub mod coin_balance;
+pub mod lp_price;
+pub mod watcher_common;
 
 pub mod coin_errors;
 use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
@@ -208,7 +212,6 @@ use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
 pub mod coins_tests;
 
 pub mod eth;
-#[cfg(feature = "enable-nft-integration")]
 use eth::GetValidEthWithdrawAddError;
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
           GetEthAddressError, SignedEthTx};
@@ -281,8 +284,7 @@ use utxo::utxo_standard::{utxo_standard_coin_with_policy, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
-#[cfg(feature = "enable-nft-integration")] pub mod nft;
-#[cfg(feature = "enable-nft-integration")]
+pub mod nft;
 use nft::nft_errors::GetNftInfoError;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
@@ -321,7 +323,6 @@ pub const INVALID_PAYMENT_STATE_ERR_LOG: &str = "Invalid payment state";
 pub const INVALID_SWAP_ID_ERR_LOG: &str = "Invalid swap id";
 pub const INVALID_SCRIPT_ERR_LOG: &str = "Invalid script";
 pub const INVALID_REFUND_TX_ERR_LOG: &str = "Invalid refund transaction";
-pub const INSUFFICIENT_WATCHER_REWARD_ERR_LOG: &str = "Insufficient watcher reward";
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -588,7 +589,7 @@ pub struct WatcherValidateTakerFeeInput {
     pub lock_duration: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct WatcherValidatePaymentInput {
     pub payment_tx: Vec<u8>,
     pub taker_payment_refund_preimage: Vec<u8>,
@@ -596,9 +597,9 @@ pub struct WatcherValidatePaymentInput {
     pub taker_pub: Vec<u8>,
     pub maker_pub: Vec<u8>,
     pub secret_hash: Vec<u8>,
-    pub try_spv_proof_until: u64,
+    pub wait_until: u64,
     pub confirmations: u64,
-    pub min_watcher_reward: Option<u64>,
+    pub maker_coin: MmCoinEnum,
 }
 
 #[derive(Clone, Debug)]
@@ -613,7 +614,7 @@ pub struct ValidatePaymentInput {
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
     pub unique_swap_data: Vec<u8>,
-    pub min_watcher_reward: Option<u64>,
+    pub watcher_reward: Option<WatcherReward>,
 }
 
 #[derive(Clone, Debug)]
@@ -647,6 +648,23 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub watcher_reward: bool,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum RewardTarget {
+    None,
+    Contract,
+    PaymentSender,
+    PaymentSpender,
+    PaymentReceiver,
+}
+
+#[derive(Clone, Debug)]
+pub struct WatcherReward {
+    pub amount: BigDecimal,
+    pub is_exact_amount: bool,
+    pub reward_target: RewardTarget,
+    pub send_contract_reward_on_spend: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct SendPaymentArgs<'a> {
     pub time_lock_duration: u64,
@@ -660,7 +678,7 @@ pub struct SendPaymentArgs<'a> {
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
     pub payment_instructions: &'a Option<PaymentInstructions>,
-    pub watcher_reward: Option<u64>,
+    pub watcher_reward: Option<WatcherReward>,
     pub wait_for_confirmation_until: u64,
 }
 
@@ -727,15 +745,38 @@ pub struct EthValidateFeeArgs<'a> {
     pub uuid: &'a [u8],
 }
 
+#[derive(Clone, Debug)]
+pub struct WaitForHTLCTxSpendArgs<'a> {
+    pub tx_bytes: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub wait_until: u64,
+    pub from_block: u64,
+    pub swap_contract_address: &'a Option<BytesJson>,
+    pub check_every: f64,
+    pub watcher_reward: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PaymentInstructions {
     #[cfg(not(target_arch = "wasm32"))]
     Lightning(Invoice),
+    WatcherReward(BigDecimal),
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PaymentInstructionArgs<'a> {
+    pub secret_hash: &'a [u8],
+    pub amount: BigDecimal,
+    pub maker_lock_duration: u64,
+    pub expires_in: u64,
+    pub watcher_reward: bool,
+    pub wait_until: u64,
 }
 
 #[derive(Display)]
 pub enum PaymentInstructionsErr {
     LightningInvoiceErr(String),
+    WatcherRewardErr(String),
     InternalError(String),
 }
 
@@ -747,6 +788,7 @@ impl From<NumConversError> for PaymentInstructionsErr {
 pub enum ValidateInstructionsErr {
     ValidateLightningInvoiceErr(String),
     UnsupportedCoin(String),
+    DeserializationErr(String),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -760,6 +802,13 @@ pub enum RefundError {
     DbError(String),
     Timeout(String),
     Internal(String),
+}
+
+#[derive(Debug, Display)]
+pub enum WatcherRewardError {
+    RPCError(String),
+    InvalidCoinType(String),
+    InternalError(String),
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
@@ -813,7 +862,7 @@ pub trait SwapOps {
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
     /// locktime < MTP
     fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
-        let now = now_ms() / 1000;
+        let now = now_sec();
         let result = if now > locktime {
             CanRefundHtlc::CanRefundNow
         } else {
@@ -845,33 +894,25 @@ pub trait SwapOps {
     /// Instructions from the taker on how the maker should send his payment.
     async fn maker_payment_instructions(
         &self,
-        secret_hash: &[u8],
-        amount: &BigDecimal,
-        maker_lock_duration: u64,
-        expires_in: u64,
+        args: PaymentInstructionArgs<'_>,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
 
     /// Instructions from the maker on how the taker should send his payment.
     async fn taker_payment_instructions(
         &self,
-        secret_hash: &[u8],
-        amount: &BigDecimal,
-        expires_in: u64,
+        args: PaymentInstructionArgs<'_>,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
 
     fn validate_maker_payment_instructions(
         &self,
         instructions: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        maker_lock_duration: u64,
+        args: PaymentInstructionArgs<'_>,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
 
     fn validate_taker_payment_instructions(
         &self,
         instructions: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
+        args: PaymentInstructionArgs<'_>,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
 
     fn is_supported_by_watchers(&self) -> bool { false }
@@ -933,6 +974,22 @@ pub trait WatcherOps {
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
+
+    async fn get_taker_watcher_reward(
+        &self,
+        other_coin: &MmCoinEnum,
+        coin_amount: Option<BigDecimal>,
+        other_coin_amount: Option<BigDecimal>,
+        reward_amount: Option<BigDecimal>,
+        wait_until: u64,
+    ) -> Result<WatcherReward, MmError<WatcherRewardError>>;
+
+    async fn get_maker_watcher_reward(
+        &self,
+        other_coin: &MmCoinEnum,
+        reward_amount: Option<BigDecimal>,
+        wait_until: u64,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
 }
 
 /// Operations that coins have independently from the MarketMaker.
@@ -979,15 +1036,7 @@ pub trait MarketCoinOps {
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn wait_for_htlc_tx_spend(
-        &self,
-        transaction: &[u8],
-        secret_hash: &[u8],
-        wait_until: u64,
-        from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
-        check_every: f64,
-    ) -> TransactionFut;
+    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut;
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>>;
 
@@ -1782,7 +1831,9 @@ pub enum WithdrawError {
         fmt = "'{}' coin doesn't support 'init_withdraw' yet. Consider using 'withdraw' request instead",
         coin
     )]
-    CoinDoesntSupportInitWithdraw { coin: String },
+    CoinDoesntSupportInitWithdraw {
+        coin: String,
+    },
     #[display(
         fmt = "Not enough {} to withdraw: available {}, required at least {}",
         coin,
@@ -1808,7 +1859,10 @@ pub enum WithdrawError {
     #[display(fmt = "Balance is zero")]
     ZeroBalanceToWithdrawMax,
     #[display(fmt = "The amount {} is too small, required at least {}", amount, threshold)]
-    AmountTooLow { amount: BigDecimal, threshold: BigDecimal },
+    AmountTooLow {
+        amount: BigDecimal,
+        threshold: BigDecimal,
+    },
     #[display(fmt = "Invalid address: {}", _0)]
     InvalidAddress(String),
     #[display(fmt = "Invalid fee policy: {}", _0)]
@@ -1816,7 +1870,9 @@ pub enum WithdrawError {
     #[display(fmt = "Invalid memo field: {}", _0)]
     InvalidMemo(String),
     #[display(fmt = "No such coin {}", coin)]
-    NoSuchCoin { coin: String },
+    NoSuchCoin {
+        coin: String,
+    },
     #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "Withdraw timed out {:?}", _0)]
     Timeout(Duration),
@@ -1825,9 +1881,13 @@ pub enum WithdrawError {
     #[display(fmt = "Unexpected 'from' address: {}", _0)]
     UnexpectedFromAddress(String),
     #[display(fmt = "Unknown '{}' account", account_id)]
-    UnknownAccount { account_id: u32 },
+    UnknownAccount {
+        account_id: u32,
+    },
     #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
-    UnexpectedUserAction { expected: String },
+    UnexpectedUserAction {
+        expected: String,
+    },
     #[from_trait(WithHwRpcError::hw_rpc_error)]
     HwError(HwRpcError),
     #[cfg(target_arch = "wasm32")]
@@ -1838,20 +1898,20 @@ pub enum WithdrawError {
     #[from_stringify("NumConversError", "UnexpectedDerivationMethod", "PrivKeyPolicyNotAllowed")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
-    #[cfg(feature = "enable-nft-integration")]
     #[display(fmt = "{} coin doesn't support NFT withdrawing", coin)]
-    CoinDoesntSupportNftWithdraw { coin: String },
-    #[cfg(feature = "enable-nft-integration")]
+    CoinDoesntSupportNftWithdraw {
+        coin: String,
+    },
     #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
-    AddressMismatchError { my_address: String, from: String },
-    #[cfg(feature = "enable-nft-integration")]
+    AddressMismatchError {
+        my_address: String,
+        from: String,
+    },
     #[display(fmt = "Contract type {} doesnt support 'withdraw_nft' yet", _0)]
     ContractTypeDoesntSupportNftWithdrawing(String),
     #[display(fmt = "Action not allowed for coin: {}", _0)]
     ActionNotAllowed(String),
-    #[cfg(feature = "enable-nft-integration")]
     GetNftInfoError(GetNftInfoError),
-    #[cfg(feature = "enable-nft-integration")]
     #[display(
         fmt = "Not enough NFTs amount with token_address: {} and token_id {}. Available {}, required {}",
         token_address,
@@ -1867,7 +1927,6 @@ pub enum WithdrawError {
     },
 }
 
-#[cfg(feature = "enable-nft-integration")]
 impl From<GetNftInfoError> for WithdrawError {
     fn from(e: GetNftInfoError) -> Self { WithdrawError::GetNftInfoError(e) }
 }
@@ -1889,17 +1948,16 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
             | WithdrawError::UnexpectedUserAction { .. }
-            | WithdrawError::ActionNotAllowed(_) => StatusCode::BAD_REQUEST,
-            WithdrawError::HwError(_) => StatusCode::GONE,
-            #[cfg(target_arch = "wasm32")]
-            WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
-            WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "enable-nft-integration")]
-            WithdrawError::GetNftInfoError(_)
+            | WithdrawError::ActionNotAllowed(_)
+            | WithdrawError::GetNftInfoError(_)
             | WithdrawError::AddressMismatchError { .. }
             | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_)
             | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
             | WithdrawError::NotEnoughNftsAmount { .. } => StatusCode::BAD_REQUEST,
+            WithdrawError::HwError(_) => StatusCode::GONE,
+            #[cfg(target_arch = "wasm32")]
+            WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
+            WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -1934,7 +1992,6 @@ impl From<TimeoutError> for WithdrawError {
     fn from(e: TimeoutError) -> Self { WithdrawError::Timeout(e.duration) }
 }
 
-#[cfg(feature = "enable-nft-integration")]
 impl From<GetValidEthWithdrawAddError> for WithdrawError {
     fn from(e: GetValidEthWithdrawAddError) -> Self {
         match e {
@@ -2237,7 +2294,7 @@ pub trait MmCoin:
     fn on_disabled(&self) -> Result<(), AbortedError>;
 
     /// For Handling the removal/deactivation of token on platform coin deactivation.
-    fn on_token_deactivated(&self, _ticker: &str);
+    fn on_token_deactivated(&self, ticker: &str);
 }
 
 /// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
@@ -2426,6 +2483,8 @@ impl MmCoinEnum {
     }
 
     pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoin(_)) }
+
+    fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
 }
 
 #[async_trait]
@@ -2433,10 +2492,51 @@ pub trait BalanceTradeFeeUpdatedHandler {
     async fn balance_updated(&self, coin: &MmCoinEnum, new_balance: &BigDecimal);
 }
 
+#[derive(Clone)]
+pub struct MmCoinStruct {
+    pub inner: MmCoinEnum,
+    is_available: Arc<AtomicBool>,
+}
+
+impl MmCoinStruct {
+    fn new(coin: MmCoinEnum) -> Self {
+        Self {
+            inner: coin,
+            is_available: AtomicBool::new(true).into(),
+        }
+    }
+
+    /// Gets the current state of the parent coin whether
+    /// it's available for the external requests or not.
+    ///
+    /// Always `true` for child tokens.
+    pub fn is_available(&self) -> bool {
+        !self.inner.is_platform_coin() // Tokens are always active or disabled
+            || self.is_available.load(AtomicOrdering::SeqCst)
+    }
+
+    /// Makes the coin disabled to the external requests.
+    /// Useful for executing `disable_coin` on parent coins
+    /// that have child tokens enabled.
+    ///
+    /// Ineffective for child tokens.
+    pub fn update_is_available(&self, to: bool) {
+        if !self.inner.is_platform_coin() {
+            warn!(
+                "`update_is_available` is ineffective for tokens. Current token: {}",
+                self.inner.ticker()
+            );
+            return;
+        }
+
+        self.is_available.store(to, AtomicOrdering::SeqCst);
+    }
+}
+
 pub struct CoinsContext {
     /// A map from a currency ticker symbol to the corresponding coin.
     /// Similar to `LP_coins`.
-    coins: AsyncMutex<HashMap<String, MmCoinEnum>>,
+    coins: AsyncMutex<HashMap<String, MmCoinStruct>>,
     balance_update_handlers: AsyncMutex<Vec<Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>>>,
     account_balance_task_manager: AccountBalanceTaskManagerShared,
     create_account_manager: CreateAccountTaskManagerShared,
@@ -2483,6 +2583,7 @@ impl CoinsContext {
                 coin: coin.ticker().into(),
             });
         }
+
         let ticker = coin.ticker();
 
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
@@ -2491,7 +2592,8 @@ impl CoinsContext {
             platform.insert(ticker.to_owned());
         }
 
-        coins.insert(ticker.into(), coin);
+        coins.insert(ticker.into(), MmCoinStruct::new(coin));
+
         Ok(())
     }
 
@@ -2509,14 +2611,19 @@ impl CoinsContext {
         let mut coins = self.coins.lock().await;
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
 
-        if coins.contains_key(platform.ticker()) {
-            return MmError::err(PlatformIsAlreadyActivatedErr {
-                ticker: platform.ticker().into(),
-            });
-        }
+        let platform_ticker = platform.ticker().to_owned();
 
-        let platform_ticker = platform.ticker().to_string();
-        coins.insert(platform_ticker.clone(), platform);
+        if let Some(coin) = coins.get(&platform_ticker) {
+            if coin.is_available() {
+                return MmError::err(PlatformIsAlreadyActivatedErr {
+                    ticker: platform.ticker().into(),
+                });
+            }
+
+            coin.update_is_available(true);
+        } else {
+            coins.insert(platform_ticker.clone(), MmCoinStruct::new(platform));
+        }
 
         // Tokens can't be activated without platform coin so we can safely insert them without checking prior existence
         let mut token_tickers = Vec::with_capacity(tokens.len());
@@ -2526,8 +2633,12 @@ impl CoinsContext {
         // We try to activate ETH coin and USDT token via enable_eth_with_tokens
         for token in tokens {
             token_tickers.push(token.ticker().to_string());
-            coins.insert(token.ticker().into(), token);
+            coins
+                .entry(token.ticker().into())
+                .or_insert_with(|| MmCoinStruct::new(token));
         }
+
+        token_tickers.dedup();
 
         platform_coin_tokens
             .entry(platform_ticker)
@@ -2555,6 +2666,7 @@ impl CoinsContext {
                     if let Some(token) = coins_storage.remove(token) {
                         // Abort all token related futures on token deactivation
                         token
+                            .inner
                             .on_disabled()
                             .error_log_with_msg(&format!("Error aborting coin({ticker}) futures"));
                     }
@@ -2565,7 +2677,7 @@ impl CoinsContext {
                 tokens.remove(ticker);
             }
             if let Some(platform_coin) = coins_storage.get(platform_ticker) {
-                platform_coin.on_token_deactivated(ticker);
+                platform_coin.inner.on_token_deactivated(ticker);
             }
         };
 
@@ -3037,10 +3149,10 @@ pub async fn lp_register_coin(
         RawEntryMut::Occupied(_oe) => {
             return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() })
         },
-        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), coin.clone()),
+        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), MmCoinStruct::new(coin.clone())),
     };
 
-    if coin.ticker() == coin.platform_ticker() {
+    if coin.is_platform_coin() {
         let mut platform_coin_tokens = cctx.platform_coin_tokens.lock();
         platform_coin_tokens
             .entry(coin.ticker().to_string())
@@ -3062,6 +3174,21 @@ fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
 pub async fn lp_coinfind(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
     let cctx = try_s!(CoinsContext::from_ctx(ctx));
     let coins = cctx.coins.lock().await;
+
+    if let Some(coin) = coins.get(ticker) {
+        if coin.is_available() {
+            return Ok(Some(coin.inner.clone()));
+        }
+    };
+
+    Ok(None)
+}
+
+/// Returns coins even if they are on the passive mode
+pub async fn lp_coinfind_any(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinStruct>, String> {
+    let cctx = try_s!(CoinsContext::from_ctx(ctx));
+    let coins = cctx.coins.lock().await;
+
     Ok(coins.get(ticker).cloned())
 }
 
@@ -3355,7 +3482,7 @@ pub async fn get_enabled_coins(ctx: MmArc) -> Result<Response<Vec<u8>>, String> 
     let enabled_coins: Vec<_> = try_s!(coins
         .iter()
         .map(|(ticker, coin)| {
-            let address = try_s!(coin.my_address());
+            let address = try_s!(coin.inner.my_address());
             Ok(EnabledCoin {
                 ticker: ticker.clone(),
                 address,
@@ -3839,4 +3966,62 @@ fn coins_conf_check(ctx: &MmArc, coins_en: &Json, ticker: &str, req: Option<&Jso
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use common::block_on;
+    use mm2_test_helpers::for_tests::RICK;
+
+    #[test]
+    fn test_lp_coinfind() {
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+        let coin = MmCoinEnum::Test(TestCoin::new(RICK));
+
+        // Add test coin to coins context
+        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![])).unwrap();
+
+        // Try to find RICK from coins context that was added above
+        let _found = common::block_on(lp_coinfind(&ctx, RICK)).unwrap();
+
+        assert!(matches!(Some(coin), _found));
+
+        block_on(coins_ctx.coins.lock())
+            .get(RICK)
+            .unwrap()
+            .update_is_available(false);
+
+        // Try to find RICK from coins context after making it passive
+        let found = common::block_on(lp_coinfind(&ctx, RICK)).unwrap();
+
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn test_lp_coinfind_any() {
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+        let coin = MmCoinEnum::Test(TestCoin::new(RICK));
+
+        // Add test coin to coins context
+        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![])).unwrap();
+
+        // Try to find RICK from coins context that was added above
+        let _found = common::block_on(lp_coinfind_any(&ctx, RICK)).unwrap();
+
+        assert!(matches!(Some(coin.clone()), _found));
+
+        block_on(coins_ctx.coins.lock())
+            .get(RICK)
+            .unwrap()
+            .update_is_available(false);
+
+        // Try to find RICK from coins context after making it passive
+        let _found = common::block_on(lp_coinfind_any(&ctx, RICK)).unwrap();
+
+        assert!(matches!(Some(coin), _found));
+    }
 }

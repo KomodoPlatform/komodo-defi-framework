@@ -169,8 +169,8 @@ fn test_withdraw_cashaddresses() {
     // Wait 5 seconds to avoid double spending
     thread::sleep(Duration::from_secs(5));
 
-    //Disable BCH to enable in Legacy Mode
-    block_on(disable_coin(&mm, "BCH"));
+    // Disable BCH to enable in Legacy Mode
+    block_on(disable_coin(&mm, "BCH", false));
 
     let electrum = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,

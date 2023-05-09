@@ -7,6 +7,7 @@ use std::str::FromStr;
 #[derive(Debug, Deserialize)]
 pub struct NftListReq {
     pub(crate) chains: Vec<Chain>,
+    pub(crate) url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -14,6 +15,7 @@ pub struct NftMetadataReq {
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
     pub(crate) chain: Chain,
+    pub(crate) url: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -97,6 +99,7 @@ pub struct Nft {
     pub(crate) last_token_uri_sync: Option<String>,
     pub(crate) last_metadata_sync: Option<String>,
     pub(crate) minter_address: Option<String>,
+    pub(crate) possible_spam: Option<bool>,
 }
 
 /// This structure is for deserializing NFT json to struct.
@@ -118,6 +121,7 @@ pub(crate) struct NftWrapper {
     pub(crate) last_token_uri_sync: Option<String>,
     pub(crate) last_metadata_sync: Option<String>,
     pub(crate) minter_address: Option<String>,
+    pub(crate) possible_spam: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -170,8 +174,15 @@ pub struct WithdrawErc721 {
 }
 
 #[derive(Clone, Deserialize)]
+pub struct WithdrawNftReq {
+    pub(crate) url: String,
+    pub(crate) withdraw_type: WithdrawNftType,
+}
+
+#[derive(Clone, Deserialize)]
 #[serde(tag = "type", content = "withdraw_data")]
-pub enum WithdrawNftReq {
+#[serde(rename_all = "snake_case")]
+pub enum WithdrawNftType {
     WithdrawErc1155(WithdrawErc1155),
     WithdrawErc721(WithdrawErc721),
 }
@@ -206,6 +217,7 @@ pub struct TransactionNftDetails {
 #[derive(Debug, Deserialize)]
 pub struct NftTransfersReq {
     pub(crate) chains: Vec<Chain>,
+    pub(crate) url: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -228,6 +240,7 @@ pub(crate) struct NftTransferHistory {
     pub(crate) amount: BigDecimal,
     pub(crate) verified: u64,
     pub(crate) operator: Option<String>,
+    pub(crate) possible_spam: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -249,6 +262,7 @@ pub(crate) struct NftTransferHistoryWrapper {
     pub(crate) amount: SerdeStringWrap<BigDecimal>,
     pub(crate) verified: u64,
     pub(crate) operator: Option<String>,
+    pub(crate) possible_spam: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]

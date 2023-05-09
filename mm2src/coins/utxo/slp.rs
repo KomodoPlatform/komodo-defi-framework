@@ -14,15 +14,16 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
                   FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs,
-            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
-            SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
+            NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionArgs, PaymentInstructions,
+            PaymentInstructionsErr, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RefundError,
+            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
             WithdrawRequest};
 use async_trait::async_trait;
@@ -31,7 +32,7 @@ use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
 use common::log::warn;
-use common::now_ms;
+use common::{now_sec, wait_until_sec};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
@@ -503,8 +504,9 @@ impl SlpToken {
             htlc_keypair.public(),
             &input.secret_hash,
             self.platform_dust_dec(),
+            None,
             input.time_lock,
-            now_ms() / 1000 + 60,
+            wait_until_sec(60),
             input.confirmations,
         );
         validate_fut.compat().await
@@ -1159,22 +1161,14 @@ impl MarketCoinOps for SlpToken {
         self.platform_coin.wait_for_confirmations(input)
     }
 
-    fn wait_for_htlc_tx_spend(
-        &self,
-        transaction: &[u8],
-        _secret_hash: &[u8],
-        wait_until: u64,
-        from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
-        check_every: f64,
-    ) -> TransactionFut {
+    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
         utxo_common::wait_for_output_spend(
             self.platform_coin.as_ref(),
-            transaction,
+            args.tx_bytes,
             SLP_SWAP_VOUT,
-            from_block,
-            wait_until,
-            check_every,
+            args.from_block,
+            args.wait_until,
+            args.check_every,
         )
     }
 
@@ -1439,19 +1433,14 @@ impl SwapOps for SlpToken {
 
     async fn maker_payment_instructions(
         &self,
-        _secret_hash: &[u8],
-        _amount: &BigDecimal,
-        _maker_lock_duration: u64,
-        _expires_in: u64,
+        _args: PaymentInstructionArgs<'_>,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
 
     async fn taker_payment_instructions(
         &self,
-        _secret_hash: &[u8],
-        _amount: &BigDecimal,
-        _expires_in: u64,
+        _args: PaymentInstructionArgs<'_>,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
@@ -1459,9 +1448,7 @@ impl SwapOps for SlpToken {
     fn validate_maker_payment_instructions(
         &self,
         _instructions: &[u8],
-        _secret_hash: &[u8],
-        _amount: BigDecimal,
-        _maker_lock_duration: u64,
+        _args: PaymentInstructionArgs,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
@@ -1469,8 +1456,7 @@ impl SwapOps for SlpToken {
     fn validate_taker_payment_instructions(
         &self,
         _instructions: &[u8],
-        _secret_hash: &[u8],
-        _amount: BigDecimal,
+        _args: PaymentInstructionArgs,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
@@ -1536,6 +1522,26 @@ impl WatcherOps for SlpToken {
         _input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
+    }
+
+    async fn get_taker_watcher_reward(
+        &self,
+        _other_coin: &MmCoinEnum,
+        _coin_amount: Option<BigDecimal>,
+        _other_coin_amount: Option<BigDecimal>,
+        _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
+    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
+        unimplemented!()
+    }
+
+    async fn get_maker_watcher_reward(
+        &self,
+        _other_coin: &MmCoinEnum,
+        _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        unimplemented!()
     }
 }
 
@@ -1696,7 +1702,7 @@ impl MmCoin for SlpToken {
                 received_by_me,
                 my_balance_change,
                 block_height: 0,
-                timestamp: now_ms() / 1000,
+                timestamp: now_sec(),
                 fee_details: Some(fee_details.into()),
                 coin: coin.ticker().into(),
                 kmd_rewards: None,
@@ -2092,11 +2098,11 @@ mod slp_tests {
 
         let other_pub = hex::decode("036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202c").unwrap();
 
-        utxo_common::validate_payment::<BchCoin>.mock_safe(|coin, tx, out_i, pub0, _, h, a, lock, spv, conf| {
+        utxo_common::validate_payment::<BchCoin>.mock_safe(|coin, tx, out_i, pub0, _, h, a, wr, lock, spv, conf| {
             // replace the second public because payment was sent with privkey that is currently unknown
             let my_pub = hex::decode("03c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed").unwrap();
             let my_pub = Box::leak(Box::new(Public::from_slice(&my_pub).unwrap()));
-            MockResult::Continue((coin, tx, out_i, pub0, my_pub, h, a, lock, spv, conf))
+            MockResult::Continue((coin, tx, out_i, pub0, my_pub, h, a, wr, lock, spv, conf))
         });
 
         let lock_time = 1624547837;
@@ -2110,10 +2116,10 @@ mod slp_tests {
             secret_hash,
             amount,
             confirmations: 1,
-            try_spv_proof_until: now_ms() / 1000 + 60,
+            try_spv_proof_until: wait_until_sec(60),
             unique_swap_data: Vec::new(),
             swap_contract_address: None,
-            min_watcher_reward: None,
+            watcher_reward: None,
         };
         block_on(fusd.validate_htlc(input)).unwrap();
     }
@@ -2230,8 +2236,9 @@ mod slp_tests {
             &other_pub,
             &secret_hash,
             fusd.platform_dust_dec(),
+            None,
             lock_time,
-            now_ms() / 1000 + 60,
+            wait_until_sec(60),
             1,
         )
         .wait()
@@ -2245,10 +2252,10 @@ mod slp_tests {
             secret_hash,
             amount,
             swap_contract_address: None,
-            try_spv_proof_until: now_ms() / 1000 + 60,
+            try_spv_proof_until: wait_until_sec(60),
             confirmations: 1,
             unique_swap_data: Vec::new(),
-            min_watcher_reward: None,
+            watcher_reward: None,
         };
         let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {

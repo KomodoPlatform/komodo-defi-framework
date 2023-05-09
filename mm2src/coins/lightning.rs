@@ -16,15 +16,16 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, RawTransactionError,
-            RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs, RefundResult,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
-            SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr, TransactionFut,
-            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
+            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            RawTransactionError, RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs,
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr,
+            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
+            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
@@ -35,7 +36,7 @@ use bitcrypto::{dhash256, ripemd160};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::{error, info, LogOnError, LogState};
-use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
+use common::{async_blocking, get_local_duration_since_epoch, log, now_sec, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -481,12 +482,12 @@ impl LightningCoin {
     async fn swap_payment_instructions(
         &self,
         secret_hash: &[u8],
-        amount: &BigDecimal,
+        amount: BigDecimal,
         expires_in: u64,
         min_final_cltv_expiry: u64,
     ) -> Result<Vec<u8>, MmError<PaymentInstructionsErr>> {
         // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
-        let amt_msat = sat_from_big_decimal(amount, self.decimals())?;
+        let amt_msat = sat_from_big_decimal(&amount, self.decimals())?;
         let payment_hash =
             payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
         // note: No description is provided in the invoice to reduce the payload
@@ -616,10 +617,11 @@ impl SwapOps for LightningCoin {
     }
 
     fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
-        let PaymentInstructions::Lightning(invoice) = try_tx_fus!(maker_payment_args
-            .payment_instructions
-            .clone()
-            .ok_or("payment_instructions can't be None"));
+        let invoice = match maker_payment_args.payment_instructions.clone() {
+            Some(PaymentInstructions::Lightning(invoice)) => invoice,
+            _ => try_tx_fus!(ERR!("Invalid instructions, ligntning invoice is expected")),
+        };
+
         let coin = self.clone();
         let fut = async move {
             // No need for max_total_cltv_expiry_delta for lightning maker payment since the maker is the side that reveals the secret/preimage
@@ -630,10 +632,11 @@ impl SwapOps for LightningCoin {
     }
 
     fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
-        let PaymentInstructions::Lightning(invoice) = try_tx_fus!(taker_payment_args
-            .payment_instructions
-            .clone()
-            .ok_or("payment_instructions can't be None"));
+        let invoice = match taker_payment_args.payment_instructions.clone() {
+            Some(PaymentInstructions::Lightning(invoice)) => invoice,
+            _ => try_tx_fus!(ERR!("Invalid instructions, ligntning invoice is expected")),
+        };
+
         let max_total_cltv_expiry_delta = self
             .estimate_blocks_from_duration(taker_payment_args.time_lock_duration)
             .try_into()
@@ -688,10 +691,11 @@ impl SwapOps for LightningCoin {
         &self,
         if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let PaymentInstructions::Lightning(invoice) = try_f!(if_my_payment_sent_args
-            .payment_instructions
-            .clone()
-            .ok_or("payment_instructions can't be None"));
+        let invoice = match if_my_payment_sent_args.payment_instructions.clone() {
+            Some(PaymentInstructions::Lightning(invoice)) => invoice,
+            _ => try_f!(ERR!("Invalid instructions, ligntning invoice is expected")),
+        };
+
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_hex = hex::encode(payment_hash.0);
         let coin = self.clone();
@@ -861,13 +865,10 @@ impl SwapOps for LightningCoin {
 
     async fn maker_payment_instructions(
         &self,
-        secret_hash: &[u8],
-        amount: &BigDecimal,
-        maker_lock_duration: u64,
-        expires_in: u64,
+        args: PaymentInstructionArgs<'_>,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        let min_final_cltv_expiry = self.estimate_blocks_from_duration(maker_lock_duration);
-        self.swap_payment_instructions(secret_hash, amount, expires_in, min_final_cltv_expiry)
+        let min_final_cltv_expiry = self.estimate_blocks_from_duration(args.maker_lock_duration);
+        self.swap_payment_instructions(args.secret_hash, args.amount, args.expires_in, min_final_cltv_expiry)
             .await
             .map(Some)
     }
@@ -875,34 +876,39 @@ impl SwapOps for LightningCoin {
     #[inline]
     async fn taker_payment_instructions(
         &self,
-        secret_hash: &[u8],
-        amount: &BigDecimal,
-        expires_in: u64,
+        args: PaymentInstructionArgs<'_>,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        self.swap_payment_instructions(secret_hash, amount, expires_in, MIN_FINAL_CLTV_EXPIRY as u64)
-            .await
-            .map(Some)
+        self.swap_payment_instructions(
+            args.secret_hash,
+            args.amount,
+            args.expires_in,
+            MIN_FINAL_CLTV_EXPIRY as u64,
+        )
+        .await
+        .map(Some)
     }
 
     fn validate_maker_payment_instructions(
         &self,
         instructions: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        maker_lock_duration: u64,
+        args: PaymentInstructionArgs,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        let min_final_cltv_expiry = self.estimate_blocks_from_duration(maker_lock_duration);
-        self.validate_swap_instructions(instructions, secret_hash, amount, min_final_cltv_expiry)
+        let min_final_cltv_expiry = self.estimate_blocks_from_duration(args.maker_lock_duration);
+        self.validate_swap_instructions(instructions, args.secret_hash, args.amount, min_final_cltv_expiry)
     }
 
     #[inline]
     fn validate_taker_payment_instructions(
         &self,
         instructions: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
+        args: PaymentInstructionArgs,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        self.validate_swap_instructions(instructions, secret_hash, amount, MIN_FINAL_CLTV_EXPIRY as u64)
+        self.validate_swap_instructions(
+            instructions,
+            args.secret_hash,
+            args.amount,
+            MIN_FINAL_CLTV_EXPIRY as u64,
+        )
     }
 
     fn maker_locktime_multiplier(&self) -> f64 { 1.5 }
@@ -988,6 +994,26 @@ impl WatcherOps for LightningCoin {
         _input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
+    }
+
+    async fn get_taker_watcher_reward(
+        &self,
+        _other_coin: &MmCoinEnum,
+        _coin_amount: Option<BigDecimal>,
+        _other_coin_amount: Option<BigDecimal>,
+        _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
+    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
+        unimplemented!()
+    }
+
+    async fn get_maker_watcher_reward(
+        &self,
+        _other_coin: &MmCoinEnum,
+        _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        unimplemented!()
     }
 }
 
@@ -1078,7 +1104,7 @@ impl MarketCoinOps for LightningCoin {
         let coin = self.clone();
         let fut = async move {
             loop {
-                if now_ms() / 1000 > input.wait_until {
+                if now_sec() > input.wait_until {
                     return ERR!(
                         "Waited too long until {} for payment {} to be received",
                         input.wait_until,
@@ -1123,22 +1149,15 @@ impl MarketCoinOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn wait_for_htlc_tx_spend(
-        &self,
-        transaction: &[u8],
-        _secret_hash: &[u8],
-        wait_until: u64,
-        _from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
-        _check_every: f64,
-    ) -> TransactionFut {
-        let payment_hash = try_tx_fus!(payment_hash_from_slice(transaction));
+    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
+        let payment_hash = try_tx_fus!(payment_hash_from_slice(args.tx_bytes));
         let payment_hex = hex::encode(payment_hash.0);
 
         let coin = self.clone();
+        let wait_until = args.wait_until;
         let fut = async move {
             loop {
-                if now_ms() / 1000 > wait_until {
+                if now_sec() > wait_until {
                     return Err(TransactionErr::Plain(ERRL!(
                         "Waited too long until {} for payment {} to be spent",
                         wait_until,

@@ -22,8 +22,6 @@ pub enum GetNftInfoError {
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
     GetEthAddressError(GetEthAddressError),
-    #[display(fmt = "X-API-Key is missing")]
-    ApiKeyError,
     #[display(
         fmt = "Token: token_address {}, token_id {} was not find in wallet",
         token_address,
@@ -68,7 +66,6 @@ impl HttpStatusCode for GetNftInfoError {
         match self {
             GetNftInfoError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
             GetNftInfoError::InvalidResponse(_) => StatusCode::FAILED_DEPENDENCY,
-            GetNftInfoError::ApiKeyError => StatusCode::FORBIDDEN,
             GetNftInfoError::Transport(_)
             | GetNftInfoError::Internal(_)
             | GetNftInfoError::GetEthAddressError(_)

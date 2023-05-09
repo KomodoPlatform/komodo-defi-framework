@@ -21,8 +21,8 @@
 //! and every time the future starts with `counter = 0`.
 
 use crate::executor::Timer;
-use crate::now_ms;
 use crate::number_type_casting::SafeTypeCastingNumbers;
+use crate::{now_ms, wait_until_ms};
 use futures::FutureExt;
 use log::warn;
 use std::fmt;
@@ -283,20 +283,20 @@ where
     /// Specifies a timeout in milliseconds before that we may try to repeat the future.
     /// Note this method name should differ from [`FutureTimerExt::timeout_ms`].
     #[inline]
-    pub fn with_timeout_ms(self, timeout_ms: u64) -> Self { self.until_ms(now_ms() + timeout_ms) }
+    pub fn with_timeout_ms(self, timeout_ms: u64) -> Self { self.until_ms(wait_until_ms(timeout_ms)) }
 
     /// Specifies a timeout in seconds before that we may try to repeat the future.
     /// Note this method name should differ from [`FutureTimerExt::timeout_secs`].
     #[inline]
     pub fn with_timeout_secs(self, timeout_secs: f64) -> Self {
         let timeout_ms = (timeout_secs * 1000.) as u64;
-        self.until_ms(now_ms() + timeout_ms)
+        self.until_ms(wait_until_ms(timeout_ms))
     }
 
     /// Checks if the deadline is not going to be reached after the `repeat_every` timeout.
     fn check_can_retry_after_timeout(&self, until_ms: u64) -> bool {
         let repeat_every_ms: u64 = self.repeat_every.as_millis().into_or_max();
-        let will_be_after_timeout = now_ms() + repeat_every_ms;
+        let will_be_after_timeout = wait_until_ms(repeat_every_ms);
         will_be_after_timeout < until_ms
     }
 }
@@ -513,7 +513,7 @@ mod tests {
 
         let fut = repeatable!(async { an_operation(&counter, ATTEMPTS_TO_FINISH).await.retry_on_err() })
             .repeat_every(Duration::from_millis(100))
-            .until_ms(now_ms() + HIGHEST_TIMEOUT.as_millis() as u64);
+            .until_ms(wait_until_ms(HIGHEST_TIMEOUT.as_millis() as u64));
 
         let before = Instant::now();
         let actual = block_on(fut);
@@ -540,7 +540,7 @@ mod tests {
 
         let counter = AsyncMutex::new(0);
 
-        let until_ms = now_ms() + HIGHEST_TIMEOUT.as_millis() as u64;
+        let until_ms = wait_until_ms(HIGHEST_TIMEOUT.as_millis() as u64);
 
         let fut = repeatable!(async { an_operation(&counter, ATTEMPTS_TO_FINISH).await.retry_on_err() })
             .repeat_every(Duration::from_millis(100))

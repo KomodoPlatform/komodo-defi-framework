@@ -4,32 +4,6 @@
 		"inputs": [
 			{
 				"indexed": false,
-				"internalType": "string",
-				"name": "message",
-				"type": "string"
-			}
-		],
-		"name": "Log",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "number",
-				"type": "uint256"
-			}
-		],
-		"name": "LogNumber",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
 				"internalType": "bytes32",
 				"name": "id",
 				"type": "bytes32"
@@ -139,6 +113,21 @@
 				"internalType": "uint64",
 				"name": "_lockTime",
 				"type": "uint64"
+			},
+			{
+				"internalType": "enum EtomicSwap.RewardTargetOnSpend",
+				"name": "_rewardTarget",
+				"type": "uint8"
+			},
+			{
+				"internalType": "bool",
+				"name": "_sendsContractRewardOnSpend",
+				"type": "bool"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_rewardAmount",
+				"type": "uint256"
 			}
 		],
 		"name": "erc20PaymentReward",
@@ -197,8 +186,18 @@
 				"type": "uint64"
 			},
 			{
+				"internalType": "enum EtomicSwap.RewardTargetOnSpend",
+				"name": "_rewardTarget",
+				"type": "uint8"
+			},
+			{
+				"internalType": "bool",
+				"name": "_sendsContractRewardOnSpend",
+				"type": "bool"
+			},
+			{
 				"internalType": "uint256",
-				"name": "_watcherReward",
+				"name": "_rewardAmount",
 				"type": "uint256"
 			}
 		],
@@ -273,8 +272,18 @@
 				"type": "address"
 			},
 			{
+				"internalType": "enum EtomicSwap.RewardTargetOnSpend",
+				"name": "_rewardTarget",
+				"type": "uint8"
+			},
+			{
+				"internalType": "bool",
+				"name": "_sendsContractRewardOnSpend",
+				"type": "bool"
+			},
+			{
 				"internalType": "uint256",
-				"name": "_watcherReward",
+				"name": "_rewardAmount",
 				"type": "uint256"
 			}
 		],
@@ -349,8 +358,18 @@
 				"type": "address"
 			},
 			{
+				"internalType": "enum EtomicSwap.RewardTargetOnSpend",
+				"name": "_rewardTarget",
+				"type": "uint8"
+			},
+			{
+				"internalType": "bool",
+				"name": "_sendsReward",
+				"type": "bool"
+			},
+			{
 				"internalType": "uint256",
-				"name": "_watcherReward",
+				"name": "_rewardAmount",
 				"type": "uint256"
 			}
 		],

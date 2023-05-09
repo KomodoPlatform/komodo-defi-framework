@@ -1,6 +1,6 @@
 use super::{MatchBy as SuperMatchBy, TakerAction};
 use crate::mm2::lp_ordermatch::{AlbOrderedOrderbookPair, OrderConfirmationsSettings, H64};
-use common::now_ms;
+use common::now_sec;
 use compact_uuid::CompactUuid;
 use mm2_number::{BigRational, MmNumber};
 use std::collections::{HashMap, HashSet};
@@ -177,7 +177,7 @@ impl MakerOrderUpdated {
             new_max_volume: None,
             new_min_volume: None,
             conf_settings: None,
-            timestamp: now_ms() / 1000,
+            timestamp: now_sec(),
             pair_trie_root: H64::default(),
         })
     }
@@ -304,7 +304,7 @@ mod new_protocol_tests {
     #[test]
     fn check_maker_order_updated_serde() {
         let uuid = CompactUuid::from(new_uuid());
-        let timestamp = now_ms() / 1000;
+        let timestamp = now_sec();
         let conf_settings = Some(OrderConfirmationsSettings {
             base_confs: 5,
             base_nota: true,

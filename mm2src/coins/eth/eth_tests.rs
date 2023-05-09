@@ -1,6 +1,6 @@
 use super::*;
 use crate::IguanaPrivKey;
-use common::block_on;
+use common::{block_on, now_sec_u32};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::for_tests::{ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT};
 use mocktopus::mocking::*;
@@ -254,7 +254,7 @@ fn send_and_refund_erc20_payment() {
     }));
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
-        time_lock: (now_ms() / 1000) as u32 - 200,
+        time_lock: now_sec_u32() - 200,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
         secret_hash: &[1; 20],
         amount: "0.001".parse().unwrap(),
@@ -271,7 +271,7 @@ fn send_and_refund_erc20_payment() {
 
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &payment.tx_hex(),
-        time_lock: (now_ms() / 1000) as u32 - 200,
+        time_lock: now_sec_u32() - 200,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
         secret_hash: &[1; 20],
         swap_contract_address: &coin.swap_contract_address(),
@@ -325,7 +325,7 @@ fn send_and_refund_eth_payment() {
     }));
     let send_maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
-        time_lock: (now_ms() / 1000) as u32 - 200,
+        time_lock: now_sec_u32() - 200,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
         secret_hash: &[1; 20],
         amount: "0.001".parse().unwrap(),
@@ -342,7 +342,7 @@ fn send_and_refund_eth_payment() {
     block_on(Timer::sleep(60.));
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &payment.tx_hex(),
-        time_lock: (now_ms() / 1000) as u32 - 200,
+        time_lock: now_sec_u32() - 200,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
         secret_hash: &[1; 20],
         swap_contract_address: &coin.swap_contract_address(),
@@ -466,7 +466,7 @@ fn test_wait_for_payment_spend_timeout() {
     };
 
     let coin = EthCoin(Arc::new(coin));
-    let wait_until = (now_ms() / 1000) - 1;
+    let wait_until = now_sec() - 1;
     let from_block = 1;
     // raw transaction bytes of https://etherscan.io/tx/0x0869be3e5d4456a29d488a533ad6c118620fef450f36778aecf31d356ff8b41f
     let tx_bytes = [
@@ -483,14 +483,15 @@ fn test_wait_for_payment_spend_timeout() {
     ];
 
     assert!(coin
-        .wait_for_htlc_tx_spend(
-            &tx_bytes,
-            &[],
+        .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+            tx_bytes: &tx_bytes,
+            secret_hash: &[],
             wait_until,
             from_block,
-            &coin.swap_contract_address(),
-            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL
-        )
+            swap_contract_address: &coin.swap_contract_address(),
+            check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+            watcher_reward: false
+        })
         .wait()
         .is_err());
 }

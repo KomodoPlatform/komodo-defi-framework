@@ -1642,8 +1642,8 @@ pub(super) fn make_random_orders(
             max_volume: BigRational::from_integer(1.into()),
             min_volume: BigRational::from_integer(0.into()),
             conf_settings: OrderConfirmationsSettings::default(),
-            created_at: now_ms() / 1000,
-            timestamp: now_ms() / 1000,
+            created_at: now_sec(),
+            timestamp: now_sec(),
             pair_trie_root: H64::default(),
             base_protocol_info: vec![],
             rel_protocol_info: vec![],
@@ -1836,7 +1836,7 @@ fn test_request_and_fill_orderbook() {
                     .collect();
                 let item = GetOrderbookPubkeyItem {
                     orders,
-                    last_keep_alive: now_ms() / 1000,
+                    last_keep_alive: now_sec(),
                     last_signed_pubkey_payload: vec![],
                 };
                 (pubkey, item)
@@ -2420,7 +2420,7 @@ fn test_orderbook_pubkey_sync_request() {
 
     let message = PubkeyKeepAlive {
         trie_roots,
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
     };
 
     let request = orderbook.process_keep_alive(pubkey, message, false).unwrap();
@@ -2451,7 +2451,7 @@ fn test_orderbook_pubkey_sync_request_relay() {
 
     let message = PubkeyKeepAlive {
         trie_roots,
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
     };
 
     let request = orderbook.process_keep_alive(pubkey, message, true).unwrap();
@@ -2872,7 +2872,7 @@ fn test_trie_state_bytes() {
     let max_volume = BigRational::from_integer(u64::MAX.into());
     let min_volume = BigRational::from_integer(1.into());
     let uuid = new_uuid();
-    let created_at = now_ms() / 1000;
+    let created_at = now_sec();
 
     #[derive(Serialize)]
     struct OrderbookItemV1 {

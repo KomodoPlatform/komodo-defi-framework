@@ -10,8 +10,8 @@ use coins::coin_errors::MyAddressError;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::solana::solana_coin_with_policy;
 use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
-use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, SolanaActivationParams,
-            SolanaCoin, SplToken};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, PrivKeyBuildPolicy,
+            SolanaActivationParams, SolanaCoin, SplToken};
 use common::Future01CompatExt;
 use common::{drop_mutability, true_f};
 use crypto::CryptoCtxError;
@@ -199,6 +199,16 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         )
         .await
         .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })
+    }
+
+    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match coin {
+            MmCoinEnum::SolanaCoin(coin) => Some(coin),
+            _ => None,
+        }
     }
 
     fn token_initializers(

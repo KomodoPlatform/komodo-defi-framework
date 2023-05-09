@@ -1,4 +1,5 @@
 mod big_int_str;
+pub mod bigdecimal_custom;
 mod fraction;
 mod mm_number;
 mod mm_number_multi_repr;

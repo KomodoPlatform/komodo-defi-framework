@@ -1,13 +1,12 @@
 use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum};
 use coins::lightning::ln_events::{CHANNEL_READY_LOG, PAYMENT_CLAIMABLE_LOG, SUCCESSFUL_CLAIM_LOG, SUCCESSFUL_SEND_LOG};
 use common::executor::Timer;
-use common::{block_on, log};
+use common::{block_on, log, wait_until_ms};
 use gstuff::now_ms;
 use http::StatusCode;
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{disable_coin, disable_coin_err, init_lightning, init_lightning_status, my_balance,
-                                  sign_message, start_swaps, verify_message, wait_for_swaps_finish_and_check_status,
-                                  MarketMakerIt};
+use mm2_test_helpers::for_tests::{disable_coin, init_lightning, init_lightning_status, my_balance, sign_message,
+                                  start_swaps, verify_message, wait_for_swaps_finish_and_check_status, MarketMakerIt};
 use mm2_test_helpers::structs::{InitLightningStatus, InitTaskResult, LightningActivationResult, RpcV2Response,
                                 SignatureResponse, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
@@ -24,7 +23,7 @@ const T_BTC_ELECTRUMS: &[&str] = &[
 async fn enable_lightning(mm: &MarketMakerIt, coin: &str, timeout: u64) -> LightningActivationResult {
     let init = init_lightning(mm, coin).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = now_ms() + (timeout * 1000);
+    let timeout = wait_until_ms(timeout * 1000);
 
     loop {
         if now_ms() > timeout {
@@ -405,14 +404,17 @@ fn test_enable_lightning() {
         "02ce55b18d617bf4ac27b0f045301a0bb4e71669ae45cb5f2529f2f217520ffca1"
     );
 
-    // Try to disable platform coin, tBTC-TEST-segwit. This should fail due to the dependent tokens.
-    let error = block_on(disable_coin_err(&mm, "tBTC-TEST-segwit"));
-    assert_eq!(error.dependent_tokens, ["tBTC-TEST-lightning"]);
+    // Try to passive tBTC-TEST-segwit platform coin.
+    let res = block_on(disable_coin(&mm, "tBTC-TEST-segwit", false));
+    assert!(res.passivized);
 
-    // Try to disable tBTC-TEST-lightning token first.
-    block_on(disable_coin(&mm, "tBTC-TEST-lightning"));
-    // Then try to disable tBTC-TEST-segwit platform coin.
-    block_on(disable_coin(&mm, "tBTC-TEST-segwit"));
+    // Try to disable tBTC-TEST-lightning token
+    // This should work, because platform coin is still in the memory.
+    let res = block_on(disable_coin(&mm, "tBTC-TEST-lightning", false));
+    assert!(!res.passivized);
+    // Try to force disable tBTC-TEST-segwit platform coin.
+    let res = block_on(disable_coin(&mm, "tBTC-TEST-segwit", true));
+    assert!(!res.passivized);
 
     // Stop mm2
     block_on(mm.stop()).unwrap();

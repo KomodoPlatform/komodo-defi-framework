@@ -2,7 +2,7 @@ use super::{addr_format_from_protocol_info, is_my_order, orderbook_address, subs
             OrdermatchContext, RpcOrderbookEntry, RpcOrderbookEntryV2};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf};
 use common::log::warn;
-use common::{now_ms, HttpStatusCode};
+use common::{now_sec, HttpStatusCode};
 use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use http::{Response, StatusCode};
@@ -206,7 +206,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
         bids,
         netid: ctx.netid(),
         rel: req.rel,
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
         total_asks_base: total_asks_base_vol.into(),
         total_asks_rel: total_asks_rel_vol.into(),
         total_bids_base: total_bids_base_vol.into(),
@@ -382,7 +382,7 @@ pub async fn orderbook_rpc_v2(
         net_id: ctx.netid(),
         base: req.base,
         rel: req.rel,
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
         total_asks_base_vol,
         total_asks_rel_vol,
         total_bids_base_vol,

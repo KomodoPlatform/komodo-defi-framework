@@ -1,11 +1,17 @@
 ## v1.0.4-beta - 2023-05-12
 
 **Features:**
+- NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
+  - Proxy support was added [#1775](https://github.com/KomodoPlatform/atomicDEX-API/pull/1775)
 
 **Enhancements/Fixes:**
 - Some enhancements were done for `enable_bch_with_tokens`,`enable_eth_with_tokens`,`enable_tendermint_with_assets` RPCs in [#1762](https://github.com/KomodoPlatform/atomicDEX-API/pull/1762)
   - A new parameter `get_balances` was added to the above methods requests, when this parameter is set to `false`, balances will not be returned in the response. The default value for this parameter is `true` to ensure backward compatibility.
   - Token balances requests are now performed concurrently for the above methods.
+- Swap watcher nodes [#1750](https://github.com/KomodoPlatform/atomicDEX-API/pull/1750)
+  - PoC for ETH/UTXO and ERC20/UTXO swaps with rewards
+  - Improved protocol to let only the taker pay the reward
+- Add passive parent coin state for keeping tokens active when platform is disabled [#1763](https://github.com/KomodoPlatform/atomicDEX-API/pull/1763)
 - Detect a chain reorganization, if it occurs, redownload and revalidate the new best chain headers for SPV  [#1728](https://github.com/KomodoPlatform/atomicDEX-API/pull/1728)
 
 
