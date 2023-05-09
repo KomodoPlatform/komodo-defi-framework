@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use chain::BlockHeader;
 use common::async_blocking;
-use db_common::sql_build::{SqlCondition, SqlDelete};
 use db_common::{sqlite::rusqlite::Error as SqlError,
                 sqlite::rusqlite::{Connection, Row, ToSql, NO_PARAMS},
                 sqlite::string_from_row,
@@ -84,6 +83,16 @@ fn get_last_block_header_with_non_max_bits_sql(
 fn get_block_height_by_hash(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
     let sql = format!("SELECT block_height FROM {} WHERE block_hash=?1;", table_name);
+
+    Ok(sql)
+}
+
+fn remove_headers_from_to_height_sql(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
+    let table_name = get_table_name_and_validate(for_coin)?;
+    let sql = format!(
+        "DELETE FROM {table_name} WHERE block_height BETWEEN ?1 AND
+    ?2;"
+    );
 
     Ok(sql)
 }
@@ -305,20 +314,13 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         to_height: u64,
     ) -> Result<(), BlockHeaderStorageError> {
         let coin = self.ticker.clone();
-        let table_name = get_table_name_and_validate(&coin)?;
-        let from_height_sql: i64 = from_height
-            .try_into()
-            .map_err(|e: TryFromIntError| BlockHeaderStorageError::Internal(e.to_string()))?;
-        let to_height_sql: i64 = to_height
-            .try_into()
-            .map_err(|e: TryFromIntError| BlockHeaderStorageError::Internal(e.to_string()))?;
+        let sql = remove_headers_from_to_height_sql(&coin)?;
+        let params = vec![from_height.to_string(), to_height.to_string()];
         let selfi = self.clone();
 
         async_blocking(move || {
             let conn = selfi.conn.lock().unwrap();
-            let mut sql_delete_headers = SqlDelete::new(&conn, &table_name)?;
-            sql_delete_headers.and_where_between("block_height", from_height_sql, to_height_sql)?;
-            sql_delete_headers.delete()
+            conn.execute(&sql, &params)
         })
         .await
         .map_err(|err| BlockHeaderStorageError::UnableToDeleteHeaders {
