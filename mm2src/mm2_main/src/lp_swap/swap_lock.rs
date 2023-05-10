@@ -4,6 +4,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use uuid::Uuid;
 
+#[cfg(target_arch = "wasm32")] use common::now_sec;
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_lock::SwapLock;
 #[cfg(target_arch = "wasm32")] pub use wasm_lock::SwapLock;
@@ -144,7 +145,7 @@ mod wasm_lock {
 
             let item = SwapLockTable {
                 uuid,
-                timestamp: now_ms() / 1000,
+                timestamp: now_sec(),
             };
             let record_id = table.add_item(&item).await?;
 
@@ -161,7 +162,7 @@ mod wasm_lock {
 
             let item = SwapLockTable {
                 uuid: self.swap_uuid,
-                timestamp: now_ms() / 1000,
+                timestamp: now_sec(),
             };
 
             let transaction = db.transaction().await?;
@@ -217,7 +218,7 @@ mod tests {
         let ctx = MmCtxBuilder::new().with_test_db_namespace().into_mm_arc();
         let uuid = new_uuid();
 
-        let started_at = now_ms() / 1000;
+        let started_at = now_sec();
         let swap_lock = SwapLock::lock(&ctx, uuid, 10.)
             .await
             .expect("!SwapLock::lock")
@@ -261,7 +262,7 @@ mod tests {
         let ctx = MmCtxBuilder::new().with_test_db_namespace().into_mm_arc();
         let uuid = new_uuid();
 
-        let started_at = now_ms() / 1000;
+        let started_at = now_sec();
         let first_lock = SwapLock::lock(&ctx, uuid, 1.)
             .await
             .expect("!SwapLock::lock")

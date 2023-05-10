@@ -1,10 +1,10 @@
-pub use common::{block_on, now_ms};
+pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
 pub use mm2_number::MmNumber;
-use mm2_test_helpers::for_tests::ETH_SEPOLIA_NODE;
-use mm2_test_helpers::for_tests::ETH_SEPOLIA_SWAP_CONTRACT;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                      enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS,
-                                      MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+                                      enable_native_bch, eth_sepolia_conf, jst_sepolia_conf, mm_dump, MarketMakerIt,
+                                      MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
+                                      TAKER_SUCCESS_EVENTS};
+use mm2_test_helpers::for_tests::{ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT, ETH_SEPOLIA_TOKEN_CONTRACT};
 pub use secp256k1::{PublicKey, SecretKey};
 pub use std::env;
 pub use std::thread;
@@ -31,8 +31,7 @@ use http::StatusCode;
 use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{enable_native, eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES,
-                                  ETH_DEV_SWAP_CONTRACT};
+use mm2_test_helpers::for_tests::{enable_native, eth_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::structs::{MyBalanceResponse, TransactionDetails};
 use primitives::hash::{H160, H256};
 use script::Builder;
@@ -80,7 +79,7 @@ pub trait CoinDockerOps {
     }
 
     fn wait_ready(&self, expected_tx_version: i32) {
-        let timeout = now_ms() + 120000;
+        let timeout = wait_until_ms(120000);
         loop {
             match self.rpc_client().get_block_count().wait() {
                 Ok(n) => {
@@ -178,7 +177,7 @@ pub fn generate_eth_coin_with_seed(seed: &str) -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "ETH",
-        &eth_testnet_conf(),
+        &eth_sepolia_conf(),
         &req,
         CoinProtocol::ETH,
         priv_key_policy,
@@ -199,11 +198,11 @@ pub fn generate_jst_with_seed(seed: &str) -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "JST",
-        &eth_jst_testnet_conf(),
+        &jst_sepolia_conf(),
         &req,
         CoinProtocol::ERC20 {
             platform: "ETH".into(),
-            contract_address: String::from("0x948BF5172383F1Bc0Fdf3aBe0630b855694A5D2c"),
+            contract_address: String::from(ETH_SEPOLIA_TOKEN_CONTRACT),
         },
         priv_key_policy,
     ))
@@ -281,7 +280,7 @@ impl BchDockerOps {
             payment_tx: slp_genesis_tx.tx_hex(),
             confirmations: 1,
             requires_nota: false,
-            wait_until: now_ms() / 1000 + 30,
+            wait_until: wait_until_sec(30),
             check_every: 1,
         };
         self.coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
@@ -300,7 +299,7 @@ impl BchDockerOps {
             payment_tx: tx.tx_hex(),
             confirmations: 1,
             requires_nota: false,
-            wait_until: now_ms() / 1000 + 30,
+            wait_until: wait_until_sec(30),
             check_every: 1,
         };
         self.coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
@@ -358,7 +357,7 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
         .arg(&conf_path)
         .status()
         .expect("Failed to execute docker command");
-    let timeout = now_ms() + 3000;
+    let timeout = wait_until_ms(3000);
     loop {
         if conf_path.exists() {
             break;
@@ -526,7 +525,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
     // is called concurrently (insufficient funds) and it also may return other errors
     // if previous transaction is not confirmed yet
     let _lock = QTUM_LOCK.lock().unwrap();
-    let timeout = now_ms() / 1000 + timeout;
+    let timeout = wait_until_sec(timeout);
     let client = match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref client) => client,
         UtxoRpcClientEnum::Electrum(_) => panic!("Expected NativeClient"),
@@ -662,7 +661,7 @@ where
         ticker => panic!("Unknown ticker {}", ticker),
     };
     let _lock = mutex.lock().unwrap();
-    let timeout = now_ms() / 1000 + timeout;
+    let timeout = wait_until_sec(timeout);
 
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
         client.import_address(address, address, false).wait().unwrap();
@@ -685,7 +684,7 @@ where
             if !unspents.is_empty() {
                 break;
             }
-            assert!(now_ms() / 1000 < timeout, "Test timed out");
+            assert!(now_sec() < timeout, "Test timed out");
             thread::sleep(Duration::from_secs(1));
         }
     };
@@ -711,12 +710,12 @@ pub fn wait_for_estimate_smart_fee(timeout: u64) -> Result<(), String> {
 
     let priv_key = random_secp256k1_secret();
     let (_ctx, coin) = qrc20_coin_from_privkey("QICK", priv_key);
-    let timeout = now_ms() / 1000 + timeout;
+    let timeout = wait_until_sec(timeout);
     let client = match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref client) => client,
         UtxoRpcClientEnum::Electrum(_) => panic!("Expected NativeClient"),
     };
-    while now_ms() / 1000 < timeout {
+    while now_sec() < timeout {
         if let Ok(res) = client.estimate_smart_fee(&None, 1).wait() {
             if res.errors.is_empty() {
                 *state = EstimateSmartFeeState::Ok;

@@ -1,8 +1,8 @@
 use super::*;
 use crate::utxo::rpc_clients::UnspentInfo;
-use crate::TxFeeDetails;
+use crate::{TxFeeDetails, WaitForHTLCTxSpendArgs};
 use chain::OutPoint;
-use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{block_on, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmCtxBuilder;
@@ -167,10 +167,10 @@ fn test_validate_maker_payment() {
         secret_hash: vec![1; 20],
         amount: correct_amount.clone(),
         swap_contract_address: coin.swap_contract_address(),
-        try_spv_proof_until: now_ms() / 1000 + 30,
+        try_spv_proof_until: wait_until_sec(30),
         confirmations: 1,
         unique_swap_data: Vec::new(),
-        min_watcher_reward: None,
+        watcher_reward: None,
     };
 
     coin.validate_maker_payment(input.clone()).wait().unwrap();
@@ -258,7 +258,7 @@ fn test_wait_for_confirmations_excepted() {
 
     let confirmations = 1;
     let requires_nota = false;
-    let wait_until = (now_ms() / 1000) + 1; // the transaction is mined already
+    let wait_until = now_sec() + 1; // the transaction is mined already
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx,
@@ -473,17 +473,18 @@ fn test_wait_for_tx_spend_malicious() {
 
     // 15fd8f71be6b2678b021e1300e67fa99574a2ad877df08276ac275728ac12304
     let payment_tx = hex::decode("01000000016601daa208531d20532c460d0c86b74a275f4a126bbffcf4eafdf33835af2859010000006a47304402205825657548bc1b5acf3f4bb2f89635a02b04f3228cd08126e63c5834888e7ac402207ca05fa0a629a31908a97a508e15076e925f8e621b155312b7526a6666b06a76012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000e35403a0860101284cc49b415b2a8620ad3b72361a5aeba5dffd333fb64750089d935a1ec974d6a91ef4f24ff6ba0000000000000000000000000000000000000000000000000000000001312d00000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad8324b6b2e5444c2639cc0fb7bcea5afba3f3cdce239000000000000000000000000000000000000000000000000000000000000000000000000000000005f855c7614ba8b71f3544b93e2f681f996da519a98ace0107ac2203de400000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac415d855f").unwrap();
-    let wait_until = (now_ms() / 1000) + 1;
+    let wait_until = now_sec() + 1;
     let from_block = 696245;
     let found = coin
-        .wait_for_htlc_tx_spend(
-            &payment_tx,
-            &[],
+        .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+            tx_bytes: &payment_tx,
+            secret_hash: &[],
             wait_until,
             from_block,
-            &coin.swap_contract_address(),
-            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-        )
+            swap_contract_address: &coin.swap_contract_address(),
+            check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+            watcher_reward: false,
+        })
         .wait()
         .unwrap();
 
@@ -1066,11 +1067,11 @@ fn test_validate_maker_payment_malicious() {
         secret_hash,
         amount,
         swap_contract_address: coin.swap_contract_address(),
-        try_spv_proof_until: now_ms() / 1000 + 30,
+        try_spv_proof_until: wait_until_sec(30),
         confirmations: 1,
         other_pub: maker_pub,
         unique_swap_data: Vec::new(),
-        min_watcher_reward: None,
+        watcher_reward: None,
     };
     let error = coin
         .validate_maker_payment(input)

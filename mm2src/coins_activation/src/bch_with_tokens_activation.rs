@@ -8,6 +8,7 @@ use coins::utxo::rpc_clients::UtxoRpcError;
 use coins::utxo::slp::{EnableSlpError, SlpProtocolConf, SlpToken};
 use coins::utxo::utxo_tx_history_v2::bch_and_slp_history_loop;
 use coins::utxo::UtxoCommonOps;
+use coins::MmCoinEnum;
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
             UnexpectedDerivationMethod};
 use common::executor::{AbortSettings, SpawnAbortable};
@@ -235,6 +236,16 @@ impl PlatformWithTokensActivationOps for BchCoin {
         .await
         .map_to_mm(|error| BchWithTokensActivationError::PlatformCoinCreationError { ticker, error })?;
         Ok(platform_coin)
+    }
+
+    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match coin {
+            MmCoinEnum::Bch(coin) => Some(coin),
+            _ => None,
+        }
     }
 
     fn token_initializers(

@@ -2,8 +2,8 @@ use crate::docker_tests::docker_tests_common::*;
 use crate::integration_tests_common::enable_native;
 use http::StatusCode;
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{assert_coin_not_found_on_balance, disable_coin, disable_coin_err,
-                                  enable_bch_with_tokens, enable_slp, my_balance, UtxoRpcMode};
+use mm2_test_helpers::for_tests::{assert_coin_not_found_on_balance, disable_coin, enable_bch_with_tokens, enable_slp,
+                                  my_balance, UtxoRpcMode};
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableElectrumResponse, EnableSlpResponse, RpcV2Response};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashSet;
@@ -238,13 +238,15 @@ fn test_disable_platform_coin_with_tokens() {
         false,
     ));
     // Try to disable ADEXSLP token.
-    block_on(disable_coin(&mm, "ADEXSLP"));
+    let res = block_on(disable_coin(&mm, "ADEXSLP", false));
+    assert!(!res.passivized);
     // Check if platform_coin FORSLP is still enabled.
     block_on(my_balance(&mm, "FORSLP"));
     // Check if ADEXSLP token still enabled.
     block_on(assert_coin_not_found_on_balance(&mm, "ADEXSLP"));
     // Try to disable patform_coin.
-    block_on(disable_coin(&mm, "FORSLP"));
+    let res = block_on(disable_coin(&mm, "FORSLP", false));
+    assert!(!res.passivized);
 
     // Enable enable_bch_with_tokens again to restart the process
     let _ = block_on(enable_bch_with_tokens(
@@ -254,7 +256,8 @@ fn test_disable_platform_coin_with_tokens() {
         UtxoRpcMode::Native,
         false,
     ));
-    // Try to disable platform coin, FORSLP. This should fail due to the dependent tokens.
-    let error = block_on(disable_coin_err(&mm, "FORSLP"));
-    assert_eq!(error.dependent_tokens, ["ADEXSLP"]);
+
+    // Try to force disable platform coin, FORSLP.
+    let res = block_on(disable_coin(&mm, "FORSLP", true));
+    assert!(!res.passivized);
 }

@@ -269,7 +269,7 @@ jobs:
       if: ${{ env.AVAILABLE != '' }}
       run: |
         NAME="mm2_$COMMIT_HASH-wasm.zip"
-        zip $NAME ./target/target-wasm-release/mm2lib_bg.wasm ./target/target-wasm-release/mm2lib.js ./target/target-wasm-release/snippets -j
+        (cd ./target/target-wasm-release && zip -r - .) > $NAME
         mkdir $BRANCH_NAME
         mv $NAME ./$BRANCH_NAME/
 

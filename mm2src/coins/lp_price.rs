@@ -2,8 +2,12 @@ use common::log::{debug, error};
 use common::StatusCode;
 use mm2_err_handle::prelude::{MmError, OrMmError};
 use mm2_net::transport::SlurpError;
+#[cfg(not(feature = "run-docker-tests"))]
+use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
+use num_traits::CheckedDiv;
 use std::collections::HashMap;
+#[cfg(feature = "run-docker-tests")] use std::str::FromStr;
 use std::str::Utf8Error;
 
 const PRICE_ENDPOINTS: [&str; 2] = [
@@ -163,7 +167,16 @@ impl TickerInfosRegistry {
                     };
                 rate_infos.base_price = base_price_infos.last_price.clone();
                 rate_infos.rel_price = rel_price_infos.last_price.clone();
-                rate_infos.price = &base_price_infos.last_price / &rel_price_infos.last_price;
+                rate_infos.price = match base_price_infos.last_price.checked_div(&rel_price_infos.last_price) {
+                    Some(res) => res,
+                    None => {
+                        debug!(
+                            "Invalid division ({}/{})",
+                            base_price_infos.last_price, rel_price_infos.last_price
+                        );
+                        return None;
+                    },
+                };
                 Some(rate_infos)
             },
             None => None,
@@ -225,6 +238,22 @@ async fn try_price_fetcher_endpoint(
     })
 }
 
+#[cfg(feature = "run-docker-tests")]
+#[inline]
+pub async fn get_base_price_in_rel(_base: Option<String>, _rel: Option<String>) -> Option<BigDecimal> {
+    std::env::var("TEST_COIN_PRICE")
+        .ok()
+        .map(|price| BigDecimal::from_str(&price).expect("TEST_COIN_PRICE should be set to a valid number"))
+}
+
+#[cfg(not(feature = "run-docker-tests"))]
+#[inline]
+pub async fn get_base_price_in_rel(base: Option<String>, rel: Option<String>) -> Option<BigDecimal> {
+    fetch_swap_coins_price(base, rel)
+        .await
+        .and_then(|rates| rates.base.checked_div(rates.rel))
+}
+
 /// Consume `try_price_fetcher_endpoint` result here using different endpoints.
 /// Return price data on success or None on failure.
 pub async fn fetch_swap_coins_price(base: Option<String>, rel: Option<String>) -> Option<CEXRates> {
@@ -268,7 +297,7 @@ mod tests {
         use mm2_number::MmNumber;
         use wasm_timer::SystemTime;
 
-        use crate::mm2::lp_price::{Provider, TickerInfos, TickerInfosRegistry};
+        use crate::lp_price::{Provider, TickerInfos, TickerInfosRegistry};
 
         let mut registry = TickerInfosRegistry::default();
         let rates = registry.get_cex_rates("KMD", "LTC").unwrap_or_default();

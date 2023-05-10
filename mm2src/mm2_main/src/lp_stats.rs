@@ -1,7 +1,7 @@
 /// The module is responsible for mm2 network stats collection
 ///
 use common::executor::{SpawnFuture, Timer};
-use common::{log, now_ms, HttpStatusCode};
+use common::{log, HttpStatusCode};
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use http::StatusCode;
@@ -267,6 +267,8 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn stat_collection_loop(ctx: MmArc, interval: f64) {
+    use common::now_sec;
+
     use crate::mm2::database::stats_nodes::select_peers_names;
 
     let mut interval = interval;
@@ -303,7 +305,7 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
 
             let peers: Vec<String> = peers_names.keys().cloned().collect();
 
-            let timestamp = now_ms() / 1000;
+            let timestamp = now_sec();
             let get_versions_res = match request_peers::<String>(
                 ctx.clone(),
                 P2PRequest::NetworkInfo(NetworkInfoRequest::GetMm2Version),

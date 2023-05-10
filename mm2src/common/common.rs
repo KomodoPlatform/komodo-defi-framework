@@ -661,6 +661,16 @@ pub fn now_float() -> f64 {
     duration_to_float(Duration::from_millis(now_ms()))
 }
 
+pub fn wait_until_sec(seconds: u64) -> u64 { (now_ms() / 1000) + seconds }
+
+pub fn wait_until_ms(milliseconds: u64) -> u64 { now_ms() + milliseconds }
+
+pub fn now_sec() -> u64 { now_ms() / 1000 }
+
+pub fn now_sec_u32() -> u32 { (now_ms() / 1000) as u32 }
+
+pub fn now_sec_i64() -> i64 { (now_ms() / 1000) as i64 }
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn temp_dir() -> PathBuf { env::temp_dir() }
 

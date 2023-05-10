@@ -1,26 +1,30 @@
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::eth::EthCoinType;
 use crate::hd_confirm_address::HDConfirmAddress;
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, HDAccountsMap,
                        NewAccountCreatingError, NewAddressDeriveConfirmError, NewAddressDerivingError};
 use crate::hd_wallet_storage::{HDWalletCoinWithStorageOps, HDWalletStorageResult};
+use crate::lp_price::get_base_price_in_rel;
 use crate::rpc_command::init_withdraw::WithdrawTaskHandle;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
                                UtxoRpcClientOps, UtxoRpcResult};
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
+use crate::watcher_common::validate_watcher_reward;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GetWithdrawSenderAddress,
             HDAccountAddressId, RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
-            SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails,
-            TxMarshalingErr, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
-            EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
-            INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut,
+            TxFeeDetails, TxMarshalingErr, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult,
+            WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
+            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
 use chain::constants::SEQUENCE_FINAL;
@@ -28,7 +32,7 @@ use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::{error, warn};
-use common::{now_ms, one_hundred, ten_f64};
+use common::{one_hundred, ten_f64};
 use crypto::{Bip32DerPathOps, Bip44Chain, RpcDerivationPath, StandardHDPath, StandardHDPathError};
 use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
@@ -39,6 +43,7 @@ use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Compact
            Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
@@ -1080,7 +1085,7 @@ pub async fn calc_interest_if_required<T: UtxoCommonOps>(
         };
     } else {
         // if interest is zero attempt to set the lowest possible lock_time to claim it later
-        unsigned.lock_time = (now_ms() / 1000) as u32 - 3600 + 777 * 2;
+        unsigned.lock_time = now_sec_u32() - 3600 + 777 * 2;
     }
     let rewards_amount = big_decimal_from_sat_unsigned(interest, coin.as_ref().decimals);
     data.kmd_rewards = Some(KmdRewardsDetails::claimed_by_me(rewards_amount));
@@ -1103,7 +1108,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
     }
     let lock_time = try_s!(coin.p2sh_tx_locktime(input.lock_time).await);
     let n_time = if coin.as_ref().conf.is_pos {
-        Some((now_ms() / 1000) as u32)
+        Some(now_sec_u32())
     } else {
         None
     };
@@ -1225,6 +1230,11 @@ pub fn send_taker_payment<T>(coin: T, args: SendPaymentArgs) -> TransactionFut
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
+    let total_amount = match args.watcher_reward {
+        Some(reward) => args.amount + reward.amount,
+        None => args.amount,
+    };
+
     let taker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let SwapPaymentOutputsResult {
         payment_address,
@@ -1235,7 +1245,7 @@ where
         taker_htlc_key_pair.public_slice(),
         args.other_pubkey,
         args.secret_hash,
-        args.amount
+        total_amount
     ));
 
     let send_fut = match &coin.as_ref().rpc_client {
@@ -1816,7 +1826,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                 )));
             }
 
-            if (now_ms() / 1000) as u32 - taker_fee_tx.lock_time > lock_duration as u32 {
+            if now_sec_u32() - taker_fee_tx.lock_time > lock_duration as u32 {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "{}: Taker fee {:?} is too old",
                     OLD_TRANSACTION_ERR_LOG, taker_fee_tx
@@ -1962,6 +1972,7 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
+        input.watcher_reward,
         input.time_lock,
         input.try_spv_proof_until,
         input.confirmations,
@@ -2033,9 +2044,7 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
 
         if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
             if coin.as_ref().conf.spv_conf.is_some() && input.confirmations != 0 {
-                client
-                    .validate_spv_proof(&taker_payment_tx, input.try_spv_proof_until)
-                    .await?;
+                client.validate_spv_proof(&taker_payment_tx, input.wait_until).await?;
             }
         }
         Ok(())
@@ -2063,6 +2072,7 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
+        input.watcher_reward,
         input.time_lock,
         input.try_spv_proof_until,
         input.confirmations,
@@ -2182,6 +2192,57 @@ pub async fn search_for_swap_tx_spend_other<T: AsRef<UtxoCoinFields> + SwapOps>(
         input.search_from_block,
     )
     .await
+}
+
+pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps>(
+    coin: &T,
+    other_coin: &MmCoinEnum,
+    coin_amount: Option<BigDecimal>,
+    other_coin_amount: Option<BigDecimal>,
+    reward_amount: Option<BigDecimal>,
+    wait_until: u64,
+) -> Result<WatcherReward, MmError<WatcherRewardError>> {
+    let reward_target = RewardTarget::PaymentReceiver;
+    let is_exact_amount = reward_amount.is_some();
+
+    let other_coin = match other_coin {
+        MmCoinEnum::EthCoin(coin) => coin,
+        _ => {
+            return Err(WatcherRewardError::InvalidCoinType(
+                "At least one coin must be Ethereum to use watcher rewards".to_string(),
+            )
+            .into())
+        },
+    };
+
+    let amount = match reward_amount {
+        Some(amount) => amount,
+        None => {
+            let gas_cost_eth = other_coin.get_watcher_reward_amount(wait_until).await?;
+            let price_in_eth = if let (EthCoinType::Eth, Some(coin_amount), Some(other_coin_amount)) =
+                (&other_coin.coin_type, coin_amount, other_coin_amount)
+            {
+                other_coin_amount.checked_div(coin_amount)
+            } else {
+                get_base_price_in_rel(Some(coin.ticker().to_string()), Some("ETH".to_string())).await
+            };
+
+            price_in_eth
+                .and_then(|price_in_eth| gas_cost_eth.checked_div(price_in_eth))
+                .ok_or_else(|| {
+                    WatcherRewardError::RPCError(format!("Price of coin {} in ETH could not be found", coin.ticker()))
+                })?
+        },
+    };
+
+    let send_contract_reward_on_spend = false;
+
+    Ok(WatcherReward {
+        amount,
+        is_exact_amount,
+        reward_target,
+        send_contract_reward_on_spend,
+    })
 }
 
 /// Extract a secret from the `spend_tx`.
@@ -2370,7 +2431,7 @@ pub fn wait_for_output_spend(
                 Err(e) => error!("Error on find_output_spend_of_tx: {}", e),
             };
 
-            if now_ms() / 1000 > wait_until {
+            if now_sec() > wait_until {
                 return TX_PLAIN_ERR!(
                     "Waited too long until {} for transaction {:?} {} to be spent ",
                     wait_until,
@@ -3400,7 +3461,7 @@ where
     };
 
     // pass the dummy params
-    let time_lock = (now_ms() / 1000) as u32;
+    let time_lock = now_sec_u32();
     let my_pub = &[0; 33]; // H264 is 33 bytes
     let other_pub = &[0; 33]; // H264 is 33 bytes
     let secret_hash = &[0; 20]; // H160 is 20 bytes
@@ -3747,6 +3808,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
     second_pub0: &Public,
     priv_bn_hash: &[u8],
     amount: BigDecimal,
+    watcher_reward: Option<WatcherReward>,
     time_lock: u32,
     try_spv_proof_until: u64,
     confirmations: u64,
@@ -3777,16 +3839,32 @@ pub fn validate_payment<T: UtxoCommonOps>(
             )));
         }
 
-        let expected_output = TransactionOutput {
-            value: amount,
-            script_pubkey: Builder::build_p2sh(&dhash160(&expected_redeem).into()).into(),
+        let expected_script_pubkey: Bytes = Builder::build_p2sh(&dhash160(&expected_redeem).into()).into();
+
+        let actual_output = match tx.outputs.get(output_index) {
+            Some(output) => output,
+            None => {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                    "Payment tx has no outputs".to_string(),
+                ))
+            },
         };
 
-        let actual_output = tx.outputs.get(output_index);
-        if actual_output != Some(&expected_output) {
+        if expected_script_pubkey != actual_output.script_pubkey {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Provided payment tx output doesn't match expected {:?} {:?}",
-                actual_output, expected_output
+                "Provided payment tx script pubkey doesn't match expected {:?} {:?}",
+                actual_output.script_pubkey, expected_script_pubkey
+            )));
+        }
+
+        if let Some(watcher_reward) = watcher_reward {
+            let expected_reward = sat_from_big_decimal(&watcher_reward.amount, coin.as_ref().decimals)?;
+            let actual_reward = actual_output.value - amount;
+            validate_watcher_reward(expected_reward, actual_reward, false)?;
+        } else if actual_output.value != amount {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Provided payment tx output value doesn't match expected {:?} {:?}",
+                actual_output.value, amount
             )));
         }
 
@@ -4095,7 +4173,7 @@ pub async fn can_refund_htlc<T>(coin: &T, locktime: u64) -> Result<CanRefundHtlc
 where
     T: UtxoCommonOps,
 {
-    let now = now_ms() / 1000;
+    let now = now_sec();
     if now < locktime {
         let to_wait = locktime - now + 1;
         return Ok(CanRefundHtlc::HaveToWait(to_wait.min(3600)));
@@ -4117,7 +4195,7 @@ where
     T: UtxoCommonOps,
 {
     let lock_time = if ticker == "KMD" {
-        (now_ms() / 1000) as u32 - 3600 + 2 * 777
+        now_sec_u32() - 3600 + 2 * 777
     } else {
         coin.get_current_mtp().await? - 1
     };

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use common::{now_ms, PagingOptionsEnum};
+use common::{now_sec_i64, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::types::FromSqlError;
 use derive_more::Display;
 use lightning::ln::{PaymentHash, PaymentPreimage};
@@ -58,7 +58,7 @@ impl DBChannelDetails {
             is_outbound,
             is_public,
             is_closed: false,
-            created_at: (now_ms() / 1000) as i64,
+            created_at: now_sec_i64(),
             closed_at: None,
         }
     }
@@ -156,8 +156,8 @@ impl PaymentInfo {
             amt_msat,
             fee_paid_msat: None,
             status: HTLCStatus::Pending,
-            created_at: (now_ms() / 1000) as i64,
-            last_updated: (now_ms() / 1000) as i64,
+            created_at: now_sec_i64(),
+            last_updated: now_sec_i64(),
         }
     }
 

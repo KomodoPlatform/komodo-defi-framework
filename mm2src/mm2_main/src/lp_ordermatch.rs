@@ -31,7 +31,7 @@ use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableS
                        SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
-use common::{bits256, log, new_uuid, now_ms};
+use common::{bits256, log, new_uuid, now_ms, now_sec, now_sec_i64};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
@@ -1033,8 +1033,8 @@ fn maker_order_created_p2p_notify(
         max_volume: order.available_amount().to_ratio(),
         min_volume: order.min_base_vol.to_ratio(),
         conf_settings: order.conf_settings.unwrap(),
-        created_at: now_ms() / 1000,
-        timestamp: now_ms() / 1000,
+        created_at: now_sec(),
+        timestamp: now_sec(),
         pair_trie_root: H64::default(),
         base_protocol_info,
         rel_protocol_info,
@@ -1076,7 +1076,7 @@ fn maker_order_updated_p2p_notify(
 fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
     let message = new_protocol::OrdermatchMessage::MakerOrderCancelled(new_protocol::MakerOrderCancelled {
         uuid: order.uuid.into(),
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
         pair_trie_root: H64::default(),
     });
     delete_my_order(&ctx, order.uuid, order.p2p_privkey);
@@ -2321,7 +2321,7 @@ fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook
 
     let message = new_protocol::PubkeyKeepAlive {
         trie_roots,
-        timestamp: now_ms() / 1000,
+        timestamp: now_sec(),
     };
 
     broadcast_ordermatch_message(ctx, topics, message.into(), p2p_privkey);
@@ -2446,7 +2446,7 @@ struct OrderbookPubkeyState {
 impl OrderbookPubkeyState {
     pub fn with_history_timeout(ttl: Duration) -> OrderbookPubkeyState {
         OrderbookPubkeyState {
-            last_keep_alive: now_ms() / 1000,
+            last_keep_alive: now_sec(),
             order_pairs_trie_state_history: TimeCache::new(ttl),
             orders_uuids: HashSet::default(),
             trie_roots: HashMap::default(),
@@ -2697,7 +2697,7 @@ impl Orderbook {
         i_am_relay: bool,
     ) -> Option<OrdermatchRequest> {
         let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-        pubkey_state.last_keep_alive = now_ms() / 1000;
+        pubkey_state.last_keep_alive = now_sec();
         let mut trie_roots_to_request = HashMap::new();
         for (alb_pair, trie_root) in message.trie_roots {
             let subscribed = self
@@ -2988,7 +2988,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             uuid
         );
 
-        let now = now_ms() / 1000;
+        let now = now_sec();
         if let Err(e) = insert_new_swap_to_db(ctx.clone(), maker_coin.ticker(), taker_coin.ticker(), uuid, now).await {
             error!("Error {} on new swap insertion", e);
         }
@@ -3100,7 +3100,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             uuid
         );
 
-        let now = now_ms() / 1000;
+        let now = now_sec();
         if let Err(e) = insert_new_swap_to_db(ctx.clone(), taker_coin.ticker(), maker_coin.ticker(), uuid, now).await {
             error!("Error {} on new swap insertion", e);
         }
@@ -3148,7 +3148,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             let mut uuids_to_remove = vec![];
             let mut pubkeys_to_remove = vec![];
             for (pubkey, state) in orderbook.pubkeys_state.iter() {
-                let to_keep = pubkey == &my_pubsecp || state.last_keep_alive + maker_order_timeout > now_ms() / 1000;
+                let to_keep = pubkey == &my_pubsecp || state.last_keep_alive + maker_order_timeout > now_sec();
                 if !to_keep {
                     for (uuid, _) in &state.orders_uuids {
                         uuids_to_remove.push(*uuid);
@@ -3985,7 +3985,7 @@ impl OrderbookP2PItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: (now_ms() as i64 / 1000),
+            age: now_sec_i64(),
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -4051,7 +4051,7 @@ impl OrderbookP2PItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: (now_ms() as i64 / 1000),
+            age: now_sec_i64(),
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -4213,7 +4213,7 @@ impl OrderbookItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: (now_ms() as i64 / 1000),
+            age: now_sec_i64(),
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -4249,7 +4249,7 @@ impl OrderbookItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: (now_ms() as i64 / 1000),
+            age: now_sec_i64(),
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -5565,7 +5565,7 @@ pub(self) async fn subscribe_to_orderbook_topic(
     rel: &str,
     request_orderbook: bool,
 ) -> Result<(), String> {
-    let current_timestamp = now_ms() / 1000;
+    let current_timestamp = now_sec();
     let topic = orderbook_topic_from_base_rel(base, rel);
     let is_orderbook_filled = {
         let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
