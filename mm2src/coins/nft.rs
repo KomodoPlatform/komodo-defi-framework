@@ -243,8 +243,6 @@ async fn send_moralis_request(uri: &str) -> MmResult<Json, GetNftInfoError> {
     }
 
     let result = FetchRequest::get(uri)
-        .cors()
-        .body_utf8("".to_owned())
         .header(ACCEPT.as_str(), APPLICATION_JSON)
         .request_str()
         .await;
