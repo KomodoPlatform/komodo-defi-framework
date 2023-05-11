@@ -19,7 +19,7 @@ use common::{median, now_float, now_ms, now_sec, OrdRange};
 use derive_more::Display;
 use futures::channel::oneshot as async_oneshot;
 use futures::compat::{Future01CompatExt, Stream01CompatExt};
-use futures::future::{FutureExt, TryFutureExt};
+use futures::future::{join_all, FutureExt, TryFutureExt};
 use futures::lock::Mutex as AsyncMutex;
 use futures::{select, StreamExt};
 use futures01::future::select_ok;
@@ -1757,6 +1757,9 @@ impl ElectrumClientImpl {
         false
     }
 
+    /// Check if all connections have been removed.
+    pub async fn is_connections_pool_empty(&self) -> bool { self.connections.lock().await.is_empty() }
+
     pub async fn count_connections(&self) -> usize { self.connections.lock().await.len() }
 
     /// Check if the protocol version was checked for one of the spawned connections.
@@ -1844,6 +1847,24 @@ impl ElectrumClient {
     ) -> RpcRes<ElectrumProtocolVersion> {
         let protocol_version: Vec<String> = version.flatten().into_iter().map(|v| format!("{}", v)).collect();
         rpc_func_from!(self, server_address, "server.version", client_name, protocol_version)
+    }
+
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-headers-subscribe
+    pub fn get_block_count_from(&self, server_address: &str) -> RpcRes<u64> {
+        Box::new(
+            rpc_func_from!(self, server_address, BLOCKCHAIN_HEADERS_SUB_ID)
+                .map(|r: ElectrumBlockHeader| r.block_height()),
+        )
+    }
+
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-block-headers
+    pub fn get_block_headers_from(
+        &self,
+        server_address: &str,
+        start_height: u64,
+        count: NonZeroU64,
+    ) -> RpcRes<ElectrumBlockHeadersRes> {
+        rpc_func_from!(self, server_address, "blockchain.block.headers", start_height, count)
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-listunspent
@@ -1935,7 +1956,7 @@ impl ElectrumClient {
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-headers-subscribe
     pub fn blockchain_headers_subscribe(&self) -> RpcRes<ElectrumBlockHeader> {
-        rpc_func!(self, "blockchain.headers.subscribe")
+        rpc_func!(self, BLOCKCHAIN_HEADERS_SUB_ID)
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-broadcast
@@ -2071,19 +2092,24 @@ impl ElectrumClient {
 
 #[cfg_attr(test, mockable)]
 impl ElectrumClient {
-    pub fn retrieve_headers(&self, from: u64, to: u64) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>)> {
+    pub fn retrieve_headers_from(
+        &self,
+        server_address: &str,
+        from_height: u64,
+        to_height: u64,
+    ) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>)> {
         let coin_name = self.coin_ticker.clone();
-        if from == 0 || to < from {
+        if from_height == 0 || to_height < from_height {
             return Box::new(futures01::future::err(
                 UtxoRpcError::Internal("Invalid values for from/to parameters".to_string()).into(),
             ));
         }
-        let count: NonZeroU64 = match (to - from + 1).try_into() {
+        let count: NonZeroU64 = match (to_height - from_height + 1).try_into() {
             Ok(c) => c,
             Err(e) => return Box::new(futures01::future::err(UtxoRpcError::Internal(e.to_string()).into())),
         };
         Box::new(
-            self.blockchain_block_headers(from, count)
+            self.get_block_headers_from(server_address, from_height, count)
                 .map_to_mm_fut(UtxoRpcError::from)
                 .and_then(move |headers| {
                     let (block_registry, block_headers) = {
@@ -2102,7 +2128,7 @@ impl ElectrumClient {
                             Err(e) => return MmError::err(UtxoRpcError::InvalidResponse(format!("{:?}", e))),
                         };
                         let mut block_registry: HashMap<u64, BlockHeader> = HashMap::new();
-                        let mut starting_height = from;
+                        let mut starting_height = from_height;
                         for block_header in &block_headers {
                             block_registry.insert(starting_height, block_header.clone());
                             starting_height += 1;
@@ -2112,6 +2138,52 @@ impl ElectrumClient {
                     Ok((block_registry, block_headers))
                 }),
         )
+    }
+
+    pub(crate) fn get_servers_with_latest_block_count(&self) -> UtxoRpcFut<(Vec<String>, u64)> {
+        let selfi = self.clone();
+        let fut = async move {
+            let connections = selfi.connections.lock().await;
+            let futures = connections
+                .iter()
+                .map(|connection| {
+                    let addr = connection.addr.clone();
+                    selfi
+                        .get_block_count_from(&addr)
+                        .map(|response| (addr, response))
+                        .compat()
+                })
+                .collect::<Vec<_>>();
+            drop(connections);
+
+            let responses = join_all(futures).await;
+
+            // First, we use filter_map to get rid of any errors and collect the
+            // server addresses and block counts into two vectors
+            let (responding_servers, block_counts_from_all_servers): (Vec<_>, Vec<_>) =
+                responses.clone().into_iter().filter_map(|res| res.ok()).unzip();
+
+            // Next, we use max to find the maximum block count from all servers
+            if let Some(max_block_count) = block_counts_from_all_servers.clone().iter().max() {
+                // Then, we use filter and collect to get the servers that have the maximum block count
+                let servers_with_max_count: Vec<_> = responding_servers
+                    .into_iter()
+                    .zip(block_counts_from_all_servers)
+                    .filter(|(_, count)| count == max_block_count)
+                    .map(|(addr, _)| addr)
+                    .collect();
+
+                // Finally, we return a tuple of servers with max count and the max count
+                return Ok((servers_with_max_count, *max_block_count));
+            }
+
+            return Err(MmError::new(UtxoRpcError::Internal(format!(
+                "Couldn't get block count from any server for {}, responses: {:?}",
+                &selfi.coin_ticker, responses
+            ))));
+        };
+
+        Box::new(fut.boxed().compat())
     }
 }
 

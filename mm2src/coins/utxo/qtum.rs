@@ -19,9 +19,9 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
-use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder,
-                                UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
-                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaSecretBuilder};
+use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
+                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
+                                UtxoFieldsWithIguanaSecretBuilder};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
@@ -244,8 +244,6 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
 }
 
 impl<'a> MergeUtxoArcOps<QtumCoin> for QtumCoinBuilder<'a> {}
-
-impl<'a> BlockHeaderUtxoArcOps<QtumCoin> for QtumCoinBuilder<'a> {}
 
 impl<'a> QtumCoinBuilder<'a> {
     pub fn new(

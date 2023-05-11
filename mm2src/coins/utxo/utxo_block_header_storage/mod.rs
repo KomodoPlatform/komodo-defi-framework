@@ -101,8 +101,12 @@ impl BlockHeaderStorageOps for BlockHeaderStorage {
         self.inner.get_block_height_by_hash(hash).await
     }
 
-    async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError> {
-        self.inner.remove_headers_up_to_height(to_height).await
+    async fn remove_headers_from_storage(
+        &self,
+        from_height: u64,
+        to_height: u64,
+    ) -> Result<(), BlockHeaderStorageError> {
+        self.inner.remove_headers_from_storage(from_height, to_height).await
     }
 
     async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError> { self.inner.is_table_empty().await }
@@ -228,14 +232,23 @@ mod block_headers_storage_tests {
         assert_eq!(last_block_height.unwrap(), 201595);
     }
 
-    pub(crate) async fn test_remove_headers_up_to_height_impl(for_coin: &str) {
+    pub(crate) async fn test_remove_headers_from_storage_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
         let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
 
-        let mut headers = HashMap::with_capacity(2);
+        // test remove headers from height.
+        let mut headers = HashMap::with_capacity(5);
+
+        // https://live.blockcypher.com/btc-testnet/block/00000000016a2f4a57ff9b9422ddc09adb753b689324899fcdc56172f55480f7/
+        let block_header: BlockHeader = "02000000f2a57f6b614df598ff8dff068292bd862c2bb0c12e4e380638db5700000000002349f389569e582d42cb51aa584f5a74f977c3cf86d2c2ac63b1bbde7fc95dc7f1e61353ab80011c8585405d".into();
+        headers.insert(201597, block_header);
+
+        // https://live.blockcypher.com/btc-testnet/block/000000000057db3806384e2ec1b02b2c86bd928206ff8dff98f54d616b7fa5f2/
+        let block_header: BlockHeader = "02000000303505969a1df329e5fccdf69b847a201772e116e557eb7f119d1a9600000000469267f52f43b8799e72f0726ba2e56432059a8ad02b84d4fff84b9476e95f7716e41353ab80011c168cb471".into();
+        headers.insert(201596, block_header);
 
         // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
         let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
@@ -252,18 +265,15 @@ mod block_headers_storage_tests {
         storage.add_block_headers_to_storage(headers).await.unwrap();
         assert!(storage.is_table_empty().await.is_err());
 
-        // Remove 2 headers from storage.
-        storage.remove_headers_up_to_height(201594).await.unwrap();
+        // Remove 4 headers from storage
+        storage.remove_headers_from_storage(201593, 201596).await.unwrap();
 
-        // Validate that blockers 201593..201594 are removed from storage.
-        for h in 201593..201594 {
+        // Validate that block headers 201593 to 201596 are removed from storage
+        // Note that 201593..201597 is exclusive meaning it includes the first value 201593 but excludes the last value 201597
+        for h in 201593..201597 {
             let block_header = storage.get_block_header(h).await.unwrap();
             assert!(block_header.is_none());
         }
-
-        // Last height should be 201595
-        let last_block_height = storage.get_last_block_height().await.unwrap();
-        assert_eq!(last_block_height.unwrap(), 201595);
     }
 }
 
@@ -310,7 +320,7 @@ mod native_tests {
     fn test_get_last_block_height() { block_on(test_get_last_block_height_impl(FOR_COIN_GET)) }
 
     #[test]
-    fn test_remove_headers_up_to_height() { block_on(test_remove_headers_up_to_height_impl(FOR_COIN_GET)) }
+    fn test_remove_headers_from_storage() { block_on(test_remove_headers_from_storage_impl(FOR_COIN_GET)) }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -319,7 +329,7 @@ mod wasm_test {
     use crate::utxo::utxo_block_header_storage::block_headers_storage_tests::*;
     use common::log::wasm_log::register_wasm_log;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
-    use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
+    use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 
@@ -357,5 +367,5 @@ mod wasm_test {
     async fn test_get_last_block_height() { test_get_last_block_height_impl(FOR_COIN).await }
 
     #[wasm_bindgen_test]
-    async fn test_remove_headers_up_to_height() { test_remove_headers_up_to_height_impl(FOR_COIN).await }
+    async fn test_remove_headers_from_storage() { test_remove_headers_from_storage_impl(FOR_COIN).await }
 }
