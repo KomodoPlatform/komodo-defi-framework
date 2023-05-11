@@ -1,35 +1,18 @@
-use crate::nft;
-use nft::{DIRECTION_BOTH_MORALIS, FORMAT_DECIMAL_MORALIS};
-
-const TEST_ENDPOINT: &str = "https://moralis-proxy.komodo.earth/api/v2/";
+const NFT_LIST_URL_TEST: &str = "https://moralis-proxy.komodo.earth/api/v2/0x394d86994f954ed931b86791b62fe64f4c5dac37/nft?chain=POLYGON&format=decimal";
+const NFT_HISTORY_URL_TEST: &str = "https://moralis-proxy.komodo.earth/api/v2/0x394d86994f954ed931b86791b62fe64f4c5dac37/nft/transfers?chain=POLYGON&format=decimal&direction=both";
+const NFT_METADATA_URL_TEST: &str = "https://moralis-proxy.komodo.earth/api/v2/nft/0xed55e4477b795eaa9bb4bca24df42214e1a05c18/1111777?chain=POLYGON&format=decimal";
 const TEST_WALLET_ADDR_EVM: &str = "0x394d86994f954ed931b86791b62fe64f4c5dac37";
-
-fn create_nft_list_url() -> String {
-    format!("{TEST_ENDPOINT}{TEST_WALLET_ADDR_EVM}/nft?chain=POLYGON&{FORMAT_DECIMAL_MORALIS}")
-}
-
-fn create_nft_tx_history_url() -> String {
-    format!("{TEST_ENDPOINT}{TEST_WALLET_ADDR_EVM}/nft/transfers?chain=POLYGON&{FORMAT_DECIMAL_MORALIS}&{DIRECTION_BOTH_MORALIS}")
-}
-
-fn create_nft_metadata_url() -> String {
-    format!(
-        "{TEST_ENDPOINT}nft/0xed55e4477b795eaa9bb4bca24df42214e1a05c18/1111777?chain=POLYGON&{FORMAT_DECIMAL_MORALIS}"
-    )
-}
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod native_tests {
     use crate::nft::nft_structs::{NftTransferHistoryWrapper, NftWrapper};
-    use crate::nft::nft_tests::{create_nft_list_url, create_nft_metadata_url, create_nft_tx_history_url,
-                                TEST_WALLET_ADDR_EVM};
+    use crate::nft::nft_tests::{NFT_HISTORY_URL_TEST, NFT_LIST_URL_TEST, NFT_METADATA_URL_TEST, TEST_WALLET_ADDR_EVM};
     use crate::nft::send_moralis_request;
     use common::block_on;
 
     #[test]
     fn test_moralis_nft_list() {
-        let url = create_nft_list_url();
-        let response = block_on(send_moralis_request(url.as_str())).unwrap();
+        let response = block_on(send_moralis_request(NFT_LIST_URL_TEST)).unwrap();
         let nfts_list = response["result"].as_array().unwrap();
         assert_eq!(2, nfts_list.len());
         for nft_json in nfts_list {
@@ -40,8 +23,7 @@ mod native_tests {
 
     #[test]
     fn test_moralis_nft_transfer_history() {
-        let url = create_nft_tx_history_url();
-        let response = block_on(send_moralis_request(url.as_str())).unwrap();
+        let response = block_on(send_moralis_request(NFT_HISTORY_URL_TEST)).unwrap();
         let transfer_list = response["result"].as_array().unwrap();
         assert_eq!(2, transfer_list.len());
         for transfer in transfer_list {
@@ -52,8 +34,7 @@ mod native_tests {
 
     #[test]
     fn test_moralis_nft_metadata() {
-        let url = create_nft_metadata_url();
-        let response = block_on(send_moralis_request(url.as_str())).unwrap();
+        let response = block_on(send_moralis_request(NFT_METADATA_URL_TEST)).unwrap();
         let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string()).unwrap();
         assert_eq!(41237364, *nft_wrapper.block_number_minted)
     }
@@ -62,8 +43,7 @@ mod native_tests {
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
     use crate::nft::nft_structs::{NftTransferHistoryWrapper, NftWrapper};
-    use crate::nft::nft_tests::{create_nft_list_url, create_nft_metadata_url, create_nft_tx_history_url,
-                                TEST_WALLET_ADDR_EVM};
+    use crate::nft::nft_tests::{NFT_HISTORY_URL_TEST, NFT_LIST_URL_TEST, NFT_METADATA_URL_TEST, TEST_WALLET_ADDR_EVM};
     use crate::nft::send_moralis_request;
     use wasm_bindgen_test::*;
 
@@ -71,8 +51,7 @@ mod wasm_tests {
 
     #[wasm_bindgen_test]
     async fn test_moralis_nft_list() {
-        let url = create_nft_list_url();
-        let response = send_moralis_request(url.as_str()).await.unwrap();
+        let response = send_moralis_request(NFT_LIST_URL_TEST).await.unwrap();
         let nfts_list = response["result"].as_array().unwrap();
         assert_eq!(2, nfts_list.len());
         for nft_json in nfts_list {
@@ -83,8 +62,7 @@ mod wasm_tests {
 
     #[wasm_bindgen_test]
     async fn test_moralis_nft_transfer_history() {
-        let url = create_nft_tx_history_url();
-        let response = send_moralis_request(url.as_str()).await.unwrap();
+        let response = send_moralis_request(NFT_HISTORY_URL_TEST).await.unwrap();
         let transfer_list = response["result"].as_array().unwrap();
         assert_eq!(2, transfer_list.len());
         for transfer in transfer_list {
@@ -95,8 +73,7 @@ mod wasm_tests {
 
     #[wasm_bindgen_test]
     async fn test_moralis_nft_metadata() {
-        let url = create_nft_metadata_url();
-        let response = send_moralis_request(url.as_str()).await.unwrap();
+        let response = send_moralis_request(NFT_METADATA_URL_TEST).await.unwrap();
         let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string()).unwrap();
         assert_eq!(41237364, *nft_wrapper.block_number_minted)
     }
