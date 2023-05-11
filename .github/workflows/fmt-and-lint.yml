@@ -13,34 +13,34 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-    - uses: actions/checkout@v3
-    - name: Install toolchain
-      run: |
-        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal --component rustfmt clippy
-        rustup default nightly-2022-10-29
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal --component rustfmt clippy
+          rustup default nightly-2022-10-29
 
-    - name: Install OS dependencies
-      run: |
-        sudo apt-get update 
-        sudo apt-get -y install libudev-dev
-      if: matrix.os == 'ubuntu-latest'
+      - name: Install OS dependencies
+        run: |
+          sudo apt-get update 
+          sudo apt-get -y install libudev-dev
+        if: matrix.os == 'ubuntu-latest'
 
-    - name: fmt check
-      run: cargo fmt -- --check
+      - name: fmt check
+        run: cargo fmt -- --check
 
-    - name: x86-64 code lint
-      run: cargo clippy --all-targets --all-features -- --D warnings
+      - name: x86-64 code lint
+        run: cargo clippy --all-targets --all-features -- --D warnings
 
   wasm-lint:
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Install toolchain
-      run: |
-        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal --component clippy
-        rustup default nightly-2022-10-29
-        rustup target add wasm32-unknown-unknown
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal --component clippy
+          rustup default nightly-2022-10-29
+          rustup target add wasm32-unknown-unknown
 
-    - name: wasm code lint
-      run: cargo clippy --target wasm32-unknown-unknown -- --D warnings
+      - name: wasm code lint
+        run: cargo clippy --target wasm32-unknown-unknown -- --D warnings
