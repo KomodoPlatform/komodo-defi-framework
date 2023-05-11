@@ -3,6 +3,7 @@ use mm2_err_handle::prelude::{MmError, MmResult};
 
 pub(crate) mod nft_errors;
 pub(crate) mod nft_structs;
+#[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;
 
 use crate::WithdrawError;
 use nft_errors::GetNftInfoError;
