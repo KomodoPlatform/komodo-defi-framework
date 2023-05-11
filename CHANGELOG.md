@@ -13,6 +13,7 @@
   - Improved protocol to let only the taker pay the reward
 - Add passive parent coin state for keeping tokens active when platform is disabled [#1763](https://github.com/KomodoPlatform/atomicDEX-API/pull/1763)
 - CI flows for `adex-cli` added [#1818](https://github.com/KomodoPlatform/atomicDEX-API/pull/1818)
+- Detect a chain reorganization, if it occurs, redownload and revalidate the new best chain headers for SPV  [#1728](https://github.com/KomodoPlatform/atomicDEX-API/pull/1728)
 
 
 ## v1.0.3-beta - 2023-04-28
