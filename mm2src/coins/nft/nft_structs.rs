@@ -2,6 +2,7 @@ use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 use serde::Deserialize;
+use serde_json::Value as Json;
 use std::str::FromStr;
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +82,16 @@ impl FromStr for ContractType {
     }
 }
 
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub(crate) struct UriMeta {
+    image: Option<String>,
+    #[serde(rename(deserialize = "name"))]
+    token_name: Option<String>,
+    description: Option<String>,
+    attributes: Option<Json>,
+    animation_url: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct Nft {
     pub(crate) chain: Chain,
@@ -100,6 +111,7 @@ pub struct Nft {
     pub(crate) last_metadata_sync: Option<String>,
     pub(crate) minter_address: Option<String>,
     pub(crate) possible_spam: Option<bool>,
+    pub(crate) uri_meta: UriMeta,
 }
 
 /// This structure is for deserializing NFT json to struct.

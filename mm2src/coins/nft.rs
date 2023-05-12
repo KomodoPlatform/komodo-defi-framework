@@ -12,7 +12,7 @@ use nft_structs::{Chain, ConvertChain, Nft, NftList, NftListReq, NftMetadataReq,
                   TransactionNftDetails, WithdrawNftReq};
 
 use crate::eth::{get_eth_address, withdraw_erc1155, withdraw_erc721};
-use crate::nft::nft_structs::WithdrawNftType;
+use crate::nft::nft_structs::{UriMeta, WithdrawNftType};
 use common::APPLICATION_JSON;
 use http::header::ACCEPT;
 use mm2_number::BigDecimal;
@@ -45,6 +45,14 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
             if let Some(nfts_list) = response["result"].as_array() {
                 for nft_json in nfts_list {
                     let nft_wrapper: NftWrapper = serde_json::from_str(&nft_json.to_string())?;
+                    let mut uri_meta = UriMeta::default();
+                    if let Some(token_uri) = &nft_wrapper.token_uri {
+                        if let Ok(response_meta) = send_moralis_request(token_uri).await {
+                            let uri_meta_res: UriMeta = serde_json::from_str(&response_meta.to_string())?;
+                            uri_meta = uri_meta_res;
+                        }
+                    }
+                    drop_mutability!(uri_meta);
                     let nft = Nft {
                         chain,
                         token_address: nft_wrapper.token_address,
@@ -63,6 +71,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
                         last_metadata_sync: nft_wrapper.last_metadata_sync,
                         minter_address: nft_wrapper.minter_address,
                         possible_spam: nft_wrapper.possible_spam,
+                        uri_meta,
                     };
                     // collect NFTs from the page
                     res_list.push(nft);
@@ -107,6 +116,14 @@ pub async fn get_nft_metadata(_ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft,
     );
     let response = send_moralis_request(uri.as_str()).await?;
     let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string())?;
+    let mut uri_meta = UriMeta::default();
+    if let Some(token_uri) = &nft_wrapper.token_uri {
+        if let Ok(response_meta) = send_moralis_request(token_uri).await {
+            let uri_meta_res: UriMeta = serde_json::from_str(&response_meta.to_string())?;
+            uri_meta = uri_meta_res;
+        }
+    }
+    drop_mutability!(uri_meta);
     let nft_metadata = Nft {
         chain: req.chain,
         token_address: nft_wrapper.token_address,
@@ -125,6 +142,7 @@ pub async fn get_nft_metadata(_ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft,
         last_metadata_sync: nft_wrapper.last_metadata_sync,
         minter_address: nft_wrapper.minter_address,
         possible_spam: nft_wrapper.possible_spam,
+        uri_meta,
     };
     Ok(nft_metadata)
 }
