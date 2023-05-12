@@ -103,7 +103,7 @@ pub struct Nft {
     pub(crate) block_number_minted: u64,
     pub(crate) block_number: u64,
     pub(crate) contract_type: Option<ContractType>,
-    pub(crate) name: Option<String>,
+    pub(crate) collection_name: Option<String>,
     pub(crate) symbol: Option<String>,
     pub(crate) token_uri: Option<String>,
     pub(crate) metadata: Option<String>,
@@ -232,6 +232,12 @@ pub struct NftTransfersReq {
     pub(crate) url: String,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) enum TransferStatus {
+    Receive,
+    Send,
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct NftTransferHistory {
     pub(crate) chain: Chain,
@@ -249,6 +255,7 @@ pub(crate) struct NftTransferHistory {
     pub(crate) token_id: BigDecimal,
     pub(crate) from_address: String,
     pub(crate) to_address: String,
+    pub(crate) status: TransferStatus,
     pub(crate) amount: BigDecimal,
     pub(crate) verified: u64,
     pub(crate) operator: Option<String>,

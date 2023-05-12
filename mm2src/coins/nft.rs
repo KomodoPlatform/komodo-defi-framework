@@ -12,7 +12,7 @@ use nft_structs::{Chain, ConvertChain, Nft, NftList, NftListReq, NftMetadataReq,
                   TransactionNftDetails, WithdrawNftReq};
 
 use crate::eth::{get_eth_address, withdraw_erc1155, withdraw_erc721};
-use crate::nft::nft_structs::{UriMeta, WithdrawNftType};
+use crate::nft::nft_structs::{TransferStatus, UriMeta, WithdrawNftType};
 use common::APPLICATION_JSON;
 use derive_more::Display;
 use enum_from::EnumFromStringify;
@@ -66,7 +66,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
                         block_number_minted: *nft_wrapper.block_number_minted,
                         block_number: *nft_wrapper.block_number,
                         contract_type: nft_wrapper.contract_type.map(|v| v.0),
-                        name: nft_wrapper.name,
+                        collection_name: nft_wrapper.name,
                         symbol: nft_wrapper.symbol,
                         token_uri: nft_wrapper.token_uri,
                         metadata: nft_wrapper.metadata,
@@ -137,7 +137,7 @@ pub async fn get_nft_metadata(_ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft,
         block_number_minted: *nft_wrapper.block_number_minted,
         block_number: *nft_wrapper.block_number,
         contract_type: nft_wrapper.contract_type.map(|v| v.0),
-        name: nft_wrapper.name,
+        collection_name: nft_wrapper.name,
         symbol: nft_wrapper.symbol,
         token_uri: nft_wrapper.token_uri,
         metadata: nft_wrapper.metadata,
@@ -179,6 +179,11 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
             if let Some(transfer_list) = response["result"].as_array() {
                 for transfer in transfer_list {
                     let transfer_wrapper: NftTransferHistoryWrapper = serde_json::from_str(&transfer.to_string())?;
+                    let status = if wallet_address.to_lowercase() == transfer_wrapper.to_address {
+                        TransferStatus::Receive
+                    } else {
+                        TransferStatus::Send
+                    };
                     let transfer_history = NftTransferHistory {
                         chain,
                         block_number: *transfer_wrapper.block_number,
@@ -194,6 +199,7 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
                         token_id: transfer_wrapper.token_id.0,
                         from_address: transfer_wrapper.from_address,
                         to_address: transfer_wrapper.to_address,
+                        status,
                         amount: transfer_wrapper.amount.0,
                         verified: transfer_wrapper.verified,
                         operator: transfer_wrapper.operator,
