@@ -3,6 +3,7 @@ use mm2_err_handle::prelude::{MmError, MmResult};
 
 pub(crate) mod nft_errors;
 pub(crate) mod nft_structs;
+#[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;
 
 use crate::WithdrawError;
 use nft_errors::GetNftInfoError;
@@ -243,8 +244,6 @@ async fn send_moralis_request(uri: &str) -> MmResult<Json, GetNftInfoError> {
     }
 
     let result = FetchRequest::get(uri)
-        .cors()
-        .body_utf8("".to_owned())
         .header(ACCEPT.as_str(), APPLICATION_JSON)
         .request_str()
         .await;
