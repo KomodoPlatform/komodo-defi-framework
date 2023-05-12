@@ -14,7 +14,10 @@ use nft_structs::{Chain, ConvertChain, Nft, NftList, NftListReq, NftMetadataReq,
 use crate::eth::{get_eth_address, withdraw_erc1155, withdraw_erc721};
 use crate::nft::nft_structs::{UriMeta, WithdrawNftType};
 use common::APPLICATION_JSON;
+use derive_more::Display;
+use enum_from::EnumFromStringify;
 use http::header::ACCEPT;
+use mm2_net::transport::SlurpError;
 use mm2_number::BigDecimal;
 use serde_json::Value as Json;
 
@@ -41,13 +44,13 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
         let mut cursor = String::new();
         loop {
             let uri = format!("{}{}", uri_without_cursor, cursor);
-            let response = send_moralis_request(uri.as_str()).await?;
+            let response = send_request_to_uri(uri.as_str()).await?;
             if let Some(nfts_list) = response["result"].as_array() {
                 for nft_json in nfts_list {
                     let nft_wrapper: NftWrapper = serde_json::from_str(&nft_json.to_string())?;
                     let mut uri_meta = UriMeta::default();
                     if let Some(token_uri) = &nft_wrapper.token_uri {
-                        if let Ok(response_meta) = send_moralis_request(token_uri).await {
+                        if let Ok(response_meta) = send_request_to_uri(token_uri).await {
                             let uri_meta_res: UriMeta = serde_json::from_str(&response_meta.to_string())?;
                             uri_meta = uri_meta_res;
                         }
@@ -114,11 +117,11 @@ pub async fn get_nft_metadata(_ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft,
     let uri = format!(
         "{req_url}{MORALIS_API_ENDPOINT}nft/{token_address}/{token_id}?chain={chain_str}&{FORMAT_DECIMAL_MORALIS}"
     );
-    let response = send_moralis_request(uri.as_str()).await?;
+    let response = send_request_to_uri(uri.as_str()).await?;
     let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string())?;
     let mut uri_meta = UriMeta::default();
     if let Some(token_uri) = &nft_wrapper.token_uri {
-        if let Ok(response_meta) = send_moralis_request(token_uri).await {
+        if let Ok(response_meta) = send_request_to_uri(token_uri).await {
             let uri_meta_res: UriMeta = serde_json::from_str(&response_meta.to_string())?;
             uri_meta = uri_meta_res;
         }
@@ -172,7 +175,7 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
         let mut cursor = String::new();
         loop {
             let uri = format!("{}{}", uri_without_cursor, cursor);
-            let response = send_moralis_request(uri.as_str()).await?;
+            let response = send_request_to_uri(uri.as_str()).await?;
             if let Some(transfer_list) = response["result"].as_array() {
                 for transfer in transfer_list {
                     let transfer_wrapper: NftTransferHistoryWrapper = serde_json::from_str(&transfer.to_string())?;
@@ -227,8 +230,34 @@ pub async fn withdraw_nft(ctx: MmArc, req: WithdrawNftReq) -> WithdrawNftResult 
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize)]
+enum GetInfoFromUriError {
+    /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
+    #[from_stringify("http::Error")]
+    #[display(fmt = "Invalid request: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Transport: {}", _0)]
+    Transport(String),
+    #[from_stringify("serde_json::Error")]
+    #[display(fmt = "Invalid response: {}", _0)]
+    InvalidResponse(String),
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+}
+
+impl From<SlurpError> for GetInfoFromUriError {
+    fn from(e: SlurpError) -> Self {
+        let error_str = e.to_string();
+        match e {
+            SlurpError::ErrorDeserializing { .. } => GetInfoFromUriError::InvalidResponse(error_str),
+            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => GetInfoFromUriError::Transport(error_str),
+            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => GetInfoFromUriError::Internal(error_str),
+        }
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
-async fn send_moralis_request(uri: &str) -> MmResult<Json, GetNftInfoError> {
+async fn send_request_to_uri(uri: &str) -> MmResult<Json, GetInfoFromUriError> {
     use http::header::HeaderValue;
     use mm2_net::transport::slurp_req_body;
 
@@ -240,7 +269,7 @@ async fn send_moralis_request(uri: &str) -> MmResult<Json, GetNftInfoError> {
 
     let (status, _header, body) = slurp_req_body(request).await?;
     if !status.is_success() {
-        return Err(MmError::new(GetNftInfoError::Transport(format!(
+        return Err(MmError::new(GetInfoFromUriError::Transport(format!(
             "Response !200 from {}: {}, {}",
             uri, status, body
         ))));
@@ -249,14 +278,14 @@ async fn send_moralis_request(uri: &str) -> MmResult<Json, GetNftInfoError> {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn send_moralis_request(uri: &str) -> MmResult<Json, GetNftInfoError> {
+async fn send_request_to_uri(uri: &str) -> MmResult<Json, GetInfoFromUriError> {
     use mm2_net::wasm_http::FetchRequest;
 
     macro_rules! try_or {
         ($exp:expr, $errtype:ident) => {
             match $exp {
                 Ok(x) => x,
-                Err(e) => return Err(MmError::new(GetNftInfoError::$errtype(ERRL!("{:?}", e)))),
+                Err(e) => return Err(MmError::new(GetInfoFromUriError::$errtype(ERRL!("{:?}", e)))),
             }
         };
     }
@@ -267,7 +296,7 @@ async fn send_moralis_request(uri: &str) -> MmResult<Json, GetNftInfoError> {
         .await;
     let (status_code, response_str) = try_or!(result, Transport);
     if !status_code.is_success() {
-        return Err(MmError::new(GetNftInfoError::Transport(ERRL!(
+        return Err(MmError::new(GetInfoFromUriError::Transport(ERRL!(
             "!200: {}, {}",
             status_code,
             response_str
