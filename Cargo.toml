@@ -50,7 +50,6 @@ resolver = "2"
 
 [profile.release]
 debug = 0
-debuginfo = 0
 debug-assertions = false
 opt-level = 3
 # strip = true
