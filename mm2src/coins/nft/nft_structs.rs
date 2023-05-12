@@ -253,6 +253,7 @@ pub(crate) struct NftTransferHistory {
     pub(crate) transaction_type: String,
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
+    pub(crate) collection_name: Option<String>,
     pub(crate) from_address: String,
     pub(crate) to_address: String,
     pub(crate) status: TransferStatus,
