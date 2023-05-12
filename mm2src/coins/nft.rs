@@ -48,14 +48,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
             if let Some(nfts_list) = response["result"].as_array() {
                 for nft_json in nfts_list {
                     let nft_wrapper: NftWrapper = serde_json::from_str(&nft_json.to_string())?;
-                    let mut uri_meta = UriMeta::default();
-                    if let Some(token_uri) = &nft_wrapper.token_uri {
-                        if let Ok(response_meta) = send_request_to_uri(token_uri).await {
-                            let uri_meta_res: UriMeta = serde_json::from_str(&response_meta.to_string())?;
-                            uri_meta = uri_meta_res;
-                        }
-                    }
-                    drop_mutability!(uri_meta);
+                    let uri_meta = try_get_uri_meta(&nft_wrapper.token_uri).await?;
                     let nft = Nft {
                         chain,
                         token_address: nft_wrapper.token_address,
@@ -119,14 +112,7 @@ pub async fn get_nft_metadata(_ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft,
     );
     let response = send_request_to_uri(uri.as_str()).await?;
     let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string())?;
-    let mut uri_meta = UriMeta::default();
-    if let Some(token_uri) = &nft_wrapper.token_uri {
-        if let Ok(response_meta) = send_request_to_uri(token_uri).await {
-            let uri_meta_res: UriMeta = serde_json::from_str(&response_meta.to_string())?;
-            uri_meta = uri_meta_res;
-        }
-    }
-    drop_mutability!(uri_meta);
+    let uri_meta = try_get_uri_meta(&nft_wrapper.token_uri).await?;
     let nft_metadata = Nft {
         chain: req.chain,
         token_address: nft_wrapper.token_address,
@@ -329,4 +315,18 @@ pub(crate) async fn find_wallet_amount(
             token_id: token_id_req.to_string(),
         })?;
     Ok(nft.amount)
+}
+
+async fn try_get_uri_meta(token_uri: &Option<String>) -> MmResult<UriMeta, GetNftInfoError> {
+    match token_uri {
+        Some(token_uri) => {
+            if let Ok(response_meta) = send_request_to_uri(token_uri).await {
+                let uri_meta_res: UriMeta = serde_json::from_str(&response_meta.to_string())?;
+                Ok(uri_meta_res)
+            } else {
+                Ok(UriMeta::default())
+            }
+        }
+        None => Ok(UriMeta::default())
+    }
 }
