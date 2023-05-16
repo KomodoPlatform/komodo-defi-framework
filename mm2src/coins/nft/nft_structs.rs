@@ -1,21 +1,23 @@
 use crate::{TransactionType, TxFeeDetails, WithdrawFee};
+use ethereum_types::Address;
 use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 use serde::Deserialize;
 use std::str::FromStr;
+use url::Url;
 
 #[derive(Debug, Deserialize)]
 pub struct NftListReq {
     pub(crate) chains: Vec<Chain>,
-    pub(crate) url: String,
+    pub(crate) url: Url,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct NftMetadataReq {
-    pub(crate) token_address: String,
+    pub(crate) token_address: Address,
     pub(crate) token_id: BigDecimal,
     pub(crate) chain: Chain,
-    pub(crate) url: String,
+    pub(crate) url: Url,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -175,7 +177,7 @@ pub struct WithdrawErc721 {
 
 #[derive(Clone, Deserialize)]
 pub struct WithdrawNftReq {
-    pub(crate) url: String,
+    pub(crate) url: Url,
     pub(crate) withdraw_type: WithdrawNftType,
 }
 
@@ -217,7 +219,7 @@ pub struct TransactionNftDetails {
 #[derive(Debug, Deserialize)]
 pub struct NftTransfersReq {
     pub(crate) chains: Vec<Chain>,
-    pub(crate) url: String,
+    pub(crate) url: Url,
 }
 
 #[derive(Debug, Serialize)]

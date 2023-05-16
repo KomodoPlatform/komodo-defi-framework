@@ -18,7 +18,7 @@ use http::header::ACCEPT;
 use mm2_number::BigDecimal;
 use serde_json::Value as Json;
 
-const MORALIS_API_ENDPOINT: &str = "/api/v2/";
+const MORALIS_API_ENDPOINT: &str = "api/v2/";
 /// query parameter for moralis request: The format of the token ID
 const FORMAT_DECIMAL_MORALIS: &str = "format=decimal";
 /// query parameter for moralis request: The transfer direction
@@ -103,7 +103,7 @@ pub async fn get_nft_metadata(_ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft,
     let token_address = &req.token_address;
     let token_id = &req.token_id;
     let uri = format!(
-        "{req_url}{MORALIS_API_ENDPOINT}nft/{token_address}/{token_id}?chain={chain_str}&{FORMAT_DECIMAL_MORALIS}"
+        "{req_url}{MORALIS_API_ENDPOINT}nft/{token_address:#02x}/{token_id}?chain={chain_str}&{FORMAT_DECIMAL_MORALIS}"
     );
     let response = send_moralis_request(uri.as_str()).await?;
     let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string())?;

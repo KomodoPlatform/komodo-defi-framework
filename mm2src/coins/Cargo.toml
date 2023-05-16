@@ -95,6 +95,7 @@ utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
 tendermint-rpc = { version = "=0.23.7", default-features = false }
 tiny-bip39 = "0.8.0"
+url = { version = "2.2.2", features = ["serde"] }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
