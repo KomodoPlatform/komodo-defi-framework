@@ -77,7 +77,9 @@ mod wasm_tests {
         let response = send_request_to_uri(NFT_METADATA_URL_TEST).await.unwrap();
         let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string()).unwrap();
         assert_eq!(41237364, *nft_wrapper.block_number_minted);
-        let uri_response = send_request_to_uri("https://tikimetadata.s3.amazonaws.com/tiki_box.json").await.unwrap();
+        let uri_response = send_request_to_uri("https://tikimetadata.s3.amazonaws.com/tiki_box.json")
+            .await
+            .unwrap();
         serde_json::from_str::<UriMeta>(&uri_response.to_string()).unwrap();
     }
 }
