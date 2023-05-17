@@ -73,7 +73,7 @@ cfg_wasm32!(
     impl<'a> WalletDbSharedImpl {
         pub async fn new(zcoin_builder: &ZCoinBuilder<'a>) -> MmResult<Self, WalletDbError> {
             Ok(Self {
-                db: ConstructibleDb::new(&zcoin_builder.ctx).into_shared(),
+                db: ConstructibleDb::new(zcoin_builder.ctx).into_shared(),
                 ticker: zcoin_builder.ticker.to_string(),
             })
         }
