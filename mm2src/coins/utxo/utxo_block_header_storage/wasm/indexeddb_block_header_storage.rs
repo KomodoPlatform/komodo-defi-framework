@@ -300,23 +300,27 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             .transpose()
     }
 
-    async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError> {
+    async fn remove_headers_from_storage(
+        &self,
+        from_height: u64,
+        to_height: u64,
+    ) -> Result<(), BlockHeaderStorageError> {
         let ticker = self.ticker.clone();
         let locked_db = self
             .lock_db()
             .await
-            .map_err(|err| BlockHeaderStorageError::delete_err(&ticker, err.to_string(), to_height))?;
+            .map_err(|err| BlockHeaderStorageError::delete_err(&ticker, err.to_string(), from_height, to_height))?;
         let db_transaction = locked_db
             .get_inner()
             .transaction()
             .await
-            .map_err(|err| BlockHeaderStorageError::delete_err(&ticker, err.to_string(), to_height))?;
+            .map_err(|err| BlockHeaderStorageError::delete_err(&ticker, err.to_string(), from_height, to_height))?;
         let block_headers_db = db_transaction
             .table::<BlockHeaderStorageTable>()
             .await
             .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?;
 
-        for height in 0..=to_height {
+        for height in from_height..=to_height {
             let index_keys = MultiIndex::new(BlockHeaderStorageTable::TICKER_HEIGHT_INDEX)
                 .with_value(&ticker)
                 .map_err(|err| BlockHeaderStorageError::table_err(&ticker, err.to_string()))?
@@ -326,7 +330,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
             block_headers_db
                 .delete_item_by_unique_multi_index(index_keys)
                 .await
-                .map_err(|err| BlockHeaderStorageError::delete_err(&ticker, err.to_string(), to_height))?;
+                .map_err(|err| BlockHeaderStorageError::delete_err(&ticker, err.to_string(), from_height, to_height))?;
         }
 
         Ok(())

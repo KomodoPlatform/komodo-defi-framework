@@ -6,7 +6,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
- FROM_SHARED_RUNNER: true
+  FROM_SHARED_RUNNER: true
 
 jobs:
   linux-x86-64-unit:
@@ -19,16 +19,16 @@ jobs:
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
-    - uses: actions/checkout@v3
-    - name: Install toolchain
-      run: |
-        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
-        rustup default nightly-2022-10-29
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+          rustup default nightly-2022-10-29
 
-    - name: Test
-      run: |
-        # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-        cargo test --bins --lib
+      - name: Test
+        run: |
+          # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
+          cargo test --bins --lib
 
   mac-x86-64-unit:
     timeout-minutes: 90
@@ -40,17 +40,17 @@ jobs:
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_MACOS }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
-    - uses: actions/checkout@v3
-    - name: Install toolchain
-      run: |
-        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
-        rustup default nightly-2022-10-29
-        rustup target add x86_64-apple-darwin
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+          rustup default nightly-2022-10-29
+          rustup target add x86_64-apple-darwin
 
-    - name: Test
-      run: |
-        # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-        cargo test --bins --lib --target x86_64-apple-darwin
+      - name: Test
+        run: |
+          # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
+          cargo test --bins --lib --target x86_64-apple-darwin
 
   win-x86-64-unit:
     timeout-minutes: 90
@@ -62,32 +62,32 @@ jobs:
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_WIN }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
-    - uses: actions/checkout@v3
-    - name: Install toolchain
-      run: |
-        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
-        rustup default nightly-2022-10-29
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+          rustup default nightly-2022-10-29
 
-    - name: Test
-      run: |
-        # Invoke-WebRequest -Uri https://github.com/KomodoPlatform/komodo/raw/d456be35acd1f8584e1e4f971aea27bd0644d5c5/zcutil/wget64.exe -OutFile \wget64.exe
-        # Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
+      - name: Test
+        run: |
+          # Invoke-WebRequest -Uri https://github.com/KomodoPlatform/komodo/raw/d456be35acd1f8584e1e4f971aea27bd0644d5c5/zcutil/wget64.exe -OutFile \wget64.exe
+          # Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
 
-        # Set Path in variable
-        # $config = "C:\ProgramData\Docker\config\daemon.json"
+          # Set Path in variable
+          # $config = "C:\ProgramData\Docker\config\daemon.json"
 
-        # $json = Get-Content $config | Out-String | ConvertFrom-Json
-        # $json | Add-Member -Type NoteProperty -Name 'experimental' -Value $True
-        # $json | ConvertTo-Json | Set-Content $config
+          # $json = Get-Content $config | Out-String | ConvertFrom-Json
+          # $json | Add-Member -Type NoteProperty -Name 'experimental' -Value $True
+          # $json | ConvertTo-Json | Set-Content $config
 
-        # Check the file content
-        # type $config
+          # Check the file content
+          # type $config
 
-        # Restart-Service docker
-        # Get-Service docker
+          # Restart-Service docker
+          # Get-Service docker
 
-        cargo test --bins --lib
-          
+          cargo test --bins --lib
+
   linux-x86-64-mm2-integration:
     timeout-minutes: 90
     runs-on: ubuntu-latest
@@ -98,14 +98,14 @@ jobs:
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
-    - uses: actions/checkout@v3
-    - name: Install toolchain
-      run: |
-        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
-        rustup default nightly-2022-10-29
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+          rustup default nightly-2022-10-29
 
-    - name: Test
-      run: cargo test --test 'mm2_tests_main'
+      - name: Test
+        run: cargo test --test 'mm2_tests_main'
 
   # https://docs.github.com/en/actions/learn-github-actions/usage-limits-billing-and-administration#usage-limits
   # https://github.com/KomodoPlatform/atomicDEX-API/actions/runs/4419618128/jobs/7748266141#step:4:1790
@@ -139,14 +139,14 @@ jobs:
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_WIN }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
-    - uses: actions/checkout@v3
-    - name: Install toolchain
-      run: |
-        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
-        rustup default nightly-2022-10-29
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+          rustup default nightly-2022-10-29
 
-    - name: Test
-      run: cargo test --test 'mm2_tests_main'
+      - name: Test
+        run: cargo test --test 'mm2_tests_main'
 
   docker-tests:
     timeout-minutes: 90
@@ -158,16 +158,16 @@ jobs:
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
-    - uses: actions/checkout@v3
-    - name: Install toolchain
-      run: |
-        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
-        rustup default nightly-2022-10-29
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+          rustup default nightly-2022-10-29
 
-    - name: Test
-      run: |
-        wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-        cargo test --test 'docker_tests_main' --features run-docker-tests
+      - name: Test
+        run: |
+          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
+          cargo test --test 'docker_tests_main' --features run-docker-tests
 
   wasm:
     timeout-minutes: 90
@@ -179,24 +179,23 @@ jobs:
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
-    - uses: actions/checkout@v3
-    - name: Install toolchain
-      run: |
-        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
-        rustup default nightly-2022-10-29
-        rustup target add wasm32-unknown-unknown
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+          rustup default nightly-2022-10-29
+          rustup target add wasm32-unknown-unknown
 
-    - name: Install wasm-pack
-      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-    - name: Install firefox and geckodriver
-      run: |
-        sudo apt-get update -y
-        sudo apt-get install -y firefox
-        wget https://github.com/mozilla/geckodriver/releases/download/v0.32.2/geckodriver-v0.32.2-linux64.tar.gz
-        sudo tar -xzvf geckodriver-v0.32.2-linux64.tar.gz -C /bin
-        sudo chmod +x /bin/geckodriver
+      - name: Install firefox and geckodriver
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y firefox
+          wget https://github.com/mozilla/geckodriver/releases/download/v0.32.2/geckodriver-v0.32.2-linux64.tar.gz
+          sudo tar -xzvf geckodriver-v0.32.2-linux64.tar.gz -C /bin
+          sudo chmod +x /bin/geckodriver
 
-    - name: Test
-      run: WASM_BINDGEN_TEST_TIMEOUT=360 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
-
+      - name: Test
+        run: WASM_BINDGEN_TEST_TIMEOUT=360 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main

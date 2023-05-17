@@ -87,9 +87,12 @@ fn get_block_height_by_hash(for_coin: &str) -> Result<String, BlockHeaderStorage
     Ok(sql)
 }
 
-fn remove_headers_up_to_height_sql(for_coin: &str, to_height: u64) -> Result<String, BlockHeaderStorageError> {
+fn remove_headers_from_to_height_sql(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
-    let sql = format!("DELETE FROM {table_name} WHERE block_height <= {to_height};");
+    let sql = format!(
+        "DELETE FROM {table_name} WHERE block_height BETWEEN ?1 AND
+    ?2;"
+    );
 
     Ok(sql)
 }
@@ -121,8 +124,9 @@ where
 impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
     async fn init(&self) -> Result<(), BlockHeaderStorageError> {
         let coin = self.ticker.clone();
-        let selfi = self.clone();
         let sql_cache = create_block_header_cache_table_sql(&coin)?;
+        let selfi = self.clone();
+
         async_blocking(move || {
             let conn = selfi.conn.lock().unwrap();
             conn.execute(&sql_cache, NO_PARAMS).map(|_| ()).map_err(|e| {
@@ -137,9 +141,9 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
     }
 
     async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> {
-        let coin = self.ticker.clone();
-        let block_headers_cache_table = get_table_name_and_validate(&coin)?;
+        let block_headers_cache_table = get_table_name_and_validate(&self.ticker)?;
         let selfi = self.clone();
+
         async_blocking(move || {
             let conn = selfi.conn.lock().unwrap();
             let cache_initialized = query_single_row(
@@ -159,6 +163,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
     ) -> Result<(), BlockHeaderStorageError> {
         let coin = self.ticker.clone();
         let selfi = self.clone();
+
         async_blocking(move || {
             let mut conn = selfi.conn.lock().unwrap();
             let sql_transaction = conn
@@ -189,7 +194,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
             sql_transaction
                 .commit()
                 .map_err(|e| BlockHeaderStorageError::AddToStorageError {
-                    coin: coin.clone(),
+                    coin,
                     reason: e.to_string(),
                 })?;
             Ok(())
@@ -303,22 +308,29 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         })
     }
 
-    async fn remove_headers_up_to_height(&self, to_height: u64) -> Result<(), BlockHeaderStorageError> {
+    async fn remove_headers_from_storage(
+        &self,
+        from_height: u64,
+        to_height: u64,
+    ) -> Result<(), BlockHeaderStorageError> {
         let coin = self.ticker.clone();
+        let sql = remove_headers_from_to_height_sql(&coin)?;
+        let params = vec![from_height.to_string(), to_height.to_string()];
         let selfi = self.clone();
-        let sql = remove_headers_up_to_height_sql(&coin, to_height)?;
 
         async_blocking(move || {
             let conn = selfi.conn.lock().unwrap();
-            conn.execute(&sql, NO_PARAMS)
-                .map_err(|e| BlockHeaderStorageError::UnableToDeleteHeaders {
-                    coin: coin.clone(),
-                    to_height,
-                    reason: e.to_string(),
-                })?;
-            Ok(())
+            conn.execute(&sql, &params)
         })
         .await
+        .map_err(|err| BlockHeaderStorageError::UnableToDeleteHeaders {
+            coin,
+            from_height,
+            to_height,
+            reason: err.to_string(),
+        })?;
+
+        Ok(())
     }
 
     async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError> {

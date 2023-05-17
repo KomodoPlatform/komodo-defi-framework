@@ -49,11 +49,9 @@ exclude = [
 resolver = "2"
 
 [profile.release]
-debug = 1
+debug = 0
 debug-assertions = false
-# For some reason, opt-level 3 started causing infinite Windows builds after Cosmos integration
-# TODO troubleshoot it
-opt-level = 2
+opt-level = 3
 # strip = true
 codegen-units = 1
 # lto = true
@@ -62,10 +60,6 @@ panic = "abort"
 [profile.test]
 # required to avoid a long running process of librustcash additional chain validation that is enabled with debug assertions
 debug-assertions = false
-
-[profile.release.overrides."*"]
-# Turns debugging symbols off for the out-of-workspace dependencies.
-debug = false
 
 [profile.dev]
 opt-level = 0

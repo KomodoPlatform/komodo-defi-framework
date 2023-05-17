@@ -92,6 +92,7 @@ pub(super) fn utxo_coin_fields_for_test(
     UtxoCoinFields {
         conf: UtxoCoinConf {
             is_pos: false,
+            is_posv: false,
             requires_notarization: false.into(),
             overwintered: true,
             segwit: true,

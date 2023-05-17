@@ -28,8 +28,6 @@ pub enum SPVError {
     InsufficientWork,
     #[display(fmt = "Couldn't calculate the required difficulty for the block: {}", _0)]
     DifficultyCalculationError(NextBlockBitsError),
-    #[display(fmt = "Header {height} in chain does not correctly reference parent header, coin: {coin}")]
-    InvalidChain { coin: String, height: u64 },
     #[display(fmt = "When validating a `BitcoinHeader`, the `hash` field is not the digest of the raw header")]
     WrongDigest,
     #[display(
@@ -61,6 +59,12 @@ pub enum SPVError {
     WrongRetargetHeight { coin: String, expected_height: u64 },
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+    #[display(
+        fmt = "Parent Hash Mismatch - coin:{} - mismatched_block_height:{}",
+        coin,
+        mismatched_block_height
+    )]
+    ParentHashMismatch { coin: String, mismatched_block_height: u64 },
 }
 
 impl From<RawHeaderError> for SPVError {
@@ -332,55 +336,61 @@ fn validate_header_prev_hash(actual: &H256, to_compare_with: &H256) -> bool { ac
 /// Wrapper inspired by `bitcoin_spv::validatespv::validate_header_chain`
 pub async fn validate_headers(
     coin: &str,
-    previous_height: u64,
-    headers: Vec<BlockHeader>,
+    last_validated_height: u64,
+    headers_to_validate: &[BlockHeader],
     storage: &dyn BlockHeaderStorageOps,
     conf: &SPVConf,
 ) -> Result<(), SPVError> {
-    let mut previous_header =
-        if previous_height == conf.starting_block_header.height {
-            conf.starting_block_header.clone()
-        } else {
-            let header = storage.get_block_header(previous_height).await?.ok_or(
-                BlockHeaderStorageError::GetFromStorageError {
-                    coin: coin.to_string(),
-                    reason: format!("Header with height {} is not found in storage", previous_height),
-                },
-            )?;
-            SPVBlockHeader::from_block_header_and_height(&header, previous_height)
-        };
-    let mut previous_height = previous_height;
-    let mut previous_hash = previous_header.hash;
-    let mut prev_bits = previous_header.bits.clone();
-
-    for header in headers.into_iter() {
-        if !validate_header_prev_hash(&header.previous_header_hash, &previous_hash) {
-            return Err(SPVError::InvalidChain {
+    let mut last_validated_header = if last_validated_height == conf.starting_block_header.height {
+        conf.starting_block_header.clone()
+    } else {
+        let header = storage.get_block_header(last_validated_height).await?.ok_or(
+            BlockHeaderStorageError::GetFromStorageError {
                 coin: coin.to_string(),
-                height: previous_height + 1,
+                reason: format!("Header with height {} is not found in storage", last_validated_height),
+            },
+        )?;
+        SPVBlockHeader::from_block_header_and_height(&header, last_validated_height)
+    };
+    let mut last_validated_height = last_validated_height;
+    let mut last_validated_hash = last_validated_header.hash;
+    let mut last_validated_bits = last_validated_header.bits.clone();
+
+    for header_to_validate in headers_to_validate.iter() {
+        if !validate_header_prev_hash(&header_to_validate.previous_header_hash, &last_validated_hash) {
+            // Detect for chain reorganization and return the last header(previous_height + 1).
+            return Err(SPVError::ParentHashMismatch {
+                coin: coin.to_string(),
+                mismatched_block_height: last_validated_height + 1,
             });
         }
 
-        let current_block_bits = header.bits.clone();
+        let block_bits_to_validate = header_to_validate.bits.clone();
         if let Some(params) = &conf.validation_params {
-            if params.constant_difficulty && params.difficulty_check && current_block_bits != prev_bits {
+            if params.constant_difficulty && params.difficulty_check && block_bits_to_validate != last_validated_bits {
                 return Err(SPVError::UnexpectedDifficultyChange);
             }
 
             if let Some(algorithm) = &params.difficulty_algorithm {
-                let next_block_bits =
-                    next_block_bits(coin, header.time, previous_header.clone(), storage, algorithm).await?;
+                let next_block_bits = next_block_bits(
+                    coin,
+                    header_to_validate.time,
+                    last_validated_header.clone(),
+                    storage,
+                    algorithm,
+                )
+                .await?;
 
-                if !params.constant_difficulty && params.difficulty_check && current_block_bits != next_block_bits {
+                if !params.constant_difficulty && params.difficulty_check && block_bits_to_validate != next_block_bits {
                     return Err(SPVError::InsufficientWork);
                 }
             }
         }
 
-        prev_bits = current_block_bits;
-        previous_header = SPVBlockHeader::from_block_header_and_height(&header, previous_height + 1);
-        previous_hash = previous_header.hash;
-        previous_height += 1;
+        last_validated_bits = block_bits_to_validate;
+        last_validated_height += 1;
+        last_validated_header = SPVBlockHeader::from_block_header_and_height(header_to_validate, last_validated_height);
+        last_validated_hash = last_validated_header.hash
     }
     Ok(())
 }
@@ -602,7 +612,7 @@ mod tests {
         block_on(validate_headers(
             "MORTY",
             1330480,
-            headers,
+            &headers,
             &TestBlockHeadersStorage { ticker: "MORTY".into() },
             &conf,
         ))
@@ -612,9 +622,12 @@ mod tests {
     #[test]
     fn test_block_headers_difficulty_check() {
         // BTC: 724609, 724610, 724611
-        let headers: Vec<BlockHeader> = vec!["00200020eab6fa183da8f9e4c761b31a67a76fa6a7658eb84c760200000000000000000063cd9585d434ec0db25894ec4b1f03735f10e31709c4395ea67c50c8378f134b972f166278100a17bfd87203".into(), 
-                                             "0000402045c698413fbe8b5bf10635658d2a1cec72062798e51200000000000000000000869617420a4c95b1d3d6d012419d2b6c199cff9b68dd9a790892a4da8466fb056033166278100a1743ac4d5b".into(), 
-                                             "0400e02019d733c1fd76a1fa5950de7bee9d80f107276b93a67204000000000000000000a0d1dee718f5f732c041800e9aa2c25e92be3f6de28278545388db8a6ae27df64c37166278100a170a970c19".into()];
+        let headers: Vec<BlockHeader> = vec![
+            "00200020eab6fa183da8f9e4c761b31a67a76fa6a7658eb84c760200000000000000000063cd9585d434ec0db25894ec4b1f03735f10e31709c4395ea67c50c8378f134b972f166278100a17bfd87203".into(),
+            "0000402045c698413fbe8b5bf10635658d2a1cec72062798e51200000000000000000000869617420a4c95b1d3d6d012419d2b6c199cff9b68dd9a790892a4da8466fb056033166278100a1743ac4d5b".into(),
+            "0400e02019d733c1fd76a1fa5950de7bee9d80f107276b93a67204000000000000000000a0d1dee718f5f732c041800e9aa2c25e92be3f6de28278545388db8a6ae27df64c37166278100a170a970c19".into()
+        ];
+        // modify hash of header 724610 to hash of header 0.
         let params = BlockHeaderValidationParams {
             difficulty_check: true,
             constant_difficulty: false,
@@ -633,7 +646,7 @@ mod tests {
         block_on(validate_headers(
             "BTC",
             724608,
-            headers,
+            &headers,
             &TestBlockHeadersStorage { ticker: "BTC".into() },
             &conf,
         ))

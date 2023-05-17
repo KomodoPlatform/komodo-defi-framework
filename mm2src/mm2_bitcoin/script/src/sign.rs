@@ -159,6 +159,7 @@ pub struct TransactionInputSigner {
     pub shielded_spends: Vec<ShieldedSpend>,
     pub shielded_outputs: Vec<ShieldedOutput>,
     pub zcash: bool,
+    pub posv: bool,
     pub str_d_zeel: Option<String>,
     pub hash_algo: SignerHashAlgo,
 }
@@ -181,6 +182,7 @@ impl From<Transaction> for TransactionInputSigner {
             shielded_spends: t.shielded_spends.clone(),
             shielded_outputs: t.shielded_outputs.clone(),
             zcash: t.zcash,
+            posv: t.posv,
             str_d_zeel: t.str_d_zeel,
             hash_algo: t.tx_hash_algo.into(),
         }
@@ -214,6 +216,7 @@ impl From<TransactionInputSigner> for Transaction {
             shielded_spends: t.shielded_spends.clone(),
             shielded_outputs: t.shielded_outputs.clone(),
             zcash: t.zcash,
+            posv: t.posv,
             binding_sig: H512::default(),
             join_split_pubkey: H256::default(),
             join_split_sig: H512::default(),
@@ -344,11 +347,14 @@ impl TransactionInputSigner {
             SighashBase::None => Vec::new(),
         };
 
+        // PoSV transactions have n_time truncated when creating signed inputs
+        let n_time: Option<u32> = if self.posv { None } else { self.n_time };
+
         let tx = Transaction {
             inputs,
             outputs,
             version: self.version,
-            n_time: self.n_time,
+            n_time,
             lock_time: self.lock_time,
             binding_sig: H512::default(),
             expiry_height: 0,
@@ -361,6 +367,7 @@ impl TransactionInputSigner {
             value_balance: 0,
             version_group_id: 0,
             zcash: self.zcash,
+            posv: self.posv,
             str_d_zeel: self.str_d_zeel.clone(),
             tx_hash_algo: self.hash_algo.into(),
         };
@@ -658,6 +665,59 @@ mod tests {
             shielded_spends: vec![],
             shielded_outputs: vec![],
             zcash: false,
+            posv: false,
+            str_d_zeel: None,
+            hash_algo: SignerHashAlgo::DSHA256,
+        };
+
+        let hash = input_signer.signature_hash(0, 0, &previous_output, SignatureVersion::Base, SighashBase::All.into());
+        assert_eq!(hash, expected_signature_hash);
+    }
+
+    #[test]
+    fn test_signature_hash_posv() {
+        let _private: Private = "cSQJp8ymcCUZCceowcTr5L1rr7tRbeB8uj3pDFRfRaMuRP6yDqfa".into();
+        let previous_tx_hash =
+            H256::from_reversed_str("0bc54ed426950f50bf2c2776034a03592e844757b42330eb908eb04492dad2c6");
+        let previous_output_index = 1;
+        let to: Address = "msj7SEQmH7pUCUx8YU6R87DrAHYzcABdzw".into();
+        assert!(to.hash.is_address_hash());
+        let previous_output = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
+        let current_output: Bytes = "76a91485ee21a7f8cdd9034fb55004e0d8ed27db1c03c288ac".into();
+        let value = 100000000;
+        let expected_signature_hash: H256 = "21d91397ba4e4bfaf73584300804cf9f9fd11cabe43f1bb38f7986cea5ef5519".into();
+
+        let unsigned_input = UnsignedTransactionInput {
+            sequence: 0xffff_ffff,
+            previous_output: OutPoint {
+                index: previous_output_index,
+                hash: previous_tx_hash,
+            },
+            amount: 100,
+            witness: vec![Vec::new()],
+        };
+
+        let output = TransactionOutput {
+            value,
+            script_pubkey: current_output,
+        };
+
+        let input_signer = TransactionInputSigner {
+            version: 2,
+            n_time: Some(1682050928),
+            overwintered: false,
+            version_group_id: 0,
+            consensus_branch_id: 0,
+            expiry_height: 0,
+            value_balance: 0,
+            lock_time: 0,
+            inputs: vec![unsigned_input],
+            outputs: vec![output],
+            join_splits: vec![],
+            shielded_spends: vec![],
+            shielded_outputs: vec![],
+            zcash: false,
+            posv: true,
             str_d_zeel: None,
             hash_algo: SignerHashAlgo::DSHA256,
         };

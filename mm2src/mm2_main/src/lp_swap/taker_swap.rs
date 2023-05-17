@@ -941,10 +941,10 @@ impl TakerSwap {
             (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
         let expires_in = wait_for_maker_payment_conf_duration(self.r().data.lock_duration);
 
-        let watcher_reward = self.r().watcher_reward && self.maker_coin.is_eth();
+        let watcher_reward = self.r().watcher_reward && self.taker_coin.is_eth();
         let wait_until = wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
         let instructions = self
-            .taker_coin
+            .maker_coin
             .maker_payment_instructions(PaymentInstructionArgs {
                 secret_hash: &secret_hash,
                 amount: maker_amount,

@@ -82,6 +82,7 @@ impl<'a> UtxoConfBuilder<'a> {
         let mature_confirmations = self.mature_confirmations();
 
         let is_pos = self.is_pos();
+        let is_posv = self.is_posv();
         let segwit = self.segwit();
         let force_min_relay_fee = self.conf["force_min_relay_fee"].as_bool().unwrap_or(false);
         let mtp_block_count = self.mtp_block_count();
@@ -95,6 +96,7 @@ impl<'a> UtxoConfBuilder<'a> {
         Ok(UtxoCoinConf {
             ticker: self.ticker.to_owned(),
             is_pos,
+            is_posv,
             requires_notarization,
             overwintered,
             pub_addr_prefix,
@@ -265,6 +267,8 @@ impl<'a> UtxoConfBuilder<'a> {
     }
 
     fn is_pos(&self) -> bool { self.conf["isPoS"].as_u64() == Some(1) }
+
+    fn is_posv(&self) -> bool { self.conf["isPoSV"].as_u64() == Some(1) }
 
     fn segwit(&self) -> bool { self.conf["segwit"].as_bool().unwrap_or(false) }
 
