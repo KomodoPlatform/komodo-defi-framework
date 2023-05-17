@@ -1722,7 +1722,7 @@ impl WatcherOps for EthCoin {
             swap_contract_address,
             input.secret_hash,
             input.search_from_block,
-            input.watcher_reward,
+            true,
         )
         .await
     }

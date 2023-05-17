@@ -695,6 +695,7 @@ impl SlpToken {
             join_split_sig: Default::default(),
             binding_sig: Default::default(),
             zcash: unsigned.zcash,
+            posv: unsigned.posv,
             str_d_zeel: unsigned.str_d_zeel,
             tx_hash_algo: self.platform_coin.as_ref().tx_hash_algo,
         };

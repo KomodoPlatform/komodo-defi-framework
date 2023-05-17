@@ -1141,6 +1141,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
         version_group_id: coin.as_ref().conf.version_group_id,
         consensus_branch_id: coin.as_ref().conf.consensus_branch_id,
         zcash: coin.as_ref().conf.zcash,
+        posv: coin.as_ref().conf.is_posv,
         str_d_zeel,
         hash_algo,
     };
@@ -1170,6 +1171,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
         join_split_sig: H512::default(),
         join_split_pubkey: H256::default(),
         zcash: coin.as_ref().conf.zcash,
+        posv: coin.as_ref().conf.is_posv,
         str_d_zeel: unsigned.str_d_zeel,
         tx_hash_algo: unsigned.hash_algo.into(),
     })
