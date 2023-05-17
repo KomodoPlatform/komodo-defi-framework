@@ -97,38 +97,39 @@ impl BlockDbImpl {
             .map_err(|err| BlockDbError::SqliteError(SqliteClientError::from(err)))
     }
 
-    fn with_blocks<F>(&self, from_height: BlockHeight, limit: Option<u32>, mut with_row: F) -> Result<(), BlockDbError>
+    fn with_blocks<F>(
+        &self,
+        from_height: BlockHeight,
+        limit: Option<u32>,
+        mut with_row: F,
+    ) -> Result<(), SqliteClientError>
     where
-        F: FnMut(CompactBlock) -> Result<(), BlockDbError>,
+        F: FnMut(CompactBlock) -> Result<(), SqliteClientError>,
     {
         // Fetch the CompactBlocks we need to scan
         let stmt_blocks = self.db.lock().unwrap();
-        let mut stmt_blocks = stmt_blocks
-            .prepare(
-                "SELECT height, data FROM compactblocks WHERE height > ? ORDER BY height ASC \
+        let mut stmt_blocks = stmt_blocks.prepare(
+            "SELECT height, data FROM compactblocks WHERE height > ? ORDER BY height ASC \
         LIMIT ?",
-            )
-            .map_err(|err| BlockDbError::SqliteError(SqliteClientError::from(err)))?;
+        )?;
 
-        let rows = stmt_blocks
-            .query_map(
-                params![u32::from(from_height), limit.unwrap_or(u32::max_value()),],
-                |row| {
-                    Ok(CompactBlockRow {
-                        height: BlockHeight::from_u32(row.get(0)?),
-                        data: row.get(1)?,
-                    })
-                },
-            )
-            .map_err(|err| BlockDbError::SqliteError(SqliteClientError::from(err)))?;
+        let rows = stmt_blocks.query_map(
+            params![u32::from(from_height), limit.unwrap_or(u32::max_value()),],
+            |row| {
+                Ok(CompactBlockRow {
+                    height: BlockHeight::from_u32(row.get(0)?),
+                    data: row.get(1)?,
+                })
+            },
+        )?;
 
         for row_result in rows {
-            let cbr = row_result.map_err(|err| BlockDbError::SqliteError(SqliteClientError::from(err)))?;
+            let cbr = row_result?;
             let block = CompactBlock::parse_from_bytes(&cbr.data)
-                .map_err(|err| BlockDbError::CorruptedData(err.to_string()))?;
+                .map_err(zcash_client_backend::data_api::error::Error::from)?;
 
             if block.height() != cbr.height {
-                return Err(BlockDbError::CorruptedData(format!(
+                return Err(SqliteClientError::CorruptedData(format!(
                     "Block height {} did not match row's height field value {}",
                     block.height(),
                     cbr.height
@@ -189,7 +190,7 @@ impl BlockDbImpl {
 }
 
 impl BlockSource for BlockDbImpl {
-    type Error = BlockDbError;
+    type Error = SqliteClientError;
 
     fn with_blocks<F>(&self, from_height: BlockHeight, limit: Option<u32>, with_row: F) -> Result<(), Self::Error>
     where

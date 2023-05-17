@@ -3,7 +3,8 @@
 use crate::z_coin::z_rpc::create_wallet_db;
 use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError, ZcoinConsensusParams};
 use mm2_err_handle::prelude::{MmError, MmResult};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use zcash_client_sqlite::WalletDb;
 use zcash_primitives::zip32::ExtendedFullViewingKey;
 
@@ -17,9 +18,9 @@ pub enum WalletDbError {
 #[derive(Clone)]
 pub struct WalletDbSharedImpl {
     #[cfg(not(target_arch = "wasm32"))]
-    db: Arc<Mutex<WalletDb<ZcoinConsensusParams>>>,
+    pub db: Arc<Mutex<WalletDb<ZcoinConsensusParams>>>,
     #[cfg(target_arch = "wasm32")]
-    db: Arc<Mutex<WalletDb<ZcoinConsensusParams>>>,
+    pub db: Arc<Mutex<WalletDb<ZcoinConsensusParams>>>,
 }
 
 impl<'a> WalletDbSharedImpl {
@@ -37,6 +38,4 @@ impl<'a> WalletDbSharedImpl {
             db: Arc::new(Mutex::new(wallet_db)),
         })
     }
-
-    pub fn into_inner(self) -> Arc<Mutex<WalletDb<ZcoinConsensusParams>>> { self.db }
 }

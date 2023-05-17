@@ -567,8 +567,7 @@ impl SaplingSyncLoopHandle {
         let current_block_in_db = block_in_place(|| self.blocks_db.get_latest_block())?;
         let wallet_db = self.wallet_db.clone();
         let extrema = block_in_place(|| {
-            let conn = wallet_db.into_inner();
-            let conn = conn.lock().expect("Connection not available");
+            let conn = wallet_db.db.lock();
             conn.block_height_extrema()
         })?;
         let mut from_block = self
@@ -597,7 +596,7 @@ impl SaplingSyncLoopHandle {
     fn scan_blocks(&mut self) -> Result<(), MmError<BlockDbError>> {
         // required to avoid immutable borrow of self
         let wallet_db_arc = self.wallet_db.clone();
-        let wallet_guard = wallet_db_arc.into_inner().lock().expect("Connection not available");
+        let wallet_guard = wallet_db_arc.db.lock();
         let mut wallet_ops = wallet_guard.get_update_ops().expect("get_update_ops always returns Ok");
 
         let validate_chain = validate_chain(
@@ -607,7 +606,7 @@ impl SaplingSyncLoopHandle {
         );
         if let Err(e) = validate_chain {
             match e {
-                BlockDbError::SqliteError(ZcashClientError::BackendError(ChainError::InvalidChain(lower_bound, _))) => {
+                ZcashClientError::BackendError(ChainError::InvalidChain(lower_bound, _)) => {
                     let rewind_height = if lower_bound > BlockHeight::from_u32(10) {
                         lower_bound - 10
                     } else {
@@ -616,7 +615,7 @@ impl SaplingSyncLoopHandle {
                     wallet_ops.rewind_to_height(rewind_height)?;
                     self.blocks_db.rewind_to_height(rewind_height.into())?;
                 },
-                e => return MmError::err(e),
+                e => return MmError::err(BlockDbError::SqliteError(e)),
             }
         }
 
@@ -728,9 +727,7 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut c
         sync_handle.check_watch_for_tx_existence(client.as_mut()).await;
 
         if let Some(tx_id) = sync_handle.watch_for_tx {
-            let db_inner = sync_handle.wallet_db.clone().into_inner();
-            let db_inner = db_inner.lock().expect("Connection not available");
-            if !block_in_place(|| is_tx_imported(db_inner.sql_conn(), tx_id)) {
+            if !block_in_place(|| is_tx_imported(sync_handle.wallet_db.db.lock().sql_conn(), tx_id)) {
                 info!("Tx {} is not imported yet", tx_id);
                 Timer::sleep(10.).await;
                 continue;

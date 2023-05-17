@@ -346,9 +346,9 @@ impl ZCoin {
 
     #[cfg(not(target_arch = "wasm32"))]
     async fn my_balance_sat(&self) -> Result<u64, MmError<ZcashClientError>> {
-        let db = self.z_fields.light_wallet_db.clone().into_inner();
+        let wallet_db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
-            let db = db.lock().expect("Connection not available");
+            let db = wallet_db.db.lock();
             let balance = get_balance(&db, AccountId::default())?.into();
             Ok(balance)
         })
@@ -360,9 +360,9 @@ impl ZCoin {
 
     #[cfg(not(target_arch = "wasm32"))]
     async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<ZcashClientError>> {
-        let db = self.z_fields.light_wallet_db.clone().into_inner();
+        let wallet_db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
-            let guard = db.lock().expect("Connection not available");
+            let guard = wallet_db.db.lock();
             let latest_db_block = match guard.block_height_extrema()? {
                 Some((_, latest)) => latest,
                 None => return Ok(Vec::new()),
@@ -529,9 +529,8 @@ impl ZCoin {
     ) -> Result<SqlTxHistoryRes, MmError<SqlTxHistoryError>> {
         let wallet_db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
-            let db_guard = wallet_db.into_inner();
-            let conn = db_guard.lock().expect("Connection not available");
-            let conn = conn.sql_conn();
+            let db_guard = wallet_db.db.lock();
+            let conn = db_guard.sql_conn();
 
             let total_sql = SqlBuilder::select_from(TRANSACTIONS_TABLE)
                 .field("COUNT(id_tx)")
