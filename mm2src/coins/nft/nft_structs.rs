@@ -1,21 +1,24 @@
 use crate::{TransactionType, TxFeeDetails, WithdrawFee};
+use ethereum_types::Address;
 use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 use serde::Deserialize;
+use std::fmt;
 use std::str::FromStr;
+use url::Url;
 
 #[derive(Debug, Deserialize)]
 pub struct NftListReq {
     pub(crate) chains: Vec<Chain>,
-    pub(crate) url: String,
+    pub(crate) url: Url,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct NftMetadataReq {
-    pub(crate) token_address: String,
+    pub(crate) token_address: Address,
     pub(crate) token_id: BigDecimal,
     pub(crate) chain: Chain,
-    pub(crate) url: String,
+    pub(crate) url: Url,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -28,10 +31,20 @@ pub(crate) enum Chain {
     Polygon,
 }
 
+impl fmt::Display for Chain {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self {
+            Chain::Avalanche => write!(f, "avalanche"),
+            Chain::Bsc => write!(f, "bsc"),
+            Chain::Eth => write!(f, "eth"),
+            Chain::Fantom => write!(f, "fantom"),
+            Chain::Polygon => write!(f, "polygon"),
+        }
+    }
+}
+
 pub(crate) trait ConvertChain {
     fn to_ticker(&self) -> String;
-
-    fn to_ticker_chain(&self) -> (String, String);
 }
 
 impl ConvertChain for Chain {
@@ -42,16 +55,6 @@ impl ConvertChain for Chain {
             Chain::Eth => "ETH".to_owned(),
             Chain::Fantom => "FTM".to_owned(),
             Chain::Polygon => "MATIC".to_owned(),
-        }
-    }
-
-    fn to_ticker_chain(&self) -> (String, String) {
-        match self {
-            Chain::Avalanche => ("AVAX".to_owned(), "avalanche".to_owned()),
-            Chain::Bsc => ("BNB".to_owned(), "bsc".to_owned()),
-            Chain::Eth => ("ETH".to_owned(), "eth".to_owned()),
-            Chain::Fantom => ("FTM".to_owned(), "fantom".to_owned()),
-            Chain::Polygon => ("MATIC".to_owned(), "polygon".to_owned()),
         }
     }
 }
@@ -175,7 +178,7 @@ pub struct WithdrawErc721 {
 
 #[derive(Clone, Deserialize)]
 pub struct WithdrawNftReq {
-    pub(crate) url: String,
+    pub(crate) url: Url,
     pub(crate) withdraw_type: WithdrawNftType,
 }
 
@@ -217,7 +220,7 @@ pub struct TransactionNftDetails {
 #[derive(Debug, Deserialize)]
 pub struct NftTransfersReq {
     pub(crate) chains: Vec<Chain>,
-    pub(crate) url: String,
+    pub(crate) url: Url,
 }
 
 #[derive(Debug, Serialize)]
