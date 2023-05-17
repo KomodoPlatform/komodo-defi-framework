@@ -31,6 +31,10 @@ pub struct BlockDbInner {
     pub inner: IndexedDb,
 }
 
+impl BlockDbInner {
+    pub fn _get_inner(&self) -> &IndexedDb { &self.inner }
+}
+
 #[async_trait]
 impl DbInstance for BlockDbInner {
     fn db_name() -> &'static str { DB_NAME }

@@ -887,7 +887,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
 
         let blocks_db = self.blocks_db().await?;
         let evk = ExtendedFullViewingKey::from(&z_spending_key);
-        let wallet_db = WalletDbSharedImpl::new(&self, evk)
+        let wallet_db = WalletDbSharedImpl::new(&self)
             .await
             .map_err(|err| ZCoinBuildError::WalletDbError(err.into_inner()))?;
 
@@ -931,7 +931,6 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
             evk: ExtendedFullViewingKey::from(&z_spending_key),
             z_spending_key,
             z_tx_prover: Arc::new(z_tx_prover),
-            #[cfg(not(target_arch = "wasm32"))]
             light_wallet_db,
             consensus_params: self.protocol_info.consensus_params,
             sync_state_connector,
@@ -996,54 +995,13 @@ impl<'a> ZCoinBuilder<'a> {
     #[cfg(target_arch = "wasm32")]
     fn cache_db_path(&self) -> String { todo!() }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    fn wallet_db_path(&self) -> PathBuf { self.db_dir_path.join(format!("{}_wallet.db", self.ticker)) }
-
-    #[cfg(target_arch = "wasm32")]
-    fn wallet_db_path(&self) -> PathBuf { todo!() }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    async fn wallet_db(
-        &self,
-        evk: ExtendedFullViewingKey,
-    ) -> Result<Arc<Mutex<WalletDb<ZcoinConsensusParams>>>, MmError<ZcoinClientInitError>> {
-        let wallet_db = create_wallet_db(
-            self.wallet_db_path(),
-            self.protocol_info.consensus_params.clone(),
-            self.protocol_info.check_point_block.clone(),
-            evk,
-        )
-        .await?;
-
-        Ok(Arc::new(Mutex::new(wallet_db)))
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    async fn wallet_db(
-        &self,
-        _evk: ExtendedFullViewingKey,
-    ) -> Result<Arc<Mutex<String>>, MmError<ZcoinClientInitError>> {
-        todo!()
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
     async fn blocks_db(&self) -> Result<BlockDbImpl, MmError<ZcoinClientInitError>> {
         let cache_db_path = self.cache_db_path();
         let ctx = self.ctx.clone();
         let ticker = self.ticker.to_string();
-        async_blocking(|| {
-            BlockDbImpl::new(ctx, ticker, cache_db_path)
-                .map_to_mm(|err| ZcoinClientInitError::BlocksDbInitFailure(err.to_string()))
-        })
-        .await
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    async fn blocks_db(&self) -> Result<BlockDbImpl, MmError<ZcoinClientInitError>> {
-        let cache_db = self.cache_db_path();
-        let ctx = self.ctx.clone();
-        BlockDbImpl::new(ctx, self.ticker.to_string(), cache_db)
-            .map_to_mm(|err| ZcoinClientInitError::BlocksDbInitFailure(err.to_string()))
+        BlockDbImpl::new(ctx, ticker, cache_db_path)
+            .map_err(|err| MmError::new(ZcoinClientInitError::BlocksDbInitFailure(err.to_string())))
+            .await
     }
 
     #[cfg(not(target_arch = "wasm32"))]

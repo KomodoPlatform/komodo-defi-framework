@@ -10,7 +10,6 @@ use futures::StreamExt;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 
@@ -45,6 +44,7 @@ cfg_native!(
     use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
     use zcash_client_sqlite::wallet::init::{init_accounts_table, init_blocks_table, init_wallet_db};
     use zcash_client_sqlite::WalletDb;
+    use zcash_client_sqlite::error::SqliteClientError;
 
     mod z_coin_grpc {
         tonic::include_proto!("cash.z.wallet.sdk.rpc");
@@ -395,8 +395,8 @@ pub(super) async fn init_light_client(
     ))
 }
 
-#[allow(unused)]
 #[cfg(target_arch = "wasm32")]
+#[allow(unused)]
 pub(super) async fn init_light_client(
     _coin: String,
     _lightwalletd_urls: Vec<String>,
@@ -405,7 +405,7 @@ pub(super) async fn init_light_client(
     _consensus_params: ZcoinConsensusParams,
     _scan_blocks_per_iteration: u32,
     _scan_interval_ms: u64,
-) -> Result<(AsyncMutex<SaplingSyncConnector>, String), MmError<ZcoinClientInitError>> {
+) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     todo!()
 }
 

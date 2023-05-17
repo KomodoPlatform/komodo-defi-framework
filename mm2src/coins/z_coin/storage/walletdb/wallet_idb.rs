@@ -27,12 +27,16 @@ impl TableSignature for WalletDbTable {
     }
 }
 
-pub struct BlockDbInner {
+pub struct WalletDbInner {
     pub inner: IndexedDb,
 }
 
+impl WalletDbInner {
+    pub fn _get_inner(&self) -> &IndexedDb { &self.inner }
+}
+
 #[async_trait]
-impl DbInstance for BlockDbInner {
+impl DbInstance for WalletDbInner {
     fn db_name() -> &'static str { DB_NAME }
 
     async fn init(db_id: DbIdentifier) -> InitDbResult<Self> {

@@ -1,6 +1,7 @@
-#[cfg(target_arch = "wasm32")] mod indexeddb;
+#[cfg(target_arch = "wasm32")] pub(crate) mod block_idb;
 
 use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use mm2_err_handle::prelude::*;
 use protobuf::Message;
 use std::path::Path;
@@ -8,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use zcash_client_backend::data_api::BlockSource;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_primitives::consensus::BlockHeight;
+
 cfg_native!(
     use db_common::sqlite::rusqlite::{params, Connection, NO_PARAMS};
     use db_common::sqlite::{query_single_row, run_optimization_pragmas};
@@ -51,7 +53,7 @@ pub struct BlockDbImpl {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl BlockDbImpl {
-    pub fn new(_ctx: MmArc, ticker: String, path: impl AsRef<Path>) -> Result<Self, BlockDbError> {
+    pub async fn new(_ctx: MmArc, ticker: String, path: impl AsRef<Path>) -> MmResult<Self, BlockDbError> {
         let conn = Connection::open(path).map_err(|err| BlockDbError::SqliteError(SqliteClientError::from(err)))?;
         run_optimization_pragmas(&conn).map_err(|err| BlockDbError::SqliteError(SqliteClientError::from(err)))?;
         conn.execute(
@@ -61,7 +63,7 @@ impl BlockDbImpl {
         )",
             NO_PARAMS,
         )
-        .map_err(|err| BlockDbError::SqliteError(SqliteClientError::from(err)))?;
+        .map_to_mm(|err| BlockDbError::SqliteError(SqliteClientError::from(err)))?;
 
         Ok(Self {
             db: Arc::new(Mutex::new(conn)),
@@ -143,20 +145,30 @@ impl BlockDbImpl {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+impl BlockSource for BlockDbImpl {
+    type Error = SqliteClientError;
+
+    fn with_blocks<F>(&self, from_height: BlockHeight, limit: Option<u32>, with_row: F) -> Result<(), Self::Error>
+    where
+        F: FnMut(CompactBlock) -> Result<(), Self::Error>,
+    {
+        self.with_blocks(from_height, limit, with_row)
+    }
+}
+
 cfg_wasm32!(
     use super::*;
-    use crate::z_coin::storage::blockdb::indexeddb::BlockDbInner;
+    use crate::z_coin::storage::blockdb::block_idb::BlockDbInner;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, IndexedDb, SharedDb};
+
+    pub type BlockDbRes<T> = MmResult<T, BlockDbError>;
+    pub type BlockDbInnerLocked<'a> = DbLocked<'a, BlockDbInner>;
 );
 
 #[cfg(target_arch = "wasm32")]
-pub type BlockDbRes<T> = MmResult<T, BlockDbError>;
-#[cfg(target_arch = "wasm32")]
-pub type BlockDbInnerLocked<'a> = DbLocked<'a, BlockDbInner>;
-
-#[cfg(target_arch = "wasm32")]
 impl BlockDbImpl {
-    pub fn new(ctx: MmArc, ticker: String, _path: impl AsRef<Path>) -> Result<Self, BlockDbError> {
+    pub async fn new(ctx: MmArc, ticker: String, _path: impl AsRef<Path>) -> Result<Self, BlockDbError> {
         Ok(Self {
             db: ConstructibleDb::new(&ctx).into_shared(),
             ticker,
@@ -189,13 +201,14 @@ impl BlockDbImpl {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl BlockSource for BlockDbImpl {
-    type Error = SqliteClientError;
+    type Error = BlockDbError;
 
     fn with_blocks<F>(&self, from_height: BlockHeight, limit: Option<u32>, with_row: F) -> Result<(), Self::Error>
     where
         F: FnMut(CompactBlock) -> Result<(), Self::Error>,
     {
-        self.with_blocks(from_height, limit, with_row)
+        todo!()
     }
 }
