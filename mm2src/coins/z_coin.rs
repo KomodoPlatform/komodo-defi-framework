@@ -54,6 +54,7 @@ use serde_json::Value as Json;
 use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
 use std::iter;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
@@ -76,8 +77,8 @@ mod z_htlc;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
+use z_rpc::init_light_client;
 pub use z_rpc::SyncStatus;
-use z_rpc::{init_light_client, BlockDb};
 
 cfg_native!(
     use crate::{NumConversError, TransactionDetails, TxFeeDetails};
@@ -98,14 +99,16 @@ cfg_native!(
     use zcash_primitives::consensus;
     use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
     use zcash_proofs::default_params_folder;
-    use z_rpc::{init_native_client, WalletDbShared};
+    use z_rpc::{init_native_client};
 
     use crate::z_coin::z_rpc::{create_wallet_db};
 );
 
 mod z_coin_errors;
+use crate::z_coin::storage::{BlockDbImpl, WalletDbShared, WalletDbSharedImpl};
 pub use z_coin_errors::*;
 
+pub mod storage;
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
 mod z_coin_native_tests;
 
@@ -205,7 +208,6 @@ pub struct ZCoinFields {
     z_spending_key: ExtendedSpendingKey,
     evk: ExtendedFullViewingKey,
     z_tx_prover: Arc<LocalTxProver>,
-    #[cfg(not(target_arch = "wasm32"))]
     light_wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
     sync_state_connector: AsyncMutex<SaplingSyncConnector>,
@@ -344,9 +346,10 @@ impl ZCoin {
 
     #[cfg(not(target_arch = "wasm32"))]
     async fn my_balance_sat(&self) -> Result<u64, MmError<ZcashClientError>> {
-        let db = self.z_fields.light_wallet_db.clone();
+        let db = self.z_fields.light_wallet_db.clone().into_inner();
         async_blocking(move || {
-            let balance = get_balance(&db.lock(), AccountId::default())?.into();
+            let db = db.lock().expect("Connection not available");
+            let balance = get_balance(&db, AccountId::default())?.into();
             Ok(balance)
         })
         .await
@@ -357,9 +360,9 @@ impl ZCoin {
 
     #[cfg(not(target_arch = "wasm32"))]
     async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<ZcashClientError>> {
-        let db = self.z_fields.light_wallet_db.clone();
+        let db = self.z_fields.light_wallet_db.clone().into_inner();
         async_blocking(move || {
-            let guard = db.lock();
+            let guard = db.lock().expect("Connection not available");
             let latest_db_block = match guard.block_height_extrema()? {
                 Some((_, latest)) => latest,
                 None => return Ok(Vec::new()),
@@ -526,8 +529,9 @@ impl ZCoin {
     ) -> Result<SqlTxHistoryRes, MmError<SqlTxHistoryError>> {
         let wallet_db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
-            let db_guard = wallet_db.lock();
-            let conn = db_guard.sql_conn();
+            let db_guard = wallet_db.into_inner();
+            let conn = db_guard.lock().expect("Connection not available");
+            let conn = conn.sql_conn();
 
             let total_sql = SqlBuilder::select_from(TRANSACTIONS_TABLE)
                 .field("COUNT(id_tx)")
@@ -884,7 +888,9 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
 
         let blocks_db = self.blocks_db().await?;
         let evk = ExtendedFullViewingKey::from(&z_spending_key);
-        let wallet_db = self.wallet_db(evk).await?;
+        let wallet_db = WalletDbSharedImpl::new(&self, evk)
+            .await
+            .map_err(|err| ZCoinBuildError::WalletDbError(err.into_inner()))?;
 
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
@@ -1022,13 +1028,24 @@ impl<'a> ZCoinBuilder<'a> {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn blocks_db(&self) -> Result<BlockDb, MmError<ZcoinClientInitError>> {
+    async fn blocks_db(&self) -> Result<BlockDbImpl, MmError<ZcoinClientInitError>> {
         let cache_db_path = self.cache_db_path();
-        async_blocking(|| BlockDb::for_path(cache_db_path).map_to_mm(ZcoinClientInitError::BlocksDbInitFailure)).await
+        let ctx = self.ctx.clone();
+        let ticker = self.ticker.to_string();
+        async_blocking(|| {
+            BlockDbImpl::new(ctx, ticker, cache_db_path)
+                .map_to_mm(|err| ZcoinClientInitError::BlocksDbInitFailure(err.to_string()))
+        })
+        .await
     }
 
     #[cfg(target_arch = "wasm32")]
-    async fn blocks_db(&self) -> Result<BlockDb, MmError<ZcoinClientInitError>> { todo!() }
+    async fn blocks_db(&self) -> Result<BlockDbImpl, MmError<ZcoinClientInitError>> {
+        let cache_db = self.cache_db_path();
+        let ctx = self.ctx.clone();
+        BlockDbImpl::new(ctx, self.ticker.to_string(), cache_db)
+            .map_to_mm(|err| ZcoinClientInitError::BlocksDbInitFailure(err.to_string()))
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     async fn z_tx_prover(&self) -> Result<LocalTxProver, MmError<ZCoinBuildError>> {

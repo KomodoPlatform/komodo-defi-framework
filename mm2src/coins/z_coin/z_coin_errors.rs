@@ -1,5 +1,6 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
+use crate::z_coin::storage::{BlockDbError, WalletDbError};
 use crate::NumConversError;
 use derive_more::Display;
 
@@ -22,7 +23,7 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
     #[non_exhaustive]
     pub enum UpdateBlocksCacheErr {
         GrpcError(tonic::Status),
-        BlocksDbError(SqliteError),
+        BlocksDbError(String),
         ZcashSqliteError(ZcashClientError),
         UtxoRpcError(UtxoRpcError),
         InternalError(String),
@@ -35,7 +36,7 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
     }
 
     impl From<SqliteError> for UpdateBlocksCacheErr {
-        fn from(err: SqliteError) -> Self { UpdateBlocksCacheErr::BlocksDbError(err) }
+        fn from(err: SqliteError) -> Self { UpdateBlocksCacheErr::BlocksDbError(err.to_string()) }
     }
 
     impl From<ZcashClientError> for UpdateBlocksCacheErr {
@@ -53,16 +54,16 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
     #[derive(Debug, Display)]
     #[non_exhaustive]
     pub enum ZcoinClientInitError {
-        BlocksDbInitFailure(SqliteError),
-        WalletDbInitFailure(SqliteError),
-        ZcashSqliteError(ZcashClientError),
+        BlocksDbInitFailure(String),
+        WalletDbInitFailure(String),
+        ZcashSqliteError(String),
         EmptyLightwalletdUris,
         #[display(fmt = "Fail to init clients while iterating lightwalletd urls {:?}", _0)]
         UrlIterFailure(Vec<UrlIterError>),
     }
 
     impl From<ZcashClientError> for ZcoinClientInitError {
-        fn from(err: ZcashClientError) -> Self { ZcoinClientInitError::ZcashSqliteError(err) }
+        fn from(err: ZcashClientError) -> Self { ZcoinClientInitError::ZcashSqliteError(err.to_string()) }
     }
 
     #[derive(Debug, Display)]
@@ -184,6 +185,7 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
         ZCashParamsNotFound,
         ZDerivationPathNotSet,
         SaplingParamsInvalidChecksum,
+        WalletDbError(WalletDbError)
     }
 
     impl From<SqliteError> for ZCoinBuildError {
@@ -241,7 +243,9 @@ cfg_wasm32!(
 
     #[derive(Debug, Display)]
     #[non_exhaustive]
-    pub enum ZcoinClientInitError {}
+    pub enum ZcoinClientInitError {
+        BlocksDbInitFailure(String)
+    }
 
     #[derive(Debug, Display)]
     pub enum UrlIterError {}
@@ -271,6 +275,7 @@ cfg_wasm32!(
         ZCashParamsNotFound,
         RpcClientInitErr(ZcoinClientInitError),
         ZDerivationPathNotSet,
+        WalletDbError(WalletDbError)
     }
 
     impl From<std::io::Error> for ZCoinBuildError {
