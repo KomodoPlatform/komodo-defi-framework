@@ -200,7 +200,6 @@ impl Parameters for ZcoinConsensusParams {
     fn b58_script_address_prefix(&self) -> [u8; 2] { self.b58_script_address_prefix }
 }
 
-#[allow(unused)]
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,
     my_z_addr: PaymentAddress,
@@ -348,8 +347,7 @@ impl ZCoin {
     async fn my_balance_sat(&self) -> Result<u64, MmError<ZcashClientError>> {
         let wallet_db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
-            let db = wallet_db.db.lock();
-            let balance = get_balance(&db, AccountId::default())?.into();
+            let balance = get_balance(&wallet_db.db.lock(), AccountId::default())?.into();
             Ok(balance)
         })
         .await
@@ -359,25 +357,28 @@ impl ZCoin {
     async fn my_balance_sat(&self) -> Result<u64, MmError<ZCoinBalanceError>> { todo!() }
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<ZcashClientError>> {
+    async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<SpendableNotesError>> {
         let wallet_db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
             let guard = wallet_db.db.lock();
-            let latest_db_block = match guard.block_height_extrema()? {
+            let latest_db_block = match guard
+                .block_height_extrema()
+                .map_err(|err| SpendableNotesError::SqliteClientError(err.to_string()))?
+            {
                 Some((_, latest)) => latest,
                 None => return Ok(Vec::new()),
             };
-            get_spendable_notes(&guard, AccountId::default(), latest_db_block).map_err(MmError::new)
+            get_spendable_notes(&guard, AccountId::default(), latest_db_block)
+                .map_err(|err| MmError::new(SpendableNotesError::SqliteClientError(err.to_string())))
         })
         .await
     }
 
     #[cfg(target_arch = "wasm32")]
-    async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<String>> { todo!() }
+    async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<SpendableNotesError>> { todo!() }
 
     /// Returns spendable notes
-    #[cfg(not(target_arch = "wasm32"))]
-    async fn spendable_notes_ordered(&self) -> Result<Vec<SpendableNote>, MmError<SqliteClientError>> {
+    async fn spendable_notes_ordered(&self) -> Result<Vec<SpendableNote>, MmError<SpendableNotesError>> {
         let mut unspents = self.get_spendable_notes().await?;
 
         unspents.sort_unstable_by(|a, b| a.note_value.cmp(&b.note_value));
@@ -409,7 +410,10 @@ impl ZCoin {
         let total_output = big_decimal_from_sat_unsigned(total_output_sat, self.utxo_arc.decimals);
         let total_required = &total_output + &tx_fee;
 
-        let spendable_notes = self.spendable_notes_ordered().await?;
+        let spendable_notes = self
+            .spendable_notes_ordered()
+            .await
+            .map_err(|err| GenTxError::SpendableNotesError(err.to_string()))?;
         let mut total_input_amount = BigDecimal::from(0);
         let mut change = BigDecimal::from(0);
 
@@ -758,6 +762,7 @@ impl AsRef<UtxoCoinFields> for ZCoin {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "rpc", content = "rpc_data")]
 pub enum ZcoinRpcMode {
+    #[cfg(not(target_arch = "wasm32"))]
     Native,
     Light {
         electrum_servers: Vec<ElectrumRpcRequest>,
@@ -820,7 +825,6 @@ fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCo
     Ok((spend_path, output_path))
 }
 
-#[allow(unused)]
 pub struct ZCoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
@@ -828,7 +832,6 @@ pub struct ZCoinBuilder<'a> {
     z_coin_params: &'a ZcoinActivationParams,
     utxo_params: UtxoActivationParams,
     priv_key_policy: PrivKeyBuildPolicy,
-    #[cfg(not(target_arch = "wasm32"))]
     db_dir_path: PathBuf,
     /// `Some` if `ZCoin` should be initialized with a forced spending key.
     z_spending_key: Option<ExtendedSpendingKey>,
@@ -906,8 +909,6 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                 )
                 .await?
             },
-            #[cfg(target_arch = "wasm32")]
-            ZcoinRpcMode::Native => todo!(),
             ZcoinRpcMode::Light {
                 light_wallet_d_servers, ..
             } => {
@@ -953,11 +954,12 @@ impl<'a> ZCoinBuilder<'a> {
         conf: &'a Json,
         z_coin_params: &'a ZcoinActivationParams,
         priv_key_policy: PrivKeyBuildPolicy,
-        #[cfg(not(target_arch = "wasm32"))] db_dir_path: PathBuf,
+        db_dir_path: PathBuf,
         z_spending_key: Option<ExtendedSpendingKey>,
         protocol_info: ZcoinProtocolInfo,
     ) -> ZCoinBuilder<'a> {
         let utxo_mode = match &z_coin_params.mode {
+            #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => UtxoRpcMode::Native,
             ZcoinRpcMode::Light { electrum_servers, .. } => UtxoRpcMode::Electrum {
                 servers: electrum_servers.clone(),
@@ -982,21 +984,14 @@ impl<'a> ZCoinBuilder<'a> {
             z_coin_params,
             utxo_params,
             priv_key_policy,
-            #[cfg(not(target_arch = "wasm32"))]
             db_dir_path,
             z_spending_key,
             protocol_info,
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    fn cache_db_path(&self) -> PathBuf { self.db_dir_path.join(format!("{}_cache.db", self.ticker)) }
-
-    #[cfg(target_arch = "wasm32")]
-    fn cache_db_path(&self) -> String { todo!() }
-
     async fn blocks_db(&self) -> Result<BlockDbImpl, MmError<ZcoinClientInitError>> {
-        let cache_db_path = self.cache_db_path();
+        let cache_db_path = self.db_dir_path.join(format!("{}_cache.db", self.ticker));
         let ctx = self.ctx.clone();
         let ticker = self.ticker.to_string();
         BlockDbImpl::new(ctx, ticker, cache_db_path)

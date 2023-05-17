@@ -17,7 +17,7 @@ cfg_native!(
     use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
     use zcash_client_sqlite::error::SqliteClientError;
     use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
-use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
+    use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
     #[derive(Debug, Display)]
     #[non_exhaustive]
@@ -90,6 +90,7 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
         BlockchainScanStopped,
         LightClientErr(SqliteClientError),
         FailedToCreateNote,
+        SpendableNotesError(String)
     }
 
     impl From<GetUnspentWitnessErr> for GenTxError {
@@ -134,6 +135,7 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
                 | GenTxError::TxReadError { .. }
                 | GenTxError::BlockchainScanStopped
                 | GenTxError::LightClientErr(_)
+                | GenTxError::SpendableNotesError(_)
                 | GenTxError::FailedToCreateNote => WithdrawError::InternalError(gen_tx.to_string()),
             }
         }
@@ -301,4 +303,9 @@ impl From<NumConversError> for SendOutputsErr {
 
 impl From<ZcoinClientInitError> for ZCoinBuildError {
     fn from(err: ZcoinClientInitError) -> Self { ZCoinBuildError::RpcClientInitErr(err) }
+}
+
+#[derive(Debug, Display)]
+pub enum SpendableNotesError {
+    SqliteClientError(String),
 }
