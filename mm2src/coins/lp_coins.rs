@@ -92,7 +92,6 @@ cfg_native! {
     use lightning_invoice::{Invoice, ParseOrSemanticError};
     use std::io;
     use std::path::PathBuf;
-    use z_coin::ZcoinProtocolInfo;
 }
 
 cfg_wasm32! {
@@ -288,7 +287,7 @@ pub mod nft;
 use nft::nft_errors::GetNftInfoError;
 
 #[allow(unused)] pub mod z_coin;
-#[allow(unused)] use z_coin::ZCoin;
+#[allow(unused)] use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
@@ -2338,7 +2337,6 @@ pub enum MmCoinEnum {
     QtumCoin(QtumCoin),
     Qrc20Coin(Qrc20Coin),
     EthCoin(EthCoin),
-    #[cfg(not(target_arch = "wasm32"))]
     ZCoin(ZCoin),
     Bch(BchCoin),
     SlpToken(SlpToken),
@@ -2424,7 +2422,6 @@ impl From<LightningCoin> for MmCoinEnum {
     fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(c) }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl From<ZCoin> for MmCoinEnum {
     fn from(c: ZCoin) -> MmCoinEnum { MmCoinEnum::ZCoin(c) }
 }
@@ -2444,7 +2441,6 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::TendermintToken(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(ref c) => c,
-            #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::ZCoin(ref c) => c,
             MmCoinEnum::Test(ref c) => c,
             #[cfg(all(
@@ -2837,7 +2833,6 @@ pub enum CoinProtocol {
         token_contract_address: String,
         decimals: u8,
     },
-    #[cfg(not(target_arch = "wasm32"))]
     ZHTLC(ZcoinProtocolInfo),
 }
 
@@ -3090,7 +3085,6 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         },
         CoinProtocol::TENDERMINT { .. } => return ERR!("TENDERMINT protocol is not supported by lp_coininit"),
         CoinProtocol::TENDERMINTTOKEN(_) => return ERR!("TENDERMINTTOKEN protocol is not supported by lp_coininit"),
-        #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
@@ -3683,7 +3677,6 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
             ERR!("Solana pubkey is the public address - you do not need to use this rpc call.")
         },
-        #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
     }
 }
