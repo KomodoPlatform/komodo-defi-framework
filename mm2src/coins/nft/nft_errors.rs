@@ -29,6 +29,7 @@ pub enum GetNftInfoError {
         token_address: String,
         token_id: String,
     },
+    AddressError(String),
 }
 
 impl From<web3::Error> for GetNftInfoError {
@@ -67,7 +68,8 @@ impl HttpStatusCode for GetNftInfoError {
             GetNftInfoError::Transport(_)
             | GetNftInfoError::Internal(_)
             | GetNftInfoError::GetEthAddressError(_)
-            | GetNftInfoError::TokenNotFoundInWallet { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | GetNftInfoError::TokenNotFoundInWallet { .. }
+            | GetNftInfoError::AddressError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

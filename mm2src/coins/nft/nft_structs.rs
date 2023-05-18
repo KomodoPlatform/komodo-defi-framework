@@ -3,8 +3,8 @@ use ethereum_types::Address;
 use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 use serde::Deserialize;
-use std::fmt;
 use serde_json::Value as Json;
+use std::fmt;
 use std::str::FromStr;
 use url::Url;
 
@@ -35,11 +35,11 @@ pub(crate) enum Chain {
 impl fmt::Display for Chain {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
-            Chain::Avalanche => write!(f, "avalanche"),
-            Chain::Bsc => write!(f, "bsc"),
-            Chain::Eth => write!(f, "eth"),
-            Chain::Fantom => write!(f, "fantom"),
-            Chain::Polygon => write!(f, "polygon"),
+            Chain::Avalanche => write!(f, "AVALANCHE"),
+            Chain::Bsc => write!(f, "BSC"),
+            Chain::Eth => write!(f, "ETH"),
+            Chain::Fantom => write!(f, "FANTOM"),
+            Chain::Polygon => write!(f, "POLYGON"),
         }
     }
 }

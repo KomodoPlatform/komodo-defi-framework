@@ -1,5 +1,6 @@
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::{MmError, MmResult};
+use std::str::FromStr;
 
 pub(crate) mod nft_errors;
 pub(crate) mod nft_structs;
@@ -16,6 +17,7 @@ use crate::nft::nft_structs::{TransferStatus, UriMeta, WithdrawNftType};
 use common::APPLICATION_JSON;
 use derive_more::Display;
 use enum_from::EnumFromStringify;
+use ethereum_types::Address;
 use http::header::ACCEPT;
 use mm2_err_handle::map_to_mm::MapToMmResult;
 use mm2_net::transport::SlurpError;
@@ -171,6 +173,7 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
 
         // The cursor returned in the previous response (used for getting the next page).
         let mut cursor = String::new();
+        let wallet_address = my_address.wallet_address;
         loop {
             let uri = format!("{}{}", uri_without_cursor, cursor);
             let response = send_request_to_uri(uri.as_str()).await?;
@@ -183,7 +186,8 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
                         TransferStatus::Send
                     };
                     let req = NftMetadataReq {
-                        token_address: transfer_wrapper.token_address.clone(),
+                        token_address: Address::from_str(&transfer_wrapper.token_address)
+                            .map_to_mm(|e| GetNftInfoError::AddressError(e.to_string()))?,
                         token_id: transfer_wrapper.token_id.clone(),
                         chain,
                         url: req.url.clone(),
