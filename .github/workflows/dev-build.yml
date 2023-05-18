@@ -61,7 +61,7 @@ jobs:
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -120,7 +120,7 @@ jobs:
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -169,7 +169,7 @@ jobs:
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -217,7 +217,7 @@ jobs:
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -277,7 +277,7 @@ jobs:
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -326,7 +326,7 @@ jobs:
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -389,7 +389,7 @@ jobs:
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -452,7 +452,7 @@ jobs:
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}

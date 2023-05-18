@@ -319,8 +319,6 @@ pub(crate) async fn block_header_utxo_loop(
                 },
             };
 
-            // More than `chunk_size` blocks could have appeared since the last `get_block_count` RPC.
-            // So reset `to_block_height` if only `from_block_height + chunk_size > actual_block_count`.
             if retrieve_to > block_count {
                 retrieve_to = block_count;
             }
