@@ -503,6 +503,9 @@ pub struct UtxoCoinConf {
     /// https://en.bitcoin.it/wiki/Proof_of_work
     /// The actual meaning of this is nTime field is used in transaction
     pub is_pos: bool,
+    /// Defines if coin uses PoSV transaction format (Reddcoin, Potcoin, et al).
+    /// n_time field is appended to end of transaction
+    pub is_posv: bool,
     /// Special field for Zcash and it's forks
     /// Defines if Overwinter network upgrade was activated
     /// https://z.cash/upgrade/overwinter/
@@ -791,6 +794,7 @@ impl UtxoCoinFields {
             shielded_spends: vec![],
             shielded_outputs: vec![],
             zcash: self.conf.zcash,
+            posv: self.conf.is_posv,
             str_d_zeel,
             hash_algo: self.tx_hash_algo.into(),
         }

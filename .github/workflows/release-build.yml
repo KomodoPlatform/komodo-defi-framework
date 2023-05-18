@@ -55,7 +55,7 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -106,7 +106,7 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -149,7 +149,7 @@ jobs:
           mv $NAME ./$Env:BRANCH_NAME/
 
       - name: Upload output
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -191,7 +191,7 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -245,7 +245,7 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -288,7 +288,7 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -345,7 +345,7 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}
@@ -402,7 +402,7 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        uses: garygrossgarten/github-action-scp@release
+        uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
           username: ${{ secrets.FILE_SERVER_USERNAME }}

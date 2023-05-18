@@ -67,6 +67,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
+use url::Url;
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId, U64};
 use web3::{self, Web3};
@@ -874,7 +875,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 
 /// `withdraw_erc1155` function returns details of `ERC-1155` transaction including tx hex,
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
-pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155, url: String) -> WithdrawNftResult {
+pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155, url: Url) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, &withdraw_type.chain.to_ticker()).await?;
     let (to_addr, token_addr, eth_coin) =
         get_valid_nft_add_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address)?;
@@ -1722,7 +1723,7 @@ impl WatcherOps for EthCoin {
             swap_contract_address,
             input.secret_hash,
             input.search_from_block,
-            input.watcher_reward,
+            true,
         )
         .await
     }

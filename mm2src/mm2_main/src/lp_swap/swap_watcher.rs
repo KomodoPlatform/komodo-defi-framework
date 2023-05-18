@@ -357,7 +357,7 @@ impl State for WaitForTakerPaymentSpend {
             let tx_hex = tx.tx_hex();
             let secret = match watcher_ctx
                 .taker_coin
-                .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex, watcher_ctx.watcher_reward)
+                .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex, true)
                 .await
             {
                 Ok(bytes) => H256Json::from(bytes.as_slice()),

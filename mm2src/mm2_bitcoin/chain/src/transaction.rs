@@ -224,6 +224,7 @@ pub struct Transaction {
     pub join_split_sig: H512,
     pub binding_sig: H512,
     pub zcash: bool,
+    pub posv: bool,
     /// https://github.com/navcoin/navcoin-core/blob/556250920fef9dc3eddd28996329ba316de5f909/src/primitives/transaction.h#L497
     pub str_d_zeel: Option<String>,
     pub tx_hash_algo: TxHashAlgo,
@@ -358,14 +359,22 @@ impl Serializable for Transaction {
                     stream.append(&self.version_group_id);
                 }
 
-                if let Some(n_time) = self.n_time {
-                    stream.append(&n_time);
+                if !self.posv {
+                    if let Some(n_time) = self.n_time {
+                        stream.append(&n_time);
+                    }
                 }
 
                 stream
                     .append_list(&self.inputs)
                     .append_list(&self.outputs)
                     .append(&self.lock_time);
+
+                if self.posv {
+                    if let Some(n_time) = self.n_time {
+                        stream.append(&n_time);
+                    }
+                }
 
                 if self.overwintered && self.version >= 3 {
                     stream.append(&self.expiry_height);
@@ -418,6 +427,11 @@ pub enum TxType {
     StandardWithWitness,
     Zcash,
     PosWithNTime,
+    PosvWithNTime,
+}
+
+impl TxType {
+    fn uses_witness(&self) -> bool { matches!(self, TxType::StandardWithWitness | TxType::PosvWithNTime) }
 }
 
 pub fn deserialize_tx<T>(reader: &mut Reader<T>, tx_type: TxType) -> Result<Transaction, Error>
@@ -433,13 +447,13 @@ where
         version_group_id = reader.read()?;
     }
 
-    let n_time = if tx_type == TxType::PosWithNTime {
+    let mut n_time = if tx_type == TxType::PosWithNTime {
         Some(reader.read()?)
     } else {
         None
     };
     let mut inputs: Vec<TransactionInput> = reader.read_list_max(MAX_LIST_SIZE)?;
-    let read_witness = if inputs.is_empty() && !overwintered && tx_type == TxType::StandardWithWitness {
+    let read_witness = if inputs.is_empty() && !overwintered && tx_type.uses_witness() {
         let witness_flag: u8 = reader.read()?;
         if witness_flag != WITNESS_FLAG {
             return Err(Error::MalformedData);
@@ -451,7 +465,7 @@ where
         false
     };
     let outputs = reader.read_list_max(MAX_LIST_SIZE)?;
-    if outputs.is_empty() && tx_type == TxType::StandardWithWitness {
+    if outputs.is_empty() && tx_type.uses_witness() {
         return Err(Error::Custom("Transaction has no output".into()));
     }
     if read_witness {
@@ -461,6 +475,14 @@ where
     }
 
     let lock_time = reader.read()?;
+
+    let mut posv = false;
+    n_time = if tx_type == TxType::PosvWithNTime {
+        posv = true;
+        Some(reader.read()?)
+    } else {
+        n_time
+    };
 
     let mut expiry_height = 0;
     let mut value_balance = 0;
@@ -528,6 +550,7 @@ where
         shielded_spends,
         shielded_outputs,
         zcash,
+        posv,
         str_d_zeel,
         tx_hash_algo: TxHashAlgo::DSHA256,
     })
@@ -545,6 +568,9 @@ impl Deserializable for Transaction {
         // specific use case
         let mut buffer = vec![];
         reader.read_to_end(&mut buffer)?;
+        if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosvWithNTime) {
+            return Ok(t);
+        }
         if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::StandardWithWitness) {
             return Ok(t);
         }
@@ -836,6 +862,7 @@ mod tests {
 			}],
 			lock_time: 0x00000011,
 			zcash: false,
+            posv: false,
             str_d_zeel: None,
             tx_hash_algo: TxHashAlgo::DSHA256,
 		};
@@ -1021,6 +1048,7 @@ mod tests {
 			}],
 			lock_time: 1632875267,
 			zcash: false,
+            posv: false,
             str_d_zeel: None,
             tx_hash_algo: TxHashAlgo::DSHA256,
 		};
@@ -1033,5 +1061,37 @@ mod tests {
         let tx: Transaction = "010000000001016546e6d844ad0142c8049a839e8deae16c17f0a6587e36e75ff2181ed7020a800100000000ffffffff0247070800000000002200200bbfbd271853ec0a775e5455d4bb19d32818e9b5bda50655ac183fb15c9aa01625910300000000001600149a85cc05e9a722575feb770a217c73fd6145cf0102473044022002eac5d11f3800131985c14a3d1bc03dfe5e694f5731bde39b0d2b183eb7d3d702201d62e7ff2dd433260bf7a8223db400d539a2c4eccd27a5aa24d83f5ad9e9e1750121031ac6d25833a5961e2a8822b2e8b0ac1fd55d90cbbbb18a780552cbd66fc02bb35c099c61".into();
         let ext_tx = ExtTransaction::from(tx.clone());
         assert_eq!(tx.hash().reversed().to_string(), ext_tx.txid().to_string());
+    }
+
+    #[test]
+    fn n_time_posv_transaction() {
+        let raw = "0200000001fa402b05b9108ec4762247d74c48a2ff303dd832d24c341c486e32cef0434177010000004847304402207a5283cc0fe6fc384744545cb600206ec730d0cdfa6a5e1479cb509fda536ee402202bec1e79b90638f1c608d805b2877fefc8fa6d0df279f58f0a70883e0e0609ce01ffffffff030000000000000000006a734110a10a0000232102fa0ecb032c7cb7be378efd03a84532b5cf1795996bfad854f042dc521616bfdcacd57f643201000000232103c8fc5c87f00bcc32b5ce5c036957f8befeff05bf4d88d2dcde720249f78d9313ac00000000dfcb3c64";
+        let t: Transaction = raw.into();
+
+        assert_eq!(t.version, 2);
+        assert_eq!(t.lock_time, 0);
+        assert_eq!(t.inputs.len(), 1);
+        assert_eq!(t.outputs.len(), 3);
+        assert_eq!(t.n_time, Some(1681705951));
+        assert!(t.posv);
+
+        let serialized = serialize(&t);
+        assert_eq!(Bytes::from(raw), serialized);
+    }
+
+    #[test]
+    fn n_time_posv_transaction_locktime() {
+        let raw = "0200000001a471828d6290f5ca7935bc26a9d07cda37227ca3fb0e8d1282296ea839c134810100000048473044022067bbc1176fe4fa8681db854d9fce8d47d5613d01820ef78a6ab76c4f067500990220560d00098fcb69eb8587873f8072c11bcf832308fdcf5712d0e4aea4b761060e01fdffffff02940237c31d0600001976a9147fb8384a3f328148137447cdf6b1c3c1f0a8559588ac00e40b54020000001976a91485ee21a7f8cdd9034fb55004e0d8ed27db1c03c288acbd8d05002b584e63";
+        let t: Transaction = raw.into();
+
+        assert_eq!(t.version, 2);
+        assert_eq!(t.lock_time, 363965);
+        assert_eq!(t.inputs.len(), 1);
+        assert_eq!(t.outputs.len(), 2);
+        assert_eq!(t.n_time, Some(1666078763));
+        assert!(t.posv);
+
+        let serialized = serialize(&t);
+        assert_eq!(Bytes::from(raw), serialized);
     }
 }
