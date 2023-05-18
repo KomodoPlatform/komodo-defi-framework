@@ -20,7 +20,8 @@ use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_s
                                   ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT,
                                   MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS};
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
-use mm2_test_helpers::for_tests::{check_stats_swap_status, MAKER_SUCCESS_EVENTS, TAKER_SUCCESS_EVENTS};
+use mm2_test_helpers::for_tests::{check_stats_swap_status, ETH_DEV_TOKEN_CONTRACT, MAKER_SUCCESS_EVENTS,
+                                  TAKER_SUCCESS_EVENTS};
 
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
@@ -4579,7 +4580,8 @@ fn test_tx_history_tbtc_non_segwit() {
 fn test_buy_conf_settings() {
     let bob_passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), 
+    {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":ETH_DEV_TOKEN_CONTRACT}},"required_confirmations":2},]);
 
     let mm_bob = MarketMakerIt::start(
         json! ({
@@ -4639,7 +4641,7 @@ fn test_buy_conf_settings() {
     let json: Json = json::from_str(&rc.1).unwrap();
     assert_eq!(json["result"]["conf_settings"]["base_confs"], Json::from(1));
     assert_eq!(json["result"]["conf_settings"]["base_nota"], Json::from(false));
-    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(1));
+    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(2));
     assert_eq!(json["result"]["conf_settings"]["rel_nota"], Json::from(false));
 }
 
@@ -4899,7 +4901,8 @@ fn test_my_orders_after_matched() {
 fn test_sell_conf_settings() {
     let bob_passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), 
+    {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address": ETH_DEV_TOKEN_CONTRACT}},"required_confirmations":2},]);
 
     let mm_bob = MarketMakerIt::start(
         json! ({
@@ -4959,7 +4962,7 @@ fn test_sell_conf_settings() {
     let json: Json = json::from_str(&rc.1).unwrap();
     assert_eq!(json["result"]["conf_settings"]["base_confs"], Json::from(1));
     assert_eq!(json["result"]["conf_settings"]["base_nota"], Json::from(false));
-    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(1));
+    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(2));
     assert_eq!(json["result"]["conf_settings"]["rel_nota"], Json::from(false));
 }
 
@@ -4968,7 +4971,8 @@ fn test_sell_conf_settings() {
 fn test_set_price_conf_settings() {
     let bob_passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), 
+    {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address": ETH_DEV_TOKEN_CONTRACT}},"required_confirmations":2},]);
 
     let mm_bob = MarketMakerIt::start(
         json! ({
@@ -5028,7 +5032,7 @@ fn test_set_price_conf_settings() {
     let json: Json = json::from_str(&rc.1).unwrap();
     assert_eq!(json["result"]["conf_settings"]["base_confs"], Json::from(1));
     assert_eq!(json["result"]["conf_settings"]["base_nota"], Json::from(false));
-    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(1));
+    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(2));
     assert_eq!(json["result"]["conf_settings"]["rel_nota"], Json::from(false));
 }
 
