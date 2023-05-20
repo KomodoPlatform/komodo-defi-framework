@@ -7344,7 +7344,7 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         "ETH",
         ETH_DEV_NODES,
         // using arbitrary address
-        "0x2b294F029Fde858b2c62184e8390591755521d8E",
+        ETH_DEV_TOKEN_CONTRACT,
         Some(ETH_DEV_SWAP_CONTRACT),
         false
     )));
@@ -7354,7 +7354,7 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         "JST",
         ETH_DEV_NODES,
         // using arbitrary address
-        "0x2b294F029Fde858b2c62184e8390591755521d8E",
+        ETH_DEV_TOKEN_CONTRACT,
         Some(ETH_DEV_SWAP_CONTRACT),
         false
     )));
@@ -7432,7 +7432,7 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         "ETH",
         ETH_DEV_NODES,
         // using arbitrary address
-        "0x2b294F029Fde858b2c62184e8390591755521d8E",
+        ETH_DEV_TOKEN_CONTRACT,
         None,
         false
     )));
@@ -7442,7 +7442,7 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         "JST",
         ETH_DEV_NODES,
         // using arbitrary address
-        "0x2b294F029Fde858b2c62184e8390591755521d8E",
+        ETH_DEV_TOKEN_CONTRACT,
         None,
         false
     )));

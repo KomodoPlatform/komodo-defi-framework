@@ -1,7 +1,8 @@
 use common::block_on;
 use http::StatusCode;
 use mm2_test_helpers::for_tests::{disable_coin, disable_coin_err, eth_jst_testnet_conf, eth_testnet_conf,
-                                  get_passphrase, MarketMakerIt, Mm2TestConf, ETH_DEV_NODES};
+                                  get_passphrase, MarketMakerIt, Mm2TestConf, ETH_DEV_FALLBACK_CONTRACT,
+                                  ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::structs::{EnableEthWithTokensResponse, RpcV2Response};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashSet;
@@ -20,8 +21,8 @@ async fn enable_eth_with_tokens(mm: &MarketMakerIt, platform_coin: &str, tokens:
         "mmrpc": "2.0",
         "params": {
                 "ticker": platform_coin,
-                "swap_contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E",
-                "fallback_swap_contract":"0x8500AFc0bc5214728082163326C2FF0C73f4a871",
+                "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+                "fallback_swap_contract": ETH_DEV_FALLBACK_CONTRACT,
                 "nodes": nodes,
                 "tx_history": true,
                 "erc20_tokens_requests": erc20_tokens_requests,
@@ -55,8 +56,8 @@ async fn enable_eth_with_tokens_without_balance(
         "mmrpc": "2.0",
         "params": {
                 "ticker": platform_coin,
-                "swap_contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E",
-                "fallback_swap_contract":"0x8500AFc0bc5214728082163326C2FF0C73f4a871",
+                "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+                "fallback_swap_contract": ETH_DEV_FALLBACK_CONTRACT,
                 "nodes": nodes,
                 "tx_history": true,
                 "erc20_tokens_requests": erc20_tokens_requests,

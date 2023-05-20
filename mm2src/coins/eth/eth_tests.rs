@@ -769,7 +769,7 @@ fn test_withdraw_impl_fee_details() {
     let (_ctx, coin) = eth_coin_for_test(
         EthCoinType::Erc20 {
             platform: "ETH".to_string(),
-            token_addr: Address::from_str("0x2b294F029Fde858b2c62184e8390591755521d8E").unwrap(),
+            token_addr: Address::from_str(ETH_DEV_TOKEN_CONTRACT).unwrap(),
         },
         &["http://dummy.dummy"],
         None,
