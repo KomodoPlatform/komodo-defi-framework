@@ -213,10 +213,9 @@ fn test_wei_from_big_decimal() {
 }
 
 #[test]
-#[ignore]
 fn send_and_refund_erc20_payment() {
     let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
+        &hex::decode("d27bfdbb5f89d30f8b7a1d0dcd4e181e54b8a2347836cb59c6570834f820f9a4").unwrap(),
     )
     .unwrap();
 
@@ -311,10 +310,9 @@ fn send_and_refund_erc20_payment() {
 }
 
 #[test]
-#[ignore]
 fn send_and_refund_eth_payment() {
     let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
+        &hex::decode("0b6d7b4b1b9454f3f0bc76b2988cd672439213a1de23d20a83467131366ba41c").unwrap(),
     )
     .unwrap();
     let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
@@ -407,10 +405,9 @@ fn send_and_refund_eth_payment() {
 }
 
 #[test]
-#[ignore]
 fn test_nonce_several_urls() {
     let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
+        &hex::decode("0dbc09312ec67cf775c00e72dd88c9a7c4b7452d4ee84ee7ca0bb55c4be35446").unwrap(),
     )
     .unwrap();
     let working_transport = Web3Transport::single_node(ETH_DEV_NODE, false);
