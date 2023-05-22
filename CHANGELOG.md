@@ -1,4 +1,4 @@
-## v1.0.4-beta - 2023-05-12
+## v1.0.4-beta - 2023-05-23
 
 **Features:**
 - NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
