@@ -87,9 +87,9 @@ impl FromStr for ContractType {
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct UriMeta {
-    image: Option<String>,
+    pub(crate) image: Option<String>,
     #[serde(rename(deserialize = "name"))]
-    token_name: Option<String>,
+    pub(crate) token_name: Option<String>,
     description: Option<String>,
     attributes: Option<Json>,
     animation_url: Option<String>,
@@ -257,6 +257,8 @@ pub(crate) struct NftTransferHistory {
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
     pub(crate) collection_name: Option<String>,
+    pub(crate) image: Option<String>,
+    pub(crate) token_name: Option<String>,
     pub(crate) from_address: String,
     pub(crate) to_address: String,
     pub(crate) status: TransferStatus,

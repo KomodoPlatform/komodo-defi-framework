@@ -192,10 +192,7 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
                         chain,
                         url: req.url.clone(),
                     };
-                    let collection_name = match get_nft_metadata(ctx.clone(), req).await {
-                        Ok(nft) => nft.collection_name,
-                        Err(_) => None,
-                    };
+                    let nft_meta = get_nft_metadata(ctx.clone(), req).await?;
                     let transfer_history = NftTransferHistory {
                         chain,
                         block_number: *transfer_wrapper.block_number,
@@ -209,7 +206,9 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
                         transaction_type: transfer_wrapper.transaction_type,
                         token_address: transfer_wrapper.token_address,
                         token_id: transfer_wrapper.token_id.0,
-                        collection_name,
+                        collection_name: nft_meta.collection_name,
+                        image: nft_meta.uri_meta.image,
+                        token_name: nft_meta.uri_meta.token_name,
                         from_address: transfer_wrapper.from_address,
                         to_address: transfer_wrapper.to_address,
                         status,
