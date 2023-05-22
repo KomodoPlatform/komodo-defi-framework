@@ -410,11 +410,14 @@ fn test_nonce_several_urls() {
         &hex::decode("0dbc09312ec67cf775c00e72dd88c9a7c4b7452d4ee84ee7ca0bb55c4be35446").unwrap(),
     )
     .unwrap();
-    let working_transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+
+    let devnet_transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+    let sepolia_transport = Web3Transport::single_node("https://rpc2.sepolia.org", false);
     // get nonce must succeed if some nodes are down at the moment for some reason
     let failing_transport = Web3Transport::single_node("http://195.201.0.6:8989", false);
 
-    let web3_working = Web3::new(working_transport);
+    let web3_devnet = Web3::new(devnet_transport);
+    let web3_sepolia = Web3::new(sepolia_transport);
     let web3_failing = Web3::new(failing_transport);
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -429,7 +432,11 @@ fn test_nonce_several_urls() {
         contract_supports_watchers: false,
         web3_instances: vec![
             Web3Instance {
-                web3: web3_working.clone(),
+                web3: web3_devnet.clone(),
+                is_parity: false,
+            },
+            Web3Instance {
+                web3: web3_sepolia,
                 is_parity: false,
             },
             Web3Instance {
@@ -437,7 +444,7 @@ fn test_nonce_several_urls() {
                 is_parity: false,
             },
         ],
-        web3: web3_working,
+        web3: web3_devnet,
         decimals: 18,
         gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
