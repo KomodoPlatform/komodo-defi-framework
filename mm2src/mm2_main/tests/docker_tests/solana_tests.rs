@@ -7,7 +7,7 @@ use serde_json as json;
 
 #[test]
 fn test_solana_and_spl_balance_enable_spl_v2() {
-    let mm = solana_supplied_node();
+    let mm = _solana_supplied_node();
     let tx_history = false;
     let enable_solana_with_tokens = block_on(enable_solana_with_tokens(
         &mm,
@@ -49,7 +49,7 @@ fn test_solana_and_spl_balance_enable_spl_v2() {
 
 #[test]
 fn test_sign_verify_message_solana() {
-    let mm = solana_supplied_node();
+    let mm = _solana_supplied_node();
     let tx_history = false;
     block_on(enable_solana_with_tokens(
         &mm,
@@ -82,7 +82,7 @@ fn test_sign_verify_message_solana() {
 
 #[test]
 fn test_sign_verify_message_spl() {
-    let mm = solana_supplied_node();
+    let mm = _solana_supplied_node();
     let tx_history = false;
     block_on(enable_solana_with_tokens(
         &mm,
@@ -117,7 +117,7 @@ fn test_sign_verify_message_spl() {
 
 #[test]
 fn test_disable_solana_platform_coin_with_tokens() {
-    let mm = solana_supplied_node();
+    let mm = _solana_supplied_node();
     block_on(enable_solana_with_tokens(
         &mm,
         "SOL-DEVNET",

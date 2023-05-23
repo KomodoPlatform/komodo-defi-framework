@@ -143,8 +143,11 @@ pub const TBTC_ELECTRUMS: &[&str] = &[
 pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
-pub const ETH_DEV_NODES: &[&str] = &["http://195.201.0.6:8565"];
-pub const ETH_DEV_SWAP_CONTRACT: &str = "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd";
+pub const ETH_DEV_NODE: &str = "http://195.201.137.5:8545";
+pub const ETH_DEV_NODES: &[&str] = &["http://195.201.137.5:8545"];
+pub const ETH_DEV_SWAP_CONTRACT: &str = "0x83965c539899cc0f918552e5a26915de40ee8852";
+pub const ETH_DEV_FALLBACK_CONTRACT: &str = "0xEA6CFe3D0f6B8814A88027b9cA865b82816409a4";
+pub const ETH_DEV_TOKEN_CONTRACT: &str = "0x6c2858f6aFaC835c43ffDa248aFA167e1a58436C";
 
 pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc2.sepolia.org"];
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
@@ -663,7 +666,7 @@ pub fn eth_jst_testnet_conf() -> Json {
             "type": "ERC20",
             "protocol_data": {
                 "platform": "ETH",
-                "contract_address": "0x2b294F029Fde858b2c62184e8390591755521d8E"
+                "contract_address": ETH_DEV_TOKEN_CONTRACT
             }
         }
     })
@@ -1592,7 +1595,7 @@ pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> Jso
             "coin": coin,
             "urls": urls,
             // Dev chain swap contract address
-            "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+            "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
             "mm2": 1,
         }))
         .await

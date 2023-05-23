@@ -157,7 +157,7 @@ pub fn eth_distributor() -> EthCoin {
 }
 
 // pass address without 0x prefix to this fn
-pub fn fill_eth(to_addr: &str) {
+pub fn _fill_eth(to_addr: &str) {
     ETH_DISTRIBUTOR
         .send_to_address(to_addr.parse().unwrap(), 1_000_000_000_000_000_000u64.into())
         .wait()
@@ -963,7 +963,7 @@ pub fn slp_supplied_node() -> MarketMakerIt {
     mm
 }
 
-pub fn solana_supplied_node() -> MarketMakerIt {
+pub fn _solana_supplied_node() -> MarketMakerIt {
     let coins = json! ([
         {"coin": "SOL-DEVNET","name": "solana","fname": "Solana","rpcport": 80,"mm2": 1,"required_confirmations": 1,"avg_blocktime": 0.25,"protocol": {"type": "SOLANA"}},
         {"coin":"USDC-SOL-DEVNET","protocol":{"type":"SPLTOKEN","protocol_data":{"decimals":6,"token_contract_address":"4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU","platform":"SOL-DEVNET"}},"mm2": 1},

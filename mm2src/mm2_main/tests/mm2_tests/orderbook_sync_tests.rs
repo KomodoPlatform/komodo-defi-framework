@@ -5,8 +5,9 @@ use http::StatusCode;
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_test_helpers::electrums::rick_electrums;
-use mm2_test_helpers::for_tests::{get_passphrase, orderbook_v2, rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf,
-                                  RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
+use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, get_passphrase, morty_conf, orderbook_v2,
+                                  rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf, ETH_DEV_NODES, RICK,
+                                  ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{EnableElectrumResponse, GetPublicKeyResult, OrderbookEntryAggregate,
                                 OrderbookResponse, OrderbookV2Response, RpcV2Response, SetPriceResponse};
@@ -1057,12 +1058,7 @@ fn orderbook_should_display_base_rel_volumes() {
 fn orderbook_should_work_without_coins_activation() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json! ([
-        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
-    ]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
 
     let mm_bob = MarketMakerIt::start(
         json!({
@@ -1106,7 +1102,7 @@ fn orderbook_should_work_without_coins_activation() {
 
     log!(
         "enable_coins (bob): {:?}",
-        block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]))
+        block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES))
     );
 
     let rc = block_on(mm_bob.rpc(&json!({
@@ -1222,12 +1218,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
 fn setprice_min_volume_should_be_displayed_in_orderbook() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json! ([
-        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
-    ]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
 
     let mm_bob = MarketMakerIt::start(
         json!({
@@ -1271,11 +1262,11 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
 
     log!(
         "enable_coins (bob): {:?}",
-        block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]))
+        block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES))
     );
     log!(
         "enable_coins (alice): {:?}",
-        block_on(enable_coins_eth_electrum(&mm_alice, &["http://195.201.0.6:8565"]))
+        block_on(enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES))
     );
 
     // issue orderbook call on Alice side to trigger subscription to a topic

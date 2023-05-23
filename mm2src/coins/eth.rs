@@ -114,7 +114,7 @@ mod nonce;
 use nonce::ParityNonce;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
-/// Dev chain (195.201.0.6:8565) contract address: 0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd
+/// Dev chain (195.201.137.5:8565) contract address: 0x83965C539899cC0F918552e5A26915de40ee8852
 /// Ropsten: https://ropsten.etherscan.io/address/0x7bc1bbdd6a0a722fc9bffc49c921b685ecb84b94
 /// ETH mainnet: https://etherscan.io/address/0x8500AFc0bc5214728082163326C2FF0C73f4a871
 const SWAP_CONTRACT_ABI: &str = include_str!("eth/swap_contract_abi.json");
@@ -4441,11 +4441,11 @@ impl EthCoin {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct EthTxFeeDetails {
-    coin: String,
-    gas: u64,
+    pub coin: String,
+    pub gas: u64,
     /// WEI units per 1 gas
-    gas_price: BigDecimal,
-    total_fee: BigDecimal,
+    pub gas_price: BigDecimal,
+    pub total_fee: BigDecimal,
 }
 
 impl EthTxFeeDetails {
