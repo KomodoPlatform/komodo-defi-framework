@@ -3,7 +3,7 @@
 **Features:**
 
 **Enhancements/Fixes:**
-- UriMeta to get info from token uri, collection name and transfer status in nft tx history were added [#1823](https://github.com/KomodoPlatform/atomicDEX-API/pull/1823)
+- UriMeta to get info from token uri, status and metadata in nft tx history were added [#1823](https://github.com/KomodoPlatform/atomicDEX-API/pull/1823)
 
 ## v1.0.4-beta - 2023-05-23
 
