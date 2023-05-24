@@ -1,11 +1,7 @@
 #[cfg(target_arch = "wasm32")] pub(crate) mod block_idb;
 
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::*;
-use mm2_err_handle::prelude::*;
-use protobuf::Message;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use zcash_client_backend::data_api::BlockSource;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_primitives::consensus::BlockHeight;
@@ -13,6 +9,9 @@ use zcash_primitives::consensus::BlockHeight;
 cfg_native!(
     use db_common::sqlite::rusqlite::{params, Connection, NO_PARAMS};
     use db_common::sqlite::{query_single_row, run_optimization_pragmas};
+    use protobuf::Message;
+    use mm2_err_handle::prelude::*;
+    use std::sync::{Arc, Mutex};
     use zcash_client_sqlite::error::{SqliteClientError as ZcashClientError, SqliteClientError};
     use zcash_client_sqlite::NoteId;
     use zcash_client_backend::data_api::error::Error as ChainError;
@@ -47,6 +46,7 @@ pub struct BlockDbImpl {
     pub db: Arc<Mutex<Connection>>,
     #[cfg(target_arch = "wasm32")]
     pub db: SharedDb<BlockDbInner>,
+    #[allow(unused)]
     ticker: String,
 }
 
@@ -156,57 +156,45 @@ impl BlockSource for BlockDbImpl {
 }
 
 cfg_wasm32!(
-    use super::*;
     use crate::z_coin::storage::blockdb::block_idb::BlockDbInner;
-    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, IndexedDb, SharedDb};
+    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
+    use mm2_err_handle::prelude::*;
 
     pub type BlockDbRes<T> = MmResult<T, BlockDbError>;
     pub type BlockDbInnerLocked<'a> = DbLocked<'a, BlockDbInner>;
-);
 
-#[cfg(target_arch = "wasm32")]
-impl BlockDbImpl {
-    pub async fn new(ctx: MmArc, ticker: String, _path: impl AsRef<Path>) -> Result<Self, BlockDbError> {
-        Ok(Self {
-            db: ConstructibleDb::new(&ctx).into_shared(),
-            ticker,
-        })
+    impl BlockDbImpl {
+        pub async fn new(ctx: MmArc, ticker: String, _path: impl AsRef<Path>) -> Result<Self, BlockDbError> {
+            Ok(Self {
+                db: ConstructibleDb::new(&ctx).into_shared(),
+                ticker,
+            })
     }
-
-    async fn lock_db(&self) -> BlockDbRes<BlockDbInnerLocked<'_>> {
-        self.db
+        #[allow(unused)]
+        async fn lock_db(&self) -> BlockDbRes<BlockDbInnerLocked<'_>> {
+            self.db
             .get_or_initialize()
             .await
             .mm_err(|err| BlockDbError::IndexedDBError(err.to_string()))
     }
 
-    pub fn get_latest_block(&self) -> Result<u32, BlockDbError> { todo!() }
+        pub fn get_latest_block(&self) -> Result<u32, BlockDbError> { todo!() }
 
-    pub fn insert_block(&self, height: u32, cb_bytes: Vec<u8>) -> Result<usize, BlockDbError> { todo!() }
+        pub fn insert_block(&self, _height: u32, _cb_bytes: Vec<u8>) -> Result<usize, BlockDbError> { todo!() }
 
-    pub fn rewind_to_height(&self, height: u32) -> Result<usize, BlockDbError> { todo!() }
+        pub fn rewind_to_height(&self, _height: u32) -> Result<usize, BlockDbError> { todo!() }
 
-    pub fn with_blocks<F>(
-        &self,
-        from_height: BlockHeight,
-        limit: Option<u32>,
-        mut with_row: F,
-    ) -> Result<(), BlockDbError>
-    where
-        F: FnMut(CompactBlock) -> Result<(), BlockDbError>,
-    {
-        todo!()
+        pub fn with_blocks<F>(&self, _from_height: BlockHeight, _limit: Option<u32>, mut _with_row: F) -> Result<(),
+        BlockDbError>
+        where F: FnMut(CompactBlock) -> Result<(), BlockDbError>
+        { todo!() }
     }
-}
 
-#[cfg(target_arch = "wasm32")]
-impl BlockSource for BlockDbImpl {
-    type Error = BlockDbError;
-
-    fn with_blocks<F>(&self, from_height: BlockHeight, limit: Option<u32>, with_row: F) -> Result<(), Self::Error>
-    where
-        F: FnMut(CompactBlock) -> Result<(), Self::Error>,
-    {
-        todo!()
+    impl BlockSource for BlockDbImpl {
+        type Error = BlockDbError;
+        fn with_blocks<F>(&self, _from_height: BlockHeight, _limit: Option<u32>, _with_row: F) -> Result<(),
+        Self::Error>
+        where F: FnMut(CompactBlock) -> Result<(), Self::Error>,
+        { todo!() }
     }
-}
+);

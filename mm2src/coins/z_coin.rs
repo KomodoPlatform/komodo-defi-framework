@@ -46,7 +46,6 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
-use parking_lot::Mutex;
 use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
@@ -54,7 +53,6 @@ use serde_json::Value as Json;
 use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
 use std::iter;
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
@@ -92,16 +90,12 @@ cfg_native!(
     use zcash_client_backend::data_api::WalletRead;
     use zcash_client_backend::wallet::{AccountId};
     use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
-    use zcash_client_sqlite::error::SqliteClientError;
     use zcash_client_sqlite::wallet::{get_balance};
     use zcash_client_sqlite::wallet::transact::get_spendable_notes;
-    use zcash_client_sqlite::WalletDb;
     use zcash_primitives::consensus;
     use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
     use zcash_proofs::default_params_folder;
     use z_rpc::{init_native_client};
-
-    use crate::z_coin::z_rpc::{create_wallet_db};
 );
 
 mod z_coin_errors;
@@ -137,7 +131,6 @@ const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
 const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
 const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
 const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
-
 cfg_native!(
     const BLOCKS_TABLE: &str = "blocks";
     const TRANSACTIONS_TABLE: &str = "transactions";
@@ -200,6 +193,7 @@ impl Parameters for ZcoinConsensusParams {
     fn b58_script_address_prefix(&self) -> [u8; 2] { self.b58_script_address_prefix }
 }
 
+#[allow(unused)]
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,
     my_z_addr: PaymentAddress,
@@ -375,9 +369,11 @@ impl ZCoin {
     }
 
     #[cfg(target_arch = "wasm32")]
+    #[allow(unused)]
     async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<SpendableNotesError>> { todo!() }
 
     /// Returns spendable notes
+    #[allow(unused)]
     async fn spendable_notes_ordered(&self) -> Result<Vec<SpendableNote>, MmError<SpendableNotesError>> {
         let mut unspents = self.get_spendable_notes().await?;
 
@@ -806,12 +802,14 @@ pub async fn z_coin_from_conf_and_params(
     builder.build().await
 }
 
+#[allow(unused)]
 fn verify_checksum_zcash_params(spend_path: &PathBuf, output_path: &PathBuf) -> Result<bool, ZCoinBuildError> {
     let spend_hash = sha256_digest(spend_path)?;
     let out_hash = sha256_digest(output_path)?;
     Ok(spend_hash == SAPLING_SPEND_EXPECTED_HASH && out_hash == SAPLING_OUTPUT_EXPECTED_HASH)
 }
 
+#[allow(unused)]
 fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCoinBuildError> {
     if !params_dir.exists() {
         return Err(ZCoinBuildError::ZCashParamsNotFound);

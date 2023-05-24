@@ -1,6 +1,6 @@
 use super::{z_coin_errors::*, ZcoinConsensusParams};
 use crate::utxo::rpc_clients::NativeClient;
-use crate::z_coin::storage::{BlockDbError, BlockDbImpl, WalletDbShared};
+use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
 use async_trait::async_trait;
 use common::executor::{spawn_abortable, AbortOnDropHandle};
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
@@ -14,12 +14,12 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 
 cfg_native!(
-    use crate::{RpcCommonOps, ZTransaction};
     use super::CheckPointBlockInfo;
-
+    use crate::{RpcCommonOps, ZTransaction};
     use crate::utxo::rpc_clients::{UtxoRpcClientOps, NO_TX_ERROR_CODE};
+    use crate::z_coin::storage::BlockDbError;
 
-    use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError, NO_PARAMS};
+    use db_common::sqlite::rusqlite::Connection;
     use db_common::sqlite::{query_single_row, run_optimization_pragmas};
     use common::async_blocking;
     use common::executor::Timer;
@@ -29,24 +29,21 @@ cfg_native!(
     use group::GroupEncoding;
     use http::Uri;
     use prost::Message;
-    use protobuf::Message as ProtobufMessage;
     use rpc::v1::types::H256 as H256Json;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::pin::Pin;
     use std::str::FromStr;
     use std::time::Duration;
     use tokio::task::block_in_place;
     use tonic::transport::{Channel, ClientTlsConfig};
-    use zcash_client_backend::data_api::{BlockSource, WalletRead, WalletWrite};
+    use zcash_client_backend::data_api::{WalletRead, WalletWrite};
     use zcash_client_backend::data_api::chain::{scan_cached_blocks, validate_chain};
     use zcash_client_backend::data_api::error::Error as ChainError;
-    use zcash_client_backend::proto::compact_formats::CompactBlock;
     use zcash_primitives::block::BlockHash;
     use zcash_primitives::zip32::ExtendedFullViewingKey;
     use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
     use zcash_client_sqlite::wallet::init::{init_accounts_table, init_blocks_table, init_wallet_db};
     use zcash_client_sqlite::WalletDb;
-    use zcash_client_sqlite::error::SqliteClientError;
 
     mod z_coin_grpc {
         tonic::include_proto!("cash.z.wallet.sdk.rpc");
@@ -62,6 +59,7 @@ cfg_native!(
 pub type OnCompactBlockFn<'a> = dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + 'a;
 
 #[cfg(target_arch = "wasm32")]
+#[allow(unused)]
 pub type OnCompactBlockFn<'a> = dyn FnMut(String) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + 'a;
 
 #[async_trait]
@@ -474,6 +472,7 @@ impl Drop for SaplingSyncRespawnGuard {
     }
 }
 
+#[allow(unused)]
 impl SaplingSyncRespawnGuard {
     pub(super) fn watch_for_tx(&mut self, tx_id: TxId) {
         if let Some(ref mut handle) = self.sync_handle {
@@ -502,6 +501,7 @@ pub enum SyncStatus {
     },
 }
 
+#[allow(unused)]
 pub struct SaplingSyncLoopHandle {
     coin: String,
     current_block: BlockHeight,
@@ -592,12 +592,11 @@ impl SaplingSyncLoopHandle {
         let wallet_guard = wallet_db_arc.db.lock();
         let mut wallet_ops = wallet_guard.get_update_ops().expect("get_update_ops always returns Ok");
 
-        let validate_chain = validate_chain(
+        if let Err(e) = validate_chain(
             &self.consensus_params,
             &self.blocks_db,
             wallet_ops.get_max_height_hash()?,
-        );
-        if let Err(e) = validate_chain {
+        ) {
             match e {
                 ZcashClientError::BackendError(ChainError::InvalidChain(lower_bound, _)) => {
                     let rewind_height = if lower_bound > BlockHeight::from_u32(10) {
@@ -625,12 +624,12 @@ impl SaplingSyncLoopHandle {
                 None => self.notify_building_wallet_db(0, current_block.into()),
             }
 
-            let e = scan_cached_blocks(
+            scan_cached_blocks(
                 &self.consensus_params,
                 &self.blocks_db,
                 &mut wallet_ops,
                 Some(self.scan_blocks_per_iteration),
-            );
+            )?;
             if self.scan_interval_ms > 0 {
                 std::thread::sleep(Duration::from_millis(self.scan_interval_ms));
             }
@@ -648,6 +647,7 @@ impl SaplingSyncLoopHandle {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[allow(unused)]
 impl SaplingSyncLoopHandle {
     fn notify_blocks_cache_status(&mut self, _current_scanned_block: u64, _latest_block: u64) { todo!() }
 
@@ -756,6 +756,7 @@ pub(super) struct SaplingSyncConnector {
 }
 
 impl SaplingSyncConnector {
+    #[allow(unused)]
     #[inline]
     pub(super) fn new_mutex_wrapped(
         simple_sync_watcher: SyncWatcher,

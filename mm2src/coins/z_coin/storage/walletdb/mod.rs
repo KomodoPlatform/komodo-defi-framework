@@ -1,14 +1,14 @@
-use crate::z_coin::{extended_spending_key_from_protocol_info_and_policy, ZCoinBuildError, ZCoinBuilder,
-                    ZcoinClientInitError, ZcoinConsensusParams};
-use mm2_core::mm_ctx::{MmArc, MmCtx};
+use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
 use mm2_err_handle::prelude::*;
-use parking_lot::Mutex;
-use std::sync::Arc;
-use zcash_primitives::zip32::ExtendedFullViewingKey;
 
 cfg_native!(
+    use crate::z_coin::{extended_spending_key_from_protocol_info_and_policy, ZcoinConsensusParams};
     use crate::z_coin::z_rpc::create_wallet_db;
+
+    use parking_lot::Mutex;
+    use std::sync::Arc;
     use zcash_client_sqlite::WalletDb;
+    use zcash_primitives::zip32::ExtendedFullViewingKey;
 );
 
 cfg_wasm32!(
@@ -29,6 +29,7 @@ pub struct WalletDbShared {
     pub db: Arc<Mutex<WalletDb<ZcoinConsensusParams>>>,
     #[cfg(target_arch = "wasm32")]
     pub db: SharedDb<WalletDbInner>,
+    #[allow(unused)]
     ticker: String,
 }
 
@@ -62,8 +63,7 @@ impl<'a> WalletDbShared {
 }
 
 cfg_wasm32!(
-    use super::*;
-    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, IndexedDb, SharedDb};
+    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
 
     pub type WalletDbRes<T> = MmResult<T, WalletDbError>;
     pub type WalletDbInnerLocked<'a> = DbLocked<'a, WalletDbInner>;
@@ -76,6 +76,7 @@ cfg_wasm32!(
             })
         }
 
+        #[allow(unused)]
         async fn lock_db(&self) -> WalletDbRes<WalletDbInnerLocked<'_>> {
             self.db
                 .get_or_initialize()

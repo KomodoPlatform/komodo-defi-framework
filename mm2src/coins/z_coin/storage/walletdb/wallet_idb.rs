@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use mm2_db::indexed_db::{BeBigUint, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, OnUpgradeResult, TableSignature};
+use mm2_db::indexed_db::{BeBigUint, DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
+                         OnUpgradeResult, TableSignature};
 
 const DB_NAME: &str = "wallet_db_cache";
 const DB_VERSION: u32 = 1;
@@ -10,10 +10,11 @@ pub struct WalletDbAccountsTable {
     account: BeBigUint,
     extfvk: String,
     address: String,
+    ticker: String,
 }
 
 impl WalletDbAccountsTable {
-    pub const ACCOUNT_ACCOUNT_INDEX: &str = "account_account_index";
+    pub const ACCOUNT_TICKER_INDEX: &str = "account_ticker_index";
 }
 
 impl TableSignature for WalletDbAccountsTable {
@@ -22,7 +23,8 @@ impl TableSignature for WalletDbAccountsTable {
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
-            table.create_index(WalletDbAccountsTable::ACCOUNT_ACCOUNT_INDEX, true)?;
+            table.create_multi_index(Self::ACCOUNT_TICKER_INDEX, &["account", "ticker"], true)?;
+            table.create_index("ticker", false)?;
         }
         Ok(())
     }
@@ -34,10 +36,12 @@ pub struct WalletDbBlocksTable {
     hash: String,
     time: BeBigUint,
     sapling_tree: String,
+    ticker: String,
 }
 
 impl WalletDbBlocksTable {
-    pub const BLOCK_HEIGHT_INDEX: &str = "height";
+    pub const TICKER_HEIGHT_INDEX: &str = "ticker_height_index";
+    pub const HASH_TICKER_INDEX: &str = "hash_ticker_index";
 }
 
 impl TableSignature for WalletDbBlocksTable {
@@ -46,7 +50,9 @@ impl TableSignature for WalletDbBlocksTable {
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
-            table.create_index(WalletDbBlocksTable::BLOCK_HEIGHT_INDEX, true)?;
+            table.create_multi_index(Self::TICKER_HEIGHT_INDEX, &["ticker", "height"], true)?;
+            table.create_multi_index(Self::HASH_TICKER_INDEX, &["ticker", "hash"], true)?;
+            table.create_index("ticker", false)?;
         }
         Ok(())
     }
@@ -61,13 +67,14 @@ pub struct WalletDbTransactionsTable {
     tx_index: BeBigUint,
     expiry_height: BeBigUint,
     raw: String,
+    ticker: String,
 }
 
 impl WalletDbTransactionsTable {
     /// A **unique** index that consists of the following properties:
     /// * id_tx
     /// * txid
-    pub const TRANSACTION_ID_TX_INDEX: &'static str = "transaction_id_tx_index";
+    pub const TICKER_ID_TX_INDEX: &'static str = "ticker_id_tx_index";
 }
 
 impl TableSignature for WalletDbTransactionsTable {
@@ -76,12 +83,7 @@ impl TableSignature for WalletDbTransactionsTable {
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
-            table.create_multi_index(
-                WalletDbTransactionsTable::TRANSACTION_ID_TX_INDEX,
-                &["id_tx", "txid"],
-                true,
-            )?;
-            table.create_index("id_tx", false)?;
+            table.create_multi_index(Self::TICKER_ID_TX_INDEX, &["ticker", "id_tx", "txid"], true)?;
         }
         Ok(())
     }
@@ -100,17 +102,18 @@ pub struct WalletDbReceivedNotesTable {
     is_change: BeBigUint,
     memo: String,
     spent: BeBigUint,
+    ticker: String,
 }
 
 impl WalletDbReceivedNotesTable {
     /// A **unique** index that consists of the following properties:
     /// * note_id
     /// * nf
-    pub const RECEIVED_NOTES_ID_NF_INDEX: &'static str = "received_note_id_nf_index";
+    pub const TICKER_NOTES_ID_NF_INDEX: &'static str = "ticker_note_id_nf_index";
     /// A **unique** index that consists of the following properties:
     /// * tx
     /// * output_index
-    pub const RECEIVED_NOTES_TX_OUTPUT_INDEX: &'static str = "received_notes_tx_output_index";
+    pub const TICKER_NOTES_TX_OUTPUT_INDEX: &'static str = "ticker_notes_tx_output_index";
 }
 
 impl TableSignature for WalletDbReceivedNotesTable {
@@ -119,17 +122,13 @@ impl TableSignature for WalletDbReceivedNotesTable {
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
+            table.create_multi_index(Self::TICKER_NOTES_ID_NF_INDEX, &["ticker", "id_note", "nf"], true)?;
             table.create_multi_index(
-                WalletDbReceivedNotesTable::RECEIVED_NOTES_ID_NF_INDEX,
-                &["id_note", "nf"],
+                Self::TICKER_NOTES_TX_OUTPUT_INDEX,
+                &["ticker", "tx", "output_index"],
                 true,
             )?;
-            table.create_multi_index(
-                WalletDbReceivedNotesTable::RECEIVED_NOTES_TX_OUTPUT_INDEX,
-                &["tx", "output_index"],
-                true,
-            )?;
-            table.create_index("id_note", false)?;
+            table.create_index("ticker", false)?;
         }
         Ok(())
     }
@@ -147,7 +146,8 @@ impl WalletDbSaplingWitnessesTable {
     /// A **unique** index that consists of the following properties:
     /// * note
     /// * block
-    pub const SAPLING_WITNESS_NOTE_BLOCK_INDEX: &'static str = "sapling_witness_note_block_index";
+    pub const TICKER_NOTE_BLOCK_INDEX: &'static str = "ticker_note_block_index";
+    pub const TICKER_ID_WITNESS_INDEX: &'static str = "ticker_id_witness_index";
 }
 
 impl TableSignature for WalletDbSaplingWitnessesTable {
@@ -156,12 +156,9 @@ impl TableSignature for WalletDbSaplingWitnessesTable {
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
-            table.create_multi_index(
-                WalletDbSaplingWitnessesTable::SAPLING_WITNESS_NOTE_BLOCK_INDEX,
-                &["note", "block"],
-                true,
-            )?;
-            table.create_index("id_witness", false)?;
+            table.create_multi_index(Self::TICKER_NOTE_BLOCK_INDEX, &["ticker", "note", "block"], true)?;
+            table.create_multi_index(Self::TICKER_ID_WITNESS_INDEX, &["ticker", "note", "id_witness"], true)?;
+            table.create_index("ticker", false)?;
         }
         Ok(())
     }
@@ -176,13 +173,14 @@ pub struct WalletDbSentNotesTable {
     address: String,
     value: BeBigUint,
     memo: String,
+    ticker: String,
 }
 
 impl WalletDbSentNotesTable {
     /// A **unique** index that consists of the following properties:
     /// * transaction
     /// * output_index
-    pub const SENT_NOTES_TX_OUTPUT_INDEX: &'static str = "sent_notes_tx_output_index";
+    pub const TICKER_TX_OUTPUT_INDEX: &'static str = "ticker_tx_output_index";
 }
 
 impl TableSignature for WalletDbSentNotesTable {
@@ -191,12 +189,8 @@ impl TableSignature for WalletDbSentNotesTable {
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
-            table.create_index("id_note", true)?;
-            table.create_multi_index(
-                WalletDbSentNotesTable::SENT_NOTES_TX_OUTPUT_INDEX,
-                &["tx", "output_index"],
-                true,
-            )?;
+            table.create_multi_index(Self::TICKER_TX_OUTPUT_INDEX, &["ticker", "tx", "output_index"], true)?;
+            table.create_index("ticker", false)?;
         }
         Ok(())
     }

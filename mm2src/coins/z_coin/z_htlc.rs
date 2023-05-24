@@ -102,7 +102,7 @@ pub async fn z_send_dex_fee(
 }
 
 #[derive(Debug, Display)]
-#[allow(clippy::large_enum_variant, clippy::upper_case_acronyms)]
+#[allow(clippy::large_enum_variant, clippy::upper_case_acronyms, unused)]
 pub enum ZP2SHSpendError {
     ZTxBuilderError(ZTxBuilderError),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),

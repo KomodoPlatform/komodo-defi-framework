@@ -1,6 +1,6 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
-use crate::z_coin::storage::{BlockDbError, WalletDbError};
+use crate::z_coin::storage::WalletDbError;
 use crate::NumConversError;
 use derive_more::Display;
 

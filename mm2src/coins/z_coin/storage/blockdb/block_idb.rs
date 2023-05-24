@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use mm2_db::indexed_db::{BeBigUint, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, OnUpgradeResult, TableSignature};
+use mm2_db::indexed_db::{BeBigUint, DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
+                         OnUpgradeResult, TableSignature};
 
 const DB_NAME: &str = "z_compactblocks_cache";
 const DB_VERSION: u32 = 1;
@@ -9,10 +9,11 @@ const DB_VERSION: u32 = 1;
 pub struct BlockDbTable {
     height: BeBigUint,
     data: Vec<u8>,
+    ticker: String,
 }
 
 impl BlockDbTable {
-    pub const BLOCK_HEIGHT_INDEX: &str = "block_height_index";
+    pub const TICKER_HEIGHT_INDEX: &str = "block_height_ticker_index";
 }
 
 impl TableSignature for BlockDbTable {
@@ -21,7 +22,7 @@ impl TableSignature for BlockDbTable {
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
-            table.create_index("BLOCK_HEIGHT_INDEX", true)?;
+            table.create_multi_index(Self::TICKER_HEIGHT_INDEX, &["ticker", "height"], true)?;
         }
         Ok(())
     }
