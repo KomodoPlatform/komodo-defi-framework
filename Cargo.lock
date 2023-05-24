@@ -1116,6 +1116,7 @@ dependencies = [
  "tokio-rustls",
  "tonic",
  "tonic-build",
+ "url",
  "utxo_signer",
  "uuid 1.2.2",
  "wasm-bindgen",
@@ -8483,6 +8484,7 @@ dependencies = [
  "idna",
  "matches",
  "percent-encoding",
+ "serde",
 ]
 
 [[package]]

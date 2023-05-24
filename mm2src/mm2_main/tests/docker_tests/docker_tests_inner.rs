@@ -1,5 +1,6 @@
+use crate::docker_tests::docker_tests_common::generate_utxo_coin_with_privkey;
 use crate::integration_tests_common::*;
-use crate::{fill_address, fill_eth, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
+use crate::{fill_address, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
             utxo_coin_from_privkey};
 use bitcrypto::dhash160;
 use chain::OutPoint;
@@ -8,12 +9,13 @@ use coins::utxo::{GetUtxoListOps, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, TransactionEnum, WithdrawRequest};
 use common::{block_on, now_sec_u32, wait_until_sec};
+use crypto::privkey::key_pair_from_seed;
 use futures01::Future;
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf, get_locked_amount, kmd_conf,
                                   max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
-                                  MarketMakerIt, Mm2TestConf};
-use mm2_test_helpers::structs::*;
+                                  MarketMakerIt, Mm2TestConf, ETH_DEV_NODES};
+use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::env;
@@ -3365,8 +3367,14 @@ fn test_taker_should_match_with_best_price_sell() {
 #[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/1074
 fn test_match_utxo_with_eth_taker_sell() {
-    let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
-    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+    let alice_priv_key = key_pair_from_seed(&alice_passphrase).unwrap().private().secret;
+    let bob_priv_key = key_pair_from_seed(&bob_passphrase).unwrap().private().secret;
+
+    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), alice_priv_key);
+    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), bob_priv_key);
+
     let coins = json!([mycoin_conf(1000), eth_testnet_conf()]);
 
     let mut mm_bob = MarketMakerIt::start(
@@ -3403,13 +3411,8 @@ fn test_match_utxo_with_eth_taker_sell() {
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
-    let eth_bob = block_on(enable_native(&mm_bob, "ETH", &["http://195.201.0.6:8565"]));
-    // pass without 0x
-    fill_eth(&eth_bob.address[2..]);
-
-    let eth_alice = block_on(enable_native(&mm_alice, "ETH", &["http://195.201.0.6:8565"]));
-    // pass without 0x
-    fill_eth(&eth_alice.address[2..]);
+    block_on(enable_native(&mm_bob, "ETH", ETH_DEV_NODES));
+    block_on(enable_native(&mm_alice, "ETH", ETH_DEV_NODES));
 
     let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
@@ -3417,7 +3420,7 @@ fn test_match_utxo_with_eth_taker_sell() {
         "base": "MYCOIN",
         "rel": "ETH",
         "price": 1,
-        "volume": "0.1",
+        "volume": "0.0001",
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
@@ -3427,7 +3430,7 @@ fn test_match_utxo_with_eth_taker_sell() {
         "base": "ETH",
         "rel": "MYCOIN",
         "price": 1,
-        "volume": "0.1",
+        "volume": "0.0001",
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!sell: {}", rc.1);
@@ -3441,10 +3444,14 @@ fn test_match_utxo_with_eth_taker_sell() {
 
 #[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/1074
-#[ignore] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
 fn test_match_utxo_with_eth_taker_buy() {
-    let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
-    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+    let alice_priv_key = key_pair_from_seed(&alice_passphrase).unwrap().private().secret;
+    let bob_priv_key = key_pair_from_seed(&bob_passphrase).unwrap().private().secret;
+
+    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), alice_priv_key);
+    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), bob_priv_key);
     let coins = json!([mycoin_conf(1000), eth_testnet_conf()]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
@@ -3480,13 +3487,9 @@ fn test_match_utxo_with_eth_taker_buy() {
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
-    let eth_bob = block_on(enable_native(&mm_bob, "ETH", &["http://195.201.0.6:8565"]));
-    // pass without 0x
-    fill_eth(&eth_bob.address[2..]);
+    block_on(enable_native(&mm_bob, "ETH", ETH_DEV_NODES));
 
-    let eth_alice = block_on(enable_native(&mm_alice, "ETH", &["http://195.201.0.6:8565"]));
-    // pass without 0x
-    fill_eth(&eth_alice.address[2..]);
+    block_on(enable_native(&mm_alice, "ETH", ETH_DEV_NODES));
 
     let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
@@ -3494,7 +3497,7 @@ fn test_match_utxo_with_eth_taker_buy() {
         "base": "MYCOIN",
         "rel": "ETH",
         "price": 1,
-        "volume": "0.1",
+        "volume": "0.0001",
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
@@ -3505,7 +3508,7 @@ fn test_match_utxo_with_eth_taker_buy() {
         "base": "MYCOIN",
         "rel": "ETH",
         "price": 1,
-        "volume": "0.1",
+        "volume": "0.0001",
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);

@@ -7,7 +7,7 @@ pub(crate) mod nft_structs;
 
 use crate::WithdrawError;
 use nft_errors::GetNftInfoError;
-use nft_structs::{Chain, ConvertChain, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory,
+use nft_structs::{ConvertChain, Nft, NftList, NftListReq, NftMetadataReq, NftTransferHistory,
                   NftTransferHistoryWrapper, NftTransfersReq, NftWrapper, NftsTransferHistoryList,
                   TransactionNftDetails, WithdrawNftReq};
 
@@ -15,14 +15,17 @@ use crate::eth::{get_eth_address, withdraw_erc1155, withdraw_erc721};
 use crate::nft::nft_structs::WithdrawNftType;
 use common::APPLICATION_JSON;
 use http::header::ACCEPT;
+use mm2_err_handle::map_to_mm::MapToMmResult;
 use mm2_number::BigDecimal;
 use serde_json::Value as Json;
 
-const MORALIS_API_ENDPOINT: &str = "/api/v2/";
-/// query parameter for moralis request: The format of the token ID
-const FORMAT_DECIMAL_MORALIS: &str = "format=decimal";
-/// query parameter for moralis request: The transfer direction
-const DIRECTION_BOTH_MORALIS: &str = "direction=both";
+const MORALIS_API_ENDPOINT: &str = "api/v2";
+/// query parameters for moralis request: The format of the token ID
+const MORALIS_FORMAT_QUERY_NAME: &str = "format";
+const MORALIS_FORMAT_QUERY_VALUE: &str = "decimal";
+/// query parameters for moralis request: The transfer direction
+const MORALIS_DIRECTION_QUERY_NAME: &str = "direction";
+const MORALIS_DIRECTION_QUERY_VALUE: &str = "both";
 
 pub type WithdrawNftResult = Result<TransactionNftDetails, MmError<WithdrawError>>;
 
@@ -30,12 +33,20 @@ pub type WithdrawNftResult = Result<TransactionNftDetails, MmError<WithdrawError
 pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetNftInfoError> {
     let mut res_list = Vec::new();
     for chain in req.chains {
-        let (coin_str, chain_str) = chain.to_ticker_chain();
-        let my_address = get_eth_address(&ctx, &coin_str).await?;
-        let req_url = &req.url;
-        let wallet_address = my_address.wallet_address;
-        let uri_without_cursor =
-            format!("{req_url}{MORALIS_API_ENDPOINT}{wallet_address}/nft?chain={chain_str}&{FORMAT_DECIMAL_MORALIS}");
+        let my_address = get_eth_address(&ctx, &chain.to_ticker()).await?;
+
+        let mut uri_without_cursor = req.url.clone();
+        uri_without_cursor.set_path(MORALIS_API_ENDPOINT);
+        uri_without_cursor
+            .path_segments_mut()
+            .map_to_mm(|_| GetNftInfoError::Internal("Invalid URI".to_string()))?
+            .push(&my_address.wallet_address)
+            .push("nft");
+        uri_without_cursor
+            .query_pairs_mut()
+            .append_pair("chain", &chain.to_string())
+            .append_pair(MORALIS_FORMAT_QUERY_NAME, MORALIS_FORMAT_QUERY_VALUE);
+        drop_mutability!(uri_without_cursor);
 
         // The cursor returned in the previous response (used for getting the next page).
         let mut cursor = String::new();
@@ -92,19 +103,18 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 /// of the same token. `get_nft_metadata` returns NFTs info with the most recent owner.
 /// **Dont** use this function to get specific info about owner address, amount etc, you will get info not related to my_address.
 pub async fn get_nft_metadata(_ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> {
-    let chain_str = match req.chain {
-        Chain::Avalanche => "avalanche",
-        Chain::Bsc => "bsc",
-        Chain::Eth => "eth",
-        Chain::Fantom => "fantom",
-        Chain::Polygon => "polygon",
-    };
-    let req_url = &req.url;
-    let token_address = &req.token_address;
-    let token_id = &req.token_id;
-    let uri = format!(
-        "{req_url}{MORALIS_API_ENDPOINT}nft/{token_address}/{token_id}?chain={chain_str}&{FORMAT_DECIMAL_MORALIS}"
-    );
+    let mut uri = req.url;
+    uri.set_path(MORALIS_API_ENDPOINT);
+    uri.path_segments_mut()
+        .map_to_mm(|_| GetNftInfoError::Internal("Invalid URI".to_string()))?
+        .push("nft")
+        .push(&format!("{:#02x}", &req.token_address))
+        .push(&req.token_id.to_string());
+    uri.query_pairs_mut()
+        .append_pair("chain", &req.chain.to_string())
+        .append_pair(MORALIS_FORMAT_QUERY_NAME, MORALIS_FORMAT_QUERY_VALUE);
+    drop_mutability!(uri);
+
     let response = send_moralis_request(uri.as_str()).await?;
     let nft_wrapper: NftWrapper = serde_json::from_str(&response.to_string())?;
     let nft_metadata = Nft {
@@ -135,20 +145,22 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
     let mut res_list = Vec::new();
 
     for chain in req.chains {
-        let (coin_str, chain_str) = match chain {
-            Chain::Avalanche => ("AVAX", "avalanche"),
-            Chain::Bsc => ("BNB", "bsc"),
-            Chain::Eth => ("ETH", "eth"),
-            Chain::Fantom => ("FTM", "fantom"),
-            Chain::Polygon => ("MATIC", "polygon"),
-        };
-        let my_address = get_eth_address(&ctx, coin_str).await?;
-        let req_url = &req.url;
-        let wallet_address = my_address.wallet_address;
-        let uri_without_cursor = format!(
-            "{req_url}{MORALIS_API_ENDPOINT}{wallet_address}/nft/transfers?chain={chain_str}&{FORMAT_DECIMAL_MORALIS}&{DIRECTION_BOTH_MORALIS}",
+        let my_address = get_eth_address(&ctx, &chain.to_ticker()).await?;
 
-        );
+        let mut uri_without_cursor = req.url.clone();
+        uri_without_cursor.set_path(MORALIS_API_ENDPOINT);
+        uri_without_cursor
+            .path_segments_mut()
+            .map_to_mm(|_| GetNftInfoError::Internal("Invalid URI".to_string()))?
+            .push(&my_address.wallet_address)
+            .push("nft")
+            .push("transfers");
+        uri_without_cursor
+            .query_pairs_mut()
+            .append_pair("chain", &chain.to_string())
+            .append_pair(MORALIS_FORMAT_QUERY_NAME, MORALIS_FORMAT_QUERY_VALUE)
+            .append_pair(MORALIS_DIRECTION_QUERY_NAME, MORALIS_DIRECTION_QUERY_VALUE);
+        drop_mutability!(uri_without_cursor);
 
         // The cursor returned in the previous response (used for getting the next page).
         let mut cursor = String::new();

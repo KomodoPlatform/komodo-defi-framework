@@ -2,6 +2,7 @@ use super::*;
 use crate::lp_coininit;
 use crypto::CryptoCtx;
 use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_test_helpers::for_tests::{ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT};
 use wasm_bindgen_test::*;
 use web_sys::console;
 
@@ -19,7 +20,7 @@ async fn test_send() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node("http://195.201.0.6:8565", false);
+    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -28,12 +29,12 @@ async fn test_send() {
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         priv_key_policy: key_pair.into(),
-        swap_contract_address: Address::from_str("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94").unwrap(),
+        swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
-            is_parity: true,
+            is_parity: false,
         }],
         web3,
         decimals: 18,
@@ -55,16 +56,16 @@ async fn test_send() {
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
         secret_hash: &[1; 20],
         amount: "0.001".parse().unwrap(),
-        swap_contract_address: &None,
+        swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = coin.send_maker_payment(maker_payment_args).compat().await;
+    let tx = coin.send_maker_payment(maker_payment_args).compat().await.unwrap();
     console::log_1(&format!("{:?}", tx).into());
 
-    let block = coin.current_block().compat().await;
+    let block = coin.current_block().compat().await.unwrap();
     console::log_1(&format!("{:?}", block).into());
 }
 
@@ -91,8 +92,8 @@ async fn test_init_eth_coin() {
     .unwrap();
 
     let req = json!({
-        "urls":["http://195.201.0.6:8565"],
-        "swap_contract_address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        "urls":[ETH_DEV_NODE],
+        "swap_contract_address":ETH_DEV_SWAP_CONTRACT
     });
     let _coin = lp_coininit(&ctx, "ETH", &req).await.unwrap();
 }

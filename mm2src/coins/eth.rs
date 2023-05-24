@@ -67,6 +67,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
+use url::Url;
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId, U64};
 use web3::{self, Web3};
@@ -113,7 +114,7 @@ mod nonce;
 use nonce::ParityNonce;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
-/// Dev chain (195.201.0.6:8565) contract address: 0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd
+/// Dev chain (195.201.137.5:8565) contract address: 0x83965C539899cC0F918552e5A26915de40ee8852
 /// Ropsten: https://ropsten.etherscan.io/address/0x7bc1bbdd6a0a722fc9bffc49c921b685ecb84b94
 /// ETH mainnet: https://etherscan.io/address/0x8500AFc0bc5214728082163326C2FF0C73f4a871
 const SWAP_CONTRACT_ABI: &str = include_str!("eth/swap_contract_abi.json");
@@ -874,7 +875,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 
 /// `withdraw_erc1155` function returns details of `ERC-1155` transaction including tx hex,
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
-pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155, url: String) -> WithdrawNftResult {
+pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155, url: Url) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, &withdraw_type.chain.to_ticker()).await?;
     let (to_addr, token_addr, eth_coin) =
         get_valid_nft_add_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address)?;
@@ -4440,11 +4441,11 @@ impl EthCoin {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct EthTxFeeDetails {
-    coin: String,
-    gas: u64,
+    pub coin: String,
+    pub gas: u64,
     /// WEI units per 1 gas
-    gas_price: BigDecimal,
-    total_fee: BigDecimal,
+    pub gas_price: BigDecimal,
+    pub total_fee: BigDecimal,
 }
 
 impl EthTxFeeDetails {

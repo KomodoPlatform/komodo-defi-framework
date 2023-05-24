@@ -2,6 +2,7 @@ use crate::integration_tests_common::*;
 use common::{block_on, log};
 use http::StatusCode;
 use mm2_number::BigDecimal;
+use mm2_test_helpers::for_tests::ETH_DEV_NODES;
 use mm2_test_helpers::for_tests::{best_orders_v2, best_orders_v2_by_number, eth_jst_testnet_conf, eth_testnet_conf,
                                   get_passphrase, morty_conf, rick_conf, tbtc_conf, tbtc_segwit_conf, MarketMakerIt,
                                   Mm2TestConf, RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS};
@@ -40,7 +41,7 @@ fn test_best_orders() {
     log!("Bob log path: {}", mm_bob.log_path.display());
 
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]));
+    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES));
     log!("enable_coins (bob): {:?}", bob_coins);
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell requests");
@@ -205,7 +206,7 @@ fn test_best_orders_v2_by_number() {
     log!("Bob log path: {:?}", [mm_bob.log_path.display()]);
 
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]));
+    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES));
     log!("enable_coins (bob) {:?}", [bob_coins]);
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell requests");
@@ -332,7 +333,7 @@ fn test_best_orders_v2_by_volume() {
     log!("Bob log path: {:?}", [mm_bob.log_path.display()]);
 
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]));
+    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES));
     log!("enable_coins (bob): {:?}", [bob_coins]);
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell requests");
@@ -610,7 +611,7 @@ fn test_best_orders_filter_response() {
     log!("Bob log path: {}", mm_bob.log_path.display());
 
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]));
+    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES));
     log!("enable_coins (bob): {:?}", bob_coins);
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell requests");
