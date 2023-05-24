@@ -16,8 +16,6 @@ cfg_wasm32!(
     use wallet_idb::WalletDbInner;
 );
 
-pub type WalletDbShared = WalletDbSharedImpl;
-
 #[derive(Debug, Display)]
 pub enum WalletDbError {
     ZcoinClientInitError(ZcoinClientInitError),
@@ -26,7 +24,7 @@ pub enum WalletDbError {
 }
 
 #[derive(Clone)]
-pub struct WalletDbSharedImpl {
+pub struct WalletDbShared {
     #[cfg(not(target_arch = "wasm32"))]
     pub db: Arc<Mutex<WalletDb<ZcoinConsensusParams>>>,
     #[cfg(target_arch = "wasm32")]
@@ -35,7 +33,7 @@ pub struct WalletDbSharedImpl {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl<'a> WalletDbSharedImpl {
+impl<'a> WalletDbShared {
     pub async fn new(zcoin_builder: &ZCoinBuilder<'a>) -> MmResult<Self, WalletDbError> {
         let z_spending_key = match zcoin_builder.z_spending_key {
             Some(ref z_spending_key) => z_spending_key.clone(),
@@ -70,7 +68,7 @@ cfg_wasm32!(
     pub type WalletDbRes<T> = MmResult<T, WalletDbError>;
     pub type WalletDbInnerLocked<'a> = DbLocked<'a, WalletDbInner>;
 
-    impl<'a> WalletDbSharedImpl {
+    impl<'a> WalletDbShared {
         pub async fn new(zcoin_builder: &ZCoinBuilder<'a>) -> MmResult<Self, WalletDbError> {
             Ok(Self {
                 db: ConstructibleDb::new(zcoin_builder.ctx).into_shared(),

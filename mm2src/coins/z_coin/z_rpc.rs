@@ -18,6 +18,7 @@ cfg_native!(
     use super::CheckPointBlockInfo;
 
     use crate::utxo::rpc_clients::{UtxoRpcClientOps, NO_TX_ERROR_CODE};
+
     use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError, NO_PARAMS};
     use db_common::sqlite::{query_single_row, run_optimization_pragmas};
     use common::async_blocking;
@@ -29,6 +30,7 @@ cfg_native!(
     use http::Uri;
     use prost::Message;
     use protobuf::Message as ProtobufMessage;
+    use rpc::v1::types::H256 as H256Json;
     use std::path::{Path, PathBuf};
     use std::pin::Pin;
     use std::str::FromStr;
@@ -50,24 +52,16 @@ cfg_native!(
         tonic::include_proto!("cash.z.wallet.sdk.rpc");
     }
 
-    use rpc::v1::types::H256 as H256Json;
     use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
     use z_coin_grpc::{BlockId, BlockRange, ChainSpec, CompactBlock as TonicCompactBlock,
                   CompactOutput as TonicCompactOutput, CompactSpend as TonicCompactSpend, CompactTx as TonicCompactTx,
                   TxFilter};
 );
 
-#[allow(unused)]
-struct CompactBlockRow {
-    height: BlockHeight,
-    data: Vec<u8>,
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 pub type OnCompactBlockFn<'a> = dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + 'a;
 
 #[cfg(target_arch = "wasm32")]
-#[allow(unused)]
 pub type OnCompactBlockFn<'a> = dyn FnMut(String) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + 'a;
 
 #[async_trait]
@@ -508,7 +502,6 @@ pub enum SyncStatus {
     },
 }
 
-#[allow(unused)]
 pub struct SaplingSyncLoopHandle {
     coin: String,
     current_block: BlockHeight,
@@ -655,7 +648,6 @@ impl SaplingSyncLoopHandle {
 }
 
 #[cfg(target_arch = "wasm32")]
-#[allow(unused)]
 impl SaplingSyncLoopHandle {
     fn notify_blocks_cache_status(&mut self, _current_scanned_block: u64, _latest_block: u64) { todo!() }
 

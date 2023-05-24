@@ -15,8 +15,9 @@ cfg_native!(
     use db_common::sqlite::{query_single_row, run_optimization_pragmas};
     use zcash_client_sqlite::error::{SqliteClientError as ZcashClientError, SqliteClientError};
     use zcash_client_sqlite::NoteId;
+    use zcash_client_backend::data_api::error::Error as ChainError;
 
-    pub(crate) struct CompactBlockRow {
+    struct CompactBlockRow {
         height: BlockHeight,
         data: Vec<u8>,
     }
@@ -36,10 +37,8 @@ impl From<SqliteClientError> for BlockDbError {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<zcash_client_backend::data_api::error::Error<NoteId>> for BlockDbError {
-    fn from(value: zcash_client_backend::data_api::error::Error<NoteId>) -> Self {
-        Self::SqliteError(SqliteClientError::from(value))
-    }
+impl From<ChainError<NoteId>> for BlockDbError {
+    fn from(value: ChainError<NoteId>) -> Self { Self::SqliteError(SqliteClientError::from(value)) }
 }
 
 /// A wrapper for the db connection to the block cache database.
@@ -127,8 +126,7 @@ impl BlockDbImpl {
 
         for row_result in rows {
             let cbr = row_result?;
-            let block = CompactBlock::parse_from_bytes(&cbr.data)
-                .map_err(zcash_client_backend::data_api::error::Error::from)?;
+            let block = CompactBlock::parse_from_bytes(&cbr.data).map_err(ChainError::from)?;
 
             if block.height() != cbr.height {
                 return Err(SqliteClientError::CorruptedData(format!(

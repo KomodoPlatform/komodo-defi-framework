@@ -105,7 +105,7 @@ cfg_native!(
 );
 
 mod z_coin_errors;
-use crate::z_coin::storage::{BlockDbImpl, WalletDbShared, WalletDbSharedImpl};
+use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
 pub use z_coin_errors::*;
 
 pub mod storage;
@@ -132,15 +132,15 @@ macro_rules! try_ztx_s {
 }
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
-const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
-const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
+const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
 const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
 const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
-const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
+const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
+const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
 
 cfg_native!(
-    const TRANSACTIONS_TABLE: &str = "transactions";
     const BLOCKS_TABLE: &str = "blocks";
+    const TRANSACTIONS_TABLE: &str = "transactions";
 );
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -363,13 +363,13 @@ impl ZCoin {
             let guard = wallet_db.db.lock();
             let latest_db_block = match guard
                 .block_height_extrema()
-                .map_err(|err| SpendableNotesError::SqliteClientError(err.to_string()))?
+                .map_err(|err| SpendableNotesError::DBClientError(err.to_string()))?
             {
                 Some((_, latest)) => latest,
                 None => return Ok(Vec::new()),
             };
             get_spendable_notes(&guard, AccountId::default(), latest_db_block)
-                .map_err(|err| MmError::new(SpendableNotesError::SqliteClientError(err.to_string())))
+                .map_err(|err| MmError::new(SpendableNotesError::DBClientError(err.to_string())))
         })
         .await
     }
@@ -883,14 +883,14 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         .expect("DEX_FEE_Z_ADDR is a valid z-address")
         .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
+        let z_tx_prover = self.z_tx_prover().await?;
         let my_z_addr_encoded = encode_payment_address(
             self.protocol_info.consensus_params.hrp_sapling_payment_address(),
             &my_z_addr,
         );
 
         let blocks_db = self.blocks_db().await?;
-        let evk = ExtendedFullViewingKey::from(&z_spending_key);
-        let wallet_db = WalletDbSharedImpl::new(&self)
+        let wallet_db = WalletDbShared::new(&self)
             .await
             .map_err(|err| ZCoinBuildError::WalletDbError(err.into_inner()))?;
 
@@ -924,7 +924,6 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                 .await?
             },
         };
-        let z_tx_prover = self.z_tx_prover().await?;
         let z_fields = ZCoinFields {
             dex_fee_addr,
             my_z_addr,
@@ -1462,6 +1461,10 @@ impl SwapOps for ZCoin {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
+    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
+        unimplemented!();
+    }
+
     #[inline]
     async fn extract_secret(
         &self,
@@ -1470,10 +1473,6 @@ impl SwapOps for ZCoin {
         _watcher_reward: bool,
     ) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
-    }
-
-    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        unimplemented!();
     }
 
     fn is_auto_refundable(&self) -> bool { false }

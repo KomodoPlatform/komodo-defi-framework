@@ -307,5 +307,5 @@ impl From<ZcoinClientInitError> for ZCoinBuildError {
 
 #[derive(Debug, Display)]
 pub enum SpendableNotesError {
-    SqliteClientError(String),
+    DBClientError(String),
 }
