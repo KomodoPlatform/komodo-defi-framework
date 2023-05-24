@@ -18,7 +18,6 @@ mm2_err_handle = { path = "../mm2_err_handle" }
 serde = "1"
 serde_derive = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-wasm-timer = "0.2.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }

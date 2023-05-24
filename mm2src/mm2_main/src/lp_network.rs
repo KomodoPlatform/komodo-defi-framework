@@ -23,6 +23,7 @@ use common::executor::SpawnFuture;
 use common::{log, Future01CompatExt};
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
+use instant::Instant;
 use keys::KeyPair;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
@@ -37,7 +38,6 @@ use parking_lot::Mutex as PaMutex;
 use serde::de;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
-use wasm_timer::Instant;
 
 use crate::mm2::lp_ordermatch;
 use crate::mm2::{lp_stats, lp_swap};

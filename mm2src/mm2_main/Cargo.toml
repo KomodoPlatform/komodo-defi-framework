@@ -90,7 +90,7 @@ sp-trie = { version = "6.0", default-features = false }
 trie-db = { version = "0.23.1", default-features = false }
 trie-root = "0.16.0"
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
-wasm-timer = "0.2.4"
+instant = { version = "0.1.12" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
