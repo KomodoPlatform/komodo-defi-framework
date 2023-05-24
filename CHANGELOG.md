@@ -1,3 +1,10 @@
+## v1.0.5-beta - ${release-date}
+
+**Features:**
+
+**Enhancements/Fixes:**
+- Remove deprecated dependency `wasm-timer` from mm2 tree [#1836](https://github.com/KomodoPlatform/atomicDEX-API/pull/1836)
+
 ## v1.0.4-beta - 2023-05-23
 
 **Features:**
