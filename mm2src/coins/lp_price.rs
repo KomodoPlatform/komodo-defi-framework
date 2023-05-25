@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn test_get_cex_rates() {
         use mm2_number::MmNumber;
-        use wasm_timer::SystemTime;
+        use std::time::SystemTime;
 
         use crate::lp_price::{Provider, TickerInfos, TickerInfosRegistry};
 

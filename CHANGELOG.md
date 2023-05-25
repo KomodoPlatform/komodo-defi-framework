@@ -1,8 +1,9 @@
-## v1.0.5-beta - 2023-06-06
+## v1.0.5-beta - ${release-date}
 
 **Features:**
 
 **Enhancements/Fixes:**
+- Remove deprecated dependency `wasm-timer` from mm2 tree [#1836](https://github.com/KomodoPlatform/atomicDEX-API/pull/1836)
 - UriMeta to get info from token uri, status and metadata in nft tx history were added [#1823](https://github.com/KomodoPlatform/atomicDEX-API/pull/1823)
 
 ## v1.0.4-beta - 2023-05-23

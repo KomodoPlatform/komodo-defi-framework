@@ -150,7 +150,6 @@ winapi = "0.3"
 
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
-wasm-timer = "0.2.4"
 
 [build-dependencies]
 prost-build = { version = "0.10.4", default-features = false }

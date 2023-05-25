@@ -1122,7 +1122,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
- "wasm-timer",
  "web-sys",
  "web3",
  "webpki-roots",
@@ -1191,6 +1190,7 @@ dependencies = [
  "http-body 0.1.0",
  "hyper",
  "hyper-rustls",
+ "instant",
  "itertools",
  "js-sys",
  "lazy_static",
@@ -1216,7 +1216,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
- "wasm-timer",
  "web-sys",
  "winapi",
 ]
@@ -4365,7 +4364,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
- "wasm-timer",
  "web-sys",
  "winapi",
 ]
@@ -4411,7 +4409,6 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "wasm-timer",
 ]
 
 [[package]]
