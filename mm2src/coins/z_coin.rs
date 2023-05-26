@@ -98,7 +98,7 @@ cfg_native!(
     use z_rpc::{init_native_client};
 );
 
-mod z_coin_errors;
+#[allow(unused)] mod z_coin_errors;
 use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
 pub use z_coin_errors::*;
 
@@ -890,7 +890,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         let blocks_db = self.blocks_db().await?;
         let wallet_db = WalletDbShared::new(&self)
             .await
-            .map_err(|err| ZCoinBuildError::WalletDbError(err.into_inner()))?;
+            .map_err(|err| ZCoinBuildError::ZcashDBError(err.to_string()))?;
 
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
@@ -992,7 +992,7 @@ impl<'a> ZCoinBuilder<'a> {
         let ctx = self.ctx.clone();
         let ticker = self.ticker.to_string();
         BlockDbImpl::new(ctx, ticker, cache_db_path)
-            .map_err(|err| MmError::new(ZcoinClientInitError::BlocksDbInitFailure(err.to_string())))
+            .map_err(|err| MmError::new(ZcoinClientInitError::ZcashDBError(err.to_string())))
             .await
     }
 

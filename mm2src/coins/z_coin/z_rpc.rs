@@ -293,10 +293,10 @@ pub async fn create_wallet_db(
     async_blocking({
         move || -> Result<WalletDb<ZcoinConsensusParams>, MmError<ZcoinClientInitError>> {
             let db = WalletDb::for_path(wallet_db_path, consensus_params)
-                .map_to_mm(|err| ZcoinClientInitError::WalletDbInitFailure(err.to_string()))?;
+                .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
             run_optimization_pragmas(db.sql_conn())
-                .map_to_mm(|err| ZcoinClientInitError::WalletDbInitFailure(err.to_string()))?;
-            init_wallet_db(&db).map_to_mm(|err| ZcoinClientInitError::WalletDbInitFailure(err.to_string()))?;
+                .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
+            init_wallet_db(&db).map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
             if db.get_extended_full_viewing_keys()?.is_empty() {
                 init_accounts_table(&db, &[evk])?;
                 if let Some(check_point) = check_point_block {
@@ -574,7 +574,7 @@ impl SaplingSyncLoopHandle {
         if current_block >= from_block {
             rpc.scan_blocks(from_block, current_block, &mut |block: TonicCompactBlock| {
                 block_in_place(|| self.blocks_db.insert_block(block.height as u32, block.encode_to_vec()))
-                    .map_err(|err| UpdateBlocksCacheErr::BlocksDbError(err.to_string()))?;
+                    .map_err(|err| UpdateBlocksCacheErr::ZcashDBError(err.to_string()))?;
                 self.notify_blocks_cache_status(block.height, current_block);
                 Ok(())
             })
