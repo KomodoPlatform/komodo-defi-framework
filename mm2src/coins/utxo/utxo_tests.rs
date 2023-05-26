@@ -349,6 +349,21 @@ fn test_kmd_interest_accrue_stop_at() {
 }
 
 #[test]
+// Test case taken from this PR: https://github.com/KomodoPlatform/komodo/pull/584
+fn test_kmd_interest_kip_0001_reduction() {
+    let height = Some(7777776);
+    let value = 64605500822;
+    let lock_time = 1663839248;
+    let current_time = 1663839248 + (31 * 24 * 60 - 1) * 60 + 3600;
+
+    // Starting from dPoW 7th season, according to KIP0001 AUR should be reduced from 5% to 0.01%, i.e. div by 500
+    let expected = value / 10512000 * (31 * 24 * 60 - 59) / 500;
+    println!("expected: {}", expected);
+    let actual = kmd_interest(height, value, lock_time, current_time).unwrap();
+    assert_eq!(expected, actual);
+}
+
+#[test]
 fn test_sat_from_big_decimal() {
     let amount = "0.000001".parse().unwrap();
     let sat = sat_from_big_decimal(&amount, 18).unwrap();
