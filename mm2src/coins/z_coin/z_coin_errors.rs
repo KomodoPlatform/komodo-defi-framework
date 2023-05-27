@@ -22,13 +22,13 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 pub enum UpdateBlocksCacheErr {
     #[cfg(not(target_arch = "wasm32"))]
     GrpcError(tonic::Status),
-    ZcashDBError(String),
     #[cfg(not(target_arch = "wasm32"))]
     ZcashSqliteError(SqliteClientError),
     UtxoRpcError(UtxoRpcError),
     InternalError(String),
     JsonRpcError(JsonRpcError),
     GetLiveLightClientError(String),
+    ZcashDBError(String),
 }
 
 cfg_native!(
@@ -67,11 +67,12 @@ impl From<SqliteClientError> for ZcoinClientInitError {
     fn from(err: SqliteClientError) -> Self { ZcoinClientInitError::ZcashDBError(err.to_string()) }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Display)]
 pub enum UrlIterError {
     InvalidUri(InvalidUri),
+    #[cfg(not(target_arch = "wasm32"))]
     TlsConfigFailure(tonic::transport::Error),
+    #[cfg(not(target_arch = "wasm32"))]
     ConnectionFailure(tonic::transport::Error),
 }
 
