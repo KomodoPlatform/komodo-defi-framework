@@ -1,10 +1,15 @@
-## v1.0.5-beta - ${release-date}
+## v1.0.5-beta - 2023-06-02
 
 **Features:**
+- NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
+  - UriMeta was added to get info from token uri, status and metadata in nft tx history [#1823](https://github.com/KomodoPlatform/atomicDEX-API/pull/1823)
 
 **Enhancements/Fixes:**
-- Remove deprecated dependency `wasm-timer` from mm2 tree [#1836](https://github.com/KomodoPlatform/atomicDEX-API/pull/1836)
-- UriMeta to get info from token uri, status and metadata in nft tx history were added [#1823](https://github.com/KomodoPlatform/atomicDEX-API/pull/1823)
+- Deprecated `wasm-timer` dependency was removed from mm2 tree [#1836](https://github.com/KomodoPlatform/atomicDEX-API/pull/1836)
+- `log`, `getrandom` and `wasm-bindgen` dependencies were updated to more recent versions that are inline with the latest libp2p upstream [#1837](https://github.com/KomodoPlatform/atomicDEX-API/pull/1837)
+- A CI lint pipeline was added that validates pull request titles to ensure that they comply with the conventional commit specifications [#1839](https://github.com/KomodoPlatform/atomicDEX-API/pull/1839)
+- KMD AUR were reduced from 5% to 0.01% starting at `nS7HardforkHeight` to comply with [KIP-0001](https://github.com/KomodoPlatform/kips/blob/main/kip-0001.mediawiki) [#1841](https://github.com/KomodoPlatform/atomicDEX-API/pull/1841)
+
 
 ## v1.0.4-beta - 2023-05-23
 
