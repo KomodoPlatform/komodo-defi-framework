@@ -22,8 +22,6 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 pub enum UpdateBlocksCacheErr {
     #[cfg(not(target_arch = "wasm32"))]
     GrpcError(tonic::Status),
-    #[cfg(not(target_arch = "wasm32"))]
-    ZcashSqliteError(SqliteClientError),
     UtxoRpcError(UtxoRpcError),
     InternalError(String),
     JsonRpcError(JsonRpcError),
@@ -41,7 +39,7 @@ cfg_native!(
     }
 
     impl From<SqliteClientError> for UpdateBlocksCacheErr {
-        fn from(err: SqliteClientError) -> Self { UpdateBlocksCacheErr::ZcashSqliteError(err) }
+        fn from(err: SqliteClientError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
     }
 );
 
@@ -183,12 +181,12 @@ impl From<GenTxError> for SendOutputsErr {
     fn from(err: GenTxError) -> SendOutputsErr { SendOutputsErr::GenTxError(err) }
 }
 
-impl From<UtxoRpcError> for SendOutputsErr {
-    fn from(err: UtxoRpcError) -> SendOutputsErr { SendOutputsErr::Rpc(err) }
-}
-
 impl From<NumConversError> for SendOutputsErr {
     fn from(err: NumConversError) -> SendOutputsErr { SendOutputsErr::NumConversion(err) }
+}
+
+impl From<UtxoRpcError> for SendOutputsErr {
+    fn from(err: UtxoRpcError) -> SendOutputsErr { SendOutputsErr::Rpc(err) }
 }
 
 #[derive(Debug, Display)]
