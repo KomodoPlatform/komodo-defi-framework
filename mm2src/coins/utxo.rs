@@ -1585,6 +1585,10 @@ fn kmd_interest(
     const LOCKTIME_THRESHOLD: u64 = 500_000_000;
     // dPoW Season 7, Fri Jun 30 2023
     const N_S7_HARDFORK_HEIGHT: u64 = 3_484_958;
+    // MINUTES_PER_YEAR = 365 * 24 * 60
+    const MINUTES_PER_YEAR: u64 = 525_600;
+    // Active user rewards per minute before N_S7_HARDFORK_HEIGHT
+    const AUR_PER_MINUTE: f64 = 0.05 / MINUTES_PER_YEAR as f64;
 
     // value must be at least 10 KMD
     if value < 1_000_000_000 {
@@ -1619,16 +1623,16 @@ fn kmd_interest(
     }
 
     // interest stop accruing after 1 year before block 1000000
-    if minutes > 365 * 24 * 60 {
-        minutes = 365 * 24 * 60
+    if minutes > MINUTES_PER_YEAR {
+        minutes = MINUTES_PER_YEAR
     };
     // interest stop accruing after 1 month past 1000000 block
     if height >= 1_000_000 && minutes > 31 * 24 * 60 {
         minutes = 31 * 24 * 60;
     }
-    // next lines ported as is from Komodo codebase
+    // Some of these lines are ported as is from Komodo codebase
     minutes -= 59;
-    let mut accrued = (value / 10_512_000) * minutes;
+    let mut accrued = (value as f64 * AUR_PER_MINUTE) as u64 * minutes;
     // KIP-0001 proposed a reduction of the AUR from 5% to 0.01%
     // https://github.com/KomodoPlatform/kips/blob/main/kip-0001.mediawiki
     // https://github.com/KomodoPlatform/komodo/pull/584
