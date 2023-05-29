@@ -1070,7 +1070,7 @@ impl TakerSwap {
         };
 
         // This will be done during order match
-        self.w().watcher_reward = false;
+        self.w().watcher_reward = std::env::var("USE_WATCHER_REWARD").is_ok();
 
         Ok((Some(TakerSwapCommand::Negotiate), vec![TakerSwapEvent::Started(data)]))
     }

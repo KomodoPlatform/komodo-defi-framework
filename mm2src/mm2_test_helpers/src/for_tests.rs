@@ -1618,7 +1618,6 @@ pub async fn enable_eth_coin(
             "method": "enable",
             "coin": coin,
             "urls": urls,
-            "chain_id": 5,
             "swap_contract_address": swap_contract_address,
             "fallback_swap_contract": fallback_swap_contract,
             "mm2": 1,
