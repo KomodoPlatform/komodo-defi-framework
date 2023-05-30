@@ -25,7 +25,7 @@ default = []
 async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1"
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
-blake2 = "0.10"
+blake2 = "0.10.6"
 bytes = "0.4"
 chain = { path = "../mm2_bitcoin/chain" }
 cfg-if = "1.0"
