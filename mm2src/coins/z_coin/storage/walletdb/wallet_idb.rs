@@ -14,7 +14,10 @@ pub struct WalletDbAccountsTable {
 }
 
 impl WalletDbAccountsTable {
-    pub const ACCOUNT_TICKER_INDEX: &str = "account_ticker_index";
+    /// A **unique** index that consists of the following properties:
+    /// * ticker
+    /// * account
+    pub const TICKER_ACCOUNT_INDEX: &str = "ticker_account_index";
 }
 
 impl TableSignature for WalletDbAccountsTable {
@@ -23,7 +26,7 @@ impl TableSignature for WalletDbAccountsTable {
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
-            table.create_multi_index(Self::ACCOUNT_TICKER_INDEX, &["account", "ticker"], true)?;
+            table.create_multi_index(Self::ACCOUNT_TICKER_INDEX, &["ticker", "account"], true)?;
             table.create_index("ticker", false)?;
         }
         Ok(())
@@ -40,8 +43,16 @@ pub struct WalletDbBlocksTable {
 }
 
 impl WalletDbBlocksTable {
+    /// A **unique** index that consists of the following properties:
+    /// * ticker
+    /// * height
+    /// * txid
     pub const TICKER_HEIGHT_INDEX: &str = "ticker_height_index";
-    pub const HASH_TICKER_INDEX: &str = "hash_ticker_index";
+    /// A **unique** index that consists of the following properties:
+    /// * ticker
+    /// * hash
+    /// * txid
+    pub const HASH_TICKER_INDEX: &str = "ticker_hash_index";
 }
 
 impl TableSignature for WalletDbBlocksTable {
@@ -72,6 +83,7 @@ pub struct WalletDbTransactionsTable {
 
 impl WalletDbTransactionsTable {
     /// A **unique** index that consists of the following properties:
+    /// * ticker
     /// * id_tx
     /// * txid
     pub const TICKER_ID_TX_INDEX: &'static str = "ticker_id_tx_index";
@@ -107,10 +119,12 @@ pub struct WalletDbReceivedNotesTable {
 
 impl WalletDbReceivedNotesTable {
     /// A **unique** index that consists of the following properties:
+    /// * ticker
     /// * note_id
     /// * nf
     pub const TICKER_NOTES_ID_NF_INDEX: &'static str = "ticker_note_id_nf_index";
     /// A **unique** index that consists of the following properties:
+    /// * ticker
     /// * tx
     /// * output_index
     pub const TICKER_NOTES_TX_OUTPUT_INDEX: &'static str = "ticker_notes_tx_output_index";
@@ -140,13 +154,18 @@ pub struct WalletDbSaplingWitnessesTable {
     note: BeBigUint,
     block: BeBigUint,
     witness: String,
+    ticker: String,
 }
 
 impl WalletDbSaplingWitnessesTable {
     /// A **unique** index that consists of the following properties:
+    /// * ticker
     /// * note
     /// * block
     pub const TICKER_NOTE_BLOCK_INDEX: &'static str = "ticker_note_block_index";
+    /// A **unique** index that consists of the following properties:
+    /// * ticker
+    /// * id_witness
     pub const TICKER_ID_WITNESS_INDEX: &'static str = "ticker_id_witness_index";
 }
 
@@ -157,7 +176,7 @@ impl TableSignature for WalletDbSaplingWitnessesTable {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
             table.create_multi_index(Self::TICKER_NOTE_BLOCK_INDEX, &["ticker", "note", "block"], true)?;
-            table.create_multi_index(Self::TICKER_ID_WITNESS_INDEX, &["ticker", "note", "id_witness"], true)?;
+            table.create_multi_index(Self::TICKER_ID_WITNESS_INDEX, &["ticker", "id_witness"], true)?;
             table.create_index("ticker", false)?;
         }
         Ok(())
@@ -178,7 +197,8 @@ pub struct WalletDbSentNotesTable {
 
 impl WalletDbSentNotesTable {
     /// A **unique** index that consists of the following properties:
-    /// * transaction
+    /// * ticker
+    /// * tx
     /// * output_index
     pub const TICKER_TX_OUTPUT_INDEX: &'static str = "ticker_tx_output_index";
 }

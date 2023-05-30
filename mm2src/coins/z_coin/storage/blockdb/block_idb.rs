@@ -23,6 +23,7 @@ impl TableSignature for BlockDbTable {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
             table.create_multi_index(Self::TICKER_HEIGHT_INDEX, &["ticker", "height"], true)?;
+            table.create_index("ticker", false)?;
         }
         Ok(())
     }
