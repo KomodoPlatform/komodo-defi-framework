@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common::executor::{spawn_abortable, AbortOnDropHandle, Timer};
 use common::log::{debug, error, info, LogOnError};
 use common::{async_blocking, Future01CompatExt};
-use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError, NO_PARAMS};
+use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas};
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
@@ -284,7 +284,7 @@ impl BlockDb {
             height INTEGER PRIMARY KEY,
             data BLOB NOT NULL
         )",
-            NO_PARAMS,
+            [],
         )?;
         Ok(BlockDb(conn))
     }
@@ -336,7 +336,7 @@ impl BlockDb {
         Ok(query_single_row(
             &self.0,
             "SELECT height FROM compactblocks ORDER BY height DESC LIMIT 1",
-            NO_PARAMS,
+            [],
             |row| row.get(0),
         )?
         .unwrap_or(0))

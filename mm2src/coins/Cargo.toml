@@ -140,10 +140,10 @@ tokio = { version = "1.20" }
 tokio-rustls = { version = "0.23" }
 tonic = { version = "0.7", features = ["tls", "tls-webpki-roots", "compression"] }
 webpki-roots = { version = "0.22" }
-zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.1.0" }
-zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.1.0" }
-zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.1.0" }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.1.0" }
+zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.2.0" }
+zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.2.0" }
+zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.2.0" }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.2.0" }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"

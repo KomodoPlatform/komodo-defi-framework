@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chain::BlockHeader;
 use common::async_blocking;
 use db_common::{sqlite::rusqlite::Error as SqlError,
-                sqlite::rusqlite::{Connection, Row, ToSql, NO_PARAMS},
+                sqlite::rusqlite::{params_from_iter, Connection, Row, ToSql},
                 sqlite::string_from_row,
                 sqlite::validate_table_name,
                 sqlite::CHECK_TABLE_EXISTS_SQL};
@@ -110,8 +110,7 @@ fn query_single_row<T, P, F>(
     map_fn: F,
 ) -> Result<Option<T>, BlockHeaderStorageError>
 where
-    P: IntoIterator,
-    P::Item: ToSql,
+    P: db_common::sqlite::rusqlite::Params,
     F: FnOnce(&Row<'_>) -> Result<T, SqlError>,
 {
     db_common::sqlite::query_single_row(conn, query, params, map_fn).map_err(|e| BlockHeaderStorageError::QueryError {
@@ -129,12 +128,12 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
 
         async_blocking(move || {
             let conn = selfi.conn.lock().unwrap();
-            conn.execute(&sql_cache, NO_PARAMS).map(|_| ()).map_err(|e| {
-                BlockHeaderStorageError::InitializationError {
+            conn.execute(&sql_cache, [])
+                .map(|_| ())
+                .map_err(|e| BlockHeaderStorageError::InitializationError {
                     coin,
                     reason: e.to_string(),
-                }
-            })?;
+                })?;
             Ok(())
         })
         .await
@@ -246,7 +245,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
 
         async_blocking(move || {
             let conn = selfi.conn.lock().unwrap();
-            query_single_row(&conn, &sql, NO_PARAMS, |row| row.get::<_, i64>(0))
+            query_single_row(&conn, &sql, [], |row| row.get::<_, i64>(0))
         })
         .await
         .map_err(|e| BlockHeaderStorageError::GetFromStorageError {
@@ -271,7 +270,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
 
         let maybe_header_raw = async_blocking(move || {
             let conn = selfi.conn.lock().unwrap();
-            query_single_row(&conn, &sql, NO_PARAMS, string_from_row)
+            query_single_row(&conn, &sql, [], string_from_row)
         })
         .await
         .map_err(|e| BlockHeaderStorageError::GetFromStorageError {
@@ -320,7 +319,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
 
         async_blocking(move || {
             let conn = selfi.conn.lock().unwrap();
-            conn.execute(&sql, &params)
+            conn.execute(&sql, params_from_iter(params.iter()))
         })
         .await
         .map_err(|err| BlockHeaderStorageError::UnableToDeleteHeaders {
@@ -337,7 +336,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         let table_name = get_table_name_and_validate(&self.ticker).unwrap();
         let sql = format!("SELECT COUNT(block_height) FROM {table_name};");
         let conn = self.conn.lock().unwrap();
-        let rows_count: u32 = conn.query_row(&sql, NO_PARAMS, |row| row.get(0)).unwrap();
+        let rows_count: u32 = conn.query_row(&sql, [], |row| row.get(0)).unwrap();
         if rows_count == 0 {
             return Ok(());
         };

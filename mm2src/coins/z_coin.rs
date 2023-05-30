@@ -36,7 +36,7 @@ use common::{async_blocking, calc_total_pages, log, one_thousand_u32, sha256_dig
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc, StandardHDPathToCoin};
 use db_common::sqlite::offset_by_id;
-use db_common::sqlite::rusqlite::{Error as SqlError, Row, NO_PARAMS};
+use db_common::sqlite::rusqlite::{Error as SqlError, Row};
 use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -488,7 +488,7 @@ impl ZCoin {
                 .field("COUNT(id_tx)")
                 .sql()
                 .expect("valid SQL");
-            let total_tx_count = conn.query_row(&total_sql, NO_PARAMS, |row| row.get(0))?;
+            let total_tx_count = conn.query_row(&total_sql, [], |row| row.get(0))?;
 
             let mut sql_builder = SqlBuilder::select_from(name!(TRANSACTIONS_TABLE; "txes"));
             sql_builder
@@ -526,7 +526,7 @@ impl ZCoin {
 
             let sql_items = conn
                 .prepare(&sql)?
-                .query_map(NO_PARAMS, ZCoinSqlTxHistoryItem::try_from_sql_row)?
+                .query_map([], ZCoinSqlTxHistoryItem::try_from_sql_row)?
                 .collect::<Result<Vec<_>, _>>()?;
 
             Ok(SqlTxHistoryRes {
