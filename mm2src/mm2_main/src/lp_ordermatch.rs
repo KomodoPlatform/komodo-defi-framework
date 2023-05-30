@@ -211,7 +211,7 @@ impl From<(new_protocol::MakerOrderCreated, String)> for OrderbookItem {
 }
 
 pub fn addr_format_from_protocol_info(protocol_info: &[u8]) -> AddressFormat {
-    match rmp_serde::from_read_ref::<_, AddressFormat>(protocol_info) {
+    match rmp_serde::from_slice::<AddressFormat>(protocol_info) {
         Ok(format) => format,
         Err(_) => AddressFormat::Standard,
     }

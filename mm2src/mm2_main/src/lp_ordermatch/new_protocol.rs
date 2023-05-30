@@ -332,7 +332,7 @@ mod new_protocol_tests {
 
         let serialized = rmp_serde::to_vec(&v1).unwrap();
 
-        let deserialized: MakerOrderUpdated = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: MakerOrderUpdated = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
@@ -358,7 +358,7 @@ mod new_protocol_tests {
 
         let serialized = rmp_serde::to_vec(&v2).unwrap();
 
-        let deserialized: MakerOrderUpdatedV1 = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: MakerOrderUpdatedV1 = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
@@ -375,7 +375,7 @@ mod new_protocol_tests {
 
         let serialized = rmp_serde::to_vec(&v2).unwrap();
 
-        let deserialized: MakerOrderUpdated = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: MakerOrderUpdated = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v2);
     }
@@ -413,12 +413,12 @@ mod new_protocol_tests {
 
         let old_serialized = rmp_serde::to_vec(&old_msg).unwrap();
 
-        let mut new: MakerOrderCreated = rmp_serde::from_read_ref(&old_serialized).unwrap();
+        let mut new: MakerOrderCreated = rmp_serde::from_slice(&old_serialized).unwrap();
 
         new.base_protocol_info = vec![1, 2, 3];
         new.rel_protocol_info = vec![1, 2, 3, 4];
 
         let new_serialized = rmp_serde::to_vec(&new).unwrap();
-        let _old_from_new: MakerOrderCreatedV1 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+        let _old_from_new: MakerOrderCreatedV1 = rmp_serde::from_slice(&new_serialized).unwrap();
     }
 }

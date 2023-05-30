@@ -53,8 +53,9 @@ pub fn encode_message<T: Serialize>(message: &T) -> Result<Vec<u8>, rmp_serde::e
     rmp_serde::to_vec(message)
 }
 
+#[inline]
 pub fn decode_message<'de, T: de::Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, rmp_serde::decode::Error> {
-    rmp_serde::from_read_ref(bytes)
+    rmp_serde::from_slice(bytes)
 }
 
 #[derive(Deserialize, Serialize)]

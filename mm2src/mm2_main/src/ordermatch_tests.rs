@@ -2987,7 +2987,7 @@ fn check_get_orderbook_p2p_res_serde() {
 
     let v1_serialized = rmp_serde::to_vec(&v1).unwrap();
 
-    let mut new: GetOrderbookRes = rmp_serde::from_read_ref(&v1_serialized).unwrap();
+    let mut new: GetOrderbookRes = rmp_serde::from_slice(&v1_serialized).unwrap();
     new.protocol_infos.insert(new_uuid(), BaseRelProtocolInfo {
         base: vec![1],
         rel: vec![2],
@@ -3001,7 +3001,7 @@ fn check_get_orderbook_p2p_res_serde() {
 
     let new_serialized = rmp_serde::to_vec(&new).unwrap();
 
-    let v1_from_new: GetOrderbookResV1 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+    let v1_from_new: GetOrderbookResV1 = rmp_serde::from_slice(&new_serialized).unwrap();
     assert_eq!(v1, v1_from_new);
 
     #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -3028,7 +3028,7 @@ fn check_get_orderbook_p2p_res_serde() {
 
     let v2_serialized = rmp_serde::to_vec(&v2).unwrap();
 
-    let mut new: GetOrderbookRes = rmp_serde::from_read_ref(&v2_serialized).unwrap();
+    let mut new: GetOrderbookRes = rmp_serde::from_slice(&v2_serialized).unwrap();
     new.conf_infos.insert(new_uuid(), OrderConfirmationsSettings {
         base_confs: 6,
         base_nota: false,
@@ -3038,7 +3038,7 @@ fn check_get_orderbook_p2p_res_serde() {
 
     let new_serialized = rmp_serde::to_vec(&new).unwrap();
 
-    let v2_from_new: GetOrderbookResV2 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+    let v2_from_new: GetOrderbookResV2 = rmp_serde::from_slice(&new_serialized).unwrap();
     assert_eq!(v2, v2_from_new);
 }
 
@@ -3096,7 +3096,7 @@ fn check_sync_pubkey_state_p2p_res_serde() {
 
     let v1_serialized = rmp_serde::to_vec(&v1).unwrap();
 
-    let mut new: SyncPubkeyOrderbookStateRes = rmp_serde::from_read_ref(&v1_serialized).unwrap();
+    let mut new: SyncPubkeyOrderbookStateRes = rmp_serde::from_slice(&v1_serialized).unwrap();
     new.protocol_infos.insert(new_uuid(), BaseRelProtocolInfo {
         base: vec![1],
         rel: vec![2],
@@ -3110,7 +3110,7 @@ fn check_sync_pubkey_state_p2p_res_serde() {
 
     let new_serialized = rmp_serde::to_vec(&new).unwrap();
 
-    let _v1_from_new: SyncPubkeyOrderbookStateResV1 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+    let _v1_from_new: SyncPubkeyOrderbookStateResV1 = rmp_serde::from_slice(&new_serialized).unwrap();
 
     #[derive(Debug, Deserialize, Serialize)]
     struct SyncPubkeyOrderbookStateResV2 {
@@ -3135,7 +3135,7 @@ fn check_sync_pubkey_state_p2p_res_serde() {
 
     let v2_serialized = rmp_serde::to_vec(&v2).unwrap();
 
-    let mut new: SyncPubkeyOrderbookStateRes = rmp_serde::from_read_ref(&v2_serialized).unwrap();
+    let mut new: SyncPubkeyOrderbookStateRes = rmp_serde::from_slice(&v2_serialized).unwrap();
     new.conf_infos.insert(new_uuid(), OrderConfirmationsSettings {
         base_confs: 6,
         base_nota: false,
@@ -3145,7 +3145,7 @@ fn check_sync_pubkey_state_p2p_res_serde() {
 
     let new_serialized = rmp_serde::to_vec(&new).unwrap();
 
-    let _v2_from_new: SyncPubkeyOrderbookStateResV2 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+    let _v2_from_new: SyncPubkeyOrderbookStateResV2 = rmp_serde::from_slice(&new_serialized).unwrap();
 }
 
 #[test]
