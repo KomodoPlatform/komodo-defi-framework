@@ -1,9 +1,10 @@
 use super::{addr_format_from_protocol_info, BaseRelProtocolInfo, OrderConfirmationsSettings,
             OrderbookP2PItemWithProof, OrdermatchContext, OrdermatchRequest};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
-use crate::mm2::lp_ordermatch::{orderbook_address, RpcOrderbookEntryV2};
+use crate::mm2::lp_ordermatch::{is_my_order, orderbook_address, RpcOrderbookEntryV2};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::{log, HttpStatusCode};
+use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use http::{Response, StatusCode};
 use mm2_core::mm_ctx::MmArc;
@@ -223,6 +224,8 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     let mut response = HashMap::new();
     if let Some((p2p_response, peer_id)) = best_orders_res {
         log::debug!("Got best orders {:?} from peer {}", p2p_response, peer_id);
+        let my_pubsecp = mm2_internal_pubkey_hex(&ctx).map_err(|mm2_err| mm2_err.to_string())?;
+        let orderbook = ordermatch_ctx.orderbook.lock();
         for (coin, orders_w_proofs) in p2p_response.orders {
             let coin_conf = coin_conf(&ctx, &coin);
             if coin_conf.is_null() {
@@ -256,9 +259,10 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                         },
                     };
                 let conf_settings = p2p_response.conf_infos.get(&order.uuid);
+                let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &order.pubkey);
                 let entry = match req.action {
-                    BestOrdersAction::Buy => order.as_rpc_best_orders_buy(address, conf_settings, false),
-                    BestOrdersAction::Sell => order.as_rpc_best_orders_sell(address, conf_settings, false),
+                    BestOrdersAction::Buy => order.as_rpc_best_orders_buy(address, conf_settings, is_mine),
+                    BestOrdersAction::Sell => order.as_rpc_best_orders_sell(address, conf_settings, is_mine),
                 };
                 if let Some(original_tickers) = ordermatch_ctx.original_tickers.get(&coin) {
                     for ticker in original_tickers {
@@ -286,13 +290,14 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
 pub enum BestOrdersRpcError {
     CoinIsWalletOnly(String),
     P2PError(String),
+    CtxError(String),
 }
 
 impl HttpStatusCode for BestOrdersRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
             BestOrdersRpcError::CoinIsWalletOnly(_) => StatusCode::BAD_REQUEST,
-            BestOrdersRpcError::P2PError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -330,6 +335,8 @@ pub async fn best_orders_rpc_v2(
     let mut orders = HashMap::new();
     if let Some((p2p_response, peer_id)) = best_orders_res {
         log::debug!("Got best orders {:?} from peer {}", p2p_response, peer_id);
+        let my_pubsecp = mm2_internal_pubkey_hex(&ctx)?;
+        let orderbook = ordermatch_ctx.orderbook.lock();
         for (coin, orders_w_proofs) in p2p_response.orders {
             let coin_conf = coin_conf(&ctx, &coin);
             if coin_conf.is_null() {
@@ -362,9 +369,10 @@ pub async fn best_orders_rpc_v2(
                     },
                 };
                 let conf_settings = p2p_response.conf_infos.get(&order.uuid);
+                let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &order.pubkey);
                 let entry = match req.action {
-                    BestOrdersAction::Buy => order.as_rpc_best_orders_buy_v2(address, conf_settings, false),
-                    BestOrdersAction::Sell => order.as_rpc_best_orders_sell_v2(address, conf_settings, false),
+                    BestOrdersAction::Buy => order.as_rpc_best_orders_buy_v2(address, conf_settings, is_mine),
+                    BestOrdersAction::Sell => order.as_rpc_best_orders_sell_v2(address, conf_settings, is_mine),
                 };
                 if let Some(original_tickers) = ordermatch_ctx.original_tickers.get(&coin) {
                     for ticker in original_tickers {
@@ -385,6 +393,14 @@ pub async fn best_orders_rpc_v2(
         orders,
         original_tickers: ordermatch_ctx.original_tickers.clone(),
     })
+}
+
+fn mm2_internal_pubkey_hex(ctx: &MmArc) -> Result<Option<String>, MmError<BestOrdersRpcError>> {
+    match CryptoCtx::from_ctx(ctx).discard_mm_trace() {
+        Ok(crypto_ctx) => Ok(Some(crypto_ctx.mm2_internal_pubkey_hex())),
+        Err(CryptoCtxError::NotInitialized) => Ok(None),
+        Err(other) => MmError::err(BestOrdersRpcError::CtxError(format!("{}", other))),
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
