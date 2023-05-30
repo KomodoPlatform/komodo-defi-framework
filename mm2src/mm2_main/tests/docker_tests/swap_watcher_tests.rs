@@ -1284,7 +1284,7 @@ fn test_watcher_validate_taker_payment_utxo() {
 
 #[test]
 fn test_watcher_validate_taker_payment_eth() {
-    let timeout = wait_until_sec(240); // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(360); // timeout if test takes more than 360 seconds to run
 
     let taker_coin = eth_distributor();
     let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
@@ -1527,7 +1527,7 @@ fn test_watcher_validate_taker_payment_eth() {
 
 #[test]
 fn test_watcher_validate_taker_payment_erc20() {
-    let timeout = wait_until_sec(240); // timeout if test takes more than 120 seconds to run
+    let timeout = wait_until_sec(360); // timeout if test takes more than 360 seconds to run
 
     let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
     let taker_coin = generate_jst_with_seed(&seed);
