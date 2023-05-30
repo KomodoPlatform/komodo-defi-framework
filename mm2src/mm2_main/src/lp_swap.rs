@@ -1756,8 +1756,7 @@ mod lp_swap_tests {
 
         let serialized = rmp_serde::to_vec(&v2).unwrap();
 
-        let deserialized: Result<SwapMsgOld, rmp_serde::decode::Error> =
-            rmp_serde::from_slice(serialized.as_slice());
+        let deserialized: Result<SwapMsgOld, rmp_serde::decode::Error> = rmp_serde::from_slice(serialized.as_slice());
 
         assert!(deserialized.is_err());
     }
