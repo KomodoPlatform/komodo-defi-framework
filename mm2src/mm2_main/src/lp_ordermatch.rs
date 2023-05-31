@@ -31,7 +31,7 @@ use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableS
                        SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
-use common::{bits256, log, new_uuid, now_ms, now_sec, now_sec_i64};
+use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
@@ -3956,13 +3956,23 @@ struct OrderbookP2PItem {
     created_at: u64,
 }
 
+macro_rules! try_sub {
+    ($base: expr, $sub: expr) => {
+        $base
+            .checked_sub($sub)
+            .ok_or_else(|| ERRL!("datetime, ({} - {}) caused an integer overflow.", $base, $sub))?
+            .try_into()
+            .map_err(|e| ERRL!("{}", e))
+    };
+}
+
 impl OrderbookP2PItem {
     fn as_rpc_best_orders_buy(
         &self,
         address: String,
         conf_settings: Option<&OrderConfirmationsSettings>,
         is_mine: bool,
-    ) -> RpcOrderbookEntry {
+    ) -> Result<RpcOrderbookEntry, String> {
         let price_mm = MmNumber::from(self.price.clone());
         let max_vol_mm = MmNumber::from(self.max_volume.clone());
         let min_vol_mm = MmNumber::from(self.min_volume.clone());
@@ -3972,7 +3982,7 @@ impl OrderbookP2PItem {
         let rel_max_volume = (&max_vol_mm * &price_mm).into();
         let rel_min_volume = (&min_vol_mm * &price_mm).into();
 
-        RpcOrderbookEntry {
+        Ok(RpcOrderbookEntry {
             coin: self.rel.clone(),
             address,
             price: price_mm.to_decimal(),
@@ -3985,7 +3995,7 @@ impl OrderbookP2PItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: now_sec_i64(),
+            age: try_sub!(now_sec(), self.created_at)?,
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -3994,7 +4004,7 @@ impl OrderbookP2PItem {
             rel_max_volume,
             rel_min_volume,
             conf_settings: conf_settings.cloned(),
-        }
+        })
     }
 
     fn as_rpc_best_orders_buy_v2(
@@ -4027,7 +4037,7 @@ impl OrderbookP2PItem {
         address: String,
         conf_settings: Option<&OrderConfirmationsSettings>,
         is_mine: bool,
-    ) -> RpcOrderbookEntry {
+    ) -> Result<RpcOrderbookEntry, String> {
         let price_mm = MmNumber::from(1i32) / self.price.clone().into();
         let max_vol_mm = MmNumber::from(self.max_volume.clone());
         let min_vol_mm = MmNumber::from(self.min_volume.clone());
@@ -4038,7 +4048,7 @@ impl OrderbookP2PItem {
         let rel_min_volume = min_vol_mm.clone().into();
         let conf_settings = conf_settings.map(|conf| conf.reversed());
 
-        RpcOrderbookEntry {
+        Ok(RpcOrderbookEntry {
             coin: self.base.clone(),
             address,
             price: price_mm.to_decimal(),
@@ -4051,7 +4061,7 @@ impl OrderbookP2PItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: now_sec_i64(),
+            age: try_sub!(now_sec(), self.created_at)?,
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -4060,7 +4070,7 @@ impl OrderbookP2PItem {
             rel_max_volume,
             rel_min_volume,
             conf_settings,
-        }
+        })
     }
 
     fn as_rpc_best_orders_sell_v2(
@@ -4190,7 +4200,7 @@ impl OrderbookItem {
         }
     }
 
-    fn as_rpc_entry_ask(&self, address: String, is_mine: bool) -> RpcOrderbookEntry {
+    fn as_rpc_entry_ask(&self, address: String, is_mine: bool) -> Result<RpcOrderbookEntry, String> {
         let price_mm = MmNumber::from(self.price.clone());
         let max_vol_mm = MmNumber::from(self.max_volume.clone());
         let min_vol_mm = MmNumber::from(self.min_volume.clone());
@@ -4200,7 +4210,7 @@ impl OrderbookItem {
         let rel_max_volume = (&max_vol_mm * &price_mm).into();
         let rel_min_volume = (&min_vol_mm * &price_mm).into();
 
-        RpcOrderbookEntry {
+        Ok(RpcOrderbookEntry {
             coin: self.base.clone(),
             address,
             price: price_mm.to_decimal(),
@@ -4213,7 +4223,7 @@ impl OrderbookItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: now_sec_i64(),
+            age: try_sub!(now_sec(), self.created_at)?,
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -4222,10 +4232,10 @@ impl OrderbookItem {
             rel_max_volume,
             rel_min_volume,
             conf_settings: self.conf_settings,
-        }
+        })
     }
 
-    fn as_rpc_entry_bid(&self, address: String, is_mine: bool) -> RpcOrderbookEntry {
+    fn as_rpc_entry_bid(&self, address: String, is_mine: bool) -> Result<RpcOrderbookEntry, String> {
         let price_mm = MmNumber::from(1i32) / self.price.clone().into();
         let max_vol_mm = MmNumber::from(self.max_volume.clone());
         let min_vol_mm = MmNumber::from(self.min_volume.clone());
@@ -4236,7 +4246,7 @@ impl OrderbookItem {
         let rel_min_volume = min_vol_mm.clone().into();
         let conf_settings = self.conf_settings.map(|conf| conf.reversed());
 
-        RpcOrderbookEntry {
+        Ok(RpcOrderbookEntry {
             coin: self.base.clone(),
             address,
             price: price_mm.to_decimal(),
@@ -4249,7 +4259,7 @@ impl OrderbookItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: now_sec_i64(),
+            age: try_sub!(now_sec(), self.created_at)?,
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -4258,7 +4268,7 @@ impl OrderbookItem {
             rel_max_volume,
             rel_min_volume,
             conf_settings,
-        }
+        })
     }
 
     fn as_rpc_v2_entry_ask(&self, address: OrderbookAddress, is_mine: bool) -> RpcOrderbookEntryV2 {

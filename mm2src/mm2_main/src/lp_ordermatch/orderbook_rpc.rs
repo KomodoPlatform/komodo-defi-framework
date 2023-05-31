@@ -160,7 +160,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     address_format,
                 ));
                 let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &ask.pubkey);
-                orderbook_entries.push(ask.as_rpc_entry_ask(address, is_mine));
+                orderbook_entries.push(ask.as_rpc_entry_ask(address, is_mine)?);
             }
             orderbook_entries
         },
@@ -187,7 +187,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     address_format,
                 ));
                 let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &bid.pubkey);
-                orderbook_entries.push(bid.as_rpc_entry_bid(address, is_mine));
+                orderbook_entries.push(bid.as_rpc_entry_bid(address, is_mine)?);
             }
             orderbook_entries
         },
