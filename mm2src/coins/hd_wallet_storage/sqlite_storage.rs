@@ -1,4 +1,4 @@
-#![allow(deprecated)]
+#![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
                                HDWalletStorageResult};

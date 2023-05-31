@@ -1,4 +1,4 @@
-#![allow(deprecated)]
+#![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
 use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DBChannelDetails,
                               DBPaymentsFilter, GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, LightningDB,

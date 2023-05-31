@@ -1,4 +1,4 @@
-#![allow(deprecated)]
+#![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
 pub use rusqlite;
 pub use sql_builder;

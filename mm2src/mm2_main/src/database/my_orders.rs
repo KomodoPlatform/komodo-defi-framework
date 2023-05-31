@@ -1,4 +1,4 @@
-#![allow(deprecated)]
+#![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
 use crate::mm2::lp_ordermatch::{FilteringOrder, MakerOrder, MyOrdersFilter, RecentOrdersSelectResult, TakerAction,
                                 TakerOrder};
