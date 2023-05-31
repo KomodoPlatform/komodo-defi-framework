@@ -9,7 +9,7 @@
 - `log`, `getrandom` and `wasm-bindgen` dependencies were updated to more recent versions that are inline with the latest libp2p upstream [#1837](https://github.com/KomodoPlatform/atomicDEX-API/pull/1837)
 - A CI lint pipeline was added that validates pull request titles to ensure that they comply with the conventional commit specifications [#1839](https://github.com/KomodoPlatform/atomicDEX-API/pull/1839)
 - KMD AUR were reduced from 5% to 0.01% starting at `nS7HardforkHeight` to comply with [KIP-0001](https://github.com/KomodoPlatform/kips/blob/main/kip-0001.mediawiki) [#1841](https://github.com/KomodoPlatform/atomicDEX-API/pull/1841)
-- Fixed the `is_mine` field in the `best_orders` command response, which was always reset was fixed [#1849](https://github.com/KomodoPlatform/atomicDEX-API/pull/1849)
+- Fixed the `is_mine` field in the `best_orders` command response, which was always reset [#1849](https://github.com/KomodoPlatform/atomicDEX-API/pull/1849)
 
 
 ## v1.0.4-beta - 2023-05-23
