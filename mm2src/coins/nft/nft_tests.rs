@@ -24,8 +24,8 @@ mod native_tests {
     fn test_moralis_nft_transfer_history() {
         let response = block_on(send_request_to_uri(NFT_HISTORY_URL_TEST)).unwrap();
         let mut transfer_list = response["result"].as_array().unwrap().clone();
-        let len = transfer_list.len();
-        let first_tx = transfer_list.remove(len - 1);
+        assert!(transfer_list.len() > 0);
+        let first_tx = transfer_list.remove(transfer_list.len() - 1);
         let transfer_wrapper: NftTransferHistoryWrapper = serde_json::from_str(&first_tx.to_string()).unwrap();
         assert_eq!(TEST_WALLET_ADDR_EVM, transfer_wrapper.to_address);
     }
@@ -64,8 +64,8 @@ mod wasm_tests {
     async fn test_moralis_nft_transfer_history() {
         let response = send_request_to_uri(NFT_HISTORY_URL_TEST).await.unwrap();
         let mut transfer_list = response["result"].as_array().unwrap().clone();
-        let len = transfer_list.len();
-        let first_tx = transfer_list.remove(len - 1);
+        assert!(transfer_list.len() > 0);
+        let first_tx = transfer_list.remove(transfer_list.len() - 1);
         let transfer_wrapper: NftTransferHistoryWrapper = serde_json::from_str(&first_tx.to_string()).unwrap();
         assert_eq!(TEST_WALLET_ADDR_EVM, transfer_wrapper.to_address);
     }
