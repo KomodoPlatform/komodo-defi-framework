@@ -135,7 +135,7 @@ pub fn process_best_orders_p2p_request(
         protocol_infos,
         conf_infos,
     };
-    let encoded = rmp_serde::to_vec(&response).expect("rmp_serde::to_vec should not fail here");
+    let encoded = rmp_serde::to_vec_named(&response).expect("rmp_serde::to_vec should not fail here");
     Ok(Some(encoded))
 }
 
@@ -202,7 +202,7 @@ pub fn process_best_orders_p2p_request_by_number(
         protocol_infos,
         conf_infos,
     };
-    let encoded = rmp_serde::to_vec(&response).expect("rmp_serde::to_vec should not fail here");
+    let encoded = rmp_serde::to_vec_named(&response).expect("rmp_serde::to_vec should not fail here");
     Ok(Some(encoded))
 }
 
@@ -454,7 +454,7 @@ mod best_orders_test {
             orders: HashMap::from_iter(std::iter::once(("RICK".into(), v1_orders))),
         };
 
-        let v1_serialized = rmp_serde::to_vec(&v1).unwrap();
+        let v1_serialized = rmp_serde::to_vec_named(&v1).unwrap();
 
         let mut new: BestOrdersP2PRes = rmp_serde::from_slice(&v1_serialized).unwrap();
         new.protocol_infos.insert(new_uuid(), BaseRelProtocolInfo {
@@ -463,7 +463,7 @@ mod best_orders_test {
         });
         new.conf_infos.insert(new_uuid(), OrderConfirmationsSettings::default());
 
-        let new_serialized = rmp_serde::to_vec(&new).unwrap();
+        let new_serialized = rmp_serde::to_vec_named(&new).unwrap();
 
         let v1_from_new: BestOrdersResV1 = rmp_serde::from_slice(&new_serialized).unwrap();
         assert_eq!(v1, v1_from_new);
@@ -491,12 +491,12 @@ mod best_orders_test {
             }))),
         };
 
-        let v2_serialized = rmp_serde::to_vec(&v2).unwrap();
+        let v2_serialized = rmp_serde::to_vec_named(&v2).unwrap();
 
         let mut new: BestOrdersP2PRes = rmp_serde::from_slice(&v2_serialized).unwrap();
         new.conf_infos.insert(new_uuid(), OrderConfirmationsSettings::default());
 
-        let new_serialized = rmp_serde::to_vec(&new).unwrap();
+        let new_serialized = rmp_serde::to_vec_named(&new).unwrap();
 
         let v2_from_new: BestOrdersResV2 = rmp_serde::from_slice(&new_serialized).unwrap();
         assert_eq!(v2, v2_from_new);

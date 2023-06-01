@@ -330,7 +330,7 @@ mod new_protocol_tests {
             pair_trie_root: H64::default(),
         });
 
-        let serialized = rmp_serde::to_vec(&v1).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v1).unwrap();
 
         let deserialized: MakerOrderUpdated = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
@@ -356,7 +356,7 @@ mod new_protocol_tests {
             pair_trie_root: H64::default(),
         };
 
-        let serialized = rmp_serde::to_vec(&v2).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
 
         let deserialized: MakerOrderUpdatedV1 = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
@@ -373,7 +373,7 @@ mod new_protocol_tests {
             conf_settings,
         });
 
-        let serialized = rmp_serde::to_vec(&v2).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
 
         let deserialized: MakerOrderUpdated = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
@@ -411,14 +411,14 @@ mod new_protocol_tests {
             pair_trie_root: H64::default(),
         };
 
-        let old_serialized = rmp_serde::to_vec(&old_msg).unwrap();
+        let old_serialized = rmp_serde::to_vec_named(&old_msg).unwrap();
 
         let mut new: MakerOrderCreated = rmp_serde::from_slice(&old_serialized).unwrap();
 
         new.base_protocol_info = vec![1, 2, 3];
         new.rel_protocol_info = vec![1, 2, 3, 4];
 
-        let new_serialized = rmp_serde::to_vec(&new).unwrap();
+        let new_serialized = rmp_serde::to_vec_named(&new).unwrap();
         let _old_from_new: MakerOrderCreatedV1 = rmp_serde::from_slice(&new_serialized).unwrap();
     }
 }
