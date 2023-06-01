@@ -52,7 +52,7 @@ pub struct BestOrdersRequestV2 {
     coin: String,
     action: BestOrdersAction,
     request_by: RequestBestOrdersBy,
-    exclude_my: Option<bool>,
+    exclude_mine: Option<bool>,
 }
 
 pub fn process_best_orders_p2p_request(
@@ -354,7 +354,7 @@ pub async fn best_orders_rpc_v2(
             for order_w_proof in orders_w_proofs {
                 let order = order_w_proof.order;
                 let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &order.pubkey);
-                if let (Some(true), true) = (req.exclude_my, is_mine) {
+                if let (Some(true), true) = (req.exclude_mine, is_mine) {
                     continue;
                 }
                 let empty_proto_info = BaseRelProtocolInfo::default();
