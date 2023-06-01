@@ -29,19 +29,20 @@ pub enum UpdateBlocksCacheErr {
     ZcashDBError(String),
 }
 
-cfg_native!(
-    impl From<tonic::Status> for UpdateBlocksCacheErr {
-        fn from(err: tonic::Status) -> Self { UpdateBlocksCacheErr::GrpcError(err) }
-    }
+#[cfg(not(target_arch = "wasm32"))]
+impl From<tonic::Status> for UpdateBlocksCacheErr {
+    fn from(err: tonic::Status) -> Self { UpdateBlocksCacheErr::GrpcError(err) }
+}
 
-    impl From<SqliteError> for UpdateBlocksCacheErr {
-        fn from(err: SqliteError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
-    }
+#[cfg(not(target_arch = "wasm32"))]
+impl From<SqliteError> for UpdateBlocksCacheErr {
+    fn from(err: SqliteError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
+}
 
-    impl From<SqliteClientError> for UpdateBlocksCacheErr {
-        fn from(err: SqliteClientError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
-    }
-);
+#[cfg(not(target_arch = "wasm32"))]
+impl From<SqliteClientError> for UpdateBlocksCacheErr {
+    fn from(err: SqliteClientError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
+}
 
 impl From<UtxoRpcError> for UpdateBlocksCacheErr {
     fn from(err: UtxoRpcError) -> Self { UpdateBlocksCacheErr::UtxoRpcError(err) }

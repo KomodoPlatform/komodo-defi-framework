@@ -46,13 +46,11 @@ impl WalletDbBlocksTable {
     /// A **unique** index that consists of the following properties:
     /// * ticker
     /// * height
-    /// * txid
     pub const TICKER_HEIGHT_INDEX: &str = "ticker_height_index";
     /// A **unique** index that consists of the following properties:
     /// * ticker
     /// * hash
-    /// * txid
-    pub const HASH_TICKER_INDEX: &str = "ticker_hash_index";
+    pub const TICKER_HASH_INDEX: &str = "ticker_hash_index";
 }
 
 impl TableSignature for WalletDbBlocksTable {
@@ -62,7 +60,7 @@ impl TableSignature for WalletDbBlocksTable {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::table_name())?;
             table.create_multi_index(Self::TICKER_HEIGHT_INDEX, &["ticker", "height"], true)?;
-            table.create_multi_index(Self::HASH_TICKER_INDEX, &["ticker", "hash"], true)?;
+            table.create_multi_index(Self::TICKER_HASH_INDEX, &["ticker", "hash"], true)?;
             table.create_index("ticker", false)?;
         }
         Ok(())

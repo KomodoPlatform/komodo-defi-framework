@@ -26,6 +26,7 @@ cfg_native!(
 pub enum BlockDbError {
     #[cfg(not(target_arch = "wasm32"))]
     SqliteError(SqliteClientError),
+    #[cfg(target_arch = "wasm32")]
     IndexedDBError(String),
     CorruptedData(String),
 }
@@ -169,14 +170,15 @@ cfg_wasm32!(
                 db: ConstructibleDb::new(&ctx).into_shared(),
                 ticker,
             })
-    }
+        }
+
         #[allow(unused)]
         async fn lock_db(&self) -> BlockDbRes<BlockDbInnerLocked<'_>> {
             self.db
             .get_or_initialize()
             .await
             .mm_err(|err| BlockDbError::IndexedDBError(err.to_string()))
-    }
+        }
 
         pub fn get_latest_block(&self) -> Result<u32, BlockDbError> { todo!() }
 
