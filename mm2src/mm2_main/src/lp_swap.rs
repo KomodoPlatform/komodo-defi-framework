@@ -1667,7 +1667,7 @@ mod lp_swap_tests {
             taker_coin_swap_contract: vec![1; 20],
         });
 
-        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
+        let serialized = rmp_serde::to_vec(&v2).unwrap();
 
         let deserialized: NegotiationDataMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
@@ -1684,7 +1684,7 @@ mod lp_swap_tests {
         });
 
         // v3 must be deserialized to v3, backward compatibility is not required
-        let serialized = rmp_serde::to_vec_named(&v3).unwrap();
+        let serialized = rmp_serde::to_vec(&v3).unwrap();
 
         let deserialized: NegotiationDataMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 

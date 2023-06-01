@@ -2897,7 +2897,7 @@ fn test_trie_state_bytes() {
         created_at,
     };
 
-    let old_bytes = rmp_serde::to_vec_named(&old).unwrap();
+    let old_bytes = rmp_serde::to_vec(&old).unwrap();
 
     let new = OrderbookItem {
         pubkey: pubkey.to_owned(),

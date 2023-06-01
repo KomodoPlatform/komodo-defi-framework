@@ -373,7 +373,7 @@ mod new_protocol_tests {
             conf_settings,
         });
 
-        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
+        let serialized = rmp_serde::to_vec(&v2).unwrap();
 
         let deserialized: MakerOrderUpdated = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
