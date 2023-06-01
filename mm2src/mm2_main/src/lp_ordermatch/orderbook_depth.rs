@@ -128,6 +128,6 @@ pub fn process_orderbook_depth_p2p_request(
         })
         .collect();
     let response = OrderbookDepthP2PResponse { depth };
-    let encoded = rmp_serde::to_vec_named(&response).expect("rmp_serde::to_vec should not fail here");
+    let encoded = rmp_serde::to_vec(&response).expect("rmp_serde::to_vec should not fail here");
     Ok(Some(encoded))
 }

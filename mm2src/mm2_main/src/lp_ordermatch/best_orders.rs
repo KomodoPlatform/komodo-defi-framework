@@ -135,7 +135,7 @@ pub fn process_best_orders_p2p_request(
         protocol_infos,
         conf_infos,
     };
-    let encoded = rmp_serde::to_vec_named(&response).expect("rmp_serde::to_vec should not fail here");
+    let encoded = rmp_serde::to_vec(&response).expect("rmp_serde::to_vec should not fail here");
     Ok(Some(encoded))
 }
 
@@ -202,7 +202,7 @@ pub fn process_best_orders_p2p_request_by_number(
         protocol_infos,
         conf_infos,
     };
-    let encoded = rmp_serde::to_vec_named(&response).expect("rmp_serde::to_vec should not fail here");
+    let encoded = rmp_serde::to_vec(&response).expect("rmp_serde::to_vec should not fail here");
     Ok(Some(encoded))
 }
 
