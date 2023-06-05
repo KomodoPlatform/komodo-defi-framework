@@ -3957,14 +3957,14 @@ struct OrderbookP2PItem {
 }
 
 macro_rules! try_get_age_or_default {
-    ($created_at: expr) => {
-        now_sec()
-            .checked_sub($created_at)
-            .ok_or_else(|| warn!("now - created_at: ({} - {}) caused an u64 underflow.", $base, $sub))
+    ($created_at: expr) => {{
+        let now = now_sec();
+        now.checked_sub($created_at)
+            .ok_or_else(|| warn!("now - created_at: ({} - {}) caused a u64 underflow.", now, $created_at))
             .unwrap_or_default()
             .try_into()
-            .expect("Expected default u64 converted to i64 without a problem")
-    };
+            .expect("Expected default u64 to be converted to i64 without a problem")
+    }};
 }
 
 impl OrderbookP2PItem {
