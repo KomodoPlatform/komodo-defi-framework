@@ -19,7 +19,7 @@ backtrace = "0.3"
 bytes = "1.1"
 cfg-if = "1.0"
 crossbeam = "0.8"
-env_logger = "0.9.0"
+env_logger = "0.9.3"
 derive_more = "0.99"
 fnv = "1.0.6"
 futures01 = { version = "0.1", package = "futures" }
@@ -30,7 +30,7 @@ http = "0.2"
 http-body = "0.1"
 itertools = "0.10"
 lazy_static = "1.4"
-log = "0.4.8"
+log = "0.4.17"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
 primitive-types = "0.11.1"
@@ -44,16 +44,16 @@ ser_error_derive = { path = "../derives/ser_error_derive" }
 sha2 = "0.9"
 shared_ref_counter = { path = "shared_ref_counter", optional = true }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
-wasm-timer = "0.2.4"
+instant = { version = "0.1.12" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { version = "0.4", features = ["wasmbind"] }
-getrandom = { version = "0.2", features = ["js"] } # see https://docs.rs/getrandom/0.2.0/getrandom/#webassembly-support
 gstuff = { version = "0.7", features = ["nightly"] }
+instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 js-sys = "0.3.27"
 serde_repr = "0.1.6"
 serde-wasm-bindgen = "0.4.3"
-wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
+wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = "0.4.21"
 wasm-bindgen-test = { version = "0.3.2" }
 web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase", "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "MessageEvent", "WebSocket"] }
@@ -62,7 +62,7 @@ web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomExcepti
 anyhow = "1.0"
 chrono = "0.4"
 gstuff = { version = "0.7", features = ["nightly"] }
-hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }

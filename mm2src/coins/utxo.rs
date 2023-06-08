@@ -1574,7 +1574,6 @@ impl UtxoHDAccount {
 }
 
 /// Function calculating KMD interest
-/// https://komodoplatform.atlassian.net/wiki/spaces/KPSD/pages/71729215/What+is+the+5+Komodo+Stake+Reward
 /// https://github.com/KomodoPlatform/komodo/blob/master/src/komodo_interest.h
 fn kmd_interest(
     height: Option<u64>,
@@ -1584,6 +1583,12 @@ fn kmd_interest(
 ) -> Result<u64, KmdRewardsNotAccruedReason> {
     const KOMODO_ENDOFERA: u64 = 7_777_777;
     const LOCKTIME_THRESHOLD: u64 = 500_000_000;
+    // dPoW Season 7, Fri Jun 30 2023
+    const N_S7_HARDFORK_HEIGHT: u64 = 3_484_958;
+    // MINUTES_PER_YEAR = 365 * 24 * 60
+    const MINUTES_PER_YEAR: u64 = 525_600;
+    // Minutes required for 100% active user reward before N_S7_HARDFORK_HEIGHT
+    const MINUTES_PER_AUR: u64 = 20 * MINUTES_PER_YEAR;
 
     // value must be at least 10 KMD
     if value < 1_000_000_000 {
@@ -1618,16 +1623,22 @@ fn kmd_interest(
     }
 
     // interest stop accruing after 1 year before block 1000000
-    if minutes > 365 * 24 * 60 {
-        minutes = 365 * 24 * 60
+    if minutes > MINUTES_PER_YEAR {
+        minutes = MINUTES_PER_YEAR
     };
     // interest stop accruing after 1 month past 1000000 block
     if height >= 1_000_000 && minutes > 31 * 24 * 60 {
         minutes = 31 * 24 * 60;
     }
-    // next 2 lines ported as is from Komodo codebase
     minutes -= 59;
-    let accrued = (value / 10_512_000) * minutes;
+    // KIP-0001 proposed a reduction of the AUR from 5% to 0.01%
+    // https://github.com/KomodoPlatform/kips/blob/main/kip-0001.mediawiki
+    // https://github.com/KomodoPlatform/komodo/pull/584
+    let accrued = if height >= N_S7_HARDFORK_HEIGHT {
+        (value / MINUTES_PER_AUR) * minutes / 500
+    } else {
+        (value / MINUTES_PER_AUR) * minutes
+    };
 
     Ok(accrued)
 }

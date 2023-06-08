@@ -1,7 +1,9 @@
+#![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
+
 use crate::mm2::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
 use common::log::{debug, error};
 use db_common::{owned_named_params,
-                sqlite::{rusqlite::{Connection, OptionalExtension},
+                sqlite::{rusqlite::{params_from_iter, Connection, OptionalExtension},
                          AsSqlNamedParams, OwnedSqlNamedParams}};
 use mm2_core::mm_ctx::MmArc;
 use std::collections::HashSet;
@@ -291,7 +293,9 @@ fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static s
 
 pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
     let params = vec![swap.uuid().to_string()];
-    let query_row = conn.query_row(SELECT_ID_BY_UUID, &params, |row| row.get::<_, i64>(0));
+    let query_row = conn.query_row(SELECT_ID_BY_UUID, params_from_iter(params.iter()), |row| {
+        row.get::<_, i64>(0)
+    });
     match query_row.optional() {
         // swap is not indexed yet, go ahead
         Ok(None) => (),

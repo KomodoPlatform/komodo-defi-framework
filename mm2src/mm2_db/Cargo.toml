@@ -24,7 +24,7 @@ primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
+wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.2" }
 web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase", "IdbCursor", "IdbCursorWithValue", "IdbCursorDirection", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "MessageEvent", "WebSocket"] }

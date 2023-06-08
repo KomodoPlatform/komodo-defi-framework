@@ -3,6 +3,7 @@ use ethereum_types::Address;
 use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 use serde::Deserialize;
+use serde_json::Value as Json;
 use std::fmt;
 use std::str::FromStr;
 use url::Url;
@@ -34,11 +35,11 @@ pub(crate) enum Chain {
 impl fmt::Display for Chain {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
-            Chain::Avalanche => write!(f, "avalanche"),
-            Chain::Bsc => write!(f, "bsc"),
-            Chain::Eth => write!(f, "eth"),
-            Chain::Fantom => write!(f, "fantom"),
-            Chain::Polygon => write!(f, "polygon"),
+            Chain::Avalanche => write!(f, "AVALANCHE"),
+            Chain::Bsc => write!(f, "BSC"),
+            Chain::Eth => write!(f, "ETH"),
+            Chain::Fantom => write!(f, "FANTOM"),
+            Chain::Polygon => write!(f, "POLYGON"),
         }
     }
 }
@@ -84,6 +85,16 @@ impl FromStr for ContractType {
     }
 }
 
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub(crate) struct UriMeta {
+    pub(crate) image: Option<String>,
+    #[serde(rename(deserialize = "name"))]
+    pub(crate) token_name: Option<String>,
+    description: Option<String>,
+    attributes: Option<Json>,
+    animation_url: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct Nft {
     pub(crate) chain: Chain,
@@ -95,7 +106,7 @@ pub struct Nft {
     pub(crate) block_number_minted: u64,
     pub(crate) block_number: u64,
     pub(crate) contract_type: Option<ContractType>,
-    pub(crate) name: Option<String>,
+    pub(crate) collection_name: Option<String>,
     pub(crate) symbol: Option<String>,
     pub(crate) token_uri: Option<String>,
     pub(crate) metadata: Option<String>,
@@ -103,6 +114,7 @@ pub struct Nft {
     pub(crate) last_metadata_sync: Option<String>,
     pub(crate) minter_address: Option<String>,
     pub(crate) possible_spam: Option<bool>,
+    pub(crate) uri_meta: UriMeta,
 }
 
 /// This structure is for deserializing NFT json to struct.
@@ -223,6 +235,12 @@ pub struct NftTransfersReq {
     pub(crate) url: Url,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) enum TransferStatus {
+    Receive,
+    Send,
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct NftTransferHistory {
     pub(crate) chain: Chain,
@@ -238,8 +256,12 @@ pub(crate) struct NftTransferHistory {
     pub(crate) transaction_type: String,
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
+    pub(crate) collection_name: Option<String>,
+    pub(crate) image: Option<String>,
+    pub(crate) token_name: Option<String>,
     pub(crate) from_address: String,
     pub(crate) to_address: String,
+    pub(crate) status: TransferStatus,
     pub(crate) amount: BigDecimal,
     pub(crate) verified: u64,
     pub(crate) operator: Option<String>,

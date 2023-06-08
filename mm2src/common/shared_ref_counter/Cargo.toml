@@ -10,4 +10,4 @@ doctest = false
 enable = []
 
 [dependencies]
-log = { version = "0.4.8", optional = true }
+log = { version = "0.4.17", optional = true }

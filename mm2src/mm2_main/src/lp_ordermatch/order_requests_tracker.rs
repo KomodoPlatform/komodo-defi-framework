@@ -1,8 +1,8 @@
 #![allow(dead_code)]
+use instant::Instant;
 use std::{collections::hash_map::{HashMap, RawEntryMut},
           num::NonZeroUsize,
           time::Duration};
-use wasm_timer::Instant;
 
 const ONE_SECOND: Duration = Duration::from_secs(1);
 

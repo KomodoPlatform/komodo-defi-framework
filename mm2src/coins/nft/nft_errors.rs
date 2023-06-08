@@ -10,8 +10,6 @@ use web3::Error;
 #[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetNftInfoError {
-    /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
-    #[from_stringify("http::Error")]
     #[display(fmt = "Invalid request: {}", _0)]
     InvalidRequest(String),
     #[display(fmt = "Transport: {}", _0)]
@@ -31,17 +29,7 @@ pub enum GetNftInfoError {
         token_address: String,
         token_id: String,
     },
-}
-
-impl From<SlurpError> for GetNftInfoError {
-    fn from(e: SlurpError) -> Self {
-        let error_str = e.to_string();
-        match e {
-            SlurpError::ErrorDeserializing { .. } => GetNftInfoError::InvalidResponse(error_str),
-            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => GetNftInfoError::Transport(error_str),
-            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => GetNftInfoError::Internal(error_str),
-        }
-    }
+    AddressError(String),
 }
 
 impl From<web3::Error> for GetNftInfoError {
@@ -61,6 +49,17 @@ impl From<GetEthAddressError> for GetNftInfoError {
     fn from(e: GetEthAddressError) -> Self { GetNftInfoError::GetEthAddressError(e) }
 }
 
+impl From<GetInfoFromUriError> for GetNftInfoError {
+    fn from(e: GetInfoFromUriError) -> Self {
+        match e {
+            GetInfoFromUriError::InvalidRequest(e) => GetNftInfoError::InvalidRequest(e),
+            GetInfoFromUriError::Transport(e) => GetNftInfoError::Transport(e),
+            GetInfoFromUriError::InvalidResponse(e) => GetNftInfoError::InvalidResponse(e),
+            GetInfoFromUriError::Internal(e) => GetNftInfoError::Internal(e),
+        }
+    }
+}
+
 impl HttpStatusCode for GetNftInfoError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -69,7 +68,34 @@ impl HttpStatusCode for GetNftInfoError {
             GetNftInfoError::Transport(_)
             | GetNftInfoError::Internal(_)
             | GetNftInfoError::GetEthAddressError(_)
-            | GetNftInfoError::TokenNotFoundInWallet { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | GetNftInfoError::TokenNotFoundInWallet { .. }
+            | GetNftInfoError::AddressError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize)]
+pub(crate) enum GetInfoFromUriError {
+    /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
+    #[from_stringify("http::Error")]
+    #[display(fmt = "Invalid request: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Transport: {}", _0)]
+    Transport(String),
+    #[from_stringify("serde_json::Error")]
+    #[display(fmt = "Invalid response: {}", _0)]
+    InvalidResponse(String),
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+}
+
+impl From<SlurpError> for GetInfoFromUriError {
+    fn from(e: SlurpError) -> Self {
+        let error_str = e.to_string();
+        match e {
+            SlurpError::ErrorDeserializing { .. } => GetInfoFromUriError::InvalidResponse(error_str),
+            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => GetInfoFromUriError::Transport(error_str),
+            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => GetInfoFromUriError::Internal(error_str),
         }
     }
 }

@@ -386,7 +386,7 @@ mod test {
     use common::{block_on,
                  executor::{abortable_queue::AbortableQueue, Timer},
                  log::{LogArc, LogState}};
-    use wasm_timer::Instant;
+    use std::time::Instant;
 
     #[test]
     fn test_collect_json() {

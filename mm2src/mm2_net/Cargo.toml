@@ -25,12 +25,12 @@ prost = "0.10"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gstuff = { version = "0.7", features = ["nightly"] }
-wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
+wasm-bindgen = "0.2.86"
 wasm-bindgen-test = { version = "0.3.2" }
 wasm-bindgen-futures = "0.4.21"
 web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase", "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "MessageEvent", "WebSocket"] }
 js-sys = "0.3.27"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 gstuff = { version = "0.7", features = ["nightly"] }

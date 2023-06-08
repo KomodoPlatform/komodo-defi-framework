@@ -13,5 +13,5 @@ keys = { path = "../keys" }
 primitives = { path = "../primitives" }
 serde = "1.0"
 serialization = { path = "../serialization" }
-log = "0.4"
+log = "0.4.17"
 blake2b_simd = "0.5"

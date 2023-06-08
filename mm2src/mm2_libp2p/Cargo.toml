@@ -18,10 +18,10 @@ futures-rustls = { version = "0.21.1" }
 hex = "0.4.2"
 lazy_static = "1.4"
 secp256k1 = { version = "0.20", features = ["rand"] }
-log = "0.4.8"
+log = "0.4.17"
 rand = { package = "rand", version = "0.7", features = ["std", "wasm-bindgen"] }
 regex = "1"
-rmp-serde = "0.14.3"
+rmp-serde = "1.1.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11.5"
 sha2 = "0.9"
@@ -33,11 +33,10 @@ tokio = { version = "1.20", features = ["rt-multi-thread", "macros"] }
 libp2p = { git = "https://github.com/libp2p/rust-libp2p.git", tag = "v0.45.1", default-features = false, features = ["dns-tokio", "floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "tcp-tokio", "websocket"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2", features = ["js"] } # see https://docs.rs/getrandom/0.2.0/getrandom/#webassembly-support
 libp2p = { git = "https://github.com/libp2p/rust-libp2p.git", tag = "v0.45.1", default-features = false, features = ["floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket"] }
 wasm-bindgen-futures = "0.4.21"
 
 [dev-dependencies]
 async-std = { version = "1.6.2", features = ["unstable"] }
-env_logger = "0.9.0"
+env_logger = "0.9.3"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }

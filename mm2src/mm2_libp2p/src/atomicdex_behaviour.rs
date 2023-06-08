@@ -424,7 +424,7 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for AtomicDexBehaviour {
             if let FloodsubEvent::Message(message) = &event {
                 for topic in &message.topics {
                     if topic == &FloodsubTopic::new(PEERS_TOPIC) {
-                        let addresses: PeerAddresses = match rmp_serde::from_read_ref(&message.data) {
+                        let addresses: PeerAddresses = match rmp_serde::from_slice(&message.data) {
                             Ok(a) => a,
                             Err(_) => return,
                         };
