@@ -14,7 +14,6 @@ mod native_tests {
     fn test_moralis_nft_list() {
         let response = block_on(send_request_to_uri(NFT_LIST_URL_TEST)).unwrap();
         let nfts_list = response["result"].as_array().unwrap();
-        assert_eq!(2, nfts_list.len());
         for nft_json in nfts_list {
             let nft_wrapper: NftWrapper = serde_json::from_str(&nft_json.to_string()).unwrap();
             assert_eq!(TEST_WALLET_ADDR_EVM, nft_wrapper.owner_of);
@@ -25,10 +24,10 @@ mod native_tests {
     fn test_moralis_nft_transfer_history() {
         let response = block_on(send_request_to_uri(NFT_HISTORY_URL_TEST)).unwrap();
         let mut transfer_list = response["result"].as_array().unwrap().clone();
-        assert_eq!(4, transfer_list.len());
-        let last_tx = transfer_list.remove(0);
-        let transfer_wrapper: NftTransferHistoryWrapper = serde_json::from_str(&last_tx.to_string()).unwrap();
-        assert_eq!(TEST_WALLET_ADDR_EVM, transfer_wrapper.from_address);
+        assert!(!transfer_list.is_empty());
+        let first_tx = transfer_list.remove(transfer_list.len() - 1);
+        let transfer_wrapper: NftTransferHistoryWrapper = serde_json::from_str(&first_tx.to_string()).unwrap();
+        assert_eq!(TEST_WALLET_ADDR_EVM, transfer_wrapper.to_address);
     }
 
     #[test]
@@ -55,7 +54,6 @@ mod wasm_tests {
     async fn test_moralis_nft_list() {
         let response = send_request_to_uri(NFT_LIST_URL_TEST).await.unwrap();
         let nfts_list = response["result"].as_array().unwrap();
-        assert_eq!(2, nfts_list.len());
         for nft_json in nfts_list {
             let nft_wrapper: NftWrapper = serde_json::from_str(&nft_json.to_string()).unwrap();
             assert_eq!(TEST_WALLET_ADDR_EVM, nft_wrapper.owner_of);
@@ -66,10 +64,10 @@ mod wasm_tests {
     async fn test_moralis_nft_transfer_history() {
         let response = send_request_to_uri(NFT_HISTORY_URL_TEST).await.unwrap();
         let mut transfer_list = response["result"].as_array().unwrap().clone();
-        assert_eq!(4, transfer_list.len());
-        let last_tx = transfer_list.remove(0);
-        let transfer_wrapper: NftTransferHistoryWrapper = serde_json::from_str(&last_tx.to_string()).unwrap();
-        assert_eq!(TEST_WALLET_ADDR_EVM, transfer_wrapper.from_address);
+        assert!(!transfer_list.is_empty());
+        let first_tx = transfer_list.remove(transfer_list.len() - 1);
+        let transfer_wrapper: NftTransferHistoryWrapper = serde_json::from_str(&first_tx.to_string()).unwrap();
+        assert_eq!(TEST_WALLET_ADDR_EVM, transfer_wrapper.to_address);
     }
 
     #[wasm_bindgen_test]

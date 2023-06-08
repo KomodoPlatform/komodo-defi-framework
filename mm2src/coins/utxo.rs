@@ -1587,8 +1587,8 @@ fn kmd_interest(
     const N_S7_HARDFORK_HEIGHT: u64 = 3_484_958;
     // MINUTES_PER_YEAR = 365 * 24 * 60
     const MINUTES_PER_YEAR: u64 = 525_600;
-    // Active user rewards per minute before N_S7_HARDFORK_HEIGHT
-    const AUR_PER_MINUTE: f64 = 0.05 / MINUTES_PER_YEAR as f64;
+    // Minutes required for 100% active user reward before N_S7_HARDFORK_HEIGHT
+    const MINUTES_PER_AUR: u64 = 20 * MINUTES_PER_YEAR;
 
     // value must be at least 10 KMD
     if value < 1_000_000_000 {
@@ -1630,16 +1630,15 @@ fn kmd_interest(
     if height >= 1_000_000 && minutes > 31 * 24 * 60 {
         minutes = 31 * 24 * 60;
     }
-    // Some of these lines are ported as is from Komodo codebase
     minutes -= 59;
-    let mut accrued = (value as f64 * AUR_PER_MINUTE) as u64 * minutes;
     // KIP-0001 proposed a reduction of the AUR from 5% to 0.01%
     // https://github.com/KomodoPlatform/kips/blob/main/kip-0001.mediawiki
     // https://github.com/KomodoPlatform/komodo/pull/584
-    if height >= N_S7_HARDFORK_HEIGHT {
-        accrued /= 500;
+    let accrued = if height >= N_S7_HARDFORK_HEIGHT {
+        (value / MINUTES_PER_AUR) * minutes / 500
+    } else {
+        (value / MINUTES_PER_AUR) * minutes
     };
-    drop_mutability!(accrued);
 
     Ok(accrued)
 }
