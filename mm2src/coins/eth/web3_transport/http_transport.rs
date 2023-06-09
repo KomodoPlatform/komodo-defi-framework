@@ -233,7 +233,12 @@ async fn send_request(
             },
         };
 
-        log!("status: {:?}, headers: {:?}, body: {}", status, headers, binprint(&body, b'.'));
+        log!(
+            "status: {:?}, headers: {:?}, body: {}",
+            status,
+            headers,
+            binprint(&body, b'.')
+        );
         event_handlers.on_incoming_response(&body);
 
         if !status.is_success() {
