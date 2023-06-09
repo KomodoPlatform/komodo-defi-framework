@@ -7,7 +7,7 @@ use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_primitives::consensus::BlockHeight;
 
 cfg_native!(
-    use db_common::sqlite::rusqlite::{params, Connection, NO_PARAMS};
+    use db_common::sqlite::rusqlite::{params, Connection};
     use db_common::sqlite::{query_single_row, run_optimization_pragmas};
     use protobuf::Message;
     use mm2_err_handle::prelude::*;
@@ -61,7 +61,7 @@ impl BlockDbImpl {
             height INTEGER PRIMARY KEY,
             data BLOB NOT NULL
         )",
-            NO_PARAMS,
+            [],
         )
         .map_to_mm(|err| BlockDbError::SqliteError(SqliteClientError::from(err)))?;
 
@@ -75,7 +75,7 @@ impl BlockDbImpl {
         Ok(query_single_row(
             &self.db.lock().unwrap(),
             "SELECT height FROM compactblocks ORDER BY height DESC LIMIT 1",
-            NO_PARAMS,
+            [],
             |row| row.get(0),
         )?
         .unwrap_or(0))
