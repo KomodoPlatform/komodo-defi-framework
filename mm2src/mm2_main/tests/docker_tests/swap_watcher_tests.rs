@@ -203,18 +203,18 @@ fn start_swaps_and_get_balances(
     ));
 
     if matches!(swap_flow, SwapFlow::WatcherRefundsTakerPayment) {
-        block_on(mm_bob.wait_for_log(180., |log| log.contains(MAKER_PAYMENT_SENT_LOG))).unwrap();
+        block_on(mm_bob.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SENT_LOG))).unwrap();
         block_on(mm_bob.stop()).unwrap();
     }
     if !matches!(swap_flow, SwapFlow::TakerSpendsMakerPayment) {
-        block_on(mm_alice.wait_for_log(180., |log| log.contains("Taker payment confirmed"))).unwrap();
+        block_on(mm_alice.wait_for_log(120., |log| log.contains("Taker payment confirmed"))).unwrap();
         alice_acoin_balance_middle = block_on(my_balance(&mm_alice, a_coin)).balance;
         alice_bcoin_balance_middle = block_on(my_balance(&mm_alice, b_coin)).balance;
         alice_eth_balance_middle = block_on(my_balance(&mm_alice, "ETH")).balance;
         block_on(mm_alice.stop()).unwrap();
     }
 
-    block_on(mm_watcher.wait_for_log(240., |log| log.contains(watcher_log_to_wait))).unwrap();
+    block_on(mm_watcher.wait_for_log(120., |log| log.contains(watcher_log_to_wait))).unwrap();
     thread::sleep(Duration::from_secs(20));
 
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
@@ -1284,7 +1284,7 @@ fn test_watcher_validate_taker_payment_utxo() {
 
 #[test]
 fn test_watcher_validate_taker_payment_eth() {
-    let timeout = wait_until_sec(360); // timeout if test takes more than 360 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
 
     let taker_coin = eth_distributor();
     let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
@@ -1527,7 +1527,7 @@ fn test_watcher_validate_taker_payment_eth() {
 
 #[test]
 fn test_watcher_validate_taker_payment_erc20() {
-    let timeout = wait_until_sec(360); // timeout if test takes more than 360 seconds to run
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
 
     let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
     let taker_coin = generate_jst_with_seed(&seed);
