@@ -1,3 +1,5 @@
+#![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
+
 use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DBChannelDetails,
                               DBPaymentsFilter, GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, LightningDB,
                               PaymentInfo, PaymentType};
@@ -5,7 +7,7 @@ use async_trait::async_trait;
 use common::{async_blocking, now_sec_i64, PagingOptionsEnum};
 use db_common::owned_named_params;
 use db_common::sqlite::rusqlite::types::Type;
-use db_common::sqlite::rusqlite::{params, Error as SqlError, Row, ToSql, NO_PARAMS};
+use db_common::sqlite::rusqlite::{params, Error as SqlError, Row, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,
                         sql_text_conversion_err, string_from_row, validate_table_name, AsSqlNamedParams,
@@ -626,8 +628,8 @@ impl LightningDB for SqliteLightningDB {
         let sql_payments_history = create_payments_history_table_sql(self.db_ticker.as_str())?;
         async_blocking(move || {
             let conn = sqlite_connection.lock().unwrap();
-            conn.execute(&sql_channels_history, NO_PARAMS).map(|_| ())?;
-            conn.execute(&sql_payments_history, NO_PARAMS).map(|_| ())?;
+            conn.execute(&sql_channels_history, []).map(|_| ())?;
+            conn.execute(&sql_payments_history, []).map(|_| ())?;
             Ok(())
         })
         .await
@@ -803,7 +805,7 @@ impl LightningDB for SqliteLightningDB {
             let mut total_builder = sql_builder.clone();
             total_builder.count("id");
             let total_sql = total_builder.sql().expect("valid sql");
-            let total: isize = conn.query_row(&total_sql, NO_PARAMS, |row| row.get(0))?;
+            let total: isize = conn.query_row(&total_sql, [], |row| row.get(0))?;
             let total = total.try_into().expect("count should be always above zero");
 
             let offset = match paging {
@@ -988,7 +990,7 @@ impl LightningDB for SqliteLightningDB {
             let mut total_builder = sql_builder.clone();
             total_builder.count("id");
             let total_sql = total_builder.sql().expect("valid sql");
-            let total: isize = conn.query_row(&total_sql, NO_PARAMS, |row| row.get(0))?;
+            let total: isize = conn.query_row(&total_sql, [], |row| row.get(0))?;
             let total = total.try_into().expect("count should be always above zero");
 
             let offset = match paging {

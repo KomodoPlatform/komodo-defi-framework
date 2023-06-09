@@ -1,7 +1,7 @@
 use crate::sql_condition::SqlCondition;
 use crate::sqlite::{validate_table_name, OwnedSqlParams, SqlParamsBuilder};
 use common::log::debug;
-use rusqlite::{Connection, Error as SqlError, Result as SqlResult};
+use rusqlite::{params_from_iter, Connection, Error as SqlError, Result as SqlResult};
 use sql_builder::SqlBuilder;
 
 /// A `DELETE` SQL request builder.
@@ -36,7 +36,8 @@ impl<'a> SqlDelete<'a> {
 
         let params = self.params();
         debug!("Trying to execute SQL query {} with params {:?}", sql, params);
-        self.conn.execute(&sql, params)
+        let params = params.clone().into_boxed_slice();
+        self.conn.execute(&sql, params_from_iter(params.iter()))
     }
 
     /// Generates a string SQL request.
@@ -68,7 +69,6 @@ impl<'a> SqlCondition for SqlDelete<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::NO_PARAMS;
 
     const CREATE_TX_HISTORY_TABLE: &str = "CREATE TABLE tx_history (
         tx_hash VARCHAR(255) NOT NULL UNIQUE,
@@ -77,7 +77,7 @@ mod tests {
         description TEXT
     );";
 
-    fn init_table_for_test(conn: &Connection) { conn.execute(CREATE_TX_HISTORY_TABLE, NO_PARAMS).unwrap(); }
+    fn init_table_for_test(conn: &Connection) { conn.execute(CREATE_TX_HISTORY_TABLE, []).unwrap(); }
 
     #[test]
     fn test_delete_all_sql() {

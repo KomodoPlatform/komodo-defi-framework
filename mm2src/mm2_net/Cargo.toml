@@ -32,5 +32,5 @@ web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomExcepti
 js-sys = "0.3.27"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 gstuff = { version = "0.7", features = ["nightly"] }

@@ -1402,7 +1402,7 @@ impl MmCoin for LightningCoin {
             Some(amt_or_err) => log_err_and_return_false!(amt_or_err),
             None => return true,
         };
-        let protocol_info = match info.as_ref().map(rmp_serde::from_read_ref::<_, LightningProtocolInfo>) {
+        let protocol_info = match info.as_ref().map(|t| rmp_serde::from_slice::<LightningProtocolInfo>(t)) {
             Some(info_or_err) => log_err_and_return_false!(info_or_err),
             None => return false,
         };

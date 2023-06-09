@@ -25,7 +25,7 @@ default = []
 async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1"
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
-blake2 = "0.10"
+blake2 = "0.10.6"
 bytes = "0.4"
 chain = { path = "../mm2_bitcoin/chain" }
 cfg-if = "1.0"
@@ -72,7 +72,7 @@ rand6 = { version = "0.6", package = "rand" }
 # TODO: Reduce the size of regex by disabling the features we don't use.
 # cf. https://github.com/rust-lang/regex/issues/583
 regex = "1"
-rmp-serde = "0.14.3"
+rmp-serde = "1.1.1"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 script = { path = "../mm2_bitcoin/script" }
@@ -105,7 +105,7 @@ web-sys = { version = "0.3.55", features = ["console"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
 futures-rustls = { version = "0.21.1" }
-hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]
