@@ -363,8 +363,8 @@ fn process_maker_order_updated(
 // So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
 // We can compare pubkeys from maker_orders and from asks or bids, to find our order.
 #[inline(always)]
-fn is_my_order(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
-    my_pub.as_deref() == Some(order_pubkey) || my_orders_pubkeys.contains(order_pubkey)
+fn is_my_order(order_pubkey: &str, my_pub: &Option<String>, my_zhtlc_orders_pubkeys: &HashSet<String>) -> bool {
+    my_pub.as_deref() == Some(order_pubkey) || my_zhtlc_orders_pubkeys.contains(order_pubkey)
 }
 
 /// Request best asks and bids for the given `base` and `rel` coins from relays.
@@ -394,7 +394,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
-
+    let my_zhtlc_orders_pubkeys = orderbook.my_zhtlc_orders_pubkeys.clone();
     let my_pubsecp = match CryptoCtx::from_ctx(ctx).discard_mm_trace() {
         Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
         Err(CryptoCtxError::NotInitialized) => None,
@@ -411,7 +411,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
             },
         };
 
-        if is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &pubkey) {
+        if is_my_order(&pubkey, &my_pubsecp, &my_zhtlc_orders_pubkeys) {
             continue;
         }
 
@@ -450,7 +450,9 @@ fn insert_or_update_my_order(ctx: &MmArc, item: OrderbookItem, my_order: &MakerO
     let mut orderbook = ordermatch_ctx.orderbook.lock();
     orderbook.insert_or_update_order_update_trie(item);
     if let Some(key) = my_order.p2p_privkey {
-        orderbook.my_p2p_pubkeys.insert(hex::encode(key.public_slice()));
+        orderbook
+            .my_zhtlc_orders_pubkeys
+            .insert(hex::encode(key.public_slice()));
     }
 }
 
@@ -469,7 +471,9 @@ fn delete_my_order(ctx: &MmArc, uuid: Uuid, p2p_privkey: Option<SerializableSecp
     let mut orderbook = ordermatch_ctx.orderbook.lock();
     orderbook.remove_order_trie_update(uuid);
     if let Some(key) = p2p_privkey {
-        orderbook.my_p2p_pubkeys.remove(&hex::encode(key.public_slice()));
+        orderbook
+            .my_zhtlc_orders_pubkeys
+            .remove(&hex::encode(key.public_slice()));
     }
 }
 
@@ -2525,7 +2529,7 @@ struct Orderbook {
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
-    my_p2p_pubkeys: HashSet<String>,
+    my_zhtlc_orders_pubkeys: HashSet<String>,
 }
 
 fn hashed_null_node<T: TrieConfiguration>() -> TrieHash<T> { <T::Codec as NodeCodecT>::hashed_null_node() }

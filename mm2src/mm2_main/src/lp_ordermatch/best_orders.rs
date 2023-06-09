@@ -227,7 +227,7 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     if let Some((p2p_response, peer_id)) = best_orders_res {
         log::debug!("Got best orders {:?} from peer {}", p2p_response, peer_id);
         let my_pubsecp = mm2_internal_pubkey_hex(&ctx).map_err(|mm2_err| mm2_err.to_string())?;
-        let orderbook = ordermatch_ctx.orderbook.lock();
+        let my_zhtlc_orders_pubkeys = ordermatch_ctx.orderbook.lock().my_zhtlc_orders_pubkeys.clone();
         for (coin, orders_w_proofs) in p2p_response.orders {
             let coin_conf = coin_conf(&ctx, &coin);
             if coin_conf.is_null() {
@@ -261,7 +261,7 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                         },
                     };
                 let conf_settings = p2p_response.conf_infos.get(&order.uuid);
-                let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &order.pubkey);
+                let is_mine = is_my_order(&order.pubkey, &my_pubsecp, &my_zhtlc_orders_pubkeys);
                 let entry = match req.action {
                     BestOrdersAction::Buy => order.as_rpc_best_orders_buy(address, conf_settings, is_mine),
                     BestOrdersAction::Sell => order.as_rpc_best_orders_sell(address, conf_settings, is_mine),
@@ -338,7 +338,8 @@ pub async fn best_orders_rpc_v2(
     if let Some((p2p_response, peer_id)) = best_orders_res {
         log::debug!("Got best orders {:?} from peer {}", p2p_response, peer_id);
         let my_pubsecp = mm2_internal_pubkey_hex(&ctx)?;
-        let orderbook = ordermatch_ctx.orderbook.lock();
+        let my_zhtlc_orders_pubkeys = ordermatch_ctx.orderbook.lock().my_zhtlc_orders_pubkeys.clone();
+
         for (coin, orders_w_proofs) in p2p_response.orders {
             let coin_conf = coin_conf(&ctx, &coin);
             if coin_conf.is_null() {
@@ -354,7 +355,7 @@ pub async fn best_orders_rpc_v2(
             }
             for order_w_proof in orders_w_proofs {
                 let order = order_w_proof.order;
-                let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &order.pubkey);
+                let is_mine = is_my_order(&order.pubkey, &my_pubsecp, &my_zhtlc_orders_pubkeys);
                 if req.exclude_mine && is_mine {
                     continue;
                 }
@@ -404,7 +405,7 @@ fn mm2_internal_pubkey_hex(ctx: &MmArc) -> Result<Option<String>, MmError<BestOr
     match CryptoCtx::from_ctx(ctx).discard_mm_trace() {
         Ok(crypto_ctx) => Ok(Some(crypto_ctx.mm2_internal_pubkey_hex())),
         Err(CryptoCtxError::NotInitialized) => Ok(None),
-        Err(other) => MmError::err(BestOrdersRpcError::CtxError(other.to_string())),
+        Err(error) => MmError::err(BestOrdersRpcError::CtxError(error.to_string())),
     }
 }
 
