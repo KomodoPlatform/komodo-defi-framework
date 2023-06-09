@@ -145,7 +145,6 @@ tonic = { version = "0.7", features = ["tls", "tls-webpki-roots", "compression"]
 webpki-roots = { version = "0.22" }
 zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.3.0" }
 
-
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"
 
