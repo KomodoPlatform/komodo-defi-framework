@@ -299,7 +299,7 @@ impl HttpStatusCode for BestOrdersRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
             BestOrdersRpcError::CoinIsWalletOnly(_) => StatusCode::BAD_REQUEST,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
+            BestOrdersRpcError::P2PError(_) | BestOrdersRpcError::CtxError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -404,7 +404,7 @@ fn mm2_internal_pubkey_hex(ctx: &MmArc) -> Result<Option<String>, MmError<BestOr
     match CryptoCtx::from_ctx(ctx).discard_mm_trace() {
         Ok(crypto_ctx) => Ok(Some(crypto_ctx.mm2_internal_pubkey_hex())),
         Err(CryptoCtxError::NotInitialized) => Ok(None),
-        Err(other) => MmError::err(BestOrdersRpcError::CtxError(format!("{}", other))),
+        Err(other) => MmError::err(BestOrdersRpcError::CtxError(other.to_string())),
     }
 }
 
