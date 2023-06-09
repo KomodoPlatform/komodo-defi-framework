@@ -225,7 +225,7 @@ async fn send_request(
             },
         };
 
-        let (status, _headers, body) = match res {
+        let (status, headers, body) = match res {
             Ok(r) => r,
             Err(err) => {
                 errors.push(Web3RpcError::Transport(err.to_string()));
@@ -233,6 +233,7 @@ async fn send_request(
             },
         };
 
+        log!("status: {:?}, headers: {:?}, body: {}", status, headers, binprint(&body, b'.'));
         event_handlers.on_incoming_response(&body);
 
         if !status.is_success() {
