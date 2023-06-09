@@ -3959,9 +3959,10 @@ struct OrderbookP2PItem {
 macro_rules! try_get_age_or_default {
     ($created_at: expr) => {{
         let now = now_sec();
-        now.checked_sub($created_at)
-            .ok_or_else(|| warn!("now - created_at: ({} - {}) caused a u64 underflow.", now, $created_at))
-            .unwrap_or_default()
+        now.checked_sub($created_at).unwrap_or_else(|| {
+            warn!("now - created_at: ({} - {}) caused a u64 underflow", now, $created_at);
+            Default::default()
+        })
     }};
 }
 
