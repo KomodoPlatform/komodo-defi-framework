@@ -1014,7 +1014,7 @@ fn test_withdraw_and_send() {
         "-0.001",
         0.001,
     );
-    thread::sleep(Duration::from_secs(5));
+    thread::sleep(Duration::from_secs(10));
     withdraw_and_send(
         &mm_alice,
         "JST",
