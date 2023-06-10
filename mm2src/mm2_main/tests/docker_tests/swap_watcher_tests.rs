@@ -3,7 +3,7 @@ use crate::integration_tests_common::*;
 use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 use coins::coin_errors::ValidatePaymentError;
 use coins::utxo::{dhash160, UtxoCommonOps};
-use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs,
+use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
             SearchForSwapTxSpendInput, SendPaymentArgs, SwapOps, WatcherOps, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
             INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
@@ -21,7 +21,7 @@ use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_testnet_conf, eth_tes
                                   DEFAULT_RPC_PASSWORD, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
-use num_traits::Zero;
+use num_traits::{One, Zero};
 use primitives::hash::H256;
 use std::str::FromStr;
 use std::thread;
@@ -1843,4 +1843,87 @@ fn test_send_taker_payment_refund_preimage_utxo() {
         .unwrap()
         .unwrap();
     assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
+}
+
+#[test]
+fn test_watcher_reward() {
+    let timeout = wait_until_sec(300); // timeout if test takes more than 300 seconds to run
+    let (_ctx, utxo_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+    let eth_coin = eth_distributor();
+
+    let watcher_reward =
+        block_on(eth_coin.get_taker_watcher_reward(&MmCoinEnum::EthCoin(eth_coin.clone()), None, None, None, timeout))
+            .unwrap();
+    assert_eq!(watcher_reward.is_exact_amount, false);
+    assert!(matches!(watcher_reward.reward_target, RewardTarget::Contract));
+    assert_eq!(watcher_reward.send_contract_reward_on_spend, false);
+
+    let watcher_reward = block_on(eth_coin.get_taker_watcher_reward(
+        &MmCoinEnum::EthCoin(eth_coin.clone()),
+        None,
+        None,
+        Some(BigDecimal::one()),
+        timeout,
+    ))
+    .unwrap();
+    assert_eq!(watcher_reward.is_exact_amount, true);
+    assert!(matches!(watcher_reward.reward_target, RewardTarget::Contract));
+    assert_eq!(watcher_reward.send_contract_reward_on_spend, false);
+    assert_eq!(watcher_reward.amount, BigDecimal::one());
+
+    let watcher_reward = block_on(eth_coin.get_taker_watcher_reward(
+        &MmCoinEnum::UtxoCoin(utxo_coin.clone()),
+        None,
+        None,
+        None,
+        timeout,
+    ))
+    .unwrap();
+    assert_eq!(watcher_reward.is_exact_amount, false);
+    assert!(matches!(watcher_reward.reward_target, RewardTarget::PaymentSender));
+    assert_eq!(watcher_reward.send_contract_reward_on_spend, false);
+
+    let watcher_reward =
+        block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::EthCoin(eth_coin.clone()), None, timeout))
+            .unwrap()
+            .unwrap();
+    assert_eq!(watcher_reward.is_exact_amount, false);
+    assert!(matches!(watcher_reward.reward_target, RewardTarget::None));
+    assert_eq!(watcher_reward.send_contract_reward_on_spend, true);
+
+    let watcher_reward = block_on(eth_coin.get_maker_watcher_reward(
+        &MmCoinEnum::EthCoin(eth_coin.clone()),
+        Some(BigDecimal::one()),
+        timeout,
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(watcher_reward.is_exact_amount, true);
+    assert!(matches!(watcher_reward.reward_target, RewardTarget::None));
+    assert_eq!(watcher_reward.send_contract_reward_on_spend, true);
+    assert_eq!(watcher_reward.amount, BigDecimal::one());
+
+    let watcher_reward =
+        block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoin(utxo_coin.clone()), None, timeout))
+            .unwrap()
+            .unwrap();
+    assert_eq!(watcher_reward.is_exact_amount, false);
+    assert!(matches!(watcher_reward.reward_target, RewardTarget::PaymentSpender));
+    assert_eq!(watcher_reward.send_contract_reward_on_spend, false);
+
+    let watcher_reward = block_on(utxo_coin.get_taker_watcher_reward(
+        &MmCoinEnum::EthCoin(eth_coin.clone()),
+        Some(BigDecimal::from_str("0.01").unwrap()),
+        Some(BigDecimal::from_str("1").unwrap()),
+        None,
+        timeout,
+    ))
+    .unwrap();
+    assert_eq!(watcher_reward.is_exact_amount, false);
+    assert!(matches!(watcher_reward.reward_target, RewardTarget::PaymentReceiver));
+    assert_eq!(watcher_reward.send_contract_reward_on_spend, false);
+
+    let watcher_reward =
+        block_on(utxo_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoin(utxo_coin.clone()), None, timeout)).unwrap();
+    assert!(matches!(watcher_reward, None));
 }
