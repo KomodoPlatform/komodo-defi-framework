@@ -1,9 +1,11 @@
 use super::*;
 use crate::IguanaPrivKey;
-use common::{block_on, now_sec_u32};
+use common::{block_on, now_sec_u32, wait_until_sec};
+use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT,
-                                  ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT};
+use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODE, ETH_DEV_NODES,
+                                  ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE,
+                                  ETH_MAINNET_SWAP_CONTRACT};
 use mocktopus::mocking::*;
 
 /// The gas price for the tests
@@ -83,6 +85,33 @@ fn eth_coin_for_test(
         abortable_system: AbortableQueue::default(),
     }));
     (ctx, eth_coin)
+}
+
+pub fn fill_eth(to_addr: Address, amount: f64) {
+    let (_ctx, distributor) = eth_coin_for_test(EthCoinType::Eth, ETH_DEV_NODES, None);
+    let wei_per_eth: u64 = 1_000_000_000_000_000_000;
+    let amount_in_wei = (amount * wei_per_eth as f64) as u64;
+    distributor
+        .send_to_address(to_addr, amount_in_wei.into())
+        .wait()
+        .unwrap();
+}
+
+pub fn fill_jst(to_addr: Address, amount: f64) {
+    let (_ctx, distributor) = eth_coin_for_test(
+        EthCoinType::Erc20 {
+            platform: "ETH".to_string(),
+            token_addr: Address::from_str(ETH_DEV_TOKEN_CONTRACT).unwrap(),
+        },
+        ETH_DEV_NODES,
+        None,
+    );
+    let wei_per_eth: u64 = 1_000_000_000_000_000_000;
+    let amount_in_wei = (amount * wei_per_eth as f64) as u64;
+    distributor
+        .send_to_address(to_addr, amount_in_wei.into())
+        .wait()
+        .unwrap();
 }
 
 #[test]
@@ -214,10 +243,9 @@ fn test_wei_from_big_decimal() {
 
 #[test]
 fn send_and_refund_erc20_payment() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("d27bfdbb5f89d30f8b7a1d0dcd4e181e54b8a2347836cb59c6570834f820f9a4").unwrap(),
-    )
-    .unwrap();
+    let key_pair = Random.generate().unwrap();
+    fill_eth(key_pair.address(), 0.001);
+    fill_jst(key_pair.address(), 0.0001);
 
     let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
     let web3 = Web3::new(transport);
@@ -260,12 +288,12 @@ fn send_and_refund_erc20_payment() {
         time_lock,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
         secret_hash,
-        amount: "0.001".parse().unwrap(),
+        amount: "0.0001".parse().unwrap(),
         swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
-        wait_for_confirmation_until: 0,
+        wait_for_confirmation_until: wait_until_sec(15),
     };
     let payment = coin.send_maker_payment(maker_payment_args).wait().unwrap();
     log!("{:?}", payment);
@@ -311,10 +339,8 @@ fn send_and_refund_erc20_payment() {
 
 #[test]
 fn send_and_refund_eth_payment() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("0b6d7b4b1b9454f3f0bc76b2988cd672439213a1de23d20a83467131366ba41c").unwrap(),
-    )
-    .unwrap();
+    let key_pair = Random.generate().unwrap();
+    fill_eth(key_pair.address(), 0.001);
     let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -353,7 +379,7 @@ fn send_and_refund_eth_payment() {
         time_lock,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
         secret_hash,
-        amount: "0.001".parse().unwrap(),
+        amount: "0.0001".parse().unwrap(),
         swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
         payment_instructions: &None,
