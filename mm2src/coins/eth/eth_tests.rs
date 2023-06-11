@@ -4,9 +4,10 @@ use common::{block_on, now_sec_u32, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODE, ETH_DEV_NODES,
-                                  ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE,
-                                  ETH_MAINNET_SWAP_CONTRACT};
+use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODE, ETH_DEV_NODES,
+                                   ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE,
+                                   ETH_MAINNET_SWAP_CONTRACT},
+                       get_passphrase};
 use mocktopus::mocking::*;
 
 /// The gas price for the tests
@@ -38,8 +39,8 @@ pub fn eth_distributor() -> EthCoin {
         "urls": ETH_DEV_NODES,
         "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
     });
-    let keypair =
-        key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
+    let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+    let keypair = key_pair_from_seed(&seed).unwrap();
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
@@ -59,8 +60,8 @@ pub fn jst_distributor() -> EthCoin {
         "urls": ETH_DEV_NODES,
         "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
     });
-    let keypair =
-        key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap();
+    let seed = get_passphrase!(".env.client", "BOB_PASSPHRASE").unwrap();
+    let keypair = key_pair_from_seed(&seed).unwrap();
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
