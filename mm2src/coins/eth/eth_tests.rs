@@ -167,17 +167,9 @@ pub fn fill_eth(to_addr: Address, amount: f64) {
 }
 
 pub fn fill_jst(to_addr: Address, amount: f64) {
-    let (_ctx, distributor) = eth_coin_for_test(
-        EthCoinType::Erc20 {
-            platform: "ETH".to_string(),
-            token_addr: Address::from_str(ETH_DEV_TOKEN_CONTRACT).unwrap(),
-        },
-        ETH_DEV_NODES,
-        None,
-    );
-    let wei_per_eth: u64 = 1_000_000_000_000_000_000;
-    let amount_in_wei = (amount * wei_per_eth as f64) as u64;
-    distributor
+    let wei_per_jst: u64 = 1_000_000_000_000_000_000;
+    let amount_in_wei = (amount * wei_per_jst as f64) as u64;
+    JST_DISTRIBUTOR
         .send_to_address(to_addr, amount_in_wei.into())
         .wait()
         .unwrap();
