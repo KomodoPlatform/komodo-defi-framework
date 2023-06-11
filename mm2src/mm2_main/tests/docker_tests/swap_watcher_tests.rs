@@ -1854,9 +1854,9 @@ fn test_watcher_reward() {
     let watcher_reward =
         block_on(eth_coin.get_taker_watcher_reward(&MmCoinEnum::EthCoin(eth_coin.clone()), None, None, None, timeout))
             .unwrap();
-    assert_eq!(watcher_reward.is_exact_amount, false);
+    assert!(!watcher_reward.is_exact_amount);
     assert!(matches!(watcher_reward.reward_target, RewardTarget::Contract));
-    assert_eq!(watcher_reward.send_contract_reward_on_spend, false);
+    assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward = block_on(eth_coin.get_taker_watcher_reward(
         &MmCoinEnum::EthCoin(eth_coin.clone()),
@@ -1866,9 +1866,9 @@ fn test_watcher_reward() {
         timeout,
     ))
     .unwrap();
-    assert_eq!(watcher_reward.is_exact_amount, true);
+    assert!(watcher_reward.is_exact_amount);
     assert!(matches!(watcher_reward.reward_target, RewardTarget::Contract));
-    assert_eq!(watcher_reward.send_contract_reward_on_spend, false);
+    assert!(!watcher_reward.send_contract_reward_on_spend);
     assert_eq!(watcher_reward.amount, BigDecimal::one());
 
     let watcher_reward = block_on(eth_coin.get_taker_watcher_reward(
@@ -1879,17 +1879,17 @@ fn test_watcher_reward() {
         timeout,
     ))
     .unwrap();
-    assert_eq!(watcher_reward.is_exact_amount, false);
+    assert!(!watcher_reward.is_exact_amount);
     assert!(matches!(watcher_reward.reward_target, RewardTarget::PaymentSender));
-    assert_eq!(watcher_reward.send_contract_reward_on_spend, false);
+    assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward =
         block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::EthCoin(eth_coin.clone()), None, timeout))
             .unwrap()
             .unwrap();
-    assert_eq!(watcher_reward.is_exact_amount, false);
+    assert!(!watcher_reward.is_exact_amount);
     assert!(matches!(watcher_reward.reward_target, RewardTarget::None));
-    assert_eq!(watcher_reward.send_contract_reward_on_spend, true);
+    assert!(watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward = block_on(eth_coin.get_maker_watcher_reward(
         &MmCoinEnum::EthCoin(eth_coin.clone()),
@@ -1898,30 +1898,30 @@ fn test_watcher_reward() {
     ))
     .unwrap()
     .unwrap();
-    assert_eq!(watcher_reward.is_exact_amount, true);
+    assert!(watcher_reward.is_exact_amount);
     assert!(matches!(watcher_reward.reward_target, RewardTarget::None));
-    assert_eq!(watcher_reward.send_contract_reward_on_spend, true);
+    assert!(watcher_reward.send_contract_reward_on_spend);
     assert_eq!(watcher_reward.amount, BigDecimal::one());
 
     let watcher_reward =
         block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoin(utxo_coin.clone()), None, timeout))
             .unwrap()
             .unwrap();
-    assert_eq!(watcher_reward.is_exact_amount, false);
+    assert!(!watcher_reward.is_exact_amount);
     assert!(matches!(watcher_reward.reward_target, RewardTarget::PaymentSpender));
-    assert_eq!(watcher_reward.send_contract_reward_on_spend, false);
+    assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward = block_on(utxo_coin.get_taker_watcher_reward(
-        &MmCoinEnum::EthCoin(eth_coin.clone()),
+        &MmCoinEnum::EthCoin(eth_coin),
         Some(BigDecimal::from_str("0.01").unwrap()),
         Some(BigDecimal::from_str("1").unwrap()),
         None,
         timeout,
     ))
     .unwrap();
-    assert_eq!(watcher_reward.is_exact_amount, false);
+    assert!(!watcher_reward.is_exact_amount);
     assert!(matches!(watcher_reward.reward_target, RewardTarget::PaymentReceiver));
-    assert_eq!(watcher_reward.send_contract_reward_on_spend, false);
+    assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward =
         block_on(utxo_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoin(utxo_coin.clone()), None, timeout)).unwrap();
