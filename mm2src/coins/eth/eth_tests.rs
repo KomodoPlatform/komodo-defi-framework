@@ -33,7 +33,25 @@ fn eth_coin_for_test(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
+    eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair)
+}
 
+fn random_eth_coin_for_test(
+    coin_type: EthCoinType,
+    urls: &[&str],
+    fallback_swap_contract: Option<Address>,
+) -> (MmArc, EthCoin) {
+    let key_pair = Random.generate().unwrap();
+    fill_eth(key_pair.address(), 0.001);
+    eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair)
+}
+
+fn eth_coin_from_keypair(
+    coin_type: EthCoinType,
+    urls: &[&str],
+    fallback_swap_contract: Option<Address>,
+    key_pair: KeyPair,
+) -> (MmArc, EthCoin) {
     let mut nodes = vec![];
     for url in urls.iter() {
         nodes.push(HttpTransportNode {
@@ -846,7 +864,7 @@ fn test_nonce_lock() {
 
     // send several transactions concurrently to check that they are not using same nonce
     // using real ETH dev node
-    let (ctx, coin) = eth_coin_for_test(EthCoinType::Eth, ETH_DEV_NODES, None);
+    let (ctx, coin) = random_eth_coin_for_test(EthCoinType::Eth, ETH_DEV_NODES, None);
     let mut futures = vec![];
     for _ in 0..5 {
         futures.push(
