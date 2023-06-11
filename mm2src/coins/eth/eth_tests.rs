@@ -1,6 +1,7 @@
 use super::*;
 use crate::IguanaPrivKey;
 use common::{block_on, now_sec_u32, wait_until_sec};
+use crypto::privkey::key_pair_from_seed;
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODE, ETH_DEV_NODES,
@@ -19,9 +20,60 @@ const GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE: u64 = 53_500_000_000;
 
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
+lazy_static! {
+    static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
+    static ref JST_DISTRIBUTOR: EthCoin = jst_distributor();
+    static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
+}
+
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);
     assert_eq!(expected, actual);
+}
+
+pub fn eth_distributor() -> EthCoin {
+    let req = json!({
+        "method": "enable",
+        "coin": "ETH",
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+    });
+    let keypair =
+        key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
+    block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "ETH",
+        &eth_testnet_conf(),
+        &req,
+        CoinProtocol::ETH,
+        priv_key_policy,
+    ))
+    .unwrap()
+}
+
+pub fn jst_distributor() -> EthCoin {
+    let req = json!({
+        "method": "enable",
+        "coin": "ETH",
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+    });
+    let keypair =
+        key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
+    block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "ETH",
+        &eth_testnet_conf(),
+        &req,
+        CoinProtocol::ERC20 {
+            platform: "ETH".to_string(),
+            contract_address: ETH_DEV_TOKEN_CONTRACT.to_string(),
+        },
+        priv_key_policy,
+    ))
+    .unwrap()
 }
 
 fn eth_coin_for_test(
@@ -106,10 +158,9 @@ fn eth_coin_from_keypair(
 }
 
 pub fn fill_eth(to_addr: Address, amount: f64) {
-    let (_ctx, distributor) = eth_coin_for_test(EthCoinType::Eth, ETH_DEV_NODES, None);
     let wei_per_eth: u64 = 1_000_000_000_000_000_000;
     let amount_in_wei = (amount * wei_per_eth as f64) as u64;
-    distributor
+    ETH_DISTRIBUTOR
         .send_to_address(to_addr, amount_in_wei.into())
         .wait()
         .unwrap();
