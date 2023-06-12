@@ -12,8 +12,8 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_mes
             SwapTxDataMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, wait_for_maker_payment_conf_duration,
-                          TakerSwapWatcherData};
+use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_message_every_with_initial_delay, tx_helper_topic,
+                          wait_for_maker_payment_conf_duration, TakerSwapWatcherData};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
             FoundSwapTxSpend, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -1631,7 +1631,7 @@ impl TakerSwap {
                 );
                 let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
                 let htlc_keypair = self.taker_coin.derive_htlc_key_pair(&self.unique_swap_data());
-                watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
+                watcher_broadcast_abort_handle = Some(broadcast_swap_message_every_with_initial_delay(
                     self.ctx.clone(),
                     watcher_topic(&self.r().data.taker_coin),
                     swpmsg_watcher,
