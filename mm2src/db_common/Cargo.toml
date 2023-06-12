@@ -13,5 +13,5 @@ log = "0.4.17"
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rusqlite = { version = "0.24.2", features = ["bundled"] }
+rusqlite = { version = "0.28", features = ["bundled"] }
 sql-builder = "3.1.1"

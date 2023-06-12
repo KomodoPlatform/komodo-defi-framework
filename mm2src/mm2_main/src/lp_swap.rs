@@ -1628,9 +1628,9 @@ mod lp_swap_tests {
             persistent_pubkey: vec![1; 33],
         });
 
-        let serialized = rmp_serde::to_vec(&v1).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v1).unwrap();
 
-        let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: NegotiationDataMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
@@ -1651,9 +1651,9 @@ mod lp_swap_tests {
             persistent_pubkey: vec![1; 33],
         };
 
-        let serialized = rmp_serde::to_vec(&v2).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
 
-        let deserialized: NegotiationDataV1 = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: NegotiationDataV1 = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
@@ -1669,7 +1669,7 @@ mod lp_swap_tests {
 
         let serialized = rmp_serde::to_vec(&v2).unwrap();
 
-        let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: NegotiationDataMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v2);
 
@@ -1686,7 +1686,7 @@ mod lp_swap_tests {
         // v3 must be deserialized to v3, backward compatibility is not required
         let serialized = rmp_serde::to_vec(&v3).unwrap();
 
-        let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: NegotiationDataMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v3);
     }
@@ -1710,9 +1710,9 @@ mod lp_swap_tests {
 
         let expected = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
 
-        let serialized = rmp_serde::to_vec(&old).unwrap();
+        let serialized = rmp_serde::to_vec_named(&old).unwrap();
 
-        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: SwapMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
@@ -1721,18 +1721,18 @@ mod lp_swap_tests {
 
         let expected = old;
 
-        let serialized = rmp_serde::to_vec(&v1).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v1).unwrap();
 
-        let deserialized: SwapMsgOld = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: SwapMsgOld = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
         // PaymentDataMsg::Regular should be deserialized to PaymentDataMsg::Regular
         let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
 
-        let serialized = rmp_serde::to_vec(&v1).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v1).unwrap();
 
-        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: SwapMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v1);
 
@@ -1742,9 +1742,9 @@ mod lp_swap_tests {
             next_step_instructions: MSG_DATA_INSTRUCTIONS.to_vec(),
         }));
 
-        let serialized = rmp_serde::to_vec(&v2).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
 
-        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: SwapMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v2);
 
@@ -1754,10 +1754,9 @@ mod lp_swap_tests {
             next_step_instructions: MSG_DATA_INSTRUCTIONS.to_vec(),
         }));
 
-        let serialized = rmp_serde::to_vec(&v2).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
 
-        let deserialized: Result<SwapMsgOld, rmp_serde::decode::Error> =
-            rmp_serde::from_read_ref(serialized.as_slice());
+        let deserialized: Result<SwapMsgOld, rmp_serde::decode::Error> = rmp_serde::from_slice(serialized.as_slice());
 
         assert!(deserialized.is_err());
     }

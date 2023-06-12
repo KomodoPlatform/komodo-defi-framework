@@ -161,15 +161,15 @@ fn key_value_to_snapshot_entry<V>(metrics: &mut HashMap<String, HashMap<Vec<Stri
 }
 
 impl Recorder for MmRecorder {
-    fn describe_counter(&self, _key_name: KeyName, _unit: Option<Unit>, _description: &'static str) {
+    fn describe_counter(&self, _key: KeyName, _unit: Option<Unit>, _description: metrics::SharedString) {
         // mm2_metrics doesn't use this method
     }
 
-    fn describe_gauge(&self, _key_name: KeyName, _unit: Option<Unit>, _description: &'static str) {
+    fn describe_gauge(&self, _key: KeyName, _unit: Option<Unit>, _description: metrics::SharedString) {
         // mm2_metrics doesn't use this method
     }
 
-    fn describe_histogram(&self, _key_name: KeyName, _unit: Option<Unit>, _description: &'static str) {
+    fn describe_histogram(&self, _key: KeyName, _unit: Option<Unit>, _description: metrics::SharedString) {
         // mm2_metrics doesn't use this method
     }
 

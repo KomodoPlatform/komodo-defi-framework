@@ -1,9 +1,11 @@
+#![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
+
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
                                HDWalletStorageResult};
 use async_trait::async_trait;
 use common::async_blocking;
 use db_common::owned_named_params;
-use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, NO_PARAMS};
+use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
 use db_common::sqlite::{query_single_row_with_named_params, AsSqlNamedParams, OwnedSqlNamedParams, SqliteConnShared,
                         SqliteConnWeak};
 use derive_more::Display;
@@ -228,7 +230,7 @@ impl HDWalletSqliteStorage {
     async fn init_tables(&self) -> HDWalletStorageResult<()> {
         let conn_shared = self.get_shared_conn()?;
         let conn = Self::lock_conn_mutex(&conn_shared)?;
-        conn.execute(CREATE_HD_ACCOUNT_TABLE, NO_PARAMS)
+        conn.execute(CREATE_HD_ACCOUNT_TABLE, [])
             .map(|_| ())
             .map_to_mm(HDWalletStorageError::from)
     }
@@ -280,7 +282,7 @@ pub(super) async fn get_all_storage_items(ctx: &MmArc) -> Vec<HDAccountStorageIt
     let conn = ctx.shared_sqlite_conn();
     let mut statement = conn.prepare(SELECT_ALL_ACCOUNTS).unwrap();
     statement
-        .query_map(NO_PARAMS, |row: &Row<'_>| HDAccountStorageItem::try_from(row))
+        .query_map([], |row: &Row<'_>| HDAccountStorageItem::try_from(row))
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap()

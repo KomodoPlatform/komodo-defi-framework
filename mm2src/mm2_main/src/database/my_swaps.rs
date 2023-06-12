@@ -1,3 +1,5 @@
+#![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
+
 /// This module contains code to work with my_swaps table in MM2 SQLite DB
 use crate::mm2::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
 use common::log::debug;
@@ -31,7 +33,7 @@ pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str,
     debug!("Inserting new swap {} to the SQLite database", uuid);
     let conn = ctx.sqlite_connection();
     let params = [my_coin, other_coin, uuid, started_at];
-    conn.execute(INSERT_MY_SWAP, &params).map(|_| ())
+    conn.execute(INSERT_MY_SWAP, params).map(|_| ())
 }
 
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files

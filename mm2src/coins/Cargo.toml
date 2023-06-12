@@ -76,7 +76,7 @@ prost = "0.10"
 protobuf = "2.20"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rlp = { version = "0.5" }
-rmp-serde = "0.14.3"
+rmp-serde = "1.1.1"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 script = { path = "../mm2_bitcoin/script" }
@@ -101,6 +101,9 @@ uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.19.0", default-features = false }
 zbase32 = "0.1.2"
+zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.3.0" }
+zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.3.0" }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.3.0" }
 
 [target.'cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
 bincode = { version = "1.3.3", default-features = false, optional = true }
@@ -124,7 +127,7 @@ web-sys = { version = "0.3.55", features = ["console", "Headers", "Request", "Re
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
 bitcoin = "0.29"
-hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
@@ -140,10 +143,7 @@ tokio = { version = "1.20" }
 tokio-rustls = { version = "0.23" }
 tonic = { version = "0.7", features = ["tls", "tls-webpki-roots", "compression"] }
 webpki-roots = { version = "0.22" }
-zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.0.0" }
-zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.0.0" }
-zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.0.0" }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.0.0" }
+zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.3.0" }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"

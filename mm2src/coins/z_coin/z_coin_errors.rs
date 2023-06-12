@@ -1,41 +1,47 @@
 use crate::my_tx_history_v2::MyTxHistoryErrorV2;
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
+use crate::z_coin::storage::WalletDbError;
+use crate::NumConversError;
+use crate::PrivKeyPolicyNotAllowed;
 use crate::WithdrawError;
-use crate::{NumConversError, PrivKeyPolicyNotAllowed};
+
 use common::jsonrpc_client::JsonRpcError;
+#[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqliteError;
-use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
 use http::uri::InvalidUri;
 use mm2_number::BigDecimal;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+#[cfg(not(target_arch = "wasm32"))]
 use zcash_client_sqlite::error::SqliteClientError;
-use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
 #[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {
+    #[cfg(not(target_arch = "wasm32"))]
     GrpcError(tonic::Status),
-    BlocksDbError(SqliteError),
-    ZcashSqliteError(ZcashClientError),
     UtxoRpcError(UtxoRpcError),
     InternalError(String),
     JsonRpcError(JsonRpcError),
     GetLiveLightClientError(String),
+    ZcashDBError(String),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<tonic::Status> for UpdateBlocksCacheErr {
     fn from(err: tonic::Status) -> Self { UpdateBlocksCacheErr::GrpcError(err) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteError> for UpdateBlocksCacheErr {
-    fn from(err: SqliteError) -> Self { UpdateBlocksCacheErr::BlocksDbError(err) }
+    fn from(err: SqliteError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
 }
 
-impl From<ZcashClientError> for UpdateBlocksCacheErr {
-    fn from(err: ZcashClientError) -> Self { UpdateBlocksCacheErr::ZcashSqliteError(err) }
+#[cfg(not(target_arch = "wasm32"))]
+impl From<SqliteClientError> for UpdateBlocksCacheErr {
+    fn from(err: SqliteClientError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
 }
 
 impl From<UtxoRpcError> for UpdateBlocksCacheErr {
@@ -49,28 +55,25 @@ impl From<JsonRpcError> for UpdateBlocksCacheErr {
 #[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum ZcoinClientInitError {
-    BlocksDbInitFailure(SqliteError),
-    WalletDbInitFailure(SqliteError),
-    ZcashSqliteError(ZcashClientError),
+    ZcashDBError(String),
     EmptyLightwalletdUris,
     #[display(fmt = "Fail to init clients while iterating lightwalletd urls {:?}", _0)]
     UrlIterFailure(Vec<UrlIterError>),
 }
 
-impl From<ZcashClientError> for ZcoinClientInitError {
-    fn from(err: ZcashClientError) -> Self { ZcoinClientInitError::ZcashSqliteError(err) }
+#[cfg(not(target_arch = "wasm32"))]
+impl From<SqliteClientError> for ZcoinClientInitError {
+    fn from(err: SqliteClientError) -> Self { ZcoinClientInitError::ZcashDBError(err.to_string()) }
 }
 
 #[derive(Debug, Display)]
 pub enum UrlIterError {
     InvalidUri(InvalidUri),
+    #[cfg(not(target_arch = "wasm32"))]
     TlsConfigFailure(tonic::transport::Error),
+    #[cfg(not(target_arch = "wasm32"))]
     ConnectionFailure(tonic::transport::Error),
 }
-
-#[derive(Debug, Display)]
-#[display(fmt = "Blockchain scan process stopped")]
-pub struct BlockchainScanStopped {}
 
 #[derive(Debug, Display)]
 pub enum GenTxError {
@@ -98,8 +101,9 @@ pub enum GenTxError {
         err: std::io::Error,
     },
     BlockchainScanStopped,
-    LightClientErr(SqliteClientError),
+    LightClientErr(String),
     FailedToCreateNote,
+    SpendableNotesError(String),
 }
 
 impl From<GetUnspentWitnessErr> for GenTxError {
@@ -118,8 +122,9 @@ impl From<ZTxBuilderError> for GenTxError {
     fn from(err: ZTxBuilderError) -> GenTxError { GenTxError::TxBuilderError(err) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteClientError> for GenTxError {
-    fn from(err: SqliteClientError) -> Self { GenTxError::LightClientErr(err) }
+    fn from(err: SqliteClientError) -> Self { GenTxError::LightClientErr(err.to_string()) }
 }
 
 impl From<GenTxError> for WithdrawError {
@@ -144,10 +149,15 @@ impl From<GenTxError> for WithdrawError {
             | GenTxError::TxReadError { .. }
             | GenTxError::BlockchainScanStopped
             | GenTxError::LightClientErr(_)
+            | GenTxError::SpendableNotesError(_)
             | GenTxError::FailedToCreateNote => WithdrawError::InternalError(gen_tx.to_string()),
         }
     }
 }
+
+#[derive(Debug, Display)]
+#[display(fmt = "Blockchain scan process stopped")]
+pub struct BlockchainScanStopped {}
 
 impl From<BlockchainScanStopped> for GenTxError {
     #[inline]
@@ -185,18 +195,19 @@ pub enum GetUnspentWitnessErr {
     EmptyDbResult,
     TreeOrWitnessAppendFailed,
     OutputCmuNotFoundInCache,
-    Sql(SqliteError),
+    ZcashDBError(String),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteError> for GetUnspentWitnessErr {
-    fn from(err: SqliteError) -> GetUnspentWitnessErr { GetUnspentWitnessErr::Sql(err) }
+    fn from(err: SqliteError) -> GetUnspentWitnessErr { GetUnspentWitnessErr::ZcashDBError(err.to_string()) }
 }
 
 #[derive(Debug, Display)]
 pub enum ZCoinBuildError {
     UtxoBuilderError(UtxoCoinBuildError),
     GetAddressError,
-    SqliteError(SqliteError),
+    ZcashDBError(String),
     Rpc(UtxoRpcError),
     #[display(fmt = "Sapling cache DB does not exist at {}. Please download it.", path)]
     SaplingCacheDbDoesNotExist {
@@ -209,35 +220,39 @@ pub enum ZCoinBuildError {
     SaplingParamsInvalidChecksum,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteError> for ZCoinBuildError {
-    fn from(err: SqliteError) -> ZCoinBuildError { ZCoinBuildError::SqliteError(err) }
+    fn from(err: SqliteError) -> ZCoinBuildError { ZCoinBuildError::ZcashDBError(err.to_string()) }
 }
 
 impl From<UtxoRpcError> for ZCoinBuildError {
     fn from(err: UtxoRpcError) -> ZCoinBuildError { ZCoinBuildError::Rpc(err) }
 }
 
-impl From<UtxoCoinBuildError> for ZCoinBuildError {
-    fn from(err: UtxoCoinBuildError) -> Self { ZCoinBuildError::UtxoBuilderError(err) }
-}
-
 impl From<std::io::Error> for ZCoinBuildError {
     fn from(err: std::io::Error) -> ZCoinBuildError { ZCoinBuildError::Io(err) }
+}
+
+impl From<UtxoCoinBuildError> for ZCoinBuildError {
+    fn from(err: UtxoCoinBuildError) -> Self { ZCoinBuildError::UtxoBuilderError(err) }
 }
 
 impl From<ZcoinClientInitError> for ZCoinBuildError {
     fn from(err: ZcoinClientInitError) -> Self { ZCoinBuildError::RpcClientInitErr(err) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) enum SqlTxHistoryError {
-    Sql(SqlError),
+    Sql(SqliteError),
     FromIdDoesNotExist(i64),
 }
 
-impl From<SqlError> for SqlTxHistoryError {
-    fn from(err: SqlError) -> Self { SqlTxHistoryError::Sql(err) }
+#[cfg(not(target_arch = "wasm32"))]
+impl From<SqliteError> for SqlTxHistoryError {
+    fn from(err: SqliteError) -> Self { SqlTxHistoryError::Sql(err) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<SqlTxHistoryError> for MyTxHistoryErrorV2 {
     fn from(err: SqlTxHistoryError) -> Self {
         match err {
@@ -256,3 +271,11 @@ impl From<NoInfoAboutTx> for MyTxHistoryErrorV2 {
         MyTxHistoryErrorV2::RpcError(format!("No info about transaction {:02x}", err.0))
     }
 }
+
+#[derive(Debug, Display)]
+pub enum SpendableNotesError {
+    DBClientError(String),
+}
+
+#[derive(Debug, Display)]
+pub enum ZCoinBalanceError {}

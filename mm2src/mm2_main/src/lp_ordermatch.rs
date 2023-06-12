@@ -31,7 +31,7 @@ use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableS
                        SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
-use common::{bits256, log, new_uuid, now_ms, now_sec, now_sec_i64};
+use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
@@ -211,7 +211,7 @@ impl From<(new_protocol::MakerOrderCreated, String)> for OrderbookItem {
 }
 
 pub fn addr_format_from_protocol_info(protocol_info: &[u8]) -> AddressFormat {
-    match rmp_serde::from_read_ref::<_, AddressFormat>(protocol_info) {
+    match rmp_serde::from_slice::<AddressFormat>(protocol_info) {
         Ok(format) => format,
         Err(_) => AddressFormat::Standard,
     }
@@ -3956,6 +3956,16 @@ struct OrderbookP2PItem {
     created_at: u64,
 }
 
+macro_rules! try_get_age_or_default {
+    ($created_at: expr) => {{
+        let now = now_sec();
+        now.checked_sub($created_at).unwrap_or_else(|| {
+            warn!("now - created_at: ({} - {}) caused a u64 underflow", now, $created_at);
+            Default::default()
+        })
+    }};
+}
+
 impl OrderbookP2PItem {
     fn as_rpc_best_orders_buy(
         &self,
@@ -3985,7 +3995,7 @@ impl OrderbookP2PItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: now_sec_i64(),
+            age: try_get_age_or_default!(self.created_at),
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -4051,7 +4061,7 @@ impl OrderbookP2PItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: now_sec_i64(),
+            age: try_get_age_or_default!(self.created_at),
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -4213,7 +4223,7 @@ impl OrderbookItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: now_sec_i64(),
+            age: try_get_age_or_default!(self.created_at),
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -4249,7 +4259,7 @@ impl OrderbookItem {
             min_volume_rat: min_vol_mm.to_ratio(),
             min_volume_fraction: min_vol_mm.to_fraction(),
             pubkey: self.pubkey.clone(),
-            age: now_sec_i64(),
+            age: try_get_age_or_default!(self.created_at),
             zcredits: 0,
             uuid: self.uuid,
             is_mine,
@@ -5622,7 +5632,7 @@ pub struct RpcOrderbookEntry {
     min_volume_rat: BigRational,
     min_volume_fraction: Fraction,
     pubkey: String,
-    age: i64,
+    age: u64,
     zcredits: u64,
     uuid: Uuid,
     is_mine: bool,
@@ -5849,12 +5859,13 @@ fn orderbook_address(
         CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
             MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))
         },
+        CoinProtocol::ZHTLC { .. } => Ok(OrderbookAddress::Shielded),
         #[cfg(not(target_arch = "wasm32"))]
         // Todo: Shielded address is used for lightning for now, the lightning node public key can be used for the orderbook entry pubkey
         // Todo: instead of the platform coin pubkey which is used right now. But lightning payments are supposed to be private,
         // Todo: so maybe we should hide the node address in the orderbook, only the sending node and the receiving node should know about a payment,
         // Todo: a routing node will know about a payment it routed but not the sender or the receiver. This will require using a new keypair for every order/swap
         // Todo: similar to how it's done for zcoin.
-        CoinProtocol::ZHTLC { .. } | CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
+        CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
     }
 }
