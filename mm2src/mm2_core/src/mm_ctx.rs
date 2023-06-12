@@ -221,7 +221,7 @@ impl MmCtx {
 
     pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or_default() }
 
-    pub fn use_watchers(&self) -> bool { self.conf["use_watchers"].as_bool().unwrap_or_default() }
+    pub fn use_watchers(&self) -> bool { self.conf["use_watchers"].as_bool().unwrap_or(true) }
 
     pub fn netid(&self) -> u16 {
         let netid = self.conf["netid"].as_u64().unwrap_or(0);
