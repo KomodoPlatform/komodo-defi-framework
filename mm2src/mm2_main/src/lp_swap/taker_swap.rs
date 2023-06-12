@@ -113,12 +113,16 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(ctx.mm_version.to_owned()),
             events: vec![],
-            success_events: match ctx.use_watchers() {
-                true => TAKER_USING_WATCHERS_SUCCESS_EVENTS
+            success_events: if ctx.use_watchers()
+                && swap.taker_coin.is_supported_by_watchers()
+                && swap.maker_coin.is_supported_by_watchers()
+            {
+                TAKER_USING_WATCHERS_SUCCESS_EVENTS
                     .iter()
                     .map(|event| event.to_string())
-                    .collect(),
-                false => TAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
+                    .collect()
+            } else {
+                TAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect()
             },
             error_events: TAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
         }),
