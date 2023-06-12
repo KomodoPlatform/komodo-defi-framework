@@ -359,7 +359,7 @@ fn send_and_refund_erc20_payment() {
     };
     let payment = coin.send_maker_payment(maker_payment_args).wait().unwrap();
     log!("{:?}", payment);
-    block_on(Timer::sleep(5.));
+    block_on(Timer::sleep(15.));
 
     let swap_id = coin.etomic_swap_id(time_lock, secret_hash);
     let status = block_on(
