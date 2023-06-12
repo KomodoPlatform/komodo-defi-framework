@@ -9,7 +9,6 @@ use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_D
                                    ETH_MAINNET_SWAP_CONTRACT},
                        get_passphrase};
 use mocktopus::mocking::*;
-use rand::Rng;
 
 /// The gas price for the tests
 const GAS_PRICE: u64 = 50_000_000_000;
@@ -306,10 +305,6 @@ fn test_wei_from_big_decimal() {
 
 #[test]
 fn send_and_refund_erc20_payment() {
-    let mut rng = rand::thread_rng();
-    let num = rng.gen_range(0, 30);
-    block_on(Timer::sleep(num.into()));
-
     let key_pair = Random.generate().unwrap();
     fill_eth(key_pair.address(), 0.001);
     fill_jst(key_pair.address(), 0.0001);
@@ -404,10 +399,6 @@ fn send_and_refund_erc20_payment() {
 
 #[test]
 fn send_and_refund_eth_payment() {
-    let mut rng = rand::thread_rng();
-    let num = rng.gen_range(0, 30);
-    block_on(Timer::sleep(num.into()));
-
     let key_pair = Random.generate().unwrap();
     fill_eth(key_pair.address(), 0.001);
     let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
@@ -908,10 +899,6 @@ fn test_withdraw_impl_fee_details() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_nonce_lock() {
-    let mut rng = rand::thread_rng();
-    let num = rng.gen_range(0, 30);
-    block_on(Timer::sleep(num.into()));
-
     use futures::future::join_all;
     use mm2_test_helpers::for_tests::{wait_for_log, ETH_DEV_NODES};
 
