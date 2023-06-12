@@ -911,7 +911,7 @@ fn test_nonce_lock() {
     let mut rng = rand::thread_rng();
     let num = rng.gen_range(0, 30);
     block_on(Timer::sleep(num.into()));
-    
+
     use futures::future::join_all;
     use mm2_test_helpers::for_tests::{wait_for_log, ETH_DEV_NODES};
 
