@@ -76,7 +76,7 @@ prost = "0.10"
 protobuf = "2.20"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rlp = { version = "0.5" }
-rmp-serde = "1.1.1"
+rmp-serde = "0.14.3"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 script = { path = "../mm2_bitcoin/script" }

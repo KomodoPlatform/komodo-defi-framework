@@ -72,7 +72,7 @@ rand6 = { version = "0.6", package = "rand" }
 # TODO: Reduce the size of regex by disabling the features we don't use.
 # cf. https://github.com/rust-lang/regex/issues/583
 regex = "1"
-rmp-serde = "1.1.1"
+rmp-serde = "0.14.3"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 script = { path = "../mm2_bitcoin/script" }
