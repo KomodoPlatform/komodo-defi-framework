@@ -4,7 +4,7 @@ use super::pubkey_banning::ban_pubkey_on_failed_swap;
 use super::swap_lock::{SwapLock, SwapLockOps};
 use super::swap_watcher::{watcher_topic, SwapWatcherMsg};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
-use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_message_every,
+use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_msg_every,
             check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, dex_fee_threshold,
             get_locked_amount, recv_swap_msg, swap_topic, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount,
             MySwapInfo, NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction,
@@ -12,7 +12,7 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_mes
             SwapTxDataMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_message_every_with_initial_delay, tx_helper_topic,
+use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
                           wait_for_maker_payment_conf_duration, TakerSwapWatcherData};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
@@ -1186,7 +1186,7 @@ impl TakerSwap {
 
         let taker_data = SwapMsg::NegotiationReply(my_negotiation_data);
         debug!("Sending taker negotiation data {:?}", taker_data);
-        let send_abort_handle = broadcast_swap_message_every(
+        let send_abort_handle = broadcast_swap_msg_every(
             self.ctx.clone(),
             swap_topic(&self.uuid),
             taker_data,
@@ -1280,7 +1280,7 @@ impl TakerSwap {
         };
 
         let msg = SwapMsg::TakerFee(payment_data_msg);
-        let abort_send_handle = broadcast_swap_message_every(
+        let abort_send_handle = broadcast_swap_msg_every(
             self.ctx.clone(),
             swap_topic(&self.uuid),
             msg,
@@ -1631,7 +1631,7 @@ impl TakerSwap {
                 );
                 let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
                 let htlc_keypair = self.taker_coin.derive_htlc_key_pair(&self.unique_swap_data());
-                watcher_broadcast_abort_handle = Some(broadcast_swap_message_every_with_initial_delay(
+                watcher_broadcast_abort_handle = Some(broadcast_swap_msg_every_delayed(
                     self.ctx.clone(),
                     watcher_topic(&self.r().data.taker_coin),
                     swpmsg_watcher,
@@ -1643,7 +1643,7 @@ impl TakerSwap {
 
         // Todo: taker_payment should be a message on lightning network not a swap message
         let msg = SwapMsg::TakerPayment(tx_hex);
-        let send_abort_handle = broadcast_swap_message_every(
+        let send_abort_handle = broadcast_swap_msg_every(
             self.ctx.clone(),
             swap_topic(&self.uuid),
             msg,

@@ -202,7 +202,7 @@ pub fn p2p_private_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
 
 /// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
 /// to stop it
-pub fn broadcast_swap_message_every<T: 'static + Serialize + Clone + Send>(
+pub fn broadcast_swap_msg_every<T: 'static + Serialize + Clone + Send>(
     ctx: MmArc,
     topic: String,
     msg: T,
@@ -219,8 +219,8 @@ pub fn broadcast_swap_message_every<T: 'static + Serialize + Clone + Send>(
 }
 
 /// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
-/// to stop it
-pub fn broadcast_swap_message_every_with_initial_delay<T: 'static + Serialize + Clone + Send>(
+/// to stop it. This function waits for interval seconds first before starting the broadcast.
+pub fn broadcast_swap_msg_every_delayed<T: 'static + Serialize + Clone + Send>(
     ctx: MmArc,
     topic: String,
     msg: T,
