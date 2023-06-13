@@ -206,13 +206,13 @@ pub fn broadcast_swap_msg_every<T: 'static + Serialize + Clone + Send>(
     ctx: MmArc,
     topic: String,
     msg: T,
-    interval: f64,
+    interval_sec: f64,
     p2p_privkey: Option<KeyPair>,
 ) -> AbortOnDropHandle {
     let fut = async move {
         loop {
             broadcast_swap_message(&ctx, topic.clone(), msg.clone(), &p2p_privkey);
-            Timer::sleep(interval).await;
+            Timer::sleep(interval_sec).await;
         }
     };
     spawn_abortable(fut)
@@ -224,12 +224,12 @@ pub fn broadcast_swap_msg_every_delayed<T: 'static + Serialize + Clone + Send>(
     ctx: MmArc,
     topic: String,
     msg: T,
-    interval: f64,
+    interval_sec: f64,
     p2p_privkey: Option<KeyPair>,
 ) -> AbortOnDropHandle {
     let fut = async move {
         loop {
-            Timer::sleep(interval).await;
+            Timer::sleep(interval_sec).await;
             broadcast_swap_message(&ctx, topic.clone(), msg.clone(), &p2p_privkey);
         }
     };
