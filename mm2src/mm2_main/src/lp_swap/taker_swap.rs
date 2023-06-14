@@ -119,12 +119,12 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
             {
                 TAKER_USING_WATCHERS_SUCCESS_EVENTS
                     .iter()
-                    .map(|event| event.to_string())
+                    .map(<&str>::to_string)
                     .collect()
             } else {
-                TAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect()
+                TAKER_SUCCESS_EVENTS.iter().map(<&str>::to_string).collect()
             },
-            error_events: TAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
+            error_events: TAKER_ERROR_EVENTS.iter().map(<&str>::to_string).collect(),
         }),
         Err(e) => return ERR!("{}", e),
     };
