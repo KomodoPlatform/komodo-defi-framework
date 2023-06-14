@@ -3,7 +3,7 @@ use super::{addr_format_from_protocol_info, is_my_order, orderbook_address, subs
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf};
 use common::log::warn;
 use common::{now_sec, HttpStatusCode};
-use crypto::{CryptoCtx, CryptoCtxError};
+use crypto::{mm2_internal_pubkey_hex, CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use http::{Response, StatusCode};
 use mm2_core::mm_ctx::MmArc;
@@ -136,11 +136,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
 
-    let my_pubsecp = match CryptoCtx::from_ctx(&ctx).discard_mm_trace() {
-        Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
-        Err(CryptoCtxError::NotInitialized) => None,
-        Err(other) => return ERR!("{}", other),
-    };
+    let my_pubsecp = mm2_internal_pubkey_hex!(ctx, String::from).map_err(MmError::into_inner)?;
 
     let orderbook = ordermatch_ctx.orderbook.lock();
     let my_zhtlc_orders_pubkeys = &orderbook.my_zhtlc_orders_pubkeys;
@@ -307,13 +303,7 @@ pub async fn orderbook_rpc_v2(
         .await
         .map_to_mm(OrderbookRpcError::P2PSubscribeError)?;
 
-    let my_pubsecp = match CryptoCtx::from_ctx(&ctx).split_mm() {
-        Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
-        Err((CryptoCtxError::NotInitialized, _trace)) => None,
-        Err((CryptoCtxError::Internal(e), trace)) => {
-            return MmError::err_with_trace(OrderbookRpcError::Internal(e), trace)
-        },
-    };
+    let my_pubsecp = mm2_internal_pubkey_hex!(ctx, OrderbookRpcError::Internal)?;
     let orderbook = ordermatch_ctx.orderbook.lock();
     let my_zhtlc_orders_pubkeys = &orderbook.my_zhtlc_orders_pubkeys;
 

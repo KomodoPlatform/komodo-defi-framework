@@ -336,6 +336,18 @@ impl CryptoCtx {
     }
 }
 
+#[macro_export]
+macro_rules! mm2_internal_pubkey_hex {
+    ($ctx: ident, $err_construct: expr) => {
+        match CryptoCtx::from_ctx(&$ctx).split_mm() {
+            Ok(crypto_ctx) => Ok(Some(crypto_ctx.mm2_internal_pubkey_hex())),
+            Err((CryptoCtxError::NotInitialized, _)) => Ok(None),
+            Err((CryptoCtxError::Internal(error), trace)) => MmError::err_with_trace($err_construct(error), trace),
+        }
+    };
+}
+pub use mm2_internal_pubkey_hex;
+
 enum KeyPairPolicyBuilder {
     Iguana,
     GlobalHDAccount { hd_account_id: u64 },

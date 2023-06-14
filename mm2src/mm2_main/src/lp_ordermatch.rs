@@ -33,7 +33,7 @@ use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
-use crypto::{CryptoCtx, CryptoCtxError};
+use crypto::{mm2_internal_pubkey_hex, CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, TryFutureExt};
 use hash256_std_hasher::Hash256StdHasher;
@@ -394,12 +394,8 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
-    let my_zhtlc_orders_pubkeys = orderbook.my_zhtlc_orders_pubkeys.clone();
-    let my_pubsecp = match CryptoCtx::from_ctx(ctx).discard_mm_trace() {
-        Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
-        Err(CryptoCtxError::NotInitialized) => None,
-        Err(other) => return ERR!("{}", other),
-    };
+
+    let my_pubsecp = mm2_internal_pubkey_hex!(ctx, String::from).map_err(MmError::into_inner)?;
 
     let alb_pair = alb_ordered_pair(base, rel);
     for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
@@ -411,7 +407,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
             },
         };
 
-        if is_my_order(&pubkey, &my_pubsecp, &my_zhtlc_orders_pubkeys) {
+        if is_my_order(&pubkey, &my_pubsecp, &orderbook.my_zhtlc_orders_pubkeys) {
             continue;
         }
 
