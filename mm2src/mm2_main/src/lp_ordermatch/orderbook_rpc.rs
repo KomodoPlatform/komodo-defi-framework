@@ -139,7 +139,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     let my_pubsecp = mm2_internal_pubkey_hex!(ctx, String::from).map_err(MmError::into_inner)?;
 
     let orderbook = ordermatch_ctx.orderbook.lock();
-    let my_zhtlc_orders_pubkeys = &orderbook.my_zhtlc_orders_pubkeys;
+    let my_p2p_pubkeys = &orderbook.my_p2p_pubkeys;
 
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {
         Some(uuids) => {
@@ -157,7 +157,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &ask.pubkey,
                     address_format,
                 ));
-                let is_mine = is_my_order(&ask.pubkey, &my_pubsecp, my_zhtlc_orders_pubkeys);
+                let is_mine = is_my_order(&ask.pubkey, &my_pubsecp, my_p2p_pubkeys);
                 orderbook_entries.push(ask.as_rpc_entry_ask(address, is_mine));
             }
             orderbook_entries
@@ -184,7 +184,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &bid.pubkey,
                     address_format,
                 ));
-                let is_mine = is_my_order(&bid.pubkey, &my_pubsecp, my_zhtlc_orders_pubkeys);
+                let is_mine = is_my_order(&bid.pubkey, &my_pubsecp, my_p2p_pubkeys);
                 orderbook_entries.push(bid.as_rpc_entry_bid(address, is_mine));
             }
             orderbook_entries
@@ -305,7 +305,7 @@ pub async fn orderbook_rpc_v2(
 
     let my_pubsecp = mm2_internal_pubkey_hex!(ctx, OrderbookRpcError::Internal)?;
     let orderbook = ordermatch_ctx.orderbook.lock();
-    let my_zhtlc_orders_pubkeys = &orderbook.my_zhtlc_orders_pubkeys;
+    let my_p2p_pubkeys = &orderbook.my_p2p_pubkeys;
 
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {
         Some(uuids) => {
@@ -326,7 +326,7 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = is_my_order(&ask.pubkey, &my_pubsecp, my_zhtlc_orders_pubkeys);
+                let is_mine = is_my_order(&ask.pubkey, &my_pubsecp, my_p2p_pubkeys);
                 orderbook_entries.push(ask.as_rpc_v2_entry_ask(address, is_mine));
             }
             orderbook_entries
@@ -356,7 +356,7 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = is_my_order(&bid.pubkey, &my_pubsecp, my_zhtlc_orders_pubkeys);
+                let is_mine = is_my_order(&bid.pubkey, &my_pubsecp, my_p2p_pubkeys);
                 orderbook_entries.push(bid.as_rpc_v2_entry_bid(address, is_mine));
             }
             orderbook_entries

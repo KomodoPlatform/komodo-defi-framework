@@ -228,7 +228,7 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     if let Some((p2p_response, peer_id)) = best_orders_res {
         log::debug!("Got best orders {:?} from peer {}", p2p_response, peer_id);
         let my_pubsecp = mm2_internal_pubkey_hex!(ctx, String::from).map_err(MmError::into_inner)?;
-        let my_zhtlc_orders_pubkeys = ordermatch_ctx.orderbook.lock().my_zhtlc_orders_pubkeys.clone();
+        let my_p2p_pubkeys = ordermatch_ctx.orderbook.lock().my_p2p_pubkeys.clone();
         for (coin, orders_w_proofs) in p2p_response.orders {
             let coin_conf = coin_conf(&ctx, &coin);
             if coin_conf.is_null() {
@@ -262,7 +262,7 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                         },
                     };
                 let conf_settings = p2p_response.conf_infos.get(&order.uuid);
-                let is_mine = is_my_order(&order.pubkey, &my_pubsecp, &my_zhtlc_orders_pubkeys);
+                let is_mine = is_my_order(&order.pubkey, &my_pubsecp, &my_p2p_pubkeys);
                 let entry = match req.action {
                     BestOrdersAction::Buy => order.as_rpc_best_orders_buy(address, conf_settings, is_mine),
                     BestOrdersAction::Sell => order.as_rpc_best_orders_sell(address, conf_settings, is_mine),
@@ -339,7 +339,7 @@ pub async fn best_orders_rpc_v2(
     if let Some((p2p_response, peer_id)) = best_orders_res {
         log::debug!("Got best orders {:?} from peer {}", p2p_response, peer_id);
         let my_pubsecp = mm2_internal_pubkey_hex!(ctx, BestOrdersRpcError::CtxError)?;
-        let my_zhtlc_orders_pubkeys = ordermatch_ctx.orderbook.lock().my_zhtlc_orders_pubkeys.clone();
+        let my_p2p_pubkeys = ordermatch_ctx.orderbook.lock().my_p2p_pubkeys.clone();
 
         for (coin, orders_w_proofs) in p2p_response.orders {
             let coin_conf = coin_conf(&ctx, &coin);
@@ -356,7 +356,7 @@ pub async fn best_orders_rpc_v2(
             }
             for order_w_proof in orders_w_proofs {
                 let order = order_w_proof.order;
-                let is_mine = is_my_order(&order.pubkey, &my_pubsecp, &my_zhtlc_orders_pubkeys);
+                let is_mine = is_my_order(&order.pubkey, &my_pubsecp, &my_p2p_pubkeys);
                 if req.exclude_mine && is_mine {
                     continue;
                 }
