@@ -9,7 +9,7 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_msg
             get_locked_amount, recv_swap_msg, swap_topic, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount,
             MySwapInfo, NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction,
             SavedSwap, SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys,
-            SwapTxDataMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            SwapTxDataMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
@@ -1080,13 +1080,13 @@ impl TakerSwap {
     }
 
     async fn negotiate(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        const NEGOTIATE_TIMEOUT: u64 = 90;
+        const NEGOTIATE_TIMEOUT_SEC: u64 = 90;
 
         let recv_fut = recv_swap_msg(
             self.ctx.clone(),
             |store| store.negotiation.take(),
             &self.uuid,
-            NEGOTIATE_TIMEOUT,
+            NEGOTIATE_TIMEOUT_SEC,
         );
         let maker_data = match recv_fut.await {
             Ok(d) => d,
@@ -1190,14 +1190,14 @@ impl TakerSwap {
             self.ctx.clone(),
             swap_topic(&self.uuid),
             taker_data,
-            NEGOTIATE_TIMEOUT as f64 / 6.,
+            NEGOTIATE_TIMEOUT_SEC as f64 / 6.,
             self.p2p_privkey,
         );
         let recv_fut = recv_swap_msg(
             self.ctx.clone(),
             |store| store.negotiated.take(),
             &self.uuid,
-            NEGOTIATE_TIMEOUT,
+            NEGOTIATE_TIMEOUT_SEC,
         );
         let negotiated = match recv_fut.await {
             Ok(d) => d,
@@ -1268,7 +1268,7 @@ impl TakerSwap {
     }
 
     async fn wait_for_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        const MAKER_PAYMENT_WAIT_TIMEOUT: u64 = 600;
+        const MAKER_PAYMENT_WAIT_TIMEOUT_SEC: u64 = 600;
 
         let payment_data_msg = match self.get_taker_fee_data().await {
             Ok(data) => data,
@@ -1284,7 +1284,7 @@ impl TakerSwap {
             self.ctx.clone(),
             swap_topic(&self.uuid),
             msg,
-            MAKER_PAYMENT_WAIT_TIMEOUT as f64 / 6.,
+            MAKER_PAYMENT_WAIT_TIMEOUT_SEC as f64 / 6.,
             self.p2p_privkey,
         );
 
@@ -1292,7 +1292,7 @@ impl TakerSwap {
             self.ctx.clone(),
             |store| store.maker_payment.take(),
             &self.uuid,
-            MAKER_PAYMENT_WAIT_TIMEOUT,
+            MAKER_PAYMENT_WAIT_TIMEOUT_SEC,
         );
         let payload = match recv_fut.await {
             Ok(p) => p,
@@ -1360,7 +1360,7 @@ impl TakerSwap {
             confirmations,
             requires_nota: self.r().data.maker_payment_requires_nota.unwrap_or(false),
             wait_until: self.r().data.maker_payment_wait,
-            check_every: WAIT_CONFIRM_INTERVAL,
+            check_every: WAIT_CONFIRM_INTERVAL_SEC,
         };
 
         let f = self.maker_coin.wait_for_confirmations(confirm_maker_payment_input);
@@ -1610,7 +1610,7 @@ impl TakerSwap {
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        const BROADCAST_SWAP_MESSAGE_INTERVAL: f64 = 600.;
+        const BROADCAST_MSG_INTERVAL_SEC: f64 = 600.;
 
         let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
         let mut watcher_broadcast_abort_handle = None;
@@ -1635,7 +1635,7 @@ impl TakerSwap {
                     self.ctx.clone(),
                     watcher_topic(&self.r().data.taker_coin),
                     swpmsg_watcher,
-                    BROADCAST_SWAP_MESSAGE_INTERVAL,
+                    BROADCAST_MSG_INTERVAL_SEC,
                     Some(htlc_keypair),
                 ));
             }
@@ -1647,7 +1647,7 @@ impl TakerSwap {
             self.ctx.clone(),
             swap_topic(&self.uuid),
             msg,
-            BROADCAST_SWAP_MESSAGE_INTERVAL,
+            BROADCAST_MSG_INTERVAL_SEC,
             self.p2p_privkey,
         );
 
@@ -1656,7 +1656,7 @@ impl TakerSwap {
             confirmations: self.r().data.taker_payment_confirmations,
             requires_nota: self.r().data.taker_payment_requires_nota.unwrap_or(false),
             wait_until: self.r().data.taker_payment_lock,
-            check_every: WAIT_CONFIRM_INTERVAL,
+            check_every: WAIT_CONFIRM_INTERVAL_SEC,
         };
         let wait_f = self
             .taker_coin
