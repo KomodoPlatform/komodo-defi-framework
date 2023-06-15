@@ -9,9 +9,8 @@ use mm2_number::{construct_detailed, BigRational, MmNumber, MmNumberMultiRepr};
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
 
-use super::{addr_format_from_protocol_info, is_my_order, orderbook_address, subscribe_to_orderbook_topic,
-            OrdermatchContext, RpcOrderbookEntry, RpcOrderbookEntryV2};
-use crate::mm2::mm2_internal_pubkey_hex;
+use super::{addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address,
+            subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntry, RpcOrderbookEntryV2};
 
 #[derive(Deserialize)]
 pub struct OrderbookReq {

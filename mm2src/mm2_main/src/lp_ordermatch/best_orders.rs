@@ -10,11 +10,10 @@ use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-use super::{addr_format_from_protocol_info, BaseRelProtocolInfo, OrderConfirmationsSettings,
-            OrderbookP2PItemWithProof, OrdermatchContext, OrdermatchRequest};
+use super::{addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address,
+            BaseRelProtocolInfo, OrderConfirmationsSettings, OrderbookP2PItemWithProof, OrdermatchContext,
+            OrdermatchRequest, RpcOrderbookEntryV2};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
-use crate::mm2::lp_ordermatch::{is_my_order, orderbook_address, RpcOrderbookEntryV2};
-use crate::mm2::mm2_internal_pubkey_hex;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]

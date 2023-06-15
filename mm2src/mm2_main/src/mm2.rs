@@ -29,8 +29,7 @@ use common::crash_reports::init_crash_reports;
 use common::double_panic_crash;
 use common::log::LogLevel;
 use common::password_policy::password_policy;
-use crypto::{CryptoCtx, CryptoCtxError};
-use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_core::mm_ctx::MmCtxBuilder;
 
 #[cfg(feature = "custom-swap-locktime")] use common::log::warn;
 #[cfg(feature = "custom-swap-locktime")]
@@ -392,16 +391,4 @@ fn init_logger(_level: LogLevel, silent_console: bool) -> Result<(), String> {
 #[cfg(target_arch = "wasm32")]
 fn init_logger(level: LogLevel, _silent_console: bool) -> Result<(), String> {
     common::log::WasmLoggerBuilder::default().level_filter(level).try_init()
-}
-
-pub(crate) fn mm2_internal_pubkey_hex<E, F>(ctx: &MmArc, err_construct: F) -> MmResult<Option<String>, E>
-where
-    E: NotMmError,
-    F: Fn(String) -> E,
-{
-    match CryptoCtx::from_ctx(ctx).split_mm() {
-        Ok(crypto_ctx) => Ok(Some(CryptoCtx::mm2_internal_pubkey_hex(crypto_ctx.as_ref()))),
-        Err((CryptoCtxError::NotInitialized, _)) => Ok(None),
-        Err((CryptoCtxError::Internal(error), trace)) => MmError::err_with_trace(err_construct(error), trace),
-    }
 }

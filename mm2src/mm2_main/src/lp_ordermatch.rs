@@ -33,7 +33,7 @@ use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
-use crypto::CryptoCtx;
+use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, TryFutureExt};
 use hash256_std_hasher::Hash256StdHasher;
@@ -70,7 +70,6 @@ use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, chec
                           p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, AtomicLocktimeVersion,
                           CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap, RunMakerSwapInput,
                           RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
-use crate::mm2::mm2_internal_pubkey_hex;
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update,
@@ -467,6 +466,18 @@ fn delete_my_order(ctx: &MmArc, uuid: Uuid, p2p_privkey: Option<SerializableSecp
     orderbook.remove_order_trie_update(uuid);
     if let Some(key) = p2p_privkey {
         orderbook.my_p2p_pubkeys.remove(&hex::encode(key.public_slice()));
+    }
+}
+
+pub(crate) fn mm2_internal_pubkey_hex<E, F>(ctx: &MmArc, err_construct: F) -> MmResult<Option<String>, E>
+where
+    E: NotMmError,
+    F: Fn(String) -> E,
+{
+    match CryptoCtx::from_ctx(ctx).split_mm() {
+        Ok(crypto_ctx) => Ok(Some(CryptoCtx::mm2_internal_pubkey_hex(crypto_ctx.as_ref()))),
+        Err((CryptoCtxError::NotInitialized, _)) => Ok(None),
+        Err((CryptoCtxError::Internal(error), trace)) => MmError::err_with_trace(err_construct(error), trace),
     }
 }
 
