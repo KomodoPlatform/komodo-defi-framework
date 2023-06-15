@@ -26,10 +26,12 @@ cfg_wasm32! {
 
 cfg_native! {
     use db_common::sqlite::rusqlite::Connection;
+    use futures_rustls::webpki::DNSNameRef;
     use mm2_metrics::prometheus;
     use mm2_metrics::MmMetricsError;
     use std::net::{IpAddr, SocketAddr, AddrParseError};
     use std::path::{Path, PathBuf};
+    use std::str::FromStr;
     use std::sync::MutexGuard;
 }
 
@@ -195,6 +197,52 @@ impl MmCtx {
         .to_string();
         let ip: IpAddr = try_s!(rpcip.parse());
         Ok(SocketAddr::new(ip, port as u16))
+    }
+
+    /// Whether to use HTTPS for RPC server or not.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn is_https(&self) -> bool { self.conf["https"].as_bool().unwrap_or(false) }
+
+    /// SANs for self-signed certificate generation.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn alt_names(&self) -> Result<Vec<String>, String> {
+        // Helper function to validate `alt_names` entries
+        fn validate_alt_name(name: &str) -> Result<(), String> {
+            // Check if it is a valid IP address
+            if let Ok(ip) = IpAddr::from_str(name) {
+                if ip.is_unspecified() {
+                    return ERR!("IP address {} must be specified", ip);
+                }
+                return Ok(());
+            }
+
+            // Check if it is a valid DNS name
+            if DNSNameRef::try_from_ascii_str(name).is_ok() {
+                return Ok(());
+            }
+
+            ERR!(
+                "`alt_names` contains {} which is neither a valid IP address nor a valid DNS name",
+                name
+            )
+        }
+
+        if self.conf["alt_names"].is_null() {
+            // Default SANs
+            return Ok(vec!["localhost".to_string(), "127.0.0.1".to_string()]);
+        }
+
+        json::from_value(self.conf["alt_names"].clone())
+            .map_err(|e| format!("`alt_names` is not a valid JSON array of strings: {}", e))
+            .and_then(|names: Vec<String>| {
+                if names.is_empty() {
+                    return ERR!("alt_names is empty");
+                }
+                for name in &names {
+                    try_s!(validate_alt_name(name));
+                }
+                Ok(names)
+            })
     }
 
     /// MM database path.  

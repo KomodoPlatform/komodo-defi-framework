@@ -29,4 +29,5 @@ gstuff = { version = "0.7", features = ["nightly"] }
 mm2_rpc = { path = "../mm2_rpc" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+futures-rustls = { version = "0.21.1" }
 gstuff = { version = "0.7", features = ["nightly"] }
