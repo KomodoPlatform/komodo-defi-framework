@@ -888,6 +888,7 @@ impl MakerSwap {
     }
 
     async fn wait_for_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
+        const PAYMENT_MSG_INTERVAL_SEC: f64 = 600.;
         let payment_data_msg = match self.get_my_payment_data().await {
             Ok(data) => data,
             Err(e) => {
@@ -900,8 +901,13 @@ impl MakerSwap {
             },
         };
         let msg = SwapMsg::MakerPayment(payment_data_msg);
-        let abort_send_handle =
-            broadcast_swap_msg_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
+        let abort_send_handle = broadcast_swap_msg_every(
+            self.ctx.clone(),
+            swap_topic(&self.uuid),
+            msg,
+            PAYMENT_MSG_INTERVAL_SEC,
+            self.p2p_privkey,
+        );
 
         let maker_payment_wait_confirm =
             wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
