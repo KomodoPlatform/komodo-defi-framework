@@ -1,9 +1,6 @@
-use super::{addr_format_from_protocol_info, is_my_order, orderbook_address, subscribe_to_orderbook_topic,
-            OrdermatchContext, RpcOrderbookEntry, RpcOrderbookEntryV2};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf};
 use common::log::warn;
 use common::{now_sec, HttpStatusCode};
-use crypto::{mm2_internal_pubkey_hex, CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use http::{Response, StatusCode};
 use mm2_core::mm_ctx::MmArc;
@@ -11,6 +8,10 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{construct_detailed, BigRational, MmNumber, MmNumberMultiRepr};
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
+
+use super::{addr_format_from_protocol_info, is_my_order, orderbook_address, subscribe_to_orderbook_topic,
+            OrdermatchContext, RpcOrderbookEntry, RpcOrderbookEntryV2};
+use crate::mm2::mm2_internal_pubkey_hex;
 
 #[derive(Deserialize)]
 pub struct OrderbookReq {
@@ -136,7 +137,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
 
-    let my_pubsecp = mm2_internal_pubkey_hex!(ctx, String::from).map_err(MmError::into_inner)?;
+    let my_pubsecp = mm2_internal_pubkey_hex(&ctx, String::from).map_err(MmError::into_inner)?;
 
     let orderbook = ordermatch_ctx.orderbook.lock();
     let my_p2p_pubkeys = &orderbook.my_p2p_pubkeys;
@@ -303,7 +304,7 @@ pub async fn orderbook_rpc_v2(
         .await
         .map_to_mm(OrderbookRpcError::P2PSubscribeError)?;
 
-    let my_pubsecp = mm2_internal_pubkey_hex!(ctx, OrderbookRpcError::Internal)?;
+    let my_pubsecp = mm2_internal_pubkey_hex(&ctx, OrderbookRpcError::Internal)?;
     let orderbook = ordermatch_ctx.orderbook.lock();
     let my_p2p_pubkeys = &orderbook.my_p2p_pubkeys;
 
