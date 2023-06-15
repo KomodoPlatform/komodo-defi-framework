@@ -1,9 +1,8 @@
-use std::sync::Arc;
-
+use crate::native_tls::TlsAcceptor;
 use hyper::server::conn::AddrIncoming;
 use rustls::ServerConfig;
+use std::sync::Arc;
 
-use super::TlsAcceptor;
 /// Builder for [`TlsAcceptor`]
 pub struct AcceptorBuilder<State>(State);
 
@@ -11,11 +10,11 @@ pub struct AcceptorBuilder<State>(State);
 pub struct WantsTlsConfig(());
 
 impl AcceptorBuilder<WantsTlsConfig> {
+    #[inline]
     /// Creates a new [`AcceptorBuilder`]
-    pub fn new() -> Self {
-        Self(WantsTlsConfig(()))
-    }
+    pub fn new() -> Self { Self(WantsTlsConfig(())) }
 
+    #[inline]
     /// Passes a rustls [`ServerConfig`] to configure the TLS connection
     pub fn with_tls_config(self, config: ServerConfig) -> AcceptorBuilder<WantsAlpn> {
         AcceptorBuilder(WantsAlpn(config))
@@ -40,9 +39,7 @@ impl AcceptorBuilder<WantsTlsConfig> {
 }
 
 impl Default for AcceptorBuilder<WantsTlsConfig> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 /// State of a builder that needs a incoming address next
@@ -50,10 +47,7 @@ pub struct WantsAlpn(ServerConfig);
 
 impl AcceptorBuilder<WantsAlpn> {
     /// Configure ALPN accept protocols in order
-    pub fn with_alpn_protocols(
-        mut self,
-        alpn_protocols: Vec<Vec<u8>>,
-    ) -> AcceptorBuilder<WantsIncoming> {
+    pub fn with_alpn_protocols(mut self, alpn_protocols: Vec<Vec<u8>>) -> AcceptorBuilder<WantsIncoming> {
         self.0 .0.alpn_protocols = alpn_protocols;
         AcceptorBuilder(WantsIncoming(self.0 .0))
     }
