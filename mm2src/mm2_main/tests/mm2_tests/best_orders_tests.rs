@@ -6,18 +6,18 @@ use mm2_test_helpers::for_tests::ETH_DEV_NODES;
 use mm2_test_helpers::for_tests::{best_orders_v2, best_orders_v2_by_number, eth_jst_testnet_conf, eth_testnet_conf,
                                   get_passphrase, morty_conf, rick_conf, tbtc_conf, tbtc_segwit_conf, MarketMakerIt,
                                   Mm2TestConf, RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS};
-use mm2_test_helpers::structs::{BestOrdersResponse, BestOrdersV2Response, EnableElectrumResponse, RpcV2Response,
-                                SetPriceResponse};
+use mm2_test_helpers::structs::{BestOrdersResponse, EnableElectrumResponse, SetPriceResponse};
 use serde_json::{self as json, json};
+use std::collections::BTreeSet;
 use std::env::{self};
 use std::thread;
 use std::time::Duration;
+use uuid::Uuid;
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_best_orders() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
     let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf()]);
 
     // start bob and immediately place the orders
@@ -259,18 +259,16 @@ fn test_best_orders_v2_by_number() {
     }))
     .unwrap();
 
-    let rc = block_on(best_orders_v2_by_number(&mm_alice, "RICK", "buy", 1));
-    log!("rc {:?}", rc);
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2_by_number(&mm_alice, "RICK", "buy", 1, false));
+    log!("response {response:?}");
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
     log!("Best MORTY orders when buy RICK {:?}", [best_morty_orders]);
     assert_eq!(1, best_morty_orders.len());
     let expected_price: BigDecimal = "0.7".parse().unwrap();
     assert_eq!(expected_price, best_morty_orders[0].price.decimal);
 
-    let rc = block_on(best_orders_v2_by_number(&mm_alice, "RICK", "buy", 2));
-    log!("rc {:?}", rc);
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2_by_number(&mm_alice, "RICK", "buy", 2, false));
+    log!("response {response:?}");
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
     log!("Best MORTY orders when buy RICK {:?}", [best_morty_orders]);
     assert_eq!(2, best_morty_orders.len());
@@ -279,9 +277,8 @@ fn test_best_orders_v2_by_number() {
     let expected_price: BigDecimal = "0.8".parse().unwrap();
     assert_eq!(expected_price, best_morty_orders[1].price.decimal);
 
-    let rc = block_on(best_orders_v2_by_number(&mm_alice, "RICK", "sell", 1));
-    log!("rc {:?}", rc);
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2_by_number(&mm_alice, "RICK", "sell", 1, false));
+    log!("response {response:?}");
     let expected_price: BigDecimal = "1.25".parse().unwrap();
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
     log!("Best MORTY orders when sell RICK {:?}", [best_morty_orders]);
@@ -292,9 +289,8 @@ fn test_best_orders_v2_by_number() {
     assert_eq!(1, best_eth_orders.len());
     assert_eq!(expected_price, best_eth_orders[0].price.decimal);
 
-    let rc = block_on(best_orders_v2_by_number(&mm_alice, "ETH", "sell", 1));
-    log!("rc {:?}", rc);
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2_by_number(&mm_alice, "ETH", "sell", 1, false));
+    log!("response {response:?}");
     let best_rick_orders = response.result.orders.get("RICK").unwrap();
     log!("Best RICK orders when sell ETH {:?}", [best_rick_orders]);
     assert_eq!(1, best_rick_orders.len());
@@ -386,9 +382,8 @@ fn test_best_orders_v2_by_volume() {
     }))
     .unwrap();
 
-    let rc = block_on(best_orders_v2(&mm_alice, "RICK", "buy", "1.7"));
-    log!("rc {:?}", rc);
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2(&mm_alice, "RICK", "buy", "1.7"));
+    log!("response {response:?}");
     // MORTY
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
     log!("Best MORTY orders when buy RICK {:?}", [best_morty_orders]);
@@ -402,9 +397,8 @@ fn test_best_orders_v2_by_volume() {
     log!("Best ETH orders when buy RICK {:?}", [best_eth_orders]);
     assert_eq!(expected_price, best_eth_orders[0].price.decimal);
 
-    let rc = block_on(best_orders_v2(&mm_alice, "RICK", "sell", "0.1"));
-    log!("rc {:?}", rc);
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2(&mm_alice, "RICK", "sell", "0.1"));
+    log!("response {response:?}");
     let expected_price: BigDecimal = "1.25".parse().unwrap();
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
     log!("Best MORTY orders when sell RICK {:?}", [best_morty_orders]);
@@ -414,15 +408,112 @@ fn test_best_orders_v2_by_volume() {
     log!("Best ETH orders when sell RICK {:?}", [best_morty_orders]);
     assert_eq!(expected_price, best_eth_orders[0].price.decimal);
 
-    let rc = block_on(best_orders_v2(&mm_alice, "ETH", "sell", "0.1"));
-    log!("rc {:?}", rc);
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2(&mm_alice, "ETH", "sell", "0.1"));
+    log!("response {response:?}");
     let expected_price: BigDecimal = "1.25".parse().unwrap();
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
     log!("Best MORTY orders when sell ETH {:?}", [best_morty_orders]);
     assert_eq!(expected_price, best_morty_orders[0].price.decimal);
     assert_eq!("MORTY", best_morty_orders[0].coin);
     assert_eq!(1, best_morty_orders.len());
+
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_best_orders_v2_exclude_mine() {
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf()]);
+    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
+    let mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        None,
+    )
+    .unwrap();
+
+    let _ = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES));
+    let bob_orders = [
+        ("RICK", "MORTY", "0.9", "0.9", None),
+        ("RICK", "MORTY", "0.8", "0.9", None),
+    ];
+
+    let mut bob_order_ids = BTreeSet::<Uuid>::new();
+    for (base, rel, price, volume, min_volume) in bob_orders.iter() {
+        let (status, data, _headers) = block_on(mm_bob.rpc(&json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": volume,
+            "min_volume": min_volume.unwrap_or("0.00777"),
+            "cancel_previous": false,
+        })))
+        .unwrap();
+        let result: SetPriceResponse = json::from_str(&data).unwrap();
+        bob_order_ids.insert(result.result.uuid);
+        assert!(status.is_success(), "!setprice: {}", data);
+    }
+
+    let alice_passphrase = get_passphrase(&".env.seed", "ALICE_PASSPHRASE").unwrap();
+    let mm_alice = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": alice_passphrase,
+            "coins": coins,
+            "seednodes": [mm_bob.ip.to_string()],
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        None,
+    )
+    .unwrap();
+
+    let _ = block_on(enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES));
+    let alice_orders = [("RICK", "MORTY", "0.85", "1", None)];
+    let mut alice_order_ids = BTreeSet::<Uuid>::new();
+    for (base, rel, price, volume, min_volume) in alice_orders.iter() {
+        let (status, data, _headers) = block_on(mm_alice.rpc(&json! ({
+            "userpass": mm_alice.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": volume,
+            "min_volume": min_volume.unwrap_or("0.00777"),
+            "cancel_previous": false,
+        })))
+        .unwrap();
+        let result: SetPriceResponse = json::from_str(&data).unwrap();
+        alice_order_ids.insert(result.result.uuid);
+        assert!(status.is_success(), "!setprice: {}", data);
+    }
+    let response = block_on(best_orders_v2_by_number(&mm_alice, "RICK", "buy", 100, false));
+    log!("all orders response: {response:?}");
+    assert_eq!(response.result.orders.get("MORTY").unwrap().len(), 3);
+
+    let response = block_on(best_orders_v2_by_number(&mm_alice, "RICK", "buy", 100, true));
+    log!("alice orders response: {response:?}");
+    assert_eq!(response.result.orders.get("MORTY").unwrap().len(), 2);
+    for order in response.result.orders.get("MORTY").unwrap() {
+        assert!(bob_order_ids.remove(&order.uuid));
+    }
+    assert!(bob_order_ids.is_empty());
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
@@ -993,26 +1084,22 @@ fn best_orders_must_return_duplicate_for_orderbook_tickers() {
     assert_eq!(best_orders.len(), 1);
     assert_eq!(best_orders[0].coin, "tBTC-Segwit");
 
-    let rc = block_on(best_orders_v2(&mm_alice, "tBTC-Segwit", "buy", "0.0002"));
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2(&mm_alice, "tBTC-Segwit", "buy", "0.0002"));
     let best_orders = response.result.orders.get("RICK").unwrap();
     assert_eq!(best_orders.len(), 1);
 
-    let rc = block_on(best_orders_v2(&mm_alice, "tBTC-Segwit", "sell", "0.0002"));
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2(&mm_alice, "tBTC-Segwit", "sell", "0.0002"));
     let best_orders = response.result.orders.get("RICK").unwrap();
     assert_eq!(best_orders.len(), 1);
 
-    let rc = block_on(best_orders_v2(&mm_alice, "RICK", "buy", "0.0002"));
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2(&mm_alice, "RICK", "buy", "0.0002"));
     let best_orders = response.result.orders.get("tBTC").unwrap();
     assert_eq!(best_orders.len(), 1);
     let best_orders = response.result.orders.get("tBTC-Segwit").unwrap();
     assert_eq!(best_orders.len(), 1);
     assert_eq!(best_orders[0].coin, "tBTC-Segwit");
 
-    let rc = block_on(best_orders_v2(&mm_alice, "RICK", "sell", "0.0002"));
-    let response: RpcV2Response<BestOrdersV2Response> = json::from_value(rc).unwrap();
+    let response = block_on(best_orders_v2(&mm_alice, "RICK", "sell", "0.0002"));
     let best_orders = response.result.orders.get("tBTC").unwrap();
     assert_eq!(best_orders.len(), 1);
     let best_orders = response.result.orders.get("tBTC-Segwit").unwrap();
@@ -1096,7 +1183,6 @@ fn zhtlc_best_orders() {
     log!("Alice log path: {}", mm_alice.log_path.display());
 
     let best_orders = block_on(best_orders_v2(&mm_alice, "RICK", "sell", "1"));
-    let best_orders: RpcV2Response<BestOrdersV2Response> = json::from_value(best_orders).unwrap();
     let zombie_best_orders = best_orders.result.orders.get("ZOMBIE").unwrap();
 
     assert_eq!(1, zombie_best_orders.len());
@@ -1106,7 +1192,6 @@ fn zhtlc_best_orders() {
         .unwrap();
 
     let best_orders = block_on(best_orders_v2(&mm_alice, "ZOMBIE", "buy", "1"));
-    let best_orders: RpcV2Response<BestOrdersV2Response> = json::from_value(best_orders).unwrap();
     let rick_best_orders = best_orders.result.orders.get("RICK").unwrap();
 
     assert_eq!(1, rick_best_orders.len());

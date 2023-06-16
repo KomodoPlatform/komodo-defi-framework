@@ -1588,7 +1588,6 @@ pub async fn enable_eth_coin(
             "method": "enable",
             "coin": coin,
             "urls": urls,
-            "chain_id": 5,
             "swap_contract_address": swap_contract_address,
             "fallback_swap_contract": fallback_swap_contract,
             "mm2": 1,
@@ -2117,7 +2116,12 @@ pub async fn orderbook_v2(mm: &MarketMakerIt, base: &str, rel: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn best_orders_v2(mm: &MarketMakerIt, coin: &str, action: &str, volume: &str) -> Json {
+pub async fn best_orders_v2(
+    mm: &MarketMakerIt,
+    coin: &str,
+    action: &str,
+    volume: &str,
+) -> RpcV2Response<BestOrdersV2Response> {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2138,7 +2142,13 @@ pub async fn best_orders_v2(mm: &MarketMakerIt, coin: &str, action: &str, volume
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn best_orders_v2_by_number(mm: &MarketMakerIt, coin: &str, action: &str, number: usize) -> Json {
+pub async fn best_orders_v2_by_number(
+    mm: &MarketMakerIt,
+    coin: &str,
+    action: &str,
+    number: usize,
+    exclude_mine: bool,
+) -> RpcV2Response<BestOrdersV2Response> {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2150,7 +2160,8 @@ pub async fn best_orders_v2_by_number(mm: &MarketMakerIt, coin: &str, action: &s
                 "request_by": {
                     "type": "number",
                     "value": number,
-                }
+                },
+                "exclude_mine": exclude_mine
             }
         }))
         .await

@@ -1,10 +1,10 @@
 pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
 pub use mm2_number::MmNumber;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                      enable_native_bch, eth_sepolia_conf, jst_sepolia_conf, mm_dump, MarketMakerIt,
-                                      MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
-                                      TAKER_SUCCESS_EVENTS};
-use mm2_test_helpers::for_tests::{ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT, ETH_SEPOLIA_TOKEN_CONTRACT};
+                                      enable_native, enable_native_bch, eth_jst_testnet_conf, eth_sepolia_conf,
+                                      eth_testnet_conf, jst_sepolia_conf, mm_dump, MarketMakerIt, ETH_DEV_NODES,
+                                      ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
+                                      MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 pub use secp256k1::{PublicKey, SecretKey};
 pub use std::env;
 pub use std::thread;
@@ -31,7 +31,6 @@ use http::StatusCode;
 use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{enable_native, eth_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::structs::{MyBalanceResponse, TransactionDetails};
 use primitives::hash::{H160, H256};
 use script::Builder;
@@ -165,19 +164,19 @@ pub fn _fill_eth(to_addr: &str) {
 }
 
 // Generates an ethereum coin in the sepolia network with the given seed
-pub fn generate_eth_coin_with_seed(seed: &str) -> EthCoin {
+pub fn _generate_eth_coin_with_seed(seed: &str) -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "ETH",
-        "urls": ETH_SEPOLIA_NODE,
-        "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
     });
     let keypair = key_pair_from_seed(seed).unwrap();
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "ETH",
-        &eth_sepolia_conf(),
+        &eth_testnet_conf(),
         &req,
         CoinProtocol::ETH,
         priv_key_policy,
@@ -189,8 +188,8 @@ pub fn generate_jst_with_seed(seed: &str) -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "JST",
-        "urls": ETH_SEPOLIA_NODE,
-        "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
     });
 
     let keypair = key_pair_from_seed(seed).unwrap();
@@ -198,11 +197,11 @@ pub fn generate_jst_with_seed(seed: &str) -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "JST",
-        &jst_sepolia_conf(),
+        &eth_jst_testnet_conf(),
         &req,
         CoinProtocol::ERC20 {
             platform: "ETH".into(),
-            contract_address: String::from(ETH_SEPOLIA_TOKEN_CONTRACT),
+            contract_address: String::from(ETH_DEV_TOKEN_CONTRACT),
         },
         priv_key_policy,
     ))

@@ -1,9 +1,13 @@
 use super::*;
 use crate::IguanaPrivKey;
-use common::{block_on, now_sec_u32};
+use common::{block_on, now_sec_u32, wait_until_sec};
+use crypto::privkey::key_pair_from_seed;
+use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT,
-                                  ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT};
+use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODE, ETH_DEV_NODES,
+                                   ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE,
+                                   ETH_MAINNET_SWAP_CONTRACT},
+                       get_passphrase};
 use mocktopus::mocking::*;
 
 /// The gas price for the tests
@@ -17,9 +21,60 @@ const GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE: u64 = 53_500_000_000;
 
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
+lazy_static! {
+    static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
+    static ref JST_DISTRIBUTOR: EthCoin = jst_distributor();
+    static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
+}
+
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);
     assert_eq!(expected, actual);
+}
+
+pub fn eth_distributor() -> EthCoin {
+    let req = json!({
+        "method": "enable",
+        "coin": "ETH",
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+    });
+    let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+    let keypair = key_pair_from_seed(&seed).unwrap();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
+    block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "ETH",
+        &eth_testnet_conf(),
+        &req,
+        CoinProtocol::ETH,
+        priv_key_policy,
+    ))
+    .unwrap()
+}
+
+pub fn jst_distributor() -> EthCoin {
+    let req = json!({
+        "method": "enable",
+        "coin": "ETH",
+        "urls": ETH_DEV_NODES,
+        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+    });
+    let seed = get_passphrase!(".env.client", "BOB_PASSPHRASE").unwrap();
+    let keypair = key_pair_from_seed(&seed).unwrap();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
+    block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "ETH",
+        &eth_testnet_conf(),
+        &req,
+        CoinProtocol::ERC20 {
+            platform: "ETH".to_string(),
+            contract_address: ETH_DEV_TOKEN_CONTRACT.to_string(),
+        },
+        priv_key_policy,
+    ))
+    .unwrap()
 }
 
 fn eth_coin_for_test(
@@ -31,7 +86,25 @@ fn eth_coin_for_test(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
+    eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair)
+}
 
+fn random_eth_coin_for_test(
+    coin_type: EthCoinType,
+    urls: &[&str],
+    fallback_swap_contract: Option<Address>,
+) -> (MmArc, EthCoin) {
+    let key_pair = Random.generate().unwrap();
+    fill_eth(key_pair.address(), 0.001);
+    eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair)
+}
+
+fn eth_coin_from_keypair(
+    coin_type: EthCoinType,
+    urls: &[&str],
+    fallback_swap_contract: Option<Address>,
+    key_pair: KeyPair,
+) -> (MmArc, EthCoin) {
     let mut nodes = vec![];
     for url in urls.iter() {
         nodes.push(HttpTransportNode {
@@ -83,6 +156,24 @@ fn eth_coin_for_test(
         abortable_system: AbortableQueue::default(),
     }));
     (ctx, eth_coin)
+}
+
+pub fn fill_eth(to_addr: Address, amount: f64) {
+    let wei_per_eth: u64 = 1_000_000_000_000_000_000;
+    let amount_in_wei = (amount * wei_per_eth as f64) as u64;
+    ETH_DISTRIBUTOR
+        .send_to_address(to_addr, amount_in_wei.into())
+        .wait()
+        .unwrap();
+}
+
+pub fn fill_jst(to_addr: Address, amount: f64) {
+    let wei_per_jst: u64 = 1_000_000_000_000_000_000;
+    let amount_in_wei = (amount * wei_per_jst as f64) as u64;
+    JST_DISTRIBUTOR
+        .send_to_address(to_addr, amount_in_wei.into())
+        .wait()
+        .unwrap();
 }
 
 #[test]
@@ -214,10 +305,9 @@ fn test_wei_from_big_decimal() {
 
 #[test]
 fn send_and_refund_erc20_payment() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("d27bfdbb5f89d30f8b7a1d0dcd4e181e54b8a2347836cb59c6570834f820f9a4").unwrap(),
-    )
-    .unwrap();
+    let key_pair = Random.generate().unwrap();
+    fill_eth(key_pair.address(), 0.001);
+    fill_jst(key_pair.address(), 0.0001);
 
     let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
     let web3 = Web3::new(transport);
@@ -260,16 +350,15 @@ fn send_and_refund_erc20_payment() {
         time_lock,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
         secret_hash,
-        amount: "0.001".parse().unwrap(),
+        amount: "0.0001".parse().unwrap(),
         swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
         payment_instructions: &None,
         watcher_reward: None,
-        wait_for_confirmation_until: 0,
+        wait_for_confirmation_until: wait_until_sec(15),
     };
     let payment = coin.send_maker_payment(maker_payment_args).wait().unwrap();
     log!("{:?}", payment);
-    block_on(Timer::sleep(5.));
 
     let swap_id = coin.etomic_swap_id(time_lock, secret_hash);
     let status = block_on(
@@ -296,7 +385,6 @@ fn send_and_refund_erc20_payment() {
         .wait()
         .unwrap();
     log!("{:?}", refund);
-    block_on(Timer::sleep(5.));
 
     let status = block_on(
         coin.payment_status(
@@ -311,10 +399,8 @@ fn send_and_refund_erc20_payment() {
 
 #[test]
 fn send_and_refund_eth_payment() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("0b6d7b4b1b9454f3f0bc76b2988cd672439213a1de23d20a83467131366ba41c").unwrap(),
-    )
-    .unwrap();
+    let key_pair = Random.generate().unwrap();
+    fill_eth(key_pair.address(), 0.001);
     let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -353,7 +439,7 @@ fn send_and_refund_eth_payment() {
         time_lock,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
         secret_hash,
-        amount: "0.001".parse().unwrap(),
+        amount: "0.0001".parse().unwrap(),
         swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
         payment_instructions: &None,
@@ -363,7 +449,6 @@ fn send_and_refund_eth_payment() {
     let payment = coin.send_maker_payment(send_maker_payment_args).wait().unwrap();
 
     log!("{:?}", payment);
-    block_on(Timer::sleep(5.));
 
     let swap_id = coin.etomic_swap_id(time_lock, secret_hash);
     let status = block_on(
@@ -391,7 +476,6 @@ fn send_and_refund_eth_payment() {
         .unwrap();
 
     log!("{:?}", refund);
-    block_on(Timer::sleep(5.));
 
     let status = block_on(
         coin.payment_status(
@@ -820,7 +904,7 @@ fn test_nonce_lock() {
 
     // send several transactions concurrently to check that they are not using same nonce
     // using real ETH dev node
-    let (ctx, coin) = eth_coin_for_test(EthCoinType::Eth, ETH_DEV_NODES, None);
+    let (ctx, coin) = random_eth_coin_for_test(EthCoinType::Eth, ETH_DEV_NODES, None);
     let mut futures = vec![];
     for _ in 0..5 {
         futures.push(
