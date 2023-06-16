@@ -94,14 +94,7 @@ fn start_swaps_and_get_balances(
         mycoin1_conf(1000)
     ]);
 
-    let alice_passphrase = if (a_coin == "MYCOIN" || a_coin == "MYCOIN1") && (b_coin == "MYCOIN" || b_coin == "MYCOIN1")
-    {
-        format!("0x{}", hex::encode(random_secp256k1_secret()))
-    } else {
-        String::from("spice describe gravity federal thank unfair blast come canal monkey style afraid")
-    };
-
-    let alice_conf = Mm2TestConf::seednode(&alice_passphrase, &coins);
+    let alice_conf = Mm2TestConf::seednode(&format!("0x{}", alice_privkey), &coins);
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
         alice_conf.conf.clone(),
         alice_conf.rpc_password.clone(),
@@ -112,13 +105,7 @@ fn start_swaps_and_get_balances(
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let bob_passphrase = if (a_coin == "MYCOIN" || a_coin == "MYCOIN1") && b_coin == "MYCOIN" || b_coin == "MYCOIN1" {
-        format!("0x{}", hex::encode(random_secp256k1_secret()))
-    } else {
-        String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney")
-    };
-
-    let bob_conf = Mm2TestConf::light_node(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
+    let bob_conf = Mm2TestConf::light_node(&format!("0x{}", bob_privkey), &coins, &[&mm_alice.ip.to_string()]);
     let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
         bob_conf.conf.clone(),
         bob_conf.rpc_password,
