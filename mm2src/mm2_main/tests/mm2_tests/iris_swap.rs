@@ -4,8 +4,7 @@ use common::{block_on, log};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_eth_coin,
                                   enable_tendermint, iris_nimda_testnet_conf, iris_testnet_conf, rick_conf, tbnb_conf,
-                                  usdc_ibc_iris_testnet_conf, MarketMakerIt, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
-                                  RICK_ELECTRUM_ADDRS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+                                  usdc_ibc_iris_testnet_conf, MarketMakerIt, RICK_ELECTRUM_ADDRS};
 use mm2_test_helpers::structs::OrderbookResponse;
 use serde_json::{json, Value as Json};
 use std::convert::TryFrom;
@@ -219,8 +218,6 @@ pub async fn trade_base_rel_iris(
         check_my_swap_status(
             &mm_alice,
             uuid,
-            &TAKER_SUCCESS_EVENTS,
-            &TAKER_ERROR_EVENTS,
             BigDecimal::try_from(volume).unwrap(),
             BigDecimal::try_from(volume).unwrap(),
         )
@@ -231,8 +228,6 @@ pub async fn trade_base_rel_iris(
         check_my_swap_status(
             &mm_bob,
             uuid,
-            &MAKER_SUCCESS_EVENTS,
-            &MAKER_ERROR_EVENTS,
             BigDecimal::try_from(volume).unwrap(),
             BigDecimal::try_from(volume).unwrap(),
         )
@@ -244,10 +239,10 @@ pub async fn trade_base_rel_iris(
 
     for uuid in uuids.iter() {
         log!("Checking alice status..");
-        check_stats_swap_status(&mm_alice, uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
+        check_stats_swap_status(&mm_alice, uuid).await;
 
         log!("Checking bob status..");
-        check_stats_swap_status(&mm_bob, uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
+        check_stats_swap_status(&mm_bob, uuid).await;
     }
 
     log!("Checking alice recent swaps..");
