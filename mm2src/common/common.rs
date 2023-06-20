@@ -134,6 +134,7 @@ pub mod wio;
 use backtrace::SymbolName;
 use chrono::format::ParseError;
 use chrono::{DateTime, Utc};
+use derive_more::Display;
 pub use futures::compat::Future01CompatExt;
 use futures01::{future, Future};
 use http::header::CONTENT_TYPE;
@@ -152,7 +153,7 @@ use std::future::Future as Future03;
 use std::io::{BufReader, Read, Write};
 use std::iter::Peekable;
 use std::mem::{forget, zeroed};
-use std::num::NonZeroUsize;
+use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
@@ -1016,7 +1017,26 @@ pub fn sha256_digest(path: &PathBuf) -> Result<String, std::io::Error> {
     Ok(digest)
 }
 
-pub fn parse_rfc3339_to_timestamp(date_str: &str) -> Result<u64, ParseError> {
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum ParseRfc3339Err {
+    #[display(
+        fmt = "Error parsing datetime to timestamp. Expected format 'YYYY-MM-DDTHH:MM:SS.sssZ', got: {}",
+        _0
+    )]
+    ParseTimestampError(String),
+    #[display(fmt = "Error while converting types: {}", _0)]
+    TryFromIntError(String),
+}
+
+impl From<ParseError> for ParseRfc3339Err {
+    fn from(e: ParseError) -> Self { ParseRfc3339Err::ParseTimestampError(e.to_string()) }
+}
+
+impl From<TryFromIntError> for ParseRfc3339Err {
+    fn from(e: TryFromIntError) -> Self { ParseRfc3339Err::TryFromIntError(e.to_string()) }
+}
+
+pub fn parse_rfc3339_to_timestamp(date_str: &str) -> Result<u64, ParseRfc3339Err> {
     let date: DateTime<Utc> = date_str.parse()?;
-    Ok(date.timestamp() as u64)
+    Ok(date.timestamp().try_into()?)
 }

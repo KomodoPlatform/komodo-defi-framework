@@ -1,7 +1,7 @@
 use crate::eth::GetEthAddressError;
 use crate::nft::storage::{CreateNftStorageError, NftStorageError};
 use crate::{GetMyAddressError, WithdrawError};
-use common::HttpStatusCode;
+use common::{HttpStatusCode, ParseRfc3339Err};
 use derive_more::Display;
 use enum_from::EnumFromStringify;
 use http::StatusCode;
@@ -33,11 +33,7 @@ pub enum GetNftInfoError {
     },
     #[display(fmt = "DB error {}", _0)]
     DbError(String),
-    #[display(
-        fmt = "Error parsing datetime to timestamp. Expected format 'YYYY-MM-DDTHH:MM:SS.sssZ', got: {}",
-        _0
-    )]
-    ParseTimestampError(String),
+    ParseRfc3339Err(ParseRfc3339Err),
     #[display(fmt = "The contract type is required and should not be null.")]
     ContractTypeIsNull,
 }
@@ -100,13 +96,15 @@ impl From<GetInfoFromUriError> for GetNftInfoError {
     }
 }
 
+impl From<ParseRfc3339Err> for GetNftInfoError {
+    fn from(e: ParseRfc3339Err) -> Self { GetNftInfoError::ParseRfc3339Err(e) }
+}
+
 impl HttpStatusCode for GetNftInfoError {
     fn status_code(&self) -> StatusCode {
         match self {
             GetNftInfoError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-            GetNftInfoError::InvalidResponse(_) | GetNftInfoError::ParseTimestampError(_) => {
-                StatusCode::FAILED_DEPENDENCY
-            },
+            GetNftInfoError::InvalidResponse(_) | GetNftInfoError::ParseRfc3339Err(_) => StatusCode::FAILED_DEPENDENCY,
             GetNftInfoError::ContractTypeIsNull => StatusCode::NOT_FOUND,
             GetNftInfoError::Transport(_)
             | GetNftInfoError::Internal(_)

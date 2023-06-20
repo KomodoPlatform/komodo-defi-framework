@@ -290,8 +290,7 @@ async fn get_moralis_nft_transfers(
                     None => continue,
                 };
                 let status = get_tx_status(&wallet_address, &transfer_wrapper.to_address);
-                let block_timestamp = parse_rfc3339_to_timestamp(&transfer_wrapper.block_timestamp)
-                    .map_to_mm(|e| GetNftInfoError::ParseTimestampError(e.to_string()))?;
+                let block_timestamp = parse_rfc3339_to_timestamp(&transfer_wrapper.block_timestamp)?;
                 let transfer_history = NftTransferHistory {
                     chain: *chain,
                     block_number: *transfer_wrapper.block_number,
