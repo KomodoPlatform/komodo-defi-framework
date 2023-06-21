@@ -3,13 +3,13 @@ use super::check_balance::{check_base_coin_balance_for_swap, check_my_coin_balan
 use super::pubkey_banning::ban_pubkey_on_failed_swap;
 use super::swap_lock::{SwapLock, SwapLockOps};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
-use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_message_every,
+use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_msg_every,
             check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
             get_locked_amount, recv_swap_msg, swap_topic, taker_payment_spend_deadline, tx_helper_topic,
             wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
             NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
             SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
-            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
@@ -584,21 +584,21 @@ impl MakerSwap {
         let negotiation_data = self.get_my_negotiation_data();
 
         let maker_negotiation_data = SwapMsg::Negotiation(negotiation_data);
-        const NEGOTIATION_TIMEOUT: u64 = 90;
+        const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
 
         debug!("Sending maker negotiation data {:?}", maker_negotiation_data);
-        let send_abort_handle = broadcast_swap_message_every(
+        let send_abort_handle = broadcast_swap_msg_every(
             self.ctx.clone(),
             swap_topic(&self.uuid),
             maker_negotiation_data,
-            NEGOTIATION_TIMEOUT as f64 / 6.,
+            NEGOTIATION_TIMEOUT_SEC as f64 / 6.,
             self.p2p_privkey,
         );
         let recv_fut = recv_swap_msg(
             self.ctx.clone(),
             |store| store.negotiation_reply.take(),
             &self.uuid,
-            NEGOTIATION_TIMEOUT,
+            NEGOTIATION_TIMEOUT_SEC,
         );
         let taker_data = match recv_fut.await {
             Ok(d) => d,
@@ -688,13 +688,13 @@ impl MakerSwap {
     }
 
     async fn wait_taker_fee(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        const TAKER_FEE_RECV_TIMEOUT: u64 = 600;
+        const TAKER_FEE_RECV_TIMEOUT_SEC: u64 = 600;
         let negotiated = SwapMsg::Negotiated(true);
-        let send_abort_handle = broadcast_swap_message_every(
+        let send_abort_handle = broadcast_swap_msg_every(
             self.ctx.clone(),
             swap_topic(&self.uuid),
             negotiated,
-            TAKER_FEE_RECV_TIMEOUT as f64 / 6.,
+            TAKER_FEE_RECV_TIMEOUT_SEC as f64 / 6.,
             self.p2p_privkey,
         );
 
@@ -702,7 +702,7 @@ impl MakerSwap {
             self.ctx.clone(),
             |store| store.taker_fee.take(),
             &self.uuid,
-            TAKER_FEE_RECV_TIMEOUT,
+            TAKER_FEE_RECV_TIMEOUT_SEC,
         );
         let payload = match recv_fut.await {
             Ok(d) => d,
@@ -888,6 +888,7 @@ impl MakerSwap {
     }
 
     async fn wait_for_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
+        const PAYMENT_MSG_INTERVAL_SEC: f64 = 600.;
         let payment_data_msg = match self.get_my_payment_data().await {
             Ok(data) => data,
             Err(e) => {
@@ -900,8 +901,13 @@ impl MakerSwap {
             },
         };
         let msg = SwapMsg::MakerPayment(payment_data_msg);
-        let abort_send_handle =
-            broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
+        let abort_send_handle = broadcast_swap_msg_every(
+            self.ctx.clone(),
+            swap_topic(&self.uuid),
+            msg,
+            PAYMENT_MSG_INTERVAL_SEC,
+            self.p2p_privkey,
+        );
 
         let maker_payment_wait_confirm =
             wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
@@ -910,7 +916,7 @@ impl MakerSwap {
             confirmations: self.r().data.maker_payment_confirmations,
             requires_nota: self.r().data.maker_payment_requires_nota.unwrap_or(false),
             wait_until: maker_payment_wait_confirm,
-            check_every: WAIT_CONFIRM_INTERVAL,
+            check_every: WAIT_CONFIRM_INTERVAL_SEC,
         };
 
         let f = self.maker_coin.wait_for_confirmations(confirm_maker_payment_input);
@@ -984,7 +990,7 @@ impl MakerSwap {
             confirmations,
             requires_nota: self.r().data.taker_payment_requires_nota.unwrap_or(false),
             wait_until: wait_taker_payment,
-            check_every: WAIT_CONFIRM_INTERVAL,
+            check_every: WAIT_CONFIRM_INTERVAL_SEC,
         };
         let wait_f = self
             .taker_coin
@@ -1140,7 +1146,7 @@ impl MakerSwap {
             confirmations,
             requires_nota,
             wait_until: self.wait_refund_until(),
-            check_every: WAIT_CONFIRM_INTERVAL,
+            check_every: WAIT_CONFIRM_INTERVAL_SEC,
         };
         let wait_fut = self.taker_coin.wait_for_confirmations(confirm_taker_payment_input);
         if let Err(err) = wait_fut.compat().await {

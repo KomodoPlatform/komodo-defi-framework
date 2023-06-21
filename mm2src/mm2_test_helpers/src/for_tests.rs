@@ -92,6 +92,21 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Finished",
 ];
 
+pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 12] = [
+    "Started",
+    "Negotiated",
+    "TakerFeeSent",
+    "TakerPaymentInstructionsReceived",
+    "MakerPaymentReceived",
+    "MakerPaymentWaitConfirmStarted",
+    "MakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSent",
+    "WatcherMessageSent",
+    "TakerPaymentSpent",
+    "MakerPaymentSpent",
+    "Finished",
+];
+
 pub const TAKER_ERROR_EVENTS: [&str; 15] = [
     "StartFailed",
     "NegotiateFailed",
@@ -175,21 +190,6 @@ impl Mm2TestConf {
         }
     }
 
-    pub fn seednode_using_watchers(passphrase: &str, coins: &Json) -> Self {
-        Mm2TestConf {
-            conf: json!({
-                "gui": "nogui",
-                "netid": 9998,
-                "passphrase": passphrase,
-                "coins": coins,
-                "rpc_password": DEFAULT_RPC_PASSWORD,
-                "i_am_seed": true,
-                "use_watchers": true,
-            }),
-            rpc_password: DEFAULT_RPC_PASSWORD.into(),
-        }
-    }
-
     pub fn seednode_with_hd_account(passphrase: &str, hd_account_id: u32, coins: &Json) -> Self {
         Mm2TestConf {
             conf: json!({
@@ -214,21 +214,6 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes
-            }),
-            rpc_password: DEFAULT_RPC_PASSWORD.into(),
-        }
-    }
-
-    pub fn light_node_using_watchers(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
-        Mm2TestConf {
-            conf: json!({
-                "gui": "nogui",
-                "netid": 9998,
-                "passphrase": passphrase,
-                "coins": coins,
-                "rpc_password": DEFAULT_RPC_PASSWORD,
-                "seednodes": seednodes,
-                "use_watchers": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -1999,17 +1984,22 @@ pub async fn wait_for_swap_negotiation_failure(mm: &MarketMakerIt, swap: &str, u
 }
 
 /// Helper function requesting my swap status and checking it's events
-pub async fn check_my_swap_status(
-    mm: &MarketMakerIt,
-    uuid: &str,
-    expected_success_events: &[&str],
-    expected_error_events: &[&str],
-    maker_amount: BigDecimal,
-    taker_amount: BigDecimal,
-) {
+pub async fn check_my_swap_status(mm: &MarketMakerIt, uuid: &str, maker_amount: BigDecimal, taker_amount: BigDecimal) {
     let status_response = my_swap_status(mm, uuid).await;
+    let swap_type = status_response["result"]["type"].as_str().unwrap();
+
     let success_events: Vec<String> = json::from_value(status_response["result"]["success_events"].clone()).unwrap();
-    assert_eq!(expected_success_events, success_events.as_slice());
+    if swap_type == "Taker" {
+        assert!(success_events == TAKER_SUCCESS_EVENTS || success_events == TAKER_USING_WATCHERS_SUCCESS_EVENTS);
+    } else {
+        assert_eq!(success_events, MAKER_SUCCESS_EVENTS)
+    }
+
+    let expected_error_events = if swap_type == "Taker" {
+        TAKER_ERROR_EVENTS.to_vec()
+    } else {
+        MAKER_ERROR_EVENTS.to_vec()
+    };
     let error_events: Vec<String> = json::from_value(status_response["result"]["error_events"].clone()).unwrap();
     assert_eq!(expected_error_events, error_events.as_slice());
 
@@ -2020,7 +2010,7 @@ pub async fn check_my_swap_status(
     assert_eq!(taker_amount, actual_taker_amount);
     let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
     let actual_events: Vec<&str> = actual_events.collect();
-    assert_eq!(expected_success_events, actual_events.as_slice());
+    assert_eq!(success_events, actual_events.as_slice());
 }
 
 pub async fn check_my_swap_status_amounts(
@@ -2038,12 +2028,7 @@ pub async fn check_my_swap_status_amounts(
     assert_eq!(taker_amount, actual_taker_amount);
 }
 
-pub async fn check_stats_swap_status(
-    mm: &MarketMakerIt,
-    uuid: &str,
-    maker_expected_events: &[&str],
-    taker_expected_events: &[&str],
-) {
+pub async fn check_stats_swap_status(mm: &MarketMakerIt, uuid: &str) {
     let response = mm
         .rpc(&json!({
             "method": "stats_swap_status",
@@ -2065,8 +2050,12 @@ pub async fn check_stats_swap_status(
         .iter()
         .map(|item| item["event"]["type"].as_str().unwrap());
     let taker_actual_events: Vec<&str> = taker_actual_events.collect();
-    assert_eq!(maker_expected_events, maker_actual_events.as_slice());
-    assert_eq!(taker_expected_events, taker_actual_events.as_slice());
+
+    assert_eq!(maker_actual_events.as_slice(), MAKER_SUCCESS_EVENTS);
+    assert!(
+        taker_actual_events.as_slice() == TAKER_SUCCESS_EVENTS
+            || taker_actual_events.as_slice() == TAKER_USING_WATCHERS_SUCCESS_EVENTS
+    );
 }
 
 pub async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {
@@ -2816,8 +2805,6 @@ pub async fn wait_for_swaps_finish_and_check_status(
         check_my_swap_status(
             taker,
             uuid.as_ref(),
-            &TAKER_SUCCESS_EVENTS,
-            &TAKER_ERROR_EVENTS,
             BigDecimal::try_from(volume).unwrap(),
             BigDecimal::try_from(volume * maker_price).unwrap(),
         )
@@ -2827,8 +2814,6 @@ pub async fn wait_for_swaps_finish_and_check_status(
         check_my_swap_status(
             maker,
             uuid.as_ref(),
-            &MAKER_SUCCESS_EVENTS,
-            &MAKER_ERROR_EVENTS,
             BigDecimal::try_from(volume).unwrap(),
             BigDecimal::try_from(volume * maker_price).unwrap(),
         )

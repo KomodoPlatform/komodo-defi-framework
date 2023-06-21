@@ -94,7 +94,7 @@ fn start_swaps_and_get_balances(
         mycoin1_conf(1000)
     ]);
 
-    let alice_conf = Mm2TestConf::seednode_using_watchers(&format!("0x{}", alice_privkey), &coins);
+    let alice_conf = Mm2TestConf::seednode(&format!("0x{}", alice_privkey), &coins);
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
         alice_conf.conf.clone(),
         alice_conf.rpc_password.clone(),
@@ -105,8 +105,7 @@ fn start_swaps_and_get_balances(
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let bob_conf =
-        Mm2TestConf::light_node_using_watchers(&format!("0x{}", bob_privkey), &coins, &[&mm_alice.ip.to_string()]);
+    let bob_conf = Mm2TestConf::light_node(&format!("0x{}", bob_privkey), &coins, &[&mm_alice.ip.to_string()]);
     let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
         bob_conf.conf.clone(),
         bob_conf.rpc_password,
@@ -656,13 +655,13 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
 
     let alice_passphrase =
         String::from("spice describe gravity federal blast come thank unfair canal monkey style afraid");
-    let alice_conf = Mm2TestConf::seednode_using_watchers(&alice_passphrase, &coins);
+    let alice_conf = Mm2TestConf::seednode(&alice_passphrase, &coins);
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
     let bob_passphrase = String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney");
-    let bob_conf = Mm2TestConf::light_node_using_watchers(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
+    let bob_conf = Mm2TestConf::light_node(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());

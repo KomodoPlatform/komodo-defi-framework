@@ -4108,6 +4108,7 @@ dependencies = [
  "db_common",
  "derive_more",
  "futures 0.3.15",
+ "futures-rustls 0.21.1",
  "gstuff",
  "hex 0.4.3",
  "lazy_static",
@@ -4288,10 +4289,13 @@ dependencies = [
  "primitives",
  "rand 0.6.5",
  "rand 0.7.3",
+ "rcgen",
  "regex",
  "rmp-serde",
  "rpc",
  "rpc_task",
+ "rustls 0.20.4",
+ "rustls-pemfile 1.0.2",
  "script",
  "secp256k1 0.20.3",
  "ser_error",
@@ -4370,6 +4374,7 @@ dependencies = [
  "derive_more",
  "ethkey",
  "futures 0.3.15",
+ "futures-util",
  "gstuff",
  "http 0.2.7",
  "hyper",
@@ -4379,8 +4384,11 @@ dependencies = [
  "mm2_err_handle",
  "prost",
  "rand 0.7.3",
+ "rustls 0.20.4",
  "serde",
  "serde_json",
+ "tokio",
+ "tokio-rustls",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -4943,6 +4951,15 @@ name = "peg-runtime"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c719dcf55f09a3a7e764c6649ab594c18a177e3599c467983cdf644bfc0a4088"
+
+[[package]]
+name = "pem"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8835c273a76a90455d7344889b0964598e3316e2a79ede8e36f16bdcf2228b8"
+dependencies = [
+ "base64 0.13.0",
+]
 
 [[package]]
 name = "percent-encoding"
@@ -5627,6 +5644,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rcgen"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffbe84efe2f38dea12e9bfc1f65377fdf03e53a18cb3b995faedf7934c7e785b"
+dependencies = [
+ "pem",
+ "ring",
+ "time 0.3.11",
+ "yasna",
+]
+
+[[package]]
 name = "rdrand"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5996,11 +6025,11 @@ dependencies = [
 
 [[package]]
 name = "rustls-pemfile"
-version = "1.0.0"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7522c9de787ff061458fe9a829dc790a3f5b22dc571694fc5883f448b94d9a9"
+checksum = "d194b56d58803a43635bdc398cd17e383d6f71f9182b9a192c127ca42494a59b"
 dependencies = [
- "base64 0.13.0",
+ "base64 0.21.2",
 ]
 
 [[package]]
@@ -7952,7 +7981,7 @@ dependencies = [
  "pin-project 1.0.10",
  "prost",
  "prost-derive",
- "rustls-pemfile 1.0.0",
+ "rustls-pemfile 1.0.2",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
@@ -8863,6 +8892,15 @@ dependencies = [
  "parking_lot 0.12.0",
  "rand 0.8.4",
  "static_assertions",
+]
+
+[[package]]
+name = "yasna"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
+dependencies = [
+ "time 0.3.11",
 ]
 
 [[package]]

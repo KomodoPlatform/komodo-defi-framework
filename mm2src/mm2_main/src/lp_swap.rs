@@ -119,7 +119,7 @@ pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_r
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
 pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
-                       MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT,
+                       MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT_SEC,
                        WATCHER_PREFIX};
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
@@ -202,17 +202,35 @@ pub fn p2p_private_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
 
 /// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
 /// to stop it
-pub fn broadcast_swap_message_every<T: 'static + Serialize + Clone + Send>(
+pub fn broadcast_swap_msg_every<T: 'static + Serialize + Clone + Send>(
     ctx: MmArc,
     topic: String,
     msg: T,
-    interval: f64,
+    interval_sec: f64,
     p2p_privkey: Option<KeyPair>,
 ) -> AbortOnDropHandle {
     let fut = async move {
         loop {
             broadcast_swap_message(&ctx, topic.clone(), msg.clone(), &p2p_privkey);
-            Timer::sleep(interval).await;
+            Timer::sleep(interval_sec).await;
+        }
+    };
+    spawn_abortable(fut)
+}
+
+/// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
+/// to stop it. This function waits for interval seconds first before starting the broadcast.
+pub fn broadcast_swap_msg_every_delayed<T: 'static + Serialize + Clone + Send>(
+    ctx: MmArc,
+    topic: String,
+    msg: T,
+    interval_sec: f64,
+    p2p_privkey: Option<KeyPair>,
+) -> AbortOnDropHandle {
+    let fut = async move {
+        loop {
+            Timer::sleep(interval_sec).await;
+            broadcast_swap_message(&ctx, topic.clone(), msg.clone(), &p2p_privkey);
         }
     };
     spawn_abortable(fut)
@@ -370,7 +388,7 @@ pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) ->
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
 const _SWAP_DEFAULT_MAX_CONFIRMS: u32 = 6;
 /// MM2 checks that swap payment is confirmed every WAIT_CONFIRM_INTERVAL seconds
-const WAIT_CONFIRM_INTERVAL: u64 = 15;
+const WAIT_CONFIRM_INTERVAL_SEC: u64 = 15;
 
 #[derive(Debug, PartialEq, Serialize)]
 pub enum RecoveredSwapAction {
@@ -437,7 +455,9 @@ impl SwapsContext {
                 running_swaps: Mutex::new(vec![]),
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 swap_msgs: Mutex::new(HashMap::new()),
-                taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(TAKER_SWAP_ENTRY_TIMEOUT))),
+                taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(
+                    TAKER_SWAP_ENTRY_TIMEOUT_SEC,
+                ))),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
             })

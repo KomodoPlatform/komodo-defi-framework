@@ -1,5 +1,5 @@
 use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
-            H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL};
+            H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::mm2::lp_network::{P2PRequestError, P2PRequestResult};
 use crate::mm2::MmError;
 use async_trait::async_trait;
@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
-pub const TAKER_SWAP_ENTRY_TIMEOUT: u64 = 21600;
+pub const TAKER_SWAP_ENTRY_TIMEOUT_SEC: u64 = 21600;
 
 pub const MAKER_PAYMENT_SPEND_SENT_LOG: &str = "Maker payment spend sent";
 pub const MAKER_PAYMENT_SPEND_FOUND_LOG: &str = "Maker payment spend found by watcher";
@@ -224,7 +224,7 @@ impl State for ValidateTakerPayment {
             confirmations,
             requires_nota: watcher_ctx.data.taker_payment_requires_nota.unwrap_or(false),
             wait_until: taker_payment_spend_deadline,
-            check_every: WAIT_CONFIRM_INTERVAL,
+            check_every: WAIT_CONFIRM_INTERVAL_SEC,
         };
 
         let wait_fut = watcher_ctx

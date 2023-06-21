@@ -21,7 +21,7 @@
 //
 
 use crate::mm2::rpc::rate_limiter::RateLimitError;
-use common::log::error;
+use common::log::{error, info};
 use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode, APPLICATION_JSON};
 use derive_more::Display;
 use futures::future::{join_all, FutureExt};
@@ -303,10 +303,47 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
 
 #[cfg(not(target_arch = "wasm32"))]
 pub extern "C" fn spawn_rpc(ctx_h: u32) {
+    use common::now_sec;
     use common::wio::CORE;
-    use hyper::server::conn::AddrStream;
+    use hyper::server::conn::{AddrIncoming, AddrStream};
     use hyper::service::{make_service_fn, service_fn};
+    use mm2_net::native_tls::{TlsAcceptor, TlsStream};
+    use rcgen::{generate_simple_self_signed, RcgenError};
+    use rustls::{Certificate, PrivateKey};
+    use rustls_pemfile as pemfile;
     use std::convert::Infallible;
+    use std::env;
+    use std::fs::File;
+    use std::io::{self, BufReader};
+
+    // Reads a certificate and a key from the specified files.
+    fn read_certificate_and_key(
+        cert_file: &File,
+        cert_key_path: &str,
+    ) -> Result<(Vec<Certificate>, PrivateKey), io::Error> {
+        let cert_file = &mut BufReader::new(cert_file);
+        let cert_chain = pemfile::certs(cert_file)?.into_iter().map(Certificate).collect();
+        let key_file = &mut BufReader::new(File::open(cert_key_path)?);
+        let key = pemfile::read_all(key_file)?
+            .into_iter()
+            .find_map(|item| match item {
+                pemfile::Item::RSAKey(key) | pemfile::Item::PKCS8Key(key) | pemfile::Item::ECKey(key) => Some(key),
+                _ => None,
+            })
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No private key found"))?;
+        Ok((cert_chain, PrivateKey(key)))
+    }
+
+    // Generates a self-signed certificate
+    fn generate_self_signed_cert(subject_alt_names: Vec<String>) -> Result<(Vec<Certificate>, PrivateKey), RcgenError> {
+        // Generate the certificate
+        let cert = generate_simple_self_signed(subject_alt_names)?;
+        let cert_der = cert.serialize_der()?;
+        let privkey = PrivateKey(cert.serialize_private_key_der());
+        let cert = Certificate(cert_der);
+        let cert_chain = vec![cert];
+        Ok((cert_chain, privkey))
+    }
 
     // NB: We need to manually handle the incoming connections in order to get the remote IP address,
     // cf. https://github.com/hyperium/hyper/issues/1410#issuecomment-419510220.
@@ -314,62 +351,126 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     // then we might want to refactor into starting it ideomatically in order to benefit from a more graceful shutdown,
     // cf. https://github.com/hyperium/hyper/pull/1640.
 
+    let make_svc_fut = move |remote_addr: SocketAddr| async move {
+        Ok::<_, Infallible>(service_fn(move |req: Request<Body>| async move {
+            let res = rpc_service(req, ctx_h, remote_addr).await;
+            Ok::<_, Infallible>(res)
+        }))
+    };
+
+    //The `make_svc` macro creates a `make_service_fn` for a specified socket type.
+    // `$socket_type`: The socket type with a `remote_addr` method that returns a `SocketAddr`.
+    macro_rules! make_svc {
+        ($socket_type:ty) => {
+            make_service_fn(move |socket: &$socket_type| {
+                let remote_addr = socket.remote_addr();
+                make_svc_fut(remote_addr)
+            })
+        };
+    }
+
+    // The `get_shutdown_future` macro registers a graceful shutdown listener by calling the `register_listener`
+    // method of `GracefulShutdownRegistry`.
+    // If the `register_listener` method fails, it implies that the application is already in a shutdown state.
+    // In this case, the macro logs an error and immediately returns.
+    macro_rules! get_shutdown_future {
+        ($ctx:expr) => {
+            match $ctx.graceful_shutdown_registry.register_listener() {
+                Ok(shutdown_fut) => shutdown_fut,
+                Err(e) => {
+                    error!("MmCtx seems to be stopped already: {e}");
+                    return;
+                },
+            }
+        };
+    }
+
+    // Macro for spawning a server with error handling and logging
+    macro_rules! spawn_server {
+        ($server:expr, $ctx:expr, $ip:expr, $port:expr) => {
+            {
+                let server = $server.then(|r| {
+                    if let Err(err) = r {
+                        error!("{}", err);
+                    };
+                    futures::future::ready(())
+                });
+
+                // As it's said in the [issue](https://github.com/hyperium/tonic/issues/330):
+                //
+                // Aborting the server future will forcefully cancel all connections and not perform a proper drain/shutdown.
+                // While using the special shutdown methods on the server will allow hyper to gracefully drain all connections
+                // and gracefully close connections.
+                common::executor::spawn({
+                    log_tag!(
+                        $ctx,
+                        "😉";
+                        fmt = ">>>>>>>>>> DEX stats {}:{} DEX stats API enabled at unixtime.{} <<<<<<<<<",
+                        $ip,
+                        $port,
+                        now_sec()
+                    );
+                    let _ = $ctx.rpc_started.pin(true);
+                    server
+                });
+            }
+        };
+    }
+
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
 
-    let rpc_ip_port = ctx.rpc_ip_port().unwrap();
+    let rpc_ip_port = ctx
+        .rpc_ip_port()
+        .unwrap_or_else(|err| panic!("Invalid RPC port: {}", err));
     // By entering the context, we tie `tokio::spawn` to this executor.
     let _runtime_guard = CORE.0.enter();
 
-    let server = Server::try_bind(&rpc_ip_port).unwrap_or_else(|_| panic!("Can't bind on {}", rpc_ip_port));
-    let make_svc = make_service_fn(move |socket: &AddrStream| {
-        let remote_addr = socket.remote_addr();
-        async move {
-            Ok::<_, Infallible>(service_fn(move |req: Request<Body>| async move {
-                let res = rpc_service(req, ctx_h, remote_addr).await;
-                Ok::<_, Infallible>(res)
-            }))
-        }
-    });
-
-    let shutdown_fut = match ctx.graceful_shutdown_registry.register_listener() {
-        Ok(shutdown_fut) => shutdown_fut,
-        Err(e) => {
-            error!("MmCtx seems to be stopped already: {e}");
-            return;
-        },
-    };
-
-    let server = server
-        .http1_half_close(false)
-        .serve(make_svc)
-        .with_graceful_shutdown(shutdown_fut);
-
-    let server = server.then(|r| {
-        if let Err(err) = r {
-            error!("{}", err);
+    if ctx.is_https() {
+        let cert_path = env::var("MM_CERT_PATH").unwrap_or_else(|_| "cert.pem".to_string());
+        let (cert_chain, privkey) = match File::open(cert_path.clone()) {
+            Ok(cert_file) => {
+                let cert_key_path = env::var("MM_CERT_KEY_PATH").unwrap_or_else(|_| "key.pem".to_string());
+                read_certificate_and_key(&cert_file, &cert_key_path)
+                    .unwrap_or_else(|err| panic!("Can't read certificate and/or key from {:?}: {}", cert_path, err))
+            },
+            Err(ref err) if err.kind() == io::ErrorKind::NotFound => {
+                info!(
+                    "No certificate found at {:?}, generating a self-signed certificate",
+                    cert_path
+                );
+                let subject_alt_names = ctx
+                    .alt_names()
+                    .unwrap_or_else(|err| panic!("Invalid `alt_names` config: {}", err));
+                generate_self_signed_cert(subject_alt_names)
+                    .unwrap_or_else(|err| panic!("Can't generate self-signed certificate: {}", err))
+            },
+            Err(err) => panic!("Can't open {:?}: {}", cert_path, err),
         };
-        futures::future::ready(())
-    });
 
-    let rpc_ip_port = ctx.rpc_ip_port().unwrap();
+        // Create a TcpListener
+        let incoming =
+            AddrIncoming::bind(&rpc_ip_port).unwrap_or_else(|err| panic!("Can't bind on {}: {}", rpc_ip_port, err));
+        let acceptor = TlsAcceptor::builder()
+            .with_single_cert(cert_chain, privkey)
+            .unwrap_or_else(|err| panic!("Can't set certificate for TlsAcceptor: {}", err))
+            .with_all_versions_alpn()
+            .with_incoming(incoming);
 
-    // As it's said in the [issue](https://github.com/hyperium/tonic/issues/330):
-    //
-    // Aborting the server future will forcefully cancel all connections and not perform a proper drain/shutdown.
-    // While using the special shutdown methods on the server will allow hyper to gracefully drain all connections
-    // and gracefully close connections.
-    common::executor::spawn({
-        log_tag!(
-            ctx,
-            "😉";
-            fmt = ">>>>>>>>>> DEX stats {}:{} DEX stats API enabled at unixtime.{}  <<<<<<<<<",
-            rpc_ip_port.ip(),
-            rpc_ip_port.port(),
-            gstuff::now_ms() / 1000
-        );
-        let _ = ctx.rpc_started.pin(true);
-        server
-    });
+        let server = Server::builder(acceptor)
+            .http1_half_close(false)
+            .serve(make_svc!(TlsStream))
+            .with_graceful_shutdown(get_shutdown_future!(ctx));
+
+        spawn_server!(server, ctx, rpc_ip_port.ip(), rpc_ip_port.port());
+    } else {
+        let server = Server::try_bind(&rpc_ip_port)
+            .unwrap_or_else(|err| panic!("Can't bind on {}: {}", rpc_ip_port, err))
+            .http1_half_close(false)
+            .serve(make_svc!(AddrStream))
+            .with_graceful_shutdown(get_shutdown_future!(ctx));
+
+        spawn_server!(server, ctx, rpc_ip_port.ip(), rpc_ip_port.port());
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

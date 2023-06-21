@@ -893,8 +893,6 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     block_on(check_my_swap_status(
         &mm_alice,
         &uuid,
-        &TAKER_SUCCESS_EVENTS,
-        &TAKER_ERROR_EVENTS,
         "2".parse().unwrap(),
         "2".parse().unwrap(),
     ));
@@ -903,8 +901,6 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     block_on(check_my_swap_status(
         &mm_bob,
         &uuid,
-        &MAKER_SUCCESS_EVENTS,
-        &MAKER_ERROR_EVENTS,
         "2".parse().unwrap(),
         "2".parse().unwrap(),
     ));
@@ -913,20 +909,10 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     thread::sleep(Duration::from_secs(3));
 
     log!("Checking alice status..");
-    block_on(check_stats_swap_status(
-        &mm_alice,
-        &uuid,
-        &MAKER_SUCCESS_EVENTS,
-        &TAKER_SUCCESS_EVENTS,
-    ));
+    block_on(check_stats_swap_status(&mm_alice, &uuid));
 
     log!("Checking bob status..");
-    block_on(check_stats_swap_status(
-        &mm_bob,
-        &uuid,
-        &MAKER_SUCCESS_EVENTS,
-        &TAKER_SUCCESS_EVENTS,
-    ));
+    block_on(check_stats_swap_status(&mm_bob, &uuid));
 
     log!("Checking alice recent swaps..");
     block_on(check_recent_swaps(&mm_alice, 1));

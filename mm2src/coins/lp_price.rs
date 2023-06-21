@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::str::Utf8Error;
 
 const PRICE_ENDPOINTS: [&str; 2] = [
-    "https://prices.komodo.live:1313/api/v2/tickers",
+    "https://prices.komodo.earth:1313/api/v2/tickers",
     "https://prices.cipig.net:1717/api/v2/tickers",
 ];
 
