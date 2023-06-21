@@ -20,7 +20,7 @@ pub(crate) trait ResponseHandler {
         &self,
         orderbook: OrderbookResponse,
         config: &Cfg,
-        otderbook_config: OrderbookConfig,
+        orderbook_config: OrderbookConfig,
     ) -> Result<()>;
     fn on_get_enabled_response(&self, enabled: &Mm2RpcResult<GetEnabledResponse>) -> Result<()>;
     fn on_version_response(&self, response: &MmVersionResponse) -> Result<()>;
@@ -57,7 +57,7 @@ impl ResponseHandler for ResponseHandlerImpl<'_> {
         &self,
         orderbook: OrderbookResponse,
         config: &Cfg,
-        otderbook_config: OrderbookConfig,
+        orderbook_config: OrderbookConfig,
     ) -> Result<()> {
         let mut writer = self.writer.borrow_mut();
 
@@ -76,7 +76,7 @@ impl ResponseHandler for ResponseHandlerImpl<'_> {
                 "Public",
                 "Address",
                 "Order conf (bc,bn:rc,rn)",
-                &otderbook_config
+                &orderbook_config
             )
         );
 
@@ -87,13 +87,13 @@ impl ResponseHandler for ResponseHandlerImpl<'_> {
             writeln_safe_io!(
                 writer,
                 "{}",
-                orderbook::AskBidRow::new("", "No asks found", "", "", "", "", "", "", "", &otderbook_config)
+                orderbook::AskBidRow::new("", "No asks found", "", "", "", "", "", "", "", &orderbook_config)
             );
         } else {
             let skip = orderbook
                 .asks
                 .len()
-                .checked_sub(otderbook_config.asks_limit.unwrap_or(usize::MAX))
+                .checked_sub(orderbook_config.asks_limit.unwrap_or(usize::MAX))
                 .unwrap_or_default();
 
             orderbook
@@ -101,24 +101,24 @@ impl ResponseHandler for ResponseHandlerImpl<'_> {
                 .iter()
                 .sorted_by(orderbook::cmp_asks)
                 .skip(skip)
-                .map(|entry| orderbook::AskBidRow::from_orderbook_entry(entry, vol_prec, price_prec, &otderbook_config))
+                .map(|entry| orderbook::AskBidRow::from_orderbook_entry(entry, vol_prec, price_prec, &orderbook_config))
                 .for_each(|row: orderbook::AskBidRow| writeln_safe_io!(writer, "{}", row));
         }
-        writeln_safe_io!(writer, "{}", orderbook::AskBidRow::new_delimiter(&otderbook_config));
+        writeln_safe_io!(writer, "{}", orderbook::AskBidRow::new_delimiter(&orderbook_config));
 
         if orderbook.bids.is_empty() {
             writeln_safe_io!(
                 writer,
                 "{}",
-                orderbook::AskBidRow::new("", "No bids found", "", "", "", "", "", "", "", &otderbook_config)
+                orderbook::AskBidRow::new("", "No bids found", "", "", "", "", "", "", "", &orderbook_config)
             );
         } else {
             orderbook
                 .bids
                 .iter()
                 .sorted_by(orderbook::cmp_bids)
-                .take(otderbook_config.bids_limit.unwrap_or(usize::MAX))
-                .map(|entry| orderbook::AskBidRow::from_orderbook_entry(entry, vol_prec, price_prec, &otderbook_config))
+                .take(orderbook_config.bids_limit.unwrap_or(usize::MAX))
+                .map(|entry| orderbook::AskBidRow::from_orderbook_entry(entry, vol_prec, price_prec, &orderbook_config))
                 .for_each(|row: orderbook::AskBidRow| writeln_safe_io!(writer, "{}", row));
         }
         Ok(())
