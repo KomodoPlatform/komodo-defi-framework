@@ -214,7 +214,8 @@ impl From<SlurpError> for GetInfoFromUriError {
         match e {
             SlurpError::ErrorDeserializing { .. } => GetInfoFromUriError::InvalidResponse(error_str),
             SlurpError::Transport { .. } | SlurpError::Timeout { .. } => GetInfoFromUriError::Transport(error_str),
-            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => GetInfoFromUriError::Internal(error_str),
+            SlurpError::InvalidRequest(_) => GetInfoFromUriError::InvalidRequest(error_str),
+            SlurpError::Internal(_) => GetInfoFromUriError::Internal(error_str),
         }
     }
 }
