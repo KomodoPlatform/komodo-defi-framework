@@ -48,7 +48,8 @@ impl From<SlurpError> for GetNftInfoError {
         match e {
             SlurpError::ErrorDeserializing { .. } => GetNftInfoError::InvalidResponse(error_str),
             SlurpError::Transport { .. } | SlurpError::Timeout { .. } => GetNftInfoError::Transport(error_str),
-            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => GetNftInfoError::Internal(error_str),
+            SlurpError::InvalidRequest(_) => GetNftInfoError::InvalidRequest(error_str),
+            SlurpError::Internal(_) => GetNftInfoError::Internal(error_str),
         }
     }
 }
@@ -79,10 +80,7 @@ impl From<CreateNftStorageError> for GetNftInfoError {
 }
 
 impl<T: NftStorageError> From<T> for GetNftInfoError {
-    fn from(err: T) -> Self {
-        let msg = format!("{:?}", err);
-        GetNftInfoError::DbError(msg)
-    }
+    fn from(err: T) -> Self { GetNftInfoError::DbError(format!("{:?}", err)) }
 }
 
 impl From<GetInfoFromUriError> for GetNftInfoError {
@@ -177,10 +175,7 @@ impl From<GetMyAddressError> for UpdateNftError {
 }
 
 impl<T: NftStorageError> From<T> for UpdateNftError {
-    fn from(err: T) -> Self {
-        let msg = format!("{:?}", err);
-        UpdateNftError::DbError(msg)
-    }
+    fn from(err: T) -> Self { UpdateNftError::DbError(format!("{:?}", err)) }
 }
 
 impl HttpStatusCode for UpdateNftError {

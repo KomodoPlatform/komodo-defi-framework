@@ -171,10 +171,10 @@ impl NftTxHistoryStorageOps for IndexedDbNftStorage {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct NftListTable {
     token_address: String,
-    token_id: BeBigUint,
+    token_id: String,
     chain: String,
-    amount: BeBigUint,
-    block_number: u32,
+    amount: String,
+    block_number: BeBigUint,
     contract_type: ContractType,
     details_json: Json,
 }
@@ -204,13 +204,13 @@ impl TableSignature for NftListTable {
 pub(crate) struct NftTxHistoryTable {
     transaction_hash: String,
     chain: String,
-    block_number: u32,
+    block_number: BeBigUint,
     block_timestamp: u64,
     contract_type: ContractType,
     token_address: String,
-    token_id: BeBigUint,
+    token_id: String,
     status: TransferStatus,
-    amount: BeBigUint,
+    amount: String,
     collection_name: String,
     image: String,
     token_name: String,

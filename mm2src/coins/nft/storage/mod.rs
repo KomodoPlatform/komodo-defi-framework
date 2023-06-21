@@ -23,10 +23,7 @@ pub enum RemoveNftResult {
 pub trait NftStorageError: std::fmt::Debug + NotMmError + NotEqual + Send {}
 
 impl<T: NftStorageError> From<T> for WithdrawError {
-    fn from(err: T) -> Self {
-        let msg = format!("{:?}", err);
-        WithdrawError::DbError(msg)
-    }
+    fn from(err: T) -> Self { WithdrawError::DbError(format!("{:?}", err)) }
 }
 
 #[async_trait]
