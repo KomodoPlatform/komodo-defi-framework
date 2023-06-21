@@ -5471,7 +5471,7 @@ pub async fn cancel_all_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec
 /// # Safety
 ///
 /// The function locks [`MmCtx::p2p_ctx`] and [`MmCtx::ordermatch_ctx`]
-pub(self) async fn subscribe_to_orderbook_topic(
+async fn subscribe_to_orderbook_topic(
     ctx: &MmArc,
     base: &str,
     rel: &str,
