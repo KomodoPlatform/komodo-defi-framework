@@ -1,3 +1,33 @@
+## v1.0.6-beta - 2023-06-30
+
+**Features:**
+- Swap watcher nodes [#1431](https://github.com/KomodoPlatform/atomicDEX-API/issues/1431)
+  - Using watcher nodes for swaps were enabled by default for UTXO coins in [#1859](https://github.com/KomodoPlatform/atomicDEX-API/pull/1859)
+    - `use_watchers` configuration is now set to true by default.
+    - All nodes doing a swap will broadcast a watcher message after the taker payment is sent if the swapped coins are supported by watchers (currently only UTXO).
+    - This update also fixes an issue that caused nodes to broadcast two consecutive watcher messages after the taker payment was sent.
+- NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
+  - NFT cache support was added for sqlite (non-wasm targets) in [#1833](https://github.com/KomodoPlatform/atomicDEX-API/pull/1833)
+- HTTPS support was added for the RPC server in [#1861](https://github.com/KomodoPlatform/atomicDEX-API/pull/1861)
+- Adex-CLI [#1682](https://github.com/KomodoPlatform/atomicDEX-API/issues/1682)
+  - New commands `enable`, `get-enabled`, `orderbook`,`sell`, `buy` were added to adex-cli in [#1768](https://github.com/KomodoPlatform/atomicDEX-API/pull/1768)
+
+**Enhancements/Fixes:**
+- Some RUSTSEC advisories where resolved in [#1853](https://github.com/KomodoPlatform/atomicDEX-API/pull/1853)
+- ARRR/ZCOIN code was refactored to be compiled in WebAssembly (WASM) in [#1805](https://github.com/KomodoPlatform/atomicDEX-API/pull/1805)
+  - The PR for this paves the way for subsequent implementation of the empty/todo functions related to WASM storage and other functionalities.
+- Orderbook response now returns the right age for the age field, this was fixed in [#1851](https://github.com/KomodoPlatform/atomicDEX-API/pull/1851)
+- A bug that caused `best_orders` rpc to return `is_mine: false` for the user's orders was fixed in [#1846](https://github.com/KomodoPlatform/atomicDEX-API/pull/1846)
+  - An optional parameter `exclude_mine` was also added to the `best_orders` request that allows users to exclude their own orders from the response.
+  - `exclude_mine` defaults to false to maintain the same behaviour before the PR.
+- Watchtower integration tests were moved to the new ethereum testnet and the ignore attributes were removed in [#1846](https://github.com/KomodoPlatform/atomicDEX-API/pull/1846)
+  - The PR also adds a new test case for watcher rewards.
+  - It also fixes the unstable `send_and_refund_eth_payment`, `send_and_refund_erc20_payment`, `test_nonce_lock` and `test_withdraw_and_send tests` tests that were failing due to concurrency issues.
+- Infrastructure DNS rotation for default seednodes was done in [#1868](https://github.com/KomodoPlatform/atomicDEX-API/pull/1868)
+- Price endpoints were updated in [#1869](https://github.com/KomodoPlatform/atomicDEX-API/pull/1869)
+- A fix removed the passed config string from the error logs during mm2 initialization if there was a deserialization error was done in [#1872](https://github.com/KomodoPlatform/atomicDEX-API/pull/1872)
+
+
 ## v1.0.5-beta - 2023-06-08
 
 **Features:**
