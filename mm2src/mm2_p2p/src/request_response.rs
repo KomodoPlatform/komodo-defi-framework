@@ -1,17 +1,22 @@
-use std::collections::{HashMap, VecDeque};
-use std::io;
-
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
 use futures::io::{AsyncRead, AsyncWrite};
+use futures::task::{Context, Poll};
+use futures::StreamExt;
 use futures_ticker::Ticker;
 use instant::{Duration, Instant};
 use libp2p::core::upgrade::{read_length_prefixed, write_length_prefixed};
-use libp2p::{request_response::{Behaviour as RequestResponse, RequestId, ResponseChannel},
+use libp2p::request_response::ProtocolSupport;
+use libp2p::swarm::{PollParameters, ToSwarm};
+use libp2p::{request_response::{Behaviour as RequestResponse, Config as RequestResponseConfig,
+                                Event as RequestResponseEvent, RequestId, ResponseChannel},
              swarm::NetworkBehaviour,
              PeerId};
+use log::{error, warn};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
+use std::io;
 
 use crate::{decode_message, encode_message};
 
@@ -171,6 +176,89 @@ pub struct RequestResponseBehaviour {
     timeout_interval: Ticker,
 }
 
+impl RequestResponseBehaviour {
+    pub fn sender(&self) -> RequestResponseSender { self.tx.clone() }
+
+    pub fn send_response(&mut self, ch: ResponseChannel<PeerResponse>, rs: PeerResponse) -> Result<(), PeerResponse> {
+        self.inner.send_response(ch, rs)
+    }
+
+    pub fn send_request(
+        &mut self,
+        peer_id: &PeerId,
+        request: PeerRequest,
+        response_tx: oneshot::Sender<PeerResponse>,
+    ) -> RequestId {
+        let request_id = self.inner.send_request(peer_id, request);
+        let pending_request = PendingRequest {
+            tx: response_tx,
+            initiated_at: Instant::now(),
+        };
+        assert!(self.pending_requests.insert(request_id, pending_request).is_none());
+        request_id
+    }
+
+    fn poll_event(
+        &mut self,
+        cx: &mut Context,
+        _params: &mut impl PollParameters,
+    ) -> Poll<ToSwarm<RequestResponseBehaviourEvent, <Self as NetworkBehaviour>::ConnectionHandler>> {
+        // poll the `rx`
+        match self.rx.poll_next_unpin(cx) {
+            // received a request, forward it through the network and put to the `pending_requests`
+            Poll::Ready(Some((peer_id, request, response_tx))) => {
+                let _request_id = self.send_request(&peer_id, request, response_tx);
+            },
+            // the channel was closed
+            Poll::Ready(None) => panic!("request-response channel has been closed"),
+            Poll::Pending => (),
+        }
+
+        if let Some(event) = self.events.pop_front() {
+            // forward a pending event to the top
+            return Poll::Ready(ToSwarm::GenerateEvent(event));
+        }
+
+        while let Poll::Ready(Some(_)) = self.timeout_interval.poll_next_unpin(cx) {
+            let now = Instant::now();
+            let timeout = self.timeout;
+            self.pending_requests.retain(|request_id, pending_request| {
+                let retain = now.duration_since(pending_request.initiated_at) < timeout;
+                if !retain {
+                    warn!("Request {} timed out", request_id);
+                }
+                retain
+            });
+        }
+
+        Poll::Pending
+    }
+
+    fn process_request(
+        &mut self,
+        peer_id: PeerId,
+        request: PeerRequest,
+        response_channel: ResponseChannel<PeerResponse>,
+    ) {
+        self.events.push_back(RequestResponseBehaviourEvent::InboundRequest {
+            peer_id,
+            request,
+            response_channel,
+        })
+    }
+
+    fn process_response(&mut self, request_id: RequestId, response: PeerResponse) {
+        match self.pending_requests.remove(&request_id) {
+            Some(pending) => {
+                if let Err(e) = pending.tx.send(response) {
+                    error!("{:?}. Request {:?} is not processed", e, request_id);
+                }
+            },
+            _ => error!("Received unknown request {:?}", request_id),
+        }
+    }
+}
+
 impl NetworkBehaviour for RequestResponseBehaviour {
     type ConnectionHandler =
         <RequestResponse<Codec<Protocol, PeerRequest, PeerResponse>> as NetworkBehaviour>::ConnectionHandler;
@@ -214,5 +302,32 @@ impl NetworkBehaviour for RequestResponseBehaviour {
         params: &mut impl libp2p::swarm::PollParameters,
     ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
         todo!()
+    }
+}
+
+impl From<RequestResponseEvent<PeerRequest, PeerResponse>> for RequestResponseBehaviour {
+    fn from(value: RequestResponseEvent<PeerRequest, PeerResponse>) -> Self { todo!() }
+}
+
+/// Build a request-response network behaviour.
+pub fn build_request_response_behaviour() -> RequestResponseBehaviour {
+    let config = RequestResponseConfig::default();
+    let protocol = core::iter::once((Protocol::Version1, ProtocolSupport::Full));
+    let inner = RequestResponse::new(protocol, config);
+
+    let (tx, rx) = mpsc::unbounded();
+    let pending_requests = HashMap::new();
+    let events = VecDeque::new();
+    let timeout = Duration::from_secs(10);
+    let timeout_interval = Ticker::new(Duration::from_secs(1));
+
+    RequestResponseBehaviour {
+        inner,
+        rx,
+        tx,
+        pending_requests,
+        events,
+        timeout,
+        timeout_interval,
     }
 }
