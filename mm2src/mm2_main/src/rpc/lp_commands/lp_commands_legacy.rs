@@ -27,7 +27,8 @@ use futures::compat::Future01CompatExt;
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
 use mm2_metrics::MetricsOps;
-use mm2_number::{construct_detailed, BigDecimal};
+use mm2_number::construct_detailed;
+use mm2_rpc::data::legacy::{BalanceResponse, CoinInitResponse, Mm2RpcResult, MmVersionResponse, Status};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -38,7 +39,6 @@ use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{cancel_orders_by, get_matching_orders, CancelBy};
 use crate::mm2::lp_swap::{active_swaps_using_coins, tx_helper_topic, watcher_topic};
-use crate::mm2::MmVersionResult;
 
 const INTERNAL_SERVER_ERROR_CODE: u16 = 500;
 const RESPONSE_OK_STATUS_CODE: u16 = 200;
@@ -138,30 +138,17 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     response(&ticker, cancelled_orders, false)
 }
 
-#[derive(Serialize)]
-struct CoinInitResponse<'a> {
-    result: &'a str,
-    address: String,
-    balance: BigDecimal,
-    unspendable_balance: BigDecimal,
-    coin: &'a str,
-    required_confirmations: u64,
-    requires_notarization: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mature_confirmations: Option<u32>,
-}
-
 /// Enable a coin in the Electrum mode.
 pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
     let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
     let balance = try_s!(coin.my_balance().compat().await);
     let res = CoinInitResponse {
-        result: "success",
+        result: "success".into(),
         address: try_s!(coin.my_address()),
         balance: balance.spendable,
         unspendable_balance: balance.unspendable,
-        coin: coin.ticker(),
+        coin: coin.ticker().into(),
         required_confirmations: coin.required_confirmations(),
         requires_notarization: coin.requires_notarization(),
         mature_confirmations: coin.mature_confirmations(),
@@ -176,11 +163,11 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
     let balance = try_s!(coin.my_balance().compat().await);
     let res = CoinInitResponse {
-        result: "success",
+        result: "success".to_string(),
         address: try_s!(coin.my_address()),
         balance: balance.spendable,
         unspendable_balance: balance.unspendable,
-        coin: coin.ticker(),
+        coin: coin.ticker().to_string(),
         required_confirmations: coin.required_confirmations(),
         requires_notarization: coin.requires_notarization(),
         mature_confirmations: coin.mature_confirmations(),
@@ -248,13 +235,13 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Stri
         Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
     };
     let my_balance = try_s!(coin.my_balance().compat().await);
-    let res = json!({
-        "coin": ticker,
-        "balance": my_balance.spendable,
-        "unspendable_balance": my_balance.unspendable,
-        "address": try_s!(coin.my_address()),
-    });
-    let res = try_s!(json::to_vec(&res));
+
+    let res = try_s!(json::to_vec(&BalanceResponse {
+        coin: ticker,
+        balance: my_balance.spendable,
+        unspendable_balance: my_balance.unspendable,
+        address: try_s!(coin.my_address())
+    }));
     Ok(try_s!(Response::builder().body(res)))
 }
 
@@ -274,10 +261,7 @@ pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     // and it may lead to an unexpected behaviour.
     common::executor::spawn(fut);
 
-    let res = json!({
-        "result": "success"
-    });
-    let res = try_s!(json::to_vec(&res));
+    let res = try_s!(json::to_vec(&Mm2RpcResult::new(Status::Success)));
     Ok(try_s!(Response::builder().body(res)))
 }
 
@@ -312,12 +296,13 @@ pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, String> {
 }
 
 pub fn version(ctx: MmArc) -> HyRes {
-    rpc_response(
-        RESPONSE_OK_STATUS_CODE,
-        MmVersionResult::new(ctx.mm_version.clone(), ctx.datetime.clone())
-            .to_json()
-            .to_string(),
-    )
+    match json::to_vec(&MmVersionResponse {
+        result: ctx.mm_version.clone(),
+        datetime: ctx.datetime.clone(),
+    }) {
+        Ok(response) => rpc_response(RESPONSE_OK_STATUS_CODE, response),
+        Err(err) => rpc_err_response(INTERNAL_SERVER_ERROR_CODE, ERRL!("{}", err).as_str()),
+    }
 }
 
 pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {

@@ -70,18 +70,6 @@ pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 #[cfg(feature = "custom-swap-locktime")]
 const CUSTOM_PAYMENT_LOCKTIME_DEFAULT: u64 = 900;
 
-#[derive(Serialize)]
-pub struct MmVersionResult {
-    result: String,
-    datetime: String,
-}
-
-impl MmVersionResult {
-    pub const fn new(result: String, datetime: String) -> MmVersionResult { MmVersionResult { result, datetime } }
-
-    pub fn to_json(&self) -> Json { json::to_value(self).expect("expected valid JSON object") }
-}
-
 pub struct LpMainParams {
     conf: Json,
     filter: Option<LogLevel>,
@@ -304,7 +292,10 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
 
     let mut conf: Json = match json::from_str(conf) {
         Ok(json) => json,
-        Err(err) => return ERR!("Couldn't parse.({}).{}", conf, err),
+        // Syntax or io errors may include the conf string in the error message so we don't want to take risks and show these errors internals in the log.
+        // If new variants are added to the Error enum, there can be a risk of exposing the conf string in the error message when updating serde_json so
+        // I think it's better to not include the serde_json::error::Error at all in the returned error message rather than selectively excluding certain variants.
+        Err(_) => return ERR!("Couldn't parse mm2 config to JSON format!"),
     };
 
     if conf["coins"].is_null() {

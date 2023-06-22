@@ -119,7 +119,7 @@ pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_r
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
 pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
-                       MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT,
+                       MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT_SEC,
                        WATCHER_PREFIX};
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
@@ -202,17 +202,35 @@ pub fn p2p_private_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
 
 /// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
 /// to stop it
-pub fn broadcast_swap_message_every<T: 'static + Serialize + Clone + Send>(
+pub fn broadcast_swap_msg_every<T: 'static + Serialize + Clone + Send>(
     ctx: MmArc,
     topic: String,
     msg: T,
-    interval: f64,
+    interval_sec: f64,
     p2p_privkey: Option<KeyPair>,
 ) -> AbortOnDropHandle {
     let fut = async move {
         loop {
             broadcast_swap_message(&ctx, topic.clone(), msg.clone(), &p2p_privkey);
-            Timer::sleep(interval).await;
+            Timer::sleep(interval_sec).await;
+        }
+    };
+    spawn_abortable(fut)
+}
+
+/// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
+/// to stop it. This function waits for interval seconds first before starting the broadcast.
+pub fn broadcast_swap_msg_every_delayed<T: 'static + Serialize + Clone + Send>(
+    ctx: MmArc,
+    topic: String,
+    msg: T,
+    interval_sec: f64,
+    p2p_privkey: Option<KeyPair>,
+) -> AbortOnDropHandle {
+    let fut = async move {
+        loop {
+            Timer::sleep(interval_sec).await;
+            broadcast_swap_message(&ctx, topic.clone(), msg.clone(), &p2p_privkey);
         }
     };
     spawn_abortable(fut)
@@ -370,7 +388,7 @@ pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) ->
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
 const _SWAP_DEFAULT_MAX_CONFIRMS: u32 = 6;
 /// MM2 checks that swap payment is confirmed every WAIT_CONFIRM_INTERVAL seconds
-const WAIT_CONFIRM_INTERVAL: u64 = 15;
+const WAIT_CONFIRM_INTERVAL_SEC: u64 = 15;
 
 #[derive(Debug, PartialEq, Serialize)]
 pub enum RecoveredSwapAction {
@@ -437,7 +455,9 @@ impl SwapsContext {
                 running_swaps: Mutex::new(vec![]),
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 swap_msgs: Mutex::new(HashMap::new()),
-                taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(TAKER_SWAP_ENTRY_TIMEOUT))),
+                taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(
+                    TAKER_SWAP_ENTRY_TIMEOUT_SEC,
+                ))),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
             })
@@ -1628,9 +1648,9 @@ mod lp_swap_tests {
             persistent_pubkey: vec![1; 33],
         });
 
-        let serialized = rmp_serde::to_vec(&v1).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v1).unwrap();
 
-        let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: NegotiationDataMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
@@ -1651,9 +1671,9 @@ mod lp_swap_tests {
             persistent_pubkey: vec![1; 33],
         };
 
-        let serialized = rmp_serde::to_vec(&v2).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
 
-        let deserialized: NegotiationDataV1 = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: NegotiationDataV1 = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
@@ -1669,7 +1689,7 @@ mod lp_swap_tests {
 
         let serialized = rmp_serde::to_vec(&v2).unwrap();
 
-        let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: NegotiationDataMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v2);
 
@@ -1686,7 +1706,7 @@ mod lp_swap_tests {
         // v3 must be deserialized to v3, backward compatibility is not required
         let serialized = rmp_serde::to_vec(&v3).unwrap();
 
-        let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: NegotiationDataMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v3);
     }
@@ -1710,9 +1730,9 @@ mod lp_swap_tests {
 
         let expected = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
 
-        let serialized = rmp_serde::to_vec(&old).unwrap();
+        let serialized = rmp_serde::to_vec_named(&old).unwrap();
 
-        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: SwapMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
@@ -1721,18 +1741,18 @@ mod lp_swap_tests {
 
         let expected = old;
 
-        let serialized = rmp_serde::to_vec(&v1).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v1).unwrap();
 
-        let deserialized: SwapMsgOld = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: SwapMsgOld = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
         // PaymentDataMsg::Regular should be deserialized to PaymentDataMsg::Regular
         let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
 
-        let serialized = rmp_serde::to_vec(&v1).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v1).unwrap();
 
-        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: SwapMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v1);
 
@@ -1742,9 +1762,9 @@ mod lp_swap_tests {
             next_step_instructions: MSG_DATA_INSTRUCTIONS.to_vec(),
         }));
 
-        let serialized = rmp_serde::to_vec(&v2).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
 
-        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: SwapMsg = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v2);
 
@@ -1754,10 +1774,9 @@ mod lp_swap_tests {
             next_step_instructions: MSG_DATA_INSTRUCTIONS.to_vec(),
         }));
 
-        let serialized = rmp_serde::to_vec(&v2).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
 
-        let deserialized: Result<SwapMsgOld, rmp_serde::decode::Error> =
-            rmp_serde::from_read_ref(serialized.as_slice());
+        let deserialized: Result<SwapMsgOld, rmp_serde::decode::Error> = rmp_serde::from_slice(serialized.as_slice());
 
         assert!(deserialized.is_err());
     }

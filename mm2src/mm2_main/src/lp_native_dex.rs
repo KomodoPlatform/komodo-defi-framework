@@ -61,7 +61,7 @@ cfg_native! {
 #[path = "lp_init/init_metamask.rs"]
 pub mod init_metamask;
 
-const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.defimania.live", "seed2.defimania.live", "seed3.defimania.live"];
+const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.komodo.earth", "seed2.komodo.earth", "seed3.komodo.earth"];
 
 pub type P2PResult<T> = Result<T, MmError<P2PInitError>>;
 pub type MmInitResult<T> = Result<T, MmError<MmInitError>>;

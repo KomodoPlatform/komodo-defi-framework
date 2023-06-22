@@ -19,8 +19,8 @@ use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_main::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
 use mm2_number::BigDecimal;
-use mm2_test_helpers::structs::{trade_preimage_error, EnableElectrumResponse, OrderbookResponse, RpcErrorResponse,
-                                RpcSuccessResponse, TransactionDetails};
+use mm2_rpc::data::legacy::{CoinInitResponse, OrderbookResponse};
+use mm2_test_helpers::structs::{trade_preimage_error, RpcErrorResponse, RpcSuccessResponse, TransactionDetails};
 use rand6::Rng;
 use serde_json::{self as json, Value as Json};
 use std::convert::TryFrom;
@@ -1704,7 +1704,7 @@ fn segwit_address_in_the_orderbook() {
     block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
     let enable_qtum_res = block_on(enable_native_segwit(&mm, "QTUM"));
-    let enable_qtum_res: EnableElectrumResponse = json::from_value(enable_qtum_res).unwrap();
+    let enable_qtum_res: CoinInitResponse = json::from_value(enable_qtum_res).unwrap();
     let segwit_addr = enable_qtum_res.address;
 
     fill_address(&coin, &segwit_addr, 1000.into(), 30);
@@ -1732,8 +1732,8 @@ fn segwit_address_in_the_orderbook() {
     assert!(orderbook.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: OrderbookResponse = json::from_str(&orderbook.1).unwrap();
-    assert_eq!(orderbook.asks[0].coin, "QTUM");
-    assert_eq!(orderbook.asks[0].address, segwit_addr);
+    assert_eq!(orderbook.asks[0].entry.coin, "QTUM");
+    assert_eq!(orderbook.asks[0].entry.address, segwit_addr);
     block_on(mm.stop()).unwrap();
 }
 

@@ -1,10 +1,11 @@
 use common::block_on;
 use mm2_number::BigDecimal;
+use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::for_tests::{enable_tendermint, enable_tendermint_without_balance, iris_testnet_conf, my_balance,
                                   orderbook, orderbook_v2, set_price, usdc_ibc_iris_testnet_conf, MarketMakerIt,
                                   Mm2TestConf};
-use mm2_test_helpers::structs::{OrderbookAddress, OrderbookResponse, OrderbookV2Response, RpcV2Response,
-                                TendermintActivationResult};
+use mm2_test_helpers::structs::{OrderbookAddress, OrderbookV2Response, RpcV2Response, TendermintActivationResult};
+
 use serde_json::{self, json};
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -56,10 +57,10 @@ fn test_iris_with_usdc_activation_balance_orderbook() {
     let orderbook: OrderbookResponse = serde_json::from_value(orderbook).unwrap();
 
     let first_ask = orderbook.asks.first().unwrap();
-    assert_eq!(first_ask.address, expected_address);
+    assert_eq!(first_ask.entry.address, expected_address);
 
     let first_bid = orderbook.bids.first().unwrap();
-    assert_eq!(first_bid.address, expected_address);
+    assert_eq!(first_bid.entry.address, expected_address);
 
     let orderbook_v2 = block_on(orderbook_v2(&mm, USDC_IBC_TICKER, IRIS_TICKER));
     let orderbook_v2: RpcV2Response<OrderbookV2Response> = serde_json::from_value(orderbook_v2).unwrap();

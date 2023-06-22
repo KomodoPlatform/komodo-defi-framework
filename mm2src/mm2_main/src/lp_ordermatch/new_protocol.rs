@@ -1,10 +1,11 @@
-use super::{MatchBy as SuperMatchBy, TakerAction};
-use crate::mm2::lp_ordermatch::{AlbOrderedOrderbookPair, OrderConfirmationsSettings, H64};
 use common::now_sec;
 use compact_uuid::CompactUuid;
 use mm2_number::{BigRational, MmNumber};
+use mm2_rpc::data::legacy::{MatchBy as SuperMatchBy, OrderConfirmationsSettings, TakerAction};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
+
+use crate::mm2::lp_ordermatch::{AlbOrderedOrderbookPair, H64};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -108,7 +109,7 @@ mod compact_uuid {
     }
 }
 
-#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MakerOrderCreated {
     pub uuid: CompactUuid,
     pub base: String,
@@ -236,7 +237,7 @@ impl MakerOrderUpdated {
     pub fn new_conf_settings(&self) -> Option<OrderConfirmationsSettings> {
         match self {
             MakerOrderUpdated::V1(_) => None,
-            MakerOrderUpdated::V2(v2) => v2.conf_settings,
+            MakerOrderUpdated::V2(v2) => v2.conf_settings.clone(),
         }
     }
 
@@ -330,9 +331,9 @@ mod new_protocol_tests {
             pair_trie_root: H64::default(),
         });
 
-        let serialized = rmp_serde::to_vec(&v1).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v1).unwrap();
 
-        let deserialized: MakerOrderUpdated = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: MakerOrderUpdated = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
@@ -344,7 +345,7 @@ mod new_protocol_tests {
             new_min_volume: Some(BigRational::from_integer(1.into())),
             timestamp,
             pair_trie_root: H64::default(),
-            conf_settings,
+            conf_settings: conf_settings.clone(),
         });
 
         let expected = MakerOrderUpdatedV1 {
@@ -356,9 +357,9 @@ mod new_protocol_tests {
             pair_trie_root: H64::default(),
         };
 
-        let serialized = rmp_serde::to_vec(&v2).unwrap();
+        let serialized = rmp_serde::to_vec_named(&v2).unwrap();
 
-        let deserialized: MakerOrderUpdatedV1 = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: MakerOrderUpdatedV1 = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, expected);
 
@@ -375,7 +376,7 @@ mod new_protocol_tests {
 
         let serialized = rmp_serde::to_vec(&v2).unwrap();
 
-        let deserialized: MakerOrderUpdated = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        let deserialized: MakerOrderUpdated = rmp_serde::from_slice(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v2);
     }
@@ -411,14 +412,14 @@ mod new_protocol_tests {
             pair_trie_root: H64::default(),
         };
 
-        let old_serialized = rmp_serde::to_vec(&old_msg).unwrap();
+        let old_serialized = rmp_serde::to_vec_named(&old_msg).unwrap();
 
-        let mut new: MakerOrderCreated = rmp_serde::from_read_ref(&old_serialized).unwrap();
+        let mut new: MakerOrderCreated = rmp_serde::from_slice(&old_serialized).unwrap();
 
         new.base_protocol_info = vec![1, 2, 3];
         new.rel_protocol_info = vec![1, 2, 3, 4];
 
-        let new_serialized = rmp_serde::to_vec(&new).unwrap();
-        let _old_from_new: MakerOrderCreatedV1 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+        let new_serialized = rmp_serde::to_vec_named(&new).unwrap();
+        let _old_from_new: MakerOrderCreatedV1 = rmp_serde::from_slice(&new_serialized).unwrap();
     }
 }

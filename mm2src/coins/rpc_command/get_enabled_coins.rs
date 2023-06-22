@@ -25,11 +25,11 @@ pub struct GetEnabledCoinsRequest;
 
 #[derive(Serialize)]
 pub struct GetEnabledCoinsResponse {
-    coins: Vec<EnabledCoin>,
+    coins: Vec<EnabledCoinV2>,
 }
 
 #[derive(Serialize)]
-pub struct EnabledCoin {
+pub struct EnabledCoinV2 {
     ticker: String,
 }
 
@@ -42,7 +42,7 @@ pub async fn get_enabled_coins(
 
     let coins = coins_map
         .iter()
-        .map(|(ticker, _coin)| EnabledCoin { ticker: ticker.clone() })
+        .map(|(ticker, _coin)| EnabledCoinV2 { ticker: ticker.clone() })
         .collect();
     Ok(GetEnabledCoinsResponse { coins })
 }

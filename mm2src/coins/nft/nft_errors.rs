@@ -1,5 +1,7 @@
 use crate::eth::GetEthAddressError;
-use common::HttpStatusCode;
+use crate::nft::storage::{CreateNftStorageError, NftStorageError};
+use crate::{GetMyAddressError, WithdrawError};
+use common::{HttpStatusCode, ParseRfc3339Err};
 use derive_more::Display;
 use enum_from::EnumFromStringify;
 use http::StatusCode;
@@ -21,7 +23,7 @@ pub enum GetNftInfoError {
     Internal(String),
     GetEthAddressError(GetEthAddressError),
     #[display(
-        fmt = "Token: token_address {}, token_id {} was not find in wallet",
+        fmt = "Token: token_address {}, token_id {} was not found in wallet",
         token_address,
         token_id
     )]
@@ -29,7 +31,27 @@ pub enum GetNftInfoError {
         token_address: String,
         token_id: String,
     },
-    AddressError(String),
+    #[display(fmt = "DB error {}", _0)]
+    DbError(String),
+    ParseRfc3339Err(ParseRfc3339Err),
+    #[display(fmt = "The contract type is required and should not be null.")]
+    ContractTypeIsNull,
+}
+
+impl From<GetNftInfoError> for WithdrawError {
+    fn from(e: GetNftInfoError) -> Self { WithdrawError::GetNftInfoError(e) }
+}
+
+impl From<SlurpError> for GetNftInfoError {
+    fn from(e: SlurpError) -> Self {
+        let error_str = e.to_string();
+        match e {
+            SlurpError::ErrorDeserializing { .. } => GetNftInfoError::InvalidResponse(error_str),
+            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => GetNftInfoError::Transport(error_str),
+            SlurpError::InvalidRequest(_) => GetNftInfoError::InvalidRequest(error_str),
+            SlurpError::Internal(_) => GetNftInfoError::Internal(error_str),
+        }
+    }
 }
 
 impl From<web3::Error> for GetNftInfoError {
@@ -49,6 +71,18 @@ impl From<GetEthAddressError> for GetNftInfoError {
     fn from(e: GetEthAddressError) -> Self { GetNftInfoError::GetEthAddressError(e) }
 }
 
+impl From<CreateNftStorageError> for GetNftInfoError {
+    fn from(e: CreateNftStorageError) -> Self {
+        match e {
+            CreateNftStorageError::Internal(err) => GetNftInfoError::Internal(err),
+        }
+    }
+}
+
+impl<T: NftStorageError> From<T> for GetNftInfoError {
+    fn from(err: T) -> Self { GetNftInfoError::DbError(format!("{:?}", err)) }
+}
+
 impl From<GetInfoFromUriError> for GetNftInfoError {
     fn from(e: GetInfoFromUriError) -> Self {
         match e {
@@ -60,16 +94,101 @@ impl From<GetInfoFromUriError> for GetNftInfoError {
     }
 }
 
+impl From<ParseRfc3339Err> for GetNftInfoError {
+    fn from(e: ParseRfc3339Err) -> Self { GetNftInfoError::ParseRfc3339Err(e) }
+}
+
 impl HttpStatusCode for GetNftInfoError {
     fn status_code(&self) -> StatusCode {
         match self {
             GetNftInfoError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-            GetNftInfoError::InvalidResponse(_) => StatusCode::FAILED_DEPENDENCY,
+            GetNftInfoError::InvalidResponse(_) | GetNftInfoError::ParseRfc3339Err(_) => StatusCode::FAILED_DEPENDENCY,
+            GetNftInfoError::ContractTypeIsNull => StatusCode::NOT_FOUND,
             GetNftInfoError::Transport(_)
             | GetNftInfoError::Internal(_)
             | GetNftInfoError::GetEthAddressError(_)
             | GetNftInfoError::TokenNotFoundInWallet { .. }
-            | GetNftInfoError::AddressError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | GetNftInfoError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum UpdateNftError {
+    #[display(fmt = "DB error {}", _0)]
+    DbError(String),
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+    GetNftInfoError(GetNftInfoError),
+    GetMyAddressError(GetMyAddressError),
+    #[display(
+        fmt = "Token: token_address {}, token_id {} was not found in wallet",
+        token_address,
+        token_id
+    )]
+    TokenNotFoundInWallet {
+        token_address: String,
+        token_id: String,
+    },
+    #[display(
+        fmt = "Insufficient amount NFT token in the cache: amount in list table before transfer {}, transferred {}",
+        amount_list,
+        amount_history
+    )]
+    InsufficientAmountInCache {
+        amount_list: String,
+        amount_history: String,
+    },
+    #[display(
+        fmt = "Last scanned nft block {} should be >= last block number {} in nft table",
+        last_scanned_block,
+        last_nft_block
+    )]
+    InvalidBlockOrder {
+        last_scanned_block: String,
+        last_nft_block: String,
+    },
+    #[display(
+        fmt = "Last scanned block not found, while the last NFT block exists: {}",
+        last_nft_block
+    )]
+    LastScannedBlockNotFound {
+        last_nft_block: String,
+    },
+}
+
+impl From<CreateNftStorageError> for UpdateNftError {
+    fn from(e: CreateNftStorageError) -> Self {
+        match e {
+            CreateNftStorageError::Internal(err) => UpdateNftError::Internal(err),
+        }
+    }
+}
+
+impl From<GetNftInfoError> for UpdateNftError {
+    fn from(e: GetNftInfoError) -> Self { UpdateNftError::GetNftInfoError(e) }
+}
+
+impl From<GetMyAddressError> for UpdateNftError {
+    fn from(e: GetMyAddressError) -> Self { UpdateNftError::GetMyAddressError(e) }
+}
+
+impl<T: NftStorageError> From<T> for UpdateNftError {
+    fn from(err: T) -> Self { UpdateNftError::DbError(format!("{:?}", err)) }
+}
+
+impl HttpStatusCode for UpdateNftError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            UpdateNftError::DbError(_)
+            | UpdateNftError::Internal(_)
+            | UpdateNftError::GetNftInfoError(_)
+            | UpdateNftError::GetMyAddressError(_)
+            | UpdateNftError::TokenNotFoundInWallet { .. }
+            | UpdateNftError::InsufficientAmountInCache { .. }
+            | UpdateNftError::InvalidBlockOrder { .. }
+            | UpdateNftError::LastScannedBlockNotFound { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -95,7 +214,8 @@ impl From<SlurpError> for GetInfoFromUriError {
         match e {
             SlurpError::ErrorDeserializing { .. } => GetInfoFromUriError::InvalidResponse(error_str),
             SlurpError::Transport { .. } | SlurpError::Timeout { .. } => GetInfoFromUriError::Transport(error_str),
-            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => GetInfoFromUriError::Internal(error_str),
+            SlurpError::InvalidRequest(_) => GetInfoFromUriError::InvalidRequest(error_str),
+            SlurpError::Internal(_) => GetInfoFromUriError::Internal(error_str),
         }
     }
 }

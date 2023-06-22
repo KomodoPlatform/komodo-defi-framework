@@ -49,7 +49,7 @@ gstuff = { version = "0.7", features = ["nightly"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }
-mm2_rpc = { path = "../mm2_rpc" }
+mm2_rpc = { path = "../mm2_rpc", features=["rpc_facilities"] }
 serde = "1.0"
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }

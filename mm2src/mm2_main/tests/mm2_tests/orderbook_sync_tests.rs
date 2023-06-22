@@ -4,13 +4,13 @@ use common::{block_on, log};
 use http::StatusCode;
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
+use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::rick_electrums;
 use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, get_passphrase, morty_conf, orderbook_v2,
                                   rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf, ETH_DEV_NODES, RICK,
                                   ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::get_passphrase;
-use mm2_test_helpers::structs::{EnableElectrumResponse, GetPublicKeyResult, OrderbookEntryAggregate,
-                                OrderbookResponse, OrderbookV2Response, RpcV2Response, SetPriceResponse};
+use mm2_test_helpers::structs::{GetPublicKeyResult, OrderbookV2Response, RpcV2Response, SetPriceResponse};
 use serde_json::{self as json, json, Value as Json};
 use std::env;
 use std::str::FromStr;
@@ -75,7 +75,10 @@ fn alice_can_see_the_active_order_after_connection() {
     let bob_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
     log!("Bob orderbook {:?}", bob_orderbook);
     assert!(!bob_orderbook.asks.is_empty(), "Bob RICK/MORTY asks are empty");
-    assert_eq!(BigDecimal::from_str("0.9").unwrap(), bob_orderbook.asks[0].max_volume);
+    assert_eq!(
+        BigDecimal::from_str("0.9").unwrap(),
+        bob_orderbook.asks[0].entry.max_volume
+    );
 
     // start eve and immediately place the order
     let mm_eve = MarketMakerIt::start(
@@ -277,7 +280,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
         electrum.1
     );
     log!("enable tBTC: {:?}", electrum);
-    let enable_tbtc_res: EnableElectrumResponse = json::from_str(&electrum.1).unwrap();
+    let enable_tbtc_res: CoinInitResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
     let electrum = block_on(mm_bob.rpc(&json!({
@@ -420,8 +423,8 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
     let response: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    assert_eq!(response.asks[0].address, tbtc_segwit_address);
-    assert_eq!(response.bids[0].address, rick_address);
+    assert_eq!(response.asks[0].entry.address, tbtc_segwit_address);
+    assert_eq!(response.bids[0].entry.address, rick_address);
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
@@ -477,7 +480,7 @@ fn test_orderbook_segwit() {
         electrum.1
     );
     log!("enable tBTC: {:?}", electrum);
-    let enable_tbtc_res: EnableElectrumResponse = json::from_str(&electrum.1).unwrap();
+    let enable_tbtc_res: CoinInitResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
     let electrum = block_on(mm_bob.rpc(&json!({
@@ -555,8 +558,8 @@ fn test_orderbook_segwit() {
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
     let response: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    assert_eq!(response.asks[0].address, tbtc_segwit_address);
-    assert_eq!(response.bids[0].address, rick_address);
+    assert_eq!(response.asks[0].entry.address, tbtc_segwit_address);
+    assert_eq!(response.bids[0].entry.address, rick_address);
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
@@ -701,20 +704,32 @@ fn test_conf_settings_in_orderbook() {
         1,
         "Alice RICK/MORTY orderbook must have exactly 1 ask"
     );
-    assert_eq!(alice_orderbook.asks[0].base_confs, 10);
-    assert!(alice_orderbook.asks[0].base_nota);
-    assert_eq!(alice_orderbook.asks[0].rel_confs, 5);
-    assert!(!alice_orderbook.asks[0].rel_nota);
+    assert_eq!(
+        alice_orderbook.asks[0].entry.conf_settings.as_ref().unwrap().base_confs,
+        10
+    );
+    assert!(alice_orderbook.asks[0].entry.conf_settings.as_ref().unwrap().base_nota);
+    assert_eq!(
+        alice_orderbook.asks[0].entry.conf_settings.as_ref().unwrap().rel_confs,
+        5
+    );
+    assert!(!alice_orderbook.asks[0].entry.conf_settings.as_ref().unwrap().rel_nota);
 
     assert_eq!(
         alice_orderbook.bids.len(),
         1,
         "Alice RICK/MORTY orderbook must have exactly 1 bid"
     );
-    assert_eq!(alice_orderbook.bids[0].base_confs, 10);
-    assert!(alice_orderbook.bids[0].base_nota);
-    assert_eq!(alice_orderbook.bids[0].rel_confs, 5);
-    assert!(!alice_orderbook.bids[0].rel_nota);
+    assert_eq!(
+        alice_orderbook.bids[0].entry.conf_settings.as_ref().unwrap().base_confs,
+        10
+    );
+    assert!(alice_orderbook.bids[0].entry.conf_settings.as_ref().unwrap().base_nota);
+    assert_eq!(
+        alice_orderbook.bids[0].entry.conf_settings.as_ref().unwrap().rel_confs,
+        5
+    );
+    assert!(!alice_orderbook.bids[0].entry.conf_settings.as_ref().unwrap().rel_nota);
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
@@ -839,12 +854,18 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     let bob_order_in_orderbook = alice_orderbook
         .asks
         .iter()
-        .find(|entry| entry.pubkey == bob_pubkey)
+        .find(|entry| entry.entry.pubkey == bob_pubkey)
         .unwrap();
-    assert_eq!(bob_order_in_orderbook.base_confs, 10);
-    assert!(bob_order_in_orderbook.base_nota);
-    assert_eq!(bob_order_in_orderbook.rel_confs, 5);
-    assert!(!bob_order_in_orderbook.rel_nota);
+    assert_eq!(
+        bob_order_in_orderbook.entry.conf_settings.as_ref().unwrap().base_confs,
+        10
+    );
+    assert!(bob_order_in_orderbook.entry.conf_settings.as_ref().unwrap().base_nota);
+    assert_eq!(
+        bob_order_in_orderbook.entry.conf_settings.as_ref().unwrap().rel_confs,
+        5
+    );
+    assert!(!bob_order_in_orderbook.entry.conf_settings.as_ref().unwrap().rel_nota);
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
@@ -924,31 +945,43 @@ fn orderbook_extended_data() {
     let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
     log!("orderbook {:?}", rc.1);
     let expected_total_asks_base_vol = MmNumber::from("2.7");
-    assert_eq!(expected_total_asks_base_vol.to_decimal(), orderbook.total_asks_base_vol);
+    assert_eq!(
+        expected_total_asks_base_vol.to_decimal(),
+        orderbook.total_asks_base.total_asks_base_vol
+    );
 
     let expected_total_bids_base_vol = MmNumber::from("1.62");
-    assert_eq!(expected_total_bids_base_vol.to_decimal(), orderbook.total_bids_base_vol);
+    assert_eq!(
+        expected_total_bids_base_vol.to_decimal(),
+        orderbook.total_bids_base.total_bids_base_vol
+    );
 
     let expected_total_asks_rel_vol = MmNumber::from("2.16");
-    assert_eq!(expected_total_asks_rel_vol.to_decimal(), orderbook.total_asks_rel_vol);
+    assert_eq!(
+        expected_total_asks_rel_vol.to_decimal(),
+        orderbook.total_asks_rel.total_asks_rel_vol
+    );
 
     let expected_total_bids_rel_vol = MmNumber::from("1.8");
-    assert_eq!(expected_total_bids_rel_vol.to_decimal(), orderbook.total_bids_rel_vol);
+    assert_eq!(
+        expected_total_bids_rel_vol.to_decimal(),
+        orderbook.total_bids_rel.total_bids_rel_vol
+    );
 
     fn check_price_and_vol_aggr(
-        order: &OrderbookEntryAggregate,
+        order: &AggregatedOrderbookEntry,
         price: &'static str,
         base_aggr: &'static str,
         rel_aggr: &'static str,
     ) {
         let price = MmNumber::from(price);
-        assert_eq!(price.to_decimal(), order.price);
+        assert_eq!(price.to_decimal(), order.entry.price);
 
         let base_aggr = MmNumber::from(base_aggr);
-        assert_eq!(base_aggr.to_decimal(), order.base_max_volume_aggr);
+        assert_eq!(base_aggr.to_decimal(), order.base_max_volume_aggr.base_max_volume_aggr);
 
         let rel_aggr = MmNumber::from(rel_aggr);
-        assert_eq!(rel_aggr.to_decimal(), order.rel_max_volume_aggr);
+        assert_eq!(rel_aggr.to_decimal(), order.rel_max_volume_aggr.rel_max_volume_aggr);
     }
 
     check_price_and_vol_aggr(&orderbook.asks[0], "0.9", "2.7", "2.16");
@@ -1026,11 +1059,17 @@ fn orderbook_should_display_base_rel_volumes() {
     log!("orderbook {:?}", orderbook);
     assert_eq!(orderbook.asks.len(), 1, "RICK/MORTY orderbook must have exactly 1 ask");
     let min_volume = BigRational::new(1.into(), 10000.into());
-    assert_eq!(volume, orderbook.asks[0].base_max_volume_rat);
-    assert_eq!(min_volume, orderbook.asks[0].base_min_volume_rat);
+    assert_eq!(volume, orderbook.asks[0].entry.base_max_volume.base_max_volume_rat);
+    assert_eq!(min_volume, orderbook.asks[0].entry.base_min_volume.base_min_volume_rat);
 
-    assert_eq!(&volume * &price, orderbook.asks[0].rel_max_volume_rat);
-    assert_eq!(&min_volume * &price, orderbook.asks[0].rel_min_volume_rat);
+    assert_eq!(
+        &volume * &price,
+        orderbook.asks[0].entry.rel_max_volume.rel_max_volume_rat
+    );
+    assert_eq!(
+        &min_volume * &price,
+        orderbook.asks[0].entry.rel_min_volume.rel_min_volume_rat
+    );
 
     log!("Get MORTY/RICK orderbook");
     let rc = block_on(mm.rpc(&json!({
@@ -1046,11 +1085,17 @@ fn orderbook_should_display_base_rel_volumes() {
     log!("orderbook {:?}", orderbook);
     assert_eq!(orderbook.bids.len(), 1, "MORTY/RICK orderbook must have exactly 1 bid");
     let min_volume = BigRational::new(1.into(), 10000.into());
-    assert_eq!(volume, orderbook.bids[0].rel_max_volume_rat);
-    assert_eq!(min_volume, orderbook.bids[0].rel_min_volume_rat);
+    assert_eq!(volume, orderbook.bids[0].entry.rel_max_volume.rel_max_volume_rat);
+    assert_eq!(min_volume, orderbook.bids[0].entry.rel_min_volume.rel_min_volume_rat);
 
-    assert_eq!(&volume * &price, orderbook.bids[0].base_max_volume_rat);
-    assert_eq!(&min_volume * &price, orderbook.bids[0].base_min_volume_rat);
+    assert_eq!(
+        &volume * &price,
+        orderbook.bids[0].entry.base_max_volume.base_max_volume_rat
+    );
+    assert_eq!(
+        &min_volume * &price,
+        orderbook.bids[0].entry.base_min_volume.base_min_volume_rat
+    );
 }
 
 #[test]

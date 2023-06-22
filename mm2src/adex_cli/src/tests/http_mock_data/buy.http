@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+access-control-allow-origin: http://localhost:3000
+content-length: 720
+date: Tue, 02 May 2023 10:09:55 GMT
+
+{"result":{"base":"MORTY","rel":"RICK","base_amount":"0.01","base_amount_rat":[[1,[1]],[1,[100]]],"rel_amount":"0.005","rel_amount_rat":[[1,[1]],[1,[200]]],"action":"Buy","uuid":"4685e133-dfb3-4b31-8d4c-0ffa79933c8e","method":"request","sender_pubkey":"264fcd9401d797c50fe2f1c7d5fe09bbc10f3838c1d8d6f793061fa5f38b2b4d","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"},"conf_settings":{"base_confs":1,"base_nota":false,"rel_confs":1,"rel_nota":false},"order_type":{"type":"GoodTillCancelled"},"min_volume":"0.0002","min_volume_fraction":{"numer":"1","denom":"5000"},"min_volume_rat":[[1,[1]],[1,[5000]]],"base_orderbook_ticker":null,"rel_orderbook_ticker":null}}

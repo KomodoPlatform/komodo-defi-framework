@@ -8,17 +8,19 @@ doctest = false
 
 [dependencies]
 common = { path = "../common" }
-mm2_err_handle = { path = "../mm2_err_handle" }
 derive_more = "0.99"
-futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
-http = "0.2"
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"], optional = true }
+gstuff = { version = "0.7", features = ["nightly"], optional = true}
+http = {version = "0.2", optional = true}
+mm2_err_handle = { path = "../mm2_err_handle", optional = true }
+mm2_number = { path = "../mm2_number" }
+rpc = { path = "../mm2_bitcoin/rpc" }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-ser_error = { path = "../derives/ser_error" }
-ser_error_derive = { path = "../derives/ser_error_derive" }
+ser_error = { path = "../derives/ser_error", optional = true}
+ser_error_derive = { path = "../derives/ser_error_derive", optional=true }
+uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-gstuff = { version = "0.7", features = ["nightly"] }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-gstuff = { version = "0.7", features = ["nightly"] }
+[features]
+default = []
+rpc_facilities = ["futures", "gstuff", "http", "mm2_err_handle", "ser_error", "ser_error_derive"]

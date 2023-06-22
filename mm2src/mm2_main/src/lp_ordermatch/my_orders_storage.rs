@@ -353,8 +353,9 @@ mod wasm_impl {
     use crate::mm2::lp_ordermatch::ordermatch_wasm_db::{DbTransactionError, InitDbError, MyActiveMakerOrdersTable,
                                                         MyActiveTakerOrdersTable, MyFilteringHistoryOrdersTable,
                                                         MyHistoryOrdersTable};
-    use crate::mm2::lp_ordermatch::{OrdermatchContext, TakerAction};
+    use crate::mm2::lp_ordermatch::OrdermatchContext;
     use common::log::warn;
+    use mm2_rpc::data::legacy::TakerAction;
     use num_traits::ToPrimitive;
     use std::sync::Arc;
 
@@ -694,12 +695,13 @@ mod tests {
     use super::wasm_impl::{maker_order_to_filtering_history_item, taker_order_to_filtering_history_item};
     use super::*;
     use crate::mm2::lp_ordermatch::ordermatch_wasm_db::{ItemId, MyFilteringHistoryOrdersTable};
-    use crate::mm2::lp_ordermatch::{MatchBy, OrderType, OrdermatchContext, TakerAction, TakerRequest};
+    use crate::mm2::lp_ordermatch::{OrdermatchContext, TakerRequest};
     use common::{new_uuid, now_ms};
     use futures::compat::Future01CompatExt;
     use itertools::Itertools;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_db::indexed_db::TableSignature;
+    use mm2_rpc::data::legacy::{MatchBy, OrderType, TakerAction};
     use std::collections::HashMap;
     use wasm_bindgen_test::*;
 

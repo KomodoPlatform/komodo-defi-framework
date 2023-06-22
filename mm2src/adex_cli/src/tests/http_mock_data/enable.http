@@ -1,0 +1,4 @@
+HTTP/1.1 200 OK
+content-length: 188
+
+{"result":"success","address":"0x224050fb7EB13Fa0D342F5b245f1237bAB531650","balance":"0.02","unspendable_balance":"0","coin":"ETH","required_confirmations":3,"requires_notarization":false}

@@ -362,7 +362,7 @@ mod tests {
     fn test_peer_id_serde() {
         let peer_id = PeerIdSerde(PeerId::random());
         let serialized = rmp_serde::to_vec(&peer_id).unwrap();
-        let deserialized: PeerIdSerde = rmp_serde::from_read_ref(&serialized).unwrap();
+        let deserialized: PeerIdSerde = rmp_serde::from_slice(&serialized).unwrap();
         assert_eq!(peer_id.0, deserialized.0);
     }
 

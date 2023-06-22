@@ -2,9 +2,10 @@ use crate::docker_tests::docker_tests_common::*;
 use crate::integration_tests_common::enable_native;
 use http::StatusCode;
 use mm2_number::BigDecimal;
+use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::for_tests::{assert_coin_not_found_on_balance, disable_coin, enable_bch_with_tokens, enable_slp,
                                   my_balance, UtxoRpcMode};
-use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableElectrumResponse, EnableSlpResponse, RpcV2Response};
+use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableSlpResponse, RpcV2Response};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashSet;
 use std::time::Duration;
@@ -56,7 +57,7 @@ fn test_bch_and_slp_balance() {
     let mm = slp_supplied_node();
 
     let enable_bch = block_on(enable_native_bch(&mm, "FORSLP", &[]));
-    let enable_bch: EnableElectrumResponse = json::from_value(enable_bch).unwrap();
+    let enable_bch: CoinInitResponse = json::from_value(enable_bch).unwrap();
 
     let expected_spendable = BigDecimal::from(1000);
     assert_eq!(expected_spendable, enable_bch.balance);
@@ -89,7 +90,7 @@ fn test_bch_and_slp_balance_enable_slp_v2() {
     let mm = slp_supplied_node();
 
     let enable_bch = block_on(enable_native_bch(&mm, "FORSLP", &[]));
-    let enable_bch: EnableElectrumResponse = json::from_value(enable_bch).unwrap();
+    let enable_bch: CoinInitResponse = json::from_value(enable_bch).unwrap();
 
     let expected_spendable = BigDecimal::from(1000);
     assert_eq!(expected_spendable, enable_bch.balance);

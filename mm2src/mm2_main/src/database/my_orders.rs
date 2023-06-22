@@ -1,12 +1,14 @@
-use crate::mm2::lp_ordermatch::{FilteringOrder, MakerOrder, MyOrdersFilter, RecentOrdersSelectResult, TakerAction,
-                                TakerOrder};
+#![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
+
+use crate::mm2::lp_ordermatch::{FilteringOrder, MakerOrder, MyOrdersFilter, RecentOrdersSelectResult, TakerOrder};
 /// This module contains code to work with my_orders table in MM2 SQLite DB
 use common::log::debug;
 use common::{now_ms, PagingOptions};
 use db_common::sqlite::offset_by_uuid;
-use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
+use db_common::sqlite::rusqlite::{params_from_iter, Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use mm2_core::mm_ctx::MmArc;
+use mm2_rpc::data::legacy::TakerAction;
 use std::convert::TryInto;
 use std::string::ParseError;
 use uuid::Uuid;
@@ -55,7 +57,8 @@ pub fn insert_maker_order(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> SqlRes
         "Created".to_string(),
     ];
     let conn = ctx.sqlite_connection();
-    conn.execute(INSERT_MY_ORDER, &params).map(|_| ())
+    conn.execute(INSERT_MY_ORDER, params_from_iter(params.iter()))
+        .map(|_| ())
 }
 
 pub fn insert_taker_order(ctx: &MmArc, uuid: Uuid, order: &TakerOrder) -> SqlResult<()> {
@@ -79,7 +82,8 @@ pub fn insert_taker_order(ctx: &MmArc, uuid: Uuid, order: &TakerOrder) -> SqlRes
         "Created".to_string(),
     ];
     let conn = ctx.sqlite_connection();
-    conn.execute(INSERT_MY_ORDER, &params).map(|_| ())
+    conn.execute(INSERT_MY_ORDER, params_from_iter(params.iter()))
+        .map(|_| ())
 }
 
 pub fn update_maker_order(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> SqlResult<()> {
@@ -92,7 +96,8 @@ pub fn update_maker_order(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> SqlRes
         "Updated".to_string(),
     ];
     let conn = ctx.sqlite_connection();
-    conn.execute(UPDATE_MY_ORDER, &params).map(|_| ())
+    conn.execute(UPDATE_MY_ORDER, params_from_iter(params.iter()))
+        .map(|_| ())
 }
 
 pub fn update_was_taker(ctx: &MmArc, uuid: Uuid) -> SqlResult<()> {
@@ -104,14 +109,16 @@ pub fn update_was_taker(ctx: &MmArc, uuid: Uuid) -> SqlResult<()> {
         1.to_string(),
     ];
     let conn = ctx.sqlite_connection();
-    conn.execute(UPDATE_WAS_TAKER, &params).map(|_| ())
+    conn.execute(UPDATE_WAS_TAKER, params_from_iter(params.iter()))
+        .map(|_| ())
 }
 
 pub fn update_order_status(ctx: &MmArc, uuid: Uuid, status: String) -> SqlResult<()> {
     debug!("Updating order {} in the SQLite database", uuid);
     let params = vec![uuid.to_string(), now_ms().to_string(), status];
     let conn = ctx.sqlite_connection();
-    conn.execute(UPDATE_ORDER_STATUS, &params).map(|_| ())
+    conn.execute(UPDATE_ORDER_STATUS, params_from_iter(params.iter()))
+        .map(|_| ())
 }
 
 /// Adds where clauses determined by MyOrdersFilter
@@ -277,5 +284,7 @@ pub fn select_orders_by_filter(
 
 pub fn select_status_by_uuid(conn: &Connection, uuid: &Uuid) -> Result<String, SqlError> {
     let params = vec![uuid.to_string()];
-    conn.query_row(SELECT_STATUS_BY_UUID, &params, |row| row.get::<_, String>(0))
+    conn.query_row(SELECT_STATUS_BY_UUID, params_from_iter(params.iter()), |row| {
+        row.get::<_, String>(0)
+    })
 }

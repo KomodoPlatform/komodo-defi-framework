@@ -33,11 +33,11 @@ use std::str::FromStr;
 macro_rules! construct_detailed {
     ($name: ident, $base_field: ident) => {
         $crate::paste! {
-            #[derive(Clone, Debug, Serialize)]
+            #[derive(Clone, Debug, Serialize, Deserialize)]
             pub struct $name {
-                $base_field: $crate::BigDecimal,
-                [<$base_field _fraction>]: $crate::Fraction,
-                [<$base_field _rat>]: $crate::BigRational,
+                pub $base_field: $crate::BigDecimal,
+                pub [<$base_field _fraction>]: $crate::Fraction,
+                pub [<$base_field _rat>]: $crate::BigRational,
             }
 
             impl From<$crate::MmNumber> for $name {

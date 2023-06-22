@@ -1,9 +1,9 @@
 use crate::sql_constraint::SqlConstraint;
 use crate::sql_value::{FromQuoted, SqlValue};
 use crate::sqlite::StringError;
-use common::fmt::{WriteSafe, WriteSafeJoin};
-use common::write_safe;
-use rusqlite::{Connection, Error as SqlError, Result as SqlResult, NO_PARAMS};
+use common::{write_safe,
+             write_safe::fmt::{WriteSafe, WriteSafeJoin}};
+use rusqlite::{Connection, Error as SqlError, Result as SqlResult};
 use std::fmt;
 
 pub enum SqlType {
@@ -144,7 +144,7 @@ impl<'a> SqlCreateTable<'a> {
     }
 
     pub fn create(self) -> SqlResult<()> {
-        self.conn.execute(&self.sql()?, NO_PARAMS)?;
+        self.conn.execute(&self.sql()?, [])?;
         Ok(())
     }
 

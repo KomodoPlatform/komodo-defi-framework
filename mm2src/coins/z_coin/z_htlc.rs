@@ -9,23 +9,32 @@ use super::ZCoin;
 use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use crate::utxo::utxo_common::payment_script;
 use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
-use crate::z_coin::{SendOutputsErr, ZOutput, DEX_FEE_OVK};
-use crate::{NumConversError, PrivKeyPolicyNotAllowed, TransactionEnum};
+use crate::z_coin::SendOutputsErr;
+use crate::z_coin::{ZOutput, DEX_FEE_OVK};
+use crate::NumConversError;
+use crate::{PrivKeyPolicyNotAllowed, TransactionEnum};
 use bitcrypto::dhash160;
-use common::async_blocking;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use keys::{Address, KeyPair, Public};
+use keys::Address;
+use keys::{KeyPair, Public};
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
-use script::{Builder as ScriptBuilder, Opcode, Script};
-use secp256k1::SecretKey;
-use zcash_primitives::consensus;
+use script::Script;
+use script::{Builder as ScriptBuilder, Opcode};
 use zcash_primitives::legacy::Script as ZCashScript;
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::transaction::builder::{Builder as ZTxBuilder, Error as ZTxBuilderError};
-use zcash_primitives::transaction::components::{Amount, OutPoint as ZCashOutpoint, TxOut};
+use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
+use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
+
+cfg_native!(
+    use common::async_blocking;
+    use secp256k1::SecretKey;
+    use zcash_primitives::consensus;
+    use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
+    use zcash_primitives::transaction::components::OutPoint as ZCashOutpoint;
+);
 
 /// Sends HTLC output from the coin's my_z_addr
 pub async fn z_send_htlc(
@@ -93,7 +102,7 @@ pub async fn z_send_dex_fee(
 }
 
 #[derive(Debug, Display)]
-#[allow(clippy::large_enum_variant, clippy::upper_case_acronyms)]
+#[allow(clippy::large_enum_variant, clippy::upper_case_acronyms, unused)]
 pub enum ZP2SHSpendError {
     ZTxBuilderError(ZTxBuilderError),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
@@ -130,6 +139,7 @@ impl ZP2SHSpendError {
 }
 
 /// Spends P2SH output 0 to the coin's my_z_addr
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn z_p2sh_spend(
     coin: &ZCoin,
     p2sh_tx: ZTransaction,
@@ -180,4 +190,17 @@ pub async fn z_p2sh_spend(
         .await
         .map(|_| zcash_tx.clone())
         .mm_err(|e| ZP2SHSpendError::TxRecoverable(zcash_tx.into(), e.to_string()))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn z_p2sh_spend(
+    _coin: &ZCoin,
+    _p2sh_tx: ZTransaction,
+    _tx_locktime: u32,
+    _input_sequence: u32,
+    _redeem_script: Script,
+    _script_data: Script,
+    _htlc_keypair: &KeyPair,
+) -> Result<ZTransaction, MmError<ZP2SHSpendError>> {
+    todo!()
 }

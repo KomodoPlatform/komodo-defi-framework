@@ -9,7 +9,7 @@ pub mod my_orders;
 use crate::CREATE_MY_SWAPS_TABLE;
 use common::log::{debug, error, info};
 use db_common::sqlite::run_optimization_pragmas;
-use db_common::sqlite::rusqlite::{Result as SqlResult, NO_PARAMS};
+use db_common::sqlite::rusqlite::{params_from_iter, Result as SqlResult};
 use mm2_core::mm_ctx::MmArc;
 
 use my_swaps::fill_my_swaps_from_json_statements;
@@ -19,7 +19,7 @@ const SELECT_MIGRATION: &str = "SELECT * FROM migration ORDER BY current_migrati
 
 fn get_current_migration(ctx: &MmArc) -> SqlResult<i64> {
     let conn = ctx.sqlite_connection();
-    conn.query_row(SELECT_MIGRATION, NO_PARAMS, |row| row.get(0))
+    conn.query_row(SELECT_MIGRATION, [], |row| row.get(0))
 }
 
 pub async fn init_and_migrate_db(ctx: &MmArc) -> SqlResult<()> {
@@ -124,10 +124,10 @@ pub async fn migrate_sqlite_database(ctx: &MmArc, mut current_migration: i64) ->
         let transaction = conn.unchecked_transaction()?;
         for (statement, params) in statements_with_params {
             debug!("Executing SQL statement {:?} with params {:?}", statement, params);
-            transaction.execute(statement, params)?;
+            transaction.execute(statement, params_from_iter(params.iter()))?;
         }
         current_migration += 1;
-        transaction.execute("INSERT INTO migration (current_migration) VALUES (?1);", &[
+        transaction.execute("INSERT INTO migration (current_migration) VALUES (?1);", [
             current_migration,
         ])?;
         transaction.commit()?;

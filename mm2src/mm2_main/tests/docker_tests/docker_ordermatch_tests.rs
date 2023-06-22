@@ -2,9 +2,10 @@ use crate::generate_utxo_coin_with_random_privkey;
 use crate::integration_tests_common::enable_native;
 use common::block_on;
 use mm2_number::BigDecimal;
+use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::for_tests::{mm_dump, MarketMakerIt};
 use mm2_test_helpers::structs::{BestOrdersResponse, BestOrdersV2Response, BuyOrSellRpcResult, MyOrdersRpcResult,
-                                OrderbookDepthResponse, OrderbookResponse, RpcV2Response, SetPriceResponse};
+                                OrderbookDepthResponse, RpcV2Response, SetPriceResponse};
 use serde_json::Value as Json;
 use std::thread;
 use std::time::Duration;
@@ -816,7 +817,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
         1,
         "MYCOIN/MYCOIN1 orderbook must have exactly 1 asks"
     );
-    assert_eq!(orderbook.asks[0].max_volume, new_expected_vol);
+    assert_eq!(orderbook.asks[0].entry.max_volume, new_expected_vol);
 
     log!("Get my orders");
     let rc = block_on(mm_maker.rpc(&json! ({
@@ -879,7 +880,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
         1,
         "MYCOIN/MYCOIN1 orderbook must have exactly 1 asks"
     );
-    assert_eq!(orderbook.asks[0].max_volume, new_expected_vol);
+    assert_eq!(orderbook.asks[0].entry.max_volume, new_expected_vol);
 
     log!("Get my orders");
     let rc = block_on(mm_maker_dup.rpc(&json! ({

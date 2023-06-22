@@ -3,7 +3,7 @@ use crate::sql_value::{SqlValue, SqlValueToString};
 use crate::sqlite::{query_single_row, validate_ident, validate_table_name, OwnedSqlParam, OwnedSqlParams,
                     SqlParamsBuilder, StringError, ToValidSqlIdent, ToValidSqlTable};
 use log::debug;
-use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row};
+use rusqlite::{params_from_iter, Connection, Error as SqlError, Result as SqlResult, Row};
 use sql_builder::SqlBuilder;
 
 /// A `SELECT` SQL query builder.
@@ -266,7 +266,9 @@ impl<'a> SqlQuery<'a> {
 
         debug!("Trying to execute SQL query {} with params {:?}", sql, self.params());
         let mut stmt = self.conn.prepare(&sql)?;
-        let items = stmt.query_map(self.params(), f)?.collect::<SqlResult<Vec<_>>>()?;
+        let items = stmt
+            .query_map(params_from_iter(self.params().iter()), f)?
+            .collect::<SqlResult<Vec<_>>>()?;
         // Otherwise, we'll get the compile error:
         // `stmt` does not live long enough
         Ok(items)
@@ -284,7 +286,7 @@ impl<'a> SqlQuery<'a> {
             .sql()
             .map_err(|e| SqlError::ToSqlConversionFailure(e.into()))?;
         debug!("Trying to execute SQL query {} with params {:?}", sql, self.params());
-        query_single_row(self.conn, &sql, self.params(), f)
+        query_single_row(self.conn, &sql, params_from_iter(self.params().iter()), f)
     }
 
     /// Applies [`SqlQuery::ordering`] to [`SqlQuery::sql_builder`].
@@ -315,6 +317,23 @@ impl<'a> SqlQuery<'a> {
         self.sql_builder
             .field(format!("ROW_NUMBER() OVER (ORDER BY {}) AS {}", order_by, alias));
         Ok(self)
+    }
+
+    /// Count all rows
+    pub fn count_all(&mut self) -> SqlResult<&mut Self> {
+        self.sql_builder.count("*");
+        Ok(self)
+    }
+
+    /// Select from union tables
+    pub fn select_from_union_alias(conn: &'a Connection, union_sql: &str, alias: &'static str) -> SqlResult<Self> {
+        validate_table_name(alias)?;
+        Ok(SqlQuery {
+            conn,
+            sql_builder: SqlBuilder::select_from(format!("({}) AS {}", union_sql, alias)),
+            params: SqlParamsBuilder::default(),
+            ordering: Vec::default(),
+        })
     }
 }
 
@@ -357,7 +376,6 @@ impl SqlOrdering {
 mod tests {
     use super::*;
     use crate::sql_insert::SqlInsert;
-    use rusqlite::NO_PARAMS;
 
     const CREATE_TX_HISTORY_TABLE: &str = "CREATE TABLE tx_history (
         tx_hash VARCHAR(255) NOT NULL UNIQUE,
@@ -371,8 +389,8 @@ mod tests {
     );";
 
     fn init_table_for_test(conn: &Connection) {
-        conn.execute(CREATE_TX_HISTORY_TABLE, NO_PARAMS).unwrap();
-        conn.execute(CREATE_TX_ADDRESS_TABLE, NO_PARAMS).unwrap();
+        conn.execute(CREATE_TX_HISTORY_TABLE, []).unwrap();
+        conn.execute(CREATE_TX_ADDRESS_TABLE, []).unwrap();
 
         let history_items = vec![
             ("tx_hash_1", 699545, 23, Some(0.5)),

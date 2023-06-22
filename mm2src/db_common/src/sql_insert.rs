@@ -1,9 +1,9 @@
 use crate::sql_value::{FromQuoted, SqlValueOptional, SqlValueToString};
 use crate::sqlite::{OwnedSqlParam, OwnedSqlParams, SqlParamsBuilder, ToValidSqlIdent};
-use common::fmt::{WriteSafe, WriteSafeJoin};
 use common::write_safe;
+use common::write_safe::fmt::{WriteSafe, WriteSafeJoin};
 use log::debug;
-use rusqlite::{Connection, Result as SqlResult};
+use rusqlite::{params_from_iter, Connection, Result as SqlResult};
 use std::fmt;
 
 enum InsertMode {
@@ -112,7 +112,7 @@ impl<'a> SqlInsert<'a> {
 
         debug!("Trying to execute SQL query {} with params {:?}", sql, self.params());
         let mut stmt = self.conn.prepare(&sql)?;
-        stmt.execute(self.params())
+        stmt.execute(params_from_iter(self.params().iter()))
     }
 
     /// Returns the reference to the specified SQL parameters.
@@ -146,7 +146,6 @@ impl<'a> SqlInsert<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::NO_PARAMS;
 
     const CREATE_TX_HISTORY_TABLE: &str = "CREATE TABLE tx_history (
         tx_hash VARCHAR(255) NOT NULL UNIQUE,
@@ -170,7 +169,7 @@ mod tests {
 
     fn select_from_tx_history(conn: &Connection) -> Vec<TxHistoryItem> {
         let mut stmt = conn.prepare(SELECT_FROM_TX_HISTORY).unwrap();
-        stmt.query_map(NO_PARAMS, |row| {
+        stmt.query_map([], |row| {
             Ok(TxHistoryItem {
                 tx_hash: row.get(0)?,
                 description: row.get(1)?,
@@ -186,7 +185,7 @@ mod tests {
 
     fn select_from_id_table(conn: &Connection) -> Vec<i64> {
         let mut stmt = conn.prepare(SELECT_FROM_ID_TABLE).unwrap();
-        stmt.query_map(NO_PARAMS, |row| row.get(0))
+        stmt.query_map([], |row| row.get(0))
             .unwrap()
             .collect::<SqlResult<_>>()
             .unwrap()
@@ -195,7 +194,7 @@ mod tests {
     #[test]
     fn test_sql_insert() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute(CREATE_TX_HISTORY_TABLE, NO_PARAMS).unwrap();
+        conn.execute(CREATE_TX_HISTORY_TABLE, []).unwrap();
 
         let mut insert = SqlInsert::new(&conn, "tx_history");
         insert
@@ -244,7 +243,7 @@ mod tests {
     #[test]
     fn test_sql_insert_nulls() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute(CREATE_TX_HISTORY_TABLE, NO_PARAMS).unwrap();
+        conn.execute(CREATE_TX_HISTORY_TABLE, []).unwrap();
 
         let description: Option<&'static str> = None;
         let tx_hex: Option<Vec<u8>> = None;
@@ -285,7 +284,7 @@ mod tests {
     #[test]
     fn test_sql_insert_one_column() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute(CREATE_TX_HISTORY_TABLE, NO_PARAMS).unwrap();
+        conn.execute(CREATE_TX_HISTORY_TABLE, []).unwrap();
 
         let mut insert = SqlInsert::new(&conn, "tx_history");
         insert.column_quoted("tx_hash", "tx_hash_1").unwrap();
@@ -310,7 +309,7 @@ mod tests {
     #[test]
     fn test_sql_create_no_columns() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute(CREATE_ID_TABLE, NO_PARAMS).unwrap();
+        conn.execute(CREATE_ID_TABLE, []).unwrap();
 
         let insert = SqlInsert::new(&conn, "id");
 

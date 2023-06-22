@@ -1,9 +1,11 @@
+#![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
+
 pub use rusqlite;
 pub use sql_builder;
 
 use log::debug;
 use rusqlite::types::{FromSql, Type as SqlType, Value};
-use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql, NO_PARAMS};
+use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
 use sql_builder::SqlBuilder;
 use std::error::Error as StdError;
 use std::fmt;
@@ -50,8 +52,7 @@ pub fn string_from_row(row: &Row<'_>) -> Result<String, SqlError> { row.get(0) }
 
 pub fn query_single_row<T, P, F>(conn: &Connection, query: &str, params: P, map_fn: F) -> Result<Option<T>, SqlError>
 where
-    P: IntoIterator,
-    P::Item: ToSql,
+    P: rusqlite::Params,
     F: FnOnce(&Row<'_>) -> Result<T, SqlError>,
 {
     let maybe_result = conn.query_row(query, params, map_fn);
@@ -145,7 +146,7 @@ pub fn offset_by_id<P>(
     where_id: &str,
 ) -> SqlResult<Option<usize>>
 where
-    P: IntoIterator + fmt::Debug,
+    P: IntoIterator + fmt::Debug + rusqlite::Params,
     P::Item: ToSql,
 {
     let row_number = format!("ROW_NUMBER() OVER (ORDER BY {}) AS row", order_by);
@@ -215,10 +216,10 @@ where
 /// be safe to use, while giving great speed boost.
 /// With these, Mac and Linux have comparable SQLite performance.
 pub fn run_optimization_pragmas(conn: &Connection) -> Result<(), SqlError> {
-    conn.query_row("pragma journal_mode = WAL;", NO_PARAMS, |row| row.get::<_, String>(0))?;
-    conn.execute("pragma synchronous = normal;", NO_PARAMS)?;
-    conn.execute("pragma temp_store = memory;", NO_PARAMS)?;
-    conn.execute("pragma foreign_keys = ON;", NO_PARAMS)?;
+    conn.query_row("pragma journal_mode = WAL;", [], |row| row.get::<_, String>(0))?;
+    conn.execute("pragma synchronous = normal;", [])?;
+    conn.execute("pragma temp_store = memory;", [])?;
+    conn.execute("pragma foreign_keys = ON;", [])?;
     Ok(())
 }
 

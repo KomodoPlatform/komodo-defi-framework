@@ -1,5 +1,5 @@
 use crate::sqlite::StringError;
-use common::fmt::WriteJoin;
+use common::write_safe::fmt::WriteJoin;
 use rusqlite::{Error as SqlError, Result as SqlResult};
 use std::collections::BTreeMap;
 use std::fmt;

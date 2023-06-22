@@ -2,12 +2,12 @@ use crate::mm2::lp_init;
 use common::executor::{spawn, Timer};
 use common::log::wasm_log::register_wasm_log;
 use mm2_core::mm_ctx::MmArc;
+use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::electrums::{morty_electrums, rick_electrums};
 use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, morty_conf, rick_conf, start_swaps,
                                   test_qrc20_history_impl, wait_for_swaps_finish_and_check_status, MarketMakerIt,
                                   Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, MORTY, RICK};
 use mm2_test_helpers::get_passphrase;
-use mm2_test_helpers::structs::OrderbookResponse;
 use serde_json::json;
 use wasm_bindgen_test::wasm_bindgen_test;
 

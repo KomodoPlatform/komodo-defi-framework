@@ -1,0 +1,4 @@
+HTTP/1.1 200 OK
+content-length: 279
+
+{"result":[{"ticker":"MORTY","address":"RPFGrvJWjSYN4qYvcXsECW1HoHbvQjowZM"},{"ticker":"RICK","address":"RPFGrvJWjSYN4qYvcXsECW1HoHbvQjowZM"},{"ticker":"KMD","address":"RPFGrvJWjSYN4qYvcXsECW1HoHbvQjowZM"},{"ticker":"ETH","address":"0x224050fb7EB13Fa0D342F5b245f1237bAB531650"}]}

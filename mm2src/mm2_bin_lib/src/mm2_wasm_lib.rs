@@ -16,7 +16,8 @@ use super::*;
 use common::log::{register_callback, LogLevel, WasmCallback};
 use common::{console_err, console_info, deserialize_from_js, executor, serialize_to_js, set_panic_hook};
 use enum_primitive_derive::Primitive;
-use mm2_main::mm2::{LpMainParams, MmVersionResult};
+use mm2_main::mm2::LpMainParams;
+use mm2_rpc::data::legacy::MmVersionResponse;
 use mm2_rpc::wasm_rpc::WasmRpcResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -240,8 +241,11 @@ pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
 /// ```
 #[wasm_bindgen]
 pub fn mm2_version() -> JsValue {
-    serialize_to_js(&MmVersionResult::new(MM_VERSION.into(), MM_DATETIME.into()))
-        .expect("expected serialization to succeed")
+    serialize_to_js(&MmVersionResponse {
+        result: MM_VERSION.into(),
+        datetime: MM_DATETIME.into(),
+    })
+    .expect("expected serialization to succeed")
 }
 
 /// Stops the MarketMaker2 instance.

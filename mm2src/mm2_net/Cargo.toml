@@ -32,5 +32,9 @@ web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomExcepti
 js-sys = "0.3.27"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+futures-util = { version = "0.3" }
+hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 gstuff = { version = "0.7", features = ["nightly"] }
+rustls = { version = "0.20", default-features = false }
+tokio = { version = "1.20" }
+tokio-rustls = { version = "0.23", default-features = false }

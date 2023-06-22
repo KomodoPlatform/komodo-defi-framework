@@ -1,58 +1,66 @@
-use super::{z_coin_errors::*, CheckPointBlockInfo, ZcoinConsensusParams};
-use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientOps, NO_TX_ERROR_CODE};
+use super::{z_coin_errors::*, ZcoinConsensusParams};
+use crate::utxo::rpc_clients::NativeClient;
+use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
 use async_trait::async_trait;
-use common::executor::{spawn_abortable, AbortOnDropHandle, Timer};
-use common::log::{debug, error, info, LogOnError};
-use common::{async_blocking, Future01CompatExt};
-use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError, NO_PARAMS};
-use db_common::sqlite::{query_single_row, run_optimization_pragmas};
-use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, Sender as AsyncSender};
+use common::executor::{spawn_abortable, AbortOnDropHandle};
+use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::StreamExt;
-use group::GroupEncoding;
-use http::Uri;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
-use prost::Message;
-use protobuf::Message as ProtobufMessage;
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::task::block_in_place;
-use tonic::transport::{Channel, ClientTlsConfig};
-use zcash_client_backend::data_api::chain::{scan_cached_blocks, validate_chain};
-use zcash_client_backend::data_api::error::Error as ChainError;
-use zcash_client_backend::data_api::{BlockSource, WalletRead, WalletWrite};
-use zcash_client_backend::proto::compact_formats::CompactBlock;
-use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
-use zcash_client_sqlite::wallet::init::{init_accounts_table, init_blocks_table, init_wallet_db};
-use zcash_client_sqlite::WalletDb;
-use zcash_primitives::block::BlockHash;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
-use zcash_primitives::zip32::ExtendedFullViewingKey;
 
-mod z_coin_grpc {
-    tonic::include_proto!("cash.z.wallet.sdk.rpc");
-}
-use crate::{RpcCommonOps, ZTransaction};
-use rpc::v1::types::H256 as H256Json;
-use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
-use z_coin_grpc::{BlockId, BlockRange, ChainSpec, CompactBlock as TonicCompactBlock,
+cfg_native!(
+    use super::CheckPointBlockInfo;
+    use crate::{RpcCommonOps, ZTransaction};
+    use crate::utxo::rpc_clients::{UtxoRpcClientOps, NO_TX_ERROR_CODE};
+    use crate::z_coin::storage::BlockDbError;
+
+    use db_common::sqlite::rusqlite::Connection;
+    use db_common::sqlite::{query_single_row, run_optimization_pragmas};
+    use common::async_blocking;
+    use common::executor::Timer;
+    use common::log::{debug, error, info, LogOnError};
+    use common::Future01CompatExt;
+    use futures::channel::mpsc::channel;
+    use group::GroupEncoding;
+    use http::Uri;
+    use prost::Message;
+    use rpc::v1::types::H256 as H256Json;
+    use std::path::PathBuf;
+    use std::pin::Pin;
+    use std::str::FromStr;
+    use std::time::Duration;
+    use tokio::task::block_in_place;
+    use tonic::transport::{Channel, ClientTlsConfig};
+    use zcash_client_backend::data_api::{WalletRead, WalletWrite};
+    use zcash_client_backend::data_api::chain::{scan_cached_blocks, validate_chain};
+    use zcash_client_backend::data_api::error::Error as ChainError;
+    use zcash_primitives::block::BlockHash;
+    use zcash_primitives::zip32::ExtendedFullViewingKey;
+    use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
+    use zcash_client_sqlite::wallet::init::{init_accounts_table, init_blocks_table, init_wallet_db};
+    use zcash_client_sqlite::WalletDb;
+
+    mod z_coin_grpc {
+        tonic::include_proto!("cash.z.wallet.sdk.rpc");
+    }
+
+    use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
+    use z_coin_grpc::{BlockId, BlockRange, ChainSpec, CompactBlock as TonicCompactBlock,
                   CompactOutput as TonicCompactOutput, CompactSpend as TonicCompactSpend, CompactTx as TonicCompactTx,
                   TxFilter};
+);
 
-pub type WalletDbShared = Arc<Mutex<WalletDb<ZcoinConsensusParams>>>;
-
-struct CompactBlockRow {
-    height: BlockHeight,
-    data: Vec<u8>,
-}
-
+#[cfg(not(target_arch = "wasm32"))]
 pub type OnCompactBlockFn<'a> = dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + 'a;
+
+#[cfg(target_arch = "wasm32")]
+#[allow(unused)]
+pub type OnCompactBlockFn<'a> = dyn FnMut(String) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + 'a;
 
 #[async_trait]
 pub trait ZRpcOps {
@@ -68,10 +76,12 @@ pub trait ZRpcOps {
     async fn check_tx_existence(&mut self, tx_id: TxId) -> bool;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct LightRpcClient {
     rpc_clients: AsyncMutex<Vec<CompactTxStreamerClient<Channel>>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl RpcCommonOps for LightRpcClient {
     type RpcClient = CompactTxStreamerClient<Channel>;
@@ -93,6 +103,7 @@ impl RpcCommonOps for LightRpcClient {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl ZRpcOps for LightRpcClient {
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>> {
@@ -167,6 +178,7 @@ impl ZRpcOps for LightRpcClient {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl ZRpcOps for NativeClient {
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>> {
@@ -271,106 +283,7 @@ impl ZRpcOps for NativeClient {
     }
 }
 
-/// A wrapper for the SQLite connection to the block cache database.
-pub struct BlockDb(Connection);
-
-impl BlockDb {
-    /// Opens a connection to the wallet database stored at the specified path.
-    pub fn for_path<P: AsRef<Path>>(path: P) -> Result<Self, db_common::sqlite::rusqlite::Error> {
-        let conn = Connection::open(path)?;
-        run_optimization_pragmas(&conn)?;
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS compactblocks (
-            height INTEGER PRIMARY KEY,
-            data BLOB NOT NULL
-        )",
-            NO_PARAMS,
-        )?;
-        Ok(BlockDb(conn))
-    }
-
-    fn with_blocks<F>(
-        &self,
-        from_height: BlockHeight,
-        limit: Option<u32>,
-        mut with_row: F,
-    ) -> Result<(), ZcashClientError>
-    where
-        F: FnMut(CompactBlock) -> Result<(), ZcashClientError>,
-    {
-        // Fetch the CompactBlocks we need to scan
-        let mut stmt_blocks = self
-            .0
-            .prepare("SELECT height, data FROM compactblocks WHERE height > ? ORDER BY height ASC LIMIT ?")?;
-
-        let rows = stmt_blocks.query_map(
-            params![u32::from(from_height), limit.unwrap_or(u32::max_value()),],
-            |row| {
-                Ok(CompactBlockRow {
-                    height: BlockHeight::from_u32(row.get(0)?),
-                    data: row.get(1)?,
-                })
-            },
-        )?;
-
-        for row_result in rows {
-            let cbr = row_result?;
-            let block = CompactBlock::parse_from_bytes(&cbr.data)
-                .map_err(zcash_client_backend::data_api::error::Error::from)?;
-
-            if block.height() != cbr.height {
-                return Err(ZcashClientError::CorruptedData(format!(
-                    "Block height {} did not match row's height field value {}",
-                    block.height(),
-                    cbr.height
-                )));
-            }
-
-            with_row(block)?;
-        }
-
-        Ok(())
-    }
-
-    fn get_latest_block(&self) -> Result<u32, MmError<SqliteError>> {
-        Ok(query_single_row(
-            &self.0,
-            "SELECT height FROM compactblocks ORDER BY height DESC LIMIT 1",
-            NO_PARAMS,
-            |row| row.get(0),
-        )?
-        .unwrap_or(0))
-    }
-
-    fn insert_block(
-        &self,
-        height: u32,
-        cb_bytes: Vec<u8>,
-    ) -> Result<usize, MmError<db_common::sqlite::rusqlite::Error>> {
-        self.0
-            .prepare("INSERT INTO compactblocks (height, data) VALUES (?, ?)")?
-            .execute(params![height, cb_bytes])
-            .map_err(MmError::new)
-    }
-
-    fn rewind_to_height(&self, height: u32) -> Result<usize, MmError<SqliteError>> {
-        self.0
-            .execute("DELETE from compactblocks WHERE height > ?1", [height])
-            .map_err(MmError::new)
-    }
-}
-
-impl BlockSource for BlockDb {
-    type Error = ZcashClientError;
-
-    fn with_blocks<F>(&self, from_height: BlockHeight, limit: Option<u32>, with_row: F) -> Result<(), Self::Error>
-    where
-        F: FnMut(CompactBlock) -> Result<(), Self::Error>,
-    {
-        self.with_blocks(from_height, limit, with_row)
-    }
-}
-
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn create_wallet_db(
     wallet_db_path: PathBuf,
     consensus_params: ZcoinConsensusParams,
@@ -380,9 +293,10 @@ pub async fn create_wallet_db(
     async_blocking({
         move || -> Result<WalletDb<ZcoinConsensusParams>, MmError<ZcoinClientInitError>> {
             let db = WalletDb::for_path(wallet_db_path, consensus_params)
-                .map_to_mm(ZcoinClientInitError::WalletDbInitFailure)?;
-            run_optimization_pragmas(db.sql_conn()).map_to_mm(ZcoinClientInitError::WalletDbInitFailure)?;
-            init_wallet_db(&db).map_to_mm(ZcoinClientInitError::WalletDbInitFailure)?;
+                .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
+            run_optimization_pragmas(db.sql_conn())
+                .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
+            init_wallet_db(&db).map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
             if db.get_extended_full_viewing_keys()?.is_empty() {
                 init_accounts_table(&db, &[evk])?;
                 if let Some(check_point) = check_point_block {
@@ -401,10 +315,11 @@ pub async fn create_wallet_db(
     .await
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) async fn init_light_client(
     coin: String,
     lightwalletd_urls: Vec<String>,
-    blocks_db: BlockDb,
+    blocks_db: BlockDbImpl,
     wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
     scan_blocks_per_iteration: u32,
@@ -472,10 +387,25 @@ pub(super) async fn init_light_client(
     ))
 }
 
+#[cfg(target_arch = "wasm32")]
+#[allow(unused)]
+pub(super) async fn init_light_client(
+    _coin: String,
+    _lightwalletd_urls: Vec<String>,
+    _blocks_db: BlockDbImpl,
+    _wallet_db: WalletDbShared,
+    _consensus_params: ZcoinConsensusParams,
+    _scan_blocks_per_iteration: u32,
+    _scan_interval_ms: u64,
+) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
+    todo!()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) async fn init_native_client(
     coin: String,
     native_client: NativeClient,
-    blocks_db: BlockDb,
+    blocks_db: BlockDbImpl,
     wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
     scan_blocks_per_iteration: u32,
@@ -504,6 +434,19 @@ pub(super) async fn init_native_client(
     ))
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) async fn _init_native_client(
+    _coin: String,
+    _native_client: NativeClient,
+    _blocks_db: BlockDbImpl,
+    _consensus_params: ZcoinConsensusParams,
+    _scan_blocks_per_iteration: u32,
+    _scan_interval_ms: u64,
+) -> Result<(AsyncMutex<SaplingSyncConnector>, String), MmError<ZcoinClientInitError>> {
+    todo!()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn is_tx_imported(conn: &Connection, tx_id: TxId) -> bool {
     const QUERY: &str = "SELECT id_tx FROM transactions WHERE txid = ?1;";
     match query_single_row(conn, QUERY, [tx_id.0.to_vec()], |row| row.get::<_, i64>(0)) {
@@ -511,6 +454,10 @@ fn is_tx_imported(conn: &Connection, tx_id: TxId) -> bool {
         Ok(None) | Err(_) => false,
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+#[allow(unused)]
+fn is_tx_imported(_conn: String, _tx_id: TxId) -> bool { todo!() }
 
 pub struct SaplingSyncRespawnGuard {
     pub(super) sync_handle: Option<(SaplingSyncLoopHandle, Box<dyn ZRpcOps + Send>)>,
@@ -525,6 +472,7 @@ impl Drop for SaplingSyncRespawnGuard {
     }
 }
 
+#[allow(unused)]
 impl SaplingSyncRespawnGuard {
     pub(super) fn watch_for_tx(&mut self, tx_id: TxId) {
         if let Some(ref mut handle) = self.sync_handle {
@@ -553,10 +501,11 @@ pub enum SyncStatus {
     },
 }
 
+#[allow(unused)]
 pub struct SaplingSyncLoopHandle {
     coin: String,
     current_block: BlockHeight,
-    blocks_db: BlockDb,
+    blocks_db: BlockDbImpl,
     wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
     /// Notifies about sync status without stopping the loop, e.g. on coin activation
@@ -569,6 +518,7 @@ pub struct SaplingSyncLoopHandle {
     scan_interval_ms: u64,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl SaplingSyncLoopHandle {
     fn notify_blocks_cache_status(&mut self, current_scanned_block: u64, latest_block: u64) {
         self.sync_status_notifier
@@ -608,7 +558,11 @@ impl SaplingSyncLoopHandle {
     ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
         let current_block = rpc.get_block_height().await?;
         let current_block_in_db = block_in_place(|| self.blocks_db.get_latest_block())?;
-        let extrema = block_in_place(|| self.wallet_db.lock().block_height_extrema())?;
+        let wallet_db = self.wallet_db.clone();
+        let extrema = block_in_place(|| {
+            let conn = wallet_db.db.lock();
+            conn.block_height_extrema()
+        })?;
         let mut from_block = self
             .consensus_params
             .sapling_activation_height
@@ -619,7 +573,8 @@ impl SaplingSyncLoopHandle {
         }
         if current_block >= from_block {
             rpc.scan_blocks(from_block, current_block, &mut |block: TonicCompactBlock| {
-                block_in_place(|| self.blocks_db.insert_block(block.height as u32, block.encode_to_vec()))?;
+                block_in_place(|| self.blocks_db.insert_block(block.height as u32, block.encode_to_vec()))
+                    .map_err(|err| UpdateBlocksCacheErr::ZcashDBError(err.to_string()))?;
                 self.notify_blocks_cache_status(block.height, current_block);
                 Ok(())
             })
@@ -631,10 +586,10 @@ impl SaplingSyncLoopHandle {
 
     /// Scans cached blocks, validates the chain and updates WalletDb.
     /// For more notes on the process, check https://github.com/zcash/librustzcash/blob/master/zcash_client_backend/src/data_api/chain.rs#L2
-    fn scan_blocks(&mut self) -> Result<(), MmError<ZcashClientError>> {
+    fn scan_blocks(&mut self) -> Result<(), MmError<BlockDbError>> {
         // required to avoid immutable borrow of self
         let wallet_db_arc = self.wallet_db.clone();
-        let wallet_guard = wallet_db_arc.lock();
+        let wallet_guard = wallet_db_arc.db.lock();
         let mut wallet_ops = wallet_guard.get_update_ops().expect("get_update_ops always returns Ok");
 
         if let Err(e) = validate_chain(
@@ -652,7 +607,7 @@ impl SaplingSyncLoopHandle {
                     wallet_ops.rewind_to_height(rewind_height)?;
                     self.blocks_db.rewind_to_height(rewind_height.into())?;
                 },
-                e => return MmError::err(e),
+                e => return MmError::err(BlockDbError::SqliteError(e)),
             }
         }
 
@@ -691,6 +646,31 @@ impl SaplingSyncLoopHandle {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+#[allow(unused)]
+impl SaplingSyncLoopHandle {
+    fn notify_blocks_cache_status(&mut self, _current_scanned_block: u64, _latest_block: u64) { todo!() }
+
+    fn notify_building_wallet_db(&mut self, _current_scanned_block: u64, _latest_block: u64) { todo!() }
+
+    fn notify_on_error(&mut self, _error: String) { todo!() }
+
+    fn notify_sync_finished(&mut self) { todo!() }
+
+    async fn update_blocks_cache(
+        &mut self,
+        _rpc: &mut (dyn ZRpcOps + Send),
+    ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
+        todo!()
+    }
+
+    /// Scans cached blocks, validates the chain and updates WalletDb.
+    /// For more notes on the process, check https://github.com/zcash/librustzcash/blob/master/zcash_client_backend/src/data_api/chain.rs#L2
+    fn scan_blocks(&mut self) -> Result<(), MmError<String>> { todo!() }
+
+    async fn check_watch_for_tx_existence(&mut self, _rpc: &mut (dyn ZRpcOps + Send)) { todo!() }
+}
+
 /// For more info on shielded light client protocol, please check the https://zips.z.cash/zip-0307
 ///
 /// It's important to note that unlike standard UTXOs, shielded outputs are not spendable until the transaction is confirmed.
@@ -712,6 +692,7 @@ impl SaplingSyncLoopHandle {
 /// 6. Once the transaction is generated and sent, `SaplingSyncRespawnGuard::watch_for_tx` is called to update `SaplingSyncLoopHandle` state.
 /// 7. Once the loop is respawned, it will check that broadcast tx is imported (or not available anymore) before stopping in favor of
 ///     next wait_for_gen_tx_blockchain_sync call.
+#[cfg(not(target_arch = "wasm32"))]
 async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut client: Box<dyn ZRpcOps + Send>) {
     info!(
         "(Re)starting light_wallet_db_sync_loop for {}, blocks per iteration {}, interval in ms {}",
@@ -738,7 +719,7 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut c
         sync_handle.check_watch_for_tx_existence(client.as_mut()).await;
 
         if let Some(tx_id) = sync_handle.watch_for_tx {
-            if !block_in_place(|| is_tx_imported(sync_handle.wallet_db.lock().sql_conn(), tx_id)) {
+            if !block_in_place(|| is_tx_imported(sync_handle.wallet_db.db.lock().sql_conn(), tx_id)) {
                 info!("Tx {} is not imported yet", tx_id);
                 Timer::sleep(10.).await;
                 continue;
@@ -760,6 +741,11 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut c
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+async fn light_wallet_db_sync_loop(mut _sync_handle: SaplingSyncLoopHandle, mut _client: Box<dyn ZRpcOps + Send>) {
+    todo!()
+}
+
 type SyncWatcher = AsyncReceiver<SyncStatus>;
 type NewTxNotifier = AsyncSender<OneshotSender<(SaplingSyncLoopHandle, Box<dyn ZRpcOps + Send>)>>;
 
@@ -770,6 +756,7 @@ pub(super) struct SaplingSyncConnector {
 }
 
 impl SaplingSyncConnector {
+    #[allow(unused)]
     #[inline]
     pub(super) fn new_mutex_wrapped(
         simple_sync_watcher: SyncWatcher,

@@ -3,11 +3,12 @@ use common::log::LogLevel;
 use common::{block_on, log, now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_seed;
 use mm2_main::mm2::{lp_main, LpMainParams};
+use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::electrums::{morty_electrums, rick_electrums};
 use mm2_test_helpers::for_tests::{enable_native as enable_native_impl, init_utxo_electrum, init_utxo_status,
                                   init_z_coin_light, init_z_coin_status, MarketMakerIt};
-use mm2_test_helpers::structs::{CoinActivationResult, EnableElectrumResponse, InitTaskResult, InitUtxoStatus,
-                                InitZcoinStatus, RpcV2Response, UtxoStandardActivationResult};
+use mm2_test_helpers::structs::{CoinActivationResult, InitTaskResult, InitUtxoStatus, InitZcoinStatus, RpcV2Response,
+                                UtxoStandardActivationResult};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::env::var;
@@ -32,12 +33,7 @@ pub fn test_mm_start_impl() {
 }
 
 /// Ideally, this function should be replaced everywhere with `enable_electrum_json`.
-pub async fn enable_electrum(
-    mm: &MarketMakerIt,
-    coin: &str,
-    tx_history: bool,
-    urls: &[&str],
-) -> EnableElectrumResponse {
+pub async fn enable_electrum(mm: &MarketMakerIt, coin: &str, tx_history: bool, urls: &[&str]) -> CoinInitResponse {
     use mm2_test_helpers::for_tests::enable_electrum as enable_electrum_impl;
 
     let value = enable_electrum_impl(mm, coin, tx_history, urls).await;
@@ -49,19 +45,19 @@ pub async fn enable_electrum_json(
     coin: &str,
     tx_history: bool,
     servers: Vec<Json>,
-) -> EnableElectrumResponse {
+) -> CoinInitResponse {
     use mm2_test_helpers::for_tests::enable_electrum_json as enable_electrum_impl;
 
     let value = enable_electrum_impl(mm, coin, tx_history, servers).await;
     json::from_value(value).unwrap()
 }
 
-pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> EnableElectrumResponse {
+pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> CoinInitResponse {
     let value = enable_native_impl(mm, coin, urls).await;
     json::from_value(value).unwrap()
 }
 
-pub async fn enable_coins_rick_morty_electrum(mm: &MarketMakerIt) -> HashMap<&'static str, EnableElectrumResponse> {
+pub async fn enable_coins_rick_morty_electrum(mm: &MarketMakerIt) -> HashMap<&'static str, CoinInitResponse> {
     let mut replies = HashMap::new();
     replies.insert("RICK", enable_electrum_json(mm, "RICK", false, rick_electrums()).await);
     replies.insert(
@@ -126,7 +122,7 @@ pub async fn enable_utxo_v2_electrum(
 pub async fn enable_coins_eth_electrum(
     mm: &MarketMakerIt,
     eth_urls: &[&str],
-) -> HashMap<&'static str, EnableElectrumResponse> {
+) -> HashMap<&'static str, CoinInitResponse> {
     let mut replies = HashMap::new();
     replies.insert("RICK", enable_electrum_json(mm, "RICK", false, rick_electrums()).await);
     replies.insert(
@@ -138,7 +134,7 @@ pub async fn enable_coins_eth_electrum(
     replies
 }
 
-pub fn addr_from_enable<'a>(enable_response: &'a HashMap<&str, EnableElectrumResponse>, coin: &str) -> &'a str {
+pub fn addr_from_enable<'a>(enable_response: &'a HashMap<&str, CoinInitResponse>, coin: &str) -> &'a str {
     &enable_response.get(coin).unwrap().address
 }
 
