@@ -1,5 +1,9 @@
+#![feature(ip)]
+
 mod behaviour;
 mod event;
+mod peers;
+mod ping;
 mod request_response;
 
 use lazy_static::lazy_static;

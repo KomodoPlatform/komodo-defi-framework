@@ -1,3 +1,4 @@
+use futures::channel::mpsc::Receiver;
 use libp2p::{gossipsub::{Event as GossipsubEvent, Message as GossipsubMessage, MessageId, TopicHash},
              PeerId};
 
