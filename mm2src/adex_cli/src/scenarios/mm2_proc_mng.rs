@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::error_anyhow;
 
 #[cfg(not(target_os = "macos"))]
-use sysinfo::{PidExt, ProcessExt, System, SystemExt, Uid};
+use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 
 #[cfg(windows)]
 mod reexport {
@@ -45,10 +45,10 @@ mod unix_reexport {
 mod macos_reexport {
     pub(super) use std::fs;
     pub(super) const LAUNCH_CTL_COOL_DOWN_TIMEOUT_MS: u64 = 500;
-    pub(super) use common::log::debug;
     pub(super) use std::process::Command;
     pub(super) use std::thread::sleep;
     pub(super) use std::time::Duration;
+    pub(super) use sysinfo::{ProcessExt, System, SystemExt};
     pub(super) const LAUNCHCTL_MM2_ID: &str = "com.komodoproject.mm2";
 }
 
