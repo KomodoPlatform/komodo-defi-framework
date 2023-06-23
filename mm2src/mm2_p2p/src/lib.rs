@@ -2,6 +2,7 @@
 
 mod behaviour;
 mod event;
+pub mod peer_store;
 mod peers;
 mod ping;
 mod request_response;
