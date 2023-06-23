@@ -1,6 +1,7 @@
 #![feature(ip)]
 
-mod behaviour;
+// mod behaviour;
+mod adex_gossipsub;
 mod event;
 pub mod peer_store;
 mod peers;

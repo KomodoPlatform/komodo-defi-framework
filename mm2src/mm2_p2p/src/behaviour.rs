@@ -5,10 +5,11 @@ use futures::{channel::oneshot,
               future::{join_all, poll_fn},
               Future, FutureExt, SinkExt, StreamExt};
 use instant::Duration;
-use libp2p::floodsub::Floodsub;
-use libp2p::gossipsub::{Behaviour as Gossipsub, MessageId};
+use libp2p::floodsub::{Floodsub, Topic as FloodsubTopic};
+use libp2p::gossipsub::{Behaviour as Gossipsub, MessageId, Topic};
 use libp2p::request_response::ResponseChannel;
 use libp2p::PeerId;
+use log::{error, debug};
 
 use crate::peers::PeersExchange;
 use crate::ping::AdexPing;
@@ -180,4 +181,165 @@ pub struct AtomicDexBehaviour {
     peers_exchange: PeersExchange,
     ping: AdexPing,
     netid: u16,
+}
+
+impl AtomicDexBehaviour {
+    fn notify_on_adex_event(&mut self, event: AdexBehaviourEvent) {
+        if let Err(e) = self.event_tx.try_send(event) {
+            error!("notify_on_adex_event error {}", e);
+        }
+    }
+
+    fn spawn(&self, fut: impl Future<Output = ()> + Send + 'static) { self.runtime.spawn(fut) }
+
+    fn process_cmd(&mut self, cmd: AdexBehaviourCmd) {
+        match cmd {
+            AdexBehaviourCmd::Subscribe { topic } => {
+                let topic = Topic::new(topic);
+                self.gossipsub.subscribe(topic);
+            },
+            AdexBehaviourCmd::PublishMsg { topics, msg } => {
+                self.gossipsub.publish_many(topics.into_iter().map(Topic::new), msg);
+            },
+            AdexBehaviourCmd::PublishMsgFrom { topics, msg, from } => {
+                self.gossipsub
+                    .publish_many_from(topics.into_iter().map(Topic::new), msg, from);
+            },
+            AdexBehaviourCmd::RequestAnyRelay { req, response_tx } => {
+                let relays = self.gossipsub.get_relay_mesh();
+                // spawn the `request_any_peer` future
+                let future = request_any_peer(relays, req, self.request_response.sender(), response_tx);
+                self.spawn(future);
+            },
+            AdexBehaviourCmd::RequestPeers {
+                req,
+                peers,
+                response_tx,
+            } => {
+                let peers = peers
+                    .into_iter()
+                    .filter_map(|peer| match peer.parse() {
+                        Ok(p) => Some(p),
+                        Err(e) => {
+                            error!("Error on parse peer id {:?}: {:?}", peer, e);
+                            None
+                        },
+                    })
+                    .collect();
+                let future = request_peers(peers, req, self.request_response.sender(), response_tx);
+                self.spawn(future);
+            },
+            AdexBehaviourCmd::RequestRelays { req, response_tx } => {
+                let relays = self.gossipsub.get_relay_mesh();
+                // spawn the `request_peers` future
+                let future = request_peers(relays, req, self.request_response.sender(), response_tx);
+                self.spawn(future);
+            },
+            AdexBehaviourCmd::SendResponse { res, response_channel } => {
+                if let Err(response) = self.request_response.send_response(response_channel.into(), res.into()) {
+                    error!("Error sending response: {:?}", response);
+                }
+            },
+            AdexBehaviourCmd::GetPeersInfo { result_tx } => {
+                let result = self
+                    .gossipsub
+                    .get_peers_connections()
+                    .into_iter()
+                    .map(|(peer_id, connected_points)| {
+                        let peer_id = peer_id.to_base58();
+                        let connected_points = connected_points
+                            .into_iter()
+                            .map(|(_conn_id, point)| match point {
+                                ConnectedPoint::Dialer { address, .. } => address.to_string(),
+                                ConnectedPoint::Listener { send_back_addr, .. } => send_back_addr.to_string(),
+                            })
+                            .collect();
+                        (peer_id, connected_points)
+                    })
+                    .collect();
+                if result_tx.send(result).is_err() {
+                    debug!("Result rx is dropped");
+                }
+            },
+            AdexBehaviourCmd::GetGossipMesh { result_tx } => {
+                let result = self
+                    .gossipsub
+                    .get_mesh()
+                    .iter()
+                    .map(|(topic, peers)| {
+                        let topic = topic.to_string();
+                        let peers = peers.iter().map(|peer| peer.to_string()).collect();
+                        (topic, peers)
+                    })
+                    .collect();
+                if result_tx.send(result).is_err() {
+                    debug!("Result rx is dropped");
+                }
+            },
+            AdexBehaviourCmd::GetGossipPeerTopics { result_tx } => {
+                let result = self
+                    .gossipsub
+                    .get_all_peer_topics()
+                    .iter()
+                    .map(|(peer, topics)| {
+                        let peer = peer.to_string();
+                        let topics = topics.iter().map(|topic| topic.to_string()).collect();
+                        (peer, topics)
+                    })
+                    .collect();
+                if result_tx.send(result).is_err() {
+                    error!("Result rx is dropped");
+                }
+            },
+            AdexBehaviourCmd::GetGossipTopicPeers { result_tx } => {
+                let result = self
+                    .gossipsub
+                    .get_all_topic_peers()
+                    .iter()
+                    .map(|(topic, peers)| {
+                        let topic = topic.to_string();
+                        let peers = peers.iter().map(|peer| peer.to_string()).collect();
+                        (topic, peers)
+                    })
+                    .collect();
+                if result_tx.send(result).is_err() {
+                    error!("Result rx is dropped");
+                }
+            },
+            AdexBehaviourCmd::GetRelayMesh { result_tx } => {
+                let result = self
+                    .gossipsub
+                    .get_relay_mesh()
+                    .into_iter()
+                    .map(|peer| peer.to_string())
+                    .collect();
+                if result_tx.send(result).is_err() {
+                    error!("Result rx is dropped");
+                }
+            },
+            AdexBehaviourCmd::AddReservedPeer { peer, addresses } => {
+                self.peers_exchange
+                    .add_peer_addresses_to_reserved_peers(&peer, addresses);
+            },
+            AdexBehaviourCmd::PropagateMessage {
+                message_id,
+                propagation_source,
+            } => {
+                self.gossipsub.propagate_message(&message_id, &propagation_source);
+            },
+        }
+    }
+
+    fn announce_listeners(&mut self, listeners: PeerAddresses) {
+        let serialized = rmp_serde::to_vec(&listeners).expect("PeerAddresses serialization should never fail");
+        self.floodsub.publish(FloodsubTopic::new(PEERS_TOPIC), serialized);
+    }
+
+    pub fn connected_relays_len(&self) -> usize { self.gossipsub.connected_relays_len() }
+
+    pub fn relay_mesh_len(&self) -> usize { self.gossipsub.relay_mesh_len() }
+
+    pub fn received_messages_in_period(&self) -> (Duration, usize) { self.gossipsub.get_received_messages_in_period() }
+
+    pub fn connected_peers_len(&self) -> usize { self.gossipsub.get_num_peers() }
 }
