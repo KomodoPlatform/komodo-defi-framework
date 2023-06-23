@@ -7,7 +7,7 @@ use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::adex_proc::SmarFractPrecision;
+use crate::adex_proc::SmartFractPrecision;
 use crate::helpers::rewrite_json_file;
 use crate::logging::{error_anyhow, warn_bail};
 
@@ -20,8 +20,8 @@ const PRICE_PRECISION_MIN: usize = 8;
 const PRICE_PRECISION_MAX: usize = 8;
 const VOLUME_PRECISION_MIN: usize = 2;
 const VOLUME_PRECISION_MAX: usize = 5;
-const VOLUME_PRECISION: SmarFractPrecision = (VOLUME_PRECISION_MIN, VOLUME_PRECISION_MAX);
-const PRICE_PRECISION: SmarFractPrecision = (PRICE_PRECISION_MIN, PRICE_PRECISION_MAX);
+const VOLUME_PRECISION: SmartFractPrecision = (VOLUME_PRECISION_MIN, VOLUME_PRECISION_MAX);
+const PRICE_PRECISION: SmartFractPrecision = (PRICE_PRECISION_MIN, PRICE_PRECISION_MAX);
 
 pub(super) fn get_config() {
     let Ok(adex_cfg) = AdexConfigImpl::from_config_path() else { return; };
@@ -52,8 +52,8 @@ pub(super) fn set_config(set_password: bool, rpc_api_uri: Option<String>) -> Res
 pub(super) trait AdexConfig {
     fn rpc_password(&self) -> Result<String>;
     fn rpc_uri(&self) -> Result<String>;
-    fn orderbook_price_precision(&self) -> &SmarFractPrecision;
-    fn orderbook_volume_precision(&self) -> &SmarFractPrecision;
+    fn orderbook_price_precision(&self) -> &SmartFractPrecision;
+    fn orderbook_volume_precision(&self) -> &SmartFractPrecision;
 }
 
 #[derive(Deserialize, Serialize, Debug, Default)]
@@ -77,8 +77,8 @@ impl AdexConfig for AdexConfigImpl {
             .map(String::clone)
             .ok_or_else(|| error_anyhow!("No rpc_uri in config"))
     }
-    fn orderbook_price_precision(&self) -> &SmarFractPrecision { &PRICE_PRECISION }
-    fn orderbook_volume_precision(&self) -> &SmarFractPrecision { &VOLUME_PRECISION }
+    fn orderbook_price_precision(&self) -> &SmartFractPrecision { &PRICE_PRECISION }
+    fn orderbook_volume_precision(&self) -> &SmartFractPrecision { &VOLUME_PRECISION }
 }
 
 impl Display for AdexConfigImpl {
