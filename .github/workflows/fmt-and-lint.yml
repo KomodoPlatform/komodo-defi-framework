@@ -25,18 +25,8 @@ jobs:
           sudo apt-get -y install libudev-dev
         if: matrix.os == 'ubuntu-latest'
 
-      - name: Set up cargo cache
-        uses: actions/cache@v3
-        continue-on-error: false
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/            
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: fmt check
         run: cargo fmt -- --check
@@ -55,18 +45,8 @@ jobs:
           rustup default nightly-2022-10-29
           rustup target add wasm32-unknown-unknown
 
-      - name: Set up cargo cache
-        uses: actions/cache@v3
-        continue-on-error: false
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/            
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: wasm code lint
         run: cargo clippy --target wasm32-unknown-unknown -- --D warnings
