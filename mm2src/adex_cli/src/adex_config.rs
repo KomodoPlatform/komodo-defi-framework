@@ -65,8 +65,8 @@ pub(super) struct AdexConfigImpl {
 }
 
 impl AdexConfig for AdexConfigImpl {
-    fn rpc_password(&self) -> Option<String> { self.rpc_password.as_ref().map(String::clone) }
-    fn rpc_uri(&self) -> Option<String> { self.rpc_uri.as_ref().map(String::clone) }
+    fn rpc_password(&self) -> Option<String> { self.rpc_password.clone() }
+    fn rpc_uri(&self) -> Option<String> { self.rpc_uri.clone() }
     fn orderbook_price_precision(&self) -> &SmartFractPrecision { &PRICE_PRECISION }
     fn orderbook_volume_precision(&self) -> &SmartFractPrecision { &VOLUME_PRECISION }
 }
