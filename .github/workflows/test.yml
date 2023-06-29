@@ -25,6 +25,9 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
 
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
+
       - name: Test
         run: |
           # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
@@ -47,6 +50,9 @@ jobs:
           rustup default nightly-2022-10-29
           rustup target add x86_64-apple-darwin
 
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
+
       - name: Test
         run: |
           # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
@@ -67,6 +73,9 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
+
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: Test
         run: |
@@ -103,6 +112,9 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
+
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: Test
         run: cargo test --test 'mm2_tests_main'
@@ -145,6 +157,9 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
 
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
+
       - name: Test
         run: cargo test --test 'mm2_tests_main'
 
@@ -163,6 +178,9 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
+
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: Test
         run: |
@@ -196,6 +214,9 @@ jobs:
           wget https://github.com/mozilla/geckodriver/releases/download/v0.32.2/geckodriver-v0.32.2-linux64.tar.gz
           sudo tar -xzvf geckodriver-v0.32.2-linux64.tar.gz -C /bin
           sudo chmod +x /bin/geckodriver
+
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: Test
         run: WASM_BINDGEN_TEST_TIMEOUT=360 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
