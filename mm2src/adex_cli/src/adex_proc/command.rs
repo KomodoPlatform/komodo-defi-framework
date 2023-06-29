@@ -7,11 +7,11 @@ where
     T: Serialize + Sized,
 {
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub(self) flatten_data: Option<T>,
+    flatten_data: Option<T>,
     #[serde(skip_serializing_if = "Option::is_none")]
     method: Option<Method>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(self) userpass: Option<String>,
+    userpass: Option<String>,
 }
 
 #[derive(Serialize, Clone, Display)]
