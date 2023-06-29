@@ -286,7 +286,9 @@ pub(crate) fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<S
 #[cfg(target_os = "macos")]
 fn get_plist_path() -> Result<PathBuf> {
     match env::current_dir() {
-        Err(error) => error_anyhow!("Failed to get current_dir to construct plist_path: {error}"),
+        Err(error) => Err(error_anyhow!(
+            "Failed to get current_dir to construct plist_path: {error}"
+        )),
         Ok(mut current_dir) => {
             current_dir.push(&format!("{LAUNCHCTL_MM2_ID}.plist"));
             Ok(current_dir)
@@ -318,7 +320,7 @@ pub(crate) fn stop_process() {
 
 #[cfg(target_os = "macos")]
 fn get_proc_uid() -> Result<u32> {
-    let pid = sysinfo::get_current_pid().map_err(|e| error!("Failed to get current pid: {e}"))?;
+    let pid = sysinfo::get_current_pid().map_err(|e| error_anyhow!("Failed to get current pid: {e}"))?;
     let s = System::new_all();
     let proc = s
         .process(pid)
