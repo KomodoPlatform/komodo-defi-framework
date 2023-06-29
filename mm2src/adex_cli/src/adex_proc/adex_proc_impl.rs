@@ -66,7 +66,12 @@ impl<T: Transport, P: ResponseHandler, C: AdexConfig + 'static> AdexProc<'_, '_,
             .method(Method::GetEnabledCoins)
             .userpass(self.get_rpc_password()?)
             .build();
-        request_legacy!(get_enabled, Mm2RpcResult<GetEnabledResponse>, self, on_get_enabled_response)
+        request_legacy!(
+            get_enabled,
+            Mm2RpcResult<GetEnabledResponse>,
+            self,
+            on_get_enabled_response
+        )
     }
 
     pub(crate) async fn get_orderbook(&self, base: &str, rel: &str, orderbook_config: OrderbookConfig) -> Result<()> {
