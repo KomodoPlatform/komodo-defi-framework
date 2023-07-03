@@ -27,7 +27,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
             VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
             WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
@@ -582,8 +582,13 @@ impl TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
             // >> END TX SIMULATION FOR FEE CALCULATION
 
+            let gas_limit = match req.fee {
+                Some(WithdrawFee::CosmosGas { gas_limit, .. }) => gas_limit,
+                _ => IBC_GAS_LIMIT_DEFAULT,
+            };
+
             let fee_amount_u64 = coin
-                .calculate_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone())
+                .calculate_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone(), req.fee)
                 .await?;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
@@ -592,7 +597,7 @@ impl TendermintCoin {
                 amount: fee_amount_u64.into(),
             };
 
-            let fee = Fee::from_amount_and_gas(fee_amount, IBC_GAS_LIMIT_DEFAULT);
+            let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
             let (amount_denom, total_amount) = if req.max {
                 if balance_denom < fee_amount_u64 {
@@ -654,7 +659,7 @@ impl TendermintCoin {
                     coin: coin.ticker.clone(),
                     amount: fee_amount_dec,
                     uamount: fee_amount_u64,
-                    gas_limit: IBC_GAS_LIMIT_DEFAULT,
+                    gas_limit,
                 })),
                 coin: coin.ticker.to_string(),
                 internal_id: hash.to_vec().into(),
@@ -876,6 +881,7 @@ impl TendermintCoin {
         msg: Any,
         timeout_height: u64,
         memo: String,
+        withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<Fee, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
 
@@ -922,14 +928,19 @@ impl TendermintCoin {
             ))
         })?;
 
-        let amount = ((gas.gas_used as f64 * 1.5) * self.gas_price()).ceil();
+        let (gas_price, gas_limit) = match withdraw_fee {
+            Some(WithdrawFee::CosmosGas { gas_price, gas_limit }) => (gas_price, gas_limit),
+            _ => (self.gas_price(), GAS_LIMIT_DEFAULT),
+        };
+
+        let amount = ((gas.gas_used as f64 * 1.5) * gas_price).ceil();
 
         let fee_amount = Coin {
             denom: self.platform_denom().clone(),
             amount: (amount as u64).into(),
         };
 
-        Ok(Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT))
+        Ok(Fee::from_amount_and_gas(fee_amount, gas_limit))
     }
 
     #[allow(deprecated)]
@@ -938,6 +949,7 @@ impl TendermintCoin {
         msg: Any,
         timeout_height: u64,
         memo: String,
+        withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<u64, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
 
@@ -984,7 +996,12 @@ impl TendermintCoin {
             ))
         })?;
 
-        Ok(((gas.gas_used as f64 * 1.5) * self.gas_price()).ceil() as u64)
+        let gas_price = match withdraw_fee {
+            Some(WithdrawFee::CosmosGas { gas_price, .. }) => gas_price,
+            _ => self.gas_price(),
+        };
+
+        Ok(((gas.gas_used as f64 * 1.5) * gas_price).ceil() as u64)
     }
 
     pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
@@ -1222,7 +1239,8 @@ impl TendermintCoin {
                 coin.calculate_fee(
                     create_htlc_tx.msg_payload.clone(),
                     timeout_height,
-                    TX_DEFAULT_MEMO.to_owned()
+                    TX_DEFAULT_MEMO.to_owned(),
+                    None
                 )
                 .await
             );
@@ -1276,7 +1294,7 @@ impl TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let fee = try_tx_s!(
-                coin.calculate_fee(tx_payload.clone(), timeout_height, TX_DEFAULT_MEMO.to_owned())
+                coin.calculate_fee(tx_payload.clone(), timeout_height, TX_DEFAULT_MEMO.to_owned(), None)
                     .await
             );
 
@@ -1518,6 +1536,7 @@ impl TendermintCoin {
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
+                None,
             )
             .await?;
 
@@ -1562,7 +1581,7 @@ impl TendermintCoin {
         .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
         let fee_uamount = self
-            .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, TX_DEFAULT_MEMO.to_owned())
+            .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, TX_DEFAULT_MEMO.to_owned(), None)
             .await?;
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, decimals);
 
@@ -1858,8 +1877,13 @@ impl MmCoin for TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
             // >> END TX SIMULATION FOR FEE CALCULATION
 
+            let gas_limit = match req.fee {
+                Some(WithdrawFee::CosmosGas { gas_limit, .. }) => gas_limit,
+                _ => GAS_LIMIT_DEFAULT,
+            };
+
             let fee_amount_u64 = coin
-                .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone())
+                .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone(), req.fee)
                 .await?;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
@@ -1868,7 +1892,7 @@ impl MmCoin for TendermintCoin {
                 amount: fee_amount_u64.into(),
             };
 
-            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+            let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
             let (amount_denom, total_amount) = if req.max {
                 if balance_denom < fee_amount_u64 {
@@ -1914,6 +1938,7 @@ impl MmCoin for TendermintCoin {
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let hash = sha256(&tx_bytes);
+
             Ok(TransactionDetails {
                 tx_hash: hex::encode_upper(hash.as_slice()),
                 tx_hex: tx_bytes.into(),
@@ -1929,7 +1954,7 @@ impl MmCoin for TendermintCoin {
                     coin: coin.ticker.clone(),
                     amount: fee_amount_dec,
                     uamount: fee_amount_u64,
-                    gas_limit: GAS_LIMIT_DEFAULT,
+                    gas_limit,
                 })),
                 coin: coin.ticker.to_string(),
                 internal_id: hash.to_vec().into(),
@@ -2325,7 +2350,8 @@ impl SwapOps for TendermintCoin {
                 coin.calculate_fee(
                     claim_htlc_tx.msg_payload.clone(),
                     timeout_height,
-                    TX_DEFAULT_MEMO.to_owned()
+                    TX_DEFAULT_MEMO.to_owned(),
+                    None
                 )
                 .await
             );
@@ -2378,6 +2404,7 @@ impl SwapOps for TendermintCoin {
                     claim_htlc_tx.msg_payload.clone(),
                     timeout_height,
                     TX_DEFAULT_MEMO.into(),
+                    None
                 )
                 .await
             );
@@ -2788,6 +2815,7 @@ pub mod tendermint_coin_tests {
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
+                None,
             )
             .await
             .unwrap()
@@ -2832,6 +2860,7 @@ pub mod tendermint_coin_tests {
                 claim_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
+                None,
             )
             .await
             .unwrap()

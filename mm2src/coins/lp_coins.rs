@@ -1070,6 +1070,10 @@ pub enum WithdrawFee {
         gas_limit: u64,
         gas_price: u64,
     },
+    CosmosGas {
+        gas_limit: u64,
+        gas_price: f64,
+    },
 }
 
 pub struct WithdrawSenderAddress<Address, Pubkey> {
