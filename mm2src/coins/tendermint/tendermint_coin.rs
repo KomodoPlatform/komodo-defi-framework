@@ -582,10 +582,7 @@ impl TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
             // >> END TX SIMULATION FOR FEE CALCULATION
 
-            let gas_limit = match req.fee {
-                Some(WithdrawFee::CosmosGas { gas_limit, .. }) => gas_limit,
-                _ => IBC_GAS_LIMIT_DEFAULT,
-            };
+            let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = coin
                 .calculate_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone(), req.fee)
@@ -928,10 +925,7 @@ impl TendermintCoin {
             ))
         })?;
 
-        let (gas_price, gas_limit) = match withdraw_fee {
-            Some(WithdrawFee::CosmosGas { gas_price, gas_limit }) => (gas_price, gas_limit),
-            _ => (self.gas_price(), GAS_LIMIT_DEFAULT),
-        };
+        let (gas_price, gas_limit) = self.gas_info_for_withdraw(&withdraw_fee, GAS_LIMIT_DEFAULT);
 
         let amount = ((gas.gas_used as f64 * 1.5) * gas_price).ceil();
 
@@ -996,10 +990,7 @@ impl TendermintCoin {
             ))
         })?;
 
-        let gas_price = match withdraw_fee {
-            Some(WithdrawFee::CosmosGas { gas_price, .. }) => gas_price,
-            _ => self.gas_price(),
-        };
+        let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
 
         Ok(((gas.gas_used as f64 * 1.5) * gas_price).ceil() as u64)
     }
@@ -1745,6 +1736,17 @@ impl TendermintCoin {
             unexpected_state => MmError::err(SearchForSwapTxSpendErr::UnexpectedHtlcState(unexpected_state)),
         }
     }
+
+    pub(crate) fn gas_info_for_withdraw(
+        &self,
+        withdraw_fee: &Option<WithdrawFee>,
+        fallback_gas_limit: u64,
+    ) -> (f64, u64) {
+        match withdraw_fee {
+            Some(WithdrawFee::CosmosGas { gas_price, gas_limit }) => (*gas_price, *gas_limit),
+            _ => (self.gas_price(), fallback_gas_limit),
+        }
+    }
 }
 
 fn clients_from_urls(rpc_urls: &[String]) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
@@ -1877,10 +1879,7 @@ impl MmCoin for TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
             // >> END TX SIMULATION FOR FEE CALCULATION
 
-            let gas_limit = match req.fee {
-                Some(WithdrawFee::CosmosGas { gas_limit, .. }) => gas_limit,
-                _ => GAS_LIMIT_DEFAULT,
-            };
+            let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = coin
                 .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone(), req.fee)

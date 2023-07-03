@@ -19,7 +19,7 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
             WithdrawError, WithdrawFut, WithdrawRequest};
-use crate::{MmCoinEnum, PaymentInstructionArgs, WatcherReward, WatcherRewardError, WithdrawFee};
+use crate::{MmCoinEnum, PaymentInstructionArgs, WatcherReward, WatcherRewardError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -175,10 +175,7 @@ impl TendermintToken {
 
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-            let gas_limit = match req.fee {
-                Some(WithdrawFee::CosmosGas { gas_limit, .. }) => gas_limit,
-                _ => IBC_GAS_LIMIT_DEFAULT,
-            };
+            let (_, gas_limit) = platform.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = platform
                 .calculate_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone(), req.fee)
@@ -654,10 +651,7 @@ impl MmCoin for TendermintToken {
 
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-            let gas_limit = match req.fee {
-                Some(WithdrawFee::CosmosGas { gas_limit, .. }) => gas_limit,
-                _ => GAS_LIMIT_DEFAULT,
-            };
+            let (_, gas_limit) = platform.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = platform
                 .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone(), req.fee)
