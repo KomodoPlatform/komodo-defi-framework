@@ -270,7 +270,7 @@ pub(crate) fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<S
         ),
         Err(error) => error!("Failed to bootstrap process: {error}"),
     }
-    let Ok(uid) = get_proc_uid() else { return };
+
     match Command::new("launchctl")
         .arg("kickstart")
         .arg("-k")
