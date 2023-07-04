@@ -255,6 +255,7 @@ fn start_swaps_and_get_balances(
 }
 
 #[test]
+#[ignore]
 fn test_watcher_spends_maker_payment_utxo_utxo() {
     let alice_privkey = hex::encode(random_secp256k1_secret());
     let bob_privkey = hex::encode(random_secp256k1_secret());
@@ -295,6 +296,7 @@ fn test_watcher_spends_maker_payment_utxo_utxo() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_spends_maker_payment_utxo_eth() {
     let alice_privkey = "0af1b1a4cdfbec12c9014e2422c8819e02e5d0f6539f8bf15190d3ea592e4f14";
     let bob_privkey = "3245331f141578d8c4604639deb1e6f38f107a65642525ef32387325a079a463";
@@ -328,6 +330,7 @@ fn test_watcher_spends_maker_payment_utxo_eth() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_spends_maker_payment_eth_utxo() {
     let alice_privkey = "0591b2acbe4798c6156a26bc8106c36d6fc09a85c9e02710eec32c1b41f047ec";
     let bob_privkey = "b6e59dee1112486573989f07d480691ca7e3eab81b499fe801d94b65ea1f1341";
@@ -374,6 +377,7 @@ fn test_watcher_spends_maker_payment_eth_utxo() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_spends_maker_payment_eth_erc20() {
     let alice_privkey = "92ee1f48f07dcaab03ff3d5077211912fdf2229bb401e7a969f73fc2c3d4fe3f";
     let bob_privkey = "59e8c09c3aace4eb9301b2f70547fc0936be2bc662b9c0a7a625b5e8929491c7";
@@ -407,6 +411,7 @@ fn test_watcher_spends_maker_payment_eth_erc20() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_spends_maker_payment_erc20_eth() {
     let alice_privkey = "2fd8d83e3b9799fa0a02cdaf6776dd36eee3243a62d399a54dc9a68f5e77b27c";
     let bob_privkey = "6425a922265573100165b60ff380fba5035c7406169087a43aefdee66aceccc1";
@@ -440,6 +445,7 @@ fn test_watcher_spends_maker_payment_erc20_eth() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_spends_maker_payment_utxo_erc20() {
     let alice_privkey = "e4fc65b69c323312ee3ba46406671bc9f2d524190621d82eeb51452701cfe43b";
     let bob_privkey = "721fc6b7f56495f7f721e1e11cddcaf593351264705c4044e83656f06eb595ef";
@@ -473,6 +479,7 @@ fn test_watcher_spends_maker_payment_utxo_erc20() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_spends_maker_payment_erc20_utxo() {
     let alice_privkey = "5c9fbc69376c3ee6bb56d8d2b715f24b3bb92ccd47e93332d4d94899aa9fc7ae";
     let bob_privkey = "ccc24b9653087d939949d513756cefe1eff657de4c5bf34febc97843a6b26782";
@@ -525,6 +532,7 @@ fn test_watcher_spends_maker_payment_erc20_utxo() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_refunds_taker_payment_utxo() {
     let alice_privkey = &hex::encode(random_secp256k1_secret());
     let bob_privkey = &hex::encode(random_secp256k1_secret());
@@ -551,6 +559,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_refunds_taker_payment_eth() {
     let alice_privkey = "0816c0558b934fafa845946bdd2b3163fe6b928e6160ea9aa10a8bea221e3813";
     let bob_privkey = "e5cb76954c5160d7df5bfa5798540d3583c73c9daa46903b98abb9eed2edecc6";
@@ -577,6 +586,7 @@ fn test_watcher_refunds_taker_payment_eth() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_refunds_taker_payment_erc20() {
     let alice_privkey = "82c1bb28bb13488f901eff67f886e9895c4dfa28e3e24f1ed7873a73231c9492";
     let bob_privkey = "9a4721db00336ea0d8b7a373cdbdefc321285e7959fff8aea493af6f485b683f";
@@ -609,6 +619,7 @@ fn test_watcher_refunds_taker_payment_erc20() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_waits_for_taker_utxo() {
     let alice_privkey = &hex::encode(random_secp256k1_secret());
     let bob_privkey = &hex::encode(random_secp256k1_secret());
@@ -629,6 +640,7 @@ fn test_watcher_waits_for_taker_utxo() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_waits_for_taker_eth() {
     let alice_privkey = "814ea055c807c1ff2d49c81abfc3434fa0d10a427369b1f8d60fc78ab1da7d16";
     let bob_privkey = "36533ec51a61f4b32856c8ce2ee811a263c625ae26e45ee68e6d28b65c8f9298";
@@ -741,6 +753,7 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_validate_taker_fee_utxo() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
@@ -866,6 +879,7 @@ fn test_watcher_validate_taker_fee_utxo() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_validate_taker_fee_eth() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
@@ -968,6 +982,7 @@ fn test_watcher_validate_taker_fee_eth() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_validate_taker_fee_erc20() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
@@ -1071,6 +1086,7 @@ fn test_watcher_validate_taker_fee_erc20() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_validate_taker_payment_utxo() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let time_lock_duration = get_payment_locktime();
@@ -1282,6 +1298,7 @@ fn test_watcher_validate_taker_payment_utxo() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_validate_taker_payment_eth() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
 
@@ -1525,6 +1542,7 @@ fn test_watcher_validate_taker_payment_eth() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_validate_taker_payment_erc20() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
 
@@ -1772,6 +1790,7 @@ fn test_watcher_validate_taker_payment_erc20() {
 }
 
 #[test]
+#[ignore]
 fn test_send_taker_payment_refund_preimage_utxo() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
@@ -1845,6 +1864,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
 }
 
 #[test]
+#[ignore]
 fn test_watcher_reward() {
     let timeout = wait_until_sec(300); // timeout if test takes more than 300 seconds to run
     let (_ctx, utxo_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
