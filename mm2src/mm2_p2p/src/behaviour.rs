@@ -196,7 +196,7 @@ impl AtomicDexBehaviour {
         match cmd {
             AdexBehaviourCmd::Subscribe { topic } => {
                 let topic = Topic::new(topic);
-                self.gossipsub.subscribe(topic);
+                self.gossipsub.subscribe(&topic);
             },
             AdexBehaviourCmd::PublishMsg { topics, msg } => {
                 self.gossipsub.publish_many(topics.into_iter().map(Topic::new), msg);
