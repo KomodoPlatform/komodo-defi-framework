@@ -510,10 +510,10 @@ impl NftListStorageOps for SqliteNftStorage {
             for nft in nfts {
                 let nft_json = json::to_string(&nft).expect("serialization should not fail");
                 let params = [
-                    Some(nft.token_address),
-                    Some(nft.token_id.to_string()),
+                    Some(nft.common.token_address),
+                    Some(nft.common.token_id.to_string()),
                     Some(nft.chain.to_string()),
-                    Some(nft.amount.to_string()),
+                    Some(nft.common.amount.to_string()),
                     Some(nft.block_number.to_string()),
                     Some(nft.contract_type.to_string()),
                     Some(nft_json),
@@ -595,7 +595,7 @@ impl NftListStorageOps for SqliteNftStorage {
         async_blocking(move || {
             let mut conn = selfi.0.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = [nft_json, nft.token_address, nft.token_id.to_string()];
+            let params = [nft_json, nft.common.token_address, nft.common.token_id.to_string()];
             sql_transaction.execute(&sql, params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -639,10 +639,10 @@ impl NftListStorageOps for SqliteNftStorage {
             let mut conn = selfi.0.lock().unwrap();
             let sql_transaction = conn.transaction()?;
             let params = [
-                Some(nft.amount.to_string()),
+                Some(nft.common.amount.to_string()),
                 Some(nft_json),
-                Some(nft.token_address),
-                Some(nft.token_id.to_string()),
+                Some(nft.common.token_address),
+                Some(nft.common.token_id.to_string()),
             ];
             sql_transaction.execute(&sql, params)?;
             sql_transaction.execute(&upsert_last_scanned_block_sql()?, scanned_block_params)?;
@@ -661,11 +661,11 @@ impl NftListStorageOps for SqliteNftStorage {
             let mut conn = selfi.0.lock().unwrap();
             let sql_transaction = conn.transaction()?;
             let params = [
-                Some(nft.amount.to_string()),
+                Some(nft.common.amount.to_string()),
                 Some(nft.block_number.to_string()),
                 Some(nft_json),
-                Some(nft.token_address),
-                Some(nft.token_id.to_string()),
+                Some(nft.common.token_address),
+                Some(nft.common.token_id.to_string()),
             ];
             sql_transaction.execute(&sql, params)?;
             sql_transaction.execute(&upsert_last_scanned_block_sql()?, scanned_block_params)?;
@@ -755,15 +755,15 @@ impl NftTxHistoryStorageOps for SqliteNftStorage {
             for tx in txs {
                 let tx_json = json::to_string(&tx).expect("serialization should not fail");
                 let params = [
-                    Some(tx.transaction_hash),
+                    Some(tx.common.transaction_hash),
                     Some(tx.chain.to_string()),
                     Some(tx.block_number.to_string()),
                     Some(tx.block_timestamp.to_string()),
                     Some(tx.contract_type.to_string()),
-                    Some(tx.token_address),
-                    Some(tx.token_id.to_string()),
+                    Some(tx.common.token_address),
+                    Some(tx.common.token_id.to_string()),
                     Some(tx.status.to_string()),
-                    Some(tx.amount.to_string()),
+                    Some(tx.common.amount.to_string()),
                     tx.collection_name,
                     tx.image_url,
                     tx.token_name,
@@ -846,7 +846,7 @@ impl NftTxHistoryStorageOps for SqliteNftStorage {
             tx.image_url,
             tx.token_name,
             Some(tx_json),
-            Some(tx.transaction_hash),
+            Some(tx.common.transaction_hash),
         ];
         let selfi = self.clone();
         async_blocking(move || {

@@ -224,7 +224,7 @@ impl NftListStorageOps for IndexedDbNftStorage {
             .with_value(token_id.to_string())?;
 
         if let Some((_item_id, item)) = table.get_item_by_unique_multi_index(index_keys).await? {
-            Ok(Some(nft_details_from_item(item)?.amount.to_string()))
+            Ok(Some(nft_details_from_item(item)?.common.amount.to_string()))
         } else {
             Ok(None)
         }
@@ -236,8 +236,8 @@ impl NftListStorageOps for IndexedDbNftStorage {
         let table = db_transaction.table::<NftListTable>().await?;
         let index_keys = MultiIndex::new(NftListTable::CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
             .with_value(chain.to_string())?
-            .with_value(&nft.token_address)?
-            .with_value(nft.token_id.to_string())?;
+            .with_value(&nft.common.token_address)?
+            .with_value(nft.common.token_id.to_string())?;
 
         let nft_item = NftListTable::from_nft(&nft)?;
         table.replace_item_by_unique_multi_index(index_keys, &nft_item).await?;
@@ -274,8 +274,8 @@ impl NftListStorageOps for IndexedDbNftStorage {
 
         let index_keys = MultiIndex::new(NftListTable::CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
             .with_value(chain.to_string())?
-            .with_value(&nft.token_address)?
-            .with_value(nft.token_id.to_string())?;
+            .with_value(&nft.common.token_address)?
+            .with_value(nft.common.token_id.to_string())?;
 
         let nft_item = NftListTable::from_nft(&nft)?;
         nft_table
@@ -299,8 +299,8 @@ impl NftListStorageOps for IndexedDbNftStorage {
 
         let index_keys = MultiIndex::new(NftListTable::CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
             .with_value(chain.to_string())?
-            .with_value(&nft.token_address)?
-            .with_value(nft.token_id.to_string())?;
+            .with_value(&nft.common.token_address)?
+            .with_value(nft.common.token_id.to_string())?;
 
         let nft_item = NftListTable::from_nft(&nft)?;
         nft_table
@@ -449,7 +449,7 @@ impl NftTxHistoryStorageOps for IndexedDbNftStorage {
 
         let index_keys = MultiIndex::new(NftTxHistoryTable::CHAIN_TX_HASH_INDEX)
             .with_value(chain.to_string())?
-            .with_value(&tx.transaction_hash)?;
+            .with_value(&tx.common.transaction_hash)?;
 
         let item = NftTxHistoryTable::from_tx_history(&tx)?;
         table.replace_item_by_unique_multi_index(index_keys, &item).await?;
@@ -472,7 +472,7 @@ impl NftTxHistoryStorageOps for IndexedDbNftStorage {
 
             let index_keys = MultiIndex::new(NftTxHistoryTable::CHAIN_TX_HASH_INDEX)
                 .with_value(chain.to_string())?
-                .with_value(&tx.transaction_hash)?;
+                .with_value(&tx.common.transaction_hash)?;
 
             let item = NftTxHistoryTable::from_tx_history(&tx)?;
             table.replace_item_by_unique_multi_index(index_keys, &item).await?;
@@ -571,10 +571,10 @@ impl NftListTable {
     fn from_nft(nft: &Nft) -> WasmNftCacheResult<NftListTable> {
         let details_json = json::to_value(nft).map_to_mm(|e| WasmNftCacheError::ErrorSerializing(e.to_string()))?;
         Ok(NftListTable {
-            token_address: nft.token_address.clone(),
-            token_id: nft.token_id.to_string(),
+            token_address: nft.common.token_address.clone(),
+            token_id: nft.common.token_id.to_string(),
             chain: nft.chain.to_string(),
-            amount: nft.amount.to_string(),
+            amount: nft.common.amount.to_string(),
             block_number: BeBigUint::from(nft.block_number),
             contract_type: nft.contract_type,
             details_json,
@@ -629,15 +629,15 @@ impl NftTxHistoryTable {
     fn from_tx_history(tx: &NftTransferHistory) -> WasmNftCacheResult<NftTxHistoryTable> {
         let details_json = json::to_value(tx).map_to_mm(|e| WasmNftCacheError::ErrorSerializing(e.to_string()))?;
         Ok(NftTxHistoryTable {
-            transaction_hash: tx.transaction_hash.clone(),
+            transaction_hash: tx.common.transaction_hash.clone(),
             chain: tx.chain.to_string(),
             block_number: BeBigUint::from(tx.block_number),
             block_timestamp: BeBigUint::from(tx.block_timestamp),
             contract_type: tx.contract_type,
-            token_address: tx.token_address.clone(),
-            token_id: tx.token_id.to_string(),
+            token_address: tx.common.token_address.clone(),
+            token_id: tx.common.token_id.to_string(),
             status: tx.status,
-            amount: tx.amount.to_string(),
+            amount: tx.common.amount.to_string(),
             token_uri: tx.token_uri.clone(),
             collection_name: tx.collection_name.clone(),
             image_url: tx.image_url.clone(),

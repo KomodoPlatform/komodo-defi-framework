@@ -185,41 +185,16 @@ impl UriMeta {
     }
 }
 
+/// [`NftCommon`] structure contains common fields from [`Nft`] and [`NftFromMoralis`]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Nft {
-    pub(crate) chain: Chain,
+pub struct NftCommon {
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
     pub(crate) amount: BigDecimal,
     pub(crate) owner_of: String,
     pub(crate) token_hash: Option<String>,
-    pub(crate) block_number_minted: Option<u64>,
-    pub(crate) block_number: u64,
-    pub(crate) contract_type: ContractType,
+    #[serde(rename = "name")]
     pub(crate) collection_name: Option<String>,
-    pub(crate) symbol: Option<String>,
-    pub(crate) token_uri: Option<String>,
-    pub(crate) metadata: Option<String>,
-    pub(crate) last_token_uri_sync: Option<String>,
-    pub(crate) last_metadata_sync: Option<String>,
-    pub(crate) minter_address: Option<String>,
-    pub(crate) possible_spam: bool,
-    pub(crate) uri_meta: UriMeta,
-}
-
-/// This structure is for deserializing NFT json to struct.
-/// Its needed to convert fields properly, because all fields in json have string type.
-#[derive(Debug, Deserialize)]
-pub(crate) struct NftWrapper {
-    pub(crate) token_address: String,
-    pub(crate) token_id: SerdeStringWrap<BigDecimal>,
-    pub(crate) amount: SerdeStringWrap<BigDecimal>,
-    pub(crate) owner_of: String,
-    pub(crate) token_hash: Option<String>,
-    pub(crate) block_number_minted: Option<SerdeStringWrap<u64>>,
-    pub(crate) block_number: SerdeStringWrap<u64>,
-    pub(crate) contract_type: Option<SerdeStringWrap<ContractType>>,
-    pub(crate) name: Option<String>,
     pub(crate) symbol: Option<String>,
     pub(crate) token_uri: Option<String>,
     pub(crate) metadata: Option<String>,
@@ -228,6 +203,27 @@ pub(crate) struct NftWrapper {
     pub(crate) minter_address: Option<String>,
     #[serde(default)]
     pub(crate) possible_spam: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Nft {
+    #[serde(flatten)]
+    pub(crate) common: NftCommon,
+    pub(crate) chain: Chain,
+    pub(crate) block_number_minted: Option<u64>,
+    pub(crate) block_number: u64,
+    pub(crate) contract_type: ContractType,
+    pub(crate) uri_meta: UriMeta,
+}
+
+/// This structure is for deserializing moralis NFT json to struct.
+#[derive(Debug, Deserialize)]
+pub(crate) struct NftFromMoralis {
+    #[serde(flatten)]
+    pub(crate) common: NftCommon,
+    pub(crate) block_number_minted: Option<SerdeStringWrap<u64>>,
+    pub(crate) block_number: SerdeStringWrap<u64>,
+    pub(crate) contract_type: Option<ContractType>,
 }
 
 #[derive(Debug)]
@@ -362,55 +358,50 @@ impl fmt::Display for TransferStatus {
     }
 }
 
+/// [`NftTransferCommon`] structure contains common fields from [`NftTransferHistory`] and [`NftTxHistoryFromMoralis`]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NftTransferHistory {
-    pub(crate) chain: Chain,
-    pub(crate) block_number: u64,
-    pub(crate) block_timestamp: u64,
+pub struct NftTransferCommon {
     pub(crate) block_hash: Option<String>,
     /// Transaction hash in hexadecimal format
     pub(crate) transaction_hash: String,
     pub(crate) transaction_index: Option<u64>,
     pub(crate) log_index: Option<u64>,
     pub(crate) value: Option<BigDecimal>,
-    pub(crate) contract_type: ContractType,
     pub(crate) transaction_type: Option<String>,
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
-    pub(crate) token_uri: Option<String>,
-    pub(crate) collection_name: Option<String>,
-    pub(crate) image_url: Option<String>,
-    pub(crate) token_name: Option<String>,
     pub(crate) from_address: String,
     pub(crate) to_address: String,
-    pub(crate) status: TransferStatus,
     pub(crate) amount: BigDecimal,
-    pub(crate) verified: Option<u64>,
-    pub(crate) operator: Option<String>,
-    pub(crate) possible_spam: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct NftTransferHistoryWrapper {
-    pub(crate) block_number: SerdeStringWrap<u64>,
-    pub(crate) block_timestamp: String,
-    pub(crate) block_hash: Option<String>,
-    /// Transaction hash in hexadecimal format
-    pub(crate) transaction_hash: String,
-    pub(crate) transaction_index: Option<u64>,
-    pub(crate) log_index: Option<u64>,
-    pub(crate) value: Option<SerdeStringWrap<BigDecimal>>,
-    pub(crate) contract_type: Option<SerdeStringWrap<ContractType>>,
-    pub(crate) transaction_type: Option<String>,
-    pub(crate) token_address: String,
-    pub(crate) token_id: SerdeStringWrap<BigDecimal>,
-    pub(crate) from_address: String,
-    pub(crate) to_address: String,
-    pub(crate) amount: SerdeStringWrap<BigDecimal>,
     pub(crate) verified: Option<u64>,
     pub(crate) operator: Option<String>,
     #[serde(default)]
     pub(crate) possible_spam: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NftTransferHistory {
+    #[serde(flatten)]
+    pub(crate) common: NftTransferCommon,
+    pub(crate) chain: Chain,
+    pub(crate) block_number: u64,
+    pub(crate) block_timestamp: u64,
+    pub(crate) contract_type: ContractType,
+    pub(crate) token_uri: Option<String>,
+    pub(crate) collection_name: Option<String>,
+    pub(crate) image_url: Option<String>,
+    pub(crate) token_name: Option<String>,
+    pub(crate) status: TransferStatus,
+}
+
+/// This structure is for deserializing moralis NFT transaction json to struct.
+#[derive(Debug, Deserialize)]
+pub(crate) struct NftTxHistoryFromMoralis {
+    #[serde(flatten)]
+    pub(crate) common: NftTransferCommon,
+    pub(crate) block_number: SerdeStringWrap<u64>,
+    pub(crate) block_timestamp: String,
+    pub(crate) contract_type: Option<ContractType>,
 }
 
 #[derive(Debug, Serialize)]
@@ -455,10 +446,10 @@ pub struct TxMeta {
 impl From<Nft> for TxMeta {
     fn from(nft_db: Nft) -> Self {
         TxMeta {
-            token_address: nft_db.token_address,
-            token_id: nft_db.token_id,
-            token_uri: nft_db.token_uri,
-            collection_name: nft_db.collection_name,
+            token_address: nft_db.common.token_address,
+            token_id: nft_db.common.token_id,
+            token_uri: nft_db.common.token_uri,
+            collection_name: nft_db.common.collection_name,
             image_url: nft_db.uri_meta.image_url,
             token_name: nft_db.uri_meta.token_name,
         }
