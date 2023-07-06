@@ -15,12 +15,14 @@ use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftLis
                   TransactionNftDetails, UpdateNftReq, WithdrawNftReq};
 
 use crate::eth::{get_eth_address, withdraw_erc1155, withdraw_erc721};
+use crate::nft::nft_errors::ProtectFromSpamError;
 use crate::nft::nft_structs::{NftCommon, NftTransferCommon, RefreshMetadataReq, TransferStatus, TxMeta, UriMeta};
 use crate::nft::storage::{NftListStorageOps, NftStorageBuilder, NftTxHistoryStorageOps};
 use common::{parse_rfc3339_to_timestamp, APPLICATION_JSON};
 use http::header::ACCEPT;
 use mm2_err_handle::map_to_mm::MapToMmResult;
 use mm2_number::BigDecimal;
+use regex::Regex;
 use serde_json::Value as Json;
 use std::cmp::Ordering;
 
@@ -89,7 +91,7 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
         .await?;
     if req.protect_from_spam {
         for tx in &mut transfer_history_list.transfer_history {
-            protect_from_history_spam(tx);
+            protect_from_history_spam(tx)?;
         }
     }
     drop_mutability!(transfer_history_list);
@@ -736,20 +738,23 @@ where
 }
 
 /// `contains_disallowed_scheme` function checks if the text contains some link.
-fn contains_disallowed_scheme(text: &str) -> bool {
-    text.contains("http://") || text.contains("https://") || text.contains("ftp://") || text.contains("file://")
+fn contains_disallowed_url(text: &str) -> Result<bool, regex::Error> {
+    let url_regex = Regex::new(
+        r"(?:(?:https?|ftp|file|[^:\s]+:)/?|[^:\s]+:/|\b(?:[a-z\d]+\.))(?:(?:[^\s()<>]+|\((?:[^\s()<>]+|(?:\([^\s()<>]+\)))?\))+(?:\((?:[^\s()<>]+|(?:\(?:[^\s()<>]+\)))?\)|[^\s`!()\[\]{};:'.,<>?«»“”‘’]))?",
+    )?;
+    Ok(url_regex.is_match(text))
 }
 
-/// `check_and_redact_if_spam` checks if the text contains any links.///
+/// `check_and_redact_if_spam` checks if the text contains any links.
 /// It doesn't matter if the link is valid or not, as this is a spam check.
 /// If text contains some link, then it is a spam.
-fn check_and_redact_if_spam(text: &mut Option<String>) -> bool {
+fn check_and_redact_if_spam(text: &mut Option<String>) -> Result<bool, regex::Error> {
     match text {
-        Some(s) if contains_disallowed_scheme(s) => {
+        Some(s) if contains_disallowed_url(s)? => {
             *text = Some("URL redacted for user protection".to_string());
-            true
+            Ok(true)
         },
-        _ => false,
+        _ => Ok(false),
     }
 }
 
@@ -757,23 +762,25 @@ fn check_and_redact_if_spam(text: &mut Option<String>) -> bool {
 ///
 /// `collection_name` and `token_name` in `NftTransferHistory` shouldn't contain any links,
 /// they must be just an arbitrary text, which represents NFT names.
-fn protect_from_history_spam(tx: &mut NftTransferHistory) {
-    let collection_name_spam = check_and_redact_if_spam(&mut tx.collection_name);
-    let token_name_spam = check_and_redact_if_spam(&mut tx.token_name);
+fn protect_from_history_spam(tx: &mut NftTransferHistory) -> MmResult<(), ProtectFromSpamError> {
+    let collection_name_spam = check_and_redact_if_spam(&mut tx.collection_name)?;
+    let token_name_spam = check_and_redact_if_spam(&mut tx.token_name)?;
 
     if collection_name_spam || token_name_spam {
         tx.common.possible_spam = true;
     }
+    Ok(())
 }
+
 /// `protect_from_nft_spam` function checks and redact spam in `Nft`.
 ///
 /// `collection_name` and `token_name` in `Nft` shouldn't contain any links,
 /// they must be just an arbitrary text, which represents NFT names.
 /// `symbol` also must be a text or sign that represents a symbol.
-fn protect_from_nft_spam(nft: &mut Nft) -> MmResult<(), serde_json::Error> {
-    let collection_name_spam = check_and_redact_if_spam(&mut nft.common.collection_name);
-    let symbol_spam = check_and_redact_if_spam(&mut nft.common.symbol);
-    let token_name_spam = check_and_redact_if_spam(&mut nft.uri_meta.token_name);
+fn protect_from_nft_spam(nft: &mut Nft) -> MmResult<(), ProtectFromSpamError> {
+    let collection_name_spam = check_and_redact_if_spam(&mut nft.common.collection_name)?;
+    let symbol_spam = check_and_redact_if_spam(&mut nft.common.symbol)?;
+    let token_name_spam = check_and_redact_if_spam(&mut nft.uri_meta.token_name)?;
     let meta_spam = check_nft_metadata_for_spam(nft)?;
 
     if collection_name_spam || symbol_spam || token_name_spam || meta_spam {
@@ -784,14 +791,14 @@ fn protect_from_nft_spam(nft: &mut Nft) -> MmResult<(), serde_json::Error> {
 /// `check_nft_metadata_for_spam` function checks and redact spam in `metadata` field from `Nft`.
 ///
 /// **note:** `token_name` is usually called `name` in `metadata`.
-fn check_nft_metadata_for_spam(nft: &mut Nft) -> MmResult<bool, serde_json::Error> {
+fn check_nft_metadata_for_spam(nft: &mut Nft) -> MmResult<bool, ProtectFromSpamError> {
     if let Some(Ok(mut metadata)) = nft
         .common
         .metadata
         .as_ref()
         .map(|t| serde_json::from_str::<serde_json::Map<String, Json>>(t))
     {
-        if check_spam_and_redact_metadata_field(&mut metadata, "name") {
+        if check_spam_and_redact_metadata_field(&mut metadata, "name")? {
             nft.common.metadata = Some(serde_json::to_string(&metadata)?);
             return Ok(true);
         }
@@ -805,16 +812,19 @@ fn check_nft_metadata_for_spam(nft: &mut Nft) -> MmResult<bool, serde_json::Erro
 /// If this field is found and its value contains some link, it's considered to contain spam.
 /// To protect users, function redacts field containing spam link.
 /// The function returns `true` if it detected spam link, or `false` otherwise.
-fn check_spam_and_redact_metadata_field(metadata: &mut serde_json::Map<String, Json>, field: &str) -> bool {
+fn check_spam_and_redact_metadata_field(
+    metadata: &mut serde_json::Map<String, Json>,
+    field: &str,
+) -> MmResult<bool, ProtectFromSpamError> {
     match metadata.get(field).and_then(|v| v.as_str()) {
-        Some(text) if contains_disallowed_scheme(text) => {
+        Some(text) if contains_disallowed_url(text)? => {
             metadata.insert(
                 field.to_string(),
                 serde_json::Value::String("URL redacted for user protection".to_string()),
             );
-            true
+            Ok(true)
         },
-        _ => false,
+        _ => Ok(false),
     }
 }
 

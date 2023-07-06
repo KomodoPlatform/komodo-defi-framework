@@ -31,9 +31,28 @@ mod native_tests {
     #[test]
     fn test_check_for_spam() {
         let mut spam_text = Some("https://arweave.net".to_string());
-        assert!(check_and_redact_if_spam(&mut spam_text));
+        assert!(check_and_redact_if_spam(&mut spam_text).unwrap());
         let url_redacted = "URL redacted for user protection";
         assert_eq!(url_redacted, spam_text.unwrap());
+
+        let mut spam_text = Some("ftp://123path ".to_string());
+        assert!(check_and_redact_if_spam(&mut spam_text).unwrap());
+        let url_redacted = "URL redacted for user protection";
+        assert_eq!(url_redacted, spam_text.unwrap());
+
+        let mut spam_text = Some("/192.168.1.1/some.example.org?type=A".to_string());
+        assert!(check_and_redact_if_spam(&mut spam_text).unwrap());
+        let url_redacted = "URL redacted for user protection";
+        assert_eq!(url_redacted, spam_text.unwrap());
+
+        let mut spam_text = Some(r"C:\Users\path\".to_string());
+        assert!(check_and_redact_if_spam(&mut spam_text).unwrap());
+        let url_redacted = "URL redacted for user protection";
+        assert_eq!(url_redacted, spam_text.unwrap());
+
+        let mut valid_text = Some("Hello my name is NFT (The best ever!)".to_string());
+        assert!(!check_and_redact_if_spam(&mut valid_text).unwrap());
+        assert_eq!("Hello my name is NFT (The best ever!)", valid_text.unwrap());
 
         let mut nft = nft();
         assert!(check_nft_metadata_for_spam(&mut nft).unwrap());
