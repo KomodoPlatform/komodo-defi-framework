@@ -43,6 +43,13 @@ pub enum ControlAction {
         /// The backoff time in seconds before we allow to reconnect
         backoff: Option<u64>,
     },
+    IAmRelay(bool),
+    /// Whether the node included or excluded from other node relays mesh
+    IncludedToRelaysMesh {
+        included: bool,
+        mesh_size: usize,
+    },
+    MeshSize(usize),
 }
 
 pub struct Behaviour {
@@ -70,7 +77,7 @@ pub struct Behaviour {
 impl NetworkBehaviour for Behaviour {
     type ConnectionHandler = dummy::ConnectionHandler;
 
-    type ToSwarm = Void;
+    type ToSwarm = libp2p::gossipsub::Event;
 
     fn handle_established_inbound_connection(
         &mut self,
@@ -92,13 +99,31 @@ impl NetworkBehaviour for Behaviour {
         todo!()
     }
 
-    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) { todo!() }
+    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {
+        match event {
+            libp2p::swarm::FromSwarm::ConnectionEstablished(_) => todo!(),
+            libp2p::swarm::FromSwarm::ConnectionClosed(_) => todo!(),
+            libp2p::swarm::FromSwarm::AddressChange(_) => todo!(),
+            libp2p::swarm::FromSwarm::DialFailure(_) => todo!(),
+            libp2p::swarm::FromSwarm::ListenFailure(_) => todo!(),
+            libp2p::swarm::FromSwarm::NewListener(_) => todo!(),
+            libp2p::swarm::FromSwarm::NewListenAddr(_) => todo!(),
+            libp2p::swarm::FromSwarm::ExpiredListenAddr(_) => todo!(),
+            libp2p::swarm::FromSwarm::ListenerError(_) => todo!(),
+            libp2p::swarm::FromSwarm::ListenerClosed(_) => todo!(),
+            libp2p::swarm::FromSwarm::NewExternalAddrCandidate(_) => todo!(),
+            libp2p::swarm::FromSwarm::ExternalAddrConfirmed(_) => todo!(),
+            libp2p::swarm::FromSwarm::ExternalAddrExpired(_) => todo!(),
+        }
+
+        todo!()
+    }
 
     fn on_connection_handler_event(
         &mut self,
         _peer_id: PeerId,
         _connection_id: libp2p::swarm::ConnectionId,
-        _event: libp2p::swarm::THandlerOutEvent<Self>,
+        event: libp2p::swarm::THandlerOutEvent<Self>,
     ) {
         todo!()
     }

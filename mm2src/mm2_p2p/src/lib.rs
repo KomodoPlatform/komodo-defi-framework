@@ -1,4 +1,5 @@
 #![feature(ip)]
+#![allow(unused, dead_code)]
 
 // mod behaviour;
 mod adex_gossipsub;
