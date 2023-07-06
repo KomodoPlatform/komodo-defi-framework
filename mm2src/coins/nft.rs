@@ -221,30 +221,7 @@ async fn get_moralis_nft_list(ctx: &MmArc, chain: &Chain, url: &Url) -> MmResult
                     Some(contract_type) => contract_type,
                     None => continue,
                 };
-                let token_uri = check_moralis_ipfs_bafy(nft_moralis.common.token_uri.as_deref());
-                let uri_meta = get_uri_meta(token_uri.as_deref(), nft_moralis.common.metadata.as_deref()).await;
-                let nft = Nft {
-                    common: NftCommon {
-                        token_address: nft_moralis.common.token_address,
-                        token_id: nft_moralis.common.token_id,
-                        amount: nft_moralis.common.amount,
-                        owner_of: nft_moralis.common.owner_of,
-                        token_hash: nft_moralis.common.token_hash,
-                        collection_name: nft_moralis.common.collection_name,
-                        symbol: nft_moralis.common.symbol,
-                        token_uri,
-                        metadata: nft_moralis.common.metadata,
-                        last_token_uri_sync: nft_moralis.common.last_token_uri_sync,
-                        last_metadata_sync: nft_moralis.common.last_metadata_sync,
-                        minter_address: nft_moralis.common.minter_address,
-                        possible_spam: nft_moralis.common.possible_spam,
-                    },
-                    chain: *chain,
-                    block_number_minted: nft_moralis.block_number_minted.map(|v| v.0),
-                    block_number: *nft_moralis.block_number,
-                    contract_type,
-                    uri_meta,
-                };
+                let nft = build_nft_from_moralis(chain, nft_moralis, contract_type).await;
                 // collect NFTs from the page
                 res_list.push(nft);
             }
@@ -377,30 +354,7 @@ async fn get_moralis_metadata(
         Some(contract_type) => contract_type,
         None => return MmError::err(GetNftInfoError::ContractTypeIsNull),
     };
-    let token_uri = check_moralis_ipfs_bafy(nft_moralis.common.token_uri.as_deref());
-    let uri_meta = get_uri_meta(token_uri.as_deref(), nft_moralis.common.metadata.as_deref()).await;
-    let nft_metadata = Nft {
-        common: NftCommon {
-            token_address: nft_moralis.common.token_address,
-            token_id: nft_moralis.common.token_id,
-            amount: nft_moralis.common.amount,
-            owner_of: nft_moralis.common.owner_of,
-            token_hash: nft_moralis.common.token_hash,
-            collection_name: nft_moralis.common.collection_name,
-            symbol: nft_moralis.common.symbol,
-            token_uri,
-            metadata: nft_moralis.common.metadata,
-            last_token_uri_sync: nft_moralis.common.last_token_uri_sync,
-            last_metadata_sync: nft_moralis.common.last_metadata_sync,
-            minter_address: nft_moralis.common.minter_address,
-            possible_spam: nft_moralis.common.possible_spam,
-        },
-        chain: *chain,
-        block_number_minted: nft_moralis.block_number_minted.map(|v| v.0),
-        block_number: *nft_moralis.block_number,
-        contract_type,
-        uri_meta,
-    };
+    let nft_metadata = build_nft_from_moralis(chain, nft_moralis, contract_type).await;
     Ok(nft_metadata)
 }
 
@@ -861,5 +815,32 @@ fn check_spam_and_redact_metadata_field(metadata: &mut serde_json::Map<String, J
             true
         },
         _ => false,
+    }
+}
+
+async fn build_nft_from_moralis(chain: &Chain, nft_moralis: NftFromMoralis, contract_type: ContractType) -> Nft {
+    let token_uri = check_moralis_ipfs_bafy(nft_moralis.common.token_uri.as_deref());
+    let uri_meta = get_uri_meta(token_uri.as_deref(), nft_moralis.common.metadata.as_deref()).await;
+    Nft {
+        common: NftCommon {
+            token_address: nft_moralis.common.token_address,
+            token_id: nft_moralis.common.token_id,
+            amount: nft_moralis.common.amount,
+            owner_of: nft_moralis.common.owner_of,
+            token_hash: nft_moralis.common.token_hash,
+            collection_name: nft_moralis.common.collection_name,
+            symbol: nft_moralis.common.symbol,
+            token_uri,
+            metadata: nft_moralis.common.metadata,
+            last_token_uri_sync: nft_moralis.common.last_token_uri_sync,
+            last_metadata_sync: nft_moralis.common.last_metadata_sync,
+            minter_address: nft_moralis.common.minter_address,
+            possible_spam: nft_moralis.common.possible_spam,
+        },
+        chain: *chain,
+        block_number_minted: nft_moralis.block_number_minted.map(|v| v.0),
+        block_number: *nft_moralis.block_number,
+        contract_type,
+        uri_meta,
     }
 }
