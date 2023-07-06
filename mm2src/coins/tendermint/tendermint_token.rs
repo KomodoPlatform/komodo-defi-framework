@@ -175,8 +175,10 @@ impl TendermintToken {
 
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
+            let (_, gas_limit) = platform.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT);
+
             let fee_amount_u64 = platform
-                .calculate_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone())
+                .calculate_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone(), req.fee)
                 .await?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
@@ -194,7 +196,7 @@ impl TendermintToken {
                 amount: fee_amount_u64.into(),
             };
 
-            let fee = Fee::from_amount_and_gas(fee_amount, IBC_GAS_LIMIT_DEFAULT);
+            let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
             let account_info = platform.my_account_info().await?;
             let tx_raw = platform
@@ -221,7 +223,7 @@ impl TendermintToken {
                     coin: platform.ticker().to_string(),
                     amount: fee_amount_dec,
                     uamount: fee_amount_u64,
-                    gas_limit: IBC_GAS_LIMIT_DEFAULT,
+                    gas_limit,
                 })),
                 coin: token.ticker.clone(),
                 internal_id: hash.to_vec().into(),
@@ -649,8 +651,10 @@ impl MmCoin for TendermintToken {
 
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
+            let (_, gas_limit) = platform.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
+
             let fee_amount_u64 = platform
-                .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone())
+                .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone(), req.fee)
                 .await?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
@@ -668,7 +672,7 @@ impl MmCoin for TendermintToken {
                 amount: fee_amount_u64.into(),
             };
 
-            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+            let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
             let account_info = platform.my_account_info().await?;
             let tx_raw = platform
@@ -695,7 +699,7 @@ impl MmCoin for TendermintToken {
                     coin: platform.ticker().to_string(),
                     amount: fee_amount_dec,
                     uamount: fee_amount_u64,
-                    gas_limit: GAS_LIMIT_DEFAULT,
+                    gas_limit,
                 })),
                 coin: token.ticker.clone(),
                 internal_id: hash.to_vec().into(),

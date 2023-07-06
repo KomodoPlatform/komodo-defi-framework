@@ -16,7 +16,6 @@ fn main() {}
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     logging::init_logging();
-    let Ok(app) = adex_app::AdexApp::new() else { return; };
-
+    let app = adex_app::AdexApp::new();
     app.execute().await;
 }

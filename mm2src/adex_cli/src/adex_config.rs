@@ -50,13 +50,13 @@ pub(super) fn set_config(set_password: bool, rpc_api_uri: Option<String>) -> Res
 }
 
 pub(super) trait AdexConfig {
-    fn rpc_password(&self) -> Result<String>;
-    fn rpc_uri(&self) -> Result<String>;
+    fn rpc_password(&self) -> Option<String>;
+    fn rpc_uri(&self) -> Option<String>;
     fn orderbook_price_precision(&self) -> &SmartFractPrecision;
     fn orderbook_volume_precision(&self) -> &SmartFractPrecision;
 }
 
-#[derive(Deserialize, Serialize, Debug, Default)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub(super) struct AdexConfigImpl {
     #[serde(skip_serializing_if = "Option::is_none")]
     rpc_password: Option<String>,
@@ -65,18 +65,8 @@ pub(super) struct AdexConfigImpl {
 }
 
 impl AdexConfig for AdexConfigImpl {
-    fn rpc_password(&self) -> Result<String> {
-        self.rpc_password
-            .as_ref()
-            .map(String::clone)
-            .ok_or_else(|| error_anyhow!("Failed to get rpc_password"))
-    }
-    fn rpc_uri(&self) -> Result<String> {
-        self.rpc_uri
-            .as_ref()
-            .map(String::clone)
-            .ok_or_else(|| error_anyhow!("No rpc_uri in config"))
-    }
+    fn rpc_password(&self) -> Option<String> { self.rpc_password.clone() }
+    fn rpc_uri(&self) -> Option<String> { self.rpc_uri.clone() }
     fn orderbook_price_precision(&self) -> &SmartFractPrecision { &PRICE_PRECISION }
     fn orderbook_volume_precision(&self) -> &SmartFractPrecision { &VOLUME_PRECISION }
 }
@@ -108,13 +98,13 @@ impl AdexConfigImpl {
     #[cfg(not(test))]
     pub(super) fn read_config() -> Result<AdexConfigImpl> {
         let config = AdexConfigImpl::from_config_path()?;
-        match config {
-            config @ AdexConfigImpl {
-                rpc_password: Some(_),
-                rpc_uri: Some(_),
-            } => Ok(config),
-            _ => warn_bail!("Failed to process, adex_config is not fully set"),
+        if config.rpc_password.is_none() {
+            warn!("Configuration is not complete, no rpc_password in there");
         }
+        if config.rpc_uri.is_none() {
+            warn!("Configuration is not complete, no rpc_uri in there");
+        }
+        Ok(config)
     }
 
     fn is_set(&self) -> bool { self.rpc_uri.is_some() && self.rpc_password.is_some() }

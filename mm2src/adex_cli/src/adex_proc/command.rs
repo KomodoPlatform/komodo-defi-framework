@@ -1,5 +1,4 @@
 use derive_more::Display;
-use log::error;
 use serde::Serialize;
 
 #[derive(Serialize, Clone)]
@@ -9,9 +8,10 @@ where
 {
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     flatten_data: Option<T>,
-    userpass: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     method: Option<Method>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    userpass: Option<String>,
 }
 
 #[derive(Serialize, Clone, Display)]
@@ -74,11 +74,7 @@ where
 
     pub(super) fn build(&mut self) -> Command<T> {
         Command {
-            userpass: self
-                .userpass
-                .take()
-                .ok_or_else(|| error!("Build command failed, no userpass"))
-                .expect("Unexpected error during building api command"),
+            userpass: self.userpass.take(),
             method: self.method.take(),
             flatten_data: self.flatten_data.take(),
         }
@@ -88,7 +84,7 @@ where
 impl<T: Serialize + Clone> std::fmt::Display for Command<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut cmd: Self = self.clone();
-        cmd.userpass = "***********".to_string();
+        cmd.userpass = self.userpass.as_ref().map(|_| "***********".to_string());
         writeln!(
             f,
             "{}",

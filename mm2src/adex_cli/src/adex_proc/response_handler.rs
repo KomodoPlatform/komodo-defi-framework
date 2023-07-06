@@ -24,7 +24,7 @@ pub(crate) trait ResponseHandler {
     fn debug_response<T: Debug + 'static>(&self, response: &T) -> Result<()>;
     fn on_orderbook_response<Cfg: AdexConfig + 'static>(
         &self,
-        orderbook: OrderbookResponse,
+        orderbook: &OrderbookResponse,
         config: &Cfg,
         orderbook_config: OrderbookConfig,
     ) -> Result<()>;
@@ -61,7 +61,7 @@ impl ResponseHandler for ResponseHandlerImpl<'_> {
 
     fn on_orderbook_response<Cfg: AdexConfig + 'static>(
         &self,
-        orderbook: OrderbookResponse,
+        orderbook: &OrderbookResponse,
         config: &Cfg,
         orderbook_config: OrderbookConfig,
     ) -> Result<()> {

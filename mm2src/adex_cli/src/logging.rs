@@ -18,6 +18,8 @@ pub(super) fn init_logging() {
 #[macro_export]
 macro_rules! error_anyhow { ($($arg: expr),*) => { { error!($($arg),*); anyhow!("") } } }
 #[macro_export]
+macro_rules! warn_anyhow { ($($arg: expr),*) => { { warn!($($arg),*); anyhow!("") } } }
+#[macro_export]
 macro_rules! error_bail { ($($arg: expr),*) => { { error!($($arg),*); bail!("") } } }
 #[macro_export]
 macro_rules! warn_bail { ($($arg: expr),*) => { { warn!($($arg),*); bail!("") } } }

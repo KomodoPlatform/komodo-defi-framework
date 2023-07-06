@@ -1004,7 +1004,7 @@ impl SwapOps for BchCoin {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
 
-    fn is_supported_by_watchers(&self) -> bool { true }
+    fn is_supported_by_watchers(&self) -> bool { std::env::var("USE_WATCHERS").is_ok() }
 }
 
 #[async_trait]
