@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use common::executor::SpawnFuture;
 use futures::channel::mpsc::{Receiver, Sender};
 use futures::{channel::oneshot,
               future::{join_all, poll_fn},
@@ -9,7 +10,7 @@ use libp2p::floodsub::{Floodsub, Topic as FloodsubTopic};
 use libp2p::gossipsub::{Behaviour as Gossipsub, MessageId, Topic};
 use libp2p::request_response::ResponseChannel;
 use libp2p::PeerId;
-use log::{error, debug};
+use log::{debug, error};
 
 use crate::peers::PeersExchange;
 use crate::ping::AdexPing;

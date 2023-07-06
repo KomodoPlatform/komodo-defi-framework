@@ -6,6 +6,7 @@ mod event;
 pub mod peer_store;
 mod peers;
 mod ping;
+mod relay;
 mod request_response;
 mod swarm_runtime;
 

@@ -3,12 +3,11 @@ use libp2p::{gossipsub::{Behaviour as Gossipsub, Event as GossipsubEvent, Messag
              PeerId};
 use std::collections::{HashMap, HashSet};
 
+use crate::relay;
+
 pub struct AtomicDexGossipsub {
     gossipsub: Gossipsub,
-    /// relays to which we forward the messages. also tracks the relay mesh size of nodes in mesh.
-    relays_mesh: HashMap<PeerId, usize>,
-    /// The peer ids of connected relay nodes
-    connected_relays: HashSet<PeerId>,
+    relay: relay::Behaviour,
 }
 
 impl NetworkBehaviour for AtomicDexGossipsub {
@@ -40,9 +39,7 @@ impl NetworkBehaviour for AtomicDexGossipsub {
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {
         match event {
             libp2p::swarm::FromSwarm::ConnectionEstablished(_) => {},
-            FromSwarm::ConnectionClosed(ref cc) => {
-                self.relays_mesh.remove(&cc.peer_id);
-            },
+            FromSwarm::ConnectionClosed(ref cc) => {},
             libp2p::swarm::FromSwarm::AddressChange(_) => {},
             libp2p::swarm::FromSwarm::DialFailure(_) => {},
             libp2p::swarm::FromSwarm::ListenFailure(_) => {},
