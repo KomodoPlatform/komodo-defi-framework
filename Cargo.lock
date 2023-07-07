@@ -334,7 +334,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10f203db73a71dfa2fb6dd22763990fa26f3d2625a6da2da900d23b87d26be27"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -357,7 +357,7 @@ version = "0.1.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "061a7acccaa286c011ddc30970520b98fa40e00c9d644633fb26b5fc63a265e3"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -852,7 +852,7 @@ dependencies = [
  "borsh-derive-internal",
  "borsh-schema-derive-internal",
  "proc-macro-crate 0.1.5",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "syn 1.0.95",
 ]
 
@@ -862,7 +862,7 @@ version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5449c28a7b352f2d1e592a8a28bf139bc71afb0764a14f3c02500935d8c44065"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -873,7 +873,7 @@ version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdbd5696d8bfa21d53d9fe39a714a18538bad11492a42d066dbbc395fb1951c0"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -939,7 +939,7 @@ version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e215f8c2f9f79cb53c8335e687ffd07d5bfcb6fe5fc80723762d0be46e7cc54"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -1843,7 +1843,7 @@ dependencies = [
  "cc",
  "codespan-reporting",
  "lazy_static",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "scratch",
  "syn 1.0.95",
@@ -1861,7 +1861,7 @@ version = "1.0.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b846f081361125bfc8dc9d3940c84e1fd83ba54bbca7b17cd29483c828be0704"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -1955,7 +1955,7 @@ version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -1966,7 +1966,7 @@ version = "0.99.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41cb0e6161ad61ed084a36ba71fbba9e3ac5aee3606fb607fe08da6acbcf3d8c"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -2220,7 +2220,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21cdad81446a7f7dc43f6a77409efeb9733d2fa65553efef6018ef257c959b73"
 dependencies = [
  "heck",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -2232,7 +2232,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9720bba047d567ffc8a3cba48bf19126600e249ab7f128e9233e6376976a116"
 dependencies = [
  "heck",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -2253,7 +2253,7 @@ name = "enum_from"
 version = "0.1.0"
 dependencies = [
  "itertools",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -2419,7 +2419,7 @@ version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa4da3c766cd7a0db8242e326e9e4e081edd567072893ed320008189715366a4"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
  "synstructure",
@@ -2688,9 +2688,9 @@ version = "0.3.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89ca545a94061b6365f2c7355b4b32bd20df3ff95f02da9329b34ccc3bd6ee72"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
 ]
 
 [[package]]
@@ -3342,7 +3342,7 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d5dacb10c5b3bb92d46ba347505a9041e676bb20ad220101326bffb0c93031ee"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -3595,9 +3595,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.146"
+version = "0.2.147"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f92be4933c13fd498862a9e02a3055f8a8d9c039ce33db97306fd5a6caa7f29b"
+checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 
 [[package]]
 name = "libloading"
@@ -3647,15 +3647,15 @@ dependencies = [
  "libp2p-websocket 0.35.0",
  "multiaddr 0.14.0",
  "parking_lot 0.12.0",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "rand 0.7.3",
  "smallvec 1.6.1",
 ]
 
 [[package]]
 name = "libp2p"
-version = "0.52.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+version = "0.52.1"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "bytes 1.4.0",
  "futures 0.3.28",
@@ -3669,7 +3669,7 @@ dependencies = [
  "libp2p-floodsub 0.43.0",
  "libp2p-gossipsub",
  "libp2p-identify",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-mdns",
  "libp2p-metrics 0.13.0",
  "libp2p-noise 0.43.0",
@@ -3681,16 +3681,16 @@ dependencies = [
  "libp2p-websocket 0.42.0",
  "libp2p-yamux 0.44.0",
  "multiaddr 0.18.0",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
 ]
 
 [[package]]
 name = "libp2p-allow-block-list"
 version = "0.2.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-swarm 0.43.0",
  "void",
 ]
@@ -3698,10 +3698,10 @@ dependencies = [
 [[package]]
 name = "libp2p-connection-limits"
 version = "0.2.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-swarm 0.43.0",
  "void",
 ]
@@ -3727,7 +3727,7 @@ dependencies = [
  "multistream-select 0.11.0",
  "p256",
  "parking_lot 0.12.0",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "prost",
  "prost-build",
  "rand 0.8.4",
@@ -3744,21 +3744,21 @@ dependencies = [
 [[package]]
 name = "libp2p-core"
 version = "0.40.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "either",
  "fnv",
  "futures 0.3.28",
  "futures-timer",
  "instant",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "log 0.4.19",
  "multiaddr 0.18.0",
  "multihash 0.19.0",
  "multistream-select 0.13.0",
  "once_cell",
  "parking_lot 0.12.0",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "quick-protobuf",
  "rand 0.8.4",
  "rw-stream-sink 0.4.0",
@@ -3784,12 +3784,12 @@ dependencies = [
 [[package]]
 name = "libp2p-dns"
 version = "0.40.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "async-std-resolver",
  "futures 0.3.28",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "log 0.4.19",
  "parking_lot 0.12.0",
  "smallvec 1.6.1",
@@ -3830,14 +3830,14 @@ dependencies = [
 [[package]]
 name = "libp2p-floodsub"
 version = "0.43.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "asynchronous-codec",
  "cuckoofilter 0.5.0",
  "fnv",
  "futures 0.3.28",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "quick-protobuf",
@@ -3850,7 +3850,7 @@ dependencies = [
 [[package]]
 name = "libp2p-gossipsub"
 version = "0.45.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "asynchronous-codec",
  "base64 0.21.2",
@@ -3864,7 +3864,7 @@ dependencies = [
  "hex_fmt",
  "instant",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "prometheus-client 0.21.1",
@@ -3881,17 +3881,17 @@ dependencies = [
 [[package]]
 name = "libp2p-identify"
 version = "0.43.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "asynchronous-codec",
  "either",
  "futures 0.3.28",
  "futures-timer",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
- "lru 0.10.0",
+ "lru 0.10.1",
  "quick-protobuf",
  "quick-protobuf-codec",
  "smallvec 1.6.1",
@@ -3910,9 +3910,9 @@ dependencies = [
 
 [[package]]
 name = "libp2p-identity"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93a7b3534b84fe89985d8076246806c845e716d0cdac50925dcf65caf49ab3c0"
+checksum = "d2874d9c6575f1d7a151022af5c42bb0ffdcdfbafe0a6fd039de870b384835a2"
 dependencies = [
  "asn1_der",
  "bs58 0.5.0",
@@ -3930,14 +3930,14 @@ dependencies = [
 [[package]]
 name = "libp2p-mdns"
 version = "0.44.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "async-io",
  "data-encoding",
  "futures 0.3.28",
  "if-watch",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "rand 0.8.4",
@@ -3962,13 +3962,13 @@ dependencies = [
 [[package]]
 name = "libp2p-metrics"
 version = "0.13.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "instant",
  "libp2p-core 0.40.0",
  "libp2p-gossipsub",
  "libp2p-identify",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-ping 0.43.0",
  "libp2p-swarm 0.43.0",
  "once_cell",
@@ -4016,13 +4016,13 @@ dependencies = [
 [[package]]
 name = "libp2p-noise"
 version = "0.43.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "bytes 1.4.0",
  "curve25519-dalek 3.2.0",
  "futures 0.3.28",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "log 0.4.19",
  "multiaddr 0.18.0",
  "multihash 0.19.0",
@@ -4055,14 +4055,14 @@ dependencies = [
 [[package]]
 name = "libp2p-ping"
 version = "0.43.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "either",
  "futures 0.3.28",
  "futures-timer",
  "instant",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "rand 0.8.4",
@@ -4105,13 +4105,13 @@ dependencies = [
 [[package]]
 name = "libp2p-request-response"
 version = "0.25.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "async-trait",
  "futures 0.3.28",
  "instant",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "rand 0.8.4",
@@ -4131,7 +4131,7 @@ dependencies = [
  "instant",
  "libp2p-core 0.33.0",
  "log 0.4.19",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "rand 0.7.3",
  "smallvec 1.6.1",
  "thiserror",
@@ -4141,7 +4141,7 @@ dependencies = [
 [[package]]
 name = "libp2p-swarm"
 version = "0.43.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "async-std",
  "either",
@@ -4150,7 +4150,7 @@ dependencies = [
  "futures-timer",
  "instant",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "libp2p-swarm-derive 0.33.0",
  "log 0.4.19",
  "multistream-select 0.13.0",
@@ -4173,13 +4173,13 @@ dependencies = [
 [[package]]
 name = "libp2p-swarm-derive"
 version = "0.33.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "heck",
  "proc-macro-warning",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
 ]
 
 [[package]]
@@ -4201,7 +4201,7 @@ dependencies = [
 [[package]]
 name = "libp2p-tcp"
 version = "0.40.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "async-io",
  "futures 0.3.28",
@@ -4209,7 +4209,7 @@ dependencies = [
  "if-watch",
  "libc",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "log 0.4.19",
  "socket2 0.5.3",
  "tokio",
@@ -4231,7 +4231,7 @@ dependencies = [
 [[package]]
 name = "libp2p-wasm-ext"
 version = "0.40.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "futures 0.3.28",
  "js-sys",
@@ -4262,13 +4262,13 @@ dependencies = [
 [[package]]
 name = "libp2p-websocket"
 version = "0.42.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "either",
  "futures 0.3.28",
  "futures-rustls 0.22.1",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "log 0.4.19",
  "parking_lot 0.12.0",
  "quicksink",
@@ -4293,7 +4293,7 @@ dependencies = [
 [[package]]
 name = "libp2p-yamux"
 version = "0.44.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "futures 0.3.28",
  "libp2p-core 0.40.0",
@@ -4552,9 +4552,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03f1160296536f10c833a82dca22267d5486734230d47bf00bf435885814ba1e"
+checksum = "718e8fae447df0c7e1ba7f5189829e63fd536945c8988d61444c19039f16b670"
 dependencies = [
  "hashbrown 0.13.2",
 ]
@@ -4685,9 +4685,9 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddece26afd34c31585c74a4db0630c376df271c285d682d1e55012197830b6df"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
 ]
 
 [[package]]
@@ -5123,10 +5123,10 @@ dependencies = [
  "hex 0.4.3",
  "instant",
  "lazy_static",
- "libp2p 0.52.0",
+ "libp2p 0.52.1",
  "libp2p-identity 0.1.2",
  "log 0.4.19",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "rand 0.7.3",
  "regex",
  "rmp-serde",
@@ -5135,7 +5135,7 @@ dependencies = [
  "serde_bytes",
  "sha2 0.9.9",
  "smallvec 1.6.1",
- "syn 2.0.18",
+ "syn 2.0.23",
  "tokio",
  "tracing",
  "void",
@@ -5205,7 +5205,7 @@ version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3048ef3680533a27f9f8e7d6a0bce44dc61e4895ea0f42709337fa1c8616fefe"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -5237,7 +5237,7 @@ dependencies = [
  "arrayref",
  "byteorder 1.4.3",
  "data-encoding",
- "libp2p-identity 0.2.0",
+ "libp2p-identity 0.2.1",
  "multibase",
  "multihash 0.19.0",
  "percent-encoding",
@@ -5289,7 +5289,7 @@ checksum = "fc076939022111618a5026d3be019fd8b366e76314538ff9a1b59ffbcbf98bcd"
 dependencies = [
  "proc-macro-crate 1.1.3",
  "proc-macro-error",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
  "synstructure",
@@ -5309,7 +5309,7 @@ dependencies = [
  "bytes 1.4.0",
  "futures 0.3.28",
  "log 0.4.19",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "smallvec 1.6.1",
  "unsigned-varint 0.7.1",
 ]
@@ -5317,12 +5317,12 @@ dependencies = [
 [[package]]
 name = "multistream-select"
 version = "0.13.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "bytes 1.4.0",
  "futures 0.3.28",
  "log 0.4.19",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "smallvec 1.6.1",
  "unsigned-varint 0.7.1",
 ]
@@ -5464,7 +5464,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "876a53fff98e03a936a674b29568b0e605f06b29372c2489ff4de23f1949743d"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -5528,7 +5528,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "486ea01961c4a818096de679a8b740b26d9033146ac5291b1c98557658f8cdd9"
 dependencies = [
  "proc-macro-crate 1.1.3",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -5603,7 +5603,7 @@ checksum = "44a0b52c2cbaef7dffa5fec1a43274afe8bd2a644fa9fc50a9ef4ff0269b1257"
 dependencies = [
  "Inflector",
  "proc-macro-error",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -5670,7 +5670,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c45ed1f39709f5a89338fab50e59816b2e8815f5bb58276e7ddf9afd495f73f8"
 dependencies = [
  "proc-macro-crate 1.1.3",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -5705,7 +5705,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f557c32c6d268a07c921471619c0295f5efad3a0e76d4f97a05c091a51d110b2"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "syn 1.0.95",
  "synstructure",
 ]
@@ -5827,7 +5827,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5aa52829b8decbef693af90202711348ab001456803ba2a98eb4ec8fb70844c"
 dependencies = [
  "peg-runtime",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
 ]
 
@@ -5873,11 +5873,11 @@ dependencies = [
 
 [[package]]
 name = "pin-project"
-version = "1.1.0"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c95a7476719eab1e366eaf73d0260af3021184f18177925b07f54b30089ceead"
+checksum = "030ad2bc4db10a8944cb0d837f158bdfec4d4a4873ab701a95046770d11f8842"
 dependencies = [
- "pin-project-internal 1.1.0",
+ "pin-project-internal 1.1.2",
 ]
 
 [[package]]
@@ -5886,20 +5886,20 @@ version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "044964427019eed9d49d9d5bbce6047ef18f37100ea400912a9fa4a3523ab12a"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
 
 [[package]]
 name = "pin-project-internal"
-version = "1.1.0"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39407670928234ebc5e6e580247dd567ad73a3578460c5990f9503df207e8f07"
+checksum = "ec2e072ecce94ec471b13398d5402c188e76ac03cf74dd1a975161b23a3f6d9c"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
 ]
 
 [[package]]
@@ -6000,7 +6000,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f28f53e8b192565862cf99343194579a022eb9c7dd3a8d03134734803c7b3125"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "syn 1.0.95",
 ]
 
@@ -6054,7 +6054,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c"
 dependencies = [
  "proc-macro-error-attr",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
  "version_check",
@@ -6066,7 +6066,7 @@ version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1be40180e52ecc98ad80b184934baf3d0d29f979574e439af5a55274b35f869"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "version_check",
 ]
@@ -6077,9 +6077,9 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70550716265d1ec349c41f70dd4f964b4fd88394efe4405f0c1da679c4799a07"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
 ]
 
 [[package]]
@@ -6093,9 +6093,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.60"
+version = "1.0.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dec2b086b7a862cf4de201096214fa870344cf922b2b30c167badb3af3195406"
+checksum = "7b368fba921b0dce7e60f5e04ec15e565b3303972b42bcfde1d0713b881959eb"
 dependencies = [
  "unicode-ident",
 ]
@@ -6130,7 +6130,7 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b6a5217beb0ad503ee7fa752d451c905113d70721b937126158f3106a48cc1"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -6141,7 +6141,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8e12d01b9d66ad9eb4529c57666b6263fc1993cb30261d83ead658fdd932652"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -6186,7 +6186,7 @@ checksum = "7b670f45da57fb8542ebdbb6105a925fe571b67f9e7ed9f47a06a84e72b4e7cc"
 dependencies = [
  "anyhow",
  "itertools",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -6269,7 +6269,7 @@ dependencies = [
 [[package]]
 name = "quick-protobuf-codec"
 version = "0.2.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "asynchronous-codec",
  "bytes 1.4.0",
@@ -6320,7 +6320,7 @@ version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b9ab9c7eadfd8df19006f1cf1a4aed13540ed5cbc047010ece5826e10825488"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
 ]
 
 [[package]]
@@ -6677,7 +6677,7 @@ version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c523ccaed8ac4b0288948849a350b37d3035827413c458b6a40ddb614bb4f72"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -7046,17 +7046,17 @@ version = "0.3.0"
 source = "git+https://github.com/libp2p/rust-libp2p.git?tag=v0.45.1#802d00e645894d8895f2f9f665b921452d992b86"
 dependencies = [
  "futures 0.3.28",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "static_assertions",
 ]
 
 [[package]]
 name = "rw-stream-sink"
 version = "0.4.0"
-source = "git+https://github.com/libp2p/rust-libp2p.git?branch=master#85a846a7dd5b54649114babde56dd7f2ec8e760b"
+source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?branch=komodo-master#b6b8844123644be602da6ea1f6c185493759ca5b"
 dependencies = [
  "futures 0.3.28",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "static_assertions",
 ]
 
@@ -7094,7 +7094,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "50e334bb10a245e28e5fd755cabcafd96cfcd167c99ae63a46924ca8d8703a3c"
 dependencies = [
  "proc-macro-crate 1.1.3",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -7255,7 +7255,7 @@ dependencies = [
 name = "ser_error_derive"
 version = "0.1.0"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "ser_error",
  "syn 1.0.95",
@@ -7296,9 +7296,9 @@ version = "1.0.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9735b638ccc51c28bf6914d90a2e9725b377144fc612c49a611fddd1b631d68"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
 ]
 
 [[package]]
@@ -7319,7 +7319,7 @@ version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dc6b7951b17b051f3210b063f12cc17320e2fe30ae05b0fe2a3abb068551c76"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -7830,7 +7830,7 @@ version = "1.9.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "402fffb54bf5d335e6df26fc1719feecfbd7a22fafdf6649fe78380de3c47384"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "rustc_version 0.4.0",
  "syn 1.0.95",
@@ -8132,7 +8132,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c834b4e02ac911b13c13aed08b3f847e722f6be79d31b1c660c1dbd2dee83cdb"
 dependencies = [
  "bs58 0.4.0",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "rustversion",
  "syn 1.0.95",
@@ -8256,7 +8256,7 @@ version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d676664972e22a0796176e81e7bec41df461d1edf52090955cdab55f2c956ff2"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -8286,7 +8286,7 @@ checksum = "22ecb916b9664ed9f90abef0ff5a3e61454c1efea5861b2997e03f39b59b955f"
 dependencies = [
  "Inflector",
  "proc-macro-crate 1.1.3",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
 ]
@@ -8434,7 +8434,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f9799e6d412271cb2414597581128b03f3285f260ea49f5363d07df6a332b3e"
 dependencies = [
  "Inflector",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "serde",
  "serde_json",
@@ -8514,18 +8514,18 @@ version = "1.0.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fbaf6116ab8924f39d52792136fb74fd60a80194cf1b1c6ffa6453eef1c3f942"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "unicode-ident",
 ]
 
 [[package]]
 name = "syn"
-version = "2.0.18"
+version = "2.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32d41677bcbe24c20c52e7c70b0d8db04134c5d1066bf98662e2871ad200ea3e"
+checksum = "59fb7d6d8281a51045d62b8eb3a7d1ce347b76f312af50cd3dc0af39c87c1737"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "unicode-ident",
 ]
@@ -8551,7 +8551,7 @@ version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b834f2d66f734cb897113e34aaff2f1ab4719ca946f9a7358dba8f8064148701"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
  "unicode-xid 0.2.0",
@@ -8774,7 +8774,7 @@ dependencies = [
  "flex-error",
  "getrandom 0.2.9",
  "peg",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -8856,9 +8856,9 @@ version = "1.0.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9456a42c5b0d803c8cd86e73dd7cc9edd429499f37a3550d286d5e86720569f"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
 ]
 
 [[package]]
@@ -8986,9 +8986,9 @@ version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "630bdcf245f78637c13ec01ffae6187cca34625e8c63150d424b59e55af2675e"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
 ]
 
 [[package]]
@@ -9056,7 +9056,7 @@ dependencies = [
  "hyper",
  "hyper-timeout",
  "percent-encoding",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "prost",
  "prost-derive",
  "rustls-pemfile 1.0.2",
@@ -9079,7 +9079,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9263bf4c9bfaae7317c1c2faf7f18491d2fe476f70c414b73bf5d445b00ffa1"
 dependencies = [
  "prettyplease",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "prost-build",
  "quote 1.0.28",
  "syn 1.0.95",
@@ -9094,7 +9094,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "indexmap",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "pin-project-lite 0.2.9",
  "rand 0.8.4",
  "slab",
@@ -9155,9 +9155,9 @@ version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f4f31f56159e98206da9efd823404b79b6ef3143b4a7ab76e67b1751b25a4ab"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
 ]
 
 [[package]]
@@ -9175,7 +9175,7 @@ version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
 dependencies = [
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "tracing",
 ]
 
@@ -9613,9 +9613,9 @@ dependencies = [
  "bumpalo",
  "log 0.4.19",
  "once_cell",
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
  "wasm-bindgen-shared",
 ]
 
@@ -9647,9 +9647,9 @@ version = "0.2.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "54681b18a46765f095758388f2d0cf16eb8d4169b639ab575a8f5693af210c7b"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
- "syn 2.0.18",
+ "syn 2.0.23",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -9680,7 +9680,7 @@ version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c2e18093f11c19ca4e188c177fecc7c372304c311189f12c2f9bea5b7324ac7"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
 ]
 
@@ -9727,7 +9727,7 @@ dependencies = [
  "jsonrpc-core",
  "log 0.4.19",
  "parking_lot 0.12.0",
- "pin-project 1.1.0",
+ "pin-project 1.1.2",
  "rand 0.8.4",
  "rlp",
  "serde",
@@ -10267,7 +10267,7 @@ version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f8f187641dad4f680d25c4bfc4225b418165984179f26ca76ec4fb6441d3a17"
 dependencies = [
- "proc-macro2 1.0.60",
+ "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
  "synstructure",
