@@ -1,4 +1,4 @@
-use crate::peer_store::Behaviour as PeerStoreBehaviour;
+// use crate::peer_store::Behaviour as PeerStoreBehaviour;
 use futures::StreamExt;
 use futures_ticker::Ticker;
 use libp2p::{multiaddr::Protocol,
@@ -74,7 +74,7 @@ pub struct PeersExchange {
     events: VecDeque<ToSwarm<(), <Self as NetworkBehaviour>::ConnectionHandler>>,
     maintain_peers_interval: Ticker,
     network_info: NetworkInfo,
-    peer_store: PeerStoreBehaviour,
+    // peer_store: PeerStoreBehaviour,
 }
 
 impl NetworkBehaviour for PeersExchange {
@@ -138,7 +138,7 @@ impl PeersExchange {
                 Duration::from_secs(REQUEST_PEERS_INITIAL_DELAY),
             ),
             network_info,
-            peer_store: Default::default(),
+            // peer_store: Default::default(),
         }
     }
 
@@ -149,12 +149,12 @@ impl PeersExchange {
             .known_peers
             .clone()
             .into_iter()
-            .filter(|peer| !self.peer_store.addresses_of_peer(peer).is_empty())
+            .filter(|peer| !self.request_response.addresses_of_peer(peer).is_empty())
             .collect::<Vec<_>>();
 
         let peer_ids = peer_ids.choose_multiple(&mut rng, num);
         for peer_id in peer_ids {
-            let addresses = self.peer_store.addresses_of_peer(peer_id).into_iter().collect();
+            let addresses = self.request_response.addresses_of_peer(peer_id).into_iter().collect();
             result.insert((*peer_id).into(), addresses);
         }
         result
@@ -166,9 +166,9 @@ impl PeersExchange {
     }
 
     fn forget_peer_addresses(&mut self, peer: &PeerId) {
-        for address in self.peer_store.addresses_of_peer(peer) {
+        for address in self.request_response.addresses_of_peer(peer) {
             if !self.is_reserved_peer(peer) {
-                self.peer_store.remove_address(peer, &address);
+                self.request_response.remove_address(peer, &address);
             }
         }
     }
@@ -183,10 +183,10 @@ impl PeersExchange {
         if !self.known_peers.contains(peer) && !addresses.is_empty() {
             self.known_peers.push(*peer);
         }
-        let already_known = self.peer_store.addresses_of_peer(peer);
+        let already_known = self.request_response.addresses_of_peer(peer);
         for address in addresses {
             if !already_known.contains(&address) {
-                self.peer_store.add_address(peer, address);
+                self.request_response.add_address(peer, address);
             }
         }
     }
@@ -202,10 +202,10 @@ impl PeersExchange {
             self.reserved_peers.push(*peer);
         }
 
-        let already_reserved = self.peer_store.addresses_of_peer(peer);
+        let already_reserved = self.request_response.addresses_of_peer(peer);
         for address in addresses {
             if !already_reserved.contains(&address) {
-                self.peer_store.add_address(peer, address);
+                self.request_response.add_address(peer, address);
             }
         }
     }
@@ -242,7 +242,7 @@ impl PeersExchange {
         let peer_ids = self.known_peers.iter().filter(|peer| filter(peer)).collect::<Vec<_>>();
 
         for peer_id in peer_ids.choose_multiple(&mut rng, num) {
-            let addresses = self.peer_store.addresses_of_peer(peer_id).into_iter().collect();
+            let addresses = self.request_response.addresses_of_peer(peer_id).into_iter().collect();
             result.insert(**peer_id, addresses);
         }
 

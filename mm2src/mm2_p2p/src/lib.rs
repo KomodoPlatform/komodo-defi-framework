@@ -1,10 +1,10 @@
 #![feature(ip)]
 #![allow(unused, dead_code)]
 
-// mod behaviour;
 mod adex_gossipsub;
+mod behaviour;
 mod event;
-pub mod peer_store;
+// pub mod peer_store;
 mod peers;
 mod ping;
 mod relay;

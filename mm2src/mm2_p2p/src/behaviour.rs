@@ -6,15 +6,16 @@ use futures::{channel::oneshot,
               future::{join_all, poll_fn},
               Future, FutureExt, SinkExt, StreamExt};
 use instant::Duration;
+use libp2p::core::ConnectedPoint;
 use libp2p::floodsub::{Floodsub, Topic as FloodsubTopic};
-use libp2p::gossipsub::{Behaviour as Gossipsub, MessageId, Topic};
+use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageId, Topic, TopicHash};
 use libp2p::request_response::ResponseChannel;
 use libp2p::PeerId;
 use log::{debug, error};
 
 use crate::peers::PeersExchange;
 use crate::ping::AdexPing;
-use crate::request_response::{PeerResponse, RequestResponseBehaviour};
+use crate::request_response::{PeerRequest, PeerResponse, RequestResponseBehaviour, RequestResponseSender};
 use crate::swarm_runtime::SwarmRuntime;
 use crate::{event::AdexBehaviourEvent, peers::PeerAddresses};
 
@@ -74,11 +75,11 @@ pub enum AdexBehaviourCmd {
         topic: String,
     },
     PublishMsg {
-        topics: Vec<String>,
+        topic: String,
         msg: Vec<u8>,
     },
     PublishMsgFrom {
-        topics: Vec<String>,
+        topic: String,
         msg: Vec<u8>,
         from: PeerId,
     },
@@ -168,6 +169,87 @@ pub async fn get_relay_mesh(mut cmd_tx: AdexCmdTx) -> Vec<String> {
     rx.await.expect("Tx should be present")
 }
 
+async fn request_one_peer(peer: PeerId, req: Vec<u8>, mut request_response_tx: RequestResponseSender) -> PeerResponse {
+    // Use the internal receiver to receive a response to this request.
+    let (internal_response_tx, internal_response_rx) = oneshot::channel();
+    let request = PeerRequest { req };
+    request_response_tx
+        .send((peer, request, internal_response_tx))
+        .await
+        .unwrap();
+
+    match internal_response_rx.await {
+        Ok(response) => response,
+        Err(e) => PeerResponse::Err {
+            err: format!("Error on request the peer {:?}: \"{:?}\". Request next peer", peer, e),
+        },
+    }
+}
+
+/// Request the peers sequential until a `PeerResponse::Ok()` will not be received.
+async fn request_any_peer(
+    peers: Vec<PeerId>,
+    request_data: Vec<u8>,
+    request_response_tx: RequestResponseSender,
+    response_tx: oneshot::Sender<Option<(PeerId, Vec<u8>)>>,
+) {
+    debug!("start request_any_peer loop: peers {}", peers.len());
+    for peer in peers {
+        match request_one_peer(peer, request_data.clone(), request_response_tx.clone()).await {
+            PeerResponse::Ok { res } => {
+                debug!("Received a response from peer {:?}, stop the request loop", peer);
+                if response_tx.send(Some((peer, res))).is_err() {
+                    error!("Response oneshot channel was closed");
+                }
+                return;
+            },
+            PeerResponse::None => {
+                debug!("Received None from peer {:?}, request next peer", peer);
+            },
+            PeerResponse::Err { err } => {
+                error!("Error on request {:?} peer: {:?}. Request next peer", peer, err);
+            },
+        };
+    }
+
+    debug!("None of the peers responded to the request");
+    if response_tx.send(None).is_err() {
+        error!("Response oneshot channel was closed");
+    };
+}
+
+/// Request the peers and collect all their responses.
+async fn request_peers(
+    peers: Vec<PeerId>,
+    request_data: Vec<u8>,
+    request_response_tx: RequestResponseSender,
+    response_tx: oneshot::Sender<Vec<(PeerId, AdexResponse)>>,
+) {
+    debug!("start request_any_peer loop: peers {}", peers.len());
+    let mut futures = Vec::with_capacity(peers.len());
+    for peer in peers {
+        let request_data = request_data.clone();
+        let request_response_tx = request_response_tx.clone();
+        futures.push(async move {
+            let response = request_one_peer(peer, request_data, request_response_tx).await;
+            (peer, response)
+        })
+    }
+
+    let responses = join_all(futures)
+        .await
+        .into_iter()
+        .map(|(peer_id, res)| {
+            let res: AdexResponse = res.into();
+            (peer_id, res)
+        })
+        .collect();
+
+    if response_tx.send(responses).is_err() {
+        error!("Response oneshot channel was closed");
+    };
+}
+
 pub struct AtomicDexBehaviour {
     gossipsub: Gossipsub,
     floodsub: Floodsub,
@@ -196,15 +278,13 @@ impl AtomicDexBehaviour {
     fn process_cmd(&mut self, cmd: AdexBehaviourCmd) {
         match cmd {
             AdexBehaviourCmd::Subscribe { topic } => {
-                let topic = Topic::new(topic);
-                self.gossipsub.subscribe(&topic);
+                self.gossipsub.subscribe(&IdentTopic::new(topic));
             },
-            AdexBehaviourCmd::PublishMsg { topics, msg } => {
-                self.gossipsub.publish_many(topics.into_iter().map(Topic::new), msg);
+            AdexBehaviourCmd::PublishMsg { topic, msg } => {
+                self.gossipsub.publish(TopicHash::from_raw(topic), msg);
             },
-            AdexBehaviourCmd::PublishMsgFrom { topics, msg, from } => {
-                self.gossipsub
-                    .publish_many_from(topics.into_iter().map(Topic::new), msg, from);
+            AdexBehaviourCmd::PublishMsgFrom { topic, msg, from } => {
+                self.gossipsub.publish_from(TopicHash::from_raw(topic), msg, from);
             },
             AdexBehaviourCmd::RequestAnyRelay { req, response_tx } => {
                 let relays = self.gossipsub.get_relay_mesh();
@@ -326,7 +406,9 @@ impl AtomicDexBehaviour {
                 message_id,
                 propagation_source,
             } => {
-                self.gossipsub.propagate_message(&message_id, &propagation_source);
+                self.gossipsub
+                    .propagate_message(&message_id, &propagation_source)
+                    .expect("propagation should not fail");
             },
         }
     }
