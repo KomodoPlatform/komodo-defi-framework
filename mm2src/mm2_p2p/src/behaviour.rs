@@ -1,23 +1,29 @@
 use std::collections::HashMap;
+use std::net::IpAddr;
 
 use common::executor::SpawnFuture;
+use derive_more::Display;
 use futures::channel::mpsc::{Receiver, Sender};
 use futures::{channel::oneshot,
               future::{join_all, poll_fn},
               Future, FutureExt, SinkExt, StreamExt};
+use futures_rustls::rustls;
 use instant::Duration;
 use libp2p::core::ConnectedPoint;
 use libp2p::floodsub::{Floodsub, Topic as FloodsubTopic};
 use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageId, Topic, TopicHash};
 use libp2p::request_response::ResponseChannel;
-use libp2p::PeerId;
-use log::{debug, error};
+use libp2p::{identity, noise, PeerId, Swarm};
+use log::{debug, error, info};
+use rand::Rng;
 
 use crate::peers::PeersExchange;
 use crate::ping::AdexPing;
+use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::request_response::{PeerRequest, PeerResponse, RequestResponseBehaviour, RequestResponseSender};
 use crate::swarm_runtime::SwarmRuntime;
 use crate::{event::AdexBehaviourEvent, peers::PeerAddresses};
+use crate::{NetworkInfo, NetworkPorts};
 
 pub type AdexCmdTx = Sender<AdexBehaviourCmd>;
 pub type AdexEventRx = Receiver<AdexBehaviourEvent>;
@@ -425,4 +431,253 @@ impl AtomicDexBehaviour {
     pub fn received_messages_in_period(&self) -> (Duration, usize) { self.gossipsub.get_received_messages_in_period() }
 
     pub fn connected_peers_len(&self) -> usize { self.gossipsub.get_num_peers() }
+}
+
+pub enum NodeType {
+    Light {
+        network_ports: NetworkPorts,
+    },
+    LightInMemory,
+    Relay {
+        ip: IpAddr,
+        network_ports: NetworkPorts,
+        wss_certs: Option<WssCerts>,
+    },
+    RelayInMemory {
+        port: u64,
+    },
+}
+
+pub struct WssCerts {
+    pub server_priv_key: rustls::PrivateKey,
+    pub certs: Vec<rustls::Certificate>,
+}
+
+impl NodeType {
+    pub fn to_network_info(&self) -> NetworkInfo {
+        match self {
+            NodeType::Light { network_ports } | NodeType::Relay { network_ports, .. } => NetworkInfo::Distributed {
+                network_ports: *network_ports,
+            },
+            NodeType::LightInMemory | NodeType::RelayInMemory { .. } => NetworkInfo::InMemory,
+        }
+    }
+
+    pub fn is_relay(&self) -> bool { matches!(self, NodeType::Relay { .. } | NodeType::RelayInMemory { .. }) }
+
+    pub fn wss_certs(&self) -> Option<&WssCerts> {
+        match self {
+            NodeType::Relay { wss_certs, .. } => wss_certs.as_ref(),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Display)]
+pub enum AdexBehaviourError {
+    #[display(fmt = "{}", _0)]
+    ParsingRelayAddress(RelayAddressError),
+}
+
+impl From<RelayAddressError> for AdexBehaviourError {
+    fn from(e: RelayAddressError) -> Self { AdexBehaviourError::ParsingRelayAddress(e) }
+}
+
+fn generate_ed25519_keypair<R: Rng>(rng: &mut R, force_key: Option<[u8; 32]>) -> identity::Keypair {
+    let mut raw_key = match force_key {
+        Some(key) => key,
+        None => {
+            let mut key = [0; 32];
+            rng.fill_bytes(&mut key);
+            key
+        },
+    };
+    let secret = identity::ed25519::SecretKey::try_from_bytes(&mut raw_key).expect("Secret length is 32 bytes");
+    let keypair = identity::ed25519::Keypair::from(secret);
+    keypair.into()
+}
+
+/// Custom types mapping the complex associated types of AtomicDexBehaviour to the ExpandedSwarm
+type AtomicDexSwarm = Swarm<AtomicDexBehaviour>;
+
+/// Creates and spawns new AdexBehaviour Swarm returning:
+/// 1. tx to send control commands
+/// 2. rx emitting gossip events to processing side
+/// 3. our peer_id
+/// 4. abort handle to stop the P2P processing fut
+///
+/// Prefer using [`spawn_gossipsub`] to make sure the Swarm is initialized and spawned on the same runtime.
+/// Otherwise, you can face the following error:
+/// `panicked at 'there is no reactor running, must be called from the context of a Tokio 1.x runtime'`.
+#[allow(clippy::too_many_arguments)]
+fn start_gossipsub(
+    netid: u16,
+    force_key: Option<[u8; 32]>,
+    runtime: SwarmRuntime,
+    to_dial: Vec<RelayAddress>,
+    node_type: NodeType,
+    on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
+) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId), AdexBehaviourError> {
+    let i_am_relay = node_type.is_relay();
+    let mut rng = rand::thread_rng();
+    let local_key = generate_ed25519_keypair(&mut rng, force_key);
+    let local_peer_id = PeerId::from(local_key.public());
+    info!("Local peer id: {:?}", local_peer_id);
+
+    let noise_config = noise::Config::new(&local_key).expect("Signing libp2p-noise static DH keypair failed.");
+
+    let network_info = node_type.to_network_info();
+    // let transport = match network_info {
+    //     NetworkInfo::InMemory => build_memory_transport(noise_keys),
+    //     NetworkInfo::Distributed { .. } => build_dns_ws_transport(noise_keys, node_type.wss_certs()),
+    // };
+
+    // let (cmd_tx, cmd_rx) = channel(CHANNEL_BUF_SIZE);
+    // let (event_tx, event_rx) = channel(CHANNEL_BUF_SIZE);
+
+    // let bootstrap = to_dial
+    //     .into_iter()
+    //     .map(|addr| addr.try_to_multiaddr(network_info))
+    //     .collect::<Result<Vec<Multiaddr>, _>>()?;
+
+    // let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (4, 6, 12) } else { (2, 3, 4) };
+
+    // // Create a Swarm to manage peers and events
+    // let mut swarm = {
+    //     // to set default parameters for gossipsub use:
+    //     // let gossipsub_config = gossipsub::GossipsubConfig::default();
+
+    //     // To content-address message, we can take the hash of message and use it as an ID.
+    //     let message_id_fn = |message: &GossipsubMessage| {
+    //         let mut s = DefaultHasher::new();
+    //         message.data.hash(&mut s);
+    //         message.sequence_number.hash(&mut s);
+    //         MessageId(s.finish().to_string())
+    //     };
+
+    //     // set custom gossipsub
+    //     let gossipsub_config = GossipsubConfigBuilder::new()
+    //         .message_id_fn(message_id_fn)
+    //         .i_am_relay(i_am_relay)
+    //         .mesh_n_low(mesh_n_low)
+    //         .mesh_n(mesh_n)
+    //         .mesh_n_high(mesh_n_high)
+    //         .manual_propagation()
+    //         .max_transmit_size(1024 * 1024 - 100)
+    //         .build();
+    //     // build a gossipsub network behaviour
+    //     let mut gossipsub = Gossipsub::new(local_peer_id, gossipsub_config);
+
+    //     let floodsub = Floodsub::new(local_peer_id, netid != NETID_7777);
+
+    //     let mut peers_exchange = PeersExchange::new(network_info);
+    //     if !network_info.in_memory() {
+    //         // Please note WASM nodes don't support `PeersExchange` currently,
+    //         // so `get_all_network_seednodes` returns an empty list.
+    //         for (peer_id, addr) in get_all_network_seednodes(netid) {
+    //             let multiaddr = addr.try_to_multiaddr(network_info)?;
+    //             peers_exchange.add_peer_addresses_to_known_peers(&peer_id, iter::once(multiaddr).collect());
+    //             gossipsub.add_explicit_relay(peer_id);
+    //         }
+    //     }
+
+    //     // build a request-response network behaviour
+    //     let request_response = build_request_response_behaviour();
+
+    //     // use default ping config with 15s interval, 20s timeout and 1 max failure
+    //     let ping = AdexPing::new();
+
+    //     let adex_behavior = AtomicDexBehaviour {
+    //         floodsub,
+    //         event_tx,
+    //         runtime: runtime.clone(),
+    //         cmd_rx,
+    //         netid,
+    //         gossipsub,
+    //         request_response,
+    //         peers_exchange,
+    //         ping,
+    //     };
+    //     libp2p::swarm::SwarmBuilder::new(transport, adex_behavior, local_peer_id)
+    //         .executor(Box::new(runtime.clone()))
+    //         .build()
+    // };
+    // swarm
+    //     .behaviour_mut()
+    //     .floodsub
+    //     .subscribe(FloodsubTopic::new(PEERS_TOPIC.to_owned()));
+
+    // match node_type {
+    //     NodeType::Relay {
+    //         ip,
+    //         network_ports,
+    //         wss_certs,
+    //     } => {
+    //         let dns_addr: Multiaddr = format!("/ip4/{}/tcp/{}", ip, network_ports.tcp).parse().unwrap();
+    //         libp2p::Swarm::listen_on(&mut swarm, dns_addr).unwrap();
+    //         if wss_certs.is_some() {
+    //             let wss_addr: Multiaddr = format!("/ip4/{}/tcp/{}/wss", ip, network_ports.wss).parse().unwrap();
+    //             libp2p::Swarm::listen_on(&mut swarm, wss_addr).unwrap();
+    //         }
+    //     },
+    //     NodeType::RelayInMemory { port } => {
+    //         let memory_addr: Multiaddr = format!("/memory/{}", port).parse().unwrap();
+    //         libp2p::Swarm::listen_on(&mut swarm, memory_addr).unwrap();
+    //     },
+    //     _ => (),
+    // }
+
+    // for relay in bootstrap.choose_multiple(&mut rng, mesh_n) {
+    //     match libp2p::Swarm::dial(&mut swarm, relay.clone()) {
+    //         Ok(_) => info!("Dialed {}", relay),
+    //         Err(e) => error!("Dial {:?} failed: {:?}", relay, e),
+    //     }
+    // }
+
+    // let mut check_connected_relays_interval = Interval::new_at(
+    //     Instant::now() + CONNECTED_RELAYS_CHECK_INTERVAL,
+    //     CONNECTED_RELAYS_CHECK_INTERVAL,
+    // );
+    // let mut announce_interval = Interval::new_at(Instant::now() + ANNOUNCE_INITIAL_DELAY, ANNOUNCE_INTERVAL);
+    // let mut listening = false;
+    // let polling_fut = poll_fn(move |cx: &mut Context| {
+    //     loop {
+    //         match swarm.behaviour_mut().cmd_rx.poll_next_unpin(cx) {
+    //             Poll::Ready(Some(cmd)) => swarm.behaviour_mut().process_cmd(cmd),
+    //             Poll::Ready(None) => return Poll::Ready(()),
+    //             Poll::Pending => break,
+    //         }
+    //     }
+
+    //     loop {
+    //         match swarm.poll_next_unpin(cx) {
+    //             Poll::Ready(Some(event)) => debug!("Swarm event {:?}", event),
+    //             Poll::Ready(None) => return Poll::Ready(()),
+    //             Poll::Pending => break,
+    //         }
+    //     }
+
+    //     if swarm.behaviour().gossipsub.is_relay() {
+    //         while let Poll::Ready(Some(())) = announce_interval.poll_next_unpin(cx) {
+    //             announce_my_addresses(&mut swarm);
+    //         }
+    //     }
+
+    //     while let Poll::Ready(Some(())) = check_connected_relays_interval.poll_next_unpin(cx) {
+    //         maintain_connection_to_relays(&mut swarm, &bootstrap);
+    //     }
+
+    //     if !listening && i_am_relay {
+    //         for listener in Swarm::listeners(&swarm) {
+    //             info!("Listening on {}", listener);
+    //             listening = true;
+    //         }
+    //     }
+    //     on_poll(&swarm);
+    //     Poll::Pending
+    // });
+
+    // runtime.spawn(polling_fut.then(|_| futures::future::ready(())));
+    // Ok((cmd_tx, event_rx, local_peer_id))
+    todo!()
 }

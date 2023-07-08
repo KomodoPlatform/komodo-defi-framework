@@ -1,13 +1,12 @@
 #![feature(ip)]
 #![allow(unused, dead_code)]
 
-mod adex_gossipsub;
 mod behaviour;
 mod event;
 // pub mod peer_store;
 mod peers;
 mod ping;
-mod relay;
+mod relay_address;
 mod request_response;
 mod swarm_runtime;
 
