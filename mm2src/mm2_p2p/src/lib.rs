@@ -4,6 +4,7 @@
 mod behaviour;
 mod event;
 // pub mod peer_store;
+mod network;
 mod peers;
 mod ping;
 mod relay_address;

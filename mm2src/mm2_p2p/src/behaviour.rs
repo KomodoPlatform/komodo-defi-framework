@@ -1,26 +1,40 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::iter;
 use std::net::IpAddr;
+use std::task::{Context, Poll};
 
 use common::executor::SpawnFuture;
 use derive_more::Display;
-use futures::channel::mpsc::{Receiver, Sender};
+use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::{channel::oneshot,
               future::{join_all, poll_fn},
               Future, FutureExt, SinkExt, StreamExt};
 use futures_rustls::rustls;
+use futures_ticker::Ticker;
 use instant::Duration;
+use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::ConnectedPoint;
 use libp2p::floodsub::{Floodsub, Topic as FloodsubTopic};
-use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageId, Topic, TopicHash};
+use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
+use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Message as GossipsubMessage};
+use libp2p::multiaddr::Protocol;
 use libp2p::request_response::ResponseChannel;
+use libp2p::swarm::NetworkBehaviour;
 use libp2p::{identity, noise, PeerId, Swarm};
+use libp2p::{Multiaddr, Transport};
 use log::{debug, error, info};
+
+use rand::seq::SliceRandom;
 use rand::Rng;
 
+use crate::network::{get_all_network_seednodes, NETID_7777};
 use crate::peers::PeersExchange;
 use crate::ping::AdexPing;
 use crate::relay_address::{RelayAddress, RelayAddressError};
-use crate::request_response::{PeerRequest, PeerResponse, RequestResponseBehaviour, RequestResponseSender};
+use crate::request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
+                              RequestResponseSender};
 use crate::swarm_runtime::SwarmRuntime;
 use crate::{event::AdexBehaviourEvent, peers::PeerAddresses};
 use crate::{NetworkInfo, NetworkPorts};
@@ -433,6 +447,51 @@ impl AtomicDexBehaviour {
     pub fn connected_peers_len(&self) -> usize { self.gossipsub.get_num_peers() }
 }
 
+impl NetworkBehaviour for AtomicDexBehaviour {
+    type ConnectionHandler = <Gossipsub as NetworkBehaviour>::ConnectionHandler;
+
+    type ToSwarm = AdexBehaviourEvent;
+
+    fn handle_established_inbound_connection(
+        &mut self,
+        _connection_id: libp2p::swarm::ConnectionId,
+        peer: PeerId,
+        local_addr: &Multiaddr,
+        remote_addr: &Multiaddr,
+    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        todo!()
+    }
+
+    fn handle_established_outbound_connection(
+        &mut self,
+        _connection_id: libp2p::swarm::ConnectionId,
+        peer: PeerId,
+        addr: &Multiaddr,
+        role_override: libp2p::core::Endpoint,
+    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        todo!()
+    }
+
+    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) { todo!() }
+
+    fn on_connection_handler_event(
+        &mut self,
+        _peer_id: PeerId,
+        _connection_id: libp2p::swarm::ConnectionId,
+        _event: libp2p::swarm::THandlerOutEvent<Self>,
+    ) {
+        todo!()
+    }
+
+    fn poll(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+        params: &mut impl libp2p::swarm::PollParameters,
+    ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
+        todo!()
+    }
+}
+
 pub enum NodeType {
     Light {
         network_ports: NetworkPorts,
@@ -527,157 +586,306 @@ fn start_gossipsub(
     let noise_config = noise::Config::new(&local_key).expect("Signing libp2p-noise static DH keypair failed.");
 
     let network_info = node_type.to_network_info();
-    // let transport = match network_info {
-    //     NetworkInfo::InMemory => build_memory_transport(noise_keys),
-    //     NetworkInfo::Distributed { .. } => build_dns_ws_transport(noise_keys, node_type.wss_certs()),
-    // };
+    let transport = match network_info {
+        NetworkInfo::InMemory => build_memory_transport(noise_config),
+        NetworkInfo::Distributed { .. } => build_dns_ws_transport(noise_config, node_type.wss_certs()),
+    };
 
-    // let (cmd_tx, cmd_rx) = channel(CHANNEL_BUF_SIZE);
-    // let (event_tx, event_rx) = channel(CHANNEL_BUF_SIZE);
+    let (cmd_tx, cmd_rx) = channel(CHANNEL_BUF_SIZE);
+    let (event_tx, event_rx) = channel(CHANNEL_BUF_SIZE);
 
-    // let bootstrap = to_dial
-    //     .into_iter()
-    //     .map(|addr| addr.try_to_multiaddr(network_info))
-    //     .collect::<Result<Vec<Multiaddr>, _>>()?;
+    let bootstrap = to_dial
+        .into_iter()
+        .map(|addr| addr.try_to_multiaddr(network_info))
+        .collect::<Result<Vec<Multiaddr>, _>>()?;
 
-    // let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (4, 6, 12) } else { (2, 3, 4) };
+    let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (4, 6, 12) } else { (2, 3, 4) };
 
-    // // Create a Swarm to manage peers and events
-    // let mut swarm = {
-    //     // to set default parameters for gossipsub use:
-    //     // let gossipsub_config = gossipsub::GossipsubConfig::default();
+    // Create a Swarm to manage peers and events
+    let mut swarm = {
+        // to set default parameters for gossipsub use:
+        // let gossipsub_config = gossipsub::GossipsubConfig::default();
 
-    //     // To content-address message, we can take the hash of message and use it as an ID.
-    //     let message_id_fn = |message: &GossipsubMessage| {
-    //         let mut s = DefaultHasher::new();
-    //         message.data.hash(&mut s);
-    //         message.sequence_number.hash(&mut s);
-    //         MessageId(s.finish().to_string())
-    //     };
+        // To content-address message, we can take the hash of message and use it as an ID.
+        let message_id_fn = |message: &GossipsubMessage| {
+            let mut s = DefaultHasher::new();
+            message.data.hash(&mut s);
+            message.sequence_number.hash(&mut s);
+            MessageId(s.finish().to_be_bytes().to_vec())
+        };
 
-    //     // set custom gossipsub
-    //     let gossipsub_config = GossipsubConfigBuilder::new()
-    //         .message_id_fn(message_id_fn)
-    //         .i_am_relay(i_am_relay)
-    //         .mesh_n_low(mesh_n_low)
-    //         .mesh_n(mesh_n)
-    //         .mesh_n_high(mesh_n_high)
-    //         .manual_propagation()
-    //         .max_transmit_size(1024 * 1024 - 100)
-    //         .build();
-    //     // build a gossipsub network behaviour
-    //     let mut gossipsub = Gossipsub::new(local_peer_id, gossipsub_config);
+        // set custom gossipsub
+        let gossipsub_config = GossipsubConfigBuilder::default()
+            .message_id_fn(message_id_fn)
+            .mesh_n_low(mesh_n_low)
+            .i_am_relay(i_am_relay)
+            .mesh_n(mesh_n)
+            .mesh_n_high(mesh_n_high)
+            .validate_messages()
+            .max_transmit_size(1024 * 1024 - 100)
+            .build()
+            .unwrap();
+        // build a gossipsub network behaviour
+        let mut gossipsub = Gossipsub::new(MessageAuthenticity::Author(local_peer_id), gossipsub_config).unwrap();
 
-    //     let floodsub = Floodsub::new(local_peer_id, netid != NETID_7777);
+        let floodsub = Floodsub::new(local_peer_id, netid != NETID_7777);
 
-    //     let mut peers_exchange = PeersExchange::new(network_info);
-    //     if !network_info.in_memory() {
-    //         // Please note WASM nodes don't support `PeersExchange` currently,
-    //         // so `get_all_network_seednodes` returns an empty list.
-    //         for (peer_id, addr) in get_all_network_seednodes(netid) {
-    //             let multiaddr = addr.try_to_multiaddr(network_info)?;
-    //             peers_exchange.add_peer_addresses_to_known_peers(&peer_id, iter::once(multiaddr).collect());
-    //             gossipsub.add_explicit_relay(peer_id);
-    //         }
-    //     }
+        let mut peers_exchange = PeersExchange::new(network_info);
+        if !network_info.in_memory() {
+            // Please note WASM nodes don't support `PeersExchange` currently,
+            // so `get_all_network_seednodes` returns an empty list.
+            for (peer_id, addr) in get_all_network_seednodes(netid) {
+                let multiaddr = addr.try_to_multiaddr(network_info)?;
+                peers_exchange.add_peer_addresses_to_known_peers(&peer_id, iter::once(multiaddr).collect());
+                gossipsub.add_explicit_relay(peer_id);
+            }
+        }
 
-    //     // build a request-response network behaviour
-    //     let request_response = build_request_response_behaviour();
+        // build a request-response network behaviour
+        let request_response = build_request_response_behaviour();
 
-    //     // use default ping config with 15s interval, 20s timeout and 1 max failure
-    //     let ping = AdexPing::new();
+        // use default ping config with 15s interval, 20s timeout and 1 max failure
+        let ping = AdexPing::new();
 
-    //     let adex_behavior = AtomicDexBehaviour {
-    //         floodsub,
-    //         event_tx,
-    //         runtime: runtime.clone(),
-    //         cmd_rx,
-    //         netid,
-    //         gossipsub,
-    //         request_response,
-    //         peers_exchange,
-    //         ping,
-    //     };
-    //     libp2p::swarm::SwarmBuilder::new(transport, adex_behavior, local_peer_id)
-    //         .executor(Box::new(runtime.clone()))
-    //         .build()
-    // };
-    // swarm
-    //     .behaviour_mut()
-    //     .floodsub
-    //     .subscribe(FloodsubTopic::new(PEERS_TOPIC.to_owned()));
+        let adex_behavior = AtomicDexBehaviour {
+            floodsub,
+            event_tx,
+            runtime: runtime.clone(),
+            cmd_rx,
+            netid,
+            gossipsub,
+            request_response,
+            peers_exchange,
+            ping,
+        };
 
-    // match node_type {
-    //     NodeType::Relay {
-    //         ip,
-    //         network_ports,
-    //         wss_certs,
-    //     } => {
-    //         let dns_addr: Multiaddr = format!("/ip4/{}/tcp/{}", ip, network_ports.tcp).parse().unwrap();
-    //         libp2p::Swarm::listen_on(&mut swarm, dns_addr).unwrap();
-    //         if wss_certs.is_some() {
-    //             let wss_addr: Multiaddr = format!("/ip4/{}/tcp/{}/wss", ip, network_ports.wss).parse().unwrap();
-    //             libp2p::Swarm::listen_on(&mut swarm, wss_addr).unwrap();
-    //         }
-    //     },
-    //     NodeType::RelayInMemory { port } => {
-    //         let memory_addr: Multiaddr = format!("/memory/{}", port).parse().unwrap();
-    //         libp2p::Swarm::listen_on(&mut swarm, memory_addr).unwrap();
-    //     },
-    //     _ => (),
-    // }
+        libp2p::swarm::SwarmBuilder::with_executor(transport, adex_behavior, local_peer_id, runtime.clone()).build()
+    };
 
-    // for relay in bootstrap.choose_multiple(&mut rng, mesh_n) {
-    //     match libp2p::Swarm::dial(&mut swarm, relay.clone()) {
-    //         Ok(_) => info!("Dialed {}", relay),
-    //         Err(e) => error!("Dial {:?} failed: {:?}", relay, e),
-    //     }
-    // }
+    swarm
+        .behaviour_mut()
+        .floodsub
+        .subscribe(FloodsubTopic::new(PEERS_TOPIC.to_owned()));
 
-    // let mut check_connected_relays_interval = Interval::new_at(
-    //     Instant::now() + CONNECTED_RELAYS_CHECK_INTERVAL,
-    //     CONNECTED_RELAYS_CHECK_INTERVAL,
-    // );
-    // let mut announce_interval = Interval::new_at(Instant::now() + ANNOUNCE_INITIAL_DELAY, ANNOUNCE_INTERVAL);
-    // let mut listening = false;
-    // let polling_fut = poll_fn(move |cx: &mut Context| {
-    //     loop {
-    //         match swarm.behaviour_mut().cmd_rx.poll_next_unpin(cx) {
-    //             Poll::Ready(Some(cmd)) => swarm.behaviour_mut().process_cmd(cmd),
-    //             Poll::Ready(None) => return Poll::Ready(()),
-    //             Poll::Pending => break,
-    //         }
-    //     }
+    match node_type {
+        NodeType::Relay {
+            ip,
+            network_ports,
+            wss_certs,
+        } => {
+            let dns_addr: Multiaddr = format!("/ip4/{}/tcp/{}", ip, network_ports.tcp).parse().unwrap();
+            libp2p::Swarm::listen_on(&mut swarm, dns_addr).unwrap();
+            if wss_certs.is_some() {
+                let wss_addr: Multiaddr = format!("/ip4/{}/tcp/{}/wss", ip, network_ports.wss).parse().unwrap();
+                libp2p::Swarm::listen_on(&mut swarm, wss_addr).unwrap();
+            }
+        },
+        NodeType::RelayInMemory { port } => {
+            let memory_addr: Multiaddr = format!("/memory/{}", port).parse().unwrap();
+            libp2p::Swarm::listen_on(&mut swarm, memory_addr).unwrap();
+        },
+        _ => (),
+    }
 
-    //     loop {
-    //         match swarm.poll_next_unpin(cx) {
-    //             Poll::Ready(Some(event)) => debug!("Swarm event {:?}", event),
-    //             Poll::Ready(None) => return Poll::Ready(()),
-    //             Poll::Pending => break,
-    //         }
-    //     }
+    for relay in bootstrap.choose_multiple(&mut rng, mesh_n) {
+        match libp2p::Swarm::dial(&mut swarm, relay.clone()) {
+            Ok(_) => info!("Dialed {}", relay),
+            Err(e) => error!("Dial {:?} failed: {:?}", relay, e),
+        }
+    }
 
-    //     if swarm.behaviour().gossipsub.is_relay() {
-    //         while let Poll::Ready(Some(())) = announce_interval.poll_next_unpin(cx) {
-    //             announce_my_addresses(&mut swarm);
-    //         }
-    //     }
+    let mut check_connected_relays_interval =
+        Ticker::new_with_next(CONNECTED_RELAYS_CHECK_INTERVAL, CONNECTED_RELAYS_CHECK_INTERVAL);
 
-    //     while let Poll::Ready(Some(())) = check_connected_relays_interval.poll_next_unpin(cx) {
-    //         maintain_connection_to_relays(&mut swarm, &bootstrap);
-    //     }
+    let mut announce_interval = Ticker::new_with_next(ANNOUNCE_INTERVAL, ANNOUNCE_INITIAL_DELAY);
+    let mut listening = false;
 
-    //     if !listening && i_am_relay {
-    //         for listener in Swarm::listeners(&swarm) {
-    //             info!("Listening on {}", listener);
-    //             listening = true;
-    //         }
-    //     }
-    //     on_poll(&swarm);
-    //     Poll::Pending
-    // });
+    let polling_fut = poll_fn(move |cx: &mut Context| {
+        loop {
+            match swarm.behaviour_mut().cmd_rx.poll_next_unpin(cx) {
+                Poll::Ready(Some(cmd)) => swarm.behaviour_mut().process_cmd(cmd),
+                Poll::Ready(None) => return Poll::Ready(()),
+                Poll::Pending => break,
+            }
+        }
 
-    // runtime.spawn(polling_fut.then(|_| futures::future::ready(())));
-    // Ok((cmd_tx, event_rx, local_peer_id))
-    todo!()
+        loop {
+            match swarm.poll_next_unpin(cx) {
+                Poll::Ready(Some(event)) => debug!("Swarm event {:?}", event),
+                Poll::Ready(None) => return Poll::Ready(()),
+                Poll::Pending => break,
+            }
+        }
+
+        if swarm.behaviour().gossipsub.is_relay() {
+            while let Poll::Ready(Some(_)) = announce_interval.poll_next_unpin(cx) {
+                announce_my_addresses(&mut swarm);
+            }
+        }
+
+        while let Poll::Ready(Some(_)) = check_connected_relays_interval.poll_next_unpin(cx) {
+            maintain_connection_to_relays(&mut swarm, &bootstrap);
+        }
+
+        if !listening && i_am_relay {
+            for listener in Swarm::listeners(&swarm) {
+                info!("Listening on {}", listener);
+                listening = true;
+            }
+        }
+        on_poll(&swarm);
+        Poll::Pending
+    });
+
+    runtime.spawn(polling_fut.then(|_| futures::future::ready(())));
+    Ok((cmd_tx, event_rx, local_peer_id))
+}
+
+fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses: &[Multiaddr]) {
+    let behaviour = swarm.behaviour();
+    let connected_relays = behaviour.gossipsub.connected_relays();
+    let mesh_n_low = behaviour.gossipsub.get_config().mesh_n_low();
+    let mesh_n = behaviour.gossipsub.get_config().mesh_n();
+    // allow 2 * mesh_n_high connections to other nodes
+    let max_n = behaviour.gossipsub.get_config().mesh_n_high() * 2;
+
+    let mut rng = rand::thread_rng();
+    if connected_relays.len() < mesh_n_low {
+        let to_connect_num = mesh_n - connected_relays.len();
+        let to_connect = swarm
+            .behaviour_mut()
+            .peers_exchange
+            .get_random_peers(to_connect_num, |peer| !connected_relays.contains(peer));
+
+        // choose some random bootstrap addresses to connect if peers exchange returned not enough peers
+        if to_connect.len() < to_connect_num {
+            let connect_bootstrap_num = to_connect_num - to_connect.len();
+            for addr in bootstrap_addresses
+                .iter()
+                .filter(|addr| !swarm.behaviour().gossipsub.is_connected_to_addr(addr))
+                .collect::<Vec<_>>()
+                .choose_multiple(&mut rng, connect_bootstrap_num)
+            {
+                if let Err(e) = libp2p::Swarm::dial(swarm, (*addr).clone()) {
+                    error!("Bootstrap addr {} dial error {}", addr, e);
+                }
+            }
+        }
+        for (peer, addresses) in to_connect {
+            for addr in addresses {
+                if swarm.behaviour().gossipsub.is_connected_to_addr(&addr) {
+                    continue;
+                }
+                if let Err(e) = libp2p::Swarm::dial(swarm, addr.clone()) {
+                    error!("Peer {} address {} dial error {}", peer, addr, e);
+                }
+            }
+        }
+    }
+
+    if connected_relays.len() > max_n {
+        let to_disconnect_num = connected_relays.len() - max_n;
+        let relays_mesh = swarm.behaviour().gossipsub.get_relay_mesh();
+        let not_in_mesh: Vec<_> = connected_relays
+            .iter()
+            .filter(|peer| !relays_mesh.contains(peer))
+            .collect();
+        for peer in not_in_mesh.choose_multiple(&mut rng, to_disconnect_num) {
+            if !swarm.behaviour().peers_exchange.is_reserved_peer(peer) {
+                info!("Disconnecting peer {}", peer);
+                if Swarm::disconnect_peer_id(swarm, *peer.clone()).is_err() {
+                    error!("Peer {} disconnect error", peer);
+                }
+            }
+        }
+    }
+
+    for relay in connected_relays {
+        if !swarm.behaviour().peers_exchange.is_known_peer(&relay) {
+            swarm.behaviour_mut().peers_exchange.add_known_peer(relay);
+        }
+    }
+}
+
+fn announce_my_addresses(swarm: &mut AtomicDexSwarm) {
+    let global_listeners: PeerAddresses = Swarm::listeners(swarm)
+        .filter(|listener| {
+            for protocol in listener.iter() {
+                if let Protocol::Ip4(ip) = protocol {
+                    return ip.is_global();
+                }
+            }
+            false
+        })
+        .take(1)
+        .cloned()
+        .collect();
+    if !global_listeners.is_empty() {
+        swarm.behaviour_mut().announce_listeners(global_listeners);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn build_dns_ws_transport(
+    noise_keys: noise::Config,
+    wss_certs: Option<&WssCerts>,
+) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)> {
+    use libp2p::websocket::tls as libp2p_tls;
+
+    let ws_tcp = libp2p::dns::TokioDnsConfig::custom(
+        libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::new().nodelay(true)),
+        libp2p::dns::ResolverConfig::google(),
+        Default::default(),
+    )
+    .unwrap();
+
+    let mut ws_dns_tcp = libp2p::websocket::WsConfig::new(ws_tcp);
+
+    if let Some(certs) = wss_certs {
+        let server_priv_key = libp2p_tls::PrivateKey::new(certs.server_priv_key.0.clone());
+        let certs = certs
+            .certs
+            .iter()
+            .map(|cert| libp2p_tls::Certificate::new(cert.0.clone()));
+        let wss_config = libp2p_tls::Config::new(server_priv_key, certs).unwrap();
+        ws_dns_tcp.set_tls_config(wss_config);
+    }
+
+    // This is for preventing port reuse of dns/tcp instead of
+    // websocket ports.
+    let dns_tcp = libp2p::dns::TokioDnsConfig::custom(
+        libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::new().nodelay(true)),
+        libp2p::dns::ResolverConfig::google(),
+        Default::default(),
+    )
+    .unwrap();
+
+    let transport = dns_tcp.or_transport(ws_dns_tcp);
+    upgrade_transport(transport, noise_keys)
+}
+
+fn build_memory_transport(noise_keys: noise::Config) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)> {
+    let transport = libp2p::core::transport::MemoryTransport::default();
+    upgrade_transport(transport, noise_keys)
+}
+
+/// Set up an encrypted Transport over the Mplex protocol.
+fn upgrade_transport<T>(
+    transport: T,
+    noise_config: noise::Config,
+) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)>
+where
+    T: Transport + Send + Sync + 'static + std::marker::Unpin,
+    T::Output: futures::AsyncRead + futures::AsyncWrite + Unpin + Send + 'static,
+    T::ListenerUpgrade: Send,
+    T::Dial: Send,
+    T::Error: Send + Sync + 'static,
+{
+    transport
+        .upgrade(libp2p::core::upgrade::Version::V1)
+        .authenticate(noise_config)
+        .multiplex(libp2p::yamux::Config::default())
+        .timeout(std::time::Duration::from_secs(20))
+        .map(|(peer, muxer), _| (peer, libp2p::core::muxing::StreamMuxerBox::new(muxer)))
+        .boxed()
 }
