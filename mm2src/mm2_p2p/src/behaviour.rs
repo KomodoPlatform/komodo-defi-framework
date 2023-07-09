@@ -18,10 +18,10 @@ use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::ConnectedPoint;
 use libp2p::floodsub::{Floodsub, Topic as FloodsubTopic};
 use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
-use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Message as GossipsubMessage};
+use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, Message as GossipsubMessage};
 use libp2p::multiaddr::Protocol;
 use libp2p::request_response::ResponseChannel;
-use libp2p::swarm::NetworkBehaviour;
+use libp2p::swarm::{NetworkBehaviour, ToSwarm};
 use libp2p::{identity, noise, PeerId, Swarm};
 use libp2p::{Multiaddr, Transport};
 use log::{debug, error, info};
@@ -447,51 +447,6 @@ impl AtomicDexBehaviour {
     pub fn connected_peers_len(&self) -> usize { self.gossipsub.get_num_peers() }
 }
 
-impl NetworkBehaviour for AtomicDexBehaviour {
-    type ConnectionHandler = <Gossipsub as NetworkBehaviour>::ConnectionHandler;
-
-    type ToSwarm = AdexBehaviourEvent;
-
-    fn handle_established_inbound_connection(
-        &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
-        peer: PeerId,
-        local_addr: &Multiaddr,
-        remote_addr: &Multiaddr,
-    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        todo!()
-    }
-
-    fn handle_established_outbound_connection(
-        &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
-        peer: PeerId,
-        addr: &Multiaddr,
-        role_override: libp2p::core::Endpoint,
-    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        todo!()
-    }
-
-    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) { todo!() }
-
-    fn on_connection_handler_event(
-        &mut self,
-        _peer_id: PeerId,
-        _connection_id: libp2p::swarm::ConnectionId,
-        _event: libp2p::swarm::THandlerOutEvent<Self>,
-    ) {
-        todo!()
-    }
-
-    fn poll(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-        params: &mut impl libp2p::swarm::PollParameters,
-    ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
-        todo!()
-    }
-}
-
 pub enum NodeType {
     Light {
         network_ports: NetworkPorts,
@@ -888,4 +843,72 @@ where
         .timeout(std::time::Duration::from_secs(20))
         .map(|(peer, muxer), _| (peer, libp2p::core::muxing::StreamMuxerBox::new(muxer)))
         .boxed()
+}
+
+impl NetworkBehaviour for AtomicDexBehaviour {
+    type ConnectionHandler = <Gossipsub as NetworkBehaviour>::ConnectionHandler;
+
+    type ToSwarm = AdexBehaviourEvent;
+
+    fn handle_established_inbound_connection(
+        &mut self,
+        connection_id: libp2p::swarm::ConnectionId,
+        peer: PeerId,
+        local_addr: &Multiaddr,
+        remote_addr: &Multiaddr,
+    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        self.gossipsub
+            .handle_established_inbound_connection(connection_id, peer, local_addr, remote_addr)
+    }
+
+    fn handle_established_outbound_connection(
+        &mut self,
+        connection_id: libp2p::swarm::ConnectionId,
+        peer: PeerId,
+        addr: &Multiaddr,
+        role_override: libp2p::core::Endpoint,
+    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        self.gossipsub
+            .handle_established_outbound_connection(connection_id, peer, addr, role_override)
+    }
+
+    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {
+        self.gossipsub.on_swarm_event(event)
+    }
+
+    fn on_connection_handler_event(
+        &mut self,
+        peer_id: PeerId,
+        connection_id: libp2p::swarm::ConnectionId,
+        event: libp2p::swarm::THandlerOutEvent<Self>,
+    ) {
+        self.gossipsub
+            .on_connection_handler_event(peer_id, connection_id, event)
+    }
+
+    fn poll(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+        params: &mut impl libp2p::swarm::PollParameters,
+    ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
+        self.gossipsub.poll(cx, params).map(|to_swarm| match to_swarm {
+            ToSwarm::GenerateEvent(event) => ToSwarm::GenerateEvent(event.into()),
+            ToSwarm::Dial { opts } => ToSwarm::Dial { opts },
+            ToSwarm::ListenOn { opts } => ToSwarm::ListenOn { opts },
+            ToSwarm::RemoveListener { id } => ToSwarm::RemoveListener { id },
+            ToSwarm::NotifyHandler {
+                peer_id,
+                handler,
+                event,
+            } => ToSwarm::NotifyHandler {
+                peer_id,
+                handler,
+                event,
+            },
+            ToSwarm::NewExternalAddrCandidate(multiaddr) => ToSwarm::NewExternalAddrCandidate(multiaddr),
+            ToSwarm::ExternalAddrConfirmed(multiaddr) => ToSwarm::ExternalAddrConfirmed(multiaddr),
+            ToSwarm::ExternalAddrExpired(multiaddr) => ToSwarm::ExternalAddrExpired(multiaddr),
+            ToSwarm::CloseConnection { peer_id, connection } => ToSwarm::CloseConnection { peer_id, connection },
+        })
+    }
 }

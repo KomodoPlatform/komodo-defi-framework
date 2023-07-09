@@ -47,7 +47,7 @@ impl From<GossipsubEvent> for AdexBehaviourEvent {
             GossipsubEvent::Subscribed { peer_id, topic } => AdexBehaviourEvent::Subscribed { peer_id, topic },
             GossipsubEvent::Unsubscribed { peer_id, topic } => AdexBehaviourEvent::Unsubscribed { peer_id, topic },
             GossipsubEvent::GossipsubNotSupported { peer_id } => {
-                todo!()
+                todo!("Add error variant to `AdexBehaviourEvent`");
             },
         }
     }
