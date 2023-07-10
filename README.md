@@ -1,6 +1,6 @@
 <p align="center">
     <a href="https://atomicdex.io" alt="Contributors">
-        <img src="https://user-images.githubusercontent.com/24797699/251983635-5ce095e8-00be-44f1-ae48-f19b343821c0.png" />
+        <img width="420" src="https://user-images.githubusercontent.com/24797699/252396802-de8f9264-8056-4430-a17d-5ecec9668dfc.png" />
     </a>
 </p>
 
