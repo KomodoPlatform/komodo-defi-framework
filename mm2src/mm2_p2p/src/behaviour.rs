@@ -17,6 +17,7 @@ use instant::Duration;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::ConnectedPoint;
 use libp2p::floodsub::{Floodsub, Topic as FloodsubTopic};
+use libp2p::gossipsub::ValidationMode;
 use libp2p::multiaddr::Protocol;
 use libp2p::request_response::ResponseChannel;
 use libp2p::swarm::{NetworkBehaviour, ToSwarm};
@@ -556,7 +557,7 @@ fn start_gossipsub(
         .map(|addr| addr.try_to_multiaddr(network_info))
         .collect::<Result<Vec<Multiaddr>, _>>()?;
 
-    let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (4, 6, 12) } else { (2, 3, 4) };
+    let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (4, 8, 16) } else { (2, 4, 8) };
 
     // Create a Swarm to manage peers and events
     let mut swarm = {
@@ -579,6 +580,7 @@ fn start_gossipsub(
             .mesh_n(mesh_n)
             .mesh_n_high(mesh_n_high)
             .validate_messages()
+            .validation_mode(ValidationMode::Permissive)
             .max_transmit_size(1024 * 1024 - 100)
             .build()
             .unwrap();
