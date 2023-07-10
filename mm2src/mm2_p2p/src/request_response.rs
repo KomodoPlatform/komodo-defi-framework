@@ -6,7 +6,7 @@ use futures::StreamExt;
 use futures_ticker::Ticker;
 use instant::{Duration, Instant};
 use libp2p::core::upgrade::{read_length_prefixed, write_length_prefixed};
-use libp2p::request_response::ProtocolSupport;
+use libp2p::request_response::{InboundFailure, Message, OutboundFailure, ProtocolSupport};
 use libp2p::swarm::{PollParameters, ToSwarm};
 use libp2p::{request_response::{Behaviour as RequestResponse, Config as RequestResponseConfig,
                                 Event as RequestResponseEvent, RequestId, ResponseChannel},
@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::io;
 
+use crate::peers_exchange::PeersExchangeRequest;
 use crate::{decode_message, encode_message};
 
 const MAX_BUFFER_SIZE: usize = 1024 * 1024 - 100;
@@ -198,42 +199,6 @@ impl RequestResponseBehaviour {
         request_id
     }
 
-    fn poll_event(
-        &mut self,
-        cx: &mut Context,
-        _params: &mut impl PollParameters,
-    ) -> Poll<ToSwarm<RequestResponseBehaviourEvent, <Self as NetworkBehaviour>::ConnectionHandler>> {
-        // poll the `rx`
-        match self.rx.poll_next_unpin(cx) {
-            // received a request, forward it through the network and put to the `pending_requests`
-            Poll::Ready(Some((peer_id, request, response_tx))) => {
-                let _request_id = self.send_request(&peer_id, request, response_tx);
-            },
-            // the channel was closed
-            Poll::Ready(None) => panic!("request-response channel has been closed"),
-            Poll::Pending => (),
-        }
-
-        if let Some(event) = self.events.pop_front() {
-            // forward a pending event to the top
-            return Poll::Ready(ToSwarm::GenerateEvent(event));
-        }
-
-        while let Poll::Ready(Some(_)) = self.timeout_interval.poll_next_unpin(cx) {
-            let now = Instant::now();
-            let timeout = self.timeout;
-            self.pending_requests.retain(|request_id, pending_request| {
-                let retain = now.duration_since(pending_request.initiated_at) < timeout;
-                if !retain {
-                    warn!("Request {} timed out", request_id);
-                }
-                retain
-            });
-        }
-
-        Poll::Pending
-    }
-
     fn process_request(
         &mut self,
         peer_id: PeerId,
@@ -267,33 +232,100 @@ impl NetworkBehaviour for RequestResponseBehaviour {
 
     fn handle_established_inbound_connection(
         &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
+        connection_id: libp2p::swarm::ConnectionId,
         peer: PeerId,
         local_addr: &libp2p::Multiaddr,
         remote_addr: &libp2p::Multiaddr,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        todo!()
+        self.inner
+            .handle_established_inbound_connection(connection_id, peer, local_addr, remote_addr)
     }
 
     fn handle_established_outbound_connection(
         &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
+        connection_id: libp2p::swarm::ConnectionId,
         peer: PeerId,
         addr: &libp2p::Multiaddr,
         role_override: libp2p::core::Endpoint,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        todo!()
+        self.inner
+            .handle_established_outbound_connection(connection_id, peer, addr, role_override)
     }
 
-    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) { todo!() }
+    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {
+        self.inner.on_swarm_event(event)
+    }
 
     fn on_connection_handler_event(
         &mut self,
-        _peer_id: PeerId,
+        peer_id: PeerId,
         _connection_id: libp2p::swarm::ConnectionId,
-        _event: libp2p::swarm::THandlerOutEvent<Self>,
+        event: libp2p::swarm::THandlerOutEvent<Self>,
     ) {
-        todo!()
+        let (peer_id, message) = match event {
+            libp2p::request_response::HandlerEvent::Request {
+                request_id,
+                request,
+                sender,
+            } => {
+                let channel = ResponseChannel { sender };
+                let message: Message<PeerRequest, PeerResponse> = Message::Request {
+                    request_id,
+                    request,
+                    channel,
+                };
+
+                (peer_id, message)
+            },
+            libp2p::request_response::HandlerEvent::Response { request_id, response } => {
+                let message = Message::Response { request_id, response };
+                (peer_id, message)
+            },
+            libp2p::request_response::HandlerEvent::ResponseSent(_) => return,
+            libp2p::request_response::HandlerEvent::ResponseOmission(_) => {
+                error!("Error on receive a request: {:?}", InboundFailure::ResponseOmission);
+                return;
+            },
+            libp2p::request_response::HandlerEvent::OutboundTimeout(request_id) => {
+                let error = OutboundFailure::Timeout;
+                error!(
+                    "Error on send request {:?} to peer {:?}: {:?}",
+                    request_id, peer_id, error
+                );
+                let err_response = PeerResponse::Err {
+                    err: format!("{:?}", error),
+                };
+                self.process_response(request_id, err_response);
+                return;
+            },
+            libp2p::request_response::HandlerEvent::OutboundUnsupportedProtocols(request_id) => {
+                let error = OutboundFailure::UnsupportedProtocols;
+                error!(
+                    "Error on send request {:?} to peer {:?}: {:?}",
+                    request_id, peer_id, error
+                );
+                let err_response = PeerResponse::Err {
+                    err: format!("{:?}", error),
+                };
+                self.process_response(request_id, err_response);
+                return;
+            },
+        };
+
+        match message {
+            Message::Request { request, channel, .. } => {
+                log::debug!("Received a request from {:?} peer", peer_id);
+                self.process_request(peer_id, request, channel)
+            },
+            Message::Response { request_id, response } => {
+                log::debug!(
+                    "Received a response to the {:?} request from peer {:?}",
+                    request_id,
+                    peer_id
+                );
+                self.process_response(request_id, response)
+            },
+        }
     }
 
     fn poll(
@@ -301,12 +333,36 @@ impl NetworkBehaviour for RequestResponseBehaviour {
         cx: &mut std::task::Context<'_>,
         params: &mut impl libp2p::swarm::PollParameters,
     ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
-        todo!()
-    }
-}
+        // poll the `rx`
+        match self.rx.poll_next_unpin(cx) {
+            // received a request, forward it through the network and put to the `pending_requests`
+            Poll::Ready(Some((peer_id, request, response_tx))) => {
+                let _request_id = self.send_request(&peer_id, request, response_tx);
+            },
+            // the channel was closed
+            Poll::Ready(None) => panic!("request-response channel has been closed"),
+            Poll::Pending => (),
+        }
 
-impl From<RequestResponseEvent<PeerRequest, PeerResponse>> for RequestResponseBehaviour {
-    fn from(value: RequestResponseEvent<PeerRequest, PeerResponse>) -> Self { todo!() }
+        if let Some(event) = self.events.pop_front() {
+            // forward a pending event to the top
+            return Poll::Ready(ToSwarm::GenerateEvent(event));
+        }
+
+        while let Poll::Ready(Some(_)) = self.timeout_interval.poll_next_unpin(cx) {
+            let now = Instant::now();
+            let timeout = self.timeout;
+            self.pending_requests.retain(|request_id, pending_request| {
+                let retain = now.duration_since(pending_request.initiated_at) < timeout;
+                if !retain {
+                    warn!("Request {} timed out", request_id);
+                }
+                retain
+            });
+        }
+
+        Poll::Pending
+    }
 }
 
 /// Build a request-response network behaviour.
