@@ -1,11 +1,11 @@
 #![feature(ip)]
 #![allow(unused, dead_code)]
 
-mod behaviour;
+pub mod behaviour;
 mod event;
 // pub mod peer_store;
 mod network;
-mod peers_exchange;
+pub mod peers_exchange;
 mod ping;
 mod relay_address;
 mod request_response;
@@ -16,9 +16,15 @@ use secp256k1::{Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1,
                 VerifyOnly};
 use sha2::{Digest, Sha256};
 
+pub use crate::swarm_runtime::SwarmRuntime;
+pub use behaviour::{spawn_gossipsub, AdexBehaviourError, NodeType, WssCerts};
+pub use behaviour::{GossipsubEvent, GossipsubMessage, MessageId, TopicHash};
 pub use libp2p::identity::secp256k1::PublicKey as Libp2pSecpPublic;
 pub use libp2p::identity::PublicKey as Libp2pPublic;
 pub use libp2p::{Multiaddr, PeerId};
+pub use libp2p_identity::DecodingError;
+pub use peers_exchange::PeerAddresses;
+pub use relay_address::{RelayAddress, RelayAddressError};
 use serde::{de, Deserialize, Serialize, Serializer};
 
 lazy_static! {

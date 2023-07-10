@@ -60,17 +60,6 @@ struct PendingRequest {
     initiated_at: Instant,
 }
 
-#[derive(Debug)]
-pub struct AdexResponseChannel(ResponseChannel<PeerResponse>);
-
-impl From<ResponseChannel<PeerResponse>> for AdexResponseChannel {
-    fn from(res: ResponseChannel<PeerResponse>) -> Self { AdexResponseChannel(res) }
-}
-
-impl From<AdexResponseChannel> for ResponseChannel<PeerResponse> {
-    fn from(res: AdexResponseChannel) -> Self { res.0 }
-}
-
 #[derive(Debug, Clone)]
 pub enum Protocol {
     Version1,

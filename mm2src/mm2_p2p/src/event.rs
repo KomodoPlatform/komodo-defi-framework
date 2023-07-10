@@ -2,7 +2,7 @@ use futures::channel::mpsc::Receiver;
 use libp2p::{gossipsub::{Event as GossipsubEvent, Message as GossipsubMessage, MessageId, TopicHash},
              PeerId};
 
-use crate::request_response::AdexResponseChannel;
+use crate::behaviour::AdexResponseChannel;
 
 #[derive(Debug)]
 pub enum AdexBehaviourEvent {

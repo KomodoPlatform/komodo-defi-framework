@@ -17,8 +17,6 @@ use instant::Duration;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::ConnectedPoint;
 use libp2p::floodsub::{Floodsub, Topic as FloodsubTopic};
-use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
-use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, Message as GossipsubMessage};
 use libp2p::multiaddr::Protocol;
 use libp2p::request_response::ResponseChannel;
 use libp2p::swarm::{NetworkBehaviour, ToSwarm};
@@ -29,7 +27,6 @@ use log::{debug, error, info};
 use rand::seq::SliceRandom;
 use rand::Rng;
 
-use crate::event::AdexBehaviourEvent;
 use crate::network::{get_all_network_seednodes, NETID_7777};
 use crate::peers_exchange::{PeerAddresses, PeersExchange};
 use crate::ping::AdexPing;
@@ -38,6 +35,11 @@ use crate::request_response::{build_request_response_behaviour, PeerRequest, Pee
                               RequestResponseSender};
 use crate::swarm_runtime::SwarmRuntime;
 use crate::{NetworkInfo, NetworkPorts};
+
+pub use crate::event::AdexBehaviourEvent;
+pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
+pub use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent,
+                            Message as GossipsubMessage};
 
 pub type AdexCmdTx = Sender<AdexBehaviourCmd>;
 pub type AdexEventRx = Receiver<AdexBehaviourEvent>;
@@ -748,7 +750,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
         for peer in not_in_mesh.choose_multiple(&mut rng, to_disconnect_num) {
             if !swarm.behaviour().peers_exchange.is_reserved_peer(peer) {
                 info!("Disconnecting peer {}", peer);
-                if Swarm::disconnect_peer_id(swarm, *peer.clone()).is_err() {
+                if Swarm::disconnect_peer_id(swarm, **peer).is_err() {
                     error!("Peer {} disconnect error", peer);
                 }
             }
@@ -911,4 +913,30 @@ impl NetworkBehaviour for AtomicDexBehaviour {
             ToSwarm::CloseConnection { peer_id, connection } => ToSwarm::CloseConnection { peer_id, connection },
         })
     }
+}
+
+/// Creates and spawns new AdexBehaviour Swarm returning:
+/// 1. tx to send control commands
+/// 2. rx emitting gossip events to processing side
+/// 3. our peer_id
+/// 4. abort handle to stop the P2P processing fut.
+pub async fn spawn_gossipsub(
+    netid: u16,
+    force_key: Option<[u8; 32]>,
+    runtime: SwarmRuntime,
+    to_dial: Vec<RelayAddress>,
+    node_type: NodeType,
+    on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
+) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId), AdexBehaviourError> {
+    let (result_tx, result_rx) = oneshot::channel();
+
+    let runtime_c = runtime.clone();
+    let fut = async move {
+        let result = start_gossipsub(netid, force_key, runtime, to_dial, node_type, on_poll);
+        result_tx.send(result).unwrap();
+    };
+
+    // `Libp2p` must be spawned on the tokio runtime
+    runtime_c.spawn(fut);
+    result_rx.await.expect("Fatal error on starting gossipsub")
 }

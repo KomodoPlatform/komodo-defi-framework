@@ -519,7 +519,7 @@ fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: 
 
 pub async fn handle_orderbook_msg(
     ctx: MmArc,
-    topics: &[TopicHash],
+    topic: &TopicHash,
     from_peer: String,
     msg: &[u8],
     i_am_relay: bool,
@@ -530,17 +530,15 @@ pub async fn handle_orderbook_msg(
 
     let mut orderbook_pairs = vec![];
 
-    for topic in topics {
-        let mut split = topic.as_str().split(TOPIC_SEPARATOR);
-        match (split.next(), split.next()) {
-            (Some(ORDERBOOK_PREFIX), Some(pair)) => {
-                orderbook_pairs.push(pair.to_string());
-            },
-            _ => {
-                return MmError::err(OrderbookP2PHandlerError::InvalidTopic(topic.as_str().to_owned()));
-            },
-        };
-    }
+    let mut split = topic.as_str().split(TOPIC_SEPARATOR);
+    match (split.next(), split.next()) {
+        (Some(ORDERBOOK_PREFIX), Some(pair)) => {
+            orderbook_pairs.push(pair.to_string());
+        },
+        _ => {
+            return MmError::err(OrderbookP2PHandlerError::InvalidTopic(topic.as_str().to_owned()));
+        },
+    };
 
     drop_mutability!(orderbook_pairs);
 
@@ -1056,7 +1054,7 @@ fn maker_order_created_p2p_notify(
     let encoded_msg = encode_and_sign(&to_broadcast, key_pair.private_ref()).unwrap();
     let item: OrderbookItem = (message, hex::encode(key_pair.public_slice())).into();
     insert_or_update_my_order(&ctx, item, order);
-    broadcast_p2p_msg(&ctx, vec![topic], encoded_msg, peer_id);
+    broadcast_p2p_msg(&ctx, topic, encoded_msg, peer_id);
 }
 
 fn process_my_maker_order_updated(ctx: &MmArc, message: &new_protocol::MakerOrderUpdated) {
@@ -1080,7 +1078,7 @@ fn maker_order_updated_p2p_notify(
     let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(&ctx, p2p_privkey);
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
     process_my_maker_order_updated(&ctx, &message);
-    broadcast_p2p_msg(&ctx, vec![topic], encoded_msg, peer_id);
+    broadcast_p2p_msg(&ctx, topic, encoded_msg, peer_id);
 }
 
 fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
