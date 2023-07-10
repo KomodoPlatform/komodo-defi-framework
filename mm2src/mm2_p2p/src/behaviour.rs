@@ -29,14 +29,14 @@ use log::{debug, error, info};
 use rand::seq::SliceRandom;
 use rand::Rng;
 
+use crate::event::AdexBehaviourEvent;
 use crate::network::{get_all_network_seednodes, NETID_7777};
-use crate::peers::PeersExchange;
+use crate::peers_exchange::{PeerAddresses, PeersExchange};
 use crate::ping::AdexPing;
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
                               RequestResponseSender};
 use crate::swarm_runtime::SwarmRuntime;
-use crate::{event::AdexBehaviourEvent, peers::PeerAddresses};
 use crate::{NetworkInfo, NetworkPorts};
 
 pub type AdexCmdTx = Sender<AdexBehaviourCmd>;

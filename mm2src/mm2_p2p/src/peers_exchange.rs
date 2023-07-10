@@ -2,7 +2,8 @@
 use futures::StreamExt;
 use futures_ticker::Ticker;
 use libp2p::{multiaddr::Protocol,
-             request_response::{Behaviour as RequestResponse, Config as RequestResponseConfig, ProtocolSupport},
+             request_response::{Behaviour as RequestResponse, Config as RequestResponseConfig, Event, HandlerEvent,
+                                InboundFailure, OutboundFailure, ProtocolSupport, ResponseChannel},
              swarm::{NetworkBehaviour, PollParameters, ToSwarm},
              Multiaddr, PeerId};
 use log::{info, warn};
@@ -71,7 +72,7 @@ pub struct PeersExchange {
     request_response: RequestResponse<PeersExchangeCodec>,
     known_peers: Vec<PeerId>,
     reserved_peers: Vec<PeerId>,
-    events: VecDeque<ToSwarm<(), <Self as NetworkBehaviour>::ConnectionHandler>>,
+    events: VecDeque<ToSwarm<<Self as NetworkBehaviour>::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>>,
     maintain_peers_interval: Ticker,
     network_info: NetworkInfo,
     // peer_store: PeerStoreBehaviour,
@@ -79,38 +80,111 @@ pub struct PeersExchange {
 
 impl NetworkBehaviour for PeersExchange {
     type ConnectionHandler = <RequestResponse<PeersExchangeCodec> as NetworkBehaviour>::ConnectionHandler;
-
-    type ToSwarm = ();
+    type ToSwarm = Event<PeersExchangeRequest, PeersExchangeResponse>;
 
     fn handle_established_inbound_connection(
         &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
+        connection_id: libp2p::swarm::ConnectionId,
         peer: PeerId,
         local_addr: &libp2p::Multiaddr,
         remote_addr: &libp2p::Multiaddr,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        todo!()
+        self.request_response
+            .handle_established_inbound_connection(connection_id, peer, local_addr, remote_addr)
     }
 
     fn handle_established_outbound_connection(
         &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
+        connection_id: libp2p::swarm::ConnectionId,
         peer: PeerId,
         addr: &libp2p::Multiaddr,
         role_override: libp2p::core::Endpoint,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        todo!()
+        self.request_response
+            .handle_established_outbound_connection(connection_id, peer, addr, role_override)
     }
 
-    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) { todo!() }
+    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {
+        self.request_response.on_swarm_event(event)
+    }
 
     fn on_connection_handler_event(
         &mut self,
-        _peer_id: PeerId,
+        peer_id: PeerId,
         _connection_id: libp2p::swarm::ConnectionId,
-        _event: libp2p::swarm::THandlerOutEvent<Self>,
+        event: libp2p::swarm::THandlerOutEvent<Self>,
     ) {
-        todo!()
+        match event {
+            HandlerEvent::Request {
+                request_id,
+                request,
+                sender,
+            } => {
+                match request {
+                    PeersExchangeRequest::GetKnownPeers { num } => {
+                        // Should not send a response in such case
+                        if num > DEFAULT_PEERS_NUM {
+                            return;
+                        }
+                        let response = PeersExchangeResponse::KnownPeers {
+                            peers: self.get_random_known_peers(num),
+                        };
+
+                        let channel = ResponseChannel { sender };
+
+                        if let Err(_response) = self.request_response.send_response(channel, response) {
+                            warn!("Response channel has been closed already");
+                        }
+                    },
+                }
+            },
+            HandlerEvent::Response { request_id, response } => {
+                match response {
+                    PeersExchangeResponse::KnownPeers { peers } => {
+                        info!("Got peers {:?}", peers);
+
+                        if !self.validate_get_known_peers_response(&peers) {
+                            // if peer provides invalid response forget it and try to request from other peer
+                            self.forget_peer(&peer_id);
+                            self.request_known_peers_from_random_peer();
+                            return;
+                        }
+
+                        peers.into_iter().for_each(|(peer, addresses)| {
+                            self.add_peer_addresses_to_known_peers(&peer.0, addresses);
+                        });
+                    },
+                }
+            },
+            HandlerEvent::ResponseSent(_) => {},
+            HandlerEvent::ResponseOmission(e) => {
+                log::error!(
+                    "Inbound failure {:?} while processing request from peer {}",
+                    InboundFailure::ResponseOmission,
+                    peer_id
+                );
+            },
+            HandlerEvent::OutboundTimeout(request_id) => {
+                log::error!(
+                    "Outbound failure {:?} while requesting {:?} to peer {}",
+                    OutboundFailure::Timeout,
+                    request_id,
+                    peer_id
+                );
+                self.forget_peer(&peer_id);
+                self.request_known_peers_from_random_peer();
+            },
+            HandlerEvent::OutboundUnsupportedProtocols(request_id) => {
+                log::error!(
+                    "Outbound failure {:?} while requesting {:?} to peer {}",
+                    OutboundFailure::UnsupportedProtocols,
+                    request_id,
+                    peer_id
+                );
+                self.forget_peer(&peer_id);
+                self.request_known_peers_from_random_peer();
+            },
+        }
     }
 
     fn poll(
@@ -118,7 +192,15 @@ impl NetworkBehaviour for PeersExchange {
         cx: &mut std::task::Context<'_>,
         params: &mut impl libp2p::swarm::PollParameters,
     ) -> std::task::Poll<ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
-        todo!()
+        while let Poll::Ready(Some(_)) = self.maintain_peers_interval.poll_next_unpin(cx) {
+            self.maintain_known_peers();
+        }
+
+        if let Some(event) = self.events.pop_front() {
+            return Poll::Ready(event);
+        }
+
+        Poll::Pending
     }
 }
 
@@ -310,21 +392,5 @@ impl PeersExchange {
             }
         }
         true
-    }
-
-    fn poll(
-        &mut self,
-        cx: &mut Context,
-        _params: &mut impl PollParameters,
-    ) -> Poll<ToSwarm<(), <Self as NetworkBehaviour>::ConnectionHandler>> {
-        while let Poll::Ready(Some(_)) = self.maintain_peers_interval.poll_next_unpin(cx) {
-            self.maintain_known_peers();
-        }
-
-        if let Some(event) = self.events.pop_front() {
-            return Poll::Ready(event);
-        }
-
-        Poll::Pending
     }
 }
