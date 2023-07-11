@@ -36,6 +36,7 @@ pub enum GetNftInfoError {
     ParseRfc3339Err(ParseRfc3339Err),
     #[display(fmt = "The contract type is required and should not be null.")]
     ContractTypeIsNull,
+    ProtectFromSpamError(ProtectFromSpamError),
 }
 
 impl From<GetNftInfoError> for WithdrawError {
@@ -98,6 +99,10 @@ impl From<ParseRfc3339Err> for GetNftInfoError {
     fn from(e: ParseRfc3339Err) -> Self { GetNftInfoError::ParseRfc3339Err(e) }
 }
 
+impl From<ProtectFromSpamError> for GetNftInfoError {
+    fn from(e: ProtectFromSpamError) -> Self { GetNftInfoError::ProtectFromSpamError(e) }
+}
+
 impl HttpStatusCode for GetNftInfoError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -108,7 +113,8 @@ impl HttpStatusCode for GetNftInfoError {
             | GetNftInfoError::Internal(_)
             | GetNftInfoError::GetEthAddressError(_)
             | GetNftInfoError::TokenNotFoundInWallet { .. }
-            | GetNftInfoError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | GetNftInfoError::DbError(_)
+            | GetNftInfoError::ProtectFromSpamError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -156,6 +162,10 @@ pub enum UpdateNftError {
     LastScannedBlockNotFound {
         last_nft_block: String,
     },
+    #[display(fmt = "Attempt to receive duplicate ERC721 token in transaction hash: {}", tx_hash)]
+    AttemptToReceiveAlreadyOwnedErc721 {
+        tx_hash: String,
+    },
 }
 
 impl From<CreateNftStorageError> for UpdateNftError {
@@ -188,7 +198,8 @@ impl HttpStatusCode for UpdateNftError {
             | UpdateNftError::TokenNotFoundInWallet { .. }
             | UpdateNftError::InsufficientAmountInCache { .. }
             | UpdateNftError::InvalidBlockOrder { .. }
-            | UpdateNftError::LastScannedBlockNotFound { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | UpdateNftError::LastScannedBlockNotFound { .. }
+            | UpdateNftError::AttemptToReceiveAlreadyOwnedErc721 { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -218,4 +229,12 @@ impl From<SlurpError> for GetInfoFromUriError {
             SlurpError::Internal(_) => GetInfoFromUriError::Internal(error_str),
         }
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize)]
+pub enum ProtectFromSpamError {
+    #[from_stringify("regex::Error")]
+    RegexError(String),
+    #[from_stringify("serde_json::Error")]
+    SerdeError(String),
 }

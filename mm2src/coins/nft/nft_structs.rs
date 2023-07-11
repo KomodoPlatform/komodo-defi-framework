@@ -18,6 +18,8 @@ pub struct NftListReq {
     #[serde(default = "ten")]
     pub(crate) limit: usize,
     pub(crate) page_number: Option<NonZeroUsize>,
+    #[serde(default)]
+    pub(crate) protect_from_spam: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +27,8 @@ pub struct NftMetadataReq {
     pub(crate) token_address: Address,
     pub(crate) token_id: BigDecimal,
     pub(crate) chain: Chain,
+    #[serde(default)]
+    pub(crate) protect_from_spam: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,27 +132,68 @@ impl fmt::Display for ContractType {
     }
 }
 
+/// `UriMeta` structure is the object which we create from `token_uri` and `metadata`.
+///
+/// `token_uri` and `metadata` usually contain either `image` or `image_url` with image url.
+/// But most often nft creators use only `image` name for this value (from my observation),
+/// less often they use both parameters with the same url.
+///
+/// I suspect this is because some APIs only look for one of these image url names, so nft creators try to satisfy all sides.
+/// In any case, since there is no clear standard, we have to look for both options,
+/// when we build `UriMeta` from `token_uri` or `metadata`.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct UriMeta {
-    pub(crate) image: Option<String>,
-    #[serde(rename(deserialize = "name"))]
+    #[serde(rename = "image")]
+    pub(crate) raw_image_url: Option<String>,
+    pub(crate) image_url: Option<String>,
+    #[serde(rename = "name")]
     pub(crate) token_name: Option<String>,
-    description: Option<String>,
-    attributes: Option<Json>,
-    animation_url: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) attributes: Option<Json>,
+    pub(crate) animation_url: Option<String>,
+    pub(crate) external_url: Option<String>,
+    pub(crate) image_details: Option<Json>,
 }
 
+impl UriMeta {
+    /// `try_to_fill_missing_fields_from` function doesnt change `raw_image_url` field.
+    /// It tries to update `image_url` field instead, if it is None.
+    /// As `image` is the original name of `raw_image_url` field in data from `token_uri` or `metadata`,
+    /// try to find **Some()** in this field first.
+    pub(crate) fn try_to_fill_missing_fields_from(&mut self, other: UriMeta) {
+        if self.image_url.is_none() {
+            self.image_url = other.raw_image_url.or(other.image_url);
+        }
+        if self.token_name.is_none() {
+            self.token_name = other.token_name;
+        }
+        if self.description.is_none() {
+            self.description = other.description;
+        }
+        if self.attributes.is_none() {
+            self.attributes = other.attributes;
+        }
+        if self.animation_url.is_none() {
+            self.animation_url = other.animation_url;
+        }
+        if self.external_url.is_none() {
+            self.external_url = other.external_url;
+        }
+        if self.image_details.is_none() {
+            self.image_details = other.image_details;
+        }
+    }
+}
+
+/// [`NftCommon`] structure contains common fields from [`Nft`] and [`NftFromMoralis`]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Nft {
-    pub(crate) chain: Chain,
+pub struct NftCommon {
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
     pub(crate) amount: BigDecimal,
     pub(crate) owner_of: String,
-    pub(crate) token_hash: String,
-    pub(crate) block_number_minted: u64,
-    pub(crate) block_number: u64,
-    pub(crate) contract_type: ContractType,
+    pub(crate) token_hash: Option<String>,
+    #[serde(rename = "name")]
     pub(crate) collection_name: Option<String>,
     pub(crate) symbol: Option<String>,
     pub(crate) token_uri: Option<String>,
@@ -156,30 +201,29 @@ pub struct Nft {
     pub(crate) last_token_uri_sync: Option<String>,
     pub(crate) last_metadata_sync: Option<String>,
     pub(crate) minter_address: Option<String>,
-    pub(crate) possible_spam: Option<bool>,
+    #[serde(default)]
+    pub(crate) possible_spam: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Nft {
+    #[serde(flatten)]
+    pub(crate) common: NftCommon,
+    pub(crate) chain: Chain,
+    pub(crate) block_number_minted: Option<u64>,
+    pub(crate) block_number: u64,
+    pub(crate) contract_type: ContractType,
     pub(crate) uri_meta: UriMeta,
 }
 
-/// This structure is for deserializing NFT json to struct.
-/// Its needed to convert fields properly, because all fields in json have string type.
+/// This structure is for deserializing moralis NFT json to struct.
 #[derive(Debug, Deserialize)]
-pub(crate) struct NftWrapper {
-    pub(crate) token_address: String,
-    pub(crate) token_id: SerdeStringWrap<BigDecimal>,
-    pub(crate) amount: SerdeStringWrap<BigDecimal>,
-    pub(crate) owner_of: String,
-    pub(crate) token_hash: String,
-    pub(crate) block_number_minted: SerdeStringWrap<u64>,
+pub(crate) struct NftFromMoralis {
+    #[serde(flatten)]
+    pub(crate) common: NftCommon,
+    pub(crate) block_number_minted: Option<SerdeStringWrap<u64>>,
     pub(crate) block_number: SerdeStringWrap<u64>,
-    pub(crate) contract_type: Option<SerdeStringWrap<ContractType>>,
-    pub(crate) name: Option<String>,
-    pub(crate) symbol: Option<String>,
-    pub(crate) token_uri: Option<String>,
-    pub(crate) metadata: Option<String>,
-    pub(crate) last_token_uri_sync: Option<String>,
-    pub(crate) last_metadata_sync: Option<String>,
-    pub(crate) minter_address: Option<String>,
-    pub(crate) possible_spam: Option<bool>,
+    pub(crate) contract_type: Option<ContractType>,
 }
 
 #[derive(Debug)]
@@ -277,6 +321,8 @@ pub struct NftTransfersReq {
     #[serde(default = "ten")]
     pub(crate) limit: usize,
     pub(crate) page_number: Option<NonZeroUsize>,
+    #[serde(default)]
+    pub(crate) protect_from_spam: bool,
 }
 
 #[derive(Debug, Display)]
@@ -312,53 +358,50 @@ impl fmt::Display for TransferStatus {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+/// [`NftTransferCommon`] structure contains common fields from [`NftTransferHistory`] and [`NftTxHistoryFromMoralis`]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NftTransferCommon {
+    pub(crate) block_hash: Option<String>,
+    /// Transaction hash in hexadecimal format
+    pub(crate) transaction_hash: String,
+    pub(crate) transaction_index: Option<u64>,
+    pub(crate) log_index: Option<u64>,
+    pub(crate) value: Option<BigDecimal>,
+    pub(crate) transaction_type: Option<String>,
+    pub(crate) token_address: String,
+    pub(crate) token_id: BigDecimal,
+    pub(crate) from_address: String,
+    pub(crate) to_address: String,
+    pub(crate) amount: BigDecimal,
+    pub(crate) verified: Option<u64>,
+    pub(crate) operator: Option<String>,
+    #[serde(default)]
+    pub(crate) possible_spam: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NftTransferHistory {
+    #[serde(flatten)]
+    pub(crate) common: NftTransferCommon,
     pub(crate) chain: Chain,
     pub(crate) block_number: u64,
     pub(crate) block_timestamp: u64,
-    pub(crate) block_hash: String,
-    /// Transaction hash in hexadecimal format
-    pub(crate) transaction_hash: String,
-    pub(crate) transaction_index: u64,
-    pub(crate) log_index: u64,
-    pub(crate) value: BigDecimal,
     pub(crate) contract_type: ContractType,
-    pub(crate) transaction_type: String,
-    pub(crate) token_address: String,
-    pub(crate) token_id: BigDecimal,
+    pub(crate) token_uri: Option<String>,
     pub(crate) collection_name: Option<String>,
-    pub(crate) image: Option<String>,
+    pub(crate) image_url: Option<String>,
     pub(crate) token_name: Option<String>,
-    pub(crate) from_address: String,
-    pub(crate) to_address: String,
     pub(crate) status: TransferStatus,
-    pub(crate) amount: BigDecimal,
-    pub(crate) verified: u64,
-    pub(crate) operator: Option<String>,
-    pub(crate) possible_spam: Option<bool>,
 }
 
+/// This structure is for deserializing moralis NFT transaction json to struct.
 #[derive(Debug, Deserialize)]
-pub(crate) struct NftTransferHistoryWrapper {
+pub(crate) struct NftTxHistoryFromMoralis {
+    #[serde(flatten)]
+    pub(crate) common: NftTransferCommon,
     pub(crate) block_number: SerdeStringWrap<u64>,
     pub(crate) block_timestamp: String,
-    pub(crate) block_hash: String,
-    /// Transaction hash in hexadecimal format
-    pub(crate) transaction_hash: String,
-    pub(crate) transaction_index: u64,
-    pub(crate) log_index: u64,
-    pub(crate) value: SerdeStringWrap<BigDecimal>,
-    pub(crate) contract_type: Option<SerdeStringWrap<ContractType>>,
-    pub(crate) transaction_type: String,
-    pub(crate) token_address: String,
-    pub(crate) token_id: SerdeStringWrap<BigDecimal>,
-    pub(crate) from_address: String,
-    pub(crate) to_address: String,
-    pub(crate) amount: SerdeStringWrap<BigDecimal>,
-    pub(crate) verified: u64,
-    pub(crate) operator: Option<String>,
-    pub(crate) possible_spam: Option<bool>,
+    pub(crate) contract_type: Option<ContractType>,
 }
 
 #[derive(Debug, Serialize)]
@@ -368,11 +411,10 @@ pub struct NftsTransferHistoryList {
     pub(crate) total: usize,
 }
 
-#[allow(dead_code)]
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub struct NftTxHistoryFilters {
     #[serde(default)]
-    pub(crate) receive: bool,
+    pub receive: bool,
     #[serde(default)]
     pub(crate) send: bool,
     pub(crate) from_date: Option<u64>,
@@ -385,18 +427,31 @@ pub struct UpdateNftReq {
     pub(crate) url: Url,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Eq, Hash, PartialEq)]
 pub struct NftTokenAddrId {
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct TxMeta {
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
+    pub(crate) token_uri: Option<String>,
     pub(crate) collection_name: Option<String>,
-    pub(crate) image: Option<String>,
+    pub(crate) image_url: Option<String>,
     pub(crate) token_name: Option<String>,
+}
+
+impl From<Nft> for TxMeta {
+    fn from(nft_db: Nft) -> Self {
+        TxMeta {
+            token_address: nft_db.common.token_address,
+            token_id: nft_db.common.token_id,
+            token_uri: nft_db.common.token_uri,
+            collection_name: nft_db.common.collection_name,
+            image_url: nft_db.uri_meta.image_url,
+            token_name: nft_db.uri_meta.token_name,
+        }
+    }
 }

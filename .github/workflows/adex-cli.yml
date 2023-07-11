@@ -20,7 +20,7 @@ jobs:
 
       - name: pre scripts for ci container
         run: |
-          git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+          git config --global --add safe.directory /__w/komodo-defi-framework/komodo-defi-framework
           echo "/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH
@@ -52,7 +52,7 @@ jobs:
 
       - name: pre scripts for ci container
         run: |
-          git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+          git config --global --add safe.directory /__w/komodo-defi-framework/komodo-defi-framework
           echo "/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH
@@ -83,7 +83,7 @@ jobs:
 
       - name: pre scripts for ci container
         run: |
-          git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+          git config --global --add safe.directory /__w/komodo-defi-framework/komodo-defi-framework
           echo "/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH

@@ -1042,6 +1042,7 @@ dependencies = [
  "prost-build",
  "protobuf",
  "rand 0.7.3",
+ "regex",
  "rlp",
  "rmp-serde",
  "rpc",
