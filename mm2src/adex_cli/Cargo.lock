@@ -28,7 +28,6 @@ dependencies = [
  "hyper-rustls",
  "inquire",
  "itertools",
- "lazy_static",
  "log 0.4.17",
  "mm2_net",
  "mm2_number",

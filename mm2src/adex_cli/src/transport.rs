@@ -4,7 +4,7 @@ use http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use common::log::{error, warn};
-use hyper_dangerous::HYPER_DANGEROUS;
+use hyper_dangerous::get_hyper_client_dangerous;
 use mm2_net::native_http::SlurpHttpClient;
 
 use crate::{error_anyhow, error_bail, warn_bail};
@@ -36,7 +36,8 @@ impl Transport for SlurpTransport {
     {
         let data = serde_json::to_string(&req)
             .map_err(|error| error_anyhow!("Failed to serialize data being sent: {error}"))?;
-        match HYPER_DANGEROUS.slurp_post_json(&self.rpc_uri, data).await {
+        let client = get_hyper_client_dangerous()?;
+        match client.slurp_post_json(&self.rpc_uri, data).await {
             Err(error) => error_bail!("Failed to send json: {error}"),
             Ok(resp) => resp.process::<OkT, ErrT>(),
         }
@@ -83,24 +84,22 @@ impl Response for (StatusCode, HeaderMap, Vec<u8>) {
 }
 
 mod hyper_dangerous {
+
     use hyper::{client::HttpConnector, Body, Client};
     use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
-    use lazy_static::lazy_static;
     use rustls::client::{ServerCertVerified, ServerCertVerifier};
     use rustls::{RootCertStore, DEFAULT_CIPHER_SUITES, DEFAULT_VERSIONS};
     use std::sync::Arc;
     use std::time::SystemTime;
 
-    lazy_static! {
-        pub(super) static ref HYPER_DANGEROUS: Client<HttpsConnector<HttpConnector>> = get_hyper_client_dangerous();
-    }
+    use super::*;
 
-    fn get_hyper_client_dangerous() -> Client<HttpsConnector<HttpConnector>> {
+    pub(super) fn get_hyper_client_dangerous() -> Result<Client<HttpsConnector<HttpConnector>>> {
         let mut config = rustls::ClientConfig::builder()
             .with_cipher_suites(&DEFAULT_CIPHER_SUITES)
             .with_safe_default_kx_groups()
             .with_protocol_versions(&DEFAULT_VERSIONS)
-            .expect("inconsistent cipher-suite/versions selected")
+            .map_err(|error| error_anyhow!("Inconsistent cipher-suite/versions selected: {error}"))?
             .with_root_certificates(RootCertStore::empty())
             .with_no_client_auth();
 
@@ -112,9 +111,10 @@ mod hyper_dangerous {
             .with_tls_config(config)
             .https_or_http()
             .enable_http1()
+            .enable_http2()
             .build();
 
-        Client::builder().build::<_, Body>(https_connector)
+        Ok(Client::builder().build::<_, Body>(https_connector))
     }
 
     struct NoCertificateVerification {}
