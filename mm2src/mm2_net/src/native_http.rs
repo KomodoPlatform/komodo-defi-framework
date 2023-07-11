@@ -5,8 +5,8 @@
 //! This module contains several service functions like [slurp_post_json] or [slurp_url_with_headers]
 //! for executing http protocol requests, allowing you to set certain headers, make a [`Request`] in JSON or [`Body`] format.
 //!
-//! These methods are wrappers over [`HYPER`], which is actually `Client<HttpsConnector<HttpConnector>>`
-//! and the [`SlurpHttpClient`] trait, designed to provide http capabilities through it.
+//! These methods are wrappers over [`HYPER`], which is actually `Client<HttpsConnector<HttpConnector>>` that implements
+//! [`SlurpHttpClient`] trait designed to provide http capabilities through it.
 //!
 //! There are also facilities for constructing [SlurpError] from the [hyper::Error]
 //!
