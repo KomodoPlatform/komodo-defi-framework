@@ -1093,13 +1093,13 @@ pub async fn calc_interest_if_required<T: UtxoCommonOps>(
 }
 
 pub struct P2SHSpendingTxInput<'a> {
-    prev_transaction: UtxoTx,
-    redeem_script: Bytes,
-    outputs: Vec<TransactionOutput>,
-    script_data: Script,
-    sequence: u32,
-    lock_time: u32,
-    keypair: &'a KeyPair,
+    pub prev_transaction: UtxoTx,
+    pub redeem_script: Bytes,
+    pub outputs: Vec<TransactionOutput>,
+    pub script_data: Script,
+    pub sequence: u32,
+    pub lock_time: u32,
+    pub keypair: &'a KeyPair,
 }
 
 pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {

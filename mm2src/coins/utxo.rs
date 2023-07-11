@@ -31,6 +31,7 @@ pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;
 pub mod spv;
+pub mod swap_proto_v2_scripts;
 pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
