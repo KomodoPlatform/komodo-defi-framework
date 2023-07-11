@@ -96,9 +96,9 @@ mod hyper_dangerous {
 
     pub(super) fn get_hyper_client_dangerous() -> Result<Client<HttpsConnector<HttpConnector>>> {
         let mut config = rustls::ClientConfig::builder()
-            .with_cipher_suites(&DEFAULT_CIPHER_SUITES)
+            .with_cipher_suites(DEFAULT_CIPHER_SUITES)
             .with_safe_default_kx_groups()
-            .with_protocol_versions(&DEFAULT_VERSIONS)
+            .with_protocol_versions(DEFAULT_VERSIONS)
             .map_err(|error| error_anyhow!("Inconsistent cipher-suite/versions selected: {error}"))?
             .with_root_certificates(RootCertStore::empty())
             .with_no_client_auth();
