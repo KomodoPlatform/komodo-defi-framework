@@ -25,11 +25,11 @@ mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc"}
 passwords = "3.1"
+rpc = { path = "../mm2_bitcoin/rpc" }
 rustls = { version = "^0.20.4", features = [ "dangerous_configuration" ] }
 serde = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 sysinfo = "0.28"
-rpc = { path = "../mm2_bitcoin/rpc" }
 tiny-bip39 = "0.8.0"
 tokio = { version = "1.20", features = [ "macros" ] }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
