@@ -104,7 +104,7 @@ impl SavedSwap {
                 Ok(try_s!(maker_swap.recover_funds().await))
             },
             SavedSwap::Taker(saved) => {
-                let (taker_swap, _) = try_s!(TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, saved));
+                let (taker_swap, _) = try_s!(TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, saved).await);
                 Ok(try_s!(taker_swap.recover_funds().await))
             },
         }
