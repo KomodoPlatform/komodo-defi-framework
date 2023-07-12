@@ -23,6 +23,7 @@ const VOLUME_PRECISION_MIN: usize = 2;
 const VOLUME_PRECISION_MAX: usize = 5;
 const VOLUME_PRECISION: SmartFractPrecision = (VOLUME_PRECISION_MIN, VOLUME_PRECISION_MAX);
 const PRICE_PRECISION: SmartFractPrecision = (PRICE_PRECISION_MIN, PRICE_PRECISION_MAX);
+#[cfg(unix)]
 const CFG_FILE_PERM_MODE: u32 = 0o660;
 
 pub(super) fn get_config() {
