@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::adex_proc::SmartFractPrecision;
 use crate::helpers::rewrite_json_file;
-#[cfg(unix)] use crate::helpers::set_file_permitions;
+#[cfg(unix)] use crate::helpers::set_file_permissions;
 use crate::logging::{error_anyhow, warn_bail};
 
 const PROJECT_QUALIFIER: &str = "com";
@@ -157,7 +157,7 @@ impl AdexConfigImpl {
         rewrite_json_file(self, adex_path_str)?;
         #[cfg(unix)]
         {
-            set_file_permitions(adex_path_str, CFG_FILE_PERM_MODE)?;
+            set_file_permissions(adex_path_str, CFG_FILE_PERM_MODE)?;
         }
         Ok(())
     }

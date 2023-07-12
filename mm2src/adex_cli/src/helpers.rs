@@ -28,7 +28,7 @@ where
 }
 
 #[cfg(unix)]
-pub(crate) fn set_file_permitions(file: &str, unix_mode: u32) -> Result<()> {
+pub(crate) fn set_file_permissions(file: &str, unix_mode: u32) -> Result<()> {
     let mut perms = fs::metadata(file)?.permissions();
     perms.set_mode(unix_mode);
     fs::set_permissions(file, perms)?;
