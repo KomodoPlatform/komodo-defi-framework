@@ -1,0 +1,1 @@
+- Activate sub behaviours in `AtomicDexBehaviour` (currently only gossipsub is activated)
