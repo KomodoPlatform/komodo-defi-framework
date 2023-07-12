@@ -36,16 +36,22 @@ pub enum AdexBehaviourEvent {
     },
 }
 
-impl From<GossipsubEvent> for AdexBehaviourEvent {
-    fn from(event: GossipsubEvent) -> Self {
+impl From<&GossipsubEvent> for AdexBehaviourEvent {
+    fn from(event: &GossipsubEvent) -> Self {
         match event {
             GossipsubEvent::Message {
                 propagation_source,
                 message_id,
                 message,
-            } => AdexBehaviourEvent::Message(propagation_source, message_id, message),
-            GossipsubEvent::Subscribed { peer_id, topic } => AdexBehaviourEvent::Subscribed { peer_id, topic },
-            GossipsubEvent::Unsubscribed { peer_id, topic } => AdexBehaviourEvent::Unsubscribed { peer_id, topic },
+            } => AdexBehaviourEvent::Message(*propagation_source, message_id.clone(), message.clone()),
+            GossipsubEvent::Subscribed { peer_id, topic } => AdexBehaviourEvent::Subscribed {
+                peer_id: *peer_id,
+                topic: topic.clone(),
+            },
+            GossipsubEvent::Unsubscribed { peer_id, topic } => AdexBehaviourEvent::Unsubscribed {
+                peer_id: *peer_id,
+                topic: topic.clone(),
+            },
             GossipsubEvent::GossipsubNotSupported { peer_id } => {
                 todo!("Add error variant to `AdexBehaviourEvent`");
             },

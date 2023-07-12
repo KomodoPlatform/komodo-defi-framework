@@ -17,7 +17,7 @@ use instant::Duration;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::ConnectedPoint;
 use libp2p::floodsub::{Floodsub, Topic as FloodsubTopic};
-use libp2p::gossipsub::ValidationMode;
+use libp2p::gossipsub::{MessageAcceptance, ValidationMode};
 use libp2p::multiaddr::Protocol;
 use libp2p::request_response::ResponseChannel;
 use libp2p::swarm::{NetworkBehaviour, ToSwarm};
@@ -430,7 +430,7 @@ impl AtomicDexBehaviour {
                 propagation_source,
             } => {
                 self.gossipsub
-                    .propagate_message(&message_id, &propagation_source)
+                    .report_message_validation_result(&message_id, &propagation_source, MessageAcceptance::Accept)
                     .expect("propagation should not fail");
             },
         }
@@ -896,7 +896,10 @@ impl NetworkBehaviour for AtomicDexBehaviour {
         params: &mut impl libp2p::swarm::PollParameters,
     ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
         self.gossipsub.poll(cx, params).map(|to_swarm| match to_swarm {
-            ToSwarm::GenerateEvent(event) => ToSwarm::GenerateEvent(event.into()),
+            ToSwarm::GenerateEvent(ref event) => {
+                self.notify_on_adex_event(event.into());
+                ToSwarm::GenerateEvent(event.into())
+            },
             ToSwarm::Dial { opts } => ToSwarm::Dial { opts },
             ToSwarm::ListenOn { opts } => ToSwarm::ListenOn { opts },
             ToSwarm::RemoveListener { id } => ToSwarm::RemoveListener { id },
