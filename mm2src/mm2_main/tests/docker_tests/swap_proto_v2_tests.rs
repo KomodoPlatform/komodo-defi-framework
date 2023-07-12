@@ -1,5 +1,5 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN};
-use bitcrypto::ripemd160;
+use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionInput, TransactionOutput};
 use coins::utxo::swap_proto_v2_scripts::dex_fee_script;
@@ -9,6 +9,7 @@ use coins::{FeeApproxStage, MarketCoinOps, SwapOps, TransactionEnum};
 use common::{block_on, now_sec_u32};
 use futures01::Future;
 use keys::AddressHashEnum;
+use primitives::bytes::Bytes;
 use primitives::hash::{H160, H256};
 use script::{Builder, Opcode, SignerHashAlgo, TransactionInputSigner, UnsignedTransactionInput};
 
@@ -23,7 +24,7 @@ fn send_and_refund_dex_fee() {
         coin.my_public_key().unwrap(),
         coin.my_public_key().unwrap(),
     );
-    let p2sh = ripemd160(script.as_slice());
+    let p2sh = dhash160(script.as_slice());
 
     // 0.1 of the MYCOIN
     let value = 1000000;
@@ -62,13 +63,15 @@ fn send_and_spend_dex_fee() {
     let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
     let timelock = now_sec_u32() - 1000;
+    let secret = [1; 32];
+    let secret_hash = dhash160(&secret);
     let script = dex_fee_script(
         timelock,
-        &[0; 20],
+        secret_hash.as_slice(),
         coin.my_public_key().unwrap(),
         coin.my_public_key().unwrap(),
     );
-    let p2sh = ripemd160(script.as_slice());
+    let p2sh = dhash160(script.as_slice());
 
     // 0.1 of the MYCOIN
     let value = 1000000;
@@ -76,12 +79,14 @@ fn send_and_spend_dex_fee() {
         value,
         script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(p2sh)).into(),
     };
-    let dex_fee_tx = send_outputs_from_my_address(coin.clone(), vec![output]).wait().unwrap();
-    let tx_hash: H256 = dex_fee_tx.tx_hash().as_slice().into();
+    let dex_fee_tx = match send_outputs_from_my_address(coin.clone(), vec![output]).wait().unwrap() {
+        TransactionEnum::UtxoTx(tx) => tx,
+        _ => panic!("Got unexpected tx"),
+    };
 
     let input_to_spend = UnsignedTransactionInput {
         previous_output: OutPoint {
-            hash: tx_hash.reversed(),
+            hash: dex_fee_tx.hash(),
             index: 0,
         },
         sequence: SEQUENCE_FINAL,
@@ -115,4 +120,22 @@ fn send_and_spend_dex_fee() {
         str_d_zeel: None,
         hash_algo: SignerHashAlgo::SHA256,
     };
+
+    let sighash = input_signer.signature_hash(
+        0,
+        value,
+        &script,
+        coin.as_ref().conf.signature_version,
+        coin.as_ref().conf.fork_id,
+    );
+    let signature = coin
+        .as_ref()
+        .priv_key_policy
+        .key_pair_or_err()
+        .unwrap()
+        .private()
+        .sign(&sighash)
+        .unwrap();
+    println!("fork_id {}", coin.as_ref().conf.fork_id);
+    let script_data = Builder::default().push_opcode(Opcode::OP_0).push_data(&signature);
 }
