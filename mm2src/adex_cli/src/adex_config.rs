@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::adex_proc::SmartFractPrecision;
 use crate::helpers::rewrite_json_file;
+#[cfg(unix)] use crate::helpers::set_file_permitions;
 use crate::logging::{error_anyhow, warn_bail};
 
 const PROJECT_QUALIFIER: &str = "com";
@@ -152,7 +153,12 @@ impl AdexConfigImpl {
         let adex_path_str = cfg_path
             .to_str()
             .ok_or_else(|| error_anyhow!("Failed to get cfg_path as str"))?;
-        rewrite_json_file(self, adex_path_str, Some(CFG_FILE_PERM_MODE))
+        rewrite_json_file(self, adex_path_str)?;
+        #[cfg(unix)]
+        {
+            set_file_permitions(adex_path_str, CFG_FILE_PERM_MODE)?;
+        }
+        Ok(())
     }
 
     fn set_rpc_password(&mut self, rpc_password: String) { self.rpc_password.replace(rpc_password); }

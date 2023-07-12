@@ -9,7 +9,7 @@ use std::path::Path;
 
 use crate::error_anyhow;
 
-pub(crate) fn rewrite_data_file<T>(data: T, file: &str, _unix_mode: Option<u32>) -> Result<()>
+pub(crate) fn rewrite_data_file<T>(data: T, file: &str) -> Result<()>
 where
     T: Deref<Target = [u8]>,
 {
@@ -24,22 +24,23 @@ where
         .write(&data)
         .map_err(|error| error_anyhow!("Failed to write data into {file}: {error}"))?;
 
-    #[cfg(unix)]
-    if let Some(unix_mode) = _unix_mode {
-        let mut perms = fs::metadata(file)?.permissions();
-        perms.set_mode(unix_mode);
-        fs::set_permissions(file, perms)?;
-    }
-
     Ok(())
 }
 
-pub(crate) fn rewrite_json_file<T>(value: &T, file: &str, unix_mode: Option<u32>) -> Result<()>
+#[cfg(unix)]
+pub(crate) fn set_file_permitions(file: &str, unix_mode: u32) -> Result<()> {
+    let mut perms = fs::metadata(file)?.permissions();
+    perms.set_mode(unix_mode);
+    fs::set_permissions(file, perms)?;
+    Ok(())
+}
+
+pub(crate) fn rewrite_json_file<T>(value: &T, file: &str) -> Result<()>
 where
     T: Serialize,
 {
     let data = serde_json::to_vec_pretty(value).map_err(|error| error_anyhow!("Failed to serialize data {error}"))?;
-    rewrite_data_file(data, file, unix_mode)
+    rewrite_data_file(data, file)
 }
 
 pub(crate) fn read_json_file<T>(file: &Path) -> Result<T>

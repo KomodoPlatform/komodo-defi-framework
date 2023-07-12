@@ -24,7 +24,7 @@ pub(crate) fn init_mm2_cfg(cfg_file: &str) -> Result<()> {
     let mut mm2_cfg = Mm2Cfg::new();
     info!("Start collecting mm2_cfg into: {cfg_file}");
     mm2_cfg.inquire()?;
-    helpers::rewrite_json_file(&mm2_cfg, cfg_file, None)?;
+    helpers::rewrite_json_file(&mm2_cfg, cfg_file)?;
     info!("mm2_cfg has been writen into: {cfg_file}");
 
     Ok(())
