@@ -1961,7 +1961,7 @@ impl TakerSwap {
             data.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
         );
         let command = saved.events.last().unwrap().get_command();
-        for saved_event in saved.events {
+        for saved_event in &saved.events {
             swap.apply_event(saved_event.event.clone());
 
             if let TakerSwapEvent::WatcherMessageSent(_, _) = saved_event.event {
@@ -2029,55 +2029,68 @@ impl TakerSwap {
                         Some(FoundSwapTxSpend::Spent(maker_payment_spend_tx)),
                         Some(FoundSwapTxSpend::Spent(taker_payment_spend_tx)),
                     ) => {
-                        let tx_hash = taker_payment_spend_tx.tx_hash();
-                        info!("Taker payment spend tx {:02x}", tx_hash);
-                        let tx_ident = TransactionIdentifier {
-                            tx_hex: BytesJson::from(taker_payment_spend_tx.tx_hex()),
-                            tx_hash,
-                        };
-                        let secret = match swap
-                            .taker_coin
-                            .extract_secret(&secret_hash, &tx_ident.tx_hex, watcher_reward)
-                            .await
+                        let mut execute_all = false;
+                        if matches!(
+                            saved.events.last().unwrap().event,
+                            TakerSwapEvent::WatcherMessageSent(_, _)
+                        ) {
+                            let tx_hash = taker_payment_spend_tx.tx_hash();
+                            info!("Taker payment spend tx {:02x}", tx_hash);
+                            let tx_ident = TransactionIdentifier {
+                                tx_hex: BytesJson::from(taker_payment_spend_tx.tx_hex()),
+                                tx_hash,
+                            };
+                            let secret = match swap
+                                .taker_coin
+                                .extract_secret(&secret_hash, &tx_ident.tx_hex, watcher_reward)
+                                .await
+                            {
+                                Ok(bytes) => H256Json::from(bytes.as_slice()),
+                                Err(_) => {
+                                    return ERR!("Could not extract secret from taker payment spend transaction");
+                                },
+                            };
+
+                            let event = TakerSwapEvent::TakerPaymentSpent(TakerPaymentSpentData {
+                                transaction: tx_ident,
+                                secret,
+                            });
+                            swap.apply_event(event.clone());
+                            let to_save = TakerSavedEvent {
+                                timestamp: now_ms(),
+                                event,
+                            };
+
+                            save_my_taker_swap_event(&ctx, &swap, to_save)
+                                .await
+                                .expect("!save_my_taker_swap_event");
+
+                            execute_all = true;
+                        }
+
+                        if execute_all
+                            | matches!(saved.events.last().unwrap().event, TakerSwapEvent::TakerPaymentSpent(_))
                         {
-                            Ok(bytes) => H256Json::from(bytes.as_slice()),
-                            Err(_) => {
-                                return ERR!("Could not extract secret from taker payment spend transaction");
-                            },
-                        };
+                            let tx_hash = maker_payment_spend_tx.tx_hash();
+                            info!("Maker payment spend tx {:02x}", tx_hash);
+                            let tx_ident = TransactionIdentifier {
+                                tx_hex: BytesJson::from(maker_payment_spend_tx.tx_hex()),
+                                tx_hash,
+                            };
 
-                        let event = TakerSwapEvent::TakerPaymentSpent(TakerPaymentSpentData {
-                            transaction: tx_ident,
-                            secret,
-                        });
-                        swap.apply_event(event.clone());
-                        let to_save = TakerSavedEvent {
-                            timestamp: now_ms(),
-                            event,
-                        };
+                            let event = TakerSwapEvent::MakerPaymentSpent(tx_ident);
+                            swap.apply_event(event.clone());
+                            let to_save = TakerSavedEvent {
+                                timestamp: now_ms(),
+                                event,
+                            };
 
-                        save_my_taker_swap_event(&ctx, &swap, to_save)
-                            .await
-                            .expect("!save_my_taker_swap_event");
+                            save_my_taker_swap_event(&ctx, &swap, to_save)
+                                .await
+                                .expect("!save_my_taker_swap_event");
+                            swap.apply_event(TakerSwapEvent::Finished);
+                        }
 
-                        let tx_hash = maker_payment_spend_tx.tx_hash();
-                        info!("Maker payment spend tx {:02x}", tx_hash);
-                        let tx_ident = TransactionIdentifier {
-                            tx_hex: BytesJson::from(maker_payment_spend_tx.tx_hex()),
-                            tx_hash,
-                        };
-
-                        let event = TakerSwapEvent::MakerPaymentSpent(tx_ident);
-                        swap.apply_event(event.clone());
-                        let to_save = TakerSavedEvent {
-                            timestamp: now_ms(),
-                            event,
-                        };
-
-                        save_my_taker_swap_event(&ctx, &swap, to_save)
-                            .await
-                            .expect("!save_my_taker_swap_event");
-                        swap.apply_event(TakerSwapEvent::Finished);
                         info!("{}", MAKER_PAYMENT_SPENT_BY_WATCHER_LOG);
                         return Ok((swap, Some(TakerSwapCommand::Finish)));
                     },
@@ -2086,58 +2099,110 @@ impl TakerSwap {
                         Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx)),
                     )
                     | (None, Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx))) => {
-                        let event = TakerSwapEvent::TakerPaymentWaitForSpendFailed(
-                            "Taker payment wait for spend failed".into(),
-                        );
-                        swap.apply_event(event.clone());
-                        let to_save = TakerSavedEvent {
-                            timestamp: now_ms(),
-                            event,
-                        };
-                        save_my_taker_swap_event(&ctx, &swap, to_save)
-                            .await
-                            .expect("!save_my_taker_swap_event");
+                        let mut execute_all = false;
+                        if let TakerSwapEvent::WatcherMessageSent(_, _) = saved.events.last().unwrap().event {
+                            let event = TakerSwapEvent::TakerPaymentWaitForSpendFailed(
+                                "Taker payment wait for spend failed".into(),
+                            );
+                            swap.apply_event(event.clone());
+                            let to_save = TakerSavedEvent {
+                                timestamp: now_ms(),
+                                event,
+                            };
+                            save_my_taker_swap_event(&ctx, &swap, to_save)
+                                .await
+                                .expect("!save_my_taker_swap_event");
+                            execute_all = true;
+                        }
 
-                        let event = TakerSwapEvent::TakerPaymentWaitRefundStarted {
-                            wait_until: swap.wait_refund_until(),
-                        };
-                        swap.apply_event(event.clone());
-                        let to_save = TakerSavedEvent {
-                            timestamp: now_ms(),
-                            event,
-                        };
-                        save_my_taker_swap_event(&ctx, &swap, to_save)
-                            .await
-                            .expect("!save_my_taker_swap_event");
+                        if execute_all
+                            | matches!(
+                                saved.events.last().unwrap().event,
+                                TakerSwapEvent::TakerPaymentWaitForSpendFailed(_)
+                            )
+                            | matches!(
+                                saved.events.last().unwrap().event,
+                                TakerSwapEvent::TakerPaymentWaitConfirmFailed(_)
+                            )
+                        {
+                            let event = TakerSwapEvent::TakerPaymentWaitRefundStarted {
+                                wait_until: swap.wait_refund_until(),
+                            };
+                            swap.apply_event(event.clone());
+                            let to_save = TakerSavedEvent {
+                                timestamp: now_ms(),
+                                event,
+                            };
+                            save_my_taker_swap_event(&ctx, &swap, to_save)
+                                .await
+                                .expect("!save_my_taker_swap_event");
+                            execute_all = true;
+                        }
 
-                        let event = TakerSwapEvent::TakerPaymentRefundStarted;
-                        swap.apply_event(event.clone());
-                        let to_save = TakerSavedEvent {
-                            timestamp: now_ms(),
-                            event,
-                        };
-                        save_my_taker_swap_event(&ctx, &swap, to_save)
-                            .await
-                            .expect("!save_my_taker_swap_event");
+                        if execute_all
+                            | matches!(
+                                saved.events.last().unwrap().event,
+                                TakerSwapEvent::TakerPaymentWaitRefundStarted { .. }
+                            )
+                            | matches!(
+                                saved.events.last().unwrap().event,
+                                TakerSwapEvent::TakerPaymentRefundFailed(_)
+                            )
+                        {
+                            let event = TakerSwapEvent::TakerPaymentRefundStarted;
+                            swap.apply_event(event.clone());
+                            let to_save = TakerSavedEvent {
+                                timestamp: now_ms(),
+                                event,
+                            };
+                            save_my_taker_swap_event(&ctx, &swap, to_save)
+                                .await
+                                .expect("!save_my_taker_swap_event");
+                            execute_all = true;
+                        }
 
-                        let tx_hash = taker_payment_refund_tx.tx_hash();
-                        info!("Taker refund tx hash {:02x}", tx_hash);
-                        let tx_ident = TransactionIdentifier {
-                            tx_hex: BytesJson::from(taker_payment_refund_tx.tx_hex()),
-                            tx_hash,
-                        };
+                        if execute_all
+                            | matches!(
+                                saved.events.last().unwrap().event,
+                                TakerSwapEvent::TakerPaymentRefundStarted
+                            )
+                        {
+                            let tx_hash = taker_payment_refund_tx.tx_hash();
+                            info!("Taker refund tx hash {:02x}", tx_hash);
+                            let tx_ident = TransactionIdentifier {
+                                tx_hex: BytesJson::from(taker_payment_refund_tx.tx_hex()),
+                                tx_hash,
+                            };
 
-                        let event = TakerSwapEvent::TakerPaymentRefunded(Some(tx_ident));
-                        swap.apply_event(event.clone());
-                        let to_save = TakerSavedEvent {
-                            timestamp: now_ms(),
-                            event,
-                        };
-                        save_my_taker_swap_event(&ctx, &swap, to_save)
-                            .await
-                            .expect("!save_my_taker_swap_event");
+                            let event = TakerSwapEvent::TakerPaymentRefunded(Some(tx_ident));
+                            swap.apply_event(event.clone());
+                            let to_save = TakerSavedEvent {
+                                timestamp: now_ms(),
+                                event,
+                            };
+                            save_my_taker_swap_event(&ctx, &swap, to_save)
+                                .await
+                                .expect("!save_my_taker_swap_event");
+                            execute_all = true;
+                        }
 
-                        swap.apply_event(TakerSwapEvent::TakerPaymentRefundFinished);
+                        if execute_all
+                            | matches!(
+                                saved.events.last().unwrap().event,
+                                TakerSwapEvent::TakerPaymentRefunded(_)
+                            )
+                        {
+                            let event = TakerSwapEvent::TakerPaymentRefundFinished;
+                            swap.apply_event(event.clone());
+                            let to_save = TakerSavedEvent {
+                                timestamp: now_ms(),
+                                event,
+                            };
+                            save_my_taker_swap_event(&ctx, &swap, to_save)
+                                .await
+                                .expect("!save_my_taker_swap_event");
+                        }
+
                         info!("{}", TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG);
                         return Ok((swap, Some(TakerSwapCommand::Finish)));
                     },
