@@ -112,20 +112,34 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
             None => return,
         };
         match adex_event {
-            Some(AdexBehaviourEvent::Message(peer_id, message_id, message)) => {
-                let spawner = ctx.spawner();
-                spawner.spawn(process_p2p_message(ctx, peer_id, message_id, message, i_am_relay));
+            Some(AdexBehaviourEvent::Gossipsub(event)) => match event {
+                mm2_libp2p::GossipsubEvent::Message {
+                    propagation_source,
+                    message_id,
+                    message,
+                } => {
+                    let spawner = ctx.spawner();
+                    spawner.spawn(process_p2p_message(
+                        ctx,
+                        propagation_source,
+                        message_id,
+                        message,
+                        i_am_relay,
+                    ));
+                },
+                _ => {},
             },
-            Some(AdexBehaviourEvent::PeerRequest {
-                peer_id,
-                request,
-                response_channel,
-            }) => {
-                if let Err(e) = process_p2p_request(ctx, peer_id, request, response_channel) {
-                    log::error!("Error on process P2P request: {:?}", e);
-                }
+            Some(AdexBehaviourEvent::RequestResponse(event)) => match event {
+                mm2_libp2p::request_response::RequestResponseBehaviourEvent::InboundRequest {
+                    peer_id,
+                    request,
+                    response_channel,
+                } => {
+                    if let Err(e) = process_p2p_request(ctx, peer_id, request.req, response_channel.into()) {
+                        log::error!("Error on process P2P request: {:?}", e);
+                    }
+                },
             },
-            None => break,
             _ => (),
         }
     }

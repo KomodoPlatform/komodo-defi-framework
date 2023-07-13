@@ -47,6 +47,7 @@ pub enum PeerResponse {
 pub type RequestResponseReceiver = mpsc::UnboundedReceiver<(PeerId, PeerRequest, oneshot::Sender<PeerResponse>)>;
 pub type RequestResponseSender = mpsc::UnboundedSender<(PeerId, PeerRequest, oneshot::Sender<PeerResponse>)>;
 
+#[derive(Debug)]
 pub enum RequestResponseBehaviourEvent {
     InboundRequest {
         peer_id: PeerId,

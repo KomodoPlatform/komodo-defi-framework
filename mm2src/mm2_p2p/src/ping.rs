@@ -21,6 +21,7 @@ impl NetworkBehaviour for AdexPing {
         local_addr: &libp2p::Multiaddr,
         remote_addr: &libp2p::Multiaddr,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        println!("ADEX PINGGGGGGGGGGGGGGGG");
         self.ping
             .handle_established_inbound_connection(connection_id, peer, local_addr, remote_addr)
     }
@@ -32,11 +33,13 @@ impl NetworkBehaviour for AdexPing {
         addr: &libp2p::Multiaddr,
         role_override: libp2p::core::Endpoint,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        println!("ADEX PINGGGGGGGGGGGGGGGG");
         self.ping
             .handle_established_outbound_connection(connection_id, peer, addr, role_override)
     }
 
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {
+        println!("ADEX PINGGGGGGGGGGGGGGGG");
         self.ping.on_swarm_event(event)
     }
 
@@ -46,6 +49,7 @@ impl NetworkBehaviour for AdexPing {
         connection_id: libp2p::swarm::ConnectionId,
         event: libp2p::swarm::THandlerOutEvent<Self>,
     ) {
+        println!("ADEX PINGGGGGGGGGGGGGGGG");
         if let Err(e) = &event {
             error!("Ping error {}. Disconnecting peer {}", e, peer_id);
             self.events.push_back(ToSwarm::CloseConnection {

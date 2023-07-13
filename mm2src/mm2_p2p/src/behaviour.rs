@@ -20,7 +20,7 @@ use libp2p::floodsub::{Floodsub, Topic as FloodsubTopic};
 use libp2p::gossipsub::{MessageAcceptance, ValidationMode};
 use libp2p::multiaddr::Protocol;
 use libp2p::request_response::ResponseChannel;
-use libp2p::swarm::{NetworkBehaviour, ToSwarm};
+use libp2p::swarm::{NetworkBehaviour, SwarmEvent, ToSwarm};
 use libp2p::{identity, noise, PeerId, Swarm};
 use libp2p::{Multiaddr, Transport};
 use log::{debug, error, info};
@@ -274,19 +274,32 @@ async fn request_peers(
 }
 
 pub struct AtomicDexBehaviour {
+    core: CoreBehaviour,
+    event_tx: Sender<AdexBehaviourEvent>,
+    runtime: SwarmRuntime,
+    cmd_rx: Receiver<AdexBehaviourCmd>,
+    netid: u16,
+}
+
+#[derive(NetworkBehaviour)]
+pub struct CoreBehaviour {
     gossipsub: Gossipsub,
     floodsub: Floodsub,
-    // #[behaviour(ignore)]
-    event_tx: Sender<AdexBehaviourEvent>,
-    // #[behaviour(ignore)]
-    runtime: SwarmRuntime,
-    // #[behaviour(ignore)]
-    cmd_rx: Receiver<AdexBehaviourCmd>,
-    // #[behaviour(ignore)]
-    request_response: RequestResponseBehaviour,
     peers_exchange: PeersExchange,
     ping: AdexPing,
-    netid: u16,
+    request_response: RequestResponseBehaviour,
+}
+
+impl From<CoreBehaviourEvent> for AdexBehaviourEvent {
+    fn from(event: CoreBehaviourEvent) -> Self {
+        match event {
+            CoreBehaviourEvent::Gossipsub(event) => AdexBehaviourEvent::Gossipsub(event),
+            CoreBehaviourEvent::Floodsub(event) => AdexBehaviourEvent::Floodsub(event),
+            CoreBehaviourEvent::PeersExchange(event) => AdexBehaviourEvent::PeersExchange(event),
+            CoreBehaviourEvent::Ping(event) => AdexBehaviourEvent::Ping(event),
+            CoreBehaviourEvent::RequestResponse(event) => AdexBehaviourEvent::RequestResponse(event),
+        }
+    }
 }
 
 impl AtomicDexBehaviour {
@@ -301,18 +314,18 @@ impl AtomicDexBehaviour {
     fn process_cmd(&mut self, cmd: AdexBehaviourCmd) {
         match cmd {
             AdexBehaviourCmd::Subscribe { topic } => {
-                self.gossipsub.subscribe(&IdentTopic::new(topic));
+                self.core.gossipsub.subscribe(&IdentTopic::new(topic));
             },
             AdexBehaviourCmd::PublishMsg { topic, msg } => {
-                self.gossipsub.publish(TopicHash::from_raw(topic), msg);
+                self.core.gossipsub.publish(TopicHash::from_raw(topic), msg);
             },
             AdexBehaviourCmd::PublishMsgFrom { topic, msg, from } => {
-                self.gossipsub.publish_from(TopicHash::from_raw(topic), msg, from);
+                self.core.gossipsub.publish_from(TopicHash::from_raw(topic), msg, from);
             },
             AdexBehaviourCmd::RequestAnyRelay { req, response_tx } => {
-                let relays = self.gossipsub.get_relay_mesh();
+                let relays = self.core.gossipsub.get_relay_mesh();
                 // spawn the `request_any_peer` future
-                let future = request_any_peer(relays, req, self.request_response.sender(), response_tx);
+                let future = request_any_peer(relays, req, self.core.request_response.sender(), response_tx);
                 self.spawn(future);
             },
             AdexBehaviourCmd::RequestPeers {
@@ -330,22 +343,27 @@ impl AtomicDexBehaviour {
                         },
                     })
                     .collect();
-                let future = request_peers(peers, req, self.request_response.sender(), response_tx);
+                let future = request_peers(peers, req, self.core.request_response.sender(), response_tx);
                 self.spawn(future);
             },
             AdexBehaviourCmd::RequestRelays { req, response_tx } => {
-                let relays = self.gossipsub.get_relay_mesh();
+                let relays = self.core.gossipsub.get_relay_mesh();
                 // spawn the `request_peers` future
-                let future = request_peers(relays, req, self.request_response.sender(), response_tx);
+                let future = request_peers(relays, req, self.core.request_response.sender(), response_tx);
                 self.spawn(future);
             },
             AdexBehaviourCmd::SendResponse { res, response_channel } => {
-                if let Err(response) = self.request_response.send_response(response_channel.into(), res.into()) {
+                if let Err(response) = self
+                    .core
+                    .request_response
+                    .send_response(response_channel.into(), res.into())
+                {
                     error!("Error sending response: {:?}", response);
                 }
             },
             AdexBehaviourCmd::GetPeersInfo { result_tx } => {
                 let result = self
+                    .core
                     .gossipsub
                     .get_peers_connections()
                     .into_iter()
@@ -367,6 +385,7 @@ impl AtomicDexBehaviour {
             },
             AdexBehaviourCmd::GetGossipMesh { result_tx } => {
                 let result = self
+                    .core
                     .gossipsub
                     .get_mesh()
                     .iter()
@@ -382,6 +401,7 @@ impl AtomicDexBehaviour {
             },
             AdexBehaviourCmd::GetGossipPeerTopics { result_tx } => {
                 let result = self
+                    .core
                     .gossipsub
                     .get_all_peer_topics()
                     .iter()
@@ -397,6 +417,7 @@ impl AtomicDexBehaviour {
             },
             AdexBehaviourCmd::GetGossipTopicPeers { result_tx } => {
                 let result = self
+                    .core
                     .gossipsub
                     .get_all_topic_peers()
                     .iter()
@@ -412,6 +433,7 @@ impl AtomicDexBehaviour {
             },
             AdexBehaviourCmd::GetRelayMesh { result_tx } => {
                 let result = self
+                    .core
                     .gossipsub
                     .get_relay_mesh()
                     .into_iter()
@@ -422,14 +444,16 @@ impl AtomicDexBehaviour {
                 }
             },
             AdexBehaviourCmd::AddReservedPeer { peer, addresses } => {
-                self.peers_exchange
+                self.core
+                    .peers_exchange
                     .add_peer_addresses_to_reserved_peers(&peer, addresses);
             },
             AdexBehaviourCmd::PropagateMessage {
                 message_id,
                 propagation_source,
             } => {
-                self.gossipsub
+                self.core
+                    .gossipsub
                     .report_message_validation_result(&message_id, &propagation_source, MessageAcceptance::Accept)
                     .expect("propagation should not fail");
             },
@@ -438,16 +462,18 @@ impl AtomicDexBehaviour {
 
     fn announce_listeners(&mut self, listeners: PeerAddresses) {
         let serialized = rmp_serde::to_vec(&listeners).expect("PeerAddresses serialization should never fail");
-        self.floodsub.publish(FloodsubTopic::new(PEERS_TOPIC), serialized);
+        self.core.floodsub.publish(FloodsubTopic::new(PEERS_TOPIC), serialized);
     }
 
-    pub fn connected_relays_len(&self) -> usize { self.gossipsub.connected_relays_len() }
+    pub fn connected_relays_len(&self) -> usize { self.core.gossipsub.connected_relays_len() }
 
-    pub fn relay_mesh_len(&self) -> usize { self.gossipsub.relay_mesh_len() }
+    pub fn relay_mesh_len(&self) -> usize { self.core.gossipsub.relay_mesh_len() }
 
-    pub fn received_messages_in_period(&self) -> (Duration, usize) { self.gossipsub.get_received_messages_in_period() }
+    pub fn received_messages_in_period(&self) -> (Duration, usize) {
+        self.core.gossipsub.get_received_messages_in_period()
+    }
 
-    pub fn connected_peers_len(&self) -> usize { self.gossipsub.get_num_peers() }
+    pub fn connected_peers_len(&self) -> usize { self.core.gossipsub.get_num_peers() }
 }
 
 pub enum NodeType {
@@ -606,16 +632,20 @@ fn start_gossipsub(
         // use default ping config with 15s interval, 20s timeout and 1 max failure
         let ping = AdexPing::new();
 
-        let adex_behavior = AtomicDexBehaviour {
+        let core_behaviour = CoreBehaviour {
+            gossipsub,
             floodsub,
+            peers_exchange,
+            request_response,
+            ping,
+        };
+
+        let adex_behavior = AtomicDexBehaviour {
+            core: core_behaviour,
             event_tx,
             runtime: runtime.clone(),
             cmd_rx,
             netid,
-            gossipsub,
-            request_response,
-            peers_exchange,
-            ping,
         };
 
         libp2p::swarm::SwarmBuilder::with_executor(transport, adex_behavior, local_peer_id, runtime.clone()).build()
@@ -623,6 +653,7 @@ fn start_gossipsub(
 
     swarm
         .behaviour_mut()
+        .core
         .floodsub
         .subscribe(FloodsubTopic::new(PEERS_TOPIC.to_owned()));
 
@@ -670,13 +701,22 @@ fn start_gossipsub(
 
         loop {
             match swarm.poll_next_unpin(cx) {
-                Poll::Ready(Some(event)) => debug!("Swarm event {:?}", event),
+                Poll::Ready(Some(event)) => {
+                    debug!("Swarm event {:?}", event);
+
+                    match event {
+                        SwarmEvent::Behaviour(event) => {
+                            swarm.behaviour_mut().notify_on_adex_event(event);
+                        },
+                        _ => {},
+                    }
+                },
                 Poll::Ready(None) => return Poll::Ready(()),
                 Poll::Pending => break,
             }
         }
 
-        if swarm.behaviour().gossipsub.is_relay() {
+        if swarm.behaviour().core.gossipsub.is_relay() {
             while let Poll::Ready(Some(_)) = announce_interval.poll_next_unpin(cx) {
                 announce_my_addresses(&mut swarm);
             }
@@ -702,17 +742,18 @@ fn start_gossipsub(
 
 fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses: &[Multiaddr]) {
     let behaviour = swarm.behaviour();
-    let connected_relays = behaviour.gossipsub.connected_relays();
-    let mesh_n_low = behaviour.gossipsub.get_config().mesh_n_low();
-    let mesh_n = behaviour.gossipsub.get_config().mesh_n();
+    let connected_relays = behaviour.core.gossipsub.connected_relays();
+    let mesh_n_low = behaviour.core.gossipsub.get_config().mesh_n_low();
+    let mesh_n = behaviour.core.gossipsub.get_config().mesh_n();
     // allow 2 * mesh_n_high connections to other nodes
-    let max_n = behaviour.gossipsub.get_config().mesh_n_high() * 2;
+    let max_n = behaviour.core.gossipsub.get_config().mesh_n_high() * 2;
 
     let mut rng = rand::thread_rng();
     if connected_relays.len() < mesh_n_low {
         let to_connect_num = mesh_n - connected_relays.len();
         let to_connect = swarm
             .behaviour_mut()
+            .core
             .peers_exchange
             .get_random_peers(to_connect_num, |peer| !connected_relays.contains(peer));
 
@@ -721,7 +762,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
             let connect_bootstrap_num = to_connect_num - to_connect.len();
             for addr in bootstrap_addresses
                 .iter()
-                .filter(|addr| !swarm.behaviour().gossipsub.is_connected_to_addr(addr))
+                .filter(|addr| !swarm.behaviour().core.gossipsub.is_connected_to_addr(addr))
                 .collect::<Vec<_>>()
                 .choose_multiple(&mut rng, connect_bootstrap_num)
             {
@@ -732,7 +773,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
         }
         for (peer, addresses) in to_connect {
             for addr in addresses {
-                if swarm.behaviour().gossipsub.is_connected_to_addr(&addr) {
+                if swarm.behaviour().core.gossipsub.is_connected_to_addr(&addr) {
                     continue;
                 }
                 if let Err(e) = libp2p::Swarm::dial(swarm, addr.clone()) {
@@ -744,13 +785,13 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
 
     if connected_relays.len() > max_n {
         let to_disconnect_num = connected_relays.len() - max_n;
-        let relays_mesh = swarm.behaviour().gossipsub.get_relay_mesh();
+        let relays_mesh = swarm.behaviour().core.gossipsub.get_relay_mesh();
         let not_in_mesh: Vec<_> = connected_relays
             .iter()
             .filter(|peer| !relays_mesh.contains(peer))
             .collect();
         for peer in not_in_mesh.choose_multiple(&mut rng, to_disconnect_num) {
-            if !swarm.behaviour().peers_exchange.is_reserved_peer(peer) {
+            if !swarm.behaviour().core.peers_exchange.is_reserved_peer(peer) {
                 info!("Disconnecting peer {}", peer);
                 if Swarm::disconnect_peer_id(swarm, **peer).is_err() {
                     error!("Peer {} disconnect error", peer);
@@ -760,8 +801,8 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
     }
 
     for relay in connected_relays {
-        if !swarm.behaviour().peers_exchange.is_known_peer(&relay) {
-            swarm.behaviour_mut().peers_exchange.add_known_peer(relay);
+        if !swarm.behaviour().core.peers_exchange.is_known_peer(&relay) {
+            swarm.behaviour_mut().core.peers_exchange.add_known_peer(relay);
         }
     }
 }
@@ -850,7 +891,7 @@ where
 }
 
 impl NetworkBehaviour for AtomicDexBehaviour {
-    type ConnectionHandler = <Gossipsub as NetworkBehaviour>::ConnectionHandler;
+    type ConnectionHandler = <CoreBehaviour as NetworkBehaviour>::ConnectionHandler;
 
     type ToSwarm = AdexBehaviourEvent;
 
@@ -861,7 +902,7 @@ impl NetworkBehaviour for AtomicDexBehaviour {
         local_addr: &Multiaddr,
         remote_addr: &Multiaddr,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        self.gossipsub
+        self.core
             .handle_established_inbound_connection(connection_id, peer, local_addr, remote_addr)
     }
 
@@ -872,12 +913,12 @@ impl NetworkBehaviour for AtomicDexBehaviour {
         addr: &Multiaddr,
         role_override: libp2p::core::Endpoint,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        self.gossipsub
+        self.core
             .handle_established_outbound_connection(connection_id, peer, addr, role_override)
     }
 
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {
-        self.gossipsub.on_swarm_event(event)
+        self.core.on_swarm_event(event)
     }
 
     fn on_connection_handler_event(
@@ -886,8 +927,7 @@ impl NetworkBehaviour for AtomicDexBehaviour {
         connection_id: libp2p::swarm::ConnectionId,
         event: libp2p::swarm::THandlerOutEvent<Self>,
     ) {
-        self.gossipsub
-            .on_connection_handler_event(peer_id, connection_id, event)
+        self.core.on_connection_handler_event(peer_id, connection_id, event)
     }
 
     fn poll(
@@ -895,11 +935,8 @@ impl NetworkBehaviour for AtomicDexBehaviour {
         cx: &mut std::task::Context<'_>,
         params: &mut impl libp2p::swarm::PollParameters,
     ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
-        self.gossipsub.poll(cx, params).map(|to_swarm| match to_swarm {
-            ToSwarm::GenerateEvent(ref event) => {
-                self.notify_on_adex_event(event.into());
-                ToSwarm::GenerateEvent(event.into())
-            },
+        self.core.poll(cx, params).map(|to_swarm| match to_swarm {
+            ToSwarm::GenerateEvent(event) => ToSwarm::GenerateEvent(event.into()),
             ToSwarm::Dial { opts } => ToSwarm::Dial { opts },
             ToSwarm::ListenOn { opts } => ToSwarm::ListenOn { opts },
             ToSwarm::RemoveListener { id } => ToSwarm::RemoveListener { id },

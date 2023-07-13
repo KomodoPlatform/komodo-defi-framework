@@ -8,7 +8,7 @@ mod network;
 pub mod peers_exchange;
 mod ping;
 mod relay_address;
-mod request_response;
+pub mod request_response;
 mod swarm_runtime;
 
 use lazy_static::lazy_static;
