@@ -13,7 +13,7 @@ use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
 use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, dex_fee_threshold, get_payment_locktime,
                              MakerSwap, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
-                             MAKER_PAYMENT_SPEND_SENT_LOG, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG,
+                             MAKER_PAYMENT_SPEND_SENT_LOG, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG, SWAP_FINISHED_LOG,
                              TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG, TAKER_PAYMENT_REFUND_SENT_LOG,
                              WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
@@ -258,7 +258,7 @@ fn start_swaps_and_get_balances(
 }
 
 #[test]
-fn test_taker_marks_the_swap_as_complete_after_watcher_spends_maker_payment() {
+fn test_taker_saves_the_swap_as_finished_after_watcher_spends_maker_payment() {
     let alice_privkey = hex::encode(random_secp256k1_secret());
     let bob_privkey = hex::encode(random_secp256k1_secret());
     let watcher_privkey = hex::encode(random_secp256k1_secret());
@@ -323,7 +323,7 @@ fn test_taker_marks_the_swap_as_complete_after_watcher_spends_maker_payment() {
     enable_coin(&mm_watcher, "MYCOIN");
     enable_coin(&mm_watcher, "MYCOIN1");
 
-    block_on(start_swaps(
+    let uuids = block_on(start_swaps(
         &mut mm_bob,
         &mut mm_alice,
         &[("MYCOIN1", "MYCOIN")],
@@ -351,10 +351,18 @@ fn test_taker_marks_the_swap_as_complete_after_watcher_spends_maker_payment() {
     enable_coin(&mm_alice, "MYCOIN1");
 
     block_on(mm_alice.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SPENT_BY_WATCHER_LOG))).unwrap();
-    thread::sleep(Duration::from_secs(5));
+
+    block_on(wait_for_swaps_finish_and_check_status(
+        &mut mm_bob,
+        &mut mm_alice,
+        &uuids,
+        2.,
+        25.,
+    ));
+
     block_on(mm_alice.stop()).unwrap();
 
-    let mm_alice = block_on(MarketMakerIt::start_with_envs(
+    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
         alice_conf.conf,
         alice_conf.rpc_password.clone(),
         None,
@@ -367,11 +375,11 @@ fn test_taker_marks_the_swap_as_complete_after_watcher_spends_maker_payment() {
     enable_coin(&mm_alice, "MYCOIN");
     enable_coin(&mm_alice, "MYCOIN1");
 
-    thread::sleep(Duration::from_secs(15));
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("{} {}", SWAP_FINISHED_LOG, uuids[0])))).unwrap();
 }
 
 #[test]
-fn test_taker_marks_the_swap_as_complete_after_watcher_refunds_taker_payment() {
+fn test_taker_saves_the_swap_as_finished_after_watcher_refunds_taker_payment() {
     let alice_privkey = hex::encode(random_secp256k1_secret());
     let bob_privkey = hex::encode(random_secp256k1_secret());
     let watcher_privkey = hex::encode(random_secp256k1_secret());
@@ -436,7 +444,7 @@ fn test_taker_marks_the_swap_as_complete_after_watcher_refunds_taker_payment() {
     enable_coin(&mm_watcher, "MYCOIN");
     enable_coin(&mm_watcher, "MYCOIN1");
 
-    block_on(start_swaps(
+    let uuids = block_on(start_swaps(
         &mut mm_bob,
         &mut mm_alice,
         &[("MYCOIN1", "MYCOIN")],
@@ -472,7 +480,7 @@ fn test_taker_marks_the_swap_as_complete_after_watcher_refunds_taker_payment() {
     thread::sleep(Duration::from_secs(5));
     block_on(mm_alice.stop()).unwrap();
 
-    let mm_alice = block_on(MarketMakerIt::start_with_envs(
+    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
         alice_conf.conf,
         alice_conf.rpc_password.clone(),
         None,
@@ -485,7 +493,7 @@ fn test_taker_marks_the_swap_as_complete_after_watcher_refunds_taker_payment() {
     enable_coin(&mm_alice, "MYCOIN");
     enable_coin(&mm_alice, "MYCOIN1");
 
-    thread::sleep(Duration::from_secs(15));
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("{} {}", SWAP_FINISHED_LOG, uuids[0])))).unwrap();
 }
 
 #[test]

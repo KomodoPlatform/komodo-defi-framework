@@ -129,8 +129,8 @@ pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
-
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
+pub const SWAP_FINISHED_LOG: &str = "Swap finished: ";
 
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
@@ -1180,6 +1180,7 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
     let swaps = try_s!(SavedSwap::load_all_my_swaps_from_db(&ctx).await);
     for swap in swaps {
         if swap.is_finished() {
+            info!("{} {}", SWAP_FINISHED_LOG, swap.uuid());
             continue;
         }
 
