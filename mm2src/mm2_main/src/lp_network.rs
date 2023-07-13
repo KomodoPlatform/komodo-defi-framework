@@ -127,6 +127,9 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
                         i_am_relay,
                     ));
                 },
+                mm2_libp2p::GossipsubEvent::GossipsubNotSupported { peer_id } => {
+                    log::error!("Received unsupported event from Peer: {peer_id}");
+                },
                 _ => {},
             },
             Some(AdexBehaviourEvent::RequestResponse(event)) => match event {

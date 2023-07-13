@@ -8,10 +8,6 @@ use crate::behaviour::AdexResponseChannel;
 use crate::peers_exchange::{PeersExchangeRequest, PeersExchangeResponse};
 use crate::request_response::RequestResponseBehaviourEvent;
 
-impl From<GossipsubEvent> for AdexBehaviourEvent {
-    fn from(event: GossipsubEvent) -> Self { AdexBehaviourEvent::Gossipsub(event) }
-}
-
 #[derive(Debug)]
 pub enum AdexBehaviourEvent {
     Gossipsub(GossipsubEvent),
