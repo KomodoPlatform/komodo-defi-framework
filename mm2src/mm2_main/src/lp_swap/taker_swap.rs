@@ -821,6 +821,16 @@ impl TakerSwap {
         }
     }
 
+    async fn append_event(&self, ctx: &MmArc, event: TakerSwapEvent) {
+        self.apply_event(event.clone());
+        let to_save = TakerSavedEvent {
+            timestamp: now_ms(),
+            event,
+        };
+        save_my_taker_swap_event(ctx, self, to_save)
+            .await
+            .expect("!save_my_taker_swap_event");
+    }
     async fn handle_command(
         &self,
         command: TakerSwapCommand,
@@ -2055,16 +2065,7 @@ impl TakerSwap {
                                 transaction: tx_ident,
                                 secret,
                             });
-                            swap.apply_event(event.clone());
-                            let to_save = TakerSavedEvent {
-                                timestamp: now_ms(),
-                                event,
-                            };
-
-                            save_my_taker_swap_event(&ctx, &swap, to_save)
-                                .await
-                                .expect("!save_my_taker_swap_event");
-
+                            swap.append_event(&ctx, event).await;
                             execute_all = true;
                         }
 
@@ -2079,16 +2080,7 @@ impl TakerSwap {
                             };
 
                             let event = TakerSwapEvent::MakerPaymentSpent(tx_ident);
-                            swap.apply_event(event.clone());
-                            let to_save = TakerSavedEvent {
-                                timestamp: now_ms(),
-                                event,
-                            };
-
-                            save_my_taker_swap_event(&ctx, &swap, to_save)
-                                .await
-                                .expect("!save_my_taker_swap_event");
-                            swap.apply_event(TakerSwapEvent::Finished);
+                            swap.append_event(&ctx, event).await;
                         }
 
                         info!("{}", MAKER_PAYMENT_SPENT_BY_WATCHER_LOG);
@@ -2104,14 +2096,7 @@ impl TakerSwap {
                             let event = TakerSwapEvent::TakerPaymentWaitForSpendFailed(
                                 "Taker payment wait for spend failed".into(),
                             );
-                            swap.apply_event(event.clone());
-                            let to_save = TakerSavedEvent {
-                                timestamp: now_ms(),
-                                event,
-                            };
-                            save_my_taker_swap_event(&ctx, &swap, to_save)
-                                .await
-                                .expect("!save_my_taker_swap_event");
+                            swap.append_event(&ctx, event).await;
                             execute_all = true;
                         }
 
@@ -2128,14 +2113,7 @@ impl TakerSwap {
                             let event = TakerSwapEvent::TakerPaymentWaitRefundStarted {
                                 wait_until: swap.wait_refund_until(),
                             };
-                            swap.apply_event(event.clone());
-                            let to_save = TakerSavedEvent {
-                                timestamp: now_ms(),
-                                event,
-                            };
-                            save_my_taker_swap_event(&ctx, &swap, to_save)
-                                .await
-                                .expect("!save_my_taker_swap_event");
+                            swap.append_event(&ctx, event).await;
                             execute_all = true;
                         }
 
@@ -2150,14 +2128,7 @@ impl TakerSwap {
                             )
                         {
                             let event = TakerSwapEvent::TakerPaymentRefundStarted;
-                            swap.apply_event(event.clone());
-                            let to_save = TakerSavedEvent {
-                                timestamp: now_ms(),
-                                event,
-                            };
-                            save_my_taker_swap_event(&ctx, &swap, to_save)
-                                .await
-                                .expect("!save_my_taker_swap_event");
+                            swap.append_event(&ctx, event).await;
                             execute_all = true;
                         }
 
@@ -2175,14 +2146,7 @@ impl TakerSwap {
                             };
 
                             let event = TakerSwapEvent::TakerPaymentRefunded(Some(tx_ident));
-                            swap.apply_event(event.clone());
-                            let to_save = TakerSavedEvent {
-                                timestamp: now_ms(),
-                                event,
-                            };
-                            save_my_taker_swap_event(&ctx, &swap, to_save)
-                                .await
-                                .expect("!save_my_taker_swap_event");
+                            swap.append_event(&ctx, event).await;
                             execute_all = true;
                         }
 
@@ -2193,14 +2157,7 @@ impl TakerSwap {
                             )
                         {
                             let event = TakerSwapEvent::TakerPaymentRefundFinished;
-                            swap.apply_event(event.clone());
-                            let to_save = TakerSavedEvent {
-                                timestamp: now_ms(),
-                                event,
-                            };
-                            save_my_taker_swap_event(&ctx, &swap, to_save)
-                                .await
-                                .expect("!save_my_taker_swap_event");
+                            swap.append_event(&ctx, event).await;
                         }
 
                         info!("{}", TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG);
