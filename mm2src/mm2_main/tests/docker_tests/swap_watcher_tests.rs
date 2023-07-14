@@ -19,9 +19,9 @@ use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, dex
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_testnet_conf, eth_testnet_conf, mm_dump, my_balance,
-                                  mycoin1_conf, mycoin_conf, start_swaps, wait_for_swaps_finish_and_check_status,
-                                  MarketMakerIt, Mm2TestConf, DEFAULT_RPC_PASSWORD, ETH_DEV_NODES,
-                                  ETH_DEV_SWAP_CONTRACT};
+                                  my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
+                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
+                                  DEFAULT_RPC_PASSWORD, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
 use num_traits::{One, Zero};
@@ -474,10 +474,9 @@ fn test_taker_saves_the_swap_as_finished_after_watcher_refunds_taker_payment() {
     enable_coin(&mm_alice, "MYCOIN");
     enable_coin(&mm_alice, "MYCOIN1");
 
-    thread::sleep(Duration::from_secs(5));
-
     block_on(mm_alice.wait_for_log(120., |log| log.contains(TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG))).unwrap();
-    thread::sleep(Duration::from_secs(5));
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
+
     block_on(mm_alice.stop()).unwrap();
 
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
@@ -494,6 +493,30 @@ fn test_taker_saves_the_swap_as_finished_after_watcher_refunds_taker_payment() {
     enable_coin(&mm_alice, "MYCOIN1");
 
     block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("{} {}", SWAP_FINISHED_LOG, uuids[0])))).unwrap();
+
+    let expected_events = [
+        "Started",
+        "Negotiated",
+        "TakerFeeSent",
+        "TakerPaymentInstructionsReceived",
+        "MakerPaymentReceived",
+        "MakerPaymentWaitConfirmStarted",
+        "MakerPaymentValidatedAndConfirmed",
+        "TakerPaymentSent",
+        "WatcherMessageSent",
+        "TakerPaymentWaitForSpendFailed",
+        "TakerPaymentWaitRefundStarted",
+        "TakerPaymentRefundStarted",
+        "TakerPaymentRefunded",
+        "TakerPaymentRefundFinished",
+        "Finished",
+    ];
+    let status_response = block_on(my_swap_status(&mm_alice, &uuids[0]));
+    let events_array = status_response["result"]["events"].as_array().unwrap();
+    let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
+    let actual_events: Vec<&str> = actual_events.collect();
+
+    assert_eq!(expected_events, actual_events.as_slice());
 }
 
 #[test]
