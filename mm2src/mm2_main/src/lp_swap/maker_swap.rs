@@ -1216,17 +1216,23 @@ impl MakerSwap {
             }
         }
 
-        let spend_fut = self.maker_coin.send_maker_refunds_payment(RefundPaymentArgs {
-            payment_tx: &maker_payment,
-            time_lock: locktime as u32,
-            other_pubkey: &*self.r().other_maker_coin_htlc_pub,
-            secret_hash: self.secret_hash().as_slice(),
-            swap_contract_address: &self.r().data.maker_coin_swap_contract_address,
-            swap_unique_data: &self.unique_swap_data(),
-            watcher_reward: self.r().watcher_reward,
-        });
+        let other_maker_coin_htlc_pub = self.r().other_maker_coin_htlc_pub;
+        let maker_coin_swap_contract_address = self.r().data.maker_coin_swap_contract_address.clone();
+        let watcher_reward = self.r().watcher_reward;
+        let spend_result = self
+            .maker_coin
+            .send_maker_refunds_payment(RefundPaymentArgs {
+                payment_tx: &maker_payment,
+                time_lock: locktime as u32,
+                other_pubkey: other_maker_coin_htlc_pub.as_slice(),
+                secret_hash: self.secret_hash().as_slice(),
+                swap_contract_address: &maker_coin_swap_contract_address,
+                swap_unique_data: &self.unique_swap_data(),
+                watcher_reward,
+            })
+            .await;
 
-        let transaction = match spend_fut.compat().await {
+        let transaction = match spend_result {
             Ok(t) => t,
             Err(err) => {
                 if let Some(tx) = err.get_tx() {
@@ -1531,7 +1537,7 @@ impl MakerSwap {
                     watcher_reward,
                 });
 
-                let transaction = match fut.compat().await {
+                let transaction = match fut.await {
                     Ok(t) => t,
                     Err(err) => {
                         if let Some(tx) = err.get_tx() {
@@ -2394,7 +2400,7 @@ mod maker_swap_tests {
         static mut MAKER_REFUND_CALLED: bool = false;
         TestCoin::send_maker_refunds_payment.mock_safe(|_, _| {
             unsafe { MAKER_REFUND_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
+            MockResult::Return(Box::pin(futures::future::ok(eth_tx_for_test().into())))
         });
         TestCoin::search_for_swap_tx_spend_my
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
@@ -2428,7 +2434,7 @@ mod maker_swap_tests {
         static mut MAKER_REFUND_CALLED: bool = false;
         TestCoin::send_maker_refunds_payment.mock_safe(|_, _| {
             unsafe { MAKER_REFUND_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
+            MockResult::Return(Box::pin(futures::future::ok(eth_tx_for_test().into())))
         });
 
         TestCoin::search_for_swap_tx_spend_my
@@ -2698,7 +2704,7 @@ mod maker_swap_tests {
         static mut SEND_MAKER_REFUNDS_PAYMENT_CALLED: bool = false;
         TestCoin::send_maker_refunds_payment.mock_safe(|_, _| {
             unsafe { SEND_MAKER_REFUNDS_PAYMENT_CALLED = true }
-            MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
+            MockResult::Return(Box::pin(futures::future::ok(eth_tx_for_test().into())))
         });
 
         let maker_coin = MmCoinEnum::Test(TestCoin::default());

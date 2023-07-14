@@ -292,6 +292,7 @@ pub mod z_coin;
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
+pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
 pub type NonZeroBalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<GetNonZeroBalance>> + Send>;
@@ -822,9 +823,9 @@ pub trait SwapOps {
 
     fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut;
+    async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult;
 
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut;
+    async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult;
 
     fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()>;
 
@@ -988,6 +989,22 @@ pub trait WatcherOps {
         reward_amount: Option<BigDecimal>,
         wait_until: u64,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
+}
+
+pub struct SendDexFeeWithPremiumArgs<'a> {
+    pub time_lock: u32,
+    pub secret_hash: &'a [u8],
+    pub other_pub: &'a [u8],
+    pub dex_fee_amount: BigDecimal,
+    pub premium_amount: BigDecimal,
+    pub swap_unique_data: &'a [u8],
+}
+
+#[async_trait]
+pub trait SwapOpsV2 {
+    async fn send_dex_fee_with_premium(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult;
+
+    async fn refund_dex_fee_with_premium(&self, args: RefundPaymentArgs<'_>) -> TransactionResult;
 }
 
 /// Operations that coins have independently from the MarketMaker.

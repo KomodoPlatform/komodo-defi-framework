@@ -3,9 +3,9 @@ use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionInput, TransactionOutput};
 use coins::utxo::swap_proto_v2_scripts::dex_fee_script;
-use coins::utxo::utxo_common::{send_outputs_from_my_address, P2SHSpendingTxInput, DEFAULT_SWAP_TX_SPEND_SIZE};
+use coins::utxo::utxo_common::{send_outputs_from_my_address, DEFAULT_SWAP_TX_SPEND_SIZE};
 use coins::utxo::{output_script, ScriptType, UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps};
-use coins::{FeeApproxStage, SwapOps, TransactionEnum};
+use coins::{FeeApproxStage, RefundPaymentArgs, SendDexFeeWithPremiumArgs, SwapOpsV2, Transaction, TransactionEnum};
 use common::{block_on, now_sec_u32};
 use futures01::Future;
 use keys::AddressHashEnum;
@@ -15,45 +15,47 @@ use script::{Builder, Opcode, TransactionInputSigner, UnsignedTransactionInput};
 fn send_and_refund_dex_fee() {
     let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
-    let timelock = now_sec_u32() - 1000;
-    let script = dex_fee_script(
-        timelock,
-        &[0; 20],
-        coin.my_public_key().unwrap(),
-        coin.my_public_key().unwrap(),
-    );
-    let p2sh = dhash160(script.as_slice());
+    let time_lock = now_sec_u32() - 1000;
 
-    // 0.1 of the MYCOIN
-    let value = 1000000;
-    let output = TransactionOutput {
-        value,
-        script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(p2sh)).into(),
+    let send_args = SendDexFeeWithPremiumArgs {
+        time_lock,
+        secret_hash: &[0; 20],
+        other_pub: coin.my_public_key().unwrap(),
+        dex_fee_amount: "0.01".parse().unwrap(),
+        premium_amount: "0.1".parse().unwrap(),
+        swap_unique_data: &[],
     };
-    let dex_fee_tx = match send_outputs_from_my_address(coin.clone(), vec![output]).wait().unwrap() {
+    let dex_fee_tx = block_on(coin.send_dex_fee_with_premium(send_args)).unwrap();
+    println!("{:02x}", dex_fee_tx.tx_hash());
+    let dex_fee_utxo_tx = match dex_fee_tx {
         TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Got unexpected tx"),
+        unexpected => panic!("Unexpected tx {:?}", unexpected),
+    };
+    // tx must have 3 outputs: actual payment, OP_RETURN containing the secret hash and change
+    assert_eq!(3, dex_fee_utxo_tx.outputs.len());
+
+    // dex_fee_amount + premium_amount
+    let expected_amount = 11000000u64;
+    assert_eq!(expected_amount, dex_fee_utxo_tx.outputs[0].value);
+
+    let expected_op_return = Builder::default()
+        .push_opcode(Opcode::OP_RETURN)
+        .push_data(&[0; 20])
+        .into_bytes();
+    assert_eq!(expected_op_return, dex_fee_utxo_tx.outputs[1].script_pubkey);
+
+    let refund_args = RefundPaymentArgs {
+        payment_tx: &dex_fee_utxo_tx.tx_hex(),
+        time_lock,
+        other_pubkey: coin.my_public_key().unwrap(),
+        secret_hash: &[0; 20],
+        swap_unique_data: &[],
+        swap_contract_address: &None,
+        watcher_reward: false,
     };
 
-    let fee = block_on(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)).unwrap();
-    let my_address = coin.as_ref().derivation_method.single_addr_or_err().unwrap();
-    let output = TransactionOutput {
-        value: value - fee,
-        script_pubkey: output_script(my_address, ScriptType::P2PKH).into(),
-    };
-
-    let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
-    let input = P2SHSpendingTxInput {
-        prev_transaction: dex_fee_tx,
-        redeem_script: script.into(),
-        outputs: vec![output],
-        script_data,
-        sequence: SEQUENCE_FINAL - 1,
-        lock_time: timelock,
-        keypair: &coin.derive_htlc_key_pair(&[]),
-    };
-    let refund_tx = block_on(coin.p2sh_spending_tx(input)).unwrap();
-    block_on(coin.broadcast_tx(&refund_tx)).unwrap();
+    let refund_tx = block_on(coin.refund_dex_fee_with_premium(refund_args)).unwrap();
+    println!("{:02x}", refund_tx.tx_hash());
 }
 
 #[test]

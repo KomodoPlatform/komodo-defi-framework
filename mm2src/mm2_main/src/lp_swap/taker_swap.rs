@@ -1828,17 +1828,24 @@ impl TakerSwap {
             }
         }
 
-        let refund_fut = self.taker_coin.send_taker_refunds_payment(RefundPaymentArgs {
-            payment_tx: &taker_payment,
-            time_lock: locktime as u32,
-            other_pubkey: &*self.r().other_taker_coin_htlc_pub,
-            secret_hash: &self.r().secret_hash.0,
-            swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
-            swap_unique_data: &self.unique_swap_data(),
-            watcher_reward: self.r().watcher_reward,
-        });
+        let other_taker_coin_htlc_pub = self.r().other_taker_coin_htlc_pub;
+        let secret_hash = self.r().secret_hash.clone();
+        let swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
+        let watcher_reward = self.r().watcher_reward;
+        let refund_result = self
+            .taker_coin
+            .send_taker_refunds_payment(RefundPaymentArgs {
+                payment_tx: &taker_payment,
+                time_lock: locktime as u32,
+                other_pubkey: other_taker_coin_htlc_pub.as_slice(),
+                secret_hash: &secret_hash,
+                swap_contract_address: &swap_contract_address,
+                swap_unique_data: &self.unique_swap_data(),
+                watcher_reward,
+            })
+            .await;
 
-        let transaction = match refund_fut.compat().await {
+        let transaction = match refund_result {
             Ok(t) => t,
             Err(err) => {
                 if let Some(tx) = err.get_tx() {
@@ -2183,7 +2190,7 @@ impl TakerSwap {
                     watcher_reward,
                 });
 
-                let transaction = match fut.compat().await {
+                let transaction = match fut.await {
                     Ok(t) => t,
                     Err(err) => {
                         if let Some(tx) = err.get_tx() {
@@ -2668,7 +2675,7 @@ mod taker_swap_tests {
         static mut TAKER_PAYMENT_REFUND_CALLED: bool = false;
         TestCoin::send_taker_refunds_payment.mock_safe(|_, _| {
             unsafe { TAKER_PAYMENT_REFUND_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
+            MockResult::Return(Box::pin(futures::future::ok(eth_tx_for_test().into())))
         });
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
@@ -2753,7 +2760,7 @@ mod taker_swap_tests {
         static mut REFUND_CALLED: bool = false;
         TestCoin::send_taker_refunds_payment.mock_safe(|_, _| {
             unsafe { REFUND_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
+            MockResult::Return(Box::pin(futures::future::ok(eth_tx_for_test().into())))
         });
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());

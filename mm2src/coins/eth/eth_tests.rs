@@ -380,10 +380,7 @@ fn send_and_refund_erc20_payment() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let refund = coin
-        .send_maker_refunds_payment(maker_refunds_payment_args)
-        .wait()
-        .unwrap();
+    let refund = block_on(coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
     log!("{:?}", refund);
 
     let status = block_on(
@@ -470,10 +467,7 @@ fn send_and_refund_eth_payment() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let refund = coin
-        .send_maker_refunds_payment(maker_refunds_payment_args)
-        .wait()
-        .unwrap();
+    let refund = block_on(coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
 
     log!("{:?}", refund);
 
