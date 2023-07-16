@@ -10,4 +10,4 @@ The ported mod is compatible with hyper 0.14 and rustls 0.20.
 ## Purpose
 
 The purpose of porting these files is to enable retrieving the remote address from the incoming connection and to expose the `TlsStream` type.
-> **Note:** The following commit [7eca34d](https://github.com/KomodoPlatform/atomicDEX-API/pull/1861/commits/7eca34dd4621a7de0033f8a81cc11ad117aeb3c3) show the changes applied to the ported code.
+> **Note:** The following commit [fe6cd24](https://github.com/KomodoPlatform/komodo-defi-framework/commit/fe6cd24c760e4aad760201723b7c3b846309254d) show the changes applied to the ported code.

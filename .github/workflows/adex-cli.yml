@@ -70,7 +70,7 @@ jobs:
 
       - name: Start testing
         run: |
-          cargo test --manifest-path ./mm2src/adex_cli/Cargo.toml
+          cargo test --manifest-path ./mm2src/adex_cli/Cargo.toml --no-fail-fast
 
   build:
     timeout-minutes: 60
