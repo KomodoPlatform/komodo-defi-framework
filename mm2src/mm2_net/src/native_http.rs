@@ -132,9 +132,9 @@ pub trait SlurpHttpClient {
     /// Returning the response status, headers and body.
     async fn slurp_url_with_headers(&self, url: &str, headers: Vec<(&'static str, &'static str)>) -> SlurpResult {
         let mut req = Request::builder();
-        let h = req.headers_mut().or_mm_err(|| {
-            SlurpError::Internal("An error occured while accessing to the request headers.".to_string())
-        })?;
+        let h = req
+            .headers_mut()
+            .or_mm_err(|| SlurpError::Internal("An error occurred when accessing the request headers".to_string()))?;
 
         for (key, value) in headers {
             h.insert(key, HeaderValue::from_static(value));
