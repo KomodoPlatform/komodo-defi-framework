@@ -54,6 +54,7 @@ pub enum RequestResponseBehaviourEvent {
         request: PeerRequest,
         response_channel: ResponseChannel<PeerResponse>,
     },
+    NoAction,
 }
 
 struct PendingRequest {
@@ -323,24 +324,6 @@ impl NetworkBehaviour for RequestResponseBehaviour {
         cx: &mut std::task::Context<'_>,
         params: &mut impl libp2p::swarm::PollParameters,
     ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
-        match self.inner.poll(cx, params) {
-            Poll::Ready(to_swarm) => match to_swarm {
-                ToSwarm::NotifyHandler {
-                    peer_id,
-                    handler,
-                    event,
-                } => {
-                    return Poll::Ready(ToSwarm::NotifyHandler {
-                        peer_id,
-                        handler,
-                        event,
-                    });
-                },
-                _ => {},
-            },
-            Poll::Pending => {},
-        };
-
         // poll the `rx`
         match self.rx.poll_next_unpin(cx) {
             // received a request, forward it through the network and put to the `pending_requests`
@@ -369,7 +352,55 @@ impl NetworkBehaviour for RequestResponseBehaviour {
             });
         }
 
-        Poll::Pending
+        self.inner.poll(cx, params).map(|to_swarm| match to_swarm {
+            ToSwarm::GenerateEvent(event) => ToSwarm::GenerateEvent(event.into()),
+            ToSwarm::Dial { opts } => ToSwarm::Dial { opts },
+            ToSwarm::ListenOn { opts } => ToSwarm::ListenOn { opts },
+            ToSwarm::RemoveListener { id } => ToSwarm::RemoveListener { id },
+            ToSwarm::NotifyHandler {
+                peer_id,
+                handler,
+                event,
+            } => ToSwarm::NotifyHandler {
+                peer_id,
+                handler,
+                event,
+            },
+            ToSwarm::NewExternalAddrCandidate(multiaddr) => ToSwarm::NewExternalAddrCandidate(multiaddr),
+            ToSwarm::ExternalAddrConfirmed(multiaddr) => ToSwarm::ExternalAddrConfirmed(multiaddr),
+            ToSwarm::ExternalAddrExpired(multiaddr) => ToSwarm::ExternalAddrExpired(multiaddr),
+            ToSwarm::CloseConnection { peer_id, connection } => ToSwarm::CloseConnection { peer_id, connection },
+        })
+    }
+}
+
+impl From<libp2p::request_response::Event<PeerRequest, PeerResponse>> for RequestResponseBehaviourEvent {
+    fn from(event: libp2p::request_response::Event<PeerRequest, PeerResponse>) -> Self {
+        match event {
+            RequestResponseEvent::Message { peer, message } => match message {
+                Message::Request {
+                    request_id,
+                    request,
+                    channel,
+                } => Self::InboundRequest {
+                    peer_id: peer,
+                    request,
+                    response_channel: channel,
+                },
+                Message::Response { request_id, response } => RequestResponseBehaviourEvent::NoAction,
+            },
+            RequestResponseEvent::OutboundFailure {
+                peer,
+                request_id,
+                error,
+            } => RequestResponseBehaviourEvent::NoAction,
+            RequestResponseEvent::InboundFailure {
+                peer,
+                request_id,
+                error,
+            } => RequestResponseBehaviourEvent::NoAction,
+            RequestResponseEvent::ResponseSent { peer, request_id } => RequestResponseBehaviourEvent::NoAction,
+        }
     }
 }
 

@@ -142,6 +142,7 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
                         log::error!("Error on process P2P request: {:?}", e);
                     }
                 },
+                mm2_libp2p::request_response::RequestResponseBehaviourEvent::NoAction => {},
             },
             _ => (),
         }
