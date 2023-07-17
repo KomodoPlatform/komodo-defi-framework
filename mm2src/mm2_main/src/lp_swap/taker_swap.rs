@@ -324,7 +324,7 @@ impl TakerSavedSwap {
             Some(event) => match &event.event {
                 TakerSwapEvent::Negotiated(neg) => {
                     let Some(key) = neg.maker_coin_htlc_pubkey else {
-                         return ERR!("maker's pubkey is empty");
+                        return ERR!("maker's pubkey is empty");
                     };
                     key.to_string()
                 },

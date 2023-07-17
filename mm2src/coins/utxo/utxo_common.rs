@@ -3127,11 +3127,12 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
 
         let prev_output_index: usize = try_s!(input.previous_output.index.try_into());
         let prev_tx_output = prev_tx.outputs.get(prev_output_index).ok_or(ERRL!(
-            "Previous output index is out of bound: coin={}, prev_output_index={}, prev_tx_hash={}, tx_hash={}",
+            "Previous output index is out of bound: coin={}, prev_output_index={}, prev_tx_hash={}, tx_hash={}, tx_hex={:02x}",
             ticker,
             prev_output_index,
             prev_tx_hash,
-            hash
+            hash,
+            verbose_tx.hex,
         ))?;
         input_amount += prev_tx_output.value;
         let from: Vec<Address> = try_s!(coin.addresses_from_script(&prev_tx_output.script_pubkey.clone().into()));

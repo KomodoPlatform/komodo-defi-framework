@@ -196,8 +196,8 @@ where
         })?;
         let prev_tx_output = prev_tx.outputs.get(prev_output_index).ok_or_else(|| {
             UtxoTxDetailsError::Internal(format!(
-                "Previous output index is out of bound: coin={}, prev_output_index={}, prev_tx_hash={}, tx_hash={}",
-                ticker, prev_output_index, prev_tx_hash, params.hash
+                "Previous output index is out of bound: coin={}, prev_output_index={}, prev_tx_hash={}, tx_hash={}, tx_hex={:02x}",
+                ticker, prev_output_index, prev_tx_hash, params.hash, verbose_tx.hex
             ))
         })?;
 
