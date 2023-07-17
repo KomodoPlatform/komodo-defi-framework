@@ -148,7 +148,7 @@ async fn test_activation_scheme() {
     assert!(kmd_scheme.is_some());
     let kmd_scheme = kmd_scheme.unwrap();
     assert_eq!(kmd_scheme.get("method").unwrap().as_str().unwrap(), "electrum");
-    assert_eq!(kmd_scheme.get("servers").unwrap().as_array().unwrap().iter().count(), 3);
+    assert_eq!(kmd_scheme.get("servers").unwrap().as_array().unwrap().iter().count(), 6);
 }
 
 #[tokio::test]
