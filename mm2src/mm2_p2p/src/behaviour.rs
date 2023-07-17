@@ -706,6 +706,28 @@ fn start_gossipsub(
 
                     match event {
                         SwarmEvent::Behaviour(event) => {
+                            match event {
+                                AdexBehaviourEvent::Floodsub(ref flood_event) => match flood_event {
+                                    libp2p::floodsub::FloodsubEvent::Message(message) => {
+                                        for topic in &message.topics {
+                                            if topic == &FloodsubTopic::new(PEERS_TOPIC) {
+                                                let addresses: PeerAddresses =
+                                                    match rmp_serde::from_slice(&message.data) {
+                                                        Ok(a) => a,
+                                                        Err(_) => break,
+                                                    };
+                                                swarm
+                                                    .behaviour_mut()
+                                                    .core
+                                                    .peers_exchange
+                                                    .add_peer_addresses_to_known_peers(&message.source, addresses);
+                                            }
+                                        }
+                                    },
+                                    _ => {},
+                                },
+                                _ => {},
+                            };
                             swarm.behaviour_mut().notify_on_adex_event(event);
                         },
                         _ => {},

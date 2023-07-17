@@ -192,6 +192,24 @@ impl NetworkBehaviour for PeersExchange {
         cx: &mut std::task::Context<'_>,
         params: &mut impl libp2p::swarm::PollParameters,
     ) -> std::task::Poll<ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
+        match self.request_response.poll(cx, params) {
+            Poll::Ready(to_swarm) => match to_swarm {
+                ToSwarm::NotifyHandler {
+                    peer_id,
+                    handler,
+                    event,
+                } => {
+                    return Poll::Ready(ToSwarm::NotifyHandler {
+                        peer_id,
+                        handler,
+                        event,
+                    });
+                },
+                _ => {},
+            },
+            Poll::Pending => {},
+        };
+
         while let Poll::Ready(Some(_)) = self.maintain_peers_interval.poll_next_unpin(cx) {
             self.maintain_known_peers();
         }

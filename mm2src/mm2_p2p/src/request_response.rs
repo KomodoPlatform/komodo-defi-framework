@@ -323,6 +323,24 @@ impl NetworkBehaviour for RequestResponseBehaviour {
         cx: &mut std::task::Context<'_>,
         params: &mut impl libp2p::swarm::PollParameters,
     ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
+        match self.inner.poll(cx, params) {
+            Poll::Ready(to_swarm) => match to_swarm {
+                ToSwarm::NotifyHandler {
+                    peer_id,
+                    handler,
+                    event,
+                } => {
+                    return Poll::Ready(ToSwarm::NotifyHandler {
+                        peer_id,
+                        handler,
+                        event,
+                    });
+                },
+                _ => {},
+            },
+            Poll::Pending => {},
+        };
+
         // poll the `rx`
         match self.rx.poll_next_unpin(cx) {
             // received a request, forward it through the network and put to the `pending_requests`
