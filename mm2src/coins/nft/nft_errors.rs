@@ -166,6 +166,8 @@ pub enum UpdateNftError {
     AttemptToReceiveAlreadyOwnedErc721 {
         tx_hash: String,
     },
+    #[display(fmt = "Invalid hex string: {}", _0)]
+    InvalidHexString(String),
 }
 
 impl From<CreateNftStorageError> for UpdateNftError {
@@ -199,7 +201,8 @@ impl HttpStatusCode for UpdateNftError {
             | UpdateNftError::InsufficientAmountInCache { .. }
             | UpdateNftError::InvalidBlockOrder { .. }
             | UpdateNftError::LastScannedBlockNotFound { .. }
-            | UpdateNftError::AttemptToReceiveAlreadyOwnedErc721 { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | UpdateNftError::AttemptToReceiveAlreadyOwnedErc721 { .. }
+            | UpdateNftError::InvalidHexString(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

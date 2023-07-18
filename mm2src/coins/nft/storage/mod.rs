@@ -154,8 +154,8 @@ impl From<CreateNftStorageError> for WithdrawError {
     }
 }
 
-/// `NftStorageBuilder` is used to create an instance that implements the `NftListStorageOps`
-/// and `NftTxHistoryStorageOps` traits.
+/// `NftStorageBuilder` is used to create an instance that implements the [`NftListStorageOps`]
+/// and [`NftTxHistoryStorageOps`] traits.Also has guard to lock write operations.
 pub struct NftStorageBuilder<'a> {
     ctx: &'a MmArc,
 }
@@ -164,8 +164,9 @@ impl<'a> NftStorageBuilder<'a> {
     #[inline]
     pub fn new(ctx: &MmArc) -> NftStorageBuilder<'_> { NftStorageBuilder { ctx } }
 
+    /// `build` function is used to build nft storage which implements [`NftListStorageOps`] and [`NftTxHistoryStorageOps`] traits.
     #[inline]
-    pub fn build(self) -> MmResult<impl NftListStorageOps + NftTxHistoryStorageOps, CreateNftStorageError> {
+    pub fn build(&self) -> MmResult<impl NftListStorageOps + NftTxHistoryStorageOps, CreateNftStorageError> {
         #[cfg(target_arch = "wasm32")]
         return wasm::wasm_storage::IndexedDbNftStorage::new(self.ctx);
         #[cfg(not(target_arch = "wasm32"))]

@@ -1,0 +1,25 @@
+name: Validate mm2 version
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate_version_change:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3
+
+      - name: Install dependencies
+        run: pip install toml
+
+      - name: Run version check
+        run: ./scripts/ci/validate-version-bump.py

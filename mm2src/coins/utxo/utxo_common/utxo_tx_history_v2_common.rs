@@ -9,8 +9,8 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
                                       UtxoTxHistoryOps};
 use crate::utxo::{output_script, RequestTxHistoryResult, UtxoCoinFields, UtxoCommonOps, UtxoHDAccount};
 use crate::{big_decimal_from_sat_unsigned, compare_transactions, BalanceResult, CoinWithDerivationMethod,
-            DerivationMethod, HDAccountAddressId, MarketCoinOps, TransactionDetails, TxFeeDetails, TxIdHeight,
-            UtxoFeeDetails, UtxoTx};
+            DerivationMethod, HDAccountAddressId, MarketCoinOps, NumConversError, TransactionDetails, TxFeeDetails,
+            TxIdHeight, UtxoFeeDetails, UtxoTx};
 use common::jsonrpc_client::JsonRpcErrorType;
 use crypto::Bip44Chain;
 use futures::compat::Future01CompatExt;
@@ -22,8 +22,9 @@ use mm2_number::BigDecimal;
 use rpc::v1::types::{TransactionInputEnum, H256 as H256Json};
 use serialization::deserialize;
 use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::iter;
+use std::num::TryFromIntError;
 
 /// [`CoinWithTxHistoryV2::history_wallet_id`] implementation.
 pub fn history_wallet_id(coin: &UtxoCoinFields) -> WalletId { WalletId::new(coin.conf.ticker.clone()) }
@@ -190,13 +191,20 @@ where
 
         let prev_tx = coin.tx_from_storage_or_rpc(&prev_tx_hash, params.storage).await?;
 
-        let prev_output_index = input.previous_output.index as usize;
-        let prev_tx_value = prev_tx.outputs[prev_output_index].value;
-        let prev_script = prev_tx.outputs[prev_output_index].script_pubkey.clone().into();
+        let prev_output_index: usize = input.previous_output.index.try_into().map_to_mm(|e: TryFromIntError| {
+            UtxoTxDetailsError::NumConversionErr(NumConversError::new(e.to_string()))
+        })?;
+        let prev_tx_output = prev_tx.outputs.get(prev_output_index).ok_or_else(|| {
+            UtxoTxDetailsError::Internal(format!(
+                "Previous output index is out of bound: coin={}, prev_output_index={}, prev_tx_hash={}, tx_hash={}, tx_hex={:02x}",
+                ticker, prev_output_index, prev_tx_hash, params.hash, verbose_tx.hex
+            ))
+        })?;
 
-        input_amount += prev_tx_value;
-        let amount = big_decimal_from_sat_unsigned(prev_tx_value, decimals);
+        input_amount += prev_tx_output.value;
+        let amount = big_decimal_from_sat_unsigned(prev_tx_output.value, decimals);
 
+        let prev_script = prev_tx_output.script_pubkey.clone().into();
         let from: Vec<Address> = coin
             .addresses_from_script(&prev_script)
             .map_to_mm(UtxoTxDetailsError::TxAddressDeserializationError)?;
