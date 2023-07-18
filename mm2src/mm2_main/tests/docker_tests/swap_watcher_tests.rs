@@ -13,9 +13,8 @@ use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
 use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, dex_fee_threshold, get_payment_locktime,
                              MakerSwap, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
-                             MAKER_PAYMENT_SPEND_SENT_LOG, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG, SWAP_FINISHED_LOG,
-                             TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG, TAKER_PAYMENT_REFUND_SENT_LOG,
-                             WATCHER_MESSAGE_SENT_LOG};
+                             MAKER_PAYMENT_SPEND_SENT_LOG, SWAP_FINISHED_LOG, TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG,
+                             TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_testnet_conf, eth_testnet_conf, mm_dump, my_balance,
@@ -258,7 +257,7 @@ fn start_swaps_and_get_balances(
 }
 
 #[test]
-fn test_taker_saves_the_swap_as_finished_after_watcher_spends_maker_payment() {
+fn test_taker_saves_the_swap_as_successful_after_watcher_spends_taker_payment() {
     let alice_privkey = hex::encode(random_secp256k1_secret());
     let bob_privkey = hex::encode(random_secp256k1_secret());
     let watcher_privkey = hex::encode(random_secp256k1_secret());
@@ -270,7 +269,7 @@ fn test_taker_saves_the_swap_as_finished_after_watcher_spends_maker_payment() {
         alice_conf.conf.clone(),
         alice_conf.rpc_password.clone(),
         None,
-        &[("USE_WATCHERS", "")],
+        &[("USE_WATCHERS", ""), ("TAKER_FAIL_AT", "maker_payment_spend")],
     ))
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -331,10 +330,10 @@ fn test_taker_saves_the_swap_as_finished_after_watcher_spends_maker_payment() {
         25.,
         2.,
     ));
-
-    block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
     alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
-    block_on(mm_alice.stop()).unwrap();
+
+    block_on(mm_bob.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
     block_on(mm_watcher.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
 
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
@@ -350,8 +349,6 @@ fn test_taker_saves_the_swap_as_finished_after_watcher_spends_maker_payment() {
     enable_coin(&mm_alice, "MYCOIN");
     enable_coin(&mm_alice, "MYCOIN1");
 
-    block_on(mm_alice.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SPENT_BY_WATCHER_LOG))).unwrap();
-
     block_on(wait_for_swaps_finish_and_check_status(
         &mut mm_bob,
         &mut mm_alice,
@@ -359,11 +356,10 @@ fn test_taker_saves_the_swap_as_finished_after_watcher_spends_maker_payment() {
         2.,
         25.,
     ));
-
     block_on(mm_alice.stop()).unwrap();
 
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
-        alice_conf.conf,
+        alice_conf.conf.clone(),
         alice_conf.rpc_password.clone(),
         None,
         &[("USE_WATCHERS", "")],

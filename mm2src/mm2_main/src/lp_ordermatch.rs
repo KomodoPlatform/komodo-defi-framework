@@ -76,6 +76,9 @@ use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, chec
                           CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap, RunMakerSwapInput,
                           RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
 
+#[cfg(any(test, feature = "run-docker-tests"))]
+use crate::mm2::lp_swap::taker_swap::FailAt;
+
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 pub use orderbook_depth::orderbook_depth_rpc;
 pub use orderbook_rpc::{orderbook_rpc, orderbook_rpc_v2};
@@ -3065,6 +3068,10 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         if let Err(e) = insert_new_swap_to_db(ctx.clone(), taker_coin.ticker(), maker_coin.ticker(), uuid, now).await {
             error!("Error {} on new swap insertion", e);
         }
+
+        #[cfg(any(test, feature = "run-docker-tests"))]
+        let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
+
         let taker_swap = TakerSwap::new(
             ctx.clone(),
             maker,
@@ -3078,6 +3085,8 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             taker_coin,
             locktime,
             taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+            #[cfg(any(test, feature = "run-docker-tests"))]
+            fail_at,
         );
         run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
     };

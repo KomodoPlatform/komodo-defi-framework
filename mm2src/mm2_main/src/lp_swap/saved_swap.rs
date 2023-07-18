@@ -56,6 +56,16 @@ impl SavedSwap {
         }
     }
 
+    pub fn contains_watcher_message(&self) -> bool {
+        match &self {
+            SavedSwap::Taker(taker_swap) => taker_swap
+                .events
+                .iter()
+                .any(|e| matches!(e.event, TakerSwapEvent::WatcherMessageSent(_, _))),
+            _ => false,
+        }
+    }
+
     pub fn uuid(&self) -> &Uuid {
         match self {
             SavedSwap::Maker(swap) => &swap.uuid,
