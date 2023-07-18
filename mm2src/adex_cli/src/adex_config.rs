@@ -118,7 +118,7 @@ impl AdexConfigImpl {
         Ok(config_path)
     }
 
-    fn get_config_path() -> Result<PathBuf> {
+    pub(crate) fn get_config_path() -> Result<PathBuf> {
         let mut config_path = Self::get_config_dir()?;
         config_path.push(ADEX_CFG);
         Ok(config_path)
