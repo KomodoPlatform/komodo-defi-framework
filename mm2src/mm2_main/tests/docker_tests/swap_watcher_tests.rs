@@ -570,13 +570,12 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_fa
         25.,
         2.,
     ));
+    alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
 
     block_on(mm_bob.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SENT_LOG))).unwrap();
     block_on(mm_bob.stop()).unwrap();
 
     block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
-    alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
-    block_on(mm_alice.stop()).unwrap();
     block_on(mm_watcher.wait_for_log(120., |log| log.contains(TAKER_PAYMENT_REFUND_SENT_LOG))).unwrap();
 
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
