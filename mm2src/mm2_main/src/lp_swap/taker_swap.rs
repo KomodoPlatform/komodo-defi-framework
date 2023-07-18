@@ -604,9 +604,10 @@ pub struct TakerSwapMut {
 #[derive(Eq, PartialEq, Debug)]
 pub enum FailAt {
     TakerPayment,
-    WaitForTakerPaymentSpend,
+    WaitForTakerPaymentSpendPanic,
     MakerPaymentSpend,
     TakerPaymentRefund,
+    TakerPaymentRefundPanic,
 }
 
 #[cfg(any(test, feature = "run-docker-tests"))]
@@ -614,9 +615,10 @@ impl From<String> for FailAt {
     fn from(str: String) -> Self {
         match str.as_str() {
             "taker_payment" => FailAt::TakerPayment,
-            "wait_for_taker_payment_spend" => FailAt::WaitForTakerPaymentSpend,
+            "wait_for_taker_payment_spend_panic" => FailAt::WaitForTakerPaymentSpendPanic,
             "maker_payment_spend" => FailAt::MakerPaymentSpend,
             "taker_payment_refund" => FailAt::TakerPaymentRefund,
+            "taker_payment_refund_panic" => FailAt::TakerPaymentRefundPanic,
             _ => panic!("Invalid TAKER_FAIL_AT value"),
         }
     }
@@ -1744,8 +1746,8 @@ impl TakerSwap {
         }
 
         #[cfg(any(test, feature = "run-docker-tests"))]
-        if self.fail_at == Some(FailAt::WaitForTakerPaymentSpend) {
-            panic!("Taker failed unexpectedly at wait for taker payment spend");
+        if self.fail_at == Some(FailAt::WaitForTakerPaymentSpendPanic) {
+            panic!("Taker panicked unexpectedly at wait for taker payment spend");
         }
 
         info!("Taker payment confirmed");
@@ -1874,6 +1876,10 @@ impl TakerSwap {
             return Ok((Some(TakerSwapCommand::Finish), vec![
                 TakerSwapEvent::TakerPaymentRefundFailed("Explicit test failure".into()),
             ]));
+        }
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::TakerPaymentRefundPanic) {
+            panic!("Taker panicked unexpectedly at taker payment refund");
         }
 
         let taker_payment = self.r().taker_payment.clone().unwrap().tx_hex;
