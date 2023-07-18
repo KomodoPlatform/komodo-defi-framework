@@ -371,7 +371,16 @@ impl BchCoin {
                 params.my_addresses,
             )
             .await?;
-        let maybe_op_return: Script = tx.outputs[0].script_pubkey.clone().into();
+        let maybe_op_return: Script = tx
+            .outputs
+            .get(0)
+            .ok_or(UtxoTxDetailsError::Internal(format!(
+                "Transaction {} has no outputs",
+                params.hash
+            )))?
+            .script_pubkey
+            .clone()
+            .into();
         if !(maybe_op_return.is_pay_to_public_key_hash()
             || maybe_op_return.is_pay_to_public_key()
             || maybe_op_return.is_pay_to_script_hash())
@@ -1004,7 +1013,7 @@ impl SwapOps for BchCoin {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
 
-    fn is_supported_by_watchers(&self) -> bool { true }
+    fn is_supported_by_watchers(&self) -> bool { std::env::var("USE_WATCHERS").is_ok() }
 }
 
 #[async_trait]

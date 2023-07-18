@@ -104,10 +104,10 @@ impl Cli {
         config: &Cfg,
         printer: &P,
     ) -> Result<()> {
-        let transport = SlurpTransport::new(config.rpc_uri()?);
+        let transport = config.rpc_uri().map(SlurpTransport::new);
 
         let proc = AdexProc {
-            transport: &transport,
+            transport: transport.as_ref(),
             response_handler: printer,
             config,
         };

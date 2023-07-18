@@ -5,7 +5,7 @@
 
 [package]
 name = "mm2_bin_lib"
-version = "1.0.5-beta"
+version = "1.0.6-beta"
 authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozkan", "Alina Sharon", "Caglar Kaya", "Cipi", "Sergey Boiko", "Samuel Onoja", "Roman Sztergbaum", "Kadan Stadelmann <ca333@komodoplatform.com>"]
 edition = "2018"
 default-run = "mm2"

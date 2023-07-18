@@ -1,4 +1,3 @@
-use anyhow::Result;
 use std::env;
 use std::io::Write;
 
@@ -11,9 +10,9 @@ pub(super) struct AdexApp {
 }
 
 impl AdexApp {
-    pub(super) fn new() -> Result<AdexApp> {
-        let config = AdexConfigImpl::read_config()?;
-        Ok(AdexApp { config })
+    pub(super) fn new() -> AdexApp {
+        let config = AdexConfigImpl::read_config().unwrap_or_default();
+        AdexApp { config }
     }
 
     pub(super) async fn execute(&self) {

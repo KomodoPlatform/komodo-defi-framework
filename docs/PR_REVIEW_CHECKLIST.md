@@ -1,4 +1,4 @@
-# PR review checklist for AtomicDEX-API
+# PR review checklist for Komodo DeFi Framework
 
 - [ ] Check that all CI build stages passed successfully. It's acceptable to have unstable tests failing. If you are unsure whether
 the test is unstable, please clarify it with the team.

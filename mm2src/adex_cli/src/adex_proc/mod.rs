@@ -1,11 +1,9 @@
 mod adex_proc_impl;
 mod command;
 mod response_handler;
-mod smart_fraction_fmt;
 
 pub(super) use adex_proc_impl::AdexProc;
-pub(super) use response_handler::{ResponseHandler, ResponseHandlerImpl};
-pub(super) use smart_fraction_fmt::SmarFractPrecision;
+pub(super) use response_handler::{ResponseHandler, ResponseHandlerImpl, SmartFractPrecision};
 
 #[derive(Clone)]
 pub(super) struct OrderbookConfig {

@@ -23,7 +23,7 @@ jobs:
 
       - name: pre scripts for ci container
         run: |
-          git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+          git config --global --add safe.directory /__w/komodo-defi-framework/komodo-defi-framework
           echo "/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH
@@ -40,6 +40,9 @@ jobs:
       - name: Calculate commit hash for merge commit
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: Build
         run: |
@@ -100,6 +103,9 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
+
       - name: Build
         run: |
           rm -f ./MM_VERSION
@@ -146,6 +152,9 @@ jobs:
       - name: Calculate commit hash for merge commit
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $Env:GITHUB_ENV
+
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: Build
         run: |
@@ -196,6 +205,9 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
+
       - name: Build
         run: |
           rm -f ./MM_VERSION
@@ -235,7 +247,7 @@ jobs:
 
       - name: pre scripts for ci container
         run: |
-          git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+          git config --global --add safe.directory /__w/komodo-defi-framework/komodo-defi-framework
           echo "/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH
@@ -256,6 +268,9 @@ jobs:
       - name: Calculate commit hash for merge commit
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: Build
         run: |
@@ -305,6 +320,9 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
+
       - name: Build
         run: |
           rm -f ./MM_VERSION
@@ -344,7 +362,7 @@ jobs:
 
       - name: pre scripts for ci container
         run: |
-          git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+          git config --global --add safe.directory /__w/komodo-defi-framework/komodo-defi-framework
           echo "/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH
@@ -365,6 +383,9 @@ jobs:
       - name: Calculate commit hash for merge commit
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: Build
         run: |
@@ -407,7 +428,7 @@ jobs:
 
       - name: pre scripts for ci container
         run: |
-          git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+          git config --global --add safe.directory /__w/komodo-defi-framework/komodo-defi-framework
           echo "/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH
@@ -428,6 +449,9 @@ jobs:
       - name: Calculate commit hash for merge commit
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
 
       - name: Build
         run: |
@@ -472,7 +496,7 @@ jobs:
 
       - name: pre scripts for ci container
         run: |
-          git config --global --add safe.directory /__w/atomicDEX-API/atomicDEX-API
+          git config --global --add safe.directory /__w/komodo-defi-framework/komodo-defi-framework
           echo "/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH

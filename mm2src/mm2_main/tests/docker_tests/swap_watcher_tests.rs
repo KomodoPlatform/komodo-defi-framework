@@ -266,7 +266,7 @@ fn test_watcher_spends_maker_payment_utxo_utxo() {
         25.,
         25.,
         2.,
-        &[],
+        &[("USE_WATCHERS", "")],
         SwapFlow::WatcherSpendsMakerPayment,
         &alice_privkey,
         &bob_privkey,
@@ -306,7 +306,7 @@ fn test_watcher_spends_maker_payment_utxo_eth() {
         0.01,
         0.01,
         1.,
-        &[("USE_WATCHER_REWARD", "")],
+        &[("USE_WATCHERS", ""), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -339,7 +339,11 @@ fn test_watcher_spends_maker_payment_eth_utxo() {
         100.,
         100.,
         0.01,
-        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
+        &[
+            ("USE_WATCHERS", ""),
+            ("TEST_COIN_PRICE", "0.01"),
+            ("USE_WATCHER_REWARD", ""),
+        ],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -385,7 +389,11 @@ fn test_watcher_spends_maker_payment_eth_erc20() {
         100.,
         100.,
         0.01,
-        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
+        &[
+            ("USE_WATCHERS", ""),
+            ("TEST_COIN_PRICE", "0.01"),
+            ("USE_WATCHER_REWARD", ""),
+        ],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -418,7 +426,7 @@ fn test_watcher_spends_maker_payment_erc20_eth() {
         0.01,
         0.01,
         1.,
-        &[("USE_WATCHER_REWARD", "")],
+        &[("USE_WATCHERS", ""), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -451,7 +459,11 @@ fn test_watcher_spends_maker_payment_utxo_erc20() {
         1.,
         1.,
         1.,
-        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
+        &[
+            ("USE_WATCHERS", ""),
+            ("TEST_COIN_PRICE", "0.01"),
+            ("USE_WATCHER_REWARD", ""),
+        ],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -484,7 +496,11 @@ fn test_watcher_spends_maker_payment_erc20_utxo() {
         1.,
         1.,
         1.,
-        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
+        &[
+            ("USE_WATCHERS", ""),
+            ("TEST_COIN_PRICE", "0.01"),
+            ("USE_WATCHER_REWARD", ""),
+        ],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -536,7 +552,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
         25.,
         25.,
         2.,
-        &[("USE_TEST_LOCKTIME", "")],
+        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
         SwapFlow::WatcherRefundsTakerPayment,
         alice_privkey,
         bob_privkey,
@@ -562,7 +578,11 @@ fn test_watcher_refunds_taker_payment_eth() {
         0.01,
         0.01,
         1.,
-        &[("USE_TEST_LOCKTIME", ""), ("USE_WATCHER_REWARD", "")],
+        &[
+            ("USE_WATCHERS", ""),
+            ("USE_TEST_LOCKTIME", ""),
+            ("USE_WATCHER_REWARD", ""),
+        ],
         SwapFlow::WatcherRefundsTakerPayment,
         alice_privkey,
         bob_privkey,
@@ -589,6 +609,7 @@ fn test_watcher_refunds_taker_payment_erc20() {
         100.,
         0.01,
         &[
+            ("USE_WATCHERS", ""),
             ("USE_TEST_LOCKTIME", ""),
             ("TEST_COIN_PRICE", "0.01"),
             ("USE_WATCHER_REWARD", ""),
@@ -640,7 +661,11 @@ fn test_watcher_waits_for_taker_eth() {
         100.,
         100.,
         0.01,
-        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
+        &[
+            ("USE_WATCHERS", ""),
+            ("TEST_COIN_PRICE", "0.01"),
+            ("USE_WATCHER_REWARD", ""),
+        ],
         SwapFlow::TakerSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -649,7 +674,6 @@ fn test_watcher_waits_for_taker_eth() {
 }
 
 #[test]
-#[ignore]
 fn test_two_watchers_spend_maker_payment_eth_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf()]);
 
