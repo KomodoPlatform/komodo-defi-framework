@@ -752,7 +752,7 @@ async fn trade_base_rel_electrum(
         log!("Bob log path: {}", mm_bob.log_path.display())
     }
 
-    Timer::sleep(1.).await;
+    Timer::sleep(2.).await;
 
     let alice_conf = Mm2TestConfForSwap::alice_conf_with_policy(alice_priv_key_policy, &coins, &mm_bob.my_seed_addr());
     let mut mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, None)
@@ -764,6 +764,8 @@ async fn trade_base_rel_electrum(
     {
         log!("Alice log path: {}", mm_alice.log_path.display())
     }
+
+    Timer::sleep(2.).await;
 
     #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
     {
