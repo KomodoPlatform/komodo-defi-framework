@@ -603,6 +603,7 @@ pub struct TakerSwapMut {
 #[derive(Eq, PartialEq, Debug)]
 pub enum FailAt {
     TakerPayment,
+    WaitForTakerPaymentSpend,
     MakerPaymentSpend,
     TakerPaymentRefund,
 }
@@ -612,6 +613,7 @@ impl From<String> for FailAt {
     fn from(str: String) -> Self {
         match str.as_str() {
             "taker_payment" => FailAt::TakerPayment,
+            "wait_for_taker_payment_spend" => FailAt::WaitForTakerPaymentSpend,
             "maker_payment_spend" => FailAt::MakerPaymentSpend,
             "taker_payment_refund" => FailAt::TakerPaymentRefund,
             _ => panic!("Invalid TAKER_FAIL_AT value"),
@@ -1735,6 +1737,11 @@ impl TakerSwap {
                     wait_until: self.wait_refund_until(),
                 },
             ]));
+        }
+
+        #[cfg(any(test, feature = "run-docker-tests"))]
+        if self.fail_at == Some(FailAt::WaitForTakerPaymentSpend) {
+            panic!("Taker failed unexpectedly at wait for taker payment spend");
         }
 
         info!("Taker payment confirmed");
