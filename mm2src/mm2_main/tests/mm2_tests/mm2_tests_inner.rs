@@ -1590,6 +1590,7 @@ fn test_cancel_order() {
         None,
     )
     .unwrap();
+    thread::sleep(Duration::from_secs(2));
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
     // Enable coins on Bob side. Print the replies in case we need the "address".
@@ -1628,6 +1629,7 @@ fn test_cancel_order() {
         None,
     )
     .unwrap();
+    thread::sleep(Duration::from_secs(2));
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());

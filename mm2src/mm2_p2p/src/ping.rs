@@ -66,7 +66,7 @@ impl NetworkBehaviour for AdexPing {
             return Poll::Ready(event);
         }
 
-        Poll::Pending
+        self.ping.poll(cx, params)
     }
 }
 
