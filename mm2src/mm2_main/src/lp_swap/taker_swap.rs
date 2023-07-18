@@ -232,6 +232,7 @@ impl TakerSavedEvent {
             TakerSwapEvent::TakerPaymentRefunded(_) => Some(TakerSwapCommand::FinalizeTakerPaymentRefund),
             TakerSwapEvent::TakerPaymentRefundFailed(_) => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::TakerPaymentRefundFinished => Some(TakerSwapCommand::Finish),
+            TakerSwapEvent::TakerPaymentRefundedByWatcher => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::Finished => None,
         }
     }
@@ -696,6 +697,7 @@ pub enum TakerSwapEvent {
     TakerPaymentRefunded(Option<TransactionIdentifier>),
     TakerPaymentRefundFailed(SwapError),
     TakerPaymentRefundFinished,
+    TakerPaymentRefundedByWatcher,
     Finished,
 }
 
@@ -734,6 +736,7 @@ impl TakerSwapEvent {
             TakerSwapEvent::TakerPaymentRefunded(_) => "Taker payment refunded...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundFailed(_) => "Taker payment refund failed...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundFinished => "Taker payment refund finished...".to_owned(),
+            TakerSwapEvent::TakerPaymentRefundedByWatcher => "TakerPaymentRefundedByWatcher...".to_owned(),
             TakerSwapEvent::Finished => "Finished".to_owned(),
         }
     }
@@ -868,6 +871,7 @@ impl TakerSwap {
             TakerSwapEvent::TakerPaymentRefunded(tx) => self.w().taker_payment_refund = tx,
             TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::TakerPaymentRefundFinished => (),
+            TakerSwapEvent::TakerPaymentRefundedByWatcher => (),
             TakerSwapEvent::Finished => self.finished_at.store(now_sec(), Ordering::Relaxed),
         }
     }
@@ -2479,6 +2483,9 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc) -> Result<Opt
             swap.append_event(ctx, event).await;
 
             let event = TakerSwapEvent::TakerPaymentRefundFinished;
+            swap.append_event(ctx, event).await;
+
+            let event = TakerSwapEvent::TakerPaymentRefundedByWatcher;
             swap.append_event(ctx, event).await;
 
             info!("{}", TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG);

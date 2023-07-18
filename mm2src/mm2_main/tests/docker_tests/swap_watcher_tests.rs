@@ -257,7 +257,7 @@ fn start_swaps_and_get_balances(
 }
 
 #[test]
-fn test_taker_saves_the_swap_as_successful_after_restart_fail_at_maker_payment_spend() {
+fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_fail_at_maker_payment_spend() {
     let alice_privkey = hex::encode(random_secp256k1_secret());
     let bob_privkey = hex::encode(random_secp256k1_secret());
     let watcher_privkey = hex::encode(random_secp256k1_secret());
@@ -375,7 +375,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_fail_at_maker_payment_s
 }
 
 #[test]
-fn test_taker_saves_the_swap_as_successful_after_restart_fail_at_wait_for_taker_payment_spend() {
+fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_panic_at_wait_for_taker_payment_spend() {
     let alice_privkey = hex::encode(random_secp256k1_secret());
     let bob_privkey = hex::encode(random_secp256k1_secret());
     let watcher_privkey = hex::encode(random_secp256k1_secret());
@@ -493,7 +493,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_fail_at_wait_for_taker_
 }
 
 #[test]
-fn test_taker_saves_the_swap_as_finished_after_watcher_refunds_taker_payment() {
+fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_fail_at_taker_payment_refund() {
     let alice_privkey = hex::encode(random_secp256k1_secret());
     let bob_privkey = hex::encode(random_secp256k1_secret());
     let watcher_privkey = hex::encode(random_secp256k1_secret());
@@ -505,7 +505,11 @@ fn test_taker_saves_the_swap_as_finished_after_watcher_refunds_taker_payment() {
         alice_conf.conf.clone(),
         alice_conf.rpc_password.clone(),
         None,
-        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+        &[
+            ("USE_WATCHERS", ""),
+            ("USE_TEST_LOCKTIME", ""),
+            ("TAKER_FAIL_AT", "taker_payment_refund"),
+        ],
     ))
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -623,6 +627,7 @@ fn test_taker_saves_the_swap_as_finished_after_watcher_refunds_taker_payment() {
         "TakerPaymentRefundStarted",
         "TakerPaymentRefunded",
         "TakerPaymentRefundFinished",
+        "TakerPaymentRefundedByWatcher",
         "Finished",
     ];
     let status_response = block_on(my_swap_status(&mm_alice, &uuids[0]));

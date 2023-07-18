@@ -66,6 +66,16 @@ impl SavedSwap {
         }
     }
 
+    pub fn refunded_by_watcher(&self) -> bool {
+        match &self {
+            SavedSwap::Taker(taker_swap) => taker_swap
+                .events
+                .iter()
+                .any(|e| matches!(e.event, TakerSwapEvent::TakerPaymentRefundedByWatcher)),
+            _ => false,
+        }
+    }
+
     pub fn uuid(&self) -> &Uuid {
         match self {
             SavedSwap::Maker(swap) => &swap.uuid,
