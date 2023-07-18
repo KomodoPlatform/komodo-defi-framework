@@ -311,6 +311,7 @@ pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransaction
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
+pub type GenAndSignDexFeeSpendResult = MmResult<TxPreimageWithSig, TxGenError>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
 
@@ -999,11 +1000,49 @@ pub struct SendDexFeeWithPremiumArgs<'a> {
     pub swap_unique_data: &'a [u8],
 }
 
+pub struct GenAndSignDexFeeSpendArgs<'a> {
+    pub tx: &'a [u8],
+    pub time_lock: u32,
+    pub secret_hash: &'a [u8],
+    pub other_pub: &'a [u8],
+    pub dex_fee_pub: &'a [u8],
+    pub dex_fee_amount: BigDecimal,
+    pub premium_amount: BigDecimal,
+    pub swap_unique_data: &'a [u8],
+}
+
+pub struct TxPreimageWithSig {
+    tx_bytes: Vec<u8>,
+    signature: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub enum TxGenError {
+    Rpc(String),
+    NumConversion(String),
+    AddressDerivation(String),
+    MinerFeeExceedsPremium { miner_fee: BigDecimal, premium: BigDecimal },
+    Legacy(String),
+}
+
+impl From<UtxoRpcError> for TxGenError {
+    fn from(err: UtxoRpcError) -> Self { TxGenError::Rpc(err.to_string()) }
+}
+
+impl From<NumConversError> for TxGenError {
+    fn from(err: NumConversError) -> Self { TxGenError::NumConversion(err.to_string()) }
+}
+
 #[async_trait]
 pub trait SwapOpsV2 {
     async fn send_dex_fee_with_premium(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult;
 
     async fn refund_dex_fee_with_premium(&self, args: RefundPaymentArgs<'_>) -> TransactionResult;
+
+    async fn gen_and_sign_dex_fee_spend_preimage(
+        &self,
+        args: GenAndSignDexFeeSpendArgs<'_>,
+    ) -> GenAndSignDexFeeSpendResult;
 }
 
 /// Operations that coins have independently from the MarketMaker.

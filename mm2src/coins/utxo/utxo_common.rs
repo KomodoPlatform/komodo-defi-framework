@@ -15,12 +15,13 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::watcher_common::validate_watcher_reward;
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GetWithdrawSenderAddress,
-            HDAccountAddressId, RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundPaymentArgs,
-            RewardTarget, SearchForSwapTxSpendInput, SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue,
-            TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr, ValidateAddressResult,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GenAndSignDexFeeSpendArgs,
+            GenAndSignDexFeeSpendResult, GetWithdrawSenderAddress, HDAccountAddressId, RawTransactionError,
+            RawTransactionRequest, RawTransactionRes, RefundPaymentArgs, RewardTarget, SearchForSwapTxSpendInput,
+            SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
+            SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TransactionResult,
+            TxFeeDetails, TxGenError, TxMarshalingErr, ValidateAddressResult, ValidateOtherPubKeyErr,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
             WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
             INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
@@ -1102,11 +1103,17 @@ pub struct P2SHSpendingTxInput<'a> {
     keypair: &'a KeyPair,
 }
 
-pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
-    if input.prev_transaction.outputs.is_empty() {
-        return ERR!("Transaction doesn't have any output");
+async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
+    coin: &T,
+    prev_tx: &UtxoTx,
+    lock_time: u32,
+    sequence: u32,
+    outputs: Vec<TransactionOutput>,
+) -> Result<TransactionInputSigner, String> {
+    if prev_tx.outputs.is_empty() {
+        return ERR!("Previous transaction doesn't have any output");
     }
-    let lock_time = try_s!(coin.p2sh_tx_locktime(input.lock_time).await);
+    let lock_time = try_s!(coin.p2sh_tx_locktime(lock_time).await);
     let n_time = if coin.as_ref().conf.is_pos {
         Some(now_sec_u32())
     } else {
@@ -1118,21 +1125,21 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
         None
     };
     let hash_algo = coin.as_ref().tx_hash_algo.into();
-    let unsigned = TransactionInputSigner {
+    Ok(TransactionInputSigner {
         lock_time,
         version: coin.as_ref().conf.tx_version,
         n_time,
         overwintered: coin.as_ref().conf.overwintered,
         inputs: vec![UnsignedTransactionInput {
-            sequence: input.sequence,
+            sequence,
             previous_output: OutPoint {
-                hash: input.prev_transaction.hash(),
+                hash: prev_tx.hash(),
                 index: DEFAULT_SWAP_VOUT as u32,
             },
-            amount: input.prev_transaction.outputs[0].value,
+            amount: prev_tx.outputs[0].value,
             witness: Vec::new(),
         }],
-        outputs: input.outputs,
+        outputs,
         expiry_height: 0,
         join_splits: vec![],
         shielded_spends: vec![],
@@ -1144,7 +1151,20 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
         posv: coin.as_ref().conf.is_posv,
         str_d_zeel,
         hash_algo,
-    };
+    })
+}
+
+pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+    let unsigned = try_s!(
+        p2sh_spending_tx_preimage(
+            coin,
+            &input.prev_transaction,
+            input.lock_time,
+            input.sequence,
+            input.outputs
+        )
+        .await
+    );
     let signed_input = try_s!(p2sh_spend(
         &unsigned,
         DEFAULT_SWAP_VOUT,
@@ -1175,6 +1195,38 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
         str_d_zeel: unsigned.str_d_zeel,
         tx_hash_algo: unsigned.hash_algo.into(),
     })
+}
+
+pub async fn gen_and_sign_dex_fee_spend_preimage<T: UtxoCommonOps>(
+    coin: &T,
+    args: GenAndSignDexFeeSpendArgs<'_>,
+) -> GenAndSignDexFeeSpendResult {
+    let miner_fee = coin
+        .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+        .await?;
+    let dex_fee_sat = sat_from_big_decimal(&args.dex_fee_amount, coin.as_ref().decimals)?;
+    let premium_sat = sat_from_big_decimal(&args.premium_amount, coin.as_ref().decimals)?;
+    if miner_fee > premium_sat + coin.as_ref().dust_amount {
+        return MmError::err(TxGenError::MinerFeeExceedsPremium {
+            miner_fee: big_decimal_from_sat_unsigned(miner_fee, coin.as_ref().decimals),
+            premium: args.premium_amount,
+        });
+    }
+
+    let dex_fee_address = address_from_raw_pubkey(
+        args.dex_fee_pub,
+        coin.as_ref().conf.pub_addr_prefix,
+        coin.as_ref().conf.pub_t_addr_prefix,
+        coin.as_ref().conf.checksum_type,
+        coin.as_ref().conf.bech32_hrp.clone(),
+        coin.addr_format().clone(),
+    )
+    .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive dex_fee_address: {}", e)))?;
+    let dex_fee_output = TransactionOutput {
+        value: dex_fee_sat,
+        script_pubkey: Builder::build_p2pkh(&dex_fee_address.hash).to_bytes(),
+    };
+    unimplemented!()
 }
 
 pub fn send_taker_fee<T>(coin: T, fee_pub_key: &[u8], amount: BigDecimal) -> TransactionFut

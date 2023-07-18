@@ -1,15 +1,10 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN};
 use bitcrypto::dhash160;
-use chain::constants::SEQUENCE_FINAL;
-use chain::{OutPoint, TransactionInput, TransactionOutput};
-use coins::utxo::swap_proto_v2_scripts::dex_fee_script;
-use coins::utxo::utxo_common::{send_outputs_from_my_address, DEFAULT_SWAP_TX_SPEND_SIZE};
-use coins::utxo::{output_script, ScriptType, UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps};
-use coins::{FeeApproxStage, RefundPaymentArgs, SendDexFeeWithPremiumArgs, SwapOpsV2, Transaction, TransactionEnum};
-use common::{block_on, now_sec_u32};
-use futures01::Future;
-use keys::AddressHashEnum;
-use script::{Builder, Opcode, TransactionInputSigner, UnsignedTransactionInput};
+use coins::utxo::UtxoCommonOps;
+use coins::{GenAndSignDexFeeSpendArgs, RefundPaymentArgs, SendDexFeeWithPremiumArgs, SwapOpsV2, Transaction,
+            TransactionEnum};
+use common::{block_on, now_sec_u32, DEX_FEE_ADDR_RAW_PUBKEY};
+use script::{Builder, Opcode};
 
 #[test]
 fn send_and_refund_dex_fee() {
@@ -63,31 +58,36 @@ fn send_and_spend_dex_fee() {
     let (_, taker_coin, _) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
     let (_, maker_coin, _) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
-    let timelock = now_sec_u32() - 1000;
+    let time_lock = now_sec_u32() - 1000;
     let secret = [1; 32];
     let secret_hash = dhash160(&secret);
-    let script = dex_fee_script(
-        timelock,
-        secret_hash.as_slice(),
-        taker_coin.my_public_key().unwrap(),
-        maker_coin.my_public_key().unwrap(),
-    );
-    let p2sh = dhash160(script.as_slice());
-
-    // 0.1 of the MYCOIN
-    let value = 1000000;
-    let output = TransactionOutput {
-        value,
-        script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(p2sh)).into(),
+    let send_args = SendDexFeeWithPremiumArgs {
+        time_lock,
+        secret_hash: secret_hash.as_slice(),
+        other_pub: maker_coin.my_public_key().unwrap(),
+        dex_fee_amount: "0.01".parse().unwrap(),
+        premium_amount: "0.1".parse().unwrap(),
+        swap_unique_data: &[],
     };
-    let dex_fee_tx = match send_outputs_from_my_address(taker_coin.clone(), vec![output])
-        .wait()
-        .unwrap()
-    {
+    let dex_fee_tx = block_on(taker_coin.send_dex_fee_with_premium(send_args)).unwrap();
+    println!("{:02x}", dex_fee_tx.tx_hash());
+    let dex_fee_utxo_tx = match dex_fee_tx {
         TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Got unexpected tx"),
+        unexpected => panic!("Unexpected tx {:?}", unexpected),
     };
 
+    let gen_preimage_args = GenAndSignDexFeeSpendArgs {
+        tx: &dex_fee_utxo_tx.tx_hex(),
+        time_lock,
+        secret_hash: secret_hash.as_slice(),
+        other_pub: &maker_coin.my_public_key().unwrap(),
+        dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
+        dex_fee_amount: "0.01".parse().unwrap(),
+        premium_amount: "0.1".parse().unwrap(),
+        swap_unique_data: &[],
+    };
+    let preimage_with_sig = block_on(taker_coin.gen_and_sign_dex_fee_spend_preimage(gen_preimage_args)).unwrap();
+    /*
     let input_to_spend = UnsignedTransactionInput {
         previous_output: OutPoint {
             hash: dex_fee_tx.hash(),
@@ -193,4 +193,5 @@ fn send_and_spend_dex_fee() {
     };
 
     block_on(taker_coin.broadcast_tx(&spend_tx)).unwrap();
+     */
 }
