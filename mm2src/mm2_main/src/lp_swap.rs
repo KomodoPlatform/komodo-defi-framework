@@ -125,8 +125,8 @@ use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, check_watcher_payments, max_taker_vol,
                      max_taker_vol_from_available, run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput,
                      TakerSavedSwap, TakerSwap, TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage,
-                     MAKER_PAYMENT_SPENT_BY_WATCHER_LOG, TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG,
-                     WATCHER_MESSAGE_SENT_LOG};
+                     MAKER_PAYMENT_SPENT_BY_WATCHER_LOG, REFUND_TEST_FAILURE_LOG,
+                     TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG, WATCHER_MESSAGE_SENT_LOG};
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
@@ -1180,7 +1180,11 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
     let mut coins = HashSet::new();
     let swaps = try_s!(SavedSwap::load_all_my_swaps_from_db(&ctx).await);
     for swap in swaps {
-        if swap.is_finished_and_success() || !swap.contains_watcher_message() || swap.refunded_by_watcher() {
+        if swap.is_finished_and_success()
+            || !swap.contains_watcher_message()
+            || swap.refunded_by_watcher()
+            || swap.watcher_refund_not_found()
+        {
             info!("{} {}", SWAP_FINISHED_LOG, swap.uuid());
             continue;
         }

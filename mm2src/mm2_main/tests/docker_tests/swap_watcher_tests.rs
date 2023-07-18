@@ -13,8 +13,9 @@ use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
 use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, dex_fee_threshold, get_payment_locktime,
                              MakerSwap, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
-                             MAKER_PAYMENT_SPEND_SENT_LOG, SWAP_FINISHED_LOG, TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG,
-                             TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
+                             MAKER_PAYMENT_SPEND_SENT_LOG, REFUND_TEST_FAILURE_LOG, SWAP_FINISHED_LOG,
+                             TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG, TAKER_PAYMENT_REFUND_SENT_LOG,
+                             WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_testnet_conf, eth_testnet_conf, mm_dump, my_balance,
@@ -578,7 +579,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_fa
     block_on(mm_bob.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SENT_LOG))).unwrap();
     block_on(mm_bob.stop()).unwrap();
 
-    block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
     block_on(mm_watcher.wait_for_log(120., |log| log.contains(TAKER_PAYMENT_REFUND_SENT_LOG))).unwrap();
 
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
@@ -594,7 +595,6 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_fa
     enable_coin(&mm_alice, "MYCOIN");
     enable_coin(&mm_alice, "MYCOIN1");
 
-    block_on(mm_alice.wait_for_log(120., |log| log.contains(TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG))).unwrap();
     block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
 
     block_on(mm_alice.stop()).unwrap();
@@ -723,7 +723,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
     block_on(mm_bob.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SENT_LOG))).unwrap();
     block_on(mm_bob.stop()).unwrap();
 
-    block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(REFUND_TEST_FAILURE_LOG))).unwrap();
     block_on(mm_watcher.wait_for_log(120., |log| log.contains(TAKER_PAYMENT_REFUND_SENT_LOG))).unwrap();
 
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
@@ -775,6 +775,120 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         "TakerPaymentRefunded",
         "TakerPaymentRefundFinished",
         "TakerPaymentRefundedByWatcher",
+        "Finished",
+    ];
+    let status_response = block_on(my_swap_status(&mm_alice, &uuids[0]));
+    let events_array = status_response["result"]["events"].as_array().unwrap();
+    let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
+    let actual_events: Vec<&str> = actual_events.collect();
+
+    assert_eq!(expected_events, actual_events.as_slice());
+}
+
+#[test]
+fn test_taker_adds_watcher_refund_not_found_event() {
+    let alice_privkey = hex::encode(random_secp256k1_secret());
+    let bob_privkey = hex::encode(random_secp256k1_secret());
+
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+
+    let mut alice_conf = Mm2TestConf::seednode(&format!("0x{}", alice_privkey), &coins);
+    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
+        alice_conf.conf.clone(),
+        alice_conf.rpc_password.clone(),
+        None,
+        &[
+            ("USE_WATCHERS", ""),
+            ("USE_TEST_LOCKTIME", ""),
+            ("TAKER_FAIL_AT", "taker_payment_refund"),
+        ],
+    ))
+    .unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {}", mm_alice.log_path.display());
+
+    let bob_conf = Mm2TestConf::light_node(&format!("0x{}", bob_privkey), &coins, &[&mm_alice.ip.to_string()]);
+    let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
+        bob_conf.conf.clone(),
+        bob_conf.rpc_password,
+        None,
+        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+    ))
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+
+    generate_utxo_coin_with_privkey("MYCOIN", 100.into(), H256::from_str(&bob_privkey).unwrap());
+    generate_utxo_coin_with_privkey("MYCOIN", 100.into(), H256::from_str(&alice_privkey).unwrap());
+    generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), H256::from_str(&bob_privkey).unwrap());
+    generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), H256::from_str(&alice_privkey).unwrap());
+
+    enable_coin(&mm_alice, "MYCOIN");
+    enable_coin(&mm_alice, "MYCOIN1");
+    enable_coin(&mm_bob, "MYCOIN");
+    enable_coin(&mm_bob, "MYCOIN1");
+
+    let uuids = block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[("MYCOIN1", "MYCOIN")],
+        25.,
+        25.,
+        2.,
+    ));
+    alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
+
+    block_on(mm_bob.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SENT_LOG))).unwrap();
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
+
+    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
+        alice_conf.conf.clone(),
+        alice_conf.rpc_password.clone(),
+        None,
+        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+    ))
+    .unwrap();
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {}", mm_alice.log_path.display());
+    enable_coin(&mm_alice, "MYCOIN");
+    enable_coin(&mm_alice, "MYCOIN1");
+
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
+
+    block_on(mm_alice.stop()).unwrap();
+
+    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
+        alice_conf.conf,
+        alice_conf.rpc_password.clone(),
+        None,
+        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+    ))
+    .unwrap();
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {}", mm_alice.log_path.display());
+    enable_coin(&mm_alice, "MYCOIN");
+    enable_coin(&mm_alice, "MYCOIN1");
+
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("{} {}", SWAP_FINISHED_LOG, uuids[0])))).unwrap();
+
+    let expected_events = [
+        "Started",
+        "Negotiated",
+        "TakerFeeSent",
+        "TakerPaymentInstructionsReceived",
+        "MakerPaymentReceived",
+        "MakerPaymentWaitConfirmStarted",
+        "MakerPaymentValidatedAndConfirmed",
+        "TakerPaymentSent",
+        "WatcherMessageSent",
+        "TakerPaymentWaitForSpendFailed",
+        "TakerPaymentWaitRefundStarted",
+        "TakerPaymentRefundStarted",
+        "TakerPaymentRefundFailed",
+        "WatcherRefundNotFound",
         "Finished",
     ];
     let status_response = block_on(my_swap_status(&mm_alice, &uuids[0]));
