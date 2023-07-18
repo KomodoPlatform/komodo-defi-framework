@@ -5905,6 +5905,7 @@ fn test_buy_min_volume() {
         None,
     )
     .unwrap();
+    thread::sleep(Duration::from_secs(2));
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());

@@ -847,6 +847,16 @@ fn announce_my_addresses(swarm: &mut AtomicDexSwarm) {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+fn build_dns_ws_transport(
+    noise_keys: noise::Config,
+    _wss_certs: Option<&WssCerts>,
+) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)> {
+    let websocket = libp2p::wasm_ext::ffi::websocket_transport();
+    let transport = libp2p::wasm_ext::ExtTransport::new(websocket);
+    upgrade_transport(transport, noise_keys)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn build_dns_ws_transport(
     noise_keys: noise::Config,
