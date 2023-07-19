@@ -184,7 +184,7 @@ impl TakerSavedEvent {
             TakerSwapEvent::TakerPaymentRefunded(_) => Some(TakerSwapCommand::FinalizeTakerPaymentRefund),
             TakerSwapEvent::TakerPaymentRefundFailed(_) => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::TakerPaymentRefundFinished => Some(TakerSwapCommand::Finish),
-            TakerSwapEvent::TakerPaymentRefundedByWatcher => Some(TakerSwapCommand::Finish),
+            TakerSwapEvent::TakerPaymentRefundedByWatcher(_) => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::WatcherRefundNotFound => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::Finished => None,
         }
@@ -660,7 +660,7 @@ pub enum TakerSwapEvent {
     TakerPaymentRefunded(Option<TransactionIdentifier>),
     TakerPaymentRefundFailed(SwapError),
     TakerPaymentRefundFinished,
-    TakerPaymentRefundedByWatcher,
+    TakerPaymentRefundedByWatcher(Option<TransactionIdentifier>),
     WatcherRefundNotFound,
     Finished,
 }
@@ -700,7 +700,7 @@ impl TakerSwapEvent {
             TakerSwapEvent::TakerPaymentRefunded(_) => "Taker payment refunded...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundFailed(_) => "Taker payment refund failed...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundFinished => "Taker payment refund finished...".to_owned(),
-            TakerSwapEvent::TakerPaymentRefundedByWatcher => "Taker payment refunded by watcher...".to_owned(),
+            TakerSwapEvent::TakerPaymentRefundedByWatcher(_) => "Taker payment refunded by watcher...".to_owned(),
             TakerSwapEvent::WatcherRefundNotFound => "Watcher refund could not be found...".to_owned(),
             TakerSwapEvent::Finished => "Finished".to_owned(),
         }
@@ -836,7 +836,7 @@ impl TakerSwap {
             TakerSwapEvent::TakerPaymentRefunded(tx) => self.w().taker_payment_refund = tx,
             TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::TakerPaymentRefundFinished => (),
-            TakerSwapEvent::TakerPaymentRefundedByWatcher => (),
+            TakerSwapEvent::TakerPaymentRefundedByWatcher(tx) => self.w().taker_payment_refund = tx,
             TakerSwapEvent::WatcherRefundNotFound => (),
             TakerSwapEvent::Finished => self.finished_at.store(now_sec(), Ordering::Relaxed),
         }
@@ -2442,35 +2442,9 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: Ta
         },
         (Some(FoundSwapTxSpend::Refunded(_)), Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx)))
         | (None, Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx))) => {
-            while !matches!(
-                saved.events.last().unwrap().event,
-                TakerSwapEvent::WatcherMessageSent(_, _)
-            ) {
+            if saved.is_finished() {
                 saved.events.pop();
             }
-
-            let event = TakerSwapEvent::TakerPaymentWaitForSpendFailed("Taker payment wait for spend failed".into());
-            let to_save = TakerSavedEvent {
-                timestamp: now_ms(),
-                event,
-            };
-            saved.events.push(to_save);
-
-            let event = TakerSwapEvent::TakerPaymentWaitRefundStarted {
-                wait_until: swap.wait_refund_until(),
-            };
-            let to_save = TakerSavedEvent {
-                timestamp: now_ms(),
-                event,
-            };
-            saved.events.push(to_save);
-
-            let event = TakerSwapEvent::TakerPaymentRefundStarted;
-            let to_save = TakerSavedEvent {
-                timestamp: now_ms(),
-                event,
-            };
-            saved.events.push(to_save);
 
             let tx_hash = taker_payment_refund_tx.tx_hash();
             info!("Taker refund tx hash {:02x}", tx_hash);
@@ -2479,21 +2453,7 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: Ta
                 tx_hash,
             };
 
-            let event = TakerSwapEvent::TakerPaymentRefunded(Some(tx_ident));
-            let to_save = TakerSavedEvent {
-                timestamp: now_ms(),
-                event,
-            };
-            saved.events.push(to_save);
-
-            let event = TakerSwapEvent::TakerPaymentRefundFinished;
-            let to_save = TakerSavedEvent {
-                timestamp: now_ms(),
-                event,
-            };
-            saved.events.push(to_save);
-
-            let event = TakerSwapEvent::TakerPaymentRefundedByWatcher;
+            let event = TakerSwapEvent::TakerPaymentRefundedByWatcher(Some(tx_ident));
             let to_save = TakerSavedEvent {
                 timestamp: now_ms(),
                 event,

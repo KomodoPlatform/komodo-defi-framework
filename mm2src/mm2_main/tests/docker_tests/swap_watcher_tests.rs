@@ -627,8 +627,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_fa
         "TakerPaymentWaitForSpendFailed",
         "TakerPaymentWaitRefundStarted",
         "TakerPaymentRefundStarted",
-        "TakerPaymentRefunded",
-        "TakerPaymentRefundFinished",
+        "TakerPaymentRefundFailed",
         "TakerPaymentRefundedByWatcher",
         "Finished",
     ];
@@ -772,8 +771,6 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         "TakerPaymentWaitForSpendFailed",
         "TakerPaymentWaitRefundStarted",
         "TakerPaymentRefundStarted",
-        "TakerPaymentRefunded",
-        "TakerPaymentRefundFinished",
         "TakerPaymentRefundedByWatcher",
         "Finished",
     ];

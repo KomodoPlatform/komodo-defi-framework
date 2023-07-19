@@ -272,7 +272,7 @@ fn convert_taker_to_maker_events(
             | TakerSwapEvent::TakerPaymentRefunded(_)
             | TakerSwapEvent::TakerPaymentRefundFailed(_)
             | TakerSwapEvent::TakerPaymentRefundFinished
-            | TakerSwapEvent::TakerPaymentRefundedByWatcher
+            | TakerSwapEvent::TakerPaymentRefundedByWatcher(_)
             | TakerSwapEvent::WatcherRefundNotFound
             | TakerSwapEvent::Finished => {}
         }

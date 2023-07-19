@@ -68,7 +68,7 @@ impl SavedSwap {
             SavedSwap::Taker(taker_swap) => taker_swap
                 .events
                 .iter()
-                .any(|e| matches!(e.event, TakerSwapEvent::TakerPaymentRefundedByWatcher)),
+                .any(|e| matches!(e.event, TakerSwapEvent::TakerPaymentRefundedByWatcher(_))),
             _ => false,
         }
     }
