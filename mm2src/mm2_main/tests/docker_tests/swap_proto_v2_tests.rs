@@ -1,8 +1,7 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
-use coins::{GenAndSignDexFeeSpendArgs, RefundPaymentArgs, SendDexFeeWithPremiumArgs, SwapOpsV2, Transaction,
-            TransactionEnum};
+use coins::{GenDexFeeSpendArgs, RefundPaymentArgs, SendDexFeeWithPremiumArgs, SwapOpsV2, Transaction, TransactionEnum};
 use common::{block_on, now_sec_u32, DEX_FEE_ADDR_RAW_PUBKEY};
 use script::{Builder, Opcode};
 
@@ -76,17 +75,29 @@ fn send_and_spend_dex_fee() {
         unexpected => panic!("Unexpected tx {:?}", unexpected),
     };
 
-    let gen_preimage_args = GenAndSignDexFeeSpendArgs {
-        tx: &dex_fee_utxo_tx.tx_hex(),
+    let gen_preimage_args = GenDexFeeSpendArgs {
+        dex_fee_tx: &dex_fee_utxo_tx.tx_hex(),
         time_lock,
         secret_hash: secret_hash.as_slice(),
-        other_pub: &maker_coin.my_public_key().unwrap(),
+        maker_pub: &maker_coin.my_public_key().unwrap(),
+        taker_pub: &taker_coin.my_public_key().unwrap(),
         dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee_amount: "0.01".parse().unwrap(),
         premium_amount: "0.1".parse().unwrap(),
-        swap_unique_data: &[],
     };
-    let preimage_with_sig = block_on(taker_coin.gen_and_sign_dex_fee_spend_preimage(gen_preimage_args)).unwrap();
+    let preimage_with_sig = block_on(taker_coin.gen_and_sign_dex_fee_spend_preimage(gen_preimage_args, &[])).unwrap();
+
+    let gen_preimage_args = GenDexFeeSpendArgs {
+        dex_fee_tx: &dex_fee_utxo_tx.tx_hex(),
+        time_lock,
+        secret_hash: secret_hash.as_slice(),
+        maker_pub: &maker_coin.my_public_key().unwrap(),
+        taker_pub: &taker_coin.my_public_key().unwrap(),
+        dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
+        dex_fee_amount: "0.01".parse().unwrap(),
+        premium_amount: "0.1".parse().unwrap(),
+    };
+    block_on(maker_coin.validate_dex_fee_spend_preimage(gen_preimage_args, preimage_with_sig)).unwrap();
     /*
     let input_to_spend = UnsignedTransactionInput {
         previous_output: OutPoint {

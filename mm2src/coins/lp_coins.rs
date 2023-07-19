@@ -312,6 +312,7 @@ pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
 pub type GenAndSignDexFeeSpendResult = MmResult<TxPreimageWithSig, TxGenError>;
+pub type ValidateDexFeeSpendPreimageResult = MmResult<(), ValidateDexFeeSpendPreimageError>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
 
@@ -1000,15 +1001,15 @@ pub struct SendDexFeeWithPremiumArgs<'a> {
     pub swap_unique_data: &'a [u8],
 }
 
-pub struct GenAndSignDexFeeSpendArgs<'a> {
-    pub tx: &'a [u8],
+pub struct GenDexFeeSpendArgs<'a> {
+    pub dex_fee_tx: &'a [u8],
     pub time_lock: u32,
     pub secret_hash: &'a [u8],
-    pub other_pub: &'a [u8],
+    pub maker_pub: &'a [u8],
+    pub taker_pub: &'a [u8],
     pub dex_fee_pub: &'a [u8],
     pub dex_fee_amount: BigDecimal,
     pub premium_amount: BigDecimal,
-    pub swap_unique_data: &'a [u8],
 }
 
 pub struct TxPreimageWithSig {
@@ -1040,6 +1041,26 @@ impl From<UtxoSignWithKeyPairError> for TxGenError {
     fn from(err: UtxoSignWithKeyPairError) -> Self { TxGenError::Signing(err.to_string()) }
 }
 
+#[derive(Debug)]
+pub enum ValidateDexFeeSpendPreimageError {
+    InvalidPubkey(String),
+    InvalidTakerSignature,
+    InvalidPreimage,
+    SignatureVerificationFailure(String),
+    TxDeserialization(String),
+    TxGenError(String),
+}
+
+impl From<UtxoSignWithKeyPairError> for ValidateDexFeeSpendPreimageError {
+    fn from(err: UtxoSignWithKeyPairError) -> Self {
+        ValidateDexFeeSpendPreimageError::SignatureVerificationFailure(err.to_string())
+    }
+}
+
+impl From<TxGenError> for ValidateDexFeeSpendPreimageError {
+    fn from(err: TxGenError) -> Self { ValidateDexFeeSpendPreimageError::TxGenError(format!("{:?}", err)) }
+}
+
 #[async_trait]
 pub trait SwapOpsV2 {
     async fn send_dex_fee_with_premium(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult;
@@ -1048,8 +1069,15 @@ pub trait SwapOpsV2 {
 
     async fn gen_and_sign_dex_fee_spend_preimage(
         &self,
-        args: GenAndSignDexFeeSpendArgs<'_>,
+        args: GenDexFeeSpendArgs<'_>,
+        swap_unique_data: &[u8],
     ) -> GenAndSignDexFeeSpendResult;
+
+    async fn validate_dex_fee_spend_preimage(
+        &self,
+        gen_args: GenDexFeeSpendArgs<'_>,
+        preimage: TxPreimageWithSig,
+    ) -> ValidateDexFeeSpendPreimageResult;
 }
 
 /// Operations that coins have independently from the MarketMaker.

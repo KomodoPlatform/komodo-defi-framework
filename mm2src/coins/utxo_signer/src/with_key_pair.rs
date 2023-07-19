@@ -186,7 +186,7 @@ pub fn calc_and_sign_sighash(
     sign_message(&sighash, key_pair)
 }
 
-fn signature_hash_to_sign(
+pub fn signature_hash_to_sign(
     signer: &TransactionInputSigner,
     input_index: usize,
     output_script: Script,

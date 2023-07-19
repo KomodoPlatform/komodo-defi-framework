@@ -23,16 +23,16 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
-            GenAndSignDexFeeSpendArgs, GenAndSignDexFeeSpendResult, GetWithdrawSenderAddress, IguanaPrivKey,
+            GenAndSignDexFeeSpendResult, GenDexFeeSpendArgs, GetWithdrawSenderAddress, IguanaPrivKey,
             MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions,
             PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundPaymentArgs, RefundResult,
             SearchForSwapTxSpendInput, SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SignatureResult, SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin, TradePreimageValue,
-            TransactionFut, TransactionResult, TxMarshalingErr, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
-            WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
+            TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
+            ValidateDexFeeSpendPreimageResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
 use common::executor::{AbortableSystem, AbortedError};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
@@ -592,9 +592,19 @@ impl SwapOpsV2 for UtxoStandardCoin {
 
     async fn gen_and_sign_dex_fee_spend_preimage(
         &self,
-        args: GenAndSignDexFeeSpendArgs<'_>,
+        args: GenDexFeeSpendArgs<'_>,
+        swap_unique_data: &[u8],
     ) -> GenAndSignDexFeeSpendResult {
-        utxo_common::gen_and_sign_dex_fee_spend_preimage(self, args).await
+        let key_pair = self.derive_htlc_key_pair(swap_unique_data);
+        utxo_common::gen_and_sign_dex_fee_spend_preimage(self, args, &key_pair).await
+    }
+
+    async fn validate_dex_fee_spend_preimage(
+        &self,
+        gen_args: GenDexFeeSpendArgs<'_>,
+        preimage: TxPreimageWithSig,
+    ) -> ValidateDexFeeSpendPreimageResult {
+        utxo_common::validate_dex_fee_spend_preimage(self, gen_args, preimage).await
     }
 }
 
