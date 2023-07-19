@@ -146,99 +146,6 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
     }
 }
 
-async fn remove_events_until_watcher_message(ctx: &MmArc, swap: &TakerSwap) -> Result<(), String> {
-    let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid).await {
-        Ok(Some(swap)) => swap,
-        Ok(None) => SavedSwap::Taker(TakerSavedSwap {
-            uuid: swap.uuid,
-            my_order_uuid: swap.my_order_uuid,
-            maker_amount: Some(swap.maker_amount.to_decimal()),
-            maker_coin: Some(swap.maker_coin.ticker().to_owned()),
-            maker_coin_usd_price: None,
-            taker_amount: Some(swap.taker_amount.to_decimal()),
-            taker_coin: Some(swap.taker_coin.ticker().to_owned()),
-            taker_coin_usd_price: None,
-            gui: ctx.gui().map(|g| g.to_owned()),
-            mm_version: Some(ctx.mm_version.to_owned()),
-            events: vec![],
-            success_events: if ctx.use_watchers()
-                && swap.taker_coin.is_supported_by_watchers()
-                && swap.maker_coin.is_supported_by_watchers()
-            {
-                TAKER_USING_WATCHERS_SUCCESS_EVENTS
-                    .iter()
-                    .map(<&str>::to_string)
-                    .collect()
-            } else {
-                TAKER_SUCCESS_EVENTS.iter().map(<&str>::to_string).collect()
-            },
-            error_events: TAKER_ERROR_EVENTS.iter().map(<&str>::to_string).collect(),
-        }),
-        Err(e) => return ERR!("{}", e),
-    };
-
-    if let SavedSwap::Taker(mut taker_swap) = swap {
-        while !matches!(
-            taker_swap.events.last().unwrap().event,
-            TakerSwapEvent::WatcherMessageSent(_, _)
-        ) {
-            taker_swap.events.pop();
-        }
-        if taker_swap.is_success().unwrap_or(false) {
-            taker_swap.fetch_and_set_usd_prices().await;
-        }
-        let new_swap = SavedSwap::Taker(taker_swap);
-        try_s!(new_swap.save_to_db(ctx).await);
-        Ok(())
-    } else {
-        ERR!("Expected SavedSwap::Taker, got {:?}", swap)
-    }
-}
-
-async fn remove_last_event(ctx: &MmArc, swap: &TakerSwap) -> Result<(), String> {
-    let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid).await {
-        Ok(Some(swap)) => swap,
-        Ok(None) => SavedSwap::Taker(TakerSavedSwap {
-            uuid: swap.uuid,
-            my_order_uuid: swap.my_order_uuid,
-            maker_amount: Some(swap.maker_amount.to_decimal()),
-            maker_coin: Some(swap.maker_coin.ticker().to_owned()),
-            maker_coin_usd_price: None,
-            taker_amount: Some(swap.taker_amount.to_decimal()),
-            taker_coin: Some(swap.taker_coin.ticker().to_owned()),
-            taker_coin_usd_price: None,
-            gui: ctx.gui().map(|g| g.to_owned()),
-            mm_version: Some(ctx.mm_version.to_owned()),
-            events: vec![],
-            success_events: if ctx.use_watchers()
-                && swap.taker_coin.is_supported_by_watchers()
-                && swap.maker_coin.is_supported_by_watchers()
-            {
-                TAKER_USING_WATCHERS_SUCCESS_EVENTS
-                    .iter()
-                    .map(<&str>::to_string)
-                    .collect()
-            } else {
-                TAKER_SUCCESS_EVENTS.iter().map(<&str>::to_string).collect()
-            },
-            error_events: TAKER_ERROR_EVENTS.iter().map(<&str>::to_string).collect(),
-        }),
-        Err(e) => return ERR!("{}", e),
-    };
-
-    if let SavedSwap::Taker(mut taker_swap) = swap {
-        taker_swap.events.pop();
-        if taker_swap.is_success().unwrap_or(false) {
-            taker_swap.fetch_and_set_usd_prices().await;
-        }
-        let new_swap = SavedSwap::Taker(taker_swap);
-        try_s!(new_swap.save_to_db(ctx).await);
-        Ok(())
-    } else {
-        ERR!("Expected SavedSwap::Taker, got {:?}", swap)
-    }
-}
-
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct TakerSavedEvent {
     pub timestamp: u64,
@@ -935,16 +842,6 @@ impl TakerSwap {
         }
     }
 
-    async fn append_event(&self, ctx: &MmArc, event: TakerSwapEvent) {
-        self.apply_event(event.clone());
-        let to_save = TakerSavedEvent {
-            timestamp: now_ms(),
-            event,
-        };
-        save_my_taker_swap_event(ctx, self, to_save)
-            .await
-            .expect("!save_my_taker_swap_event");
-    }
     async fn handle_command(
         &self,
         command: TakerSwapCommand,
@@ -2110,7 +2007,7 @@ impl TakerSwap {
             swap.apply_event(saved_event.event.clone());
         }
 
-        if saved.contains_watcher_message() && check_watcher_payments(&swap, &ctx, &saved).await? {
+        if saved.contains_watcher_message() && check_watcher_payments(&swap, &ctx, saved).await? {
             return Ok((swap, Some(TakerSwapCommand::Finish)));
         }
 
@@ -2424,7 +2321,7 @@ pub struct TakerSwapPreparedParams {
     maker_payment_spend_trade_fee: TradeFee,
 }
 
-pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, saved: &TakerSavedSwap) -> Result<bool, String> {
+pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: TakerSavedSwap) -> Result<bool, String> {
     let other_maker_coin_htlc_pub = swap.r().other_maker_coin_htlc_pub;
     let secret_hash = swap.r().secret_hash.0.clone();
     let maker_coin_start_block = swap.r().data.maker_coin_start_block;
@@ -2489,7 +2386,13 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, saved: &Taker
             Some(FoundSwapTxSpend::Spent(maker_payment_spend_tx)),
             Some(FoundSwapTxSpend::Spent(taker_payment_spend_tx)),
         ) => {
-            remove_events_until_watcher_message(ctx, swap).await?;
+            while !matches!(
+                saved.events.last().unwrap().event,
+                TakerSwapEvent::WatcherMessageSent(_, _)
+            ) {
+                saved.events.pop();
+            }
+
             let tx_hash = taker_payment_spend_tx.tx_hash();
             info!("Taker payment spend tx {:02x}", tx_hash);
             let tx_ident = TransactionIdentifier {
@@ -2511,7 +2414,11 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, saved: &Taker
                 transaction: tx_ident,
                 secret,
             });
-            swap.append_event(ctx, event).await;
+            let to_save = TakerSavedEvent {
+                timestamp: now_ms(),
+                event,
+            };
+            saved.events.push(to_save);
 
             let tx_hash = maker_payment_spend_tx.tx_hash();
             info!("Maker payment spend tx {:02x}", tx_hash);
@@ -2521,24 +2428,49 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, saved: &Taker
             };
 
             let event = TakerSwapEvent::MakerPaymentSpent(tx_ident);
-            swap.append_event(ctx, event).await;
+            let to_save = TakerSavedEvent {
+                timestamp: now_ms(),
+                event,
+            };
+            saved.events.push(to_save);
+
+            let new_swap = SavedSwap::Taker(saved);
+            try_s!(new_swap.save_to_db(ctx).await);
 
             info!("{}", MAKER_PAYMENT_SPENT_BY_WATCHER_LOG);
             Ok(true)
         },
         (Some(FoundSwapTxSpend::Refunded(_)), Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx)))
         | (None, Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx))) => {
-            remove_events_until_watcher_message(ctx, swap).await?;
+            while !matches!(
+                saved.events.last().unwrap().event,
+                TakerSwapEvent::WatcherMessageSent(_, _)
+            ) {
+                saved.events.pop();
+            }
+
             let event = TakerSwapEvent::TakerPaymentWaitForSpendFailed("Taker payment wait for spend failed".into());
-            swap.append_event(ctx, event).await;
+            let to_save = TakerSavedEvent {
+                timestamp: now_ms(),
+                event,
+            };
+            saved.events.push(to_save);
 
             let event = TakerSwapEvent::TakerPaymentWaitRefundStarted {
                 wait_until: swap.wait_refund_until(),
             };
-            swap.append_event(ctx, event).await;
+            let to_save = TakerSavedEvent {
+                timestamp: now_ms(),
+                event,
+            };
+            saved.events.push(to_save);
 
             let event = TakerSwapEvent::TakerPaymentRefundStarted;
-            swap.append_event(ctx, event).await;
+            let to_save = TakerSavedEvent {
+                timestamp: now_ms(),
+                event,
+            };
+            saved.events.push(to_save);
 
             let tx_hash = taker_payment_refund_tx.tx_hash();
             info!("Taker refund tx hash {:02x}", tx_hash);
@@ -2548,13 +2480,28 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, saved: &Taker
             };
 
             let event = TakerSwapEvent::TakerPaymentRefunded(Some(tx_ident));
-            swap.append_event(ctx, event).await;
+            let to_save = TakerSavedEvent {
+                timestamp: now_ms(),
+                event,
+            };
+            saved.events.push(to_save);
 
             let event = TakerSwapEvent::TakerPaymentRefundFinished;
-            swap.append_event(ctx, event).await;
+            let to_save = TakerSavedEvent {
+                timestamp: now_ms(),
+                event,
+            };
+            saved.events.push(to_save);
 
             let event = TakerSwapEvent::TakerPaymentRefundedByWatcher;
-            swap.append_event(ctx, event).await;
+            let to_save = TakerSavedEvent {
+                timestamp: now_ms(),
+                event,
+            };
+            saved.events.push(to_save);
+
+            let new_swap = SavedSwap::Taker(saved);
+            try_s!(new_swap.save_to_db(ctx).await);
 
             info!("{}", TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG);
             Ok(true)
@@ -2565,10 +2512,16 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, saved: &Taker
         (None, None) => {
             if saved.contains_failure() {
                 if saved.is_finished() {
-                    remove_last_event(ctx, swap).await?;
+                    saved.events.pop();
                 }
                 let event = TakerSwapEvent::WatcherRefundNotFound;
-                swap.append_event(ctx, event).await;
+                let to_save = TakerSavedEvent {
+                    timestamp: now_ms(),
+                    event,
+                };
+                saved.events.push(to_save);
+                let new_swap = SavedSwap::Taker(saved);
+                try_s!(new_swap.save_to_db(ctx).await);
                 Ok(true)
             } else {
                 Ok(false)
