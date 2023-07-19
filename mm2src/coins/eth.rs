@@ -5154,7 +5154,7 @@ pub async fn eth_coin_from_conf_and_request(
     let contract_supports_watchers = req["contract_supports_watchers"].as_bool().unwrap_or_default();
 
     let path_to_address = try_s!(json::from_value::<Option<StandardHDCoinAddress>>(
-        req["account"].clone()
+        req["path_to_address"].clone()
     ))
     .unwrap_or_default();
     let (my_address, key_pair) =
