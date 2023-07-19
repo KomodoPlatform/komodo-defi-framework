@@ -157,8 +157,8 @@ pub struct ZcoinConsensusParams {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CheckPointBlockInfo {
-    height: u64,
+pub struct SyncBlockInfo {
+    height: u32,
     hash: H256Json,
     time: u32,
     sapling_tree: BytesJson,
@@ -167,7 +167,6 @@ pub struct CheckPointBlockInfo {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinProtocolInfo {
     consensus_params: ZcoinConsensusParams,
-    check_point_block: Option<CheckPointBlockInfo>,
     // `z_derivation_path` can be the same or different from [`UtxoCoinFields::derivation_path`].
     z_derivation_path: Option<StandardHDPathToCoin>,
 }

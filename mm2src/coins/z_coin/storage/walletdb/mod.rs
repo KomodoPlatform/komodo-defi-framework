@@ -27,6 +27,7 @@ pub enum WalletDbError {
     GrpcError(String),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<tonic::Status> for WalletDbError {
     fn from(err: tonic::Status) -> Self { WalletDbError::GrpcError(err.to_string()) }
 }
@@ -41,10 +42,17 @@ pub struct WalletDbShared {
     ticker: String,
 }
 
-fn calculate_starting_height_from_date(date: u64, current_block_height: u64) -> Result<u32, String> {
+/// Calculates the starting block height based on a given date and the current block height.
+///
+/// # Arguments
+/// * `date`: The date in seconds representing the desired starting height.
+/// * `current_block_height`: The current block height at the time of calculation.
+///
+fn calculate_starting_height_from_date(date: u32, current_block_height: u64) -> Result<u32, String> {
     let blocks_prod_per_day = 24 * 60;
     let current_time_s = now_sec();
 
+    let date = date as u64;
     if current_time_s > date {
         return Err("sync_starting_date must be earlier then current date".to_string());
     };
@@ -81,7 +89,7 @@ impl<'a> WalletDbShared {
                         .await
                         .map_err(|err| WalletDbError::GrpcError(err.to_string()))?;
 
-                    let starting_height = calculate_starting_height_from_date(date as u64, current_block_height)
+                    let starting_height = calculate_starting_height_from_date(date, current_block_height)
                         .map_err(|err| WalletDbError::ZcoinClientInitError(ZcoinClientInitError::ZcashDBError(err)))?;
 
                     info!(

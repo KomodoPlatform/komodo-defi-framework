@@ -16,7 +16,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 
 cfg_native!(
-    use super::CheckPointBlockInfo;
+    use super::SyncBlockInfo;
     use crate::{RpcCommonOps, ZTransaction};
     use crate::utxo::rpc_clients::{UtxoRpcClientOps, NO_TX_ERROR_CODE};
     use crate::z_coin::storage::BlockDbError;
@@ -68,7 +68,7 @@ pub type OnCompactBlockFn<'a> = dyn FnMut(String) -> Result<(), MmError<UpdateBl
 pub trait ZRpcOps {
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>>;
 
-    async fn get_tree_state(&mut self, height: u32) -> Result<CheckPointBlockInfo, MmError<ZcoinRpcError>>;
+    async fn get_tree_state(&mut self, height: u32) -> Result<SyncBlockInfo, MmError<ZcoinRpcError>>;
 
     async fn scan_blocks(
         &mut self,
@@ -123,7 +123,7 @@ impl ZRpcOps for LightRpcClient {
         Ok(block.height)
     }
 
-    async fn get_tree_state(&mut self, height: u32) -> Result<CheckPointBlockInfo, MmError<ZcoinRpcError>> {
+    async fn get_tree_state(&mut self, height: u32) -> Result<SyncBlockInfo, MmError<ZcoinRpcError>> {
         let request = tonic::Request::new(BlockId {
             height: height as u64,
             hash: vec![],
@@ -138,8 +138,8 @@ impl ZRpcOps for LightRpcClient {
 
         let hash = H256Json::from_str(&block.hash).unwrap();
 
-        Ok(CheckPointBlockInfo {
-            height: block.height,
+        Ok(SyncBlockInfo {
+            height: block.height as u32,
             hash,
             time: block.time,
             sapling_tree: Bytes(block.tree.as_bytes().to_vec()),
@@ -212,7 +212,7 @@ impl ZRpcOps for NativeClient {
         Ok(self.get_block_count().compat().await?)
     }
 
-    async fn get_tree_state(&mut self, _height: u32) -> Result<CheckPointBlockInfo, MmError<ZcoinRpcError>> { todo!() }
+    async fn get_tree_state(&mut self, _height: u32) -> Result<SyncBlockInfo, MmError<ZcoinRpcError>> { todo!() }
 
     async fn scan_blocks(
         &mut self,
@@ -316,7 +316,7 @@ impl ZRpcOps for NativeClient {
 pub async fn create_wallet_db(
     wallet_db_path: PathBuf,
     consensus_params: ZcoinConsensusParams,
-    sync_block: Option<CheckPointBlockInfo>,
+    sync_block: Option<SyncBlockInfo>,
     evk: ExtendedFullViewingKey,
 ) -> Result<WalletDb<ZcoinConsensusParams>, MmError<ZcoinClientInitError>> {
     async_blocking({
@@ -440,10 +440,6 @@ pub(super) async fn init_native_client<'a>(
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
-    //
-    //    let wallet_db = WalletDbShared::new(&self, native_client.clone())
-    //        .await
-    //        .map_err(|err| ZCoinBuildError::ZcashDBError(err.to_string()))?;
     let wallet_db = WalletDbShared::new(builder, &mut native_client, &None).await.unwrap();
     let sync_handle = SaplingSyncLoopHandle {
         coin,
