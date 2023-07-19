@@ -157,7 +157,7 @@ pub struct ZcoinConsensusParams {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CheckpointBlockInfo {
+pub struct CheckPointBlockInfo {
     height: u32,
     hash: H256Json,
     time: u32,
@@ -167,7 +167,7 @@ pub struct CheckpointBlockInfo {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinProtocolInfo {
     consensus_params: ZcoinConsensusParams,
-    checkpoint_block: Option<CheckpointBlockInfo>,
+    check_point_block: Option<CheckPointBlockInfo>,
     // `z_derivation_path` can be the same or different from [`UtxoCoinFields::derivation_path`].
     z_derivation_path: Option<StandardHDPathToCoin>,
 }
@@ -801,11 +801,11 @@ pub enum ZcoinRpcMode {
         electrum_servers: Vec<ElectrumRpcRequest>,
         light_wallet_d_servers: Vec<String>,
         /// Specifies the parameters for synchronizing the wallet from a specific block. This overrides the
-        /// `CheckpointBlock` configuration in the coin settings.
+        /// `CheckPointBlockInfo` configuration in the coin settings.
         ///
         /// # Note:
         /// The `LightWalletSyncParams.date` field takes the highest priority, overriding both the
-        /// `LightWalletSyncParams.height` and `CheckpointBlock` if specified. Followed by `LightWalletSyncParams
+        /// `LightWalletSyncParams.height` and `CheckPointBlockInfo` if specified. Followed by `LightWalletSyncParams
         /// .height`.
         sync_params: Option<LightWalletSyncParams>,
     },

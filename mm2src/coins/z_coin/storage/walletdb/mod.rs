@@ -2,7 +2,7 @@ use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
 use mm2_err_handle::prelude::*;
 
 cfg_native!(
-    use crate::z_coin::{CheckpointBlockInfo, extended_spending_key_from_protocol_info_and_policy, ZcoinConsensusParams,
+    use crate::z_coin::{CheckPointBlockInfo, extended_spending_key_from_protocol_info_and_policy, ZcoinConsensusParams,
                     ZcoinRpcMode};
     use crate::z_coin::z_rpc::{create_wallet_db, ZRpcOps};
 
@@ -127,22 +127,22 @@ impl<'a> WalletDbShared {
                         let hash = H256::from_str(&block.hash)
                             .map_err(|err| WalletDbError::DecodeError(err.to_string()))?
                             .reversed();
-                        let tree = Bytes::new(
+                        let sapling_tree = Bytes::new(
                             FromHex::from_hex(&block.tree)
                                 .map_err(|err: FromHexError| WalletDbError::DecodeError(err.to_string()))?,
                         );
 
-                        Some(CheckpointBlockInfo {
+                        Some(CheckPointBlockInfo {
                             height: block.height as u32,
                             hash,
                             time: block.time,
-                            sapling_tree: tree,
+                            sapling_tree,
                         })
                     },
-                    None => zcoin_builder.protocol_info.checkpoint_block.clone(),
+                    None => zcoin_builder.protocol_info.check_point_block.clone(),
                 }
             },
-            ZcoinRpcMode::Native => zcoin_builder.protocol_info.checkpoint_block.clone(),
+            ZcoinRpcMode::Native => zcoin_builder.protocol_info.check_point_block.clone(),
         };
 
         let wallet_db = create_wallet_db(
