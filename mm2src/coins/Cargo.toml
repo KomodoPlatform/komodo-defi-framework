@@ -76,6 +76,7 @@ primitives = { path = "../mm2_bitcoin/primitives" }
 prost = "0.10"
 protobuf = "2.20"
 rand = { version = "0.7", features = ["std", "small_rng"] }
+regex = "1"
 rlp = { version = "0.5" }
 rmp-serde = "0.14.3"
 rpc = { path = "../mm2_bitcoin/rpc" }

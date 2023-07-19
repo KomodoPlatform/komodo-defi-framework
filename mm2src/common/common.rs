@@ -1040,3 +1040,8 @@ pub fn parse_rfc3339_to_timestamp(date_str: &str) -> Result<u64, ParseRfc3339Err
     let date: DateTime<Utc> = date_str.parse()?;
     Ok(date.timestamp().try_into()?)
 }
+
+/// `is_initial_upgrade` function checks if the database is being upgraded from version 0 to 1.
+/// This function returns a boolean indicating whether the database is being upgraded from version 0 to 1.
+#[cfg(target_arch = "wasm32")]
+pub fn is_initial_upgrade(old_version: u32, new_version: u32) -> bool { old_version == 0 && new_version == 1 }

@@ -1,4 +1,4 @@
-# Setting up the dev environment for AtomicDEX-API to run full tests suite
+# Setting up the dev environment for Komodo DeFi Framework to run full tests suite
 
 ## Running native tests
 

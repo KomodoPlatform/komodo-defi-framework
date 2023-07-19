@@ -45,11 +45,11 @@ mod unix_reexport {
 mod macos_reexport {
     pub(super) use std::fs;
     pub(super) const LAUNCH_CTL_COOL_DOWN_TIMEOUT_MS: u64 = 500;
-    pub(super) use common::log::debug;
     pub(super) use std::process::Command;
     pub(super) use std::thread::sleep;
     pub(super) use std::time::Duration;
-    pub(super) const LAUNCHCTL_MM2_ID: &str = "com.mm2.daemon";
+    pub(super) use sysinfo::{ProcessExt, System, SystemExt};
+    pub(super) const LAUNCHCTL_MM2_ID: &str = "com.komodoproject.mm2";
 }
 
 #[cfg(target_os = "macos")] use macos_reexport::*;
@@ -208,7 +208,6 @@ pub(crate) fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<S
     };
 
     let Ok(plist_path)  = get_plist_path() else {return;};
-
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -216,6 +215,11 @@ pub(crate) fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<S
         <dict>
             <key>Label</key>
             <string>{}</string>
+            <key>LimitLoadToSessionType</key>
+            <array>
+                <string>Aqua</string>
+                <string>Background</string>
+            </array>
             <key>ProgramArguments</key>
             <array>
                 <string>{}</string>
@@ -252,33 +256,39 @@ pub(crate) fn start_process(mm2_cfg_file: &Option<String>, coins_file: &Option<S
         return;
     }
 
+    let Ok(uid) = get_proc_uid() else { return };
     match Command::new("launchctl")
-        .arg("enable")
-        .arg(format!("system/{LAUNCHCTL_MM2_ID}").as_str())
+        .arg("bootstrap")
+        .arg(format!("user/{}", uid).as_str())
+        .arg(&plist_path)
         .spawn()
     {
-        Ok(_) => debug!("Successfully enabled using launchctl, label: {LAUNCHCTL_MM2_ID}"),
-        Err(error) => error!("Failed to enable process: {error}"),
+        Ok(_) => info!(
+            "Successfully bootstraped launchctl: user/{} {}",
+            uid,
+            plist_path.display()
+        ),
+        Err(error) => error!("Failed to bootstrap process: {error}"),
     }
 
-    match Command::new("launchctl").arg("load").arg(&plist_path).spawn() {
-        Ok(_) => debug!("Successfully loaded using launchctl, label: {LAUNCHCTL_MM2_ID}"),
-        Err(error) => error!("Failed to load process: {error}"),
-    }
-
-    match Command::new("launchctl").args(["start", LAUNCHCTL_MM2_ID]).spawn() {
-        Ok(_) => info!("Successfully started using launchctl, label: {LAUNCHCTL_MM2_ID}"),
-        Err(error) => error!("Failed to start process: {error}"),
+    match Command::new("launchctl")
+        .arg("kickstart")
+        .arg("-k")
+        .arg("-p")
+        .arg(format!("user/{}/{}", uid, LAUNCHCTL_MM2_ID).as_str())
+        .spawn()
+    {
+        Ok(_) => info!("Successfully kickstarted launchctl: user/{}/{}", uid, LAUNCHCTL_MM2_ID),
+        Err(error) => error!("Failed to kickstart process: {error}"),
     }
 }
 
 #[cfg(target_os = "macos")]
-fn get_plist_path() -> Result<PathBuf, ()> {
+fn get_plist_path() -> Result<PathBuf> {
     match env::current_dir() {
-        Err(error) => {
-            error!("Failed to get current_dir to construct plist_path: {error}");
-            Err(())
-        },
+        Err(error) => Err(error_anyhow!(
+            "Failed to get current_dir to construct plist_path: {error}"
+        )),
         Ok(mut current_dir) => {
             current_dir.push(&format!("{LAUNCHCTL_MM2_ID}.plist"));
             Ok(current_dir)
@@ -289,16 +299,35 @@ fn get_plist_path() -> Result<PathBuf, ()> {
 #[cfg(target_os = "macos")]
 pub(crate) fn stop_process() {
     let Ok(plist_path) = get_plist_path() else { return; };
-
-    if let Err(error) = Command::new("launchctl").arg("unload").arg(&plist_path).spawn() {
-        error!("Failed to unload process using launchctl: {}", error);
+    let Ok(uid) = get_proc_uid() else { return };
+    if let Err(error) = Command::new("launchctl")
+        .arg("bootout")
+        .arg(format!("user/{}/{}", uid, LAUNCHCTL_MM2_ID))
+        .spawn()
+    {
+        error!(
+            "Failed to unload process using launchctl: user/{}/{}, error: {}",
+            uid, LAUNCHCTL_MM2_ID, error
+        );
     } else {
         info!("mm2 successfully stopped by launchctl");
     }
     sleep(Duration::from_millis(LAUNCH_CTL_COOL_DOWN_TIMEOUT_MS));
-    if let Err(err) = fs::remove_file(&plist_path) {
+    if let Err(err) = fs::remove_file(plist_path) {
         error!("Failed to remove plist file: {}", err);
     }
+}
+
+#[cfg(target_os = "macos")]
+fn get_proc_uid() -> Result<u32> {
+    let pid = sysinfo::get_current_pid().map_err(|e| error_anyhow!("Failed to get current pid: {e}"))?;
+    let s = System::new_all();
+    let proc = s
+        .process(pid)
+        .ok_or_else(|| error_anyhow!("Failed to get current process by pid: {pid}"))?;
+    proc.user_id()
+        .map(|uid| **uid)
+        .ok_or_else(|| error_anyhow!("Failed to get uid"))
 }
 
 #[cfg(target_os = "macos")]

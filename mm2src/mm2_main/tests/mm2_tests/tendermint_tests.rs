@@ -143,6 +143,41 @@ fn test_tendermint_withdraw() {
 }
 
 #[test]
+fn test_custom_gas_limit_on_tendermint_withdraw() {
+    let coins = json!([atom_testnet_conf()]);
+
+    let conf = Mm2TestConf::seednode(ATOM_TEST_WITHDRAW_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        ATOM_TICKER,
+        &[],
+        ATOM_TENDERMINT_RPC_URLS,
+        false,
+    ));
+    println!("Activation {}", json::to_string(&activation_res).unwrap());
+
+    let request = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "withdraw",
+        "coin": ATOM_TICKER,
+        "to": "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz",
+        "amount": "0.1",
+        "fee": {
+            "type": "CosmosGas",
+            "gas_limit": 150000,
+            "gas_price": 0.1
+        }
+    })))
+    .unwrap();
+    assert_eq!(request.0, common::StatusCode::OK, "'withdraw' failed: {}", request.1);
+    let tx_details: TransactionDetails = json::from_str(&request.1).unwrap();
+
+    assert_eq!(tx_details.fee_details["gas_limit"], 150000);
+}
+
+#[test]
 fn test_tendermint_ibc_withdraw() {
     const IBC_SOURCE_CHANNEL: &str = "channel-81";
     const IBC_TARGET_ADDRESS: &str = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl";

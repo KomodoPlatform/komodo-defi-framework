@@ -5298,6 +5298,10 @@ fn checksum_address(addr: &str) -> String {
     result
 }
 
+/// `eth_addr_to_hex` converts Address to hex format.
+/// Note: the result will be in lowercase.
+pub(crate) fn eth_addr_to_hex(address: &Address) -> String { format!("{:#02x}", address) }
+
 /// Checks that input is valid mixed-case checksum form address
 /// The input must be 0x prefixed hex string
 fn is_valid_checksum_addr(addr: &str) -> bool { addr == checksum_address(addr) }
@@ -5413,6 +5417,7 @@ impl From<CryptoCtxError> for GetEthAddressError {
 }
 
 /// `get_eth_address` returns wallet address for coin with `ETH` protocol type.
+/// Note: result address has mixed-case checksum form.
 pub async fn get_eth_address(
     ctx: &MmArc,
     ticker: &str,
