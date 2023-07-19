@@ -174,7 +174,7 @@ pub fn p2wpkh_spend(
 }
 
 /// Calculates the input script hash and sign it using `key_pair`.
-pub(crate) fn calc_and_sign_sighash(
+pub fn calc_and_sign_sighash(
     signer: &TransactionInputSigner,
     input_index: usize,
     output_script: Script,

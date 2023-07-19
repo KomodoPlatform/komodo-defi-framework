@@ -1012,7 +1012,7 @@ pub struct GenAndSignDexFeeSpendArgs<'a> {
 }
 
 pub struct TxPreimageWithSig {
-    tx_bytes: Vec<u8>,
+    preimage: Vec<u8>,
     signature: Vec<u8>,
 }
 
@@ -1021,6 +1021,9 @@ pub enum TxGenError {
     Rpc(String),
     NumConversion(String),
     AddressDerivation(String),
+    TxDeserialization(String),
+    InvalidPubkey(String),
+    Signing(String),
     MinerFeeExceedsPremium { miner_fee: BigDecimal, premium: BigDecimal },
     Legacy(String),
 }
@@ -1031,6 +1034,10 @@ impl From<UtxoRpcError> for TxGenError {
 
 impl From<NumConversError> for TxGenError {
     fn from(err: NumConversError) -> Self { TxGenError::NumConversion(err.to_string()) }
+}
+
+impl From<UtxoSignWithKeyPairError> for TxGenError {
+    fn from(err: UtxoSignWithKeyPairError) -> Self { TxGenError::Signing(err.to_string()) }
 }
 
 #[async_trait]
