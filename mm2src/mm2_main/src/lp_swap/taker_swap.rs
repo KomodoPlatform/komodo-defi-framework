@@ -402,6 +402,12 @@ impl TakerSavedSwap {
 
     pub fn contains_failure(&self) -> bool { self.events.iter().any(|event| event.event.is_error()) }
 
+    pub fn contains_watcher_message(&self) -> bool {
+        self.events
+            .iter()
+            .any(|e| matches!(e.event, TakerSwapEvent::WatcherMessageSent(_, _)))
+    }
+
     pub async fn fetch_and_set_usd_prices(&mut self) {
         if let Some(rates) = fetch_swap_coins_price(self.maker_coin.clone(), self.taker_coin.clone()).await {
             self.maker_coin_usd_price = Some(rates.base);
@@ -2102,13 +2108,12 @@ impl TakerSwap {
         let command = saved.events.last().unwrap().get_command();
         for saved_event in &saved.events {
             swap.apply_event(saved_event.event.clone());
-
-            if let TakerSwapEvent::WatcherMessageSent(_, _) = saved_event.event {
-                if check_watcher_payments(&swap, &ctx, &saved).await? {
-                    return Ok((swap, Some(TakerSwapCommand::Finish)));
-                }
-            }
         }
+
+        if saved.contains_watcher_message() && check_watcher_payments(&swap, &ctx, &saved).await? {
+            return Ok((swap, Some(TakerSwapCommand::Finish)));
+        }
+
         Ok((swap, command))
     }
 
