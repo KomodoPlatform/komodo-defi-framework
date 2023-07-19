@@ -71,6 +71,9 @@ use zcash_primitives::{constants::mainnet as z_mainnet_constants, sapling::Payme
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
 use zcash_proofs::prover::LocalTxProver;
 
+pub mod z_rpc_methods;
+use crate::z_coin::z_rpc_methods::{GetMinimumHeightError, GetMinimumHeightResponse};
+
 mod z_htlc;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
@@ -155,7 +158,7 @@ pub struct ZcoinConsensusParams {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CheckPointBlockInfo {
-    height: u32,
+    height: u64,
     hash: H256Json,
     time: u32,
     sapling_tree: BytesJson,
@@ -749,10 +752,43 @@ impl ZCoin {
             paging_options: request.paging_options,
         })
     }
+
+    pub async fn get_minimum_header_from_cache(&self) -> MmResult<GetMinimumHeightResponse, GetMinimumHeightError> {
+        let sync = self
+            .sync_status()
+            .await
+            .map_err(|err| GetMinimumHeightError::TemporaryError(err.to_string()))?;
+        let wallet_db = self.z_fields.light_wallet_db.db.lock();
+        let extrema = wallet_db
+            .block_height_extrema()
+            .map_to_mm(|err| GetMinimumHeightError::StorageError(err.to_string()))?;
+
+        match sync {
+            SyncStatus::UpdatingBlocksCache { .. } => MmError::err(GetMinimumHeightError::UpdatingBlocksCache(
+                "Blocks cache still bulding, try again later".to_string(),
+            )),
+            SyncStatus::BuildingWalletDb { .. } => MmError::err(GetMinimumHeightError::BuildingWalletDb(
+                "Wallets cache still bulding, try again later".to_string(),
+            )),
+            SyncStatus::TemporaryError(_) => MmError::err(GetMinimumHeightError::TemporaryError(
+                "Temporary error occured".to_string(),
+            )),
+            SyncStatus::Finished { .. } => Ok(GetMinimumHeightResponse {
+                height: extrema.map(|(min, _max)| min.into()),
+                status: "Finished".to_string(),
+            }),
+        }
+    }
 }
 
 impl AsRef<UtxoCoinFields> for ZCoin {
     fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct LightWalletSyncParams {
+    pub date: Option<u32>,
+    pub height: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -763,6 +799,7 @@ pub enum ZcoinRpcMode {
     Light {
         electrum_servers: Vec<ElectrumRpcRequest>,
         light_wallet_d_servers: Vec<String>,
+        sync_params: Option<LightWalletSyncParams>,
     },
 }
 
@@ -888,39 +925,17 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         );
 
         let blocks_db = self.blocks_db().await?;
-        let wallet_db = WalletDbShared::new(&self)
-            .await
-            .map_err(|err| ZCoinBuildError::ZcashDBError(err.to_string()))?;
-
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => {
                 let native_client = self.native_client()?;
-                init_native_client(
-                    self.ticker.into(),
-                    native_client,
-                    blocks_db,
-                    wallet_db,
-                    self.protocol_info.consensus_params.clone(),
-                    self.z_coin_params.scan_blocks_per_iteration,
-                    self.z_coin_params.scan_interval_ms,
-                )
-                .await?
+                init_native_client(&self, native_client, blocks_db).await?
             },
             ZcoinRpcMode::Light {
-                light_wallet_d_servers, ..
-            } => {
-                init_light_client(
-                    self.ticker.into(),
-                    light_wallet_d_servers.clone(),
-                    blocks_db,
-                    wallet_db,
-                    self.protocol_info.consensus_params.clone(),
-                    self.z_coin_params.scan_blocks_per_iteration,
-                    self.z_coin_params.scan_interval_ms,
-                )
-                .await?
-            },
+                light_wallet_d_servers,
+                sync_params,
+                ..
+            } => init_light_client(&self, light_wallet_d_servers.clone(), blocks_db, sync_params).await?,
         };
         let z_fields = ZCoinFields {
             dex_fee_addr,

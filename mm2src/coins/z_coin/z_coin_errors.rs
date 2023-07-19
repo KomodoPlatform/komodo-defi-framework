@@ -279,3 +279,29 @@ pub enum SpendableNotesError {
 
 #[derive(Debug, Display)]
 pub enum ZCoinBalanceError {}
+
+#[derive(Debug, Display)]
+pub enum ZcoinRpcError {
+    #[cfg(not(target_arch = "wasm32"))]
+    GrpcError(tonic::Status),
+    UtxoRpcError(UtxoRpcError),
+    JsonRpcError(JsonRpcError),
+    UpdateBlocksCacheErr(UpdateBlocksCacheErr),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<tonic::Status> for ZcoinRpcError {
+    fn from(err: tonic::Status) -> Self { Self::GrpcError(err) }
+}
+
+impl From<UtxoRpcError> for ZcoinRpcError {
+    fn from(err: UtxoRpcError) -> Self { ZcoinRpcError::UtxoRpcError(err) }
+}
+
+impl From<JsonRpcError> for ZcoinRpcError {
+    fn from(err: JsonRpcError) -> Self { ZcoinRpcError::JsonRpcError(err) }
+}
+
+impl From<UpdateBlocksCacheErr> for ZcoinRpcError {
+    fn from(err: UpdateBlocksCacheErr) -> Self { ZcoinRpcError::UpdateBlocksCacheErr(err) }
+}
