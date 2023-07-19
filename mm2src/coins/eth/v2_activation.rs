@@ -322,7 +322,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
 /// Processes the given `priv_key_policy` and generates corresponding `KeyPair`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
 /// or [`PrivKeyBuildPolicy::GlobalHDAccount`], otherwise returns `PrivKeyPolicyNotAllowed` error.
-// Todo: maybe change the parameters passed to this function and the function name
 pub(crate) async fn build_address_and_priv_key_policy(
     conf: &Json,
     priv_key_policy: EthPrivKeyBuildPolicy,

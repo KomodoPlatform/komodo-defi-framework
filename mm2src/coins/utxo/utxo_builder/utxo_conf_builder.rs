@@ -296,7 +296,6 @@ impl<'a> UtxoConfBuilder<'a> {
             .map_to_mm(|e| UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()))
     }
 
-    // Todo: recheck if this can be default in config
     fn path_to_address(&self) -> StandardHDCoinAddress { self.params.path_to_address.clone() }
 
     fn avg_blocktime(&self) -> Option<u64> { self.conf["avg_blocktime"].as_u64() }

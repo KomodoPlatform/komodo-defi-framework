@@ -48,7 +48,6 @@ use std::str::FromStr;
 /// * `account = (2 ^ 31 - 1) = 2147483647` - latest available account index.
 ///   This number is chosen so that it does not cross with real accounts;
 /// * `change = 0` - nothing special.
-// Todo: add more comments to this
 /// * `address_index = 0`.
 pub(crate) fn mm2_internal_der_path() -> DerivationPath {
     DerivationPath::from_str("m/44'/141'/2147483647/0/0").expect("valid derivation path")

@@ -1856,7 +1856,6 @@ pub fn output_script(address: &Address, script_type: ScriptType) -> Script {
     }
 }
 
-// Todo: the pubkey should be for the account and address_index if this is used for HD mode
 pub fn address_by_conf_and_pubkey_str(
     coin: &str,
     conf: &Json,
@@ -1875,7 +1874,7 @@ pub fn address_by_conf_and_pubkey_str(
         enable_params: EnabledCoinBalanceParams::default(),
         priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
         check_utxo_maturity: None,
-        // Todo: recheck this field
+        // This will not be used since the pubkey from orderbook/etc.. will be used to generate the address
         path_to_address: StandardHDCoinAddress::default(),
     };
     let conf_builder = UtxoConfBuilder::new(conf, &params, coin);
