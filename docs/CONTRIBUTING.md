@@ -1,4 +1,4 @@
-# Contributing to AtomicDEX-API
+# Contributing to Komodo DeFi Framework
 
 We welcome contribution from everyone in the form of suggestions, bug reports, pull requests, and feedback.
 Please note we have a code of conduct, please follow it in all your interactions with the project.

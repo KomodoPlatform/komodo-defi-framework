@@ -3,7 +3,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
 use mm2_number::BigDecimal;
 
-use crate::{lp_coinfind_or_err, MmCoinEnum, WithdrawError, WithdrawResult};
+use crate::{lp_coinfind_or_err, MmCoinEnum, WithdrawError, WithdrawFee, WithdrawResult};
 
 #[derive(Clone, Deserialize)]
 pub struct IBCWithdrawRequest {
@@ -15,6 +15,7 @@ pub struct IBCWithdrawRequest {
     #[serde(default)]
     pub(crate) max: bool,
     pub(crate) memo: Option<String>,
+    pub(crate) fee: Option<WithdrawFee>,
 }
 
 pub async fn ibc_withdraw(ctx: MmArc, req: IBCWithdrawRequest) -> WithdrawResult {
