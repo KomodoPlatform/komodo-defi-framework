@@ -71,9 +71,6 @@ use zcash_primitives::{constants::mainnet as z_mainnet_constants, sapling::Payme
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
 use zcash_proofs::prover::LocalTxProver;
 
-pub mod z_rpc_methods;
-use crate::z_coin::z_rpc_methods::{GetMinimumHeightError, GetMinimumHeightResponse};
-
 mod z_htlc;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
@@ -99,6 +96,9 @@ cfg_native!(
     use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
     use zcash_proofs::default_params_folder;
     use z_rpc::{init_native_client};
+
+    pub mod z_rpc_methods;
+    use crate::z_coin::z_rpc_methods::{GetMinimumHeightError, GetMinimumHeightResponse};
 );
 
 #[allow(unused)] mod z_coin_errors;
@@ -157,7 +157,7 @@ pub struct ZcoinConsensusParams {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SyncBlockInfo {
+pub struct CheckpointBlockInfo {
     height: u32,
     hash: H256Json,
     time: u32,
@@ -167,6 +167,7 @@ pub struct SyncBlockInfo {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinProtocolInfo {
     consensus_params: ZcoinConsensusParams,
+    checkpoint_block: Option<CheckpointBlockInfo>,
     // `z_derivation_path` can be the same or different from [`UtxoCoinFields::derivation_path`].
     z_derivation_path: Option<StandardHDPathToCoin>,
 }
@@ -752,6 +753,7 @@ impl ZCoin {
         })
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn get_minimum_header_from_cache(&self) -> MmResult<GetMinimumHeightResponse, GetMinimumHeightError> {
         let sync = self
             .sync_status()
@@ -798,6 +800,13 @@ pub enum ZcoinRpcMode {
     Light {
         electrum_servers: Vec<ElectrumRpcRequest>,
         light_wallet_d_servers: Vec<String>,
+        /// Specifies the parameters for synchronizing the wallet from a specific block. This overrides the
+        /// `CheckpointBlock` configuration in the coin settings.
+        ///
+        /// # Note:
+        /// The `LightWalletSyncParams.date` field takes the highest priority, overriding both the
+        /// `LightWalletSyncParams.height` and `CheckpointBlock` if specified. Followed by `LightWalletSyncParams
+        /// .height`.
         sync_params: Option<LightWalletSyncParams>,
     },
 }
@@ -931,10 +940,8 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                 init_native_client(&self, native_client, blocks_db).await?
             },
             ZcoinRpcMode::Light {
-                light_wallet_d_servers,
-                sync_params,
-                ..
-            } => init_light_client(&self, light_wallet_d_servers.clone(), blocks_db, sync_params).await?,
+                light_wallet_d_servers, ..
+            } => init_light_client(&self, light_wallet_d_servers.clone(), blocks_db).await?,
         };
         let z_fields = ZCoinFields {
             dex_fee_addr,

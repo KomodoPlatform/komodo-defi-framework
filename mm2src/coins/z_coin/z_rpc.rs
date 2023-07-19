@@ -1,7 +1,5 @@
-use super::{z_coin_errors::*, ZcoinConsensusParams};
+use super::{z_coin_errors::*, BlockDbImpl, WalletDbShared, ZCoinBuilder, ZcoinConsensusParams};
 use crate::utxo::rpc_clients::NativeClient;
-use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
-use crate::z_coin::{LightWalletSyncParams, ZCoinBuilder};
 use async_trait::async_trait;
 use common::executor::{spawn_abortable, AbortOnDropHandle};
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
@@ -10,15 +8,14 @@ use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::StreamExt;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
-use rpc::v1::types::Bytes;
 use std::sync::Arc;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 
 cfg_native!(
-    use super::SyncBlockInfo;
     use crate::{RpcCommonOps, ZTransaction};
     use crate::utxo::rpc_clients::{UtxoRpcClientOps, NO_TX_ERROR_CODE};
+    use super::CheckpointBlockInfo;
     use crate::z_coin::storage::BlockDbError;
 
     use db_common::sqlite::rusqlite::Connection;
@@ -50,7 +47,7 @@ cfg_native!(
     mod z_coin_grpc {
         tonic::include_proto!("cash.z.wallet.sdk.rpc");
     }
-
+    use z_coin_grpc::TreeState;
     use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
     use z_coin_grpc::{BlockId, BlockRange, ChainSpec, CompactBlock as TonicCompactBlock,
                   CompactOutput as TonicCompactOutput, CompactSpend as TonicCompactSpend, CompactTx as TonicCompactTx,
@@ -68,7 +65,8 @@ pub type OnCompactBlockFn<'a> = dyn FnMut(String) -> Result<(), MmError<UpdateBl
 pub trait ZRpcOps {
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>>;
 
-    async fn get_tree_state(&mut self, height: u32) -> Result<SyncBlockInfo, MmError<ZcoinRpcError>>;
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn get_tree_state(&mut self, height: u32) -> Result<TreeState, MmError<ZcoinRpcError>>;
 
     async fn scan_blocks(
         &mut self,
@@ -123,27 +121,20 @@ impl ZRpcOps for LightRpcClient {
         Ok(block.height)
     }
 
-    async fn get_tree_state(&mut self, height: u32) -> Result<SyncBlockInfo, MmError<ZcoinRpcError>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn get_tree_state(&mut self, height: u32) -> Result<TreeState, MmError<ZcoinRpcError>> {
         let request = tonic::Request::new(BlockId {
             height: height as u64,
             hash: vec![],
         });
-        let block = self
+
+        Ok(self
             .get_live_client()
             .await?
             .get_tree_state(request)
             .await
             .map_to_mm(ZcoinRpcError::GrpcError)?
-            .into_inner();
-
-        let hash = H256Json::from_str(&block.hash).unwrap();
-
-        Ok(SyncBlockInfo {
-            height: block.height as u32,
-            hash,
-            time: block.time,
-            sapling_tree: Bytes(block.tree.as_bytes().to_vec()),
-        })
+            .into_inner())
     }
 
     async fn scan_blocks(
@@ -212,7 +203,8 @@ impl ZRpcOps for NativeClient {
         Ok(self.get_block_count().compat().await?)
     }
 
-    async fn get_tree_state(&mut self, _height: u32) -> Result<SyncBlockInfo, MmError<ZcoinRpcError>> { todo!() }
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn get_tree_state(&mut self, _height: u32) -> Result<TreeState, MmError<ZcoinRpcError>> { todo!() }
 
     async fn scan_blocks(
         &mut self,
@@ -316,7 +308,7 @@ impl ZRpcOps for NativeClient {
 pub async fn create_wallet_db(
     wallet_db_path: PathBuf,
     consensus_params: ZcoinConsensusParams,
-    sync_block: Option<SyncBlockInfo>,
+    sync_block: Option<CheckpointBlockInfo>,
     evk: ExtendedFullViewingKey,
 ) -> Result<WalletDb<ZcoinConsensusParams>, MmError<ZcoinClientInitError>> {
     async_blocking({
@@ -328,10 +320,12 @@ pub async fn create_wallet_db(
             init_wallet_db(&db).map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
             if db.get_extended_full_viewing_keys()?.is_empty() {
                 init_accounts_table(&db, &[evk])?;
+                println!("sync_block {}", sync_block.is_some());
                 if let Some(block) = sync_block {
+                    println!("sync_block {}", block.height);
                     init_blocks_table(
                         &db,
-                        BlockHeight::from_u32(block.height as u32),
+                        BlockHeight::from_u32(block.height),
                         BlockHash(block.hash.0),
                         block.time,
                         &block.sapling_tree.0,
@@ -349,7 +343,6 @@ pub(super) async fn init_light_client<'a>(
     builder: &ZCoinBuilder<'a>,
     lightwalletd_urls: Vec<String>,
     blocks_db: BlockDbImpl,
-    sync_param: &Option<LightWalletSyncParams>,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -393,9 +386,8 @@ pub(super) async fn init_light_client<'a>(
     let mut light_rpc_clients = LightRpcClient {
         rpc_clients: AsyncMutex::new(rpc_clients),
     };
-    let wallet_db = WalletDbShared::new(builder, &mut light_rpc_clients, sync_param)
-        .await
-        .unwrap();
+    info!("initializing wallet_db for light");
+    let wallet_db = WalletDbShared::new(builder, &mut light_rpc_clients).await.unwrap();
     let sync_handle = SaplingSyncLoopHandle {
         coin,
         current_block: BlockHeight::from_u32(0),
@@ -419,14 +411,10 @@ pub(super) async fn init_light_client<'a>(
 
 #[cfg(target_arch = "wasm32")]
 #[allow(unused)]
-pub(super) async fn init_light_client(
-    _coin: String,
+pub(super) async fn init_light_client<'a>(
+    _builder: &ZCoinBuilder<'a>,
     _lightwalletd_urls: Vec<String>,
     _blocks_db: BlockDbImpl,
-    _wallet_db: WalletDbShared,
-    _consensus_params: ZcoinConsensusParams,
-    _scan_blocks_per_iteration: u32,
-    _scan_interval_ms: u64,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     todo!()
 }
@@ -440,7 +428,8 @@ pub(super) async fn init_native_client<'a>(
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
-    let wallet_db = WalletDbShared::new(builder, &mut native_client, &None).await.unwrap();
+    let wallet_db = WalletDbShared::new(builder, &mut native_client).await.unwrap();
+
     let sync_handle = SaplingSyncLoopHandle {
         coin,
         current_block: BlockHeight::from_u32(0),
@@ -462,13 +451,10 @@ pub(super) async fn init_native_client<'a>(
 }
 
 #[cfg(target_arch = "wasm32")]
-pub(super) async fn _init_native_client(
-    _coin: String,
-    _native_client: NativeClient,
+pub(super) async fn _init_native_client<'a>(
+    _builder: &ZCoinBuilder<'a>,
+    mut _native_client: NativeClient,
     _blocks_db: BlockDbImpl,
-    _consensus_params: ZcoinConsensusParams,
-    _scan_blocks_per_iteration: u32,
-    _scan_interval_ms: u64,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, String), MmError<ZcoinClientInitError>> {
     todo!()
 }
@@ -598,6 +584,7 @@ impl SaplingSyncLoopHandle {
         if let Some((_, max_in_wallet)) = extrema {
             from_block = from_block.max(max_in_wallet.into());
         }
+
         if current_block >= from_block {
             rpc.scan_blocks(from_block, current_block, &mut |block: TonicCompactBlock| {
                 block_in_place(|| self.blocks_db.insert_block(block.height as u32, block.encode_to_vec()))

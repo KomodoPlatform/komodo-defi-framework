@@ -30,6 +30,7 @@ use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
+#[cfg(not(target_arch = "wasm32"))]
 use coins::z_coin::z_rpc_methods::get_minimum_header_from_cache;
 use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_infos, remove_delegation, sign_message,
             verify_message, withdraw};
@@ -261,6 +262,7 @@ async fn rpc_task_dispatcher(
         "withdraw::init" => handle_mmrpc(ctx, request, init_withdraw).await,
         "withdraw::status" => handle_mmrpc(ctx, request, withdraw_status).await,
         "withdraw::user_action" => handle_mmrpc(ctx, request, withdraw_user_action).await,
+        #[cfg(not(target_arch = "wasm32"))]
         "z_storage::min_height" => handle_mmrpc(ctx, request, get_minimum_header_from_cache).await,
         #[cfg(not(target_arch = "wasm32"))]
         native_only_methods => match native_only_methods {
