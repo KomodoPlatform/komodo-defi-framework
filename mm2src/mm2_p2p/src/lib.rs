@@ -1,5 +1,4 @@
 #![feature(ip)]
-#![allow(unused, dead_code)]
 
 pub mod behaviour;
 mod event;

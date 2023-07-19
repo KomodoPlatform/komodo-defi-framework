@@ -314,13 +314,16 @@ impl AtomicDexBehaviour {
     fn process_cmd(&mut self, cmd: AdexBehaviourCmd) {
         match cmd {
             AdexBehaviourCmd::Subscribe { topic } => {
-                self.core.gossipsub.subscribe(&IdentTopic::new(topic));
+                self.core.gossipsub.subscribe(&IdentTopic::new(topic)).unwrap();
             },
             AdexBehaviourCmd::PublishMsg { topic, msg } => {
-                self.core.gossipsub.publish(TopicHash::from_raw(topic), msg);
+                self.core.gossipsub.publish(TopicHash::from_raw(topic), msg).unwrap();
             },
             AdexBehaviourCmd::PublishMsgFrom { topic, msg, from } => {
-                self.core.gossipsub.publish_from(TopicHash::from_raw(topic), msg, from);
+                self.core
+                    .gossipsub
+                    .publish_from(TopicHash::from_raw(topic), msg, from)
+                    .unwrap();
             },
             AdexBehaviourCmd::RequestAnyRelay { req, response_tx } => {
                 let relays = self.core.gossipsub.get_relay_mesh();
@@ -705,18 +708,20 @@ fn start_gossipsub(
                     debug!("Swarm event {:?}", event);
 
                     if let SwarmEvent::Behaviour(event) = event {
-                        if let AdexBehaviourEvent::Floodsub(FloodsubEvent::Message(message)) = &event {
-                            for topic in &message.topics {
-                                if topic == &FloodsubTopic::new(PEERS_TOPIC) {
-                                    let addresses: PeerAddresses = match rmp_serde::from_slice(&message.data) {
-                                        Ok(a) => a,
-                                        Err(_) => break,
-                                    };
-                                    swarm
-                                        .behaviour_mut()
-                                        .core
-                                        .peers_exchange
-                                        .add_peer_addresses_to_known_peers(&message.source, addresses);
+                        if swarm.behaviour_mut().netid != NETID_7777 {
+                            if let AdexBehaviourEvent::Floodsub(FloodsubEvent::Message(message)) = &event {
+                                for topic in &message.topics {
+                                    if topic == &FloodsubTopic::new(PEERS_TOPIC) {
+                                        let addresses: PeerAddresses = match rmp_serde::from_slice(&message.data) {
+                                            Ok(a) => a,
+                                            Err(_) => break,
+                                        };
+                                        swarm
+                                            .behaviour_mut()
+                                            .core
+                                            .peers_exchange
+                                            .add_peer_addresses_to_known_peers(&message.source, addresses);
+                                    }
                                 }
                             }
                         }

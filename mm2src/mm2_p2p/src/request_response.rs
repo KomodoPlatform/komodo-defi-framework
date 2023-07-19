@@ -1,13 +1,13 @@
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
 use futures::io::{AsyncRead, AsyncWrite};
-use futures::task::{Context, Poll};
+use futures::task::Poll;
 use futures::StreamExt;
 use futures_ticker::Ticker;
 use instant::{Duration, Instant};
 use libp2p::core::upgrade::{read_length_prefixed, write_length_prefixed};
 use libp2p::request_response::{InboundFailure, Message, OutboundFailure, ProtocolSupport};
-use libp2p::swarm::{PollParameters, ToSwarm};
+use libp2p::swarm::ToSwarm;
 use libp2p::{request_response::{Behaviour as RequestResponse, Config as RequestResponseConfig,
                                 Event as RequestResponseEvent, RequestId, ResponseChannel},
              swarm::NetworkBehaviour,
@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::io;
 
-use crate::peers_exchange::PeersExchangeRequest;
 use crate::{decode_message, encode_message};
 
 const MAX_BUFFER_SIZE: usize = 1024 * 1024 - 100;
@@ -378,28 +377,16 @@ impl From<libp2p::request_response::Event<PeerRequest, PeerResponse>> for Reques
     fn from(event: libp2p::request_response::Event<PeerRequest, PeerResponse>) -> Self {
         match event {
             RequestResponseEvent::Message { peer, message } => match message {
-                Message::Request {
-                    request_id,
-                    request,
-                    channel,
-                } => Self::InboundRequest {
+                Message::Request { request, channel, .. } => Self::InboundRequest {
                     peer_id: peer,
                     request,
                     response_channel: channel,
                 },
-                Message::Response { request_id, response } => RequestResponseBehaviourEvent::NoAction,
+                Message::Response { .. } => RequestResponseBehaviourEvent::NoAction,
             },
-            RequestResponseEvent::OutboundFailure {
-                peer,
-                request_id,
-                error,
-            } => RequestResponseBehaviourEvent::NoAction,
-            RequestResponseEvent::InboundFailure {
-                peer,
-                request_id,
-                error,
-            } => RequestResponseBehaviourEvent::NoAction,
-            RequestResponseEvent::ResponseSent { peer, request_id } => RequestResponseBehaviourEvent::NoAction,
+            RequestResponseEvent::OutboundFailure { .. } => RequestResponseBehaviourEvent::NoAction,
+            RequestResponseEvent::InboundFailure { .. } => RequestResponseBehaviourEvent::NoAction,
+            RequestResponseEvent::ResponseSent { .. } => RequestResponseBehaviourEvent::NoAction,
         }
     }
 }

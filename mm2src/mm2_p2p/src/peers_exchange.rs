@@ -4,14 +4,14 @@ use futures_ticker::Ticker;
 use libp2p::{multiaddr::Protocol,
              request_response::{Behaviour as RequestResponse, Config as RequestResponseConfig, Event, HandlerEvent,
                                 InboundFailure, OutboundFailure, ProtocolSupport, ResponseChannel},
-             swarm::{NetworkBehaviour, PollParameters, ToSwarm},
+             swarm::{NetworkBehaviour, ToSwarm},
              Multiaddr, PeerId};
 use log::{info, warn};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::{HashMap, HashSet, VecDeque},
           iter,
-          task::{Context, Poll},
+          task::Poll,
           time::Duration};
 
 use crate::{request_response::Codec, NetworkInfo};
@@ -115,11 +115,7 @@ impl NetworkBehaviour for PeersExchange {
         event: libp2p::swarm::THandlerOutEvent<Self>,
     ) {
         match event {
-            HandlerEvent::Request {
-                request_id,
-                request,
-                sender,
-            } => {
+            HandlerEvent::Request { request, sender, .. } => {
                 match request {
                     PeersExchangeRequest::GetKnownPeers { num } => {
                         // Should not send a response in such case
@@ -138,7 +134,7 @@ impl NetworkBehaviour for PeersExchange {
                     },
                 }
             },
-            HandlerEvent::Response { request_id, response } => {
+            HandlerEvent::Response { response, .. } => {
                 match response {
                     PeersExchangeResponse::KnownPeers { peers } => {
                         info!("Got peers {:?}", peers);
@@ -157,10 +153,11 @@ impl NetworkBehaviour for PeersExchange {
                 }
             },
             HandlerEvent::ResponseSent(_) => {},
-            HandlerEvent::ResponseOmission(e) => {
+            HandlerEvent::ResponseOmission(request_id) => {
                 log::error!(
-                    "Inbound failure {:?} while processing request from peer {}",
+                    "Inbound failure {:?} while requesting {:?} from peer {}",
                     InboundFailure::ResponseOmission,
+                    request_id,
                     peer_id
                 );
             },

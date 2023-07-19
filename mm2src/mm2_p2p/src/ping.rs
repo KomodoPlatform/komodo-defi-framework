@@ -1,8 +1,7 @@
-use libp2p::ping::{Behaviour, Config, Event};
+use libp2p::ping::{Behaviour, Config};
 use libp2p::swarm::{CloseConnection, NetworkBehaviour, PollParameters, ToSwarm};
 use log::error;
-use std::{collections::VecDeque,
-          task::{Context, Poll}};
+use std::{collections::VecDeque, task::Poll};
 use void::Void;
 
 pub struct AdexPing {

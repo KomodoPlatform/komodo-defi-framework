@@ -1,5 +1,4 @@
 use crate::{NetworkInfo, NetworkPorts};
-use common::serde_json;
 use derive_more::Display;
 use lazy_static::lazy_static;
 use libp2p::Multiaddr;
@@ -177,7 +176,7 @@ fn test_deserialize_relay_address() {
     }
 
     let Config { addresses: actual } =
-        serde_json::from_str(r#"{"addresses": ["foo.bar.com", "127.0.0.2", "/memory/12345"]}"#)
+        common::serde_json::from_str(r#"{"addresses": ["foo.bar.com", "127.0.0.2", "/memory/12345"]}"#)
             .expect("Error deserializing a list of RelayAddress");
     let expected = vec![
         RelayAddress::Dns("foo.bar.com".to_owned()),
