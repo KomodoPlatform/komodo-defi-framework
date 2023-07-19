@@ -34,8 +34,8 @@ use common::executor::{AbortableSystem, AbortedError};
 use common::sha256_digest;
 use common::{log, one_thousand_u32};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
-use crypto::StandardHDPathToCoin;
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
+use crypto::{StandardHDCoinAddress, StandardHDPathToCoin};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -776,6 +776,8 @@ pub struct ZcoinActivationParams {
     pub scan_blocks_per_iteration: u32,
     #[serde(default)]
     pub scan_interval_ms: u64,
+    #[serde(default)]
+    pub path_to_address: StandardHDCoinAddress,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -863,11 +865,16 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
+        let path_to_address = utxo.conf.path_to_address.clone();
         let utxo_arc = UtxoArc::new(utxo);
 
         let z_spending_key = match self.z_spending_key {
             Some(ref z_spending_key) => z_spending_key.clone(),
-            None => extended_spending_key_from_protocol_info_and_policy(&self.protocol_info, &self.priv_key_policy)?,
+            None => extended_spending_key_from_protocol_info_and_policy(
+                &self.protocol_info,
+                &self.priv_key_policy,
+                &path_to_address,
+            )?,
         };
 
         let (_, my_z_addr) = z_spending_key
@@ -888,7 +895,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         );
 
         let blocks_db = self.blocks_db().await?;
-        let wallet_db = WalletDbShared::new(&self)
+        let wallet_db = WalletDbShared::new(&self, &path_to_address)
             .await
             .map_err(|err| ZCoinBuildError::ZcashDBError(err.to_string()))?;
 
@@ -973,6 +980,7 @@ impl<'a> ZCoinBuilder<'a> {
             enable_params: Default::default(),
             priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
             check_utxo_maturity: None,
+            path_to_address: z_coin_params.path_to_address.clone(),
         };
         ZCoinBuilder {
             ctx,
@@ -1991,11 +1999,12 @@ pub fn interpret_memo_string(memo_str: &str) -> MmResult<MemoBytes, WithdrawErro
 fn extended_spending_key_from_protocol_info_and_policy(
     protocol_info: &ZcoinProtocolInfo,
     priv_key_policy: &PrivKeyBuildPolicy,
+    path_to_address: &StandardHDCoinAddress,
 ) -> MmResult<ExtendedSpendingKey, ZCoinBuildError> {
     match priv_key_policy {
         PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(ExtendedSpendingKey::master(iguana.as_slice())),
         PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
-            extended_spending_key_from_global_hd_account(protocol_info, global_hd)
+            extended_spending_key_from_global_hd_account(protocol_info, global_hd, path_to_address)
         },
         PrivKeyBuildPolicy::Trezor => {
             let priv_key_err = PrivKeyPolicyNotAllowed::HardwareWalletNotSupported;
@@ -2009,12 +2018,12 @@ fn extended_spending_key_from_protocol_info_and_policy(
 fn extended_spending_key_from_global_hd_account(
     protocol_info: &ZcoinProtocolInfo,
     global_hd: &GlobalHDAccountArc,
+    path_to_address: &StandardHDCoinAddress,
 ) -> MmResult<ExtendedSpendingKey, ZCoinBuildError> {
     let path_to_coin = protocol_info
         .z_derivation_path
         .clone()
         .or_mm_err(|| ZCoinBuildError::ZDerivationPathNotSet)?;
-
     let path_to_account = path_to_coin
         .to_derivation_path()
         .into_iter()
@@ -2022,7 +2031,9 @@ fn extended_spending_key_from_global_hd_account(
         .map(|child| Zip32Child::from_index(child.0))
         // Push the hardened `account` index, so the derivation path looks like:
         // `m/purpose'/coin'/account'`.
-        .chain(iter::once(Zip32Child::Hardened(global_hd.account_id())));
+        .chain(iter::once(Zip32Child::Hardened(path_to_address.account)))
+        .chain(iter::once(Zip32Child::NonHardened(path_to_address.is_change as u32)))
+        .chain(iter::once(Zip32Child::NonHardened(path_to_address.address_index)));
 
     let mut spending_key = ExtendedSpendingKey::master(global_hd.root_seed_bytes());
     for zip32_child in path_to_account {

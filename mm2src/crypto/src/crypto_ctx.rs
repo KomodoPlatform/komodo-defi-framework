@@ -223,12 +223,8 @@ impl CryptoCtx {
         Self::init_crypto_ctx_with_policy_builder(ctx, passphrase, KeyPairPolicyBuilder::Iguana)
     }
 
-    pub fn init_with_global_hd_account(
-        ctx: MmArc,
-        passphrase: &str,
-        hd_account_id: u64,
-    ) -> CryptoInitResult<Arc<CryptoCtx>> {
-        let builder = KeyPairPolicyBuilder::GlobalHDAccount { hd_account_id };
+    pub fn init_with_global_hd_account(ctx: MmArc, passphrase: &str) -> CryptoInitResult<Arc<CryptoCtx>> {
+        let builder = KeyPairPolicyBuilder::GlobalHDAccount;
         Self::init_crypto_ctx_with_policy_builder(ctx, passphrase, builder)
     }
 
@@ -338,7 +334,7 @@ impl CryptoCtx {
 
 enum KeyPairPolicyBuilder {
     Iguana,
-    GlobalHDAccount { hd_account_id: u64 },
+    GlobalHDAccount,
 }
 
 impl KeyPairPolicyBuilder {
@@ -349,8 +345,8 @@ impl KeyPairPolicyBuilder {
                 let secp256k1_key_pair = key_pair_from_seed(passphrase)?;
                 Ok((secp256k1_key_pair, KeyPairPolicy::Iguana))
             },
-            KeyPairPolicyBuilder::GlobalHDAccount { hd_account_id } => {
-                let (mm2_internal_key_pair, global_hd_ctx) = GlobalHDAccountCtx::new(passphrase, hd_account_id)?;
+            KeyPairPolicyBuilder::GlobalHDAccount => {
+                let (mm2_internal_key_pair, global_hd_ctx) = GlobalHDAccountCtx::new(passphrase)?;
                 let key_pair_policy = KeyPairPolicy::GlobalHDAccount(global_hd_ctx.into_arc());
                 Ok((mm2_internal_key_pair, key_pair_policy))
             },

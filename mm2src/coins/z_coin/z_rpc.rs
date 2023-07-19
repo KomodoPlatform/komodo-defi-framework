@@ -298,6 +298,7 @@ pub async fn create_wallet_db(
                 .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
             init_wallet_db(&db).map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
             if db.get_extended_full_viewing_keys()?.is_empty() {
+                // Todo: revise usage of evk here
                 init_accounts_table(&db, &[evk])?;
                 if let Some(check_point) = check_point_block {
                     init_blocks_table(

@@ -51,7 +51,7 @@ struct Mm2Cfg {
     #[serde(skip_serializing_if = "Vec::<Ipv4Addr>::is_empty")]
     seednodes: Vec<Ipv4Addr>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    hd_account_id: Option<u64>,
+    enable_hd: Option<bool>,
 }
 
 impl Mm2Cfg {
@@ -68,7 +68,7 @@ impl Mm2Cfg {
             rpc_local_only: None,
             i_am_seed: None,
             seednodes: Vec::<Ipv4Addr>::new(),
-            hd_account_id: None,
+            enable_hd: None,
         }
     }
 
@@ -84,6 +84,7 @@ impl Mm2Cfg {
         self.inquire_rpc_local_only()?;
         self.inquire_i_am_a_seed()?;
         self.inquire_seednodes()?;
+        // Todo: check all instances of hd_account_id
         self.inquire_hd_account_id()?;
         Ok(())
     }
@@ -312,9 +313,15 @@ impl Mm2Cfg {
 
     #[inline]
     fn inquire_hd_account_id(&mut self) -> Result<()> {
-        self.hd_account_id = CustomType::<InquireOption<u64>>::new("What is hd_account_id:")
-                .with_help_message(r#"Optional. If this value is set, the AtomicDEX-API will work in only the HD derivation mode, coins will need to have a coin derivation path entry in the coins file for activation. The hd_account_id value effectively takes its place in the full derivation as follows: m/44'/COIN_ID'/<hd_account_id>'/CHAIN/ADDRESS_ID"#)
-                .with_placeholder(DEFAULT_OPTION_PLACEHOLDER)
+        // Todo: recheck if this is renamed in mm2
+        self.enable_hd = CustomType::<InquireOption<bool>>::new("What is enable_hd:")
+                .with_parser(OPTION_BOOL_PARSER)
+                .with_formatter(DEFAULT_OPTION_BOOL_FORMATTER)
+                // Todo: if we decide to se default as false we will change the name back to iguana in mm2 and make it default to false here too
+                .with_default_value_formatter(DEFAULT_DEFAULT_OPTION_BOOL_FORMATTER)
+                .with_default(InquireOption::None)
+                // Todo: add account and address_index to activation methods once they are refactored in mm2
+                .with_help_message(r#"Optional. If this value is set, the AtomicDEX-API will work in only the HD derivation mode, coins will need to have a coin derivation path entry in the coins file for activation. account and address_index will have to be set in coins activation to take thier place in the full derivation path as follows: m/44'/COIN_ID'/<account>'/CHAIN/<address_index>"#)
                 .prompt()
                 .map_err(|error|
                     error_anyhow!("Failed to get hd_account_id: {}", error)

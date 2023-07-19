@@ -1,6 +1,6 @@
 use super::*;
 use common::executor::AbortedError;
-use crypto::{CryptoCtxError, StandardHDPathToCoin};
+use crypto::{CryptoCtxError, StandardHDCoinAddress, StandardHDPathToCoin};
 use enum_from::EnumFromTrait;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
@@ -100,6 +100,8 @@ pub struct EthActivationV2Request {
     pub required_confirmations: Option<u64>,
     #[serde(default)]
     pub priv_key_policy: EthPrivKeyActivationPolicy,
+    #[serde(default)]
+    pub path_to_address: StandardHDCoinAddress,
 }
 
 #[derive(Clone, Deserialize)]
@@ -246,7 +248,8 @@ pub async fn eth_coin_from_conf_and_request_v2(
         }
     }
 
-    let (my_address, priv_key_policy) = build_address_and_priv_key_policy(conf, priv_key_policy).await?;
+    let (my_address, priv_key_policy) =
+        build_address_and_priv_key_policy(conf, priv_key_policy, &req.path_to_address).await?;
     let my_address_str = checksum_address(&format!("{:02x}", my_address));
 
     let chain_id = conf["chain_id"].as_u64();
@@ -319,9 +322,11 @@ pub async fn eth_coin_from_conf_and_request_v2(
 /// Processes the given `priv_key_policy` and generates corresponding `KeyPair`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
 /// or [`PrivKeyBuildPolicy::GlobalHDAccount`], otherwise returns `PrivKeyPolicyNotAllowed` error.
+// Todo: maybe change the parameters passed to this function and the function name
 pub(crate) async fn build_address_and_priv_key_policy(
     conf: &Json,
     priv_key_policy: EthPrivKeyBuildPolicy,
+    path_to_address: &StandardHDCoinAddress,
 ) -> MmResult<(Address, EthPrivKeyPolicy), EthActivationV2Error> {
     let raw_priv_key = match priv_key_policy {
         EthPrivKeyBuildPolicy::IguanaPrivKey(iguana) => iguana,
@@ -331,7 +336,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 .map_to_mm(|e| EthActivationV2Error::ErrorDeserializingDerivationPath(e.to_string()))?;
             let derivation_path = derivation_path.or_mm_err(|| EthActivationV2Error::DerivationPathIsNotSet)?;
             global_hd_ctx
-                .derive_secp256k1_secret(&derivation_path)
+                .derive_secp256k1_secret(&derivation_path, path_to_address)
                 .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?
         },
         #[cfg(target_arch = "wasm32")]

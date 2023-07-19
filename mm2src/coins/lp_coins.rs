@@ -49,7 +49,7 @@ use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
 use common::log::{warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy,
-             Secp256k1Secret, WithHwRpcError};
+             Secp256k1Secret, StandardHDCoinAddress, WithHwRpcError};
 use derive_more::Display;
 use enum_from::{EnumFromStringify, EnumFromTrait};
 use ethereum_types::H256;
@@ -408,6 +408,8 @@ pub struct RawTransactionRes {
 #[derive(Debug, Deserialize)]
 pub struct MyAddressReq {
     coin: String,
+    #[serde(default)]
+    path_to_address: StandardHDCoinAddress,
 }
 
 #[derive(Debug, Serialize)]
@@ -3911,7 +3913,7 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
     let protocol: CoinProtocol = json::from_value(coins_en["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&ctx, ticker).await?,
+        CoinProtocol::ETH => get_eth_address(&ctx, ticker, &req.path_to_address).await?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",

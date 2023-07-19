@@ -158,7 +158,7 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
             .as_ref()
             .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
         let secret = global_hd_ctx
-            .derive_secp256k1_secret(derivation_path)
+            .derive_secp256k1_secret(derivation_path, &conf.path_to_address)
             .mm_err(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
         build_utxo_coin_fields_with_conf_and_secret(self, conf, secret).await
     }

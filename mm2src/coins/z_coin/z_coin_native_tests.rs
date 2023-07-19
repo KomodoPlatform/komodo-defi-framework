@@ -1,5 +1,6 @@
 use bitcrypto::dhash160;
 use common::{block_on, now_sec_u32};
+use crypto::StandardHDCoinAddress;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_test_helpers::for_tests::zombie_conf;
 use std::path::PathBuf;
@@ -289,5 +290,6 @@ fn default_zcoin_activation_params() -> ZcoinActivationParams {
         zcash_params_path: None,
         scan_blocks_per_iteration: 0,
         scan_interval_ms: 0,
+        path_to_address: StandardHDCoinAddress::default(),
     }
 }

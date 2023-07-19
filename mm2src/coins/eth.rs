@@ -34,7 +34,7 @@ use common::{get_utc_timestamp, now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 #[cfg(target_arch = "wasm32")]
 use common::{now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
+use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy, StandardHDCoinAddress};
 use derive_more::Display;
 use enum_from::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
@@ -5153,7 +5153,12 @@ pub async fn eth_coin_from_conf_and_request(
     }
     let contract_supports_watchers = req["contract_supports_watchers"].as_bool().unwrap_or_default();
 
-    let (my_address, key_pair) = try_s!(build_address_and_priv_key_policy(conf, priv_key_policy).await);
+    let path_to_address = try_s!(json::from_value::<Option<StandardHDCoinAddress>>(
+        req["account"].clone()
+    ))
+    .unwrap_or_default();
+    let (my_address, key_pair) =
+        try_s!(build_address_and_priv_key_policy(conf, priv_key_policy, &path_to_address).await);
 
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
@@ -5408,12 +5413,16 @@ impl From<CryptoCtxError> for GetEthAddressError {
 }
 
 /// `get_eth_address` returns wallet address for coin with `ETH` protocol type.
-pub async fn get_eth_address(ctx: &MmArc, ticker: &str) -> MmResult<MyWalletAddress, GetEthAddressError> {
+pub async fn get_eth_address(
+    ctx: &MmArc,
+    ticker: &str,
+    path_to_address: &StandardHDCoinAddress,
+) -> MmResult<MyWalletAddress, GetEthAddressError> {
     let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(ctx)?;
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
     let priv_key_policy = EthPrivKeyBuildPolicy::try_from(priv_key_policy)?;
 
-    let (my_address, ..) = build_address_and_priv_key_policy(&ctx.conf, priv_key_policy).await?;
+    let (my_address, ..) = build_address_and_priv_key_policy(&ctx.conf, priv_key_policy, path_to_address).await?;
     let wallet_address = checksum_address(&format!("{:#02x}", my_address));
 
     Ok(MyWalletAddress {

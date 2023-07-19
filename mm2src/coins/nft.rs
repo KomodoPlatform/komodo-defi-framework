@@ -18,6 +18,7 @@ use crate::eth::{get_eth_address, withdraw_erc1155, withdraw_erc721};
 use crate::nft::nft_structs::{RefreshMetadataReq, TransferStatus, TxMeta, UriMeta};
 use crate::nft::storage::{NftListStorageOps, NftStorageBuilder, NftTxHistoryStorageOps};
 use common::{parse_rfc3339_to_timestamp, APPLICATION_JSON};
+use crypto::StandardHDCoinAddress;
 use http::header::ACCEPT;
 use mm2_err_handle::map_to_mm::MapToMmResult;
 use mm2_number::BigDecimal;
@@ -182,7 +183,8 @@ pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResu
 
 async fn get_moralis_nft_list(ctx: &MmArc, chain: &Chain, url: &Url) -> MmResult<Vec<Nft>, GetNftInfoError> {
     let mut res_list = Vec::new();
-    let my_address = get_eth_address(ctx, &chain.to_ticker()).await?;
+    // Todo: implement HD account for NFTs
+    let my_address = get_eth_address(ctx, &chain.to_ticker(), &StandardHDCoinAddress::default()).await?;
 
     let mut uri_without_cursor = url.clone();
     uri_without_cursor.set_path(MORALIS_API_ENDPOINT);
@@ -254,7 +256,8 @@ async fn get_moralis_nft_transfers(
     url: &Url,
 ) -> MmResult<Vec<NftTransferHistory>, GetNftInfoError> {
     let mut res_list = Vec::new();
-    let my_address = get_eth_address(ctx, &chain.to_ticker()).await?;
+    // Todo: implement HD account for NFTs
+    let my_address = get_eth_address(ctx, &chain.to_ticker(), &StandardHDCoinAddress::default()).await?;
 
     let mut uri_without_cursor = url.clone();
     uri_without_cursor.set_path(MORALIS_API_ENDPOINT);
@@ -479,6 +482,8 @@ async fn update_nft_list<T: NftListStorageOps + NftTxHistoryStorageOps>(
     let txs = storage.get_txs_from_block(chain, scan_from_block).await?;
     let req = MyAddressReq {
         coin: chain.to_ticker(),
+        // Todo: implement HD account for NFTs
+        path_to_address: StandardHDCoinAddress::default(),
     };
     let my_address = get_my_address(ctx.clone(), req).await?.wallet_address.to_lowercase();
     for tx in txs.into_iter() {

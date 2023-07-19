@@ -51,7 +51,7 @@ use common::jsonrpc_client::JsonRpcError;
 use common::log::LogOnError;
 use common::{now_sec, now_sec_u32};
 use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey,
-             StandardHDPathError, StandardHDPathToAccount, StandardHDPathToCoin};
+             StandardHDCoinAddress, StandardHDPathError, StandardHDPathToAccount, StandardHDPathToCoin};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedSender};
@@ -561,8 +561,10 @@ pub struct UtxoCoinConf {
     /// Derivation path of the coin.
     /// This derivation path consists of `purpose` and `coin_type` only
     /// where the full `BIP44` address has the following structure:
-    /// `m/purpose'/coin_type'/account'/change/address_index`.
+    /// `m/purpose'/coin_type'`.
     pub derivation_path: Option<StandardHDPathToCoin>,
+    /// `/account'/change/address_index`
+    pub path_to_address: StandardHDCoinAddress,
     /// The average time in seconds needed to mine a new block for this coin.
     pub avg_blocktime: Option<u64>,
 }
@@ -1369,6 +1371,10 @@ pub struct UtxoActivationParams {
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
     pub check_utxo_maturity: Option<bool>,
+    /// This determines which Address of the HD account to be used for swaps for this UTXO coin.
+    /// If not specified, the first non-change address for the first account is used.
+    #[serde(default)]
+    pub path_to_address: StandardHDCoinAddress,
 }
 
 #[derive(Debug, Display)]
@@ -1384,6 +1390,8 @@ pub enum UtxoFromLegacyReqErr {
     InvalidScanPolicy(json::Error),
     InvalidMinAddressesNumber(json::Error),
     InvalidPrivKeyPolicy(json::Error),
+    InvalidAccount(json::Error),
+    InvalidAddressIndex(json::Error),
 }
 
 impl UtxoActivationParams {
@@ -1421,6 +1429,9 @@ impl UtxoActivationParams {
         let priv_key_policy = json::from_value::<Option<PrivKeyActivationPolicy>>(req["priv_key_policy"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidPrivKeyPolicy)?
             .unwrap_or(PrivKeyActivationPolicy::ContextPrivKey);
+        let path_to_address = json::from_value::<Option<StandardHDCoinAddress>>(req["path_to_address"].clone())
+            .map_to_mm(UtxoFromLegacyReqErr::InvalidAddressIndex)?
+            .unwrap_or_default();
 
         Ok(UtxoActivationParams {
             mode,
@@ -1433,6 +1444,7 @@ impl UtxoActivationParams {
             enable_params,
             priv_key_policy,
             check_utxo_maturity,
+            path_to_address,
         })
     }
 }
@@ -1844,6 +1856,7 @@ pub fn output_script(address: &Address, script_type: ScriptType) -> Script {
     }
 }
 
+// Todo: the pubkey should be for the account and address_index if this is used for HD mode
 pub fn address_by_conf_and_pubkey_str(
     coin: &str,
     conf: &Json,
@@ -1862,6 +1875,8 @@ pub fn address_by_conf_and_pubkey_str(
         enable_params: EnabledCoinBalanceParams::default(),
         priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
         check_utxo_maturity: None,
+        // Todo: recheck this field
+        path_to_address: StandardHDCoinAddress::default(),
     };
     let conf_builder = UtxoConfBuilder::new(conf, &params, coin);
     let utxo_conf = try_s!(conf_builder.build());

@@ -122,6 +122,14 @@ impl From<UnknownChainError> for Bip32DerPathError {
     }
 }
 
+// Todo: add doc comments
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct StandardHDCoinAddress {
+    pub account: u32,
+    pub is_change: bool,
+    pub address_index: u32,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive)]
 pub enum StandardHDIndex {
     Purpose = 0,
