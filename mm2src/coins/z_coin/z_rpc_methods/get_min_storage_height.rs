@@ -41,7 +41,7 @@ pub struct GetMinimumHeightResponse {
     pub(crate) height: Option<u32>,
 }
 
-// TOODO: make WASM compatible when implementing WASM walletdb.
+// TODO: make WASM compatible when implementing WASM walletdb.
 pub async fn get_minimum_header_from_cache(
     ctx: MmArc,
     req: GetMinimumHeightRequest,

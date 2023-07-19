@@ -49,7 +49,7 @@ pub struct WalletDbShared {
 /// Calculates the starting block height based on a given date and the current block height.
 ///
 /// # Arguments
-/// * `date`: The date in seconds representing the desired starting height.
+/// * `date`: The date in seconds representing the desired starting date.
 /// * `current_block_height`: The current block height at the time of calculation.
 ///
 #[cfg(not(target_arch = "wasm32"))]
@@ -154,7 +154,7 @@ impl<'a> WalletDbShared {
             ExtendedFullViewingKey::from(&z_spending_key),
         )
         .await
-        .map_err(|err| MmError::new(WalletDbError::ZcoinClientInitError(err.into_inner())))?;
+        .mm_err(WalletDbError::ZcoinClientInitError)?;
 
         Ok(Self {
             db: Arc::new(Mutex::new(wallet_db)),
