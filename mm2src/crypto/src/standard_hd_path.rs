@@ -122,7 +122,14 @@ impl From<UnknownChainError> for Bip32DerPathError {
     }
 }
 
-// Todo: add doc comments
+/// A struct that represents a standard HD path from account to address.
+///
+/// This is used in coins activation to specify the default address that will be used for swaps.
+///
+/// # Attributes
+/// * `account`: The account number of the address.
+/// * `is_change`: A flag that indicates whether the address is a change address or not.
+/// * `address_index`: The index of the address within the account.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct StandardHDCoinAddress {
     pub account: u32,

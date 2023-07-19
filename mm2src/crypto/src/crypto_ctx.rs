@@ -29,11 +29,6 @@ pub enum CryptoInitError {
     EmptyPassphrase,
     #[display(fmt = "Invalid passphrase: '{}'", _0)]
     InvalidPassphrase(PrivKeyError),
-    #[display(fmt = "Invalid 'hd_account_id' = {}: {}", hd_account_id, error)]
-    InvalidHdAccount {
-        hd_account_id: u64,
-        error: String,
-    },
     Internal(String),
 }
 

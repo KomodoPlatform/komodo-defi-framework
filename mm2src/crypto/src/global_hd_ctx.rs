@@ -55,10 +55,6 @@ impl GlobalHDAccountCtx {
     #[inline]
     pub fn into_arc(self) -> GlobalHDAccountArc { GlobalHDAccountArc(Arc::new(self)) }
 
-    // Todo: remove this
-    // /// Returns an identifier of the selected HD account.
-    // pub fn account_id(&self) -> u32 { self.hd_account.index() }
-
     /// Returns the root BIP39 seed.
     pub fn root_seed(&self) -> &bip39::Seed { &self.bip39_seed }
 

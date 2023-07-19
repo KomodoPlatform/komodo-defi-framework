@@ -84,8 +84,7 @@ impl Mm2Cfg {
         self.inquire_rpc_local_only()?;
         self.inquire_i_am_a_seed()?;
         self.inquire_seednodes()?;
-        // Todo: check all instances of hd_account_id
-        self.inquire_hd_account_id()?;
+        self.inquire_enable_hd()?;
         Ok(())
     }
 
@@ -312,19 +311,17 @@ impl Mm2Cfg {
     }
 
     #[inline]
-    fn inquire_hd_account_id(&mut self) -> Result<()> {
-        // Todo: recheck if this is renamed in mm2
+    fn inquire_enable_hd(&mut self) -> Result<()> {
         self.enable_hd = CustomType::<InquireOption<bool>>::new("What is enable_hd:")
                 .with_parser(OPTION_BOOL_PARSER)
                 .with_formatter(DEFAULT_OPTION_BOOL_FORMATTER)
-                // Todo: if we decide to se default as false we will change the name back to iguana in mm2 and make it default to false here too
                 .with_default_value_formatter(DEFAULT_DEFAULT_OPTION_BOOL_FORMATTER)
                 .with_default(InquireOption::None)
-                // Todo: add account and address_index to activation methods once they are refactored in mm2
-                .with_help_message(r#"Optional. If this value is set, the AtomicDEX-API will work in only the HD derivation mode, coins will need to have a coin derivation path entry in the coins file for activation. account and address_index will have to be set in coins activation to take thier place in the full derivation path as follows: m/44'/COIN_ID'/<account>'/CHAIN/<address_index>"#)
+                // Todo: mention in PR comment that activation scheme data should be updated
+                .with_help_message(r#"Optional. If this value is set, the AtomicDEX-API will work in HD wallet mode only, coins will need to have a coin derivation path entry in the coins file for activation. path_to_address `/account'/change/address_index` will have to be set in coins activation to change the default HD wallet address that is used in swaps for a coin in the full derivation path as follows: m/purpose'/coin_type/account'/change/address_index"#)
                 .prompt()
                 .map_err(|error|
-                    error_anyhow!("Failed to get hd_account_id: {}", error)
+                    error_anyhow!("Failed to get enable_hd: {}", error)
                 )?
                 .into();
         Ok(())

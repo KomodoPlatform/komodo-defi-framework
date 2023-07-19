@@ -625,10 +625,9 @@ fn test_sign_verify_message_slp() {
 }
 
 /// Tested via [Electron-Cash-SLP](https://github.com/simpleledger/Electron-Cash-SLP).
-// Todo: add more test cases for different accounts and address_indexes
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_bch_and_slp_with_hd_account_id() {
+fn test_bch_and_slp_with_enable_hd() {
     const TX_HISTORY: bool = false;
 
     let coins = json!([tbch_for_slp_conf(), tbch_usdf_conf()]);
@@ -704,4 +703,40 @@ fn test_bch_and_slp_with_hd_account_id() {
         .exactly_one()
         .unwrap();
     assert_eq!(slp_addr, "slptest:qpyhwc7shd5hlul8zg0snmaptaa9q9yc4q9uzddky0");
+
+    // HD account 7 and change 1 and address_index 77
+    let path_to_address = StandardHDCoinAddress {
+        account: 7,
+        is_change: true,
+        address_index: 77,
+    };
+    let conf_1 = Mm2TestConf::seednode_with_hd_account(BIP39_PASSPHRASE, &coins);
+    let mm_hd_1 = MarketMakerIt::start(conf_1.conf, conf_1.rpc_password, None).unwrap();
+
+    let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
+    let activation_result = block_on(enable_bch_with_tokens(
+        &mm_hd_1,
+        "tBCH",
+        &["USDF"],
+        rpc_mode,
+        TX_HISTORY,
+        Some(path_to_address),
+    ));
+
+    let activation_result: RpcV2Response<EnableBchWithTokensResponse> = json::from_value(activation_result).unwrap();
+    let (bch_addr, _) = activation_result
+        .result
+        .bch_addresses_infos
+        .into_iter()
+        .exactly_one()
+        .unwrap();
+    assert_eq!(bch_addr, "bchtest:qzghm7m4v2jyn3dz4qcfdmzg9xnhqvlgeqlx6ru72p");
+
+    let (slp_addr, _) = activation_result
+        .result
+        .slp_addresses_infos
+        .into_iter()
+        .exactly_one()
+        .unwrap();
+    assert_eq!(slp_addr, "slptest:qzghm7m4v2jyn3dz4qcfdmzg9xnhqvlgeqyjacxfcu");
 }

@@ -740,7 +740,6 @@ fn test_rpc_password_from_json_no_userpass() {
 /// Trades few pairs concurrently to speed up the process and also act like "load" test
 ///
 /// Please note that it
-// Todo: check if this is still needed after refactors
 #[allow(clippy::too_many_arguments)]
 async fn trade_base_rel_electrum(
     bob_priv_key_policy: Mm2InitPrivKeyPolicy,
@@ -7437,10 +7436,9 @@ fn test_tbtc_block_header_sync() {
     block_on(mm_bob.stop()).unwrap();
 }
 
-// Todo: check test time with normal enable and previous implementation
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_enable_coins_with_hd_account_id() {
+fn test_enable_coins_with_enable_hd() {
     const TX_HISTORY: bool = false;
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
@@ -7462,7 +7460,6 @@ fn test_enable_coins_with_hd_account_id() {
     let (_dump_log, _dump_dashboard) = mm_hd_0.mm_dump();
     log!("log path: {}", mm_hd_0.log_path.display());
 
-    // Todo: check hd test for nch and separate activation functions too
     let eth = block_on(enable_native(
         &mm_hd_0,
         "ETH",
@@ -7550,6 +7547,55 @@ fn test_enable_coins_with_hd_account_id() {
         Some(path_to_address),
     ));
     assert_eq!(btc_segwit.address, "bc1q6kxcwcrsm5z8pe940xxu294q7588mqvarttxcx");
+
+    let path_to_address = StandardHDCoinAddress {
+        account: 77,
+        is_change: false,
+        address_index: 7,
+    };
+    let conf_1 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd_1 = MarketMakerIt::start(conf_1.conf, conf_1.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm_hd_1.mm_dump();
+    log!("log path: {}", mm_hd_1.log_path.display());
+
+    let eth = block_on(enable_native(
+        &mm_hd_1,
+        "ETH",
+        ETH_DEV_NODES,
+        Some(path_to_address.clone()),
+    ));
+    assert_eq!(eth.address, "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B");
+    let jst = block_on(enable_native(
+        &mm_hd_1,
+        "JST",
+        ETH_DEV_NODES,
+        Some(path_to_address.clone()),
+    ));
+    assert_eq!(jst.address, "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B");
+    let rick = block_on(enable_electrum(
+        &mm_hd_1,
+        "RICK",
+        TX_HISTORY,
+        RICK_ELECTRUM_ADDRS,
+        Some(path_to_address.clone()),
+    ));
+    assert_eq!(rick.address, "RLNu8gszQ8ENUrY3VSyBS2714CNVwn1f7P");
+    let qrc20 = block_on(enable_qrc20(
+        &mm_hd_1,
+        "QRC20",
+        QRC20_ELECTRUMS,
+        "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
+        Some(path_to_address.clone()),
+    ));
+    assert_eq!(qrc20["address"].as_str(), Some("qREuDjyn7dzUPgnCkxPvALz9Szgy7diB5w"));
+    let btc_segwit = block_on(enable_electrum(
+        &mm_hd_1,
+        "BTC-segwit",
+        TX_HISTORY,
+        RICK_ELECTRUM_ADDRS,
+        Some(path_to_address),
+    ));
+    assert_eq!(btc_segwit.address, "bc1q0dxnd7afj997a40j86a8a6dq3xs3dwm7rkzams");
 }
 
 /// `shared_db_id` must be the same for Iguana and all HD accounts derived from the same passphrase.
@@ -7564,9 +7610,6 @@ fn test_get_shared_db_id() {
         Mm2TestConf::seednode(PASSPHRASE, &coins),
         Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins),
         Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins),
-        // Todo: remove these
-        // Mm2TestConf::seednode_with_hd_account(PASSPHRASE, 0, &coins),
-        // Mm2TestConf::seednode_with_hd_account(PASSPHRASE, 1, &coins),
     ];
 
     let mut shared_db_id = None;
