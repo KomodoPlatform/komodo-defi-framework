@@ -56,7 +56,7 @@ impl SavedSwap {
         }
     }
 
-    pub fn contains_watcher_message(&self) -> bool {
+    pub fn watcher_message_sent(&self) -> bool {
         match &self {
             SavedSwap::Taker(taker_swap) => taker_swap.watcher_message_sent(),
             _ => false,
@@ -73,12 +73,12 @@ impl SavedSwap {
         }
     }
 
-    pub fn watcher_refund_not_found(&self) -> bool {
+    pub fn watcher_spend_or_refund_not_found(&self) -> bool {
         match &self {
             SavedSwap::Taker(taker_swap) => taker_swap
                 .events
                 .iter()
-                .any(|e| matches!(e.event, TakerSwapEvent::WatcherRefundNotFound)),
+                .any(|e| matches!(e.event, TakerSwapEvent::WatcherSpendOrRefundNotFound)),
             _ => false,
         }
     }

@@ -186,7 +186,7 @@ impl TakerSavedEvent {
             TakerSwapEvent::TakerPaymentRefundFailed(_) => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::TakerPaymentRefundFinished => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::TakerPaymentRefundedByWatcher(_) => Some(TakerSwapCommand::Finish),
-            TakerSwapEvent::WatcherRefundNotFound => Some(TakerSwapCommand::Finish),
+            TakerSwapEvent::WatcherSpendOrRefundNotFound => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::Finished => None,
         }
     }
@@ -676,7 +676,7 @@ pub enum TakerSwapEvent {
     TakerPaymentRefundFailed(SwapError),
     TakerPaymentRefundFinished,
     TakerPaymentRefundedByWatcher(Option<TransactionIdentifier>),
-    WatcherRefundNotFound,
+    WatcherSpendOrRefundNotFound,
     Finished,
 }
 
@@ -717,7 +717,7 @@ impl TakerSwapEvent {
             TakerSwapEvent::TakerPaymentRefundFailed(_) => "Taker payment refund failed...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundFinished => "Taker payment refund finished...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundedByWatcher(_) => "Taker payment refunded by watcher...".to_owned(),
-            TakerSwapEvent::WatcherRefundNotFound => "Watcher refund could not be found...".to_owned(),
+            TakerSwapEvent::WatcherSpendOrRefundNotFound => "Watcher refund could not be found...".to_owned(),
             TakerSwapEvent::Finished => "Finished".to_owned(),
         }
     }
@@ -752,7 +752,7 @@ impl TakerSwapEvent {
             TakerSwapEvent::TakerPaymentRefundFailed(_) => "TakerPaymentRefundFailed".to_owned(),
             TakerSwapEvent::TakerPaymentRefundFinished => "TakerPaymentRefundFinished".to_owned(),
             TakerSwapEvent::TakerPaymentRefundedByWatcher(_) => "TakerPaymentRefundedByWatcher".to_owned(),
-            TakerSwapEvent::WatcherRefundNotFound => "WatcherRefundNotFound".to_owned(),
+            TakerSwapEvent::WatcherSpendOrRefundNotFound => "WatcherRefundNotFound".to_owned(),
             TakerSwapEvent::Finished => "Finished".to_owned(),
         }
     }
@@ -890,7 +890,7 @@ impl TakerSwap {
             TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::TakerPaymentRefundFinished => (),
             TakerSwapEvent::TakerPaymentRefundedByWatcher(tx) => self.w().taker_payment_refund = tx,
-            TakerSwapEvent::WatcherRefundNotFound => (),
+            TakerSwapEvent::WatcherSpendOrRefundNotFound => (),
             TakerSwapEvent::Finished => self.finished_at.store(now_sec(), Ordering::Relaxed),
         }
     }
@@ -2060,7 +2060,7 @@ impl TakerSwap {
             swap.apply_event(saved_event.event.clone());
         }
 
-        if saved.watcher_message_sent() && check_watcher_payments(&swap, &ctx, saved).await? {
+        if check_watcher_payments(&swap, &ctx, saved).await? {
             return Ok((swap, Some(TakerSwapCommand::Finish)));
         }
 
@@ -2375,6 +2375,10 @@ pub struct TakerSwapPreparedParams {
 }
 
 pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: TakerSavedSwap) -> Result<bool, String> {
+    if !saved.watcher_message_sent() {
+        return Ok(false);
+    }
+
     let other_maker_coin_htlc_pub = swap.r().other_maker_coin_htlc_pub;
     let secret_hash = swap.r().secret_hash.0.clone();
     let maker_coin_start_block = swap.r().data.maker_coin_start_block;
@@ -2530,7 +2534,7 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: Ta
                 if saved.is_finished() {
                     saved.events.pop();
                 }
-                let event = TakerSwapEvent::WatcherRefundNotFound;
+                let event = TakerSwapEvent::WatcherSpendOrRefundNotFound;
                 let to_save = TakerSavedEvent {
                     timestamp: now_ms(),
                     event,
