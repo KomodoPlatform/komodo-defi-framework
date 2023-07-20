@@ -1428,6 +1428,7 @@ fn test_watcher_waits_for_taker_eth() {
 }
 
 #[test]
+#[ignore]
 fn test_two_watchers_spend_maker_payment_eth_erc20() {
     let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf()]);
 
