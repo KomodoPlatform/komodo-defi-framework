@@ -1395,7 +1395,7 @@ fn test_watcher_waits_for_taker_utxo() {
         25.,
         25.,
         2.,
-        &[],
+        &[("USE_WATCHERS", "")],
         SwapFlow::TakerSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
