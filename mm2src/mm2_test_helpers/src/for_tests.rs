@@ -1176,7 +1176,6 @@ impl MarketMakerIt {
         let request = try_s!(Request::builder().method("POST").uri(uri).body(payload));
 
         let (status, headers, body) = try_s!(slurp_req(request).await);
-        println!("HEADERS {:?}", headers);
         Ok((status, try_s!(std::str::from_utf8(&body)).trim().into(), headers))
     }
 
@@ -1486,7 +1485,6 @@ pub async fn enable_electrum_json(mm: &MarketMakerIt, coin: &str, tx_history: bo
         }))
         .await
         .unwrap();
-    println!("\n{:?}\n", electrum);
     assert_eq!(
         electrum.0,
         StatusCode::OK,
