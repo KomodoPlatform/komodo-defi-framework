@@ -171,6 +171,7 @@ impl State for ValidateTakerFee {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        debug!("Watcher validate taker fee");
         let validated_f = watcher_ctx
             .taker_coin
             .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
@@ -199,6 +200,7 @@ impl State for ValidateTakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        debug!("Watcher validate taker payment");
         let taker_payment_spend_deadline =
             taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
 
@@ -273,6 +275,7 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        debug!("Watcher wait for taker payment spend");
         let payment_search_interval = watcher_ctx.conf.search_interval;
         let wait_until = watcher_ctx.refund_start_time();
         let search_input = WatcherSearchForSwapTxSpendInput {
@@ -378,6 +381,7 @@ impl State for SpendMakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        debug!("Watcher spend maker payment");
         let spend_fut = watcher_ctx
             .maker_coin
             .send_maker_payment_spend_preimage(SendMakerPaymentSpendPreimageInput {
@@ -430,6 +434,7 @@ impl State for RefundTakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        debug!("Watcher refund taker payment");
         if std::env::var("USE_TEST_LOCKTIME").is_err() {
             loop {
                 match watcher_ctx
