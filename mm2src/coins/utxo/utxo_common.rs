@@ -1104,17 +1104,25 @@ pub struct P2SHSpendingTxInput<'a> {
     keypair: &'a KeyPair,
 }
 
+enum LocktimeSetting {
+    CalcByHtlcLocktime(u32),
+    UseExact(u32),
+}
+
 async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
     coin: &T,
     prev_tx: &UtxoTx,
-    lock_time: u32,
+    lock_time: LocktimeSetting,
     sequence: u32,
     outputs: Vec<TransactionOutput>,
 ) -> Result<TransactionInputSigner, String> {
     if prev_tx.outputs.is_empty() {
         return ERR!("Previous transaction doesn't have any output");
     }
-    let lock_time = try_s!(coin.p2sh_tx_locktime(lock_time).await);
+    let lock_time = match lock_time {
+        LocktimeSetting::CalcByHtlcLocktime(lock) => try_s!(coin.p2sh_tx_locktime(lock).await),
+        LocktimeSetting::UseExact(lock) => lock,
+    };
     let n_time = if coin.as_ref().conf.is_pos {
         Some(now_sec_u32())
     } else {
@@ -1160,7 +1168,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
         p2sh_spending_tx_preimage(
             coin,
             &input.prev_transaction,
-            input.lock_time,
+            LocktimeSetting::CalcByHtlcLocktime(input.lock_time),
             input.sequence,
             input.outputs
         )
@@ -1200,9 +1208,16 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
 
 pub type GenDexFeeSpendResult = MmResult<TransactionInputSigner, TxGenError>;
 
-pub async fn gen_dex_fee_spend_preimage<T: UtxoCommonOps>(
+enum CalcPremiumBy {
+    DeductMinerFee,
+    UseExactAmount(u64),
+}
+
+async fn gen_dex_fee_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenDexFeeSpendArgs<'_>,
+    lock_time: LocktimeSetting,
+    calc_premium: CalcPremiumBy,
 ) -> GenDexFeeSpendResult {
     let mut prev_tx: UtxoTx =
         deserialize(args.dex_fee_tx).map_to_mm(|e| TxGenError::TxDeserialization(e.to_string()))?;
@@ -1213,13 +1228,19 @@ pub async fn gen_dex_fee_spend_preimage<T: UtxoCommonOps>(
         .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
         .await?;
     let dex_fee_sat = sat_from_big_decimal(&args.dex_fee_amount, coin.as_ref().decimals)?;
-    let premium_sat = sat_from_big_decimal(&args.premium_amount, coin.as_ref().decimals)?;
-    if miner_fee > premium_sat + coin.as_ref().dust_amount {
-        return MmError::err(TxGenError::MinerFeeExceedsPremium {
-            miner_fee: big_decimal_from_sat_unsigned(miner_fee, coin.as_ref().decimals),
-            premium: args.premium_amount.clone(),
-        });
-    }
+    let premium_sat = match calc_premium {
+        CalcPremiumBy::UseExactAmount(sat) => sat,
+        CalcPremiumBy::DeductMinerFee => {
+            let premium_sat = sat_from_big_decimal(&args.premium_amount, coin.as_ref().decimals)?;
+            if miner_fee + coin.as_ref().dust_amount > premium_sat {
+                return MmError::err(TxGenError::MinerFeeExceedsPremium {
+                    miner_fee: big_decimal_from_sat_unsigned(miner_fee, coin.as_ref().decimals),
+                    premium: args.premium_amount.clone(),
+                });
+            }
+            premium_sat - miner_fee
+        },
+    };
 
     let dex_fee_address = address_from_raw_pubkey(
         args.dex_fee_pub,
@@ -1245,11 +1266,11 @@ pub async fn gen_dex_fee_spend_preimage<T: UtxoCommonOps>(
     )
     .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive premium_address: {}", e)))?;
     let premium_output = TransactionOutput {
-        value: premium_sat - miner_fee,
+        value: premium_sat,
         script_pubkey: Builder::build_p2pkh(&premium_address.hash).to_bytes(),
     };
 
-    p2sh_spending_tx_preimage(coin, &prev_tx, args.time_lock, SEQUENCE_FINAL, vec![
+    p2sh_spending_tx_preimage(coin, &prev_tx, lock_time, SEQUENCE_FINAL, vec![
         dex_fee_output,
         premium_output,
     ])
@@ -1265,7 +1286,13 @@ pub async fn gen_and_sign_dex_fee_spend_preimage<T: UtxoCommonOps>(
     let maker_pub = Public::from_slice(args.maker_pub).map_to_mm(|e| TxGenError::InvalidPubkey(e.to_string()))?;
     let taker_pub = Public::from_slice(args.taker_pub).map_to_mm(|e| TxGenError::InvalidPubkey(e.to_string()))?;
 
-    let preimage = gen_dex_fee_spend_preimage(coin, &args).await?;
+    let preimage = gen_dex_fee_spend_preimage(
+        coin,
+        &args,
+        LocktimeSetting::CalcByHtlcLocktime(args.time_lock),
+        CalcPremiumBy::DeductMinerFee,
+    )
+    .await?;
 
     let redeem_script = swap_proto_v2_scripts::dex_fee_script(args.time_lock, args.secret_hash, &taker_pub, &maker_pub);
     let signature = calc_and_sign_sighash(
@@ -1286,14 +1313,28 @@ pub async fn gen_and_sign_dex_fee_spend_preimage<T: UtxoCommonOps>(
 pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     gen_args: GenDexFeeSpendArgs<'_>,
-    preimage: TxPreimageWithSig,
+    preimage: &TxPreimageWithSig,
 ) -> ValidateDexFeeSpendPreimageResult {
+    let actual_preimage_tx: UtxoTx = deserialize(preimage.preimage.as_slice())
+        .map_to_mm(|e| ValidateDexFeeSpendPreimageError::TxDeserialization(e.to_string()))?;
+
     let maker_pub = Public::from_slice(gen_args.maker_pub)
         .map_to_mm(|e| ValidateDexFeeSpendPreimageError::InvalidPubkey(e.to_string()))?;
     let taker_pub = Public::from_slice(gen_args.taker_pub)
         .map_to_mm(|e| ValidateDexFeeSpendPreimageError::InvalidPubkey(e.to_string()))?;
 
-    let expected_preimage = gen_dex_fee_spend_preimage(coin, &gen_args).await?;
+    // TODO validate premium amount. Might be a bit tricky in the case of dynamic miner fee
+    // TODO validate that output amounts are larger than dust
+
+    // Here, we have to use the exact lock time and premium amount from the preimage because maker
+    // can get different values (e.g. if MTP advances during preimage exchange/fee rate changes)
+    let expected_preimage = gen_dex_fee_spend_preimage(
+        coin,
+        &gen_args,
+        LocktimeSetting::UseExact(actual_preimage_tx.lock_time),
+        CalcPremiumBy::UseExactAmount(actual_preimage_tx.outputs[1].value),
+    )
+    .await?;
     let redeem_script =
         swap_proto_v2_scripts::dex_fee_script(gen_args.time_lock, gen_args.secret_hash, &taker_pub, &maker_pub);
     let sig_hash = signature_hash_to_sign(
@@ -1304,18 +1345,25 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
         coin.as_ref().conf.fork_id,
     )?;
     if !taker_pub
-        .verify(&sig_hash, &preimage.signature.into())
+        .verify(&sig_hash, &preimage.signature.clone().into())
         .map_to_mm(|e| ValidateDexFeeSpendPreimageError::SignatureVerificationFailure(e.to_string()))?
     {
         return MmError::err(ValidateDexFeeSpendPreimageError::InvalidTakerSignature);
     };
     let expected_preimage_tx: UtxoTx = expected_preimage.into();
-    let actual_preimage_tx: UtxoTx = deserialize(preimage.preimage.as_slice())
-        .map_to_mm(|e| ValidateDexFeeSpendPreimageError::TxDeserialization(e.to_string()))?;
     if expected_preimage_tx != actual_preimage_tx {
         return MmError::err(ValidateDexFeeSpendPreimageError::InvalidPreimage);
     }
     Ok(())
+}
+
+pub async fn sign_and_broadcast_dex_fee_spend<T: UtxoCommonOps>(
+    coin: &T,
+    preimage: TxPreimageWithSig,
+    secret: &[u8],
+    htlc_keypair: &KeyPair,
+) -> TransactionResult {
+    unimplemented!()
 }
 
 pub fn send_taker_fee<T>(coin: T, fee_pub_key: &[u8], amount: BigDecimal) -> TransactionFut

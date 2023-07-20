@@ -69,7 +69,7 @@ fn send_and_spend_dex_fee() {
         swap_unique_data: &[],
     };
     let dex_fee_tx = block_on(taker_coin.send_dex_fee_with_premium(send_args)).unwrap();
-    println!("{:02x}", dex_fee_tx.tx_hash());
+    println!("dex_fee_tx hash {:02x}", dex_fee_tx.tx_hash());
     let dex_fee_utxo_tx = match dex_fee_tx {
         TransactionEnum::UtxoTx(tx) => tx,
         unexpected => panic!("Unexpected tx {:?}", unexpected),
@@ -85,7 +85,8 @@ fn send_and_spend_dex_fee() {
         dex_fee_amount: "0.01".parse().unwrap(),
         premium_amount: "0.1".parse().unwrap(),
     };
-    let preimage_with_sig = block_on(taker_coin.gen_and_sign_dex_fee_spend_preimage(gen_preimage_args, &[])).unwrap();
+    let preimage_with_taker_sig =
+        block_on(taker_coin.gen_and_sign_dex_fee_spend_preimage(gen_preimage_args, &[])).unwrap();
 
     let gen_preimage_args = GenDexFeeSpendArgs {
         dex_fee_tx: &dex_fee_utxo_tx.tx_hex(),
@@ -97,112 +98,9 @@ fn send_and_spend_dex_fee() {
         dex_fee_amount: "0.01".parse().unwrap(),
         premium_amount: "0.1".parse().unwrap(),
     };
-    block_on(maker_coin.validate_dex_fee_spend_preimage(gen_preimage_args, preimage_with_sig)).unwrap();
-    /*
-    let input_to_spend = UnsignedTransactionInput {
-        previous_output: OutPoint {
-            hash: dex_fee_tx.hash(),
-            index: 0,
-        },
-        sequence: SEQUENCE_FINAL,
-        amount: value,
-        witness: vec![],
-    };
+    block_on(maker_coin.validate_dex_fee_spend_preimage(gen_preimage_args, &preimage_with_taker_sig)).unwrap();
 
-    let fee =
-        block_on(taker_coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)).unwrap();
-    let my_address = taker_coin.as_ref().derivation_method.single_addr_or_err().unwrap();
-    let output = TransactionOutput {
-        value: value - fee,
-        script_pubkey: output_script(my_address, ScriptType::P2PKH).into(),
-    };
-
-    let input_signer = TransactionInputSigner {
-        version: taker_coin.as_ref().conf.tx_version,
-        n_time: None,
-        overwintered: taker_coin.as_ref().conf.overwintered,
-        version_group_id: taker_coin.as_ref().conf.version_group_id,
-        consensus_branch_id: taker_coin.as_ref().conf.consensus_branch_id,
-        expiry_height: 0,
-        value_balance: 0,
-        inputs: vec![input_to_spend.clone()],
-        outputs: vec![output],
-        lock_time: timelock,
-        join_splits: vec![],
-        shielded_spends: vec![],
-        shielded_outputs: vec![],
-        zcash: taker_coin.as_ref().conf.zcash,
-        posv: false,
-        str_d_zeel: None,
-        hash_algo: taker_coin.as_ref().tx_hash_algo.into(),
-    };
-
-    let sighash = input_signer.signature_hash(
-        0,
-        value,
-        &script,
-        taker_coin.as_ref().conf.signature_version,
-        1 | taker_coin.as_ref().conf.fork_id,
-    );
-    let taker_signature = taker_coin
-        .as_ref()
-        .priv_key_policy
-        .key_pair_or_err()
-        .unwrap()
-        .private()
-        .sign(&sighash)
-        .unwrap();
-    let mut taker_signature_with_sighash = taker_signature.to_vec();
-    taker_signature_with_sighash.push(1 | taker_coin.as_ref().conf.fork_id as u8);
-
-    let maker_signature = maker_coin
-        .as_ref()
-        .priv_key_policy
-        .key_pair_or_err()
-        .unwrap()
-        .private()
-        .sign(&sighash)
-        .unwrap();
-    let mut maker_signature_with_sighash = maker_signature.to_vec();
-    maker_signature_with_sighash.push(1 | taker_coin.as_ref().conf.fork_id as u8);
-
-    let script_sig = Builder::default()
-        .push_opcode(Opcode::OP_0)
-        .push_data(&taker_signature_with_sighash)
-        .push_data(&maker_signature_with_sighash)
-        .push_data(&secret)
-        .push_opcode(Opcode::OP_0)
-        .push_data(&script)
-        .into_bytes();
-
-    let input = TransactionInput {
-        previous_output: input_to_spend.previous_output,
-        script_sig,
-        sequence: SEQUENCE_FINAL,
-        script_witness: vec![],
-    };
-    let spend_tx = UtxoTx {
-        version: input_signer.version,
-        n_time: input_signer.n_time,
-        overwintered: input_signer.overwintered,
-        version_group_id: input_signer.version_group_id,
-        inputs: vec![input],
-        outputs: input_signer.outputs,
-        lock_time: input_signer.lock_time,
-        expiry_height: input_signer.expiry_height,
-        shielded_spends: input_signer.shielded_spends,
-        shielded_outputs: input_signer.shielded_outputs,
-        join_splits: input_signer.join_splits,
-        value_balance: input_signer.value_balance,
-        join_split_pubkey: Default::default(),
-        join_split_sig: Default::default(),
-        binding_sig: Default::default(),
-        zcash: input_signer.zcash,
-        posv: input_signer.posv,
-        str_d_zeel: input_signer.str_d_zeel,
-        tx_hash_algo: input_signer.hash_algo.into(),
-    };
-
-    block_on(taker_coin.broadcast_tx(&spend_tx)).unwrap();
-     */
+    let dex_fee_spend =
+        block_on(maker_coin.sign_and_broadcast_dex_fee_spend(preimage_with_taker_sig, &secret, &[])).unwrap();
+    println!("dex_fee_spend hash {:02x}", dex_fee_spend.tx_hash());
 }

@@ -1076,8 +1076,15 @@ pub trait SwapOpsV2 {
     async fn validate_dex_fee_spend_preimage(
         &self,
         gen_args: GenDexFeeSpendArgs<'_>,
-        preimage: TxPreimageWithSig,
+        preimage: &TxPreimageWithSig,
     ) -> ValidateDexFeeSpendPreimageResult;
+
+    async fn sign_and_broadcast_dex_fee_spend(
+        &self,
+        preimage: TxPreimageWithSig,
+        secret: &[u8],
+        swap_unique_data: &[u8],
+    ) -> TransactionResult;
 }
 
 /// Operations that coins have independently from the MarketMaker.
