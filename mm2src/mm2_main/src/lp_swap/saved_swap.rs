@@ -58,7 +58,7 @@ impl SavedSwap {
 
     pub fn contains_watcher_message(&self) -> bool {
         match &self {
-            SavedSwap::Taker(taker_swap) => taker_swap.contains_watcher_message(),
+            SavedSwap::Taker(taker_swap) => taker_swap.watcher_message_sent(),
             _ => false,
         }
     }

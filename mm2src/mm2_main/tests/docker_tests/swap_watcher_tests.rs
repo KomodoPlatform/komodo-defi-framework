@@ -26,6 +26,7 @@ use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
 use num_traits::{One, Zero};
 use primitives::hash::H256;
+use serde_json as json;
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
@@ -350,13 +351,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_fai
     enable_coin(&mm_alice, "MYCOIN");
     enable_coin(&mm_alice, "MYCOIN1");
 
-    block_on(wait_for_swaps_finish_and_check_status(
-        &mut mm_bob,
-        &mut mm_alice,
-        &uuids,
-        2.,
-        25.,
-    ));
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
     block_on(mm_alice.stop()).unwrap();
 
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
@@ -373,6 +368,30 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_fai
     enable_coin(&mm_alice, "MYCOIN1");
 
     block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("{} {}", SWAP_FINISHED_LOG, uuids[0])))).unwrap();
+
+    let expected_events = [
+        "Started",
+        "Negotiated",
+        "TakerFeeSent",
+        "TakerPaymentInstructionsReceived",
+        "MakerPaymentReceived",
+        "MakerPaymentWaitConfirmStarted",
+        "MakerPaymentValidatedAndConfirmed",
+        "TakerPaymentSent",
+        "WatcherMessageSent",
+        "TakerPaymentSpent",
+        "MakerPaymentSpendFailed",
+        "MakerPaymentSpentByWatcher",
+        "Finished",
+    ];
+    let status_response = block_on(my_swap_status(&mm_alice, &uuids[0]));
+    let events_array = status_response["result"]["events"].as_array().unwrap();
+    let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
+    let actual_events: Vec<&str> = actual_events.collect();
+    assert_eq!(expected_events, actual_events.as_slice());
+
+    let success_events: Vec<String> = json::from_value(status_response["result"]["success_events"].clone()).unwrap();
+    assert_eq!(expected_events, success_events.as_slice());
 }
 
 #[test]
@@ -471,13 +490,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_pan
     enable_coin(&mm_alice, "MYCOIN");
     enable_coin(&mm_alice, "MYCOIN1");
 
-    block_on(wait_for_swaps_finish_and_check_status(
-        &mut mm_bob,
-        &mut mm_alice,
-        &uuids,
-        2.,
-        25.,
-    ));
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
     block_on(mm_alice.stop()).unwrap();
 
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
@@ -494,6 +507,30 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_pan
     enable_coin(&mm_alice, "MYCOIN1");
 
     block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("{} {}", SWAP_FINISHED_LOG, uuids[0])))).unwrap();
+
+    let expected_events = [
+        "Started",
+        "Negotiated",
+        "TakerFeeSent",
+        "TakerPaymentInstructionsReceived",
+        "MakerPaymentReceived",
+        "MakerPaymentWaitConfirmStarted",
+        "MakerPaymentValidatedAndConfirmed",
+        "TakerPaymentSent",
+        "WatcherMessageSent",
+        "TakerPaymentSpent",
+        "MakerPaymentSpentByWatcher",
+        "Finished",
+    ];
+    let status_response = block_on(my_swap_status(&mm_alice, &uuids[0]));
+    let events_array = status_response["result"]["events"].as_array().unwrap();
+    let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
+    let actual_events: Vec<&str> = actual_events.collect();
+
+    assert_eq!(expected_events, actual_events.as_slice());
+
+    let success_events: Vec<String> = json::from_value(status_response["result"]["success_events"].clone()).unwrap();
+    assert_eq!(expected_events, success_events.as_slice());
 }
 
 #[test]
