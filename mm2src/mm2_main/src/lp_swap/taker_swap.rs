@@ -92,7 +92,6 @@ pub const TAKER_ERROR_EVENTS: [&str; 15] = [
 pub const REFUND_TEST_FAILURE_LOG: &str = "Explicit refund test failure...";
 pub const WATCHER_MESSAGE_SENT_LOG: &str = "Watcher message sent...";
 pub const MAKER_PAYMENT_SPENT_BY_WATCHER_LOG: &str = "Maker payment is spent by the watcher...";
-pub const TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG: &str = "Taker payment is refunded by the watcher...";
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("TAKER") }
@@ -2523,7 +2522,7 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: Ta
             let new_swap = SavedSwap::Taker(saved);
             try_s!(new_swap.save_to_db(ctx).await);
 
-            info!("{}", TAKER_PAYMENT_REFUNDED_BY_WATCHER_LOG);
+            info!("Taker payment is refunded by the watcher");
             Ok(true)
         },
         (Some(_), None) => {
