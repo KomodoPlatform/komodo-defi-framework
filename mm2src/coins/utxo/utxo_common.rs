@@ -1298,7 +1298,7 @@ pub async fn gen_and_sign_dex_fee_spend_preimage<T: UtxoCommonOps>(
     let signature = calc_and_sign_sighash(
         &preimage,
         DEFAULT_SWAP_VOUT,
-        redeem_script,
+        &redeem_script,
         htlc_keypair,
         coin.as_ref().conf.signature_version,
         coin.as_ref().conf.fork_id,
@@ -1315,6 +1315,7 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
     gen_args: GenDexFeeSpendArgs<'_>,
     preimage: &TxPreimageWithSig,
 ) -> ValidateDexFeeSpendPreimageResult {
+    // TODO validate that preimage has exactly 2 outputs
     let actual_preimage_tx: UtxoTx = deserialize(preimage.preimage.as_slice())
         .map_to_mm(|e| ValidateDexFeeSpendPreimageError::TxDeserialization(e.to_string()))?;
 
@@ -1340,10 +1341,11 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
     let sig_hash = signature_hash_to_sign(
         &expected_preimage,
         DEFAULT_SWAP_VOUT,
-        redeem_script,
+        &redeem_script,
         coin.as_ref().conf.signature_version,
         coin.as_ref().conf.fork_id,
     )?;
+    println!("Sighash {:?}", sig_hash);
     if !taker_pub
         .verify(&sig_hash, &preimage.signature.clone().into())
         .map_to_mm(|e| ValidateDexFeeSpendPreimageError::SignatureVerificationFailure(e.to_string()))?
@@ -1360,10 +1362,52 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
 pub async fn sign_and_broadcast_dex_fee_spend<T: UtxoCommonOps>(
     coin: &T,
     preimage: TxPreimageWithSig,
+    time_lock: u32,
+    taker_pub: &[u8],
     secret: &[u8],
     htlc_keypair: &KeyPair,
 ) -> TransactionResult {
-    unimplemented!()
+    let taker_pub = try_tx_s!(Public::from_slice(taker_pub));
+
+    let mut preimage_tx: UtxoTx = try_tx_s!(deserialize(preimage.preimage.as_slice()));
+    preimage_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    drop_mutability!(preimage_tx);
+
+    let secret_hash = dhash160(secret);
+    let redeem_script =
+        swap_proto_v2_scripts::dex_fee_script(time_lock, secret_hash.as_slice(), &taker_pub, htlc_keypair.public());
+    let signer: TransactionInputSigner = preimage_tx.into();
+    let maker_signature = try_tx_s!(calc_and_sign_sighash(
+        &signer,
+        DEFAULT_SWAP_VOUT,
+        &redeem_script,
+        htlc_keypair,
+        coin.as_ref().conf.signature_version,
+        coin.as_ref().conf.fork_id
+    ));
+    let sig_hash_all_fork_id = 1 | coin.as_ref().conf.fork_id as u8;
+    let mut taker_signature_with_sighash = preimage.signature;
+    taker_signature_with_sighash.push(sig_hash_all_fork_id);
+    drop_mutability!(taker_signature_with_sighash);
+
+    let mut maker_signature_with_sighash: Vec<u8> = maker_signature.take();
+    maker_signature_with_sighash.push(sig_hash_all_fork_id);
+    drop_mutability!(maker_signature_with_sighash);
+
+    let script_sig = Builder::default()
+        .push_opcode(Opcode::OP_0)
+        .push_data(&taker_signature_with_sighash)
+        .push_data(&maker_signature_with_sighash)
+        .push_data(secret)
+        .push_opcode(Opcode::OP_0)
+        .push_data(&redeem_script)
+        .into_bytes();
+    let mut final_tx: UtxoTx = signer.into();
+    final_tx.inputs[0].script_sig = script_sig;
+    drop_mutability!(final_tx);
+
+    try_tx_s!(coin.broadcast_tx(&final_tx).await, final_tx);
+    Ok(final_tx.into())
 }
 
 pub fn send_taker_fee<T>(coin: T, fee_pub_key: &[u8], amount: BigDecimal) -> TransactionFut

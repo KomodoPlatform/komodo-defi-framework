@@ -100,7 +100,13 @@ fn send_and_spend_dex_fee() {
     };
     block_on(maker_coin.validate_dex_fee_spend_preimage(gen_preimage_args, &preimage_with_taker_sig)).unwrap();
 
-    let dex_fee_spend =
-        block_on(maker_coin.sign_and_broadcast_dex_fee_spend(preimage_with_taker_sig, &secret, &[])).unwrap();
+    let dex_fee_spend = block_on(maker_coin.sign_and_broadcast_dex_fee_spend(
+        preimage_with_taker_sig,
+        time_lock,
+        &taker_coin.my_public_key().unwrap(),
+        &secret,
+        &[],
+    ))
+    .unwrap();
     println!("dex_fee_spend hash {:02x}", dex_fee_spend.tx_hash());
 }

@@ -1082,6 +1082,8 @@ pub trait SwapOpsV2 {
     async fn sign_and_broadcast_dex_fee_spend(
         &self,
         preimage: TxPreimageWithSig,
+        time_lock: u32,
+        taker_pub: &[u8],
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionResult;

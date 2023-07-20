@@ -610,11 +610,13 @@ impl SwapOpsV2 for UtxoStandardCoin {
     async fn sign_and_broadcast_dex_fee_spend(
         &self,
         preimage: TxPreimageWithSig,
+        time_lock: u32,
+        taker_pub: &[u8],
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionResult {
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
-        utxo_common::sign_and_broadcast_dex_fee_spend(self, preimage, secret, &htlc_keypair).await
+        utxo_common::sign_and_broadcast_dex_fee_spend(self, preimage, time_lock, taker_pub, secret, &htlc_keypair).await
     }
 }
 

@@ -82,7 +82,7 @@ pub fn p2pk_spend(
     let unsigned_input = get_input(signer, input_index)?;
 
     let script = Builder::build_p2pk(key_pair.public());
-    let signature = calc_and_sign_sighash(signer, input_index, script, key_pair, signature_version, fork_id)?;
+    let signature = calc_and_sign_sighash(signer, input_index, &script, key_pair, signature_version, fork_id)?;
     Ok(p2pk_spend_with_signature(unsigned_input, fork_id, signature))
 }
 
@@ -106,7 +106,7 @@ pub fn p2pkh_spend(
         });
     }
 
-    let signature = calc_and_sign_sighash(signer, input_index, script, key_pair, signature_version, fork_id)?;
+    let signature = calc_and_sign_sighash(signer, input_index, &script, key_pair, signature_version, fork_id)?;
     Ok(p2pkh_spend_with_signature(
         unsigned_input,
         key_pair.public(),
@@ -130,7 +130,7 @@ pub fn p2sh_spend(
     let signature = calc_and_sign_sighash(
         signer,
         input_index,
-        redeem_script.clone(),
+        &redeem_script,
         key_pair,
         signature_version,
         fork_id,
@@ -164,7 +164,7 @@ pub fn p2wpkh_spend(
         });
     }
 
-    let signature = calc_and_sign_sighash(signer, input_index, script, key_pair, signature_version, fork_id)?;
+    let signature = calc_and_sign_sighash(signer, input_index, &script, key_pair, signature_version, fork_id)?;
     Ok(p2wpkh_spend_with_signature(
         unsigned_input,
         key_pair.public(),
@@ -177,19 +177,20 @@ pub fn p2wpkh_spend(
 pub fn calc_and_sign_sighash(
     signer: &TransactionInputSigner,
     input_index: usize,
-    output_script: Script,
+    output_script: &Script,
     key_pair: &KeyPair,
     signature_version: SignatureVersion,
     fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<Signature> {
     let sighash = signature_hash_to_sign(signer, input_index, output_script, signature_version, fork_id)?;
+    println!("Sighash {:?}", sighash);
     sign_message(&sighash, key_pair)
 }
 
 pub fn signature_hash_to_sign(
     signer: &TransactionInputSigner,
     input_index: usize,
-    output_script: Script,
+    output_script: &Script,
     signature_version: SignatureVersion,
     fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<H256> {
