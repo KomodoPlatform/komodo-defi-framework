@@ -922,7 +922,7 @@ fn test_taker_adds_watcher_refund_not_found_event() {
         "TakerPaymentWaitRefundStarted",
         "TakerPaymentRefundStarted",
         "TakerPaymentRefundFailed",
-        "WatcherRefundNotFound",
+        "WatcherSpendOrRefundNotFound",
         "Finished",
     ];
     let status_response = block_on(my_swap_status(&mm_alice, &uuids[0]));
