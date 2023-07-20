@@ -40,3 +40,7 @@ libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", branch = "
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", branch = "port-from-old-impl", default-features = false, features = ["async-std", "identify", "floodsub", "noise", "gossipsub", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket", "macros", "yamux"] }
 wasm-bindgen-futures = "0.4.21"
+
+[dev-dependencies]
+async-std = { version = "1.6.2", features = ["unstable"] }
+env_logger = "0.9.3"

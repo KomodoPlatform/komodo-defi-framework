@@ -1,10 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::iter;
-use std::net::IpAddr;
-use std::task::{Context, Poll};
-
 use common::executor::SpawnFuture;
 use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver, Sender};
@@ -24,20 +17,24 @@ use libp2p::swarm::{NetworkBehaviour, SwarmEvent, ToSwarm};
 use libp2p::{identity, noise, PeerId, Swarm};
 use libp2p::{Multiaddr, Transport};
 use log::{debug, error, info};
-
 use rand::seq::SliceRandom;
 use rand::Rng;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::iter;
+use std::net::IpAddr;
+use std::task::{Context, Poll};
 
-use crate::network::{get_all_network_seednodes, NETID_7777};
-use crate::peers_exchange::{PeerAddresses, PeersExchange};
-use crate::ping::AdexPing;
-use crate::relay_address::{RelayAddress, RelayAddressError};
-use crate::request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
+use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, PeersExchangeResponse};
+use super::ping::AdexPing;
+use super::request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
                               RequestResponseSender};
+use crate::network::{get_all_network_seednodes, NETID_7777};
+use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
-use crate::{NetworkInfo, NetworkPorts};
+use crate::{NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
 
-pub use crate::event::AdexBehaviourEvent;
 pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
 pub use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent,
                             Message as GossipsubMessage};
@@ -81,7 +78,7 @@ impl From<AdexResponse> for PeerResponse {
 }
 
 #[derive(Debug)]
-pub struct AdexResponseChannel(ResponseChannel<PeerResponse>);
+pub struct AdexResponseChannel(pub ResponseChannel<PeerResponse>);
 
 impl From<ResponseChannel<PeerResponse>> for AdexResponseChannel {
     fn from(res: ResponseChannel<PeerResponse>) -> Self { AdexResponseChannel(res) }
@@ -288,6 +285,15 @@ pub struct CoreBehaviour {
     peers_exchange: PeersExchange,
     ping: AdexPing,
     request_response: RequestResponseBehaviour,
+}
+
+#[derive(Debug)]
+pub enum AdexBehaviourEvent {
+    Gossipsub(libp2p::gossipsub::Event),
+    Floodsub(FloodsubEvent),
+    PeersExchange(libp2p::request_response::Event<PeersExchangeRequest, PeersExchangeResponse>),
+    Ping(libp2p::ping::Event),
+    RequestResponse(RequestResponseBehaviourEvent),
 }
 
 impl From<CoreBehaviourEvent> for AdexBehaviourEvent {

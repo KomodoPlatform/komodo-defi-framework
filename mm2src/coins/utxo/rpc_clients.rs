@@ -1552,7 +1552,10 @@ pub struct ElectrumConnection {
 }
 
 impl ElectrumConnection {
-    async fn is_connected(&self) -> bool { self.tx.lock().await.is_some() }
+    async fn is_connected(&self) -> bool {
+        println!("DEBUGGING {:?}", self.responses.lock().await);
+        self.tx.lock().await.is_some()
+    }
 
     async fn set_protocol_version(&self, version: f32) { self.protocol_version.lock().await.replace(version); }
 

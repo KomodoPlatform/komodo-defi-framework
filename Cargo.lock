@@ -5114,9 +5114,11 @@ dependencies = [
 name = "mm2_p2p"
 version = "0.1.0"
 dependencies = [
+ "async-std",
  "async-trait",
  "common",
  "derive_more",
+ "env_logger",
  "fnv",
  "futures 0.3.28",
  "futures-rustls 0.21.1",

@@ -27,10 +27,10 @@ use instant::Instant;
 use keys::KeyPair;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse};
-use mm2_libp2p::peers_exchange::PeerAddresses;
 use mm2_libp2p::{decode_message, encode_message, DecodingError, GossipsubMessage, Libp2pPublic, Libp2pSecpPublic,
                  MessageId, NetworkPorts, PeerId, TopicHash, TOPIC_SEPARATOR};
+use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse};
+use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
 use mm2_metrics::{mm_label, mm_timing};
 #[cfg(test)] use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
@@ -132,17 +132,14 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
                 },
                 _ => {},
             },
-            Some(AdexBehaviourEvent::RequestResponse(event)) => match event {
-                mm2_libp2p::request_response::RequestResponseBehaviourEvent::InboundRequest {
-                    peer_id,
-                    request,
-                    response_channel,
-                } => {
-                    if let Err(e) = process_p2p_request(ctx, peer_id, request.req, response_channel.into()) {
-                        log::error!("Error on process P2P request: {:?}", e);
-                    }
-                },
-                mm2_libp2p::request_response::RequestResponseBehaviourEvent::NoAction => {},
+            Some(AdexBehaviourEvent::RequestResponse(RequestResponseBehaviourEvent::InboundRequest {
+                peer_id,
+                request,
+                response_channel,
+            })) => {
+                if let Err(e) = process_p2p_request(ctx, peer_id, request.req, response_channel.into()) {
+                    log::error!("Error on process P2P request: {:?}", e);
+                }
             },
             _ => (),
         }
@@ -252,7 +249,7 @@ fn process_p2p_request(
     ctx: MmArc,
     _peer_id: PeerId,
     request: Vec<u8>,
-    response_channel: mm2_libp2p::behaviour::AdexResponseChannel,
+    response_channel: mm2_libp2p::AdexResponseChannel,
 ) -> P2PRequestResult<()> {
     let request = decode_message::<P2PRequest>(&request)?;
     let result = match request {

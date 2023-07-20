@@ -1,4 +1,3 @@
-// use crate::peer_store::Behaviour as PeerStoreBehaviour;
 use futures::StreamExt;
 use futures_ticker::Ticker;
 use libp2p::{multiaddr::Protocol,
@@ -14,7 +13,9 @@ use std::{collections::{HashMap, HashSet, VecDeque},
           task::Poll,
           time::Duration};
 
-use crate::{request_response::Codec, NetworkInfo};
+use super::request_response::Codec;
+use crate::NetworkInfo;
+// use crate::peer_store::Behaviour as PeerStoreBehaviour;
 
 pub type PeerAddresses = HashSet<Multiaddr>;
 type PeersExchangeCodec = Codec<PeersExchangeProtocol, PeersExchangeRequest, PeersExchangeResponse>;
@@ -25,7 +26,7 @@ const REQUEST_PEERS_INTERVAL: u64 = 300;
 const MAX_PEERS: usize = 100;
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
-pub struct PeerIdSerde(PeerId);
+pub struct PeerIdSerde(pub(crate) PeerId);
 
 impl From<PeerId> for PeerIdSerde {
     fn from(peer_id: PeerId) -> PeerIdSerde { PeerIdSerde(peer_id) }
@@ -69,7 +70,7 @@ pub enum PeersExchangeResponse {
 }
 
 pub struct PeersExchange {
-    request_response: RequestResponse<PeersExchangeCodec>,
+    pub(crate) request_response: RequestResponse<PeersExchangeCodec>,
     known_peers: Vec<PeerId>,
     reserved_peers: Vec<PeerId>,
     events: VecDeque<ToSwarm<<Self as NetworkBehaviour>::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>>,
@@ -221,7 +222,7 @@ impl PeersExchange {
         }
     }
 
-    fn get_random_known_peers(&mut self, num: usize) -> HashMap<PeerIdSerde, PeerAddresses> {
+    pub(crate) fn get_random_known_peers(&mut self, num: usize) -> HashMap<PeerIdSerde, PeerAddresses> {
         let mut result = HashMap::with_capacity(num);
         let mut rng = rand::thread_rng();
         let peer_ids = self
@@ -367,7 +368,7 @@ impl PeersExchange {
         true
     }
 
-    fn validate_get_known_peers_response(&self, response: &HashMap<PeerIdSerde, PeerAddresses>) -> bool {
+    pub(crate) fn validate_get_known_peers_response(&self, response: &HashMap<PeerIdSerde, PeerAddresses>) -> bool {
         if response.is_empty() {
             return false;
         }

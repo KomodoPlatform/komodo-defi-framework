@@ -1,30 +1,38 @@
 #![feature(ip)]
 
-pub mod behaviour;
-mod event;
-// pub mod peer_store;
+mod behaviours;
 mod network;
-pub mod peers_exchange;
-mod ping;
 mod relay_address;
-pub mod request_response;
 mod swarm_runtime;
 
 use lazy_static::lazy_static;
 use secp256k1::{Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1, SecretKey, SignOnly, Signature,
                 VerifyOnly};
+use serde::{de, Deserialize, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
 pub use crate::swarm_runtime::SwarmRuntime;
-pub use behaviour::{spawn_gossipsub, AdexBehaviourError, NodeType, WssCerts};
-pub use behaviour::{GossipsubEvent, GossipsubMessage, MessageId, TopicHash};
-pub use libp2p::identity::secp256k1::PublicKey as Libp2pSecpPublic;
-pub use libp2p::identity::PublicKey as Libp2pPublic;
+
+// Atomicdex-related imports
+pub use behaviours::atomicdex::{get_gossip_mesh, get_gossip_peer_topics, get_gossip_topic_peers, get_peers_info,
+                                get_relay_mesh, spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourError,
+                                AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse, AdexResponseChannel,
+                                GossipsubEvent, GossipsubMessage, MessageId, NodeType, TopicHash, WssCerts};
+
+// Peers exchange-related imports
+pub use behaviours::peers_exchange::PeerAddresses;
+
+// Request-response-related imports
+pub use behaviours::request_response::RequestResponseBehaviourEvent;
+
+// Libp2p-related imports
+pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, PublicKey as Libp2pPublic};
 pub use libp2p::{Multiaddr, PeerId};
 pub use libp2p_identity::DecodingError;
-pub use peers_exchange::PeerAddresses;
-pub use relay_address::{RelayAddress, RelayAddressError};
-use serde::{de, Deserialize, Serialize, Serializer};
+
+// Relay address-related imports
+pub use relay_address::RelayAddress;
+pub use relay_address::RelayAddressError;
 
 lazy_static! {
     static ref SECP_VERIFY: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
