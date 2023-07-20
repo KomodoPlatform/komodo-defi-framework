@@ -183,7 +183,6 @@ pub fn calc_and_sign_sighash(
     fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<Signature> {
     let sighash = signature_hash_to_sign(signer, input_index, output_script, signature_version, fork_id)?;
-    println!("Sighash {:?}", sighash);
     sign_message(&sighash, key_pair)
 }
 

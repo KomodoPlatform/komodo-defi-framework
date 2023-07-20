@@ -1224,13 +1224,14 @@ async fn gen_dex_fee_spend_preimage<T: UtxoCommonOps>(
     prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_tx);
 
-    let miner_fee = coin
-        .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-        .await?;
     let dex_fee_sat = sat_from_big_decimal(&args.dex_fee_amount, coin.as_ref().decimals)?;
     let premium_sat = match calc_premium {
         CalcPremiumBy::UseExactAmount(sat) => sat,
         CalcPremiumBy::DeductMinerFee => {
+            let miner_fee = coin
+                .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await?;
+
             let premium_sat = sat_from_big_decimal(&args.premium_amount, coin.as_ref().decimals)?;
             if miner_fee + coin.as_ref().dust_amount > premium_sat {
                 return MmError::err(TxGenError::MinerFeeExceedsPremium {
@@ -1280,7 +1281,7 @@ async fn gen_dex_fee_spend_preimage<T: UtxoCommonOps>(
 
 pub async fn gen_and_sign_dex_fee_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
-    args: GenDexFeeSpendArgs<'_>,
+    args: &GenDexFeeSpendArgs<'_>,
     htlc_keypair: &KeyPair,
 ) -> GenAndSignDexFeeSpendResult {
     let maker_pub = Public::from_slice(args.maker_pub).map_to_mm(|e| TxGenError::InvalidPubkey(e.to_string()))?;
@@ -1288,7 +1289,7 @@ pub async fn gen_and_sign_dex_fee_spend_preimage<T: UtxoCommonOps>(
 
     let preimage = gen_dex_fee_spend_preimage(
         coin,
-        &args,
+        args,
         LocktimeSetting::CalcByHtlcLocktime(args.time_lock),
         CalcPremiumBy::DeductMinerFee,
     )
@@ -1312,7 +1313,7 @@ pub async fn gen_and_sign_dex_fee_spend_preimage<T: UtxoCommonOps>(
 
 pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
-    gen_args: GenDexFeeSpendArgs<'_>,
+    gen_args: &GenDexFeeSpendArgs<'_>,
     preimage: &TxPreimageWithSig,
 ) -> ValidateDexFeeSpendPreimageResult {
     // TODO validate that preimage has exactly 2 outputs
@@ -1361,22 +1362,34 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
 
 pub async fn sign_and_broadcast_dex_fee_spend<T: UtxoCommonOps>(
     coin: &T,
-    preimage: TxPreimageWithSig,
-    time_lock: u32,
-    taker_pub: &[u8],
+    preimage: &TxPreimageWithSig,
+    gen_args: &GenDexFeeSpendArgs<'_>,
     secret: &[u8],
     htlc_keypair: &KeyPair,
 ) -> TransactionResult {
-    let taker_pub = try_tx_s!(Public::from_slice(taker_pub));
+    let taker_pub = try_tx_s!(Public::from_slice(gen_args.taker_pub));
+
+    let mut dex_fee_tx: UtxoTx = try_tx_s!(deserialize(gen_args.dex_fee_tx));
+    dex_fee_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    drop_mutability!(dex_fee_tx);
 
     let mut preimage_tx: UtxoTx = try_tx_s!(deserialize(preimage.preimage.as_slice()));
     preimage_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(preimage_tx);
 
     let secret_hash = dhash160(secret);
-    let redeem_script =
-        swap_proto_v2_scripts::dex_fee_script(time_lock, secret_hash.as_slice(), &taker_pub, htlc_keypair.public());
-    let signer: TransactionInputSigner = preimage_tx.into();
+    let redeem_script = swap_proto_v2_scripts::dex_fee_script(
+        gen_args.time_lock,
+        secret_hash.as_slice(),
+        &taker_pub,
+        htlc_keypair.public(),
+    );
+
+    let mut signer: TransactionInputSigner = preimage_tx.clone().into();
+    signer.inputs[0].amount = dex_fee_tx.outputs[0].value;
+    signer.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
+    drop_mutability!(signer);
+
     let maker_signature = try_tx_s!(calc_and_sign_sighash(
         &signer,
         DEFAULT_SWAP_VOUT,
@@ -1386,7 +1399,7 @@ pub async fn sign_and_broadcast_dex_fee_spend<T: UtxoCommonOps>(
         coin.as_ref().conf.fork_id
     ));
     let sig_hash_all_fork_id = 1 | coin.as_ref().conf.fork_id as u8;
-    let mut taker_signature_with_sighash = preimage.signature;
+    let mut taker_signature_with_sighash = preimage.signature.clone();
     taker_signature_with_sighash.push(sig_hash_all_fork_id);
     drop_mutability!(taker_signature_with_sighash);
 

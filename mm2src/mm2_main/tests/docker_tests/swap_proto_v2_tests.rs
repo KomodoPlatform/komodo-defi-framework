@@ -86,24 +86,13 @@ fn send_and_spend_dex_fee() {
         premium_amount: "0.1".parse().unwrap(),
     };
     let preimage_with_taker_sig =
-        block_on(taker_coin.gen_and_sign_dex_fee_spend_preimage(gen_preimage_args, &[])).unwrap();
+        block_on(taker_coin.gen_and_sign_dex_fee_spend_preimage(&gen_preimage_args, &[])).unwrap();
 
-    let gen_preimage_args = GenDexFeeSpendArgs {
-        dex_fee_tx: &dex_fee_utxo_tx.tx_hex(),
-        time_lock,
-        secret_hash: secret_hash.as_slice(),
-        maker_pub: &maker_coin.my_public_key().unwrap(),
-        taker_pub: &taker_coin.my_public_key().unwrap(),
-        dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
-        dex_fee_amount: "0.01".parse().unwrap(),
-        premium_amount: "0.1".parse().unwrap(),
-    };
-    block_on(maker_coin.validate_dex_fee_spend_preimage(gen_preimage_args, &preimage_with_taker_sig)).unwrap();
+    block_on(maker_coin.validate_dex_fee_spend_preimage(&gen_preimage_args, &preimage_with_taker_sig)).unwrap();
 
     let dex_fee_spend = block_on(maker_coin.sign_and_broadcast_dex_fee_spend(
-        preimage_with_taker_sig,
-        time_lock,
-        &taker_coin.my_public_key().unwrap(),
+        &preimage_with_taker_sig,
+        &gen_preimage_args,
         &secret,
         &[],
     ))

@@ -592,7 +592,7 @@ impl SwapOpsV2 for UtxoStandardCoin {
 
     async fn gen_and_sign_dex_fee_spend_preimage(
         &self,
-        args: GenDexFeeSpendArgs<'_>,
+        args: &GenDexFeeSpendArgs<'_>,
         swap_unique_data: &[u8],
     ) -> GenAndSignDexFeeSpendResult {
         let key_pair = self.derive_htlc_key_pair(swap_unique_data);
@@ -601,7 +601,7 @@ impl SwapOpsV2 for UtxoStandardCoin {
 
     async fn validate_dex_fee_spend_preimage(
         &self,
-        gen_args: GenDexFeeSpendArgs<'_>,
+        gen_args: &GenDexFeeSpendArgs<'_>,
         preimage: &TxPreimageWithSig,
     ) -> ValidateDexFeeSpendPreimageResult {
         utxo_common::validate_dex_fee_spend_preimage(self, gen_args, preimage).await
@@ -609,14 +609,13 @@ impl SwapOpsV2 for UtxoStandardCoin {
 
     async fn sign_and_broadcast_dex_fee_spend(
         &self,
-        preimage: TxPreimageWithSig,
-        time_lock: u32,
-        taker_pub: &[u8],
+        preimage: &TxPreimageWithSig,
+        gen_args: &GenDexFeeSpendArgs<'_>,
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionResult {
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
-        utxo_common::sign_and_broadcast_dex_fee_spend(self, preimage, time_lock, taker_pub, secret, &htlc_keypair).await
+        utxo_common::sign_and_broadcast_dex_fee_spend(self, preimage, gen_args, secret, &htlc_keypair).await
     }
 }
 

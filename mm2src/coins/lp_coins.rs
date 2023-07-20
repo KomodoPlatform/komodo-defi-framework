@@ -1069,21 +1069,20 @@ pub trait SwapOpsV2 {
 
     async fn gen_and_sign_dex_fee_spend_preimage(
         &self,
-        args: GenDexFeeSpendArgs<'_>,
+        args: &GenDexFeeSpendArgs<'_>,
         swap_unique_data: &[u8],
     ) -> GenAndSignDexFeeSpendResult;
 
     async fn validate_dex_fee_spend_preimage(
         &self,
-        gen_args: GenDexFeeSpendArgs<'_>,
+        gen_args: &GenDexFeeSpendArgs<'_>,
         preimage: &TxPreimageWithSig,
     ) -> ValidateDexFeeSpendPreimageResult;
 
     async fn sign_and_broadcast_dex_fee_spend(
         &self,
-        preimage: TxPreimageWithSig,
-        time_lock: u32,
-        taker_pub: &[u8],
+        preimage: &TxPreimageWithSig,
+        gen_args: &GenDexFeeSpendArgs<'_>,
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionResult;
