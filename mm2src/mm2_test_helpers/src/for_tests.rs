@@ -579,6 +579,7 @@ pub fn tbtc_segwit_conf() -> Json {
         "txfee": 0,
         "estimate_fee_mode": "ECONOMICAL",
         "required_confirmations": 0,
+        "derivation_path": "m/84'/1'",
         "address_format": {
             "format": "segwit"
         },

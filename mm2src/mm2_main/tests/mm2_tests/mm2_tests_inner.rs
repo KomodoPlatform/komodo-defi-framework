@@ -15,13 +15,14 @@ use mm2_test_helpers::for_tests::check_stats_swap_status;
 use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
                                   check_recent_swaps, enable_eth_coin, enable_qrc20, eth_jst_testnet_conf,
                                   eth_testnet_conf, find_metrics_in_json, from_env_file, get_shared_db_id, mm_spat,
-                                  morty_conf, rick_conf, sign_message, start_swaps, tbtc_with_spv_conf,
-                                  test_qrc20_history_impl, tqrc20_conf, verify_message,
+                                  morty_conf, rick_conf, sign_message, start_swaps, tbtc_segwit_conf,
+                                  tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf, verify_message,
                                   wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
                                   wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
                                   ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE,
-                                  ETH_MAINNET_SWAP_CONTRACT, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS};
+                                  ETH_MAINNET_SWAP_CONTRACT, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
+                                  TBTC_ELECTRUMS};
 
 use crypto::StandardHDCoinAddress;
 use mm2_test_helpers::get_passphrase;
@@ -1163,7 +1164,7 @@ fn test_withdraw_and_send_hd() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     // Todo: add more coins
-    let coins = json!([rick_conf(), btc_segwit_conf(),]);
+    let coins = json!([rick_conf(), tbtc_segwit_conf()]);
 
     let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
     let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -1175,14 +1176,10 @@ fn test_withdraw_and_send_hd() {
     let mut rick_enable_res = HashMap::new();
     rick_enable_res.insert("RICK", rick);
 
-    let btc_segwit = block_on(enable_electrum(
-        &mm_hd,
-        "BTC-segwit",
-        TX_HISTORY,
-        RICK_ELECTRUM_ADDRS,
-        None,
-    ));
-    assert_eq!(btc_segwit.address, "bc1q6vyur5hjul2m0979aadd6u7ptuj9ac4gt0ha0c");
+    let tbtc_segwit = block_on(enable_electrum(&mm_hd, "tBTC-Segwit", TX_HISTORY, TBTC_ELECTRUMS, None));
+    assert_eq!(tbtc_segwit.address, "tb1q7z9vzf8wpp9cks0l4nj5v28zf7jt56kuekegh5");
+    let mut tbtc_segwit_enable_res = HashMap::new();
+    tbtc_segwit_enable_res.insert("tBTC-Segwit", tbtc_segwit);
 
     // Todo: add comment here
     let from_account_address = StandardHDCoinAddress {
@@ -1190,13 +1187,24 @@ fn test_withdraw_and_send_hd() {
         is_change: false,
         address_index: 1,
     };
+
     withdraw_and_send(
         &mm_hd,
         "RICK",
-        Some(from_account_address),
+        Some(from_account_address.clone()),
         "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
         &rick_enable_res,
         "-0.00101",
+        0.001,
+    );
+
+    withdraw_and_send(
+        &mm_hd,
+        "tBTC-Segwit",
+        Some(from_account_address),
+        "tb1q7z9vzf8wpp9cks0l4nj5v28zf7jt56kuekegh5",
+        &tbtc_segwit_enable_res,
+        "-0.00100144",
         0.001,
     );
 
