@@ -199,7 +199,7 @@ pub fn signature_hash_to_sign(
     Ok(signer.signature_hash(
         input_index,
         input_amount,
-        &output_script,
+        output_script,
         signature_version,
         sighash_type,
     ))

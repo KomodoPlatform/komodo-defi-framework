@@ -1276,7 +1276,7 @@ async fn gen_dex_fee_spend_preimage<T: UtxoCommonOps>(
         premium_output,
     ])
     .await
-    .map_to_mm(|e| TxGenError::Legacy(e))
+    .map_to_mm(TxGenError::Legacy)
 }
 
 pub async fn gen_and_sign_dex_fee_spend_preimage<T: UtxoCommonOps>(
@@ -1332,7 +1332,7 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
     // can get different values (e.g. if MTP advances during preimage exchange/fee rate changes)
     let expected_preimage = gen_dex_fee_spend_preimage(
         coin,
-        &gen_args,
+        gen_args,
         LocktimeSetting::UseExact(actual_preimage_tx.lock_time),
         CalcPremiumBy::UseExactAmount(actual_preimage_tx.outputs[1].value),
     )
