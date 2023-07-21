@@ -1,6 +1,5 @@
 use super::{z_coin_errors::*, BlockDbImpl, WalletDbShared, ZCoinBuilder, ZcoinConsensusParams};
 use crate::utxo::rpc_clients::NativeClient;
-use crate::z_coin::CheckPointBlockInfo;
 use async_trait::async_trait;
 use common::executor::{spawn_abortable, AbortOnDropHandle};
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
@@ -14,7 +13,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 
 cfg_native!(
-    use crate::{RpcCommonOps, ZTransaction};
+    use crate::{RpcCommonOps, ZTransaction, CheckPointBlockInfo};
     use crate::utxo::rpc_clients::{UtxoRpcClientOps, NO_TX_ERROR_CODE};
     use crate::z_coin::storage::BlockDbError;
 
@@ -66,7 +65,7 @@ pub trait ZRpcOps {
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>>;
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn get_tree_state(&mut self, height: u32) -> Result<TreeState, MmError<ZcoinRpcError>>;
+    async fn get_tree_state(&mut self, height: u64) -> Result<TreeState, MmError<ZcoinRpcError>>;
 
     async fn scan_blocks(
         &mut self,
@@ -122,11 +121,8 @@ impl ZRpcOps for LightRpcClient {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn get_tree_state(&mut self, height: u32) -> Result<TreeState, MmError<ZcoinRpcError>> {
-        let request = tonic::Request::new(BlockId {
-            height: height as u64,
-            hash: vec![],
-        });
+    async fn get_tree_state(&mut self, height: u64) -> Result<TreeState, MmError<ZcoinRpcError>> {
+        let request = tonic::Request::new(BlockId { height, hash: vec![] });
 
         Ok(self
             .get_live_client()
@@ -204,7 +200,7 @@ impl ZRpcOps for NativeClient {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn get_tree_state(&mut self, _height: u32) -> Result<TreeState, MmError<ZcoinRpcError>> { todo!() }
+    async fn get_tree_state(&mut self, _height: u64) -> Result<TreeState, MmError<ZcoinRpcError>> { todo!() }
 
     async fn scan_blocks(
         &mut self,

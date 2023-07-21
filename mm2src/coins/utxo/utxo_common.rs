@@ -67,6 +67,7 @@ pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
 pub const DEFAULT_SWAP_VOUT: usize = 0;
 pub const DEFAULT_SWAP_VIN: usize = 0;
+pub const DAY_IN_SECONDS: u64 = 86400;
 const MIN_BTC_TRADING_VOL: &str = "0.00777";
 
 macro_rules! true_or {

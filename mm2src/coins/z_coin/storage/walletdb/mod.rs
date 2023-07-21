@@ -2,11 +2,11 @@ use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
 use mm2_err_handle::prelude::*;
 
 cfg_native!(
-    use crate::z_coin::{CheckPointBlockInfo, extended_spending_key_from_protocol_info_and_policy, ZcoinConsensusParams,
-                    ZcoinRpcMode};
+    use crate::z_coin::{ZCOIN_AVERAGE_BLOCKTIME, CheckPointBlockInfo, extended_spending_key_from_protocol_info_and_policy,
+                    LightClientSyncParams, ZcoinConsensusParams, ZcoinRpcMode};
+    use crate::utxo::utxo_builder::UtxoBlockSyncOps;
     use crate::z_coin::z_rpc::{create_wallet_db, ZRpcOps};
 
-    use common::now_sec;
     use common::log::info;
     use hex::{FromHex, FromHexError};
     use parking_lot::Mutex;
@@ -46,30 +46,6 @@ pub struct WalletDbShared {
     ticker: String,
 }
 
-/// Calculates the starting block height based on a given date and the current block height.
-///
-/// # Arguments
-/// * `date`: The date in seconds representing the desired starting date.
-/// * `current_block_height`: The current block height at the time of calculation.
-///
-#[cfg(not(target_arch = "wasm32"))]
-fn calculate_starting_height_from_date(date: u32, current_block_height: u64) -> Result<u32, String> {
-    let blocks_prod_per_day = 24 * 60;
-    let current_time_s = now_sec();
-
-    let date = date as u64;
-    if current_time_s < date {
-        return Err("sync_param_date must be earlier then current date".to_string());
-    };
-
-    let secs_since_date = current_time_s - date;
-    let days_since_date = (secs_since_date / 86400) - 1;
-    let blocks_to_sync = (days_since_date * blocks_prod_per_day) + blocks_prod_per_day;
-    let block_to_sync_from = current_block_height - blocks_to_sync;
-
-    Ok(block_to_sync_from as u32)
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 impl<'a> WalletDbShared {
     pub async fn new(zcoin_builder: &ZCoinBuilder<'a>, rpc: &mut impl ZRpcOps) -> MmResult<Self, WalletDbError> {
@@ -82,41 +58,43 @@ impl<'a> WalletDbShared {
             .mm_err(|err| WalletDbError::ZCoinBuildError(err.to_string()))?,
         };
 
+        println!("conf {}", zcoin_builder.conf);
+
+        let current_block_height = rpc
+            .get_block_height()
+            .await
+            .map_err(|err| WalletDbError::GrpcError(err.to_string()))?;
+
         let sync_block = match zcoin_builder.z_coin_params.mode.clone() {
             ZcoinRpcMode::Light { sync_params, .. } => {
-                let sync_height = match sync_params {
-                    Some(params) => {
-                        if let Some(date) = params.date {
-                            let current_block_height = rpc
-                                .get_block_height()
-                                .await
-                                .map_err(|err| WalletDbError::GrpcError(err.to_string()))?;
+                let sync_height =
+                    match sync_params {
+                        Some(params) => match params {
+                            LightClientSyncParams::Date(date) => {
+                                let buffer = zcoin_builder.avg_blocktime().unwrap_or(ZCOIN_AVERAGE_BLOCKTIME) * 24;
+                                let starting_height = zcoin_builder
+                                    .calculate_starting_height_from_date(date, current_block_height, buffer)
+                                    .map_err(|err| {
+                                        WalletDbError::ZcoinClientInitError(ZcoinClientInitError::ZcashDBError(err))
+                                    })?;
 
-                            let starting_height = calculate_starting_height_from_date(date, current_block_height)
-                                .map_err(|err| {
-                                    WalletDbError::ZcoinClientInitError(ZcoinClientInitError::ZcashDBError(err))
-                                })?;
-
-                            info!(
-                        "Found date in sync params for {}. Walletdb will be built using block height {} as the \
-                        starting \
-                        block for scanning and updating walletdb",
-                        zcoin_builder.ticker, starting_height
-                    );
-                            Some(starting_height)
-                        } else {
-                            if params.height.is_some() {
                                 info!(
-                            "Found height in sync params for {}. Walletdb will be built using block height {:?} as the \
-                            starting block for scanning and updating walletdb",
-                            zcoin_builder.ticker, params.height
-                        );
-                            }
-                            params.height
-                        }
-                    },
-                    None => None,
-                };
+                                "Found date in sync params for {}. Walletdb will be built using block height {} as \
+                                the starting block for sync", zcoin_builder.ticker, starting_height);
+
+                                Some(starting_height)
+                            },
+                            LightClientSyncParams::Height(height) => {
+                                info!(
+                                    "Found height in sync params for {}. Walletdb will be built using block height \
+                                {:?} as the starting block for sync",
+                                    zcoin_builder.ticker, height
+                                );
+                                Some(height)
+                            },
+                        },
+                        None => None,
+                    };
 
                 match sync_height {
                     Some(height) => {
