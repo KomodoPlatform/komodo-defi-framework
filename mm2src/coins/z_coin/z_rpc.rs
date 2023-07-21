@@ -13,9 +13,10 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 
 cfg_native!(
-    use crate::{RpcCommonOps, ZTransaction, CheckPointBlockInfo};
+    use crate::{RpcCommonOps, ZTransaction};
     use crate::utxo::rpc_clients::{UtxoRpcClientOps, NO_TX_ERROR_CODE};
     use crate::z_coin::storage::BlockDbError;
+    use crate::z_coin::CheckPointBlockInfo;
 
     use db_common::sqlite::rusqlite::Connection;
     use db_common::sqlite::{query_single_row, run_optimization_pragmas};

@@ -1064,7 +1064,7 @@ impl<'a> ZCoinBuilder<'a> {
     async fn z_tx_prover(&self) -> Result<LocalTxProver, MmError<ZCoinBuildError>> { todo!() }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn avg_blocktime(&self) -> Option<u64> { self.conf()["avg_blocktime"].as_u64().clone() }
+    pub fn avg_blocktime(&self) -> Option<u64> { self.conf()["avg_blocktime"].as_u64() }
 }
 
 /// Initialize `ZCoin` with a forced `z_spending_key`.
