@@ -39,6 +39,7 @@ pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
 
 use async_trait::async_trait;
+use bip32::ExtendedPrivateKey;
 #[cfg(not(target_arch = "wasm32"))]
 use bitcoin::network::constants::Network as BitcoinNetwork;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
@@ -563,6 +564,7 @@ pub struct UtxoCoinConf {
     /// where the full `BIP44` address has the following structure:
     /// `m/purpose'/coin_type'`.
     pub derivation_path: Option<StandardHDPathToCoin>,
+    // Todo: should this be in UtxoCoinFields instead?
     /// `/account'/change/address_index`
     pub path_to_address: StandardHDCoinAddress,
     /// The average time in seconds needed to mine a new block for this coin.
@@ -584,7 +586,7 @@ pub struct UtxoCoinFields {
     /// RPC client
     pub rpc_client: UtxoRpcClientEnum,
     /// Either ECDSA key pair or a Hardware Wallet info.
-    pub priv_key_policy: PrivKeyPolicy<KeyPair>,
+    pub priv_key_policy: PrivKeyPolicy<KeyPair, ExtendedPrivateKey<secp256k1::SecretKey>>,
     /// Either an Iguana address or an info about last derived account/address.
     pub derivation_method: DerivationMethod<Address, UtxoHDWallet>,
     pub history_sync_state: Mutex<HistorySyncState>,
@@ -593,6 +595,7 @@ pub struct UtxoCoinFields {
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
     /// This cache helps to prevent UTXO reuse in such cases
+    // Todo: this is also used in withdraw, check other fields/configs used in withdraw, it might also be used in other places, it can be updated to add more scriptpubkeys
     pub recently_spent_outpoints: AsyncMutex<RecentlySpentOutPoints>,
     pub tx_hash_algo: TxHashAlgo,
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
@@ -1479,6 +1482,7 @@ impl Default for ElectrumBuilderArgs {
 }
 
 #[derive(Debug)]
+// Todo: check this against priv_key_policy
 pub struct UtxoHDWallet {
     pub hd_wallet_rmd160: H160,
     pub hd_wallet_storage: HDWalletCoinStorage,

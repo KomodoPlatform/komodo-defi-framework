@@ -212,6 +212,8 @@ pub struct HDAddress<Address, Pubkey> {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+// Todo: check this against StandardHDCoinAddress
+// Todo: Maybe rename this to HWAccountAddressId and other related structs that should be HW instead of HD
 pub struct HDAccountAddressId {
     pub account_id: u32,
     pub chain: Bip44Chain,

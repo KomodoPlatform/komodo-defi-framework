@@ -932,6 +932,7 @@ fn trade_test_electrum_rick_zombie() {
 fn withdraw_and_send(
     mm: &MarketMakerIt,
     coin: &str,
+    from: Option<StandardHDCoinAddress>,
     to: &str,
     enable_res: &HashMap<&'static str, CoinInitResponse>,
     expected_bal_change: &str,
@@ -939,14 +940,16 @@ fn withdraw_and_send(
 ) {
     use std::ops::Sub;
 
-    use coins::TxFeeDetails;
+    use coins::{TxFeeDetails, WithdrawFrom};
 
+    let from = from.map(WithdrawFrom::HDWalletAddress);
     let withdraw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "withdraw",
         "params": {
             "coin": coin,
+            "from": from,
             "to": to,
             "amount": amount,
         },
@@ -959,7 +962,7 @@ fn withdraw_and_send(
         json::from_str(&withdraw.1).expect("Expected 'RpcSuccessResponse<TransactionDetails>'");
     let tx_details = res.result;
 
-    let from = addr_from_enable(enable_res, coin).to_owned();
+    let from_str = addr_from_enable(enable_res, coin).to_owned();
     let mut expected_bal_change = BigDecimal::from_str(expected_bal_change).expect("!BigDecimal::from_str");
 
     let fee_details: TxFeeDetails = json::from_value(tx_details.fee_details).unwrap();
@@ -972,7 +975,10 @@ fn withdraw_and_send(
 
     assert_eq!(tx_details.to, vec![to.to_owned()]);
     assert_eq!(tx_details.my_balance_change, expected_bal_change);
-    assert_eq!(tx_details.from, vec![from]);
+    // Todo: find a way to test from and make from_str -> from again
+    if from.is_none() {
+        assert_eq!(tx_details.from, vec![from_str]);
+    }
 
     let send = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
@@ -1041,6 +1047,7 @@ fn test_withdraw_and_send() {
     withdraw_and_send(
         &mm_alice,
         "MORTY",
+        None,
         "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
         &enable_res,
         "-0.00101",
@@ -1049,6 +1056,7 @@ fn test_withdraw_and_send() {
     withdraw_and_send(
         &mm_alice,
         "ETH",
+        None,
         "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
         &enable_res,
         "-0.001",
@@ -1059,6 +1067,7 @@ fn test_withdraw_and_send() {
     withdraw_and_send(
         &mm_alice,
         "JST",
+        None,
         "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
         &enable_res,
         "-0.001",
@@ -1142,6 +1151,56 @@ fn test_withdraw_and_send() {
     assert_eq!(error.error_data, Some(expected_error));
 
     block_on(mm_alice.stop()).unwrap();
+}
+
+// This test is ignored because it requires refilling addresses with coins
+// Todo: try more test cases
+#[test]
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_withdraw_and_send_hd() {
+    const TX_HISTORY: bool = false;
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    // Todo: add more coins
+    let coins = json!([rick_conf(), btc_segwit_conf(),]);
+
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm_hd.mm_dump();
+    log!("log path: {}", mm_hd.log_path.display());
+
+    let rick = block_on(enable_electrum(&mm_hd, "RICK", TX_HISTORY, RICK_ELECTRUM_ADDRS, None));
+    assert_eq!(rick.address, "RXNtAyDSsY3DS3VxTpJegzoHU9bUX54j56");
+    let mut rick_enable_res = HashMap::new();
+    rick_enable_res.insert("RICK", rick);
+
+    let btc_segwit = block_on(enable_electrum(
+        &mm_hd,
+        "BTC-segwit",
+        TX_HISTORY,
+        RICK_ELECTRUM_ADDRS,
+        None,
+    ));
+    assert_eq!(btc_segwit.address, "bc1q6vyur5hjul2m0979aadd6u7ptuj9ac4gt0ha0c");
+
+    // Todo: add comment here
+    let from_account_address = StandardHDCoinAddress {
+        account: 0,
+        is_change: false,
+        address_index: 1,
+    };
+    withdraw_and_send(
+        &mm_hd,
+        "RICK",
+        Some(from_account_address),
+        "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
+        &rick_enable_res,
+        "-0.00101",
+        0.001,
+    );
+
+    block_on(mm_hd.stop()).unwrap();
 }
 
 #[test]
@@ -3008,6 +3067,7 @@ fn test_electrum_tx_history() {
     withdraw_and_send(
         &mm,
         "RICK",
+        None,
         "RRYmiZSDo3UdHHqj1rLKf8cbJroyv9NxXw",
         &enable_res,
         "-0.00001",

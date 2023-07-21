@@ -1105,10 +1105,9 @@ pub trait GetWithdrawSenderAddress {
     ) -> MmResult<WithdrawSenderAddress<Self::Address, Self::Pubkey>, WithdrawError>;
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum WithdrawFrom {
-    // AccountId { account_id: u32 },
     AddressId(HDAccountAddressId),
     /// Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
     /// `serde::Deserialize` returns "data did not match any variant of untagged enum WithdrawFrom".
@@ -1116,6 +1115,7 @@ pub enum WithdrawFrom {
     DerivationPath {
         derivation_path: String,
     },
+    HDWalletAddress(StandardHDCoinAddress),
 }
 
 #[derive(Clone, Deserialize)]
@@ -1901,6 +1901,8 @@ pub enum WithdrawError {
     #[from_stringify("NumConversError", "UnexpectedDerivationMethod", "PrivKeyPolicyNotAllowed")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "Unsupported error: {}", _0)]
+    UnsupportedError(String),
     #[display(fmt = "{} coin doesn't support NFT withdrawing", coin)]
     CoinDoesntSupportNftWithdraw {
         coin: String,
@@ -1949,6 +1951,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
             | WithdrawError::UnexpectedUserAction { .. }
+            | WithdrawError::UnsupportedError(_)
             | WithdrawError::ActionNotAllowed(_)
             | WithdrawError::GetNftInfoError(_)
             | WithdrawError::AddressMismatchError { .. }
@@ -2016,6 +2019,13 @@ impl From<EthGasDetailsErr> for WithdrawError {
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
         }
+    }
+}
+
+impl From<Bip32Error> for WithdrawError {
+    fn from(e: Bip32Error) -> Self {
+        let error = format!("Error deriving key: {}", e);
+        WithdrawError::InternalError(error)
     }
 }
 
@@ -2705,26 +2715,50 @@ pub enum PrivKeyActivationPolicy {
     Trezor,
 }
 
+// Todo: should default be changed to HD wallet?
 impl Default for PrivKeyActivationPolicy {
     fn default() -> Self { PrivKeyActivationPolicy::ContextPrivKey }
 }
 
 #[derive(Debug)]
-pub enum PrivKeyPolicy<T> {
+pub enum PrivKeyPolicy<T, U> {
     KeyPair(T),
+    // Todo: fix withdraw for other coins (ETH, etc..)
+    HDWallet {
+        // Todo: maybe rename this to activated key_pair
+        key_pair: T,
+        bip39_secp_priv_key: U,
+    },
     Trezor,
 }
 
-impl<T> PrivKeyPolicy<T> {
+impl<T, U> PrivKeyPolicy<T, U> {
     pub fn key_pair(&self) -> Option<&T> {
         match self {
             PrivKeyPolicy::KeyPair(key_pair) => Some(key_pair),
+            PrivKeyPolicy::HDWallet { key_pair, .. } => Some(key_pair),
             PrivKeyPolicy::Trezor => None,
         }
     }
 
     pub fn key_pair_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
         self.key_pair()
+            // Todo: change the error HardwareWalletNotSupported
+            .or_mm_err(|| PrivKeyPolicyNotAllowed::HardwareWalletNotSupported)
+    }
+
+    pub fn bip39_secp_priv_key(&self) -> Option<&U> {
+        match self {
+            PrivKeyPolicy::HDWallet {
+                bip39_secp_priv_key, ..
+            } => Some(bip39_secp_priv_key),
+            PrivKeyPolicy::KeyPair(_) | PrivKeyPolicy::Trezor => None,
+        }
+    }
+
+    pub fn bip39_secp_priv_key_or_err(&self) -> Result<&U, MmError<PrivKeyPolicyNotAllowed>> {
+        self.bip39_secp_priv_key()
+            // Todo: change the error HardwareWalletNotSupported
             .or_mm_err(|| PrivKeyPolicyNotAllowed::HardwareWalletNotSupported)
     }
 }

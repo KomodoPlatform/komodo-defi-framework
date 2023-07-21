@@ -706,6 +706,8 @@ pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> MmRes
 pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
     match coin.priv_key_policy {
         PrivKeyPolicy::KeyPair(ref key_pair) => Ok(key_pair.public()),
+        // Todo: recheck this since we can use any public key for any path_to_addr in swaps, etc.. using this, edit this comment if I will implement this in next PRs
+        PrivKeyPolicy::HDWallet { ref key_pair, .. } => Ok(key_pair.public()),
         // Hardware Wallets requires BIP39/BIP44 derivation path to extract a public key.
         PrivKeyPolicy::Trezor => MmError::err(UnexpectedDerivationMethod::ExpectedSingleAddress),
     }
@@ -2470,6 +2472,8 @@ pub fn current_block(coin: &UtxoCoinFields) -> Box<dyn Future<Item = u64, Error 
 pub fn display_priv_key(coin: &UtxoCoinFields) -> Result<String, String> {
     match coin.priv_key_policy {
         PrivKeyPolicy::KeyPair(ref key_pair) => Ok(key_pair.private().to_string()),
+        // Todo: recheck this since we can use display any priv key for any path_to_addr using this, edit this comment if I will implement this in next PRs
+        PrivKeyPolicy::HDWallet { ref key_pair, .. } => Ok(key_pair.private().to_string()),
         PrivKeyPolicy::Trezor => ERR!("'display_priv_key' doesn't support Hardware Wallets"),
     }
 }
@@ -2595,6 +2599,12 @@ where
                 return MmError::err(WithdrawError::UnexpectedFromAddress(error));
             }
             HDAccountAddressId::from(derivation_path)
+        },
+        // Todo: this is part of init_withdraw should be implemented and UnsupportedError removed or from address should be generated else where, check code after this block
+        WithdrawFrom::HDWalletAddress(_) => {
+            return MmError::err(WithdrawError::UnsupportedError(
+                "`WithdrawFrom::HDWalletAddress` is not supported for `get_withdraw_hd_sender`".to_string(),
+            ))
         },
     };
 
@@ -4292,6 +4302,8 @@ where
 pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> KeyPair {
     match coin.priv_key_policy {
         PrivKeyPolicy::KeyPair(k) => k,
+        // Todo: recheck this since we can derive any keypair for any path_to_addr in swaps using this, edit this comment if I will implement this in next PRs
+        PrivKeyPolicy::HDWallet { key_pair, .. } => key_pair,
         PrivKeyPolicy::Trezor => todo!(),
     }
 }
