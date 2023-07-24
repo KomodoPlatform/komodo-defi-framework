@@ -592,7 +592,7 @@ fn start_gossipsub(
         .map(|addr| addr.try_to_multiaddr(network_info))
         .collect::<Result<Vec<Multiaddr>, _>>()?;
 
-    let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (4, 8, 16) } else { (2, 4, 8) };
+    let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (4, 8, 12) } else { (2, 4, 6) };
 
     // Create a Swarm to manage peers and events
     let mut swarm = {
