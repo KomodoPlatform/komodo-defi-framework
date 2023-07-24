@@ -856,12 +856,6 @@ pub trait UtxoBlockSyncOps {
     /// # Arguments
     /// * `date`: The date in seconds representing the desired starting date.
     /// * `current_block_height`: The current block height at the time of calculation.
-    /// * `buffer`:  buffer is calculated using avg_blocktime in a day(avg_blocktime * 24).
     ///
-    fn calculate_starting_height_from_date(
-        &self,
-        date: u64,
-        current_block_height: u64,
-        buffer: u64,
-    ) -> Result<u64, String>;
+    fn calculate_starting_height_from_date(&self, date: u64, current_block_height: u64) -> Result<u64, String>;
 }

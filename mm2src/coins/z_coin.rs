@@ -138,7 +138,6 @@ const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb
 cfg_native!(
     const BLOCKS_TABLE: &str = "blocks";
     const TRANSACTIONS_TABLE: &str = "transactions";
-    const ZCOIN_AVERAGE_BLOCKTIME: u64 = 60;
 );
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -967,16 +966,18 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
 }
 
 impl<'a> UtxoBlockSyncOps for ZCoinBuilder<'a> {
-    fn calculate_starting_height_from_date(
-        &self,
-        date: u64,
-        current_block_height: u64,
-        buffer: u64,
-    ) -> Result<u64, String> {
+    fn calculate_starting_height_from_date(&self, date: u64, current_block_height: u64) -> Result<u64, String> {
+        let buffer = self
+            .avg_blocktime()
+            .ok_or_else(|| format!("avg_blocktime not specified in {} coin config", self.ticker))?;
+        let buffer = buffer * 24;
         let current_time_s = now_sec();
 
         if current_time_s < date {
-            return Err("sync_param_date must be earlier then current date".to_string());
+            return Err(format!(
+                "{} sync_param_date must be earlier then current date",
+                self.ticker
+            ));
         };
 
         let secs_since_date = current_time_s - date;
@@ -1063,7 +1064,6 @@ impl<'a> ZCoinBuilder<'a> {
     #[cfg(target_arch = "wasm32")]
     async fn z_tx_prover(&self) -> Result<LocalTxProver, MmError<ZCoinBuildError>> { todo!() }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn avg_blocktime(&self) -> Option<u64> { self.conf()["avg_blocktime"].as_u64() }
 }
 

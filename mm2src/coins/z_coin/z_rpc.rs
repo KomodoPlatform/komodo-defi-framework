@@ -381,7 +381,9 @@ pub(super) async fn init_light_client<'a>(
     let mut light_rpc_clients = LightRpcClient {
         rpc_clients: AsyncMutex::new(rpc_clients),
     };
-    let wallet_db = WalletDbShared::new(builder, &mut light_rpc_clients).await.unwrap();
+    let wallet_db = WalletDbShared::new(builder, &mut light_rpc_clients)
+        .await
+        .mm_err(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
     let sync_handle = SaplingSyncLoopHandle {
         coin,
         current_block: BlockHeight::from_u32(0),
@@ -422,7 +424,9 @@ pub(super) async fn init_native_client<'a>(
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
-    let wallet_db = WalletDbShared::new(builder, &mut native_client).await.unwrap();
+    let wallet_db = WalletDbShared::new(builder, &mut native_client)
+        .await
+        .mm_err(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
 
     let sync_handle = SaplingSyncLoopHandle {
         coin,
