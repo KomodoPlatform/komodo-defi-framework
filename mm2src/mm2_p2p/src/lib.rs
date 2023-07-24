@@ -13,24 +13,24 @@ use sha2::{Digest, Sha256};
 
 pub use crate::swarm_runtime::SwarmRuntime;
 
-// Atomicdex-related imports
+// atomicdex related re-exports
 pub use behaviours::atomicdex::{get_gossip_mesh, get_gossip_peer_topics, get_gossip_topic_peers, get_peers_info,
                                 get_relay_mesh, spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourError,
                                 AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse, AdexResponseChannel,
                                 GossipsubEvent, GossipsubMessage, MessageId, NodeType, TopicHash, WssCerts};
 
-// Peers exchange-related imports
+// peers-exchange re-exports
 pub use behaviours::peers_exchange::PeerAddresses;
 
-// Request-response-related imports
+// request-response related re-exports
 pub use behaviours::request_response::RequestResponseBehaviourEvent;
 
-// Libp2p-related imports
+// libp2p related re-exports
 pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, PublicKey as Libp2pPublic};
 pub use libp2p::{Multiaddr, PeerId};
 pub use libp2p_identity::DecodingError;
 
-// Relay address-related imports
+// relay-address related re-exports
 pub use relay_address::RelayAddress;
 pub use relay_address::RelayAddressError;
 
