@@ -107,13 +107,13 @@ impl<'a> WalletDbShared {
                     None => match zcoin_builder.protocol_info.check_point_block.clone() {
                         Some(block) => Some(block),
                         None => {
-                            let buffer = zcoin_builder.avg_blocktime().ok_or_else(|| {
+                            let avg_blocktime = zcoin_builder.avg_blocktime().ok_or_else(|| {
                                 WalletDbError::ZcoinClientInitError(ZcoinClientInitError::ZcashDBError(format!(
                                     "avg_blocktime not  specified in {} coin config",
                                     zcoin_builder.ticker
                                 )))
                             })?;
-                            let current_block_height = current_block_height - (buffer * 24);
+                            let current_block_height = current_block_height - (avg_blocktime * 24);
                             checkpoint_block_from_height(current_block_height, rpc).await?
                         },
                     },
