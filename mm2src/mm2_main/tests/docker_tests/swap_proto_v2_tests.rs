@@ -1,7 +1,8 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
-use coins::{GenDexFeeSpendArgs, RefundPaymentArgs, SendDexFeeWithPremiumArgs, SwapOpsV2, Transaction, TransactionEnum};
+use coins::{GenDexFeeSpendArgs, RefundPaymentArgs, SendDexFeeWithPremiumArgs, SwapOpsV2, Transaction, TransactionEnum,
+            ValidateDexFeeArgs};
 use common::{block_on, now_sec_u32, DEX_FEE_ADDR_RAW_PUBKEY};
 use script::{Builder, Opcode};
 
@@ -10,11 +11,13 @@ fn send_and_refund_dex_fee() {
     let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
     let time_lock = now_sec_u32() - 1000;
+    let secret_hash = &[0; 20];
+    let other_pub = coin.my_public_key().unwrap();
 
     let send_args = SendDexFeeWithPremiumArgs {
         time_lock,
-        secret_hash: &[0; 20],
-        other_pub: coin.my_public_key().unwrap(),
+        secret_hash,
+        other_pub,
         dex_fee_amount: "0.01".parse().unwrap(),
         premium_amount: "0.1".parse().unwrap(),
         swap_unique_data: &[],
@@ -38,8 +41,21 @@ fn send_and_refund_dex_fee() {
         .into_bytes();
     assert_eq!(expected_op_return, dex_fee_utxo_tx.outputs[1].script_pubkey);
 
+    let dex_fee_bytes = dex_fee_utxo_tx.tx_hex();
+
+    let validate_args = ValidateDexFeeArgs {
+        dex_fee_tx: &dex_fee_bytes,
+        time_lock,
+        secret_hash,
+        other_pub,
+        dex_fee_amount: "0.01".parse().unwrap(),
+        premium_amount: "0.1".parse().unwrap(),
+        swap_unique_data: &[],
+    };
+    block_on(coin.validate_dex_fee_with_premium(validate_args)).unwrap();
+
     let refund_args = RefundPaymentArgs {
-        payment_tx: &dex_fee_utxo_tx.tx_hex(),
+        payment_tx: &dex_fee_bytes,
         time_lock,
         other_pubkey: coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],

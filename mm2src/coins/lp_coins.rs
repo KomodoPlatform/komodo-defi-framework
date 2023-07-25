@@ -312,6 +312,7 @@ pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
 pub type GenAndSignDexFeeSpendResult = MmResult<TxPreimageWithSig, TxGenError>;
+pub type ValidateDexFeeResult = MmResult<(), ValidateDexFeeError>;
 pub type ValidateDexFeeSpendPreimageResult = MmResult<(), ValidateDexFeeSpendPreimageError>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
@@ -1001,6 +1002,16 @@ pub struct SendDexFeeWithPremiumArgs<'a> {
     pub swap_unique_data: &'a [u8],
 }
 
+pub struct ValidateDexFeeArgs<'a> {
+    pub dex_fee_tx: &'a [u8],
+    pub time_lock: u32,
+    pub secret_hash: &'a [u8],
+    pub other_pub: &'a [u8],
+    pub dex_fee_amount: BigDecimal,
+    pub premium_amount: BigDecimal,
+    pub swap_unique_data: &'a [u8],
+}
+
 pub struct GenDexFeeSpendArgs<'a> {
     pub dex_fee_tx: &'a [u8],
     pub time_lock: u32,
@@ -1042,6 +1053,19 @@ impl From<UtxoSignWithKeyPairError> for TxGenError {
 }
 
 #[derive(Debug)]
+pub enum ValidateDexFeeError {
+    InvalidDestinationOrAmount(String),
+    InvalidPubkey(String),
+    NumConversion(String),
+    TxDeserialization(String),
+    TxLacksOfOutputs,
+}
+
+impl From<NumConversError> for ValidateDexFeeError {
+    fn from(err: NumConversError) -> Self { ValidateDexFeeError::NumConversion(err.to_string()) }
+}
+
+#[derive(Debug)]
 pub enum ValidateDexFeeSpendPreimageError {
     InvalidPubkey(String),
     InvalidTakerSignature,
@@ -1064,6 +1088,8 @@ impl From<TxGenError> for ValidateDexFeeSpendPreimageError {
 #[async_trait]
 pub trait SwapOpsV2 {
     async fn send_dex_fee_with_premium(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult;
+
+    async fn validate_dex_fee_with_premium(&self, args: ValidateDexFeeArgs<'_>) -> ValidateDexFeeResult;
 
     async fn refund_dex_fee_with_premium(&self, args: RefundPaymentArgs<'_>) -> TransactionResult;
 

@@ -20,12 +20,13 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPayment
             RawTransactionRequest, RawTransactionRes, RefundPaymentArgs, RewardTarget, SearchForSwapTxSpendInput,
             SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
             SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TransactionResult,
-            TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
-            ValidateDexFeeSpendPreimageError, ValidateDexFeeSpendPreimageResult, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
-            WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateDexFeeArgs,
+            ValidateDexFeeError, ValidateDexFeeResult, ValidateDexFeeSpendPreimageError,
+            ValidateDexFeeSpendPreimageResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
+            EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
+            INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
@@ -4582,6 +4583,43 @@ where
             .await?;
     }
     send_outputs_from_my_address(coin, outputs).compat().await
+}
+
+pub async fn validate_dex_fee_with_premium<T>(coin: &T, args: ValidateDexFeeArgs<'_>) -> ValidateDexFeeResult
+where
+    T: UtxoCommonOps + SwapOps,
+{
+    let dex_fee_tx: UtxoTx =
+        deserialize(args.dex_fee_tx).map_to_mm(|e| ValidateDexFeeError::TxDeserialization(e.to_string()))?;
+    if dex_fee_tx.outputs.len() < 2 {
+        return MmError::err(ValidateDexFeeError::TxLacksOfOutputs);
+    }
+
+    let taker_pub =
+        Public::from_slice(args.other_pub).map_to_mm(|e| ValidateDexFeeError::InvalidPubkey(e.to_string()))?;
+    let maker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let total_expected_amount = &args.dex_fee_amount + &args.premium_amount;
+
+    let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals)?;
+
+    let redeem_script = swap_proto_v2_scripts::dex_fee_script(
+        args.time_lock,
+        args.secret_hash,
+        &taker_pub,
+        maker_htlc_key_pair.public(),
+    );
+    let expected_output = TransactionOutput {
+        value: expected_amount_sat,
+        script_pubkey: redeem_script.into(),
+    };
+
+    if dex_fee_tx.outputs[0] != expected_output {
+        return MmError::err(ValidateDexFeeError::InvalidDestinationOrAmount(format!(
+            "Expected {:?}, got {:?}",
+            expected_output, dex_fee_tx.outputs[0]
+        )));
+    }
+    unimplemented!()
 }
 
 pub async fn refund_dex_fee_with_premium<T>(coin: T, args: RefundPaymentArgs<'_>) -> TransactionResult

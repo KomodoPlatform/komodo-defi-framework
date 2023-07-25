@@ -29,10 +29,11 @@ use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDeriva
             SearchForSwapTxSpendInput, SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SignatureResult, SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin, TradePreimageValue,
             TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
-            ValidateDexFeeSpendPreimageResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
+            ValidateDexFeeArgs, ValidateDexFeeResult, ValidateDexFeeSpendPreimageResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
+            WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
 use common::executor::{AbortableSystem, AbortedError};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
@@ -584,6 +585,10 @@ impl WatcherOps for UtxoStandardCoin {
 impl SwapOpsV2 for UtxoStandardCoin {
     async fn send_dex_fee_with_premium(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult {
         utxo_common::send_dex_fee_with_premium(self.clone(), args).await
+    }
+
+    async fn validate_dex_fee_with_premium(&self, args: ValidateDexFeeArgs<'_>) -> ValidateDexFeeResult {
+        utxo_common::validate_dex_fee_with_premium(self, args).await
     }
 
     async fn refund_dex_fee_with_premium(&self, args: RefundPaymentArgs<'_>) -> TransactionResult {
