@@ -10,7 +10,7 @@ use instant::Duration;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::ConnectedPoint;
 use libp2p::floodsub::{Floodsub, FloodsubEvent, Topic as FloodsubTopic};
-use libp2p::gossipsub::{MessageAcceptance, ValidationMode};
+use libp2p::gossipsub::{MessageAcceptance, PublishError, SubscriptionError, ValidationMode};
 use libp2p::multiaddr::Protocol;
 use libp2p::request_response::ResponseChannel;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent, ToSwarm};
@@ -317,19 +317,18 @@ impl AtomicDexBehaviour {
 
     fn spawn(&self, fut: impl Future<Output = ()> + Send + 'static) { self.runtime.spawn(fut) }
 
-    fn process_cmd(&mut self, cmd: AdexBehaviourCmd) {
+    fn process_cmd(&mut self, cmd: AdexBehaviourCmd) -> Result<(), AdexBehaviourError> {
         match cmd {
             AdexBehaviourCmd::Subscribe { topic } => {
-                self.core.gossipsub.subscribe(&IdentTopic::new(topic)).unwrap();
+                self.core.gossipsub.subscribe(&IdentTopic::new(topic))?;
             },
             AdexBehaviourCmd::PublishMsg { topic, msg } => {
-                self.core.gossipsub.publish(TopicHash::from_raw(topic), msg).unwrap();
+                self.core.gossipsub.publish(TopicHash::from_raw(topic), msg)?;
             },
             AdexBehaviourCmd::PublishMsgFrom { topic, msg, from } => {
                 self.core
                     .gossipsub
-                    .publish_from(TopicHash::from_raw(topic), msg, from)
-                    .unwrap();
+                    .publish_from(TopicHash::from_raw(topic), msg, from)?;
             },
             AdexBehaviourCmd::RequestAnyRelay { req, response_tx } => {
                 let relays = self.core.gossipsub.get_relay_mesh();
@@ -461,12 +460,15 @@ impl AtomicDexBehaviour {
                 message_id,
                 propagation_source,
             } => {
-                self.core
-                    .gossipsub
-                    .report_message_validation_result(&message_id, &propagation_source, MessageAcceptance::Accept)
-                    .expect("propagation should not fail");
+                self.core.gossipsub.report_message_validation_result(
+                    &message_id,
+                    &propagation_source,
+                    MessageAcceptance::Accept,
+                )?;
             },
         }
+
+        Ok(())
     }
 
     fn announce_listeners(&mut self, listeners: PeerAddresses) {
@@ -529,10 +531,24 @@ impl NodeType {
 pub enum AdexBehaviourError {
     #[display(fmt = "{}", _0)]
     ParsingRelayAddress(RelayAddressError),
+    #[display(fmt = "{}", _0)]
+    SubscriptionError(SubscriptionError),
+    #[display(fmt = "{}", _0)]
+    PublishError(PublishError),
+    #[display(fmt = "{}", _0)]
+    InitializationError(String),
 }
 
 impl From<RelayAddressError> for AdexBehaviourError {
     fn from(e: RelayAddressError) -> Self { AdexBehaviourError::ParsingRelayAddress(e) }
+}
+
+impl From<SubscriptionError> for AdexBehaviourError {
+    fn from(e: SubscriptionError) -> Self { AdexBehaviourError::SubscriptionError(e) }
+}
+
+impl From<PublishError> for AdexBehaviourError {
+    fn from(e: PublishError) -> Self { AdexBehaviourError::PublishError(e) }
 }
 
 fn generate_ed25519_keypair<R: Rng>(rng: &mut R, force_key: Option<[u8; 32]>) -> identity::Keypair {
@@ -618,9 +634,11 @@ fn start_gossipsub(
             .validation_mode(ValidationMode::Permissive)
             .max_transmit_size(1024 * 1024 - 100)
             .build()
-            .unwrap();
+            .map_err(|e| AdexBehaviourError::InitializationError(e.to_owned()))?;
+
         // build a gossipsub network behaviour
-        let mut gossipsub = Gossipsub::new(MessageAuthenticity::Author(local_peer_id), gossipsub_config).unwrap();
+        let mut gossipsub = Gossipsub::new(MessageAuthenticity::Author(local_peer_id), gossipsub_config)
+            .map_err(|e| AdexBehaviourError::InitializationError(e.to_owned()))?;
 
         let floodsub = Floodsub::new(local_peer_id, netid != NETID_7777);
 
@@ -702,7 +720,7 @@ fn start_gossipsub(
     let polling_fut = poll_fn(move |cx: &mut Context| {
         loop {
             match swarm.behaviour_mut().cmd_rx.poll_next_unpin(cx) {
-                Poll::Ready(Some(cmd)) => swarm.behaviour_mut().process_cmd(cmd),
+                Poll::Ready(Some(cmd)) => swarm.behaviour_mut().process_cmd(cmd).unwrap(),
                 Poll::Ready(None) => return Poll::Ready(()),
                 Poll::Pending => break,
             }
