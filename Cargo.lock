@@ -3670,7 +3670,7 @@ dependencies = [
  "libp2p-floodsub 0.43.0",
  "libp2p-gossipsub",
  "libp2p-identify",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-mdns",
  "libp2p-metrics 0.13.0",
  "libp2p-noise 0.43.0",
@@ -3691,7 +3691,7 @@ version = "0.2.0"
 source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?tag=k-0.52.1#e7c2fd1ef9d20cc4d29768b0a422a0f0ac9df82d"
 dependencies = [
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-swarm 0.43.0",
  "void",
 ]
@@ -3702,7 +3702,7 @@ version = "0.2.0"
 source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?tag=k-0.52.1#e7c2fd1ef9d20cc4d29768b0a422a0f0ac9df82d"
 dependencies = [
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-swarm 0.43.0",
  "void",
 ]
@@ -3752,7 +3752,7 @@ dependencies = [
  "futures 0.3.28",
  "futures-timer",
  "instant",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "log 0.4.19",
  "multiaddr 0.18.0",
  "multihash 0.19.0",
@@ -3790,7 +3790,7 @@ dependencies = [
  "async-std-resolver",
  "futures 0.3.28",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "log 0.4.19",
  "parking_lot 0.12.0",
  "smallvec 1.6.1",
@@ -3838,7 +3838,7 @@ dependencies = [
  "fnv",
  "futures 0.3.28",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "quick-protobuf",
@@ -3865,7 +3865,7 @@ dependencies = [
  "hex_fmt",
  "instant",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "prometheus-client 0.21.1",
@@ -3889,7 +3889,7 @@ dependencies = [
  "futures 0.3.28",
  "futures-timer",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "lru 0.10.1",
@@ -3898,15 +3898,6 @@ dependencies = [
  "smallvec 1.6.1",
  "thiserror",
  "void",
-]
-
-[[package]]
-name = "libp2p-identity"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e2d584751cecb2aabaa56106be6be91338a60a0f4e420cf2af639204f596fc1"
-dependencies = [
- "log 0.4.19",
 ]
 
 [[package]]
@@ -3938,7 +3929,7 @@ dependencies = [
  "futures 0.3.28",
  "if-watch",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "rand 0.8.4",
@@ -3969,7 +3960,7 @@ dependencies = [
  "libp2p-core 0.40.0",
  "libp2p-gossipsub",
  "libp2p-identify",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-ping 0.43.0",
  "libp2p-swarm 0.43.0",
  "once_cell",
@@ -4023,7 +4014,7 @@ dependencies = [
  "curve25519-dalek 3.2.0",
  "futures 0.3.28",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "log 0.4.19",
  "multiaddr 0.18.0",
  "multihash 0.19.0",
@@ -4063,7 +4054,7 @@ dependencies = [
  "futures-timer",
  "instant",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "rand 0.8.4",
@@ -4112,7 +4103,7 @@ dependencies = [
  "futures 0.3.28",
  "instant",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-swarm 0.43.0",
  "log 0.4.19",
  "rand 0.8.4",
@@ -4151,7 +4142,7 @@ dependencies = [
  "futures-timer",
  "instant",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "libp2p-swarm-derive 0.33.0",
  "log 0.4.19",
  "multistream-select 0.13.0",
@@ -4210,7 +4201,7 @@ dependencies = [
  "if-watch",
  "libc",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "log 0.4.19",
  "socket2 0.5.3",
  "tokio",
@@ -4269,7 +4260,7 @@ dependencies = [
  "futures 0.3.28",
  "futures-rustls 0.22.1",
  "libp2p-core 0.40.0",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "log 0.4.19",
  "parking_lot 0.12.0",
  "quicksink",
@@ -5127,7 +5118,6 @@ dependencies = [
  "instant",
  "lazy_static",
  "libp2p 0.52.1",
- "libp2p-identity 0.1.2",
  "log 0.4.19",
  "pin-project 1.1.2",
  "rand 0.7.3",
@@ -5240,7 +5230,7 @@ dependencies = [
  "arrayref",
  "byteorder 1.4.3",
  "data-encoding",
- "libp2p-identity 0.2.1",
+ "libp2p-identity",
  "multibase",
  "multihash 0.19.0",
  "percent-encoding",

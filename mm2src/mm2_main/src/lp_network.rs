@@ -27,8 +27,8 @@ use instant::Instant;
 use keys::KeyPair;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::{decode_message, encode_message, DecodingError, GossipsubMessage, Libp2pPublic, Libp2pSecpPublic,
-                 MessageId, NetworkPorts, PeerId, TopicHash, TOPIC_SEPARATOR};
+use mm2_libp2p::{decode_message, encode_message, DecodingError, GossipsubEvent, GossipsubMessage, Libp2pPublic,
+                 Libp2pSecpPublic, MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR};
 use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse};
 use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
 use mm2_metrics::{mm_label, mm_timing};
@@ -113,7 +113,7 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
         };
         match adex_event {
             Some(AdexBehaviourEvent::Gossipsub(event)) => match event {
-                mm2_libp2p::GossipsubEvent::Message {
+                GossipsubEvent::Message {
                     propagation_source,
                     message_id,
                     message,
@@ -127,7 +127,7 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
                         i_am_relay,
                     ));
                 },
-                mm2_libp2p::GossipsubEvent::GossipsubNotSupported { peer_id } => {
+                GossipsubEvent::GossipsubNotSupported { peer_id } => {
                     log::error!("Received unsupported event from Peer: {peer_id}");
                 },
                 _ => {},
@@ -141,7 +141,7 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
                     log::error!("Error on process P2P request: {:?}", e);
                 }
             },
-            _ => (),
+            _ => {},
         }
     }
 }
@@ -155,25 +155,14 @@ async fn process_p2p_message(
 ) {
     let mut to_propagate = false;
 
-    // message.topics.dedup();
     drop_mutability!(message);
 
-    let inform_about_break = |used: &str, all: &TopicHash| {
-        log::debug!(
-            "Topic '{}' proceed and loop is killed. Whole topic list was '{:?}'",
-            used,
-            all
-        );
-    };
-
-    let topic = message.topic;
-    let mut split = topic.as_str().split(TOPIC_SEPARATOR);
-
+    let mut split = message.topic.as_str().split(TOPIC_SEPARATOR);
     match split.next() {
         Some(lp_ordermatch::ORDERBOOK_PREFIX) => {
             let fut = lp_ordermatch::handle_orderbook_msg(
                 ctx.clone(),
-                &topic,
+                &message.topic,
                 peer_id.to_string(),
                 &message.data,
                 i_am_relay,
@@ -199,8 +188,6 @@ async fn process_p2p_message(
             }
 
             to_propagate = true;
-
-            inform_about_break(topic.as_str(), &topic);
         },
         Some(lp_swap::WATCHER_PREFIX) => {
             if ctx.is_watcher() {
@@ -211,8 +198,6 @@ async fn process_p2p_message(
             }
 
             to_propagate = true;
-
-            inform_about_break(topic.as_str(), &topic);
         },
         Some(lp_swap::TX_HELPER_PREFIX) => {
             if let Some(pair) = split.next() {
@@ -234,8 +219,6 @@ async fn process_p2p_message(
                         })
                 }
             }
-
-            inform_about_break(topic.as_str(), &topic);
         },
         None | Some(_) => (),
     }
@@ -519,6 +502,6 @@ pub fn lp_network_ports(netid: u16) -> Result<NetworkPorts, MmError<NetIdError>>
 }
 
 pub fn peer_id_from_secp_public(secp_public: &[u8]) -> Result<PeerId, MmError<DecodingError>> {
-    let public_key = Libp2pSecpPublic::try_from_bytes(secp_public).unwrap();
+    let public_key = Libp2pSecpPublic::try_from_bytes(secp_public)?;
     Ok(PeerId::from_public_key(&Libp2pPublic::from(public_key)))
 }
