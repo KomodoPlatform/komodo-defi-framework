@@ -16,7 +16,7 @@ use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        Timer};
 use common::log::{error, info, LogOnError};
-use common::small_rng;
+use common::{now_sec, small_rng};
 use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, Secp256k1Secret,
              StandardHDPathError, StandardHDPathToCoin};
 use derive_more::Display;
@@ -43,6 +43,9 @@ cfg_native! {
     use dirs::home_dir;
     use std::path::{Path, PathBuf};
 }
+
+const DAY_IN_SECONDS: u64 = 86400;
+pub const DAY_IN_HOURS: u64 = 24;
 
 pub type UtxoCoinBuildResult<T> = Result<T, MmError<UtxoCoinBuildError>>;
 
@@ -667,6 +670,40 @@ pub trait UtxoCoinBuilderCommonOps {
 
         (None, None)
     }
+
+    // Calculates the starting block height based on a given date and the current block height.
+    ///
+    /// # Arguments
+    /// * `date`: The date in seconds representing the desired starting date.
+    /// * `current_block_height`: The current block height at the time of calculation.
+    ///
+    fn calculate_starting_height_from_date(&self, date: u64, current_block_height: u64) -> Result<u64, String> {
+        let buffer = self.conf()["avg_blocktime"]
+            .clone()
+            .as_u64()
+            .ok_or_else(|| format!("avg_blocktime not specified in {} coin config", self.ticker()))?;
+        let buffer = buffer * DAY_IN_HOURS;
+        let current_time_s = now_sec();
+
+        if current_time_s < date {
+            return Err(format!("{} sync date must be earlier then current date", self.ticker()));
+        };
+
+        let secs_since_date = current_time_s - date;
+        let days_since_date = (secs_since_date / DAY_IN_SECONDS) - 1;
+        let blocks_to_sync = (days_since_date * buffer) + buffer;
+
+        if current_block_height < blocks_to_sync {
+            return Err(format!(
+                "{} current_block_height: {current_block_height} must be greater than blocks_to_sync: {blocks_to_sync}",
+                self.ticker()
+            ));
+        }
+
+        let block_to_sync_from = current_block_height - blocks_to_sync;
+
+        Ok(block_to_sync_from)
+    }
 }
 
 /// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword
@@ -848,14 +885,4 @@ async fn wait_for_protocol_version_checked(client: &ElectrumClientImpl) -> Resul
     .map_err(|_exceed| ERRL!("Failed protocol version verifying of at least 1 of Electrums in 5 seconds."))
     // Flatten `Result< Result<(), String>, String >`
     .flatten()
-}
-
-pub trait UtxoBlockSyncOps {
-    // Calculates the starting block height based on a given date and the current block height.
-    ///
-    /// # Arguments
-    /// * `date`: The date in seconds representing the desired starting date.
-    /// * `current_block_height`: The current block height at the time of calculation.
-    ///
-    fn calculate_starting_height_from_date(&self, date: u64, current_block_height: u64) -> Result<u64, String>;
 }

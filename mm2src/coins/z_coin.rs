@@ -6,10 +6,9 @@ use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStat
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
-use crate::utxo::utxo_builder::{UtxoBlockSyncOps, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
-                                UtxoFieldsWithIguanaSecretBuilder};
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, DAY_IN_SECONDS};
+use crate::utxo::utxo_builder::{UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
+                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaSecretBuilder};
+use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address,
                   BroadcastTxErr, FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
@@ -32,8 +31,8 @@ use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::executor::{AbortableSystem, AbortedError};
+use common::sha256_digest;
 use common::{log, one_thousand_u32};
-use common::{now_sec, sha256_digest};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use crypto::StandardHDPathToCoin;
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
@@ -965,30 +964,6 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
     }
 }
 
-impl<'a> UtxoBlockSyncOps for ZCoinBuilder<'a> {
-    fn calculate_starting_height_from_date(&self, date: u64, current_block_height: u64) -> Result<u64, String> {
-        let buffer = self
-            .avg_blocktime()
-            .ok_or_else(|| format!("avg_blocktime not specified in {} coin config", self.ticker))?;
-        let buffer = buffer * 24;
-        let current_time_s = now_sec();
-
-        if current_time_s < date {
-            return Err(format!(
-                "{} sync_param_date must be earlier then current date",
-                self.ticker
-            ));
-        };
-
-        let secs_since_date = current_time_s - date;
-        let days_since_date = (secs_since_date / DAY_IN_SECONDS) - 1;
-        let blocks_to_sync = (days_since_date * buffer) + buffer;
-        let block_to_sync_from = current_block_height - blocks_to_sync;
-
-        Ok(block_to_sync_from)
-    }
-}
-
 impl<'a> ZCoinBuilder<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -1063,8 +1038,6 @@ impl<'a> ZCoinBuilder<'a> {
 
     #[cfg(target_arch = "wasm32")]
     async fn z_tx_prover(&self) -> Result<LocalTxProver, MmError<ZCoinBuildError>> { todo!() }
-
-    pub fn avg_blocktime(&self) -> Option<u64> { self.conf()["avg_blocktime"].as_u64() }
 }
 
 /// Initialize `ZCoin` with a forced `z_spending_key`.

@@ -1,10 +1,11 @@
+use crate::utxo::utxo_builder::DAY_IN_HOURS;
 use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
 use mm2_err_handle::prelude::*;
 
 cfg_native!(
+    use crate::utxo::utxo_builder::UtxoCoinBuilderCommonOps;
     use crate::z_coin::{CheckPointBlockInfo, extended_spending_key_from_protocol_info_and_policy, LightClientSyncParams,
                     ZcoinConsensusParams, ZcoinRpcMode};
-    use crate::utxo::utxo_builder::UtxoBlockSyncOps;
     use crate::z_coin::z_rpc::{create_wallet_db, ZRpcOps};
 
     use hex::{FromHex, FromHexError};
@@ -90,34 +91,37 @@ impl<'a> WalletDbShared {
             ZcoinRpcMode::Light { sync_params, .. } => {
                 let sync_height = match sync_params {
                     Some(params) => match params {
-                        LightClientSyncParams::Date(date) => Some(
-                            zcoin_builder
-                                .calculate_starting_height_from_date(date, current_block_height)
-                                .map_err(|err| {
-                                    WalletDbError::ZcoinClientInitError(ZcoinClientInitError::ZcashDBError(err))
-                                })?,
-                        ),
-                        LightClientSyncParams::Height(height) => Some(height),
+                        LightClientSyncParams::Date(date) => zcoin_builder
+                            .calculate_starting_height_from_date(date, current_block_height)
+                            .map_err(|err| {
+                                WalletDbError::ZcoinClientInitError(ZcoinClientInitError::ZcashDBError(err))
+                            })?,
+                        LightClientSyncParams::Height(height) => height,
                     },
-                    None => None,
+                    None => {
+                        let avg_blocktime = zcoin_builder.conf()["avg_blocktime"].as_u64().ok_or_else(|| {
+                            WalletDbError::ZcoinClientInitError(ZcoinClientInitError::ZcashDBError(format!(
+                                "avg_blocktime not  specified in {} coin config",
+                                zcoin_builder.ticker()
+                            )))
+                        })?;
+                        let buffer = avg_blocktime * DAY_IN_HOURS;
+
+                        if current_block_height < buffer {
+                            return MmError::err(WalletDbError::ZcoinClientInitError(
+                                ZcoinClientInitError::ZcashDBError(format!(
+                                    "{} current_block_height: {current_block_height} must be greater than buffer: \
+                                        {buffer}",
+                                    zcoin_builder.ticker()
+                                )),
+                            ));
+                        }
+
+                        current_block_height - buffer
+                    },
                 };
 
-                match sync_height {
-                    Some(height) => checkpoint_block_from_height(height, rpc).await?,
-                    None => match zcoin_builder.protocol_info.check_point_block.clone() {
-                        Some(block) => Some(block),
-                        None => {
-                            let avg_blocktime = zcoin_builder.avg_blocktime().ok_or_else(|| {
-                                WalletDbError::ZcoinClientInitError(ZcoinClientInitError::ZcashDBError(format!(
-                                    "avg_blocktime not  specified in {} coin config",
-                                    zcoin_builder.ticker
-                                )))
-                            })?;
-                            let current_block_height = current_block_height - (avg_blocktime * 24);
-                            checkpoint_block_from_height(current_block_height, rpc).await?
-                        },
-                    },
-                }
+                checkpoint_block_from_height(sync_height, rpc).await?
             },
             ZcoinRpcMode::Native => zcoin_builder.protocol_info.check_point_block.clone(),
         };
