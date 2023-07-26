@@ -1347,7 +1347,7 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
         coin.as_ref().conf.signature_version,
         coin.as_ref().conf.fork_id,
     )?;
-    println!("Sighash {:?}", sig_hash);
+
     if !taker_pub
         .verify(&sig_hash, &preimage.signature.clone().into())
         .map_to_mm(|e| ValidateDexFeeSpendPreimageError::SignatureVerificationFailure(e.to_string()))?
@@ -4610,7 +4610,7 @@ where
     );
     let expected_output = TransactionOutput {
         value: expected_amount_sat,
-        script_pubkey: redeem_script.into(),
+        script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&redeem_script))).into(),
     };
 
     if dex_fee_tx.outputs[0] != expected_output {
@@ -4619,7 +4619,20 @@ where
             expected_output, dex_fee_tx.outputs[0]
         )));
     }
-    unimplemented!()
+
+    let tx_bytes_from_rpc = coin
+        .as_ref()
+        .rpc_client
+        .get_transaction_bytes(&dex_fee_tx.hash().reversed().into())
+        .compat()
+        .await?;
+    if tx_bytes_from_rpc.0 != args.dex_fee_tx {
+        return MmError::err(ValidateDexFeeError::TxBytesMismatch {
+            from_rpc: tx_bytes_from_rpc,
+            actual: args.dex_fee_tx.into(),
+        });
+    }
+    Ok(())
 }
 
 pub async fn refund_dex_fee_with_premium<T>(coin: T, args: RefundPaymentArgs<'_>) -> TransactionResult

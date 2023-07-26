@@ -1057,12 +1057,18 @@ pub enum ValidateDexFeeError {
     InvalidDestinationOrAmount(String),
     InvalidPubkey(String),
     NumConversion(String),
+    Rpc(String),
+    TxBytesMismatch { from_rpc: BytesJson, actual: BytesJson },
     TxDeserialization(String),
     TxLacksOfOutputs,
 }
 
 impl From<NumConversError> for ValidateDexFeeError {
     fn from(err: NumConversError) -> Self { ValidateDexFeeError::NumConversion(err.to_string()) }
+}
+
+impl From<UtxoRpcError> for ValidateDexFeeError {
+    fn from(err: UtxoRpcError) -> Self { ValidateDexFeeError::Rpc(err.to_string()) }
 }
 
 #[derive(Debug)]

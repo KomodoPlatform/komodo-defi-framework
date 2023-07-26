@@ -91,6 +91,18 @@ fn send_and_spend_dex_fee() {
         unexpected => panic!("Unexpected tx {:?}", unexpected),
     };
 
+    let dex_fee_bytes = dex_fee_utxo_tx.tx_hex();
+    let validate_args = ValidateDexFeeArgs {
+        dex_fee_tx: &dex_fee_bytes,
+        time_lock,
+        secret_hash: secret_hash.as_slice(),
+        other_pub: taker_coin.my_public_key().unwrap(),
+        dex_fee_amount: "0.01".parse().unwrap(),
+        premium_amount: "0.1".parse().unwrap(),
+        swap_unique_data: &[],
+    };
+    block_on(maker_coin.validate_dex_fee_with_premium(validate_args)).unwrap();
+
     let gen_preimage_args = GenDexFeeSpendArgs {
         dex_fee_tx: &dex_fee_utxo_tx.tx_hex(),
         time_lock,
