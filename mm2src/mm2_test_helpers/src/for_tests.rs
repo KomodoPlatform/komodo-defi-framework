@@ -14,7 +14,7 @@ use lazy_static::lazy_static;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::BigDecimal;
-use mm2_rpc::data::legacy::BalanceResponse;
+use mm2_rpc::data::legacy::{BalanceResponse, ElectrumProtocol};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{self as json, json, Value as Json};
@@ -1645,19 +1645,6 @@ pub async fn enable_slp(mm: &MarketMakerIt, coin: &str) -> Json {
         .unwrap();
     assert_eq!(enable.0, StatusCode::OK, "'enable_slp' failed: {}", enable.1);
     json::from_str(&enable.1).unwrap()
-}
-
-#[allow(clippy::upper_case_acronyms)]
-#[derive(Serialize)]
-pub enum ElectrumProtocol {
-    /// TCP
-    TCP,
-    /// SSL/TLS
-    SSL,
-    /// Insecure WebSocket.
-    WS,
-    /// Secure WebSocket.
-    WSS,
 }
 
 #[derive(Serialize)]

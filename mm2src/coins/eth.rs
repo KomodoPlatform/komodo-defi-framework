@@ -52,6 +52,7 @@ use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
+use mm2_rpc::data::legacy::GasStationPricePolicy;
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
@@ -4248,7 +4249,7 @@ impl EthCoin {
             // TODO refactor to error_log_passthrough once simple maker bot is merged
             let gas_station_price = match &coin.gas_station_url {
                 Some(url) => {
-                    match GasStationData::get_gas_price(url, coin.gas_station_decimals, coin.gas_station_policy)
+                    match GasStationData::get_gas_price(url, coin.gas_station_decimals, coin.gas_station_policy.clone())
                         .compat()
                         .await
                     {
@@ -4999,21 +5000,6 @@ pub struct GasStationData {
     #[serde(alias = "average", alias = "standard")]
     average: MmNumber,
     fast: MmNumber,
-}
-
-/// Using tagged representation to allow adding variants with coefficients, percentage, etc in the future.
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(tag = "policy", content = "additional_data")]
-pub enum GasStationPricePolicy {
-    /// Use mean between average and fast values, default and recommended to use on ETH mainnet due to
-    /// gas price big spikes.
-    MeanAverageFast,
-    /// Use average value only. Useful for non-heavily congested networks (Matic, etc.)
-    Average,
-}
-
-impl Default for GasStationPricePolicy {
-    fn default() -> Self { GasStationPricePolicy::MeanAverageFast }
 }
 
 impl GasStationData {
