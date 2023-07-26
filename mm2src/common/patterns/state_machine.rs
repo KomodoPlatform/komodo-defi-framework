@@ -4,13 +4,14 @@
 
 use crate::NotSame;
 use async_trait::async_trait;
+use std::convert::TryInto;
 
 pub mod prelude {
     pub use super::{LastState, State, StateExt, StateMachine, StateResult, TransitionFrom};
 }
 
 pub struct StateMachine<Ctx, Result> {
-    /// The shared between states context.
+    /// The context that is shared between states.
     ctx: Ctx,
     phantom: std::marker::PhantomData<Result>,
 }
@@ -131,6 +132,33 @@ pub struct ResultGuard<T> {
 impl<T> ResultGuard<T> {
     /// The private constructor.
     fn new(result: T) -> Self { ResultGuard { result } }
+}
+
+pub struct StorableStateMachine<Ctx, Result, Storage, Event> {
+    inner: StateMachine<Ctx, Result>,
+    storage: Storage,
+    phantom: std::marker::PhantomData<Event>,
+}
+
+pub trait StorableState: State {
+    type Event;
+
+    fn get_state_events(&self) -> Vec<Self::Event>;
+}
+
+impl<Ctx: Send + 'static, Result: 'static, Storage, Event> StorableStateMachine<Ctx, Result, Storage, Event> {
+    pub async fn run(mut self, initial_state: impl StorableState<Ctx = Ctx, Result = Result, Event = Event>) -> Result {
+        let mut state: Box<dyn State<Ctx = Ctx, Result = Result>> = Box::new(initial_state);
+        loop {
+            let result = state.on_changed(&mut self.inner.ctx).await;
+            let next_state = match result {
+                StateResult::ChangeState(ChangeGuard { next }) => next,
+                StateResult::Finish(ResultGuard { result }) => return result,
+            };
+
+            state = next_state;
+        }
+    }
 }
 
 #[cfg(test)]
