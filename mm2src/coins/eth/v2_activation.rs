@@ -376,7 +376,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
                     public_key,
                     public_key_uncompressed,
                 }),
-            ));
+            ))
         },
     }
 }
