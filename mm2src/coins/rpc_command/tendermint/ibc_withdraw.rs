@@ -18,6 +18,7 @@ pub struct IBCWithdrawRequest {
     pub(crate) fee: Option<WithdrawFee>,
 }
 
+// Todo: add support for HD wallet for IBC withdraw
 pub async fn ibc_withdraw(ctx: MmArc, req: IBCWithdrawRequest) -> WithdrawResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {

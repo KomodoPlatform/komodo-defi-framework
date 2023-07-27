@@ -370,7 +370,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let address = *metamask_ctx.check_active_eth_account().await?;
             let public_key_uncompressed = metamask_ctx.eth_account_pubkey_uncompressed();
             let public_key = compress_public_key(public_key_uncompressed)?;
-            return Ok((
+            Ok((
                 address,
                 EthPrivKeyPolicy::Metamask(EthMetamaskPolicy {
                     public_key,
