@@ -707,7 +707,9 @@ pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<Unexpecte
     match coin.priv_key_policy {
         PrivKeyPolicy::KeyPair(ref key_pair) => Ok(key_pair.public()),
         // Todo: recheck this since we can use any public key for any path_to_addr in swaps, etc.. using this, edit this comment if I will implement this in next PRs
-        PrivKeyPolicy::HDWallet { ref key_pair, .. } => Ok(key_pair.public()),
+        PrivKeyPolicy::HDWallet {
+            ref activated_key_pair, ..
+        } => Ok(activated_key_pair.public()),
         // Hardware Wallets requires BIP39/BIP44 derivation path to extract a public key.
         PrivKeyPolicy::Trezor => MmError::err(UnexpectedDerivationMethod::ExpectedSingleAddress),
     }
@@ -2473,7 +2475,9 @@ pub fn display_priv_key(coin: &UtxoCoinFields) -> Result<String, String> {
     match coin.priv_key_policy {
         PrivKeyPolicy::KeyPair(ref key_pair) => Ok(key_pair.private().to_string()),
         // Todo: recheck this since we can use display any priv key for any path_to_addr using this, edit this comment if I will implement this in next PRs
-        PrivKeyPolicy::HDWallet { ref key_pair, .. } => Ok(key_pair.private().to_string()),
+        PrivKeyPolicy::HDWallet {
+            ref activated_key_pair, ..
+        } => Ok(activated_key_pair.private().to_string()),
         PrivKeyPolicy::Trezor => ERR!("'display_priv_key' doesn't support Hardware Wallets"),
     }
 }
@@ -4303,7 +4307,7 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
     match coin.priv_key_policy {
         PrivKeyPolicy::KeyPair(k) => k,
         // Todo: recheck this since we can derive any keypair for any path_to_addr in swaps using this, edit this comment if I will implement this in next PRs
-        PrivKeyPolicy::HDWallet { key_pair, .. } => key_pair,
+        PrivKeyPolicy::HDWallet { activated_key_pair, .. } => activated_key_pair,
         PrivKeyPolicy::Trezor => todo!(),
     }
 }

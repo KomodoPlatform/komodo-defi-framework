@@ -314,7 +314,9 @@ where
             PrivKeyPolicy::KeyPair(ref key_pair) => SignPolicy::WithKeyPair(key_pair),
             // InitUtxoWithdraw works only for hardware wallets so it's ok to use signing with activated keypair here as a placeholder.
             // Todo: recheck above comment
-            PrivKeyPolicy::HDWallet { ref key_pair, .. } => SignPolicy::WithKeyPair(key_pair),
+            PrivKeyPolicy::HDWallet {
+                ref activated_key_pair, ..
+            } => SignPolicy::WithKeyPair(activated_key_pair),
             PrivKeyPolicy::Trezor => {
                 let trezor_session = hw_ctx.trezor().await?;
                 SignPolicy::WithTrezor(trezor_session)

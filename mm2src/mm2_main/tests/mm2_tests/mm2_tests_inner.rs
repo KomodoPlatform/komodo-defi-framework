@@ -1164,7 +1164,7 @@ fn test_withdraw_and_send_hd() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     // Todo: add more coins
-    let coins = json!([rick_conf(), tbtc_segwit_conf()]);
+    let coins = json!([rick_conf(), tbtc_segwit_conf(), eth_testnet_conf()]);
 
     let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
     let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -1181,8 +1181,23 @@ fn test_withdraw_and_send_hd() {
     let mut tbtc_segwit_enable_res = HashMap::new();
     tbtc_segwit_enable_res.insert("tBTC-Segwit", tbtc_segwit);
 
+    // Enable ETH with HD account 0, change address 0, index 1 to try to withdraw from index 0 which has funds
+    let eth = block_on(enable_native(
+        &mm_hd,
+        "ETH",
+        ETH_DEV_NODES,
+        Some(StandardHDCoinAddress {
+            account: 0,
+            is_change: false,
+            address_index: 1,
+        }),
+    ));
+    assert_eq!(eth.address, "0xDe841899aB4A22E23dB21634e54920aDec402397");
+    let mut eth_enable_res = HashMap::new();
+    eth_enable_res.insert("ETH", eth);
+
     // Todo: add comment here
-    let from_account_address = StandardHDCoinAddress {
+    let mut from_account_address = StandardHDCoinAddress {
         account: 0,
         is_change: false,
         address_index: 1,
@@ -1201,12 +1216,25 @@ fn test_withdraw_and_send_hd() {
     withdraw_and_send(
         &mm_hd,
         "tBTC-Segwit",
-        Some(from_account_address),
+        Some(from_account_address.clone()),
         "tb1q7z9vzf8wpp9cks0l4nj5v28zf7jt56kuekegh5",
         &tbtc_segwit_enable_res,
         "-0.00100144",
         0.001,
     );
+
+    from_account_address.address_index = 0;
+    withdraw_and_send(
+        &mm_hd,
+        "ETH",
+        Some(from_account_address),
+        "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
+        &eth_enable_res,
+        "-0.001",
+        0.001,
+    );
+    log!("Wait for the ETH payment to be sent");
+    thread::sleep(Duration::from_secs(15));
 
     block_on(mm_hd.stop()).unwrap();
 }

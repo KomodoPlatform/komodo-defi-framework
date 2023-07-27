@@ -380,6 +380,7 @@ async fn get_moralis_metadata(
 /// `withdraw_nft` function generates, signs and returns a transaction that transfers NFT
 /// from my address to recipient's address.
 /// This method generates a raw transaction which should then be broadcast using `send_raw_transaction`.
+// Todo: HD wallet withdraw support
 pub async fn withdraw_nft(ctx: MmArc, req: WithdrawNftReq) -> WithdrawNftResult {
     match req {
         WithdrawNftReq::WithdrawErc1155(erc1155_withdraw) => withdraw_erc1155(ctx, erc1155_withdraw).await,

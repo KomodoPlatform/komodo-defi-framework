@@ -24,6 +24,7 @@ use super::eth::Action::{Call, Create};
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_structs::{ContractType, ConvertChain, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
 use async_trait::async_trait;
+use bip32::ExtendedPrivateKey;
 use bitcrypto::{keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
 use common::custom_futures::timeout::FutureTimerExt;
@@ -34,7 +35,8 @@ use common::{get_utc_timestamp, now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 #[cfg(target_arch = "wasm32")]
 use common::{now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy, StandardHDCoinAddress};
+use crypto::{derive_secp256k1_secret, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy,
+             StandardHDCoinAddress, StandardHDPathToCoin};
 use derive_more::Display;
 use enum_from::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
@@ -109,6 +111,7 @@ use crate::nft::{find_wallet_nft_amount, WithdrawNftResult};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod nonce;
+use crate::WithdrawFrom;
 use nonce::ParityNonce;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -412,6 +415,10 @@ impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
 #[derive(Clone)]
 pub enum EthPrivKeyPolicy {
     KeyPair(KeyPair),
+    HDWallet {
+        activated_key_pair: KeyPair,
+        bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
+    },
     #[cfg(target_arch = "wasm32")]
     Metamask(EthMetamaskPolicy),
 }
@@ -431,6 +438,7 @@ impl EthPrivKeyPolicy {
     pub fn key_pair_or_err(&self) -> MmResult<&KeyPair, PrivKeyPolicyNotAllowed> {
         match self {
             EthPrivKeyPolicy::KeyPair(key_pair) => Ok(key_pair),
+            EthPrivKeyPolicy::HDWallet { activated_key_pair, .. } => Ok(activated_key_pair),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(_) => MmError::err(PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
         }
@@ -442,6 +450,11 @@ pub struct EthCoinImpl {
     ticker: String,
     pub coin_type: EthCoinType,
     priv_key_policy: EthPrivKeyPolicy,
+    /// Derivation path of the coin.
+    /// This derivation path consists of `purpose` and `coin_type` only
+    /// where the full `BIP44` address has the following structure:
+    /// `m/purpose'/coin_type'`.
+    derivation_path: Option<StandardHDPathToCoin>,
     my_address: Address,
     sign_message_prefix: Option<String>,
     swap_contract_address: Address,
@@ -734,7 +747,48 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     let to_addr = coin
         .address_from_str(&req.to)
         .map_to_mm(WithdrawError::InvalidAddress)?;
-    let my_balance = coin.my_balance().compat().await?;
+    // Todo: from HDWalletAddress shouldn't be allowed if privatekey policy is EthPrivKeyPolicy::KeyPair
+    // Todo: this needs some refactoring with other let (tx_hash, tx_hex) = match coin.priv_key_policy {
+    let (my_balance, my_address, key_pair) = match req.from {
+        Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+            let bip39_secp_priv_key = match &coin.priv_key_policy {
+                EthPrivKeyPolicy::HDWallet {
+                    bip39_secp_priv_key, ..
+                } => bip39_secp_priv_key.clone(),
+                _ => {
+                    return MmError::err(WithdrawError::UnexpectedFromAddress(
+                        "Withdraw from 'HDWalletAddress' is only supported for 'EthPrivKeyPolicy::HDWallet'!"
+                            .to_string(),
+                    ))
+                },
+            };
+            // Todo: should derivation path be part of EthPrivKeyPolicy::HDWallet same for UTXO too?
+            let derivation_path = coin.derivation_path.clone().or_mm_err(|| {
+                WithdrawError::InternalError(
+                    "Derivation path can't be None when EthPrivKeyPolicy is HDWallet!".to_string(),
+                )
+            })?;
+            // todo: these are repeated in build_address_and_priv_key_policy too
+            let raw_priv_key = derive_secp256k1_secret(bip39_secp_priv_key, &derivation_path, path_to_address)
+                .mm_err(|e| WithdrawError::InternalError(e.to_string()))?;
+            let key_pair = KeyPair::from_secret_slice(raw_priv_key.as_slice())
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            let address = key_pair.address();
+            let balance = coin.address_balance(address).compat().await?;
+            (balance, address, key_pair)
+        },
+        Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
+            return MmError::err(WithdrawError::UnexpectedFromAddress(
+                "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for EVM!".to_string(),
+            ))
+        },
+        // Todo: using coin.priv_key_policy.key_pair_or_err() will cause problems for EthPrivKeyPolicy::Metamask(_) down the line in this function
+        None => (
+            coin.my_balance().compat().await?,
+            coin.my_address,
+            coin.priv_key_policy.key_pair_or_err()?.clone(),
+        ),
+    };
     let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals)?;
 
     let (mut wei_amount, dec_amount) = if req.max {
@@ -777,9 +831,10 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     };
 
     let (tx_hash, tx_hex) = match coin.priv_key_policy {
-        EthPrivKeyPolicy::KeyPair(ref key_pair) => {
+        EthPrivKeyPolicy::KeyPair(_) | EthPrivKeyPolicy::HDWallet { .. } => {
+            // Todo: how nonce_lock should work with withdrawing from other addresses of the HD account? I will leave it for now
             let _nonce_lock = coin.nonce_lock.lock().await;
-            let (nonce, _) = get_addr_nonce(coin.my_address, coin.web3_instances.clone())
+            let (nonce, _) = get_addr_nonce(my_address, coin.web3_instances.clone())
                 .compat()
                 .timeout_secs(30.)
                 .await?
@@ -841,7 +896,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 
     let amount_decimal = u256_to_big_decimal(wei_amount, coin.decimals)?;
     let mut spent_by_me = amount_decimal.clone();
-    let received_by_me = if to_addr == coin.my_address {
+    let received_by_me = if to_addr == my_address {
         amount_decimal.clone()
     } else {
         0.into()
@@ -850,10 +905,10 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     if coin.coin_type == EthCoinType::Eth {
         spent_by_me += &fee_details.total_fee;
     }
-    let my_address = coin.my_address()?;
     Ok(TransactionDetails {
         to: vec![checksum_address(&format!("{:#02x}", to_addr))],
-        from: vec![my_address],
+        // Todo: checksum_address should be made a common function str_from_address
+        from: vec![checksum_address(&format!("{:#02x}", my_address))],
         total_amount: amount_decimal,
         my_balance_change: &received_by_me - &spent_by_me,
         spent_by_me,
@@ -1305,9 +1360,11 @@ impl SwapOps for EthCoin {
     #[inline]
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
         match self.priv_key_policy {
-            EthPrivKeyPolicy::KeyPair(ref key_pair) => {
-                key_pair_from_secret(key_pair.secret().as_bytes()).expect("valid key")
-            },
+            EthPrivKeyPolicy::KeyPair(ref key_pair)
+            | EthPrivKeyPolicy::HDWallet {
+                activated_key_pair: ref key_pair,
+                ..
+            } => key_pair_from_secret(key_pair.secret().as_bytes()).expect("valid key"),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(_) => todo!(),
         }
@@ -1316,7 +1373,11 @@ impl SwapOps for EthCoin {
     #[inline]
     fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> {
         match self.priv_key_policy {
-            EthPrivKeyPolicy::KeyPair(ref key_pair) => key_pair_from_secret(key_pair.secret().as_bytes())
+            EthPrivKeyPolicy::KeyPair(ref key_pair)
+            | EthPrivKeyPolicy::HDWallet {
+                activated_key_pair: ref key_pair,
+                ..
+            } => key_pair_from_secret(key_pair.secret().as_bytes())
                 .expect("valid key")
                 .public_slice()
                 .to_vec(),
@@ -1809,7 +1870,11 @@ impl MarketCoinOps for EthCoin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         match self.priv_key_policy {
-            EthPrivKeyPolicy::KeyPair(ref key_pair) => {
+            EthPrivKeyPolicy::KeyPair(ref key_pair)
+            | EthPrivKeyPolicy::HDWallet {
+                activated_key_pair: ref key_pair,
+                ..
+            } => {
                 let uncompressed_without_prefix = hex::encode(key_pair.public());
                 Ok(format!("04{}", uncompressed_without_prefix))
             },
@@ -2107,7 +2172,11 @@ impl MarketCoinOps for EthCoin {
 
     fn display_priv_key(&self) -> Result<String, String> {
         match self.priv_key_policy {
-            EthPrivKeyPolicy::KeyPair(ref key_pair) => Ok(format!("{:#02x}", key_pair.secret())),
+            EthPrivKeyPolicy::KeyPair(ref key_pair)
+            | EthPrivKeyPolicy::HDWallet {
+                activated_key_pair: ref key_pair,
+                ..
+            } => Ok(format!("{:#02x}", key_pair.secret())),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' doesn't support MetaMask"),
         }
@@ -2972,9 +3041,11 @@ impl EthCoin {
         let coin = self.clone();
         let fut = async move {
             match coin.priv_key_policy {
-                EthPrivKeyPolicy::KeyPair(ref key_pair) => {
-                    sign_and_send_transaction_with_keypair(ctx, &coin, key_pair, value, action, data, gas).await
-                },
+                EthPrivKeyPolicy::KeyPair(ref key_pair)
+                | EthPrivKeyPolicy::HDWallet {
+                    activated_key_pair: ref key_pair,
+                    ..
+                } => sign_and_send_transaction_with_keypair(ctx, &coin, key_pair, value, action, data, gas).await,
                 #[cfg(target_arch = "wasm32")]
                 EthPrivKeyPolicy::Metamask(_) => {
                     sign_and_send_transaction_with_metamask(coin, value, action, data, gas).await
@@ -3611,18 +3682,14 @@ impl EthCoin {
         }
     }
 
-    fn my_balance(&self) -> BalanceFut<U256> {
+    fn address_balance(&self, address: Address) -> BalanceFut<U256> {
         let coin = self.clone();
         let fut = async move {
             match coin.coin_type {
-                EthCoinType::Eth => Ok(coin
-                    .web3
-                    .eth()
-                    .balance(coin.my_address, Some(BlockNumber::Latest))
-                    .await?),
+                EthCoinType::Eth => Ok(coin.web3.eth().balance(address, Some(BlockNumber::Latest)).await?),
                 EthCoinType::Erc20 { ref token_addr, .. } => {
                     let function = ERC20_CONTRACT.function("balanceOf")?;
-                    let data = function.encode_input(&[Token::Address(coin.my_address)])?;
+                    let data = function.encode_input(&[Token::Address(address)])?;
 
                     let res = coin.call_request(*token_addr, None, Some(data.into())).await?;
                     let decoded = function.decode_output(&res.0)?;
@@ -3638,6 +3705,8 @@ impl EthCoin {
         };
         Box::new(fut.boxed().compat())
     }
+
+    fn my_balance(&self) -> BalanceFut<U256> { self.address_balance(self.my_address) }
 
     pub async fn get_tokens_balance_list(&self) -> Result<HashMap<String, CoinBalance>, MmError<BalanceError>> {
         let coin = || self;
@@ -5160,6 +5229,9 @@ pub async fn eth_coin_from_conf_and_request(
     let (my_address, key_pair) =
         try_s!(build_address_and_priv_key_policy(conf, priv_key_policy, &path_to_address).await);
 
+    // Todo: this should be in config if EthPrivKeyPolicy is HDWallet
+    let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone()).ok();
+
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
     for node in nodes.iter() {
@@ -5243,6 +5315,7 @@ pub async fn eth_coin_from_conf_and_request(
     let coin = EthCoinImpl {
         priv_key_policy: key_pair,
         my_address,
+        derivation_path,
         coin_type,
         sign_message_prefix,
         swap_contract_address,

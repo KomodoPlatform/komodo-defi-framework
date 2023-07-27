@@ -575,6 +575,7 @@ impl MmCoin for TendermintToken {
 
     fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
 
+    // Todo: add support for HD wallet withdraw in this PR
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let platform = self.platform_coin.clone();
         let token = self.clone();

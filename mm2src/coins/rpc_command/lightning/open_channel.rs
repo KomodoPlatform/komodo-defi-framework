@@ -132,6 +132,7 @@ pub struct OpenChannelResponse {
     node_address: NodeAddress,
 }
 
+// Todo: should be able to open channel from any HD account address, can it be done though?
 /// Opens a channel on the lightning network.
 pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelResult<OpenChannelResponse> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {

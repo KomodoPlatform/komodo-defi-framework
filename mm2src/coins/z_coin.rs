@@ -1908,6 +1908,7 @@ impl UtxoCommonOps for ZCoin {
 #[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl InitWithdrawCoin for ZCoin {
+    // Todo: add support for HD wallet
     async fn init_withdraw(
         &self,
         _ctx: MmArc,

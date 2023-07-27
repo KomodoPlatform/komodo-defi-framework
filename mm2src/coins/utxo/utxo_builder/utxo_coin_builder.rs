@@ -181,9 +181,10 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
             compressed: true,
             checksum_type: conf.checksum_type,
         };
-        let key_pair = KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
+        let activated_key_pair =
+            KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
         let priv_key_policy = PrivKeyPolicy::HDWallet {
-            key_pair,
+            activated_key_pair,
             bip39_secp_priv_key: global_hd_ctx.root_priv_key().clone(),
         };
         build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy).await

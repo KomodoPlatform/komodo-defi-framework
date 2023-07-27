@@ -2725,8 +2725,7 @@ pub enum PrivKeyPolicy<T, U> {
     KeyPair(T),
     // Todo: fix withdraw for other coins (ETH, etc..)
     HDWallet {
-        // Todo: maybe rename this to activated key_pair
-        key_pair: T,
+        activated_key_pair: T,
         bip39_secp_priv_key: U,
     },
     Trezor,
@@ -2736,7 +2735,7 @@ impl<T, U> PrivKeyPolicy<T, U> {
     pub fn key_pair(&self) -> Option<&T> {
         match self {
             PrivKeyPolicy::KeyPair(key_pair) => Some(key_pair),
-            PrivKeyPolicy::HDWallet { key_pair, .. } => Some(key_pair),
+            PrivKeyPolicy::HDWallet { activated_key_pair, .. } => Some(activated_key_pair),
             PrivKeyPolicy::Trezor => None,
         }
     }

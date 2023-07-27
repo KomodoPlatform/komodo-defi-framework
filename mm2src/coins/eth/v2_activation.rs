@@ -153,6 +153,9 @@ impl EthCoin {
 
         let conf = coin_conf(&ctx, &ticker);
 
+        // Todo: this should be in config if EthPrivKeyPolicy is HDWallet
+        let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone()).ok();
+
         let decimals = match conf["decimals"].as_u64() {
             None | Some(0) => get_token_decimals(&self.web3, protocol.token_addr)
                 .await
@@ -194,6 +197,7 @@ impl EthCoin {
         let token = EthCoinImpl {
             priv_key_policy: self.priv_key_policy.clone(),
             my_address: self.my_address,
+            derivation_path,
             coin_type: EthCoinType::Erc20 {
                 platform: protocol.platform,
                 token_addr: protocol.token_addr,
@@ -252,10 +256,21 @@ pub async fn eth_coin_from_conf_and_request_v2(
         build_address_and_priv_key_policy(conf, priv_key_policy, &req.path_to_address).await?;
     let my_address_str = checksum_address(&format!("{:02x}", my_address));
 
+    // Todo: this should be in config if EthPrivKeyPolicy is HDWallet
+    let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone()).ok();
+
     let chain_id = conf["chain_id"].as_u64();
 
     let (web3, web3_instances) = match (req.rpc_mode, &priv_key_policy) {
-        (EthRpcMode::Http, EthPrivKeyPolicy::KeyPair(key_pair)) => {
+        (
+            EthRpcMode::Http,
+            EthPrivKeyPolicy::KeyPair(key_pair)
+            | EthPrivKeyPolicy::HDWallet {
+                activated_key_pair: key_pair,
+                ..
+            },
+        ) => {
+            // Todo: need to test GUI authentication using only the activated keypair
             build_http_transport(ctx, ticker.clone(), my_address_str, key_pair, &req.nodes).await?
         },
         #[cfg(target_arch = "wasm32")]
@@ -294,6 +309,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let coin = EthCoinImpl {
         priv_key_policy,
         my_address,
+        derivation_path,
         coin_type: EthCoinType::Eth,
         sign_message_prefix,
         swap_contract_address: req.swap_contract_address,
@@ -327,16 +343,27 @@ pub(crate) async fn build_address_and_priv_key_policy(
     priv_key_policy: EthPrivKeyBuildPolicy,
     path_to_address: &StandardHDCoinAddress,
 ) -> MmResult<(Address, EthPrivKeyPolicy), EthActivationV2Error> {
-    let raw_priv_key = match priv_key_policy {
-        EthPrivKeyBuildPolicy::IguanaPrivKey(iguana) => iguana,
+    match priv_key_policy {
+        EthPrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
+            let key_pair = KeyPair::from_secret_slice(iguana.as_slice())
+                .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+            Ok((key_pair.address(), EthPrivKeyPolicy::KeyPair(key_pair)))
+        },
         EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
             // Consider storing `derivation_path` at `EthCoinImpl`.
             let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone())
                 .map_to_mm(|e| EthActivationV2Error::ErrorDeserializingDerivationPath(e.to_string()))?;
             let derivation_path = derivation_path.or_mm_err(|| EthActivationV2Error::DerivationPathIsNotSet)?;
-            global_hd_ctx
+            let raw_priv_key = global_hd_ctx
                 .derive_secp256k1_secret(&derivation_path, path_to_address)
-                .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?
+                .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+            let activated_key_pair = KeyPair::from_secret_slice(raw_priv_key.as_slice())
+                .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+            let bip39_secp_priv_key = global_hd_ctx.root_priv_key().clone();
+            Ok((activated_key_pair.address(), EthPrivKeyPolicy::HDWallet {
+                activated_key_pair,
+                bip39_secp_priv_key,
+            }))
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyBuildPolicy::Metamask(metamask_ctx) => {
@@ -351,12 +378,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 }),
             ));
         },
-    };
-
-    let key_pair = KeyPair::from_secret_slice(raw_priv_key.as_slice())
-        .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
-    let address = key_pair.address();
-    Ok((address, EthPrivKeyPolicy::KeyPair(key_pair)))
+    }
 }
 
 async fn build_http_transport(
