@@ -43,13 +43,14 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
+use bip32::ExtendedPrivateKey;
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
 use common::log::{warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
-use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy,
-             Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin, WithHwRpcError};
+use crypto::{derive_secp256k1_secret, Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc,
+             HwRpcError, KeyPairPolicy, Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin, WithHwRpcError};
 use derive_more::Display;
 use enum_from::{EnumFromStringify, EnumFromTrait};
 use ethereum_types::H256;
@@ -443,6 +444,7 @@ pub enum PrivKeyPolicyNotAllowed {
     HardwareWalletNotSupported,
     #[display(fmt = "Unsupported method: {}", _0)]
     UnsupportedMethod(String),
+    InternalError(String),
 }
 
 impl Serialize for PrivKeyPolicyNotAllowed {
@@ -466,6 +468,7 @@ pub enum UnexpectedDerivationMethod {
     Trezor,
     #[display(fmt = "Unsupported error: {}", _0)]
     UnsupportedError(String),
+    InternalError(String),
 }
 
 impl From<PrivKeyPolicyNotAllowed> for UnexpectedDerivationMethod {
@@ -473,6 +476,7 @@ impl From<PrivKeyPolicyNotAllowed> for UnexpectedDerivationMethod {
         match e {
             PrivKeyPolicyNotAllowed::HardwareWalletNotSupported => UnexpectedDerivationMethod::Trezor,
             PrivKeyPolicyNotAllowed::UnsupportedMethod(method) => UnexpectedDerivationMethod::UnsupportedError(method),
+            PrivKeyPolicyNotAllowed::InternalError(e) => UnexpectedDerivationMethod::InternalError(e),
         }
     }
 }
@@ -2740,7 +2744,7 @@ impl Default for PrivKeyActivationPolicy {
 }
 
 #[derive(Clone, Debug)]
-pub enum PrivKeyPolicy<T, U> {
+pub enum PrivKeyPolicy<T> {
     Iguana(T),
     // Todo: fix withdraw for other coins (ETH, etc..)
     HDWallet {
@@ -2748,10 +2752,9 @@ pub enum PrivKeyPolicy<T, U> {
         /// This derivation path consists of `purpose` and `coin_type` only
         /// where the full `BIP44` address has the following structure:
         /// `m/purpose'/coin_type'`.
-        // Todo: if I didn't merge PrivKeyPolicy between all coins then this derivation_path can be removed
         derivation_path: StandardHDPathToCoin,
         activated_key: T,
-        bip39_secp_priv_key: U,
+        bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
     },
     Trezor,
     #[cfg(target_arch = "wasm32")]
@@ -2765,11 +2768,11 @@ pub struct EthMetamaskPolicy {
     pub(crate) public_key_uncompressed: EthH520,
 }
 
-impl<T, U> From<T> for PrivKeyPolicy<T, U> {
+impl<T> From<T> for PrivKeyPolicy<T> {
     fn from(key_pair: T) -> Self { PrivKeyPolicy::Iguana(key_pair) }
 }
 
-impl<T, U> PrivKeyPolicy<T, U> {
+impl<T> PrivKeyPolicy<T> {
     pub fn activated_key(&self) -> Option<&T> {
         match self {
             PrivKeyPolicy::Iguana(key_pair) => Some(key_pair),
@@ -2792,7 +2795,7 @@ impl<T, U> PrivKeyPolicy<T, U> {
         })
     }
 
-    pub fn bip39_secp_priv_key(&self) -> Option<&U> {
+    pub fn bip39_secp_priv_key(&self) -> Option<&ExtendedPrivateKey<secp256k1::SecretKey>> {
         match self {
             PrivKeyPolicy::HDWallet {
                 bip39_secp_priv_key, ..
@@ -2803,7 +2806,9 @@ impl<T, U> PrivKeyPolicy<T, U> {
         }
     }
 
-    pub fn bip39_secp_priv_key_or_err(&self) -> Result<&U, MmError<PrivKeyPolicyNotAllowed>> {
+    pub fn bip39_secp_priv_key_or_err(
+        &self,
+    ) -> Result<&ExtendedPrivateKey<secp256k1::SecretKey>, MmError<PrivKeyPolicyNotAllowed>> {
         self.bip39_secp_priv_key().or_mm_err(|| {
             PrivKeyPolicyNotAllowed::UnsupportedMethod(
                 "`bip39_secp_priv_key_or_err` is supported only for `PrivKeyPolicy::HDWallet`".to_string(),
@@ -2826,6 +2831,16 @@ impl<T, U> PrivKeyPolicy<T, U> {
                 "`derivation_path_or_err` is supported only for `PrivKeyPolicy::HDWallet`".to_string(),
             )
         })
+    }
+
+    pub fn hd_wallet_derived_priv_key_or_err(
+        &self,
+        path_to_address: &StandardHDCoinAddress,
+    ) -> Result<Secp256k1Secret, MmError<PrivKeyPolicyNotAllowed>> {
+        let bip39_secp_priv_key = self.bip39_secp_priv_key_or_err()?;
+        let derivation_path = self.derivation_path_or_err()?;
+        derive_secp256k1_secret(bip39_secp_priv_key.clone(), derivation_path, path_to_address)
+            .mm_err(|e| PrivKeyPolicyNotAllowed::InternalError(e.to_string()))
     }
 }
 

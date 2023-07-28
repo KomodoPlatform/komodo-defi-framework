@@ -24,7 +24,6 @@ use super::eth::Action::{Call, Create};
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_structs::{ContractType, ConvertChain, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
 use async_trait::async_trait;
-use bip32::ExtendedPrivateKey;
 use bitcrypto::{keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
 use common::custom_futures::timeout::FutureTimerExt;
@@ -35,8 +34,7 @@ use common::{get_utc_timestamp, now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 #[cfg(target_arch = "wasm32")]
 use common::{now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{derive_secp256k1_secret, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy,
-             StandardHDCoinAddress};
+use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy, StandardHDCoinAddress};
 use derive_more::Display;
 use enum_from::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
@@ -169,7 +167,7 @@ lazy_static! {
     pub static ref ERC1155_CONTRACT: Contract = Contract::load(ERC1155_ABI.as_bytes()).unwrap();
 }
 
-type EthPrivKeyPolicy = PrivKeyPolicy<KeyPair, ExtendedPrivateKey<secp256k1::SecretKey>>;
+type EthPrivKeyPolicy = PrivKeyPolicy<KeyPair>;
 pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>> + Send>;
 pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
 pub type GasStationResult = Result<GasStationData, MmError<GasStationReqErr>>;
@@ -711,11 +709,9 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         .map_to_mm(WithdrawError::InvalidAddress)?;
     let (my_balance, my_address, key_pair) = match req.from {
         Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
-            let bip39_secp_priv_key = coin.priv_key_policy.bip39_secp_priv_key_or_err()?;
-            let derivation_path = coin.priv_key_policy.derivation_path_or_err()?;
-            // todo: these are repeated in build_address_and_priv_key_policy too
-            let raw_priv_key = derive_secp256k1_secret(bip39_secp_priv_key.clone(), derivation_path, path_to_address)
-                .mm_err(|e| WithdrawError::InternalError(e.to_string()))?;
+            let raw_priv_key = coin
+                .priv_key_policy
+                .hd_wallet_derived_priv_key_or_err(path_to_address)?;
             let key_pair = KeyPair::from_secret_slice(raw_priv_key.as_slice())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
             let address = key_pair.address();
@@ -727,7 +723,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
                 "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for EVM!".to_string(),
             ))
         },
-        // Todo: using coin.priv_key_policy.key_pair_or_err() will cause problems for EthPrivKeyPolicy::Metamask(_) down the line in this function
+        // Todo: using coin.priv_key_policy.activated_key_or_err() will cause problems for EthPrivKeyPolicy::Metamask(_) down the line in this function
         None => (
             coin.my_balance().compat().await?,
             coin.my_address,

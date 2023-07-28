@@ -9,8 +9,7 @@ use chain::TransactionOutput;
 use common::log::info;
 use common::now_sec;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
-use crypto::{derive_secp256k1_secret, from_hw_error, CryptoCtx, CryptoCtxError, DerivationPath, HwError,
-             HwProcessingError, HwRpcError};
+use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, DerivationPath, HwError, HwProcessingError, HwRpcError};
 use keys::{AddressHashEnum, KeyPair, Private, Public as PublicKey, Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -421,9 +420,10 @@ where
         // Todo: refactor this
         let (key_pair, my_address, my_address_string) = match req.from {
             Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
-                let bip39_secp_priv_key = coin.as_ref().priv_key_policy.bip39_secp_priv_key_or_err()?;
-                let derivation_path = coin.as_ref().priv_key_policy.derivation_path_or_err()?;
-                let secret = derive_secp256k1_secret(bip39_secp_priv_key.clone(), derivation_path, path_to_address)?;
+                let secret = coin
+                    .as_ref()
+                    .priv_key_policy
+                    .hd_wallet_derived_priv_key_or_err(path_to_address)?;
                 // Todo: refactor this and check if there should be more fields included in coin fields etc.. (maybe save the generated addresses and private keys there also check UtxoHDWallet, etc..)
                 let private = Private {
                     prefix: coin.as_ref().conf.wif_prefix,

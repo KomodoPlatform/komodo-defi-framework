@@ -39,7 +39,6 @@ pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
 
 use async_trait::async_trait;
-use bip32::ExtendedPrivateKey;
 #[cfg(not(target_arch = "wasm32"))]
 use bitcoin::network::constants::Network as BitcoinNetwork;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
@@ -586,7 +585,7 @@ pub struct UtxoCoinFields {
     /// RPC client
     pub rpc_client: UtxoRpcClientEnum,
     /// Either ECDSA key pair or a Hardware Wallet info.
-    pub priv_key_policy: PrivKeyPolicy<KeyPair, ExtendedPrivateKey<secp256k1::SecretKey>>,
+    pub priv_key_policy: PrivKeyPolicy<KeyPair>,
     /// Either an Iguana address or an info about last derived account/address.
     pub derivation_method: DerivationMethod<Address, UtxoHDWallet>,
     pub history_sync_state: Mutex<HistorySyncState>,

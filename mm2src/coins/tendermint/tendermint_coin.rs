@@ -30,7 +30,6 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
-use bip32::ExtendedPrivateKey;
 use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
@@ -51,7 +50,7 @@ use cosmrs::tendermint::PublicKey;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{derive_secp256k1_secret, Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin};
+use crypto::{Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin};
 use derive_more::Display;
 use futures::future::try_join_all;
 use futures::lock::Mutex as AsyncMutex;
@@ -105,7 +104,7 @@ const MIN_TIME_LOCK: i64 = 50;
 
 const ACCOUNT_SEQUENCE_ERR: &str = "incorrect account sequence";
 
-type TendermintPrivKeyPolicy = PrivKeyPolicy<Secp256k1Secret, ExtendedPrivateKey<secp256k1::SecretKey>>;
+type TendermintPrivKeyPolicy = PrivKeyPolicy<Secp256k1Secret>;
 
 #[async_trait]
 pub trait TendermintCommons {
@@ -1945,14 +1944,10 @@ impl MmCoin for TendermintCoin {
             }
 
             let (account_id, priv_key) = match req.from {
-                // Todo: This block is repeated a lot, maybe we can make it common between coins somehow?
                 Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
-                    let bip39_secp_priv_key = coin.priv_key_policy.bip39_secp_priv_key_or_err()?;
-                    let derivation_path = coin.priv_key_policy.derivation_path_or_err()?;
-                    let priv_key =
-                        derive_secp256k1_secret(bip39_secp_priv_key.clone(), derivation_path, path_to_address)
-                            .mm_err(|e| WithdrawError::InternalError(e.to_string()))?;
-
+                    let priv_key = coin
+                        .priv_key_policy
+                        .hd_wallet_derived_priv_key_or_err(path_to_address)?;
                     let account_id = account_id_from_privkey(priv_key.as_slice(), &coin.account_prefix)
                         .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
                     (account_id, priv_key)

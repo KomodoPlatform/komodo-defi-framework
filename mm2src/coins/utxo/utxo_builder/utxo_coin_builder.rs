@@ -11,7 +11,6 @@ use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProto
 use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
             PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
-use bip32::ExtendedPrivateKey;
 use chain::TxHashAlgo;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
@@ -195,8 +194,7 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
 async fn build_utxo_coin_fields_with_conf_and_policy<Builder>(
     builder: &Builder,
     conf: UtxoCoinConf,
-    // Todo: recheck this, maybe make ExtendedPrivateKey<secp256k1::SecretKey>> a type
-    priv_key_policy: PrivKeyPolicy<KeyPair, ExtendedPrivateKey<secp256k1::SecretKey>>,
+    priv_key_policy: PrivKeyPolicy<KeyPair>,
 ) -> UtxoCoinBuildResult<UtxoCoinFields>
 where
     Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
