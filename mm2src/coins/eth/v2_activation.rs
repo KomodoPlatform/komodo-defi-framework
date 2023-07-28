@@ -1,4 +1,5 @@
 use super::*;
+#[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
 use common::executor::AbortedError;
 use crypto::{CryptoCtxError, StandardHDCoinAddress};
 use enum_from::EnumFromTrait;
@@ -255,14 +256,19 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let (web3, web3_instances) = match (req.rpc_mode, &priv_key_policy) {
         (
             EthRpcMode::Http,
-            EthPrivKeyPolicy::KeyPair(key_pair)
+            EthPrivKeyPolicy::Iguana(key_pair)
             | EthPrivKeyPolicy::HDWallet {
-                activated_key_pair: key_pair,
+                activated_key: key_pair,
                 ..
             },
         ) => {
             // Todo: need to test GUI authentication using only the activated keypair
             build_http_transport(ctx, ticker.clone(), my_address_str, key_pair, &req.nodes).await?
+        },
+        (EthRpcMode::Http, EthPrivKeyPolicy::Trezor) => {
+            return MmError::err(EthActivationV2Error::PrivKeyPolicyNotAllowed(
+                PrivKeyPolicyNotAllowed::HardwareWalletNotSupported,
+            ));
         },
         #[cfg(target_arch = "wasm32")]
         (EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(_)) => {
@@ -272,7 +278,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
             build_metamask_transport(ctx, ticker.clone(), chain_id).await?
         },
         #[cfg(target_arch = "wasm32")]
-        (_, _) => {
+        (EthRpcMode::Http, EthPrivKeyPolicy::Metamask(_)) | (EthRpcMode::Metamask, _) => {
             let error = r#"priv_key_policy="Metamask" and rpc_mode="Metamask" should be used both"#.to_string();
             return MmError::err(EthActivationV2Error::ActivationFailed { ticker, error });
         },
@@ -337,7 +343,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
         EthPrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
             let key_pair = KeyPair::from_secret_slice(iguana.as_slice())
                 .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
-            Ok((key_pair.address(), EthPrivKeyPolicy::KeyPair(key_pair)))
+            Ok((key_pair.address(), EthPrivKeyPolicy::Iguana(key_pair)))
         },
         EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
             // Consider storing `derivation_path` at `EthCoinImpl`.
@@ -351,7 +357,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let bip39_secp_priv_key = global_hd_ctx.root_priv_key().clone();
             Ok((activated_key_pair.address(), EthPrivKeyPolicy::HDWallet {
                 derivation_path,
-                activated_key_pair,
+                activated_key: activated_key_pair,
                 bip39_secp_priv_key,
             }))
         },

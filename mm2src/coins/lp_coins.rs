@@ -72,6 +72,7 @@ use serde_json::{self as json, Value as Json};
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::collections::HashSet;
+use std::error::Error as StdError;
 use std::fmt;
 use std::future::Future as Future03;
 use std::num::NonZeroUsize;
@@ -96,6 +97,7 @@ cfg_native! {
 }
 
 cfg_wasm32! {
+    use ethereum_types::{H264 as EthH264, H520 as EthH520};
     use hd_wallet_storage::HDWalletDb;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
@@ -452,12 +454,27 @@ impl Serialize for PrivKeyPolicyNotAllowed {
     }
 }
 
+impl StdError for PrivKeyPolicyNotAllowed {}
+
 #[derive(Clone, Debug, Display, PartialEq, Serialize)]
 pub enum UnexpectedDerivationMethod {
     #[display(fmt = "Expected 'SingleAddress' derivation method")]
     ExpectedSingleAddress,
     #[display(fmt = "Expected 'HDWallet' derivationMethod")]
     ExpectedHDWallet,
+    #[display(fmt = "Trezor derivation method is not supported yet!")]
+    Trezor,
+    #[display(fmt = "Unsupported error: {}", _0)]
+    UnsupportedError(String),
+}
+
+impl From<PrivKeyPolicyNotAllowed> for UnexpectedDerivationMethod {
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        match e {
+            PrivKeyPolicyNotAllowed::HardwareWalletNotSupported => UnexpectedDerivationMethod::Trezor,
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(method) => UnexpectedDerivationMethod::UnsupportedError(method),
+        }
+    }
 }
 
 pub trait Transaction: fmt::Debug + 'static {
@@ -2722,9 +2739,9 @@ impl Default for PrivKeyActivationPolicy {
     fn default() -> Self { PrivKeyActivationPolicy::ContextPrivKey }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum PrivKeyPolicy<T, U> {
-    KeyPair(T),
+    Iguana(T),
     // Todo: fix withdraw for other coins (ETH, etc..)
     HDWallet {
         /// Derivation path of the coin.
@@ -2733,24 +2750,46 @@ pub enum PrivKeyPolicy<T, U> {
         /// `m/purpose'/coin_type'`.
         // Todo: if I didn't merge PrivKeyPolicy between all coins then this derivation_path can be removed
         derivation_path: StandardHDPathToCoin,
-        activated_key_pair: T,
+        activated_key: T,
         bip39_secp_priv_key: U,
     },
     Trezor,
+    #[cfg(target_arch = "wasm32")]
+    Metamask(EthMetamaskPolicy),
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone, Debug)]
+pub struct EthMetamaskPolicy {
+    pub(crate) public_key: EthH264,
+    pub(crate) public_key_uncompressed: EthH520,
+}
+
+impl<T, U> From<T> for PrivKeyPolicy<T, U> {
+    fn from(key_pair: T) -> Self { PrivKeyPolicy::Iguana(key_pair) }
 }
 
 impl<T, U> PrivKeyPolicy<T, U> {
-    pub fn key_pair(&self) -> Option<&T> {
+    pub fn activated_key(&self) -> Option<&T> {
         match self {
-            PrivKeyPolicy::KeyPair(key_pair) => Some(key_pair),
-            PrivKeyPolicy::HDWallet { activated_key_pair, .. } => Some(activated_key_pair),
+            PrivKeyPolicy::Iguana(key_pair) => Some(key_pair),
+            PrivKeyPolicy::HDWallet {
+                activated_key: activated_key_pair,
+                ..
+            } => Some(activated_key_pair),
             PrivKeyPolicy::Trezor => None,
+            #[cfg(target_arch = "wasm32")]
+            PrivKeyPolicy::Metamask(_) => None,
         }
     }
 
-    pub fn key_pair_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
-        self.key_pair()
-            .or_mm_err(|| PrivKeyPolicyNotAllowed::HardwareWalletNotSupported)
+    pub fn activated_key_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
+        self.activated_key().or_mm_err(|| {
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`key_pair_or_err` is supported only for `PrivKeyPolicy::KeyPair` or `PrivKeyPolicy::HDWallet`"
+                    .to_string(),
+            )
+        })
     }
 
     pub fn bip39_secp_priv_key(&self) -> Option<&U> {
@@ -2758,7 +2797,9 @@ impl<T, U> PrivKeyPolicy<T, U> {
             PrivKeyPolicy::HDWallet {
                 bip39_secp_priv_key, ..
             } => Some(bip39_secp_priv_key),
-            PrivKeyPolicy::KeyPair(_) | PrivKeyPolicy::Trezor => None,
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor => None,
+            #[cfg(target_arch = "wasm32")]
+            PrivKeyPolicy::Metamask(_) => None,
         }
     }
 
@@ -2773,7 +2814,9 @@ impl<T, U> PrivKeyPolicy<T, U> {
     pub fn derivation_path(&self) -> Option<&StandardHDPathToCoin> {
         match self {
             PrivKeyPolicy::HDWallet { derivation_path, .. } => Some(derivation_path),
-            PrivKeyPolicy::KeyPair(_) | PrivKeyPolicy::Trezor => None,
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor => None,
+            #[cfg(target_arch = "wasm32")]
+            PrivKeyPolicy::Metamask(_) => None,
         }
     }
 

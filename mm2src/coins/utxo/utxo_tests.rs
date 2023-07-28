@@ -546,7 +546,7 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock: 1591933469,
-        other_pub: coin.as_ref().priv_key_policy.key_pair_or_err().unwrap().public(),
+        other_pub: coin.as_ref().priv_key_policy.activated_key_or_err().unwrap().public(),
         secret_hash: &secret_hash,
         tx: &payment_tx_bytes,
         search_from_block: 0,
@@ -3360,7 +3360,7 @@ fn test_split_qtum() {
     let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
     let p2pkh_address = coin.as_ref().derivation_method.unwrap_single_addr();
     let script: Script = output_script(p2pkh_address, ScriptType::P2PKH);
-    let key_pair = coin.as_ref().priv_key_policy.key_pair_or_err().unwrap();
+    let key_pair = coin.as_ref().priv_key_policy.activated_key_or_err().unwrap();
     let (unspents, _) = block_on(coin.get_mature_unspent_ordered_list(p2pkh_address)).expect("Unspent list is empty");
     log!("Mature unspents vec = {:?}", unspents.mature);
     let outputs = vec![

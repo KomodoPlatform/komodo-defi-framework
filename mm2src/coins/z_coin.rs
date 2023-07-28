@@ -324,7 +324,7 @@ impl ZCoin {
     fn secp_keypair(&self) -> &KeyPair {
         self.utxo_arc
             .priv_key_policy
-            .key_pair()
+            .activated_key()
             .expect("Zcoin doesn't support HW wallets")
     }
 

@@ -944,7 +944,7 @@ pub trait UtxoCommonOps:
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64;
 
-    /// Get a public key that matches [`PrivKeyPolicy::KeyPair`].
+    /// Get a public key that matches [`PrivKeyPolicy::Iguana`].
     ///
     /// # Fail
     ///
@@ -1806,7 +1806,7 @@ where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err());
-    let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.key_pair_or_err());
+    let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.activated_key_or_err());
 
     let mut builder = UtxoTxBuilder::new(coin)
         .add_available_inputs(unspents)

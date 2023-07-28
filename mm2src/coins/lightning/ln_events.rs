@@ -216,7 +216,7 @@ fn sign_funding_transaction(
     let key_pair = coin
         .as_ref()
         .priv_key_policy
-        .key_pair_or_err()
+        .activated_key_or_err()
         .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
 
     let prev_script = Builder::build_p2pkh(&my_address.hash);

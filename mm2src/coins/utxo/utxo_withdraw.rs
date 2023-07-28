@@ -311,15 +311,22 @@ where
             .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
 
         let sign_policy = match self.coin.as_ref().priv_key_policy {
-            PrivKeyPolicy::KeyPair(ref key_pair) => SignPolicy::WithKeyPair(key_pair),
+            PrivKeyPolicy::Iguana(ref key_pair) => SignPolicy::WithKeyPair(key_pair),
             // InitUtxoWithdraw works only for hardware wallets so it's ok to use signing with activated keypair here as a placeholder.
             // Todo: recheck above comment
             PrivKeyPolicy::HDWallet {
-                ref activated_key_pair, ..
+                activated_key: ref activated_key_pair,
+                ..
             } => SignPolicy::WithKeyPair(activated_key_pair),
             PrivKeyPolicy::Trezor => {
                 let trezor_session = hw_ctx.trezor().await?;
                 SignPolicy::WithTrezor(trezor_session)
+            },
+            #[cfg(target_arch = "wasm32")]
+            PrivKeyPolicy::Metamask(_) => {
+                return MmError::err(WithdrawError::UnsupportedError(
+                    "`PrivKeyPolicy::Metamask` is not supported for UTXO coins!".to_string(),
+                ))
             },
         };
 
@@ -451,7 +458,7 @@ where
                 ))
             },
             None => {
-                let key_pair = coin.as_ref().priv_key_policy.key_pair_or_err()?;
+                let key_pair = coin.as_ref().priv_key_policy.activated_key_or_err()?;
                 let my_address = coin.as_ref().derivation_method.single_addr_or_err()?.clone();
                 let my_address_string = coin.my_address()?;
                 (*key_pair, my_address, my_address_string)

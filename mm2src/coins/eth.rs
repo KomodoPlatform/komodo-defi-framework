@@ -36,7 +36,7 @@ use common::{get_utc_timestamp, now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use common::{now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{derive_secp256k1_secret, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy,
-             StandardHDCoinAddress, StandardHDPathToCoin};
+             StandardHDCoinAddress};
 use derive_more::Display;
 use enum_from::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
@@ -111,7 +111,7 @@ use crate::nft::{find_wallet_nft_amount, WithdrawNftResult};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod nonce;
-use crate::WithdrawFrom;
+use crate::{PrivKeyPolicy, WithdrawFrom};
 use nonce::ParityNonce;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -169,6 +169,7 @@ lazy_static! {
     pub static ref ERC1155_CONTRACT: Contract = Contract::load(ERC1155_ABI.as_bytes()).unwrap();
 }
 
+type EthPrivKeyPolicy = PrivKeyPolicy<KeyPair, ExtendedPrivateKey<secp256k1::SecretKey>>;
 pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>> + Send>;
 pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
 pub type GasStationResult = Result<GasStationData, MmError<GasStationReqErr>>;
@@ -407,69 +408,6 @@ impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
             PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(iguana)),
             PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd)),
             PrivKeyBuildPolicy::Trezor => Err(PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
-        }
-    }
-}
-
-/// An alternative to `crate::PrivKeyPolicy`, typical only for ETH coin.
-#[derive(Clone)]
-pub enum EthPrivKeyPolicy {
-    KeyPair(KeyPair),
-    HDWallet {
-        /// Derivation path of the coin.
-        /// This derivation path consists of `purpose` and `coin_type` only
-        /// where the full `BIP44` address has the following structure:
-        /// `m/purpose'/coin_type'`.
-        derivation_path: StandardHDPathToCoin,
-        activated_key_pair: KeyPair,
-        bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
-    },
-    #[cfg(target_arch = "wasm32")]
-    Metamask(EthMetamaskPolicy),
-}
-
-#[cfg(target_arch = "wasm32")]
-#[derive(Clone)]
-pub struct EthMetamaskPolicy {
-    pub(crate) public_key: H264,
-    pub(crate) public_key_uncompressed: H520,
-}
-
-impl From<KeyPair> for EthPrivKeyPolicy {
-    fn from(key_pair: KeyPair) -> Self { EthPrivKeyPolicy::KeyPair(key_pair) }
-}
-
-impl EthPrivKeyPolicy {
-    pub fn key_pair_or_err(&self) -> MmResult<&KeyPair, PrivKeyPolicyNotAllowed> {
-        match self {
-            EthPrivKeyPolicy::KeyPair(key_pair) => Ok(key_pair),
-            EthPrivKeyPolicy::HDWallet { activated_key_pair, .. } => Ok(activated_key_pair),
-            #[cfg(target_arch = "wasm32")]
-            EthPrivKeyPolicy::Metamask(_) => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
-                "`key_pair_or_err` is not supported for `EthPrivKeyPolicy::Metamask`".to_string(),
-            )),
-        }
-    }
-
-    pub fn bip39_secp_priv_key_or_err(
-        &self,
-    ) -> MmResult<&ExtendedPrivateKey<secp256k1::SecretKey>, PrivKeyPolicyNotAllowed> {
-        match self {
-            EthPrivKeyPolicy::HDWallet {
-                bip39_secp_priv_key, ..
-            } => Ok(bip39_secp_priv_key),
-            _ => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
-                "`bip39_secp_priv_key_or_err` is supported only for `EthPrivKeyPolicy::HDWallet`".to_string(),
-            )),
-        }
-    }
-
-    pub fn derivation_path_or_err(&self) -> MmResult<&StandardHDPathToCoin, PrivKeyPolicyNotAllowed> {
-        match self {
-            EthPrivKeyPolicy::HDWallet { derivation_path, .. } => Ok(derivation_path),
-            _ => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
-                "`derivation_path_or_err` is supported only for `EthPrivKeyPolicy::HDWallet`".to_string(),
-            )),
         }
     }
 }
@@ -771,7 +709,6 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     let to_addr = coin
         .address_from_str(&req.to)
         .map_to_mm(WithdrawError::InvalidAddress)?;
-    // Todo: this needs some refactoring with other let (tx_hash, tx_hex) = match coin.priv_key_policy
     let (my_balance, my_address, key_pair) = match req.from {
         Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
             let bip39_secp_priv_key = coin.priv_key_policy.bip39_secp_priv_key_or_err()?;
@@ -794,7 +731,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         None => (
             coin.my_balance().compat().await?,
             coin.my_address,
-            coin.priv_key_policy.key_pair_or_err()?.clone(),
+            coin.priv_key_policy.activated_key_or_err()?.clone(),
         ),
     };
     let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals)?;
@@ -839,7 +776,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     };
 
     let (tx_hash, tx_hex) = match coin.priv_key_policy {
-        EthPrivKeyPolicy::KeyPair(_) | EthPrivKeyPolicy::HDWallet { .. } => {
+        EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {
             // Todo: how nonce_lock should work with withdrawing from other addresses of the HD account? I will leave it for now
             let _nonce_lock = coin.nonce_lock.lock().await;
             let (nonce, _) = get_addr_nonce(my_address, coin.web3_instances.clone())
@@ -861,6 +798,11 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
             let bytes = rlp::encode(&signed);
 
             (signed.hash, BytesJson::from(bytes.to_vec()))
+        },
+        EthPrivKeyPolicy::Trezor => {
+            return MmError::err(WithdrawError::UnsupportedError(
+                "Trezor is not supported for EVM yet!".to_string(),
+            ))
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyPolicy::Metamask(_) => {
@@ -1013,7 +955,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         gas_price,
     };
 
-    let secret = eth_coin.priv_key_policy.key_pair_or_err()?.secret();
+    let secret = eth_coin.priv_key_policy.activated_key_or_err()?.secret();
     let signed = tx.sign(secret, eth_coin.chain_id);
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
@@ -1088,7 +1030,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         gas_price,
     };
 
-    let secret = eth_coin.priv_key_policy.key_pair_or_err()?.secret();
+    let secret = eth_coin.priv_key_policy.activated_key_or_err()?.secret();
     let signed = tx.sign(secret, eth_coin.chain_id);
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
@@ -1368,11 +1310,12 @@ impl SwapOps for EthCoin {
     #[inline]
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
         match self.priv_key_policy {
-            EthPrivKeyPolicy::KeyPair(ref key_pair)
+            EthPrivKeyPolicy::Iguana(ref key_pair)
             | EthPrivKeyPolicy::HDWallet {
-                activated_key_pair: ref key_pair,
+                activated_key: ref key_pair,
                 ..
             } => key_pair_from_secret(key_pair.secret().as_bytes()).expect("valid key"),
+            EthPrivKeyPolicy::Trezor => todo!(),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(_) => todo!(),
         }
@@ -1381,14 +1324,15 @@ impl SwapOps for EthCoin {
     #[inline]
     fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> {
         match self.priv_key_policy {
-            EthPrivKeyPolicy::KeyPair(ref key_pair)
+            EthPrivKeyPolicy::Iguana(ref key_pair)
             | EthPrivKeyPolicy::HDWallet {
-                activated_key_pair: ref key_pair,
+                activated_key: ref key_pair,
                 ..
             } => key_pair_from_secret(key_pair.secret().as_bytes())
                 .expect("valid key")
                 .public_slice()
                 .to_vec(),
+            EthPrivKeyPolicy::Trezor => todo!(),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(ref metamask_policy) => metamask_policy.public_key.as_bytes().to_vec(),
         }
@@ -1878,14 +1822,15 @@ impl MarketCoinOps for EthCoin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         match self.priv_key_policy {
-            EthPrivKeyPolicy::KeyPair(ref key_pair)
+            EthPrivKeyPolicy::Iguana(ref key_pair)
             | EthPrivKeyPolicy::HDWallet {
-                activated_key_pair: ref key_pair,
+                activated_key: ref key_pair,
                 ..
             } => {
                 let uncompressed_without_prefix = hex::encode(key_pair.public());
                 Ok(format!("04{}", uncompressed_without_prefix))
             },
+            EthPrivKeyPolicy::Trezor => MmError::err(UnexpectedDerivationMethod::Trezor),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(ref metamask_policy) => {
                 Ok(format!("{:02x}", metamask_policy.public_key_uncompressed))
@@ -1909,7 +1854,7 @@ impl MarketCoinOps for EthCoin {
 
     fn sign_message(&self, message: &str) -> SignatureResult<String> {
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
-        let privkey = &self.priv_key_policy.key_pair_or_err()?.secret();
+        let privkey = &self.priv_key_policy.activated_key_or_err()?.secret();
         let signature = sign(privkey, &H256::from(message_hash))?;
         Ok(format!("0x{}", signature))
     }
@@ -2180,11 +2125,12 @@ impl MarketCoinOps for EthCoin {
 
     fn display_priv_key(&self) -> Result<String, String> {
         match self.priv_key_policy {
-            EthPrivKeyPolicy::KeyPair(ref key_pair)
+            EthPrivKeyPolicy::Iguana(ref key_pair)
             | EthPrivKeyPolicy::HDWallet {
-                activated_key_pair: ref key_pair,
+                activated_key: ref key_pair,
                 ..
             } => Ok(format!("{:#02x}", key_pair.secret())),
+            EthPrivKeyPolicy::Trezor => ERR!("'display_priv_key' doesn't support Trezor yet!"),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' doesn't support MetaMask"),
         }
@@ -3049,11 +2995,12 @@ impl EthCoin {
         let coin = self.clone();
         let fut = async move {
             match coin.priv_key_policy {
-                EthPrivKeyPolicy::KeyPair(ref key_pair)
+                EthPrivKeyPolicy::Iguana(ref key_pair)
                 | EthPrivKeyPolicy::HDWallet {
-                    activated_key_pair: ref key_pair,
+                    activated_key: ref key_pair,
                     ..
                 } => sign_and_send_transaction_with_keypair(ctx, &coin, key_pair, value, action, data, gas).await,
+                EthPrivKeyPolicy::Trezor => Err(TransactionErr::Plain(ERRL!("Trezor is not supported for EVM yet!"))),
                 #[cfg(target_arch = "wasm32")]
                 EthPrivKeyPolicy::Metamask(_) => {
                     sign_and_send_transaction_with_metamask(coin, value, action, data, gas).await

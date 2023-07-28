@@ -154,7 +154,7 @@ pub trait UtxoFieldsWithIguanaSecretBuilder: UtxoCoinBuilderCommonOps {
             checksum_type: conf.checksum_type,
         };
         let key_pair = KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
-        let priv_key_policy = PrivKeyPolicy::KeyPair(key_pair);
+        let priv_key_policy = PrivKeyPolicy::Iguana(key_pair);
         build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy).await
     }
 }
@@ -185,7 +185,7 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
             KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
         let priv_key_policy = PrivKeyPolicy::HDWallet {
             derivation_path: derivation_path.clone(),
-            activated_key_pair,
+            activated_key: activated_key_pair,
             bip39_secp_priv_key: global_hd_ctx.root_priv_key().clone(),
         };
         build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy).await
@@ -201,7 +201,7 @@ async fn build_utxo_coin_fields_with_conf_and_policy<Builder>(
 where
     Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
 {
-    let key_pair = priv_key_policy.key_pair_or_err()?;
+    let key_pair = priv_key_policy.activated_key_or_err()?;
     let addr_format = builder.address_format()?;
     let my_address = Address {
         prefix: conf.pub_addr_prefix,

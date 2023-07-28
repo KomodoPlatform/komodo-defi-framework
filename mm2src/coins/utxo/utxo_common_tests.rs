@@ -80,7 +80,7 @@ pub(super) fn utxo_coin_fields_for_test(
     };
     let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
 
-    let priv_key_policy = PrivKeyPolicy::KeyPair(key_pair);
+    let priv_key_policy = PrivKeyPolicy::Iguana(key_pair);
     let derivation_method = DerivationMethod::SingleAddress(my_address);
 
     let bech32_hrp = if is_segwit_coin {

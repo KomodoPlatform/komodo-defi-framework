@@ -534,7 +534,7 @@ impl Qrc20Coin {
             .await?;
 
         let my_address = self.utxo.derivation_method.single_addr_or_err()?;
-        let key_pair = self.utxo.priv_key_policy.key_pair_or_err()?;
+        let key_pair = self.utxo.priv_key_policy.activated_key_or_err()?;
 
         let prev_script = ScriptBuilder::build_p2pkh(&my_address.hash);
         let signed = sign_tx(
