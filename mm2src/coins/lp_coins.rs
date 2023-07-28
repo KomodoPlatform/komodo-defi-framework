@@ -49,7 +49,7 @@ use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
 use common::log::{warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy,
-             Secp256k1Secret, StandardHDCoinAddress, WithHwRpcError};
+             Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin, WithHwRpcError};
 use derive_more::Display;
 use enum_from::{EnumFromStringify, EnumFromTrait};
 use ethereum_types::H256;
@@ -2727,6 +2727,12 @@ pub enum PrivKeyPolicy<T, U> {
     KeyPair(T),
     // Todo: fix withdraw for other coins (ETH, etc..)
     HDWallet {
+        /// Derivation path of the coin.
+        /// This derivation path consists of `purpose` and `coin_type` only
+        /// where the full `BIP44` address has the following structure:
+        /// `m/purpose'/coin_type'`.
+        // Todo: if I didn't merge PrivKeyPolicy between all coins then this derivation_path can be removed
+        derivation_path: StandardHDPathToCoin,
         activated_key_pair: T,
         bip39_secp_priv_key: U,
     },
@@ -2760,6 +2766,21 @@ impl<T, U> PrivKeyPolicy<T, U> {
         self.bip39_secp_priv_key().or_mm_err(|| {
             PrivKeyPolicyNotAllowed::UnsupportedMethod(
                 "`bip39_secp_priv_key_or_err` is supported only for `PrivKeyPolicy::HDWallet`".to_string(),
+            )
+        })
+    }
+
+    pub fn derivation_path(&self) -> Option<&StandardHDPathToCoin> {
+        match self {
+            PrivKeyPolicy::HDWallet { derivation_path, .. } => Some(derivation_path),
+            PrivKeyPolicy::KeyPair(_) | PrivKeyPolicy::Trezor => None,
+        }
+    }
+
+    pub fn derivation_path_or_err(&self) -> Result<&StandardHDPathToCoin, MmError<PrivKeyPolicyNotAllowed>> {
+        self.derivation_path().or_mm_err(|| {
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`derivation_path_or_err` is supported only for `PrivKeyPolicy::HDWallet`".to_string(),
             )
         })
     }

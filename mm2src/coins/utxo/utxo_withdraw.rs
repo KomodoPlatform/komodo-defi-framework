@@ -415,13 +415,7 @@ where
         let (key_pair, my_address, my_address_string) = match req.from {
             Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
                 let bip39_secp_priv_key = coin.as_ref().priv_key_policy.bip39_secp_priv_key_or_err()?;
-                // Todo: recheck the error here
-                let derivation_path = coin
-                    .as_ref()
-                    .conf
-                    .derivation_path
-                    .as_ref()
-                    .or_mm_err(|| WithdrawError::InternalError("Derivation path is not set".to_string()))?;
+                let derivation_path = coin.as_ref().priv_key_policy.derivation_path_or_err()?;
                 let secret = derive_secp256k1_secret(bip39_secp_priv_key.clone(), derivation_path, path_to_address)?;
                 // Todo: refactor this and check if there should be more fields included in coin fields etc.. (maybe save the generated addresses and private keys there also check UtxoHDWallet, etc..)
                 let private = Private {

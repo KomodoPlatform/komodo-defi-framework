@@ -27,7 +27,6 @@ async fn test_send() {
         ticker: "ETH".into(),
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
-        derivation_path: None,
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),

@@ -416,6 +416,11 @@ impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
 pub enum EthPrivKeyPolicy {
     KeyPair(KeyPair),
     HDWallet {
+        /// Derivation path of the coin.
+        /// This derivation path consists of `purpose` and `coin_type` only
+        /// where the full `BIP44` address has the following structure:
+        /// `m/purpose'/coin_type'`.
+        derivation_path: StandardHDPathToCoin,
         activated_key_pair: KeyPair,
         bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
     },
@@ -458,6 +463,15 @@ impl EthPrivKeyPolicy {
             )),
         }
     }
+
+    pub fn derivation_path_or_err(&self) -> MmResult<&StandardHDPathToCoin, PrivKeyPolicyNotAllowed> {
+        match self {
+            EthPrivKeyPolicy::HDWallet { derivation_path, .. } => Ok(derivation_path),
+            _ => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`derivation_path_or_err` is supported only for `EthPrivKeyPolicy::HDWallet`".to_string(),
+            )),
+        }
+    }
 }
 
 /// pImpl idiom.
@@ -465,11 +479,6 @@ pub struct EthCoinImpl {
     ticker: String,
     pub coin_type: EthCoinType,
     priv_key_policy: EthPrivKeyPolicy,
-    /// Derivation path of the coin.
-    /// This derivation path consists of `purpose` and `coin_type` only
-    /// where the full `BIP44` address has the following structure:
-    /// `m/purpose'/coin_type'`.
-    derivation_path: Option<StandardHDPathToCoin>,
     my_address: Address,
     sign_message_prefix: Option<String>,
     swap_contract_address: Address,
@@ -766,14 +775,9 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     let (my_balance, my_address, key_pair) = match req.from {
         Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
             let bip39_secp_priv_key = coin.priv_key_policy.bip39_secp_priv_key_or_err()?;
-            // Todo: should derivation path be part of EthPrivKeyPolicy::HDWallet same for UTXO too?
-            let derivation_path = coin.derivation_path.clone().or_mm_err(|| {
-                WithdrawError::InternalError(
-                    "Derivation path can't be None when EthPrivKeyPolicy is HDWallet!".to_string(),
-                )
-            })?;
+            let derivation_path = coin.priv_key_policy.derivation_path_or_err()?;
             // todo: these are repeated in build_address_and_priv_key_policy too
-            let raw_priv_key = derive_secp256k1_secret(bip39_secp_priv_key.clone(), &derivation_path, path_to_address)
+            let raw_priv_key = derive_secp256k1_secret(bip39_secp_priv_key.clone(), derivation_path, path_to_address)
                 .mm_err(|e| WithdrawError::InternalError(e.to_string()))?;
             let key_pair = KeyPair::from_secret_slice(raw_priv_key.as_slice())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
@@ -5233,9 +5237,6 @@ pub async fn eth_coin_from_conf_and_request(
     let (my_address, key_pair) =
         try_s!(build_address_and_priv_key_policy(conf, priv_key_policy, &path_to_address).await);
 
-    // Todo: this should be in config if EthPrivKeyPolicy is HDWallet
-    let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone()).ok();
-
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
     for node in nodes.iter() {
@@ -5319,7 +5320,6 @@ pub async fn eth_coin_from_conf_and_request(
     let coin = EthCoinImpl {
         priv_key_policy: key_pair,
         my_address,
-        derivation_path,
         coin_type,
         sign_message_prefix,
         swap_contract_address,

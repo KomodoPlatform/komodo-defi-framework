@@ -230,6 +230,11 @@ impl RpcCommonOps for TendermintCoin {
 pub enum TendermintPrivKeyPolicy {
     PrivKey(Secp256k1Secret),
     HDWallet {
+        /// Derivation path of the coin.
+        /// This derivation path consists of `purpose` and `coin_type` only
+        /// where the full `BIP44` address has the following structure:
+        /// `m/purpose'/coin_type'`.
+        derivation_path: StandardHDPathToCoin,
         activated_priv_key: Secp256k1Secret,
         bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
     },
@@ -264,6 +269,16 @@ impl TendermintPrivKeyPolicy {
             )
         })
     }
+
+    pub fn derivation_path_or_err(&self) -> Result<&StandardHDPathToCoin, MmError<PrivKeyPolicyNotAllowed>> {
+        match self {
+            TendermintPrivKeyPolicy::PrivKey(_) => Err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`derivation_path_or_err` is supported only for `TendermintPrivKeyPolicy::HDWallet`".to_string(),
+            )
+            .into()),
+            TendermintPrivKeyPolicy::HDWallet { derivation_path, .. } => Ok(derivation_path),
+        }
+    }
 }
 
 pub struct TendermintCoinImpl {
@@ -274,11 +289,6 @@ pub struct TendermintCoinImpl {
     pub account_id: AccountId,
     pub(super) account_prefix: String,
     priv_key_policy: TendermintPrivKeyPolicy,
-    /// Derivation path of the coin.
-    /// This derivation path consists of `purpose` and `coin_type` only
-    /// where the full `BIP44` address has the following structure:
-    /// `m/purpose'/coin_type'`.
-    derivation_path: Option<StandardHDPathToCoin>,
     pub(crate) decimals: u8,
     pub(super) denom: Denom,
     chain_id: ChainId,
@@ -579,7 +589,6 @@ impl TendermintCoin {
             account_id,
             account_prefix: protocol_info.account_prefix,
             priv_key_policy,
-            derivation_path: conf.derivation_path,
             decimals: protocol_info.decimals,
             denom,
             chain_id,
@@ -1985,14 +1994,9 @@ impl MmCoin for TendermintCoin {
                 // Todo: This block is repeated a lot, maybe we can make it common between coins somehow?
                 Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
                     let bip39_secp_priv_key = coin.priv_key_policy.bip39_secp_priv_key_or_err()?;
-                    // Todo: should derivation path be part of priv_key_policy?
-                    let derivation_path = coin.derivation_path.clone().or_mm_err(|| {
-                        WithdrawError::InternalError(
-                            "Derivation path can't be None when TendermintPrivKeyPolicy is HDWallet!".to_string(),
-                        )
-                    })?;
+                    let derivation_path = coin.priv_key_policy.derivation_path_or_err()?;
                     let priv_key =
-                        derive_secp256k1_secret(bip39_secp_priv_key.clone(), &derivation_path, path_to_address)
+                        derive_secp256k1_secret(bip39_secp_priv_key.clone(), derivation_path, path_to_address)
                             .mm_err(|e| WithdrawError::InternalError(e.to_string()))?;
 
                     let account_id = account_id_from_privkey(priv_key.as_slice(), &coin.account_prefix)
@@ -2867,6 +2871,7 @@ pub(crate) fn priv_key_policy_from_build_and_conf(
                 })?;
             let bip39_secp_priv_key = global_hd.root_priv_key().clone();
             Ok(TendermintPrivKeyPolicy::HDWallet {
+                derivation_path: derivation_path.clone(),
                 activated_priv_key,
                 bip39_secp_priv_key,
             })

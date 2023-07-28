@@ -1,6 +1,6 @@
 use super::*;
 use common::executor::AbortedError;
-use crypto::{CryptoCtxError, StandardHDCoinAddress, StandardHDPathToCoin};
+use crypto::{CryptoCtxError, StandardHDCoinAddress};
 use enum_from::EnumFromTrait;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
@@ -24,8 +24,6 @@ pub enum EthActivationV2Error {
     UnreachableNodes(String),
     #[display(fmt = "Enable request for ETH coin must have at least 1 node")]
     AtLeastOneNodeRequired,
-    #[display(fmt = "'derivation_path' field is not found in config")]
-    DerivationPathIsNotSet,
     #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
     ErrorDeserializingDerivationPath(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
@@ -153,9 +151,6 @@ impl EthCoin {
 
         let conf = coin_conf(&ctx, &ticker);
 
-        // Todo: this should be in config if EthPrivKeyPolicy is HDWallet
-        let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone()).ok();
-
         let decimals = match conf["decimals"].as_u64() {
             None | Some(0) => get_token_decimals(&self.web3, protocol.token_addr)
                 .await
@@ -197,7 +192,6 @@ impl EthCoin {
         let token = EthCoinImpl {
             priv_key_policy: self.priv_key_policy.clone(),
             my_address: self.my_address,
-            derivation_path,
             coin_type: EthCoinType::Erc20 {
                 platform: protocol.platform,
                 token_addr: protocol.token_addr,
@@ -256,9 +250,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
         build_address_and_priv_key_policy(conf, priv_key_policy, &req.path_to_address).await?;
     let my_address_str = checksum_address(&format!("{:02x}", my_address));
 
-    // Todo: this should be in config if EthPrivKeyPolicy is HDWallet
-    let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone()).ok();
-
     let chain_id = conf["chain_id"].as_u64();
 
     let (web3, web3_instances) = match (req.rpc_mode, &priv_key_policy) {
@@ -309,7 +300,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let coin = EthCoinImpl {
         priv_key_policy,
         my_address,
-        derivation_path,
         coin_type: EthCoinType::Eth,
         sign_message_prefix,
         swap_contract_address: req.swap_contract_address,
@@ -351,9 +341,8 @@ pub(crate) async fn build_address_and_priv_key_policy(
         },
         EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
             // Consider storing `derivation_path` at `EthCoinImpl`.
-            let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone())
+            let derivation_path = json::from_value(conf["derivation_path"].clone())
                 .map_to_mm(|e| EthActivationV2Error::ErrorDeserializingDerivationPath(e.to_string()))?;
-            let derivation_path = derivation_path.or_mm_err(|| EthActivationV2Error::DerivationPathIsNotSet)?;
             let raw_priv_key = global_hd_ctx
                 .derive_secp256k1_secret(&derivation_path, path_to_address)
                 .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
@@ -361,6 +350,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
             let bip39_secp_priv_key = global_hd_ctx.root_priv_key().clone();
             Ok((activated_key_pair.address(), EthPrivKeyPolicy::HDWallet {
+                derivation_path,
                 activated_key_pair,
                 bip39_secp_priv_key,
             }))
