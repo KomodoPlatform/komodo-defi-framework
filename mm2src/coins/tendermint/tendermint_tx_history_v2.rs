@@ -73,6 +73,7 @@ impl CoinCapabilities for TendermintCoin {}
 
 #[async_trait]
 impl CoinWithTxHistoryV2 for TendermintCoin {
+    // Todo: enable tx history for activated hd account address
     fn history_wallet_id(&self) -> WalletId { WalletId::new(self.ticker().into()) }
 
     async fn get_tx_history_filters(

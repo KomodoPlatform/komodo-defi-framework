@@ -748,7 +748,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         .address_from_str(&req.to)
         .map_to_mm(WithdrawError::InvalidAddress)?;
     // Todo: from HDWalletAddress shouldn't be allowed if privatekey policy is EthPrivKeyPolicy::KeyPair
-    // Todo: this needs some refactoring with other let (tx_hash, tx_hex) = match coin.priv_key_policy {
+    // Todo: this needs some refactoring with other let (tx_hash, tx_hex) = match coin.priv_key_policy { or we can add bip39_secp_priv_key_or_err same for tendermint and others
     let (my_balance, my_address, key_pair) = match req.from {
         Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
             let bip39_secp_priv_key = match &coin.priv_key_policy {

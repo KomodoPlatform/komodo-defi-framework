@@ -66,6 +66,7 @@ fn test_tendermint_activation_without_balance() {
     assert!(result.result.tokens_tickers.unwrap().is_empty());
 }
 
+// Todo: tendermint HD wallet withdraw test
 #[test]
 fn test_tendermint_withdraw() {
     let coins = json!([atom_testnet_conf()]);
@@ -177,6 +178,7 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
     assert_eq!(tx_details.fee_details["gas_limit"], 150000);
 }
 
+// Todo: IBC HD wallet withdraw test
 #[test]
 fn test_tendermint_ibc_withdraw() {
     const IBC_SOURCE_CHANNEL: &str = "channel-81";

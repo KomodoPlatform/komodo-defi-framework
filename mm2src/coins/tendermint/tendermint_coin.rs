@@ -27,9 +27,10 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
             VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
             WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
+use bip32::ExtendedPrivateKey;
 use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
@@ -49,7 +50,8 @@ use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
-use crypto::{privkey::key_pair_from_secret, Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin};
+use crypto::privkey::key_pair_from_secret;
+use crypto::{derive_secp256k1_secret, Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin};
 use derive_more::Display;
 use futures::future::try_join_all;
 use futures::lock::Mutex as AsyncMutex;
@@ -224,6 +226,44 @@ impl RpcCommonOps for TendermintCoin {
     }
 }
 
+#[derive(Clone)]
+pub enum TendermintPrivKeyPolicy {
+    PrivKey(Secp256k1Secret),
+    HDWallet {
+        activated_priv_key: Secp256k1Secret,
+        bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
+    },
+}
+
+// Todo: we can probably merge PrivKeyPolicy and make an enum for different coins priv_key policies
+impl TendermintPrivKeyPolicy {
+    pub fn priv_key(&self) -> &Secp256k1Secret {
+        match self {
+            TendermintPrivKeyPolicy::PrivKey(priv_key) => priv_key,
+            TendermintPrivKeyPolicy::HDWallet { activated_priv_key, .. } => activated_priv_key,
+        }
+    }
+
+    pub fn bip39_secp_priv_key(&self) -> Option<&ExtendedPrivateKey<secp256k1::SecretKey>> {
+        match self {
+            TendermintPrivKeyPolicy::PrivKey(_) => None,
+            TendermintPrivKeyPolicy::HDWallet {
+                ref bip39_secp_priv_key,
+                ..
+            } => Some(bip39_secp_priv_key),
+        }
+    }
+
+    // Todo: this should be used in utxo withdraw too
+    pub fn bip39_secp_priv_key_or_err(
+        &self,
+    ) -> Result<&ExtendedPrivateKey<secp256k1::SecretKey>, MmError<PrivKeyPolicyNotAllowed>> {
+        self.bip39_secp_priv_key()
+            // Todo: change the error HardwareWalletNotSupported
+            .or_mm_err(|| PrivKeyPolicyNotAllowed::HardwareWalletNotSupported)
+    }
+}
+
 pub struct TendermintCoinImpl {
     ticker: String,
     /// As seconds
@@ -231,7 +271,12 @@ pub struct TendermintCoinImpl {
     /// My address
     pub account_id: AccountId,
     pub(super) account_prefix: String,
-    priv_key: Vec<u8>,
+    priv_key_policy: TendermintPrivKeyPolicy,
+    /// Derivation path of the coin.
+    /// This derivation path consists of `purpose` and `coin_type` only
+    /// where the full `BIP44` address has the following structure:
+    /// `m/purpose'/coin_type'`.
+    derivation_path: Option<StandardHDPathToCoin>,
     pub(crate) decimals: u8,
     pub(super) denom: Denom,
     chain_id: ChainId,
@@ -474,7 +519,7 @@ impl TendermintCoin {
         protocol_info: TendermintProtocolInfo,
         rpc_urls: Vec<String>,
         tx_history: bool,
-        priv_key_policy: PrivKeyBuildPolicy,
+        priv_key_build_policy: PrivKeyBuildPolicy,
     ) -> MmResult<Self, TendermintInitError> {
         if rpc_urls.is_empty() {
             return MmError::err(TendermintInitError {
@@ -483,7 +528,8 @@ impl TendermintCoin {
             });
         }
 
-        let priv_key = secret_from_priv_key_policy(&conf, &ticker, priv_key_policy)?;
+        let priv_key_policy = priv_key_policy_from_build_and_conf(&conf, &ticker, priv_key_build_policy)?;
+        let priv_key = priv_key_policy.priv_key();
 
         let account_id =
             account_id_from_privkey(priv_key.as_slice(), &protocol_info.account_prefix).mm_err(|kind| {
@@ -530,7 +576,8 @@ impl TendermintCoin {
             ticker,
             account_id,
             account_prefix: protocol_info.account_prefix,
-            priv_key: priv_key.to_vec(),
+            priv_key_policy,
+            derivation_path: conf.derivation_path,
             decimals: protocol_info.decimals,
             denom,
             chain_id,
@@ -806,9 +853,12 @@ impl TendermintCoin {
     // We must simulate the tx on rpc nodes in order to calculate network fee.
     // Right now cosmos doesn't expose any of gas price and fee informations directly.
     // Therefore, we can call SimulateRequest or CheckTx(doesn't work with using Abci interface) to get used gas or fee itself.
-    pub(super) fn gen_simulated_tx(
+    // Todo: avoid all these functions duplications
+    pub(super) fn gen_simulated_tx_with_priv_key(
         &self,
+        // Todo: should this include the private key for better structure?
         account_info: BaseAccount,
+        priv_key: &Secp256k1Secret,
         tx_payload: Any,
         timeout_height: u64,
         memo: String,
@@ -820,11 +870,30 @@ impl TendermintCoin {
 
         let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
 
-        let signkey = SigningKey::from_bytes(&self.priv_key)?;
+        let signkey = SigningKey::from_bytes(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
         sign_doc.sign(&signkey)?.to_bytes()
+    }
+
+    // We must simulate the tx on rpc nodes in order to calculate network fee.
+    // Right now cosmos doesn't expose any of gas price and fee informations directly.
+    // Therefore, we can call SimulateRequest or CheckTx(doesn't work with using Abci interface) to get used gas or fee itself.
+    pub(super) fn gen_simulated_tx(
+        &self,
+        account_info: BaseAccount,
+        tx_payload: Any,
+        timeout_height: u64,
+        memo: String,
+    ) -> cosmrs::Result<Vec<u8>> {
+        self.gen_simulated_tx_with_priv_key(
+            account_info,
+            self.priv_key_policy.priv_key(),
+            tx_payload,
+            timeout_height,
+            memo,
+        )
     }
 
     /// This is converted from irismod and cosmos-sdk source codes written in golang.
@@ -954,8 +1023,10 @@ impl TendermintCoin {
     }
 
     #[allow(deprecated)]
-    pub(super) async fn calculate_fee_amount_as_u64(
+    pub(super) async fn calculate_account_fee_amount_as_u64(
         &self,
+        account_id: &AccountId,
+        priv_key: &Secp256k1Secret,
         msg: Any,
         timeout_height: u64,
         memo: String,
@@ -964,9 +1035,9 @@ impl TendermintCoin {
         let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
 
         let (response, raw_response) = loop {
-            let account_info = self.my_account_info().await?;
+            let account_info = self.account_info(account_id).await?;
             let tx_bytes = self
-                .gen_simulated_tx(account_info, msg.clone(), timeout_height, memo.clone())
+                .gen_simulated_tx_with_priv_key(account_info, priv_key, msg.clone(), timeout_height, memo.clone())
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -1011,10 +1082,29 @@ impl TendermintCoin {
         Ok(((gas.gas_used as f64 * 1.5) * gas_price).ceil() as u64)
     }
 
-    pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
+    #[allow(deprecated)]
+    pub(super) async fn calculate_fee_amount_as_u64(
+        &self,
+        msg: Any,
+        timeout_height: u64,
+        memo: String,
+        withdraw_fee: Option<WithdrawFee>,
+    ) -> MmResult<u64, TendermintCoinRpcError> {
+        self.calculate_account_fee_amount_as_u64(
+            &self.account_id,
+            self.priv_key_policy.priv_key(),
+            msg,
+            timeout_height,
+            memo,
+            withdraw_fee,
+        )
+        .await
+    }
+
+    pub(super) async fn account_info(&self, account_id: &AccountId) -> MmResult<BaseAccount, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_QUERY_ACCOUNT_PATH).expect("valid path");
         let request = QueryAccountRequest {
-            address: self.account_id.to_string(),
+            address: account_id.to_string(),
         };
         let request = AbciRequest::new(
             Some(path),
@@ -1046,10 +1136,18 @@ impl TendermintCoin {
         Ok(base_account)
     }
 
-    pub(super) async fn balance_for_denom(&self, denom: String) -> MmResult<u64, TendermintCoinRpcError> {
+    pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
+        self.account_info(&self.account_id).await
+    }
+
+    pub(super) async fn account_balance_for_denom(
+        &self,
+        account_id: &AccountId,
+        denom: String,
+    ) -> MmResult<u64, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_QUERY_BALANCE_PATH).expect("valid path");
         let request = QueryBalanceRequest {
-            address: self.account_id.to_string(),
+            address: account_id.to_string(),
             denom,
         };
         let request = AbciRequest::new(
@@ -1067,6 +1165,10 @@ impl TendermintCoin {
             .amount
             .parse()
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
+    }
+
+    pub(super) async fn balance_for_denom(&self, denom: String) -> MmResult<u64, TendermintCoinRpcError> {
+        self.account_balance_for_denom(&self.account_id, denom).await
     }
 
     fn gen_create_htlc_tx(
@@ -1116,6 +1218,22 @@ impl TendermintCoin {
         })
     }
 
+    pub(super) fn any_to_signed_raw_tx_with_priv_key(
+        &self,
+        priv_key: &Secp256k1Secret,
+        account_info: BaseAccount,
+        tx_payload: Any,
+        fee: Fee,
+        timeout_height: u64,
+        memo: String,
+    ) -> cosmrs::Result<Raw> {
+        let signkey = SigningKey::from_bytes(priv_key.as_slice())?;
+        let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
+        let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
+        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
+        sign_doc.sign(&signkey)
+    }
+
     pub(super) fn any_to_signed_raw_tx(
         &self,
         account_info: BaseAccount,
@@ -1124,11 +1242,14 @@ impl TendermintCoin {
         timeout_height: u64,
         memo: String,
     ) -> cosmrs::Result<Raw> {
-        let signkey = SigningKey::from_bytes(&self.priv_key)?;
-        let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
-        let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
-        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
-        sign_doc.sign(&signkey)
+        self.any_to_signed_raw_tx_with_priv_key(
+            self.priv_key_policy.priv_key(),
+            account_info,
+            tx_payload,
+            fee,
+            timeout_height,
+            memo,
+        )
     }
 
     pub fn add_activated_token_info(&self, ticker: String, decimals: u8, denom: Denom) {
@@ -1599,15 +1720,25 @@ impl TendermintCoin {
         })
     }
 
+    pub(super) async fn get_account_balance_as_unsigned_and_decimal(
+        &self,
+        account_id: &AccountId,
+        denom: &Denom,
+        decimals: u8,
+    ) -> MmResult<(u64, BigDecimal), TendermintCoinRpcError> {
+        let denom_ubalance = self.account_balance_for_denom(account_id, denom.to_string()).await?;
+        let denom_balance_dec = big_decimal_from_sat_unsigned(denom_ubalance, decimals);
+
+        Ok((denom_ubalance, denom_balance_dec))
+    }
+
     pub(super) async fn get_balance_as_unsigned_and_decimal(
         &self,
         denom: &Denom,
         decimals: u8,
     ) -> MmResult<(u64, BigDecimal), TendermintCoinRpcError> {
-        let denom_ubalance = self.balance_for_denom(denom.to_string()).await?;
-        let denom_balance_dec = big_decimal_from_sat_unsigned(denom_ubalance, decimals);
-
-        Ok((denom_ubalance, denom_balance_dec))
+        self.get_account_balance_as_unsigned_and_decimal(&self.account_id, denom, decimals)
+            .await
     }
 
     async fn request_tx(&self, hash: String) -> MmResult<Tx, TendermintCoinRpcError> {
@@ -1848,8 +1979,35 @@ impl MmCoin for TendermintCoin {
                 )));
             }
 
+            let (account_id, priv_key) = match req.from {
+                // Todo: This block is repeated a lot, maybe we can make it common between coins somehow?
+                Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+                    let bip39_secp_priv_key = coin.priv_key_policy.bip39_secp_priv_key_or_err()?;
+                    // Todo: should derivation path be part of priv_key_policy?
+                    let derivation_path = coin.derivation_path.clone().or_mm_err(|| {
+                        WithdrawError::InternalError(
+                            "Derivation path can't be None when TendermintPrivKeyPolicy is HDWallet!".to_string(),
+                        )
+                    })?;
+                    let priv_key =
+                        derive_secp256k1_secret(bip39_secp_priv_key.clone(), &derivation_path, path_to_address)
+                            .mm_err(|e| WithdrawError::InternalError(e.to_string()))?;
+
+                    let account_id = account_id_from_privkey(priv_key.as_slice(), &coin.account_prefix)
+                        .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    (account_id, priv_key)
+                },
+                Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
+                    return MmError::err(WithdrawError::UnexpectedFromAddress(
+                        "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
+                            .to_string(),
+                    ))
+                },
+                None => (coin.account_id.clone(), *coin.priv_key_policy.priv_key()),
+            };
+
             let (balance_denom, balance_dec) = coin
-                .get_balance_as_unsigned_and_decimal(&coin.denom, coin.decimals())
+                .get_account_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
                 .await?;
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
@@ -1869,14 +2027,14 @@ impl MmCoin for TendermintCoin {
                 });
             }
 
-            let received_by_me = if to_address == coin.account_id {
+            let received_by_me = if to_address == account_id {
                 amount_dec
             } else {
                 BigDecimal::default()
             };
 
             let msg_send = MsgSend {
-                from_address: coin.account_id.clone(),
+                from_address: account_id.clone(),
                 to_address: to_address.clone(),
                 amount: vec![Coin {
                     denom: coin.denom.clone(),
@@ -1899,7 +2057,14 @@ impl MmCoin for TendermintCoin {
             let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = coin
-                .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone(), req.fee)
+                .calculate_account_fee_amount_as_u64(
+                    &account_id,
+                    &priv_key,
+                    msg_send.clone(),
+                    timeout_height,
+                    memo.clone(),
+                    req.fee,
+                )
                 .await?;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
@@ -1934,7 +2099,7 @@ impl MmCoin for TendermintCoin {
             };
 
             let msg_send = MsgSend {
-                from_address: coin.account_id.clone(),
+                from_address: account_id.clone(),
                 to_address,
                 amount: vec![Coin {
                     denom: coin.denom.clone(),
@@ -1944,9 +2109,16 @@ impl MmCoin for TendermintCoin {
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let account_info = coin.my_account_info().await?;
+            let account_info = coin.account_info(&account_id).await?;
             let tx_raw = coin
-                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, memo.clone())
+                .any_to_signed_raw_tx_with_priv_key(
+                    &priv_key,
+                    account_info,
+                    msg_send,
+                    fee,
+                    timeout_height,
+                    memo.clone(),
+                )
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -1958,7 +2130,7 @@ impl MmCoin for TendermintCoin {
             Ok(TransactionDetails {
                 tx_hash: hex::encode_upper(hash.as_slice()),
                 tx_hex: tx_bytes.into(),
-                from: vec![coin.account_id.to_string()],
+                from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
                 spent_by_me: total_amount.clone(),
@@ -2121,7 +2293,8 @@ impl MarketCoinOps for TendermintCoin {
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        let key = SigningKey::from_bytes(&self.priv_key).expect("privkey validity is checked on coin creation");
+        let key = SigningKey::from_bytes(self.priv_key_policy.priv_key().as_slice())
+            .expect("privkey validity is checked on coin creation");
         Ok(key.public_key().to_string())
     }
 
@@ -2301,7 +2474,7 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn display_priv_key(&self) -> Result<String, String> { Ok(hex::encode(&self.priv_key)) }
+    fn display_priv_key(&self) -> Result<String, String> { Ok(self.priv_key_policy.priv_key().to_string()) }
 
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.decimals) }
 
@@ -2540,7 +2713,7 @@ impl SwapOps for TendermintCoin {
 
     #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
-        key_pair_from_secret(&self.priv_key).expect("valid priv key")
+        key_pair_from_secret(self.priv_key_policy.priv_key().as_ref()).expect("valid priv key")
     }
 
     #[inline]
@@ -2671,24 +2844,30 @@ impl WatcherOps for TendermintCoin {
 /// Processes the given `priv_key_policy` and returns corresponding `Secp256k1Secret`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
 /// or [`PrivKeyBuildPolicy::GlobalHDAccount`], otherwise returns `PrivKeyPolicyNotAllowed` error.
-pub(crate) fn secret_from_priv_key_policy(
+pub(crate) fn priv_key_policy_from_build_and_conf(
     conf: &TendermintConf,
     ticker: &str,
-    priv_key_policy: PrivKeyBuildPolicy,
-) -> MmResult<Secp256k1Secret, TendermintInitError> {
-    match priv_key_policy {
-        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(iguana),
+    priv_key_build_policy: PrivKeyBuildPolicy,
+) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
+    match priv_key_build_policy {
+        // Todo: refactor errors
+        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(TendermintPrivKeyPolicy::PrivKey(iguana)),
         PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
             let derivation_path = conf.derivation_path.as_ref().or_mm_err(|| TendermintInitError {
                 ticker: ticker.to_string(),
                 kind: TendermintInitErrorKind::DerivationPathIsNotSet,
             })?;
-            global_hd
+            let activated_priv_key = global_hd
                 .derive_secp256k1_secret(derivation_path, &conf.path_to_address)
                 .mm_err(|e| TendermintInitError {
                     ticker: ticker.to_string(),
                     kind: TendermintInitErrorKind::InvalidPrivKey(e.to_string()),
-                })
+                })?;
+            let bip39_secp_priv_key = global_hd.root_priv_key().clone();
+            Ok(TendermintPrivKeyPolicy::HDWallet {
+                activated_priv_key,
+                bip39_secp_priv_key,
+            })
         },
         PrivKeyBuildPolicy::Trezor => {
             let kind =
