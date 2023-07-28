@@ -40,20 +40,16 @@ impl<Ctx: Send + 'static, Result: 'static> StateMachine<Ctx, Result> {
 
  */
 
-pub trait TransitionFrom<Prev> {}
+pub trait TransitionFrom<S: StateMachineTrait, Prev: State<S>>: State<S> {}
 
 #[async_trait]
-pub trait StateMachineTrait
-where
-    (dyn State<Machine = Self> + 'static): State,
-{
+pub trait StateMachineTrait {
     type Ctx: Send;
     type Result;
 
     fn ctx_mut(&mut self) -> &mut Self::Ctx;
 
-    async fn run(mut self, initial_state: impl State<Machine = Self>) -> Self::Result {
-        let mut state: Box<dyn State<Machine = Self>> = Box::new(initial_state);
+    async fn run(mut self: Box<Self>, mut state: Box<dyn State<Self>>) -> Self::Result {
         loop {
             let result = state.on_changed(self.ctx_mut()).await;
             let next_state = match result {
@@ -67,73 +63,58 @@ where
 }
 
 /// Prevent implementing [`TransitionFrom<T>`] for `Next` If `T` implements `LastState` already.
-impl<T, Next> !TransitionFrom<T> for Next
+impl<S: StateMachineTrait, T, Next> !TransitionFrom<S, T> for Next
 where
-    T: LastState,
+    T: LastState<S>,
     // this bound is required to prevent conflicting implementation with `impl<T> !TransitionFrom<T> for T`.
     (T, Next): NotSame,
 {
 }
 
 /// Prevent implementing [`TransitionFrom<T>`] for itself.
-impl<T> !TransitionFrom<T> for T {}
+impl<S: StateMachineTrait, T> !TransitionFrom<S, T> for T {}
 
 #[async_trait]
-pub trait State: Send + 'static {
-    type Machine: StateMachineTrait;
-
+pub trait State<T: StateMachineTrait>: Send + 'static {
     /// An action is called on entering this state.
     /// To change the state to another one in the end of processing, use [`StateExt::change_state`].
     /// For example:
     /// ```rust
     /// return Self::change_state(next_state);
     /// ```
-    async fn on_changed(
-        self: Box<Self>,
-        ctx: &mut <Self::Machine as StateMachineTrait>::Ctx,
-    ) -> StateResult<Self::Machine>;
+    async fn on_changed(self: Box<Self>, ctx: &mut T::Ctx) -> StateResult<T>;
 }
 
-pub trait StateExt {
+pub trait StateExt<T: StateMachineTrait> {
     /// Change the state to the `next_state`.
     /// This function performs the compile-time validation whether this state can transition to the `Next` state,
     /// i.e checks if `Next` implements [`Transition::from(ThisState)`].
-    fn change_state<Next>(next_state: Next) -> StateResult<Next::Machine>
+    fn change_state<Next>(next_state: Next) -> StateResult<T>
     where
         Self: Sized,
-        Next: State + TransitionFrom<Self>,
+        Next: State<T> + TransitionFrom<T, Self>,
     {
         StateResult::ChangeState(ChangeGuard::next(next_state))
     }
 }
 
-impl<T: State> StateExt for T {}
+impl<S: StateMachineTrait, T: State<S>> StateExt<S> for T {}
 
 #[async_trait]
-pub trait LastState: Send + 'static {
-    type Machine: StateMachineTrait;
-
-    async fn on_changed(
-        self: Box<Self>,
-        ctx: &mut <Self::Machine as StateMachineTrait>::Ctx,
-    ) -> <Self::Machine as StateMachineTrait>::Result;
+pub trait LastState<T: StateMachineTrait>: Send + 'static {
+    async fn on_changed(self: Box<Self>, ctx: &mut T::Ctx) -> T::Result;
 }
 
 #[async_trait]
-impl<T: LastState> State for T {
-    type Machine = T::Machine;
-
+impl<S: StateMachineTrait, T: LastState<S>> State<S> for T {
     /// The last state always returns the result of the state machine calculations.
-    async fn on_changed(self: Box<Self>, ctx: &mut <T::Machine as StateMachineTrait>::Ctx) -> StateResult<T::Machine> {
+    async fn on_changed(self: Box<Self>, ctx: &mut S::Ctx) -> StateResult<S> {
         let result = LastState::on_changed(self, ctx).await;
         StateResult::Finish(ResultGuard::new(result))
     }
 }
 
-pub enum StateResult<Machine: StateMachineTrait + ?Sized>
-where
-    (dyn State<Machine = Machine> + 'static): State,
-{
+pub enum StateResult<Machine: StateMachineTrait + ?Sized> {
     ChangeState(ChangeGuard<Machine>),
     Finish(ResultGuard<Machine::Result>),
 }
@@ -141,17 +122,14 @@ where
 /* vvv The access guards that prevents the user using this pattern from entering an invalid state vvv */
 
 /// An instance of `ChangeGuard` can be initialized within `state_machine` module only.
-pub struct ChangeGuard<Machine: StateMachineTrait + ?Sized>
-where
-    (dyn State<Machine = Machine> + 'static): State,
-{
+pub struct ChangeGuard<Machine: StateMachineTrait + ?Sized> {
     /// The private field.
-    next: Box<dyn State<Machine = Machine>>,
+    next: Box<dyn State<Machine>>,
 }
 
 impl<Machine: StateMachineTrait + 'static> ChangeGuard<Machine> {
     /// The private constructor.
-    fn next<Next: State<Machine = Machine>>(next_state: Next) -> Self {
+    fn next<Next: State<Machine>>(next_state: Next) -> Self {
         ChangeGuard {
             next: Box::new(next_state),
         }
@@ -252,31 +230,25 @@ mod tests {
         error: ErrorType,
     }
 
-    impl TransitionFrom<ReadingState> for ParsingState {}
-    impl TransitionFrom<ParsingState> for AuthenticationState {}
-    impl TransitionFrom<ParsingState> for ErrorState {}
-    impl TransitionFrom<AuthenticationState> for SuccessfulState {}
-    impl TransitionFrom<AuthenticationState> for ErrorState {}
+    impl TransitionFrom<AuthStateMachine, ReadingState> for ParsingState {}
+    impl TransitionFrom<AuthStateMachine, ParsingState> for AuthenticationState {}
+    impl TransitionFrom<AuthStateMachine, ParsingState> for ErrorState {}
+    impl TransitionFrom<AuthStateMachine, AuthenticationState> for SuccessfulState {}
+    impl TransitionFrom<AuthStateMachine, AuthenticationState> for ErrorState {}
 
     #[async_trait]
-    impl LastState for SuccessfulState {
-        type Machine = AuthStateMachine;
-
+    impl LastState<AuthStateMachine> for SuccessfulState {
         async fn on_changed(self: Box<Self>, _ctx: &mut AuthCtx) -> AuthResult { Ok(self.user_id) }
     }
 
     #[async_trait]
-    impl LastState for ErrorState {
-        type Machine = AuthStateMachine;
-
+    impl LastState<AuthStateMachine> for ErrorState {
         async fn on_changed(self: Box<Self>, _ctx: &mut AuthCtx) -> AuthResult { Err(self.error) }
     }
 
     #[async_trait]
-    impl State for ReadingState {
-        type Machine = AuthStateMachine;
-
-        async fn on_changed(self: Box<Self>, _ctx: &mut AuthCtx) -> StateResult<Self::Machine> {
+    impl State<AuthStateMachine> for ReadingState {
+        async fn on_changed(self: Box<Self>, _ctx: &mut AuthCtx) -> StateResult<AuthStateMachine> {
             let mut line = String::with_capacity(80);
             while let Some(ch) = self.rx.next().await {
                 line.push(ch);
@@ -287,10 +259,8 @@ mod tests {
     }
 
     #[async_trait]
-    impl State for ParsingState {
-        type Machine = AuthStateMachine;
-
-        async fn on_changed(self: Box<Self>, _ctx: &mut AuthCtx) -> StateResult<Self::Machine> {
+    impl State<AuthStateMachine> for ParsingState {
+        async fn on_changed(self: Box<Self>, _ctx: &mut AuthCtx) -> StateResult<AuthStateMachine> {
             // parse the line into two chunks: (login, password)
             let chunks: Vec<_> = self.line.split(' ').collect();
             if chunks.len() == 2 {
@@ -309,10 +279,8 @@ mod tests {
     }
 
     #[async_trait]
-    impl State for AuthenticationState {
-        type Machine = AuthStateMachine;
-
-        async fn on_changed(self: Box<Self>, ctx: &mut AuthCtx) -> StateResult<Self::Machine> {
+    impl State<AuthStateMachine> for AuthenticationState {
+        async fn on_changed(self: Box<Self>, ctx: &mut AuthCtx) -> StateResult<AuthStateMachine> {
             let credentials = (self.login, self.password);
             match ctx.users.get(&credentials) {
                 Some(user_id) => Self::change_state(SuccessfulState { user_id: *user_id }),
@@ -341,7 +309,7 @@ mod tests {
         let fut = async move {
             let initial_state: ReadingState = ReadingState { rx };
             let mut state_machine = AuthStateMachine { ctx: AuthCtx { users } };
-            state_machine.run(initial_state).await
+            Box::new(state_machine).run(Box::new(initial_state)).await
         };
         block_on(fut)
     }

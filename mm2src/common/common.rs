@@ -18,7 +18,6 @@
 #![feature(negative_impls)]
 #![feature(auto_traits)]
 #![feature(drain_filter)]
-#![feature(unsized_locals, unsized_fn_params)]
 
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate gstuff;
