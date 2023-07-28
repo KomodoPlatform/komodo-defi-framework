@@ -2442,6 +2442,10 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: Ta
             Some(FoundSwapTxSpend::Spent(maker_payment_spend_tx)),
             Some(FoundSwapTxSpend::Spent(taker_payment_spend_tx)),
         ) => {
+            swap.taker_coin
+                .validate_watcher_spend(maker_payment_spend_tx.clone())
+                .map_err(|e| e.to_string())?;
+
             if saved.is_finished() {
                 saved.events.pop();
             }
@@ -2501,6 +2505,10 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: Ta
         },
         (Some(FoundSwapTxSpend::Refunded(_)), Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx)))
         | (None, Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx))) => {
+            swap.taker_coin
+                .validate_watcher_spend(taker_payment_refund_tx.clone())
+                .map_err(|e| e.to_string())?;
+
             if saved.is_finished() {
                 saved.events.pop();
             }

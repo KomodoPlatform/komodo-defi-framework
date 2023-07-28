@@ -1461,6 +1461,10 @@ impl WatcherOps for EthCoin {
         // 1.Validate if taker fee is old
     }
 
+    fn validate_watcher_spend(&self, _tx: TransactionEnum) -> Result<(), MmError<ValidatePaymentError>> {
+        unimplemented!();
+    }
+
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         let unsigned: UnverifiedTransaction = try_f!(rlp::decode(&input.payment_tx));
         let tx =

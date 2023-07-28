@@ -543,6 +543,11 @@ impl WatcherOps for UtxoStandardCoin {
     }
 
     #[inline]
+    fn validate_watcher_spend(&self, tx: TransactionEnum) -> Result<(), MmError<ValidatePaymentError>> {
+        utxo_common::validate_watcher_spend(self, tx)
+    }
+
+    #[inline]
     async fn watcher_search_for_swap_tx_spend(
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,

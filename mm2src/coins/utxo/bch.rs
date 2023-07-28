@@ -1086,6 +1086,11 @@ impl WatcherOps for BchCoin {
         utxo_common::watcher_validate_taker_payment(self, input)
     }
 
+    #[inline]
+    fn validate_watcher_spend(&self, tx: TransactionEnum) -> Result<(), MmError<ValidatePaymentError>> {
+        utxo_common::validate_watcher_spend(self, tx)
+    }
+
     async fn watcher_search_for_swap_tx_spend(
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,

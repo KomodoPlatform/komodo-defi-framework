@@ -270,6 +270,10 @@ impl WatcherOps for TestCoin {
         unimplemented!();
     }
 
+    fn validate_watcher_spend(&self, tx: TransactionEnum) -> Result<(), MmError<ValidatePaymentError>> {
+        unimplemented!()
+    }
+
     async fn watcher_search_for_swap_tx_spend(
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,
