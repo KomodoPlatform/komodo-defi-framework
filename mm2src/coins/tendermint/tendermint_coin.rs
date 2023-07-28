@@ -258,9 +258,11 @@ impl TendermintPrivKeyPolicy {
     pub fn bip39_secp_priv_key_or_err(
         &self,
     ) -> Result<&ExtendedPrivateKey<secp256k1::SecretKey>, MmError<PrivKeyPolicyNotAllowed>> {
-        self.bip39_secp_priv_key()
-            // Todo: change the error HardwareWalletNotSupported
-            .or_mm_err(|| PrivKeyPolicyNotAllowed::HardwareWalletNotSupported)
+        self.bip39_secp_priv_key().or_mm_err(|| {
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`bip39_secp_priv_key_or_err` is supported only for `TendermintPrivKeyPolicy::HDWallet`".to_string(),
+            )
+        })
     }
 }
 

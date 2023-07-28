@@ -5,6 +5,7 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::str::FromStr;
 
+// Todo: should those be used in StandardHDCoinAddress?? Similar to StandardHDPathToCoin??
 pub type HardenedValue = AnyValue<true>;
 pub type NonHardenedValue = AnyValue<false>;
 

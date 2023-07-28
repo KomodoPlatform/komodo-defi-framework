@@ -440,7 +440,22 @@ impl EthPrivKeyPolicy {
             EthPrivKeyPolicy::KeyPair(key_pair) => Ok(key_pair),
             EthPrivKeyPolicy::HDWallet { activated_key_pair, .. } => Ok(activated_key_pair),
             #[cfg(target_arch = "wasm32")]
-            EthPrivKeyPolicy::Metamask(_) => MmError::err(PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
+            EthPrivKeyPolicy::Metamask(_) => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`key_pair_or_err` is not supported for `EthPrivKeyPolicy::Metamask`".to_string(),
+            )),
+        }
+    }
+
+    pub fn bip39_secp_priv_key_or_err(
+        &self,
+    ) -> MmResult<&ExtendedPrivateKey<secp256k1::SecretKey>, PrivKeyPolicyNotAllowed> {
+        match self {
+            EthPrivKeyPolicy::HDWallet {
+                bip39_secp_priv_key, ..
+            } => Ok(bip39_secp_priv_key),
+            _ => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`bip39_secp_priv_key_or_err` is supported only for `EthPrivKeyPolicy::HDWallet`".to_string(),
+            )),
         }
     }
 }
@@ -747,21 +762,10 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     let to_addr = coin
         .address_from_str(&req.to)
         .map_to_mm(WithdrawError::InvalidAddress)?;
-    // Todo: from HDWalletAddress shouldn't be allowed if privatekey policy is EthPrivKeyPolicy::KeyPair
-    // Todo: this needs some refactoring with other let (tx_hash, tx_hex) = match coin.priv_key_policy { or we can add bip39_secp_priv_key_or_err same for tendermint and others
+    // Todo: this needs some refactoring with other let (tx_hash, tx_hex) = match coin.priv_key_policy
     let (my_balance, my_address, key_pair) = match req.from {
         Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
-            let bip39_secp_priv_key = match &coin.priv_key_policy {
-                EthPrivKeyPolicy::HDWallet {
-                    bip39_secp_priv_key, ..
-                } => bip39_secp_priv_key.clone(),
-                _ => {
-                    return MmError::err(WithdrawError::UnexpectedFromAddress(
-                        "Withdraw from 'HDWalletAddress' is only supported for 'EthPrivKeyPolicy::HDWallet'!"
-                            .to_string(),
-                    ))
-                },
-            };
+            let bip39_secp_priv_key = coin.priv_key_policy.bip39_secp_priv_key_or_err()?;
             // Todo: should derivation path be part of EthPrivKeyPolicy::HDWallet same for UTXO too?
             let derivation_path = coin.derivation_path.clone().or_mm_err(|| {
                 WithdrawError::InternalError(
@@ -769,7 +773,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
                 )
             })?;
             // todo: these are repeated in build_address_and_priv_key_policy too
-            let raw_priv_key = derive_secp256k1_secret(bip39_secp_priv_key, &derivation_path, path_to_address)
+            let raw_priv_key = derive_secp256k1_secret(bip39_secp_priv_key.clone(), &derivation_path, path_to_address)
                 .mm_err(|e| WithdrawError::InternalError(e.to_string()))?;
             let key_pair = KeyPair::from_secret_slice(raw_priv_key.as_slice())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;

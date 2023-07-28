@@ -439,6 +439,8 @@ pub enum TxHistoryError {
 pub enum PrivKeyPolicyNotAllowed {
     #[display(fmt = "Hardware Wallet is not supported")]
     HardwareWalletNotSupported,
+    #[display(fmt = "Unsupported method: {}", _0)]
+    UnsupportedMethod(String),
 }
 
 impl Serialize for PrivKeyPolicyNotAllowed {
@@ -2742,7 +2744,6 @@ impl<T, U> PrivKeyPolicy<T, U> {
 
     pub fn key_pair_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
         self.key_pair()
-            // Todo: change the error HardwareWalletNotSupported
             .or_mm_err(|| PrivKeyPolicyNotAllowed::HardwareWalletNotSupported)
     }
 
@@ -2756,9 +2757,11 @@ impl<T, U> PrivKeyPolicy<T, U> {
     }
 
     pub fn bip39_secp_priv_key_or_err(&self) -> Result<&U, MmError<PrivKeyPolicyNotAllowed>> {
-        self.bip39_secp_priv_key()
-            // Todo: change the error HardwareWalletNotSupported
-            .or_mm_err(|| PrivKeyPolicyNotAllowed::HardwareWalletNotSupported)
+        self.bip39_secp_priv_key().or_mm_err(|| {
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`bip39_secp_priv_key_or_err` is supported only for `PrivKeyPolicy::HDWallet`".to_string(),
+            )
+        })
     }
 }
 
