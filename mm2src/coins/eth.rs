@@ -723,7 +723,6 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
                 "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for EVM!".to_string(),
             ))
         },
-        // Todo: using coin.priv_key_policy.activated_key_or_err() will cause problems for EthPrivKeyPolicy::Metamask(_) down the line in this function
         None => (
             coin.my_balance().compat().await?,
             coin.my_address,
@@ -853,7 +852,6 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     }
     Ok(TransactionDetails {
         to: vec![checksum_address(&format!("{:#02x}", to_addr))],
-        // Todo: checksum_address should be made a common function str_from_address
         from: vec![checksum_address(&format!("{:#02x}", my_address))],
         total_amount: amount_decimal,
         my_balance_change: &received_by_me - &spent_by_me,

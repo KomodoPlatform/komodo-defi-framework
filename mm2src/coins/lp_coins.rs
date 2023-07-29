@@ -73,7 +73,6 @@ use serde_json::{self as json, Value as Json};
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::collections::HashSet;
-use std::error::Error as StdError;
 use std::fmt;
 use std::future::Future as Future03;
 use std::num::NonZeroUsize;
@@ -455,8 +454,6 @@ impl Serialize for PrivKeyPolicyNotAllowed {
         serializer.serialize_str(&self.to_string())
     }
 }
-
-impl StdError for PrivKeyPolicyNotAllowed {}
 
 #[derive(Clone, Debug, Display, PartialEq, Serialize)]
 pub enum UnexpectedDerivationMethod {

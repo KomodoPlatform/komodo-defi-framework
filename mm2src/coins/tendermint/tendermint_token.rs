@@ -111,11 +111,11 @@ impl TendermintToken {
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
             let (base_denom_balance, base_denom_balance_dec) = platform
-                .get_balance_as_unsigned_and_decimal(&platform.denom, token.decimals())
+                .get_account_balance_as_unsigned_and_decimal(&platform.account_id, &platform.denom, token.decimals())
                 .await?;
 
             let (balance_denom, balance_dec) = platform
-                .get_balance_as_unsigned_and_decimal(&token.denom, token.decimals())
+                .get_account_balance_as_unsigned_and_decimal(&platform.account_id, &token.denom, token.decimals())
                 .await?;
 
             let (amount_denom, amount_dec, total_amount) = if req.max {
@@ -178,7 +178,14 @@ impl TendermintToken {
             let (_, gas_limit) = platform.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = platform
-                .calculate_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone(), req.fee)
+                .calculate_account_fee_amount_as_u64(
+                    &platform.account_id,
+                    platform.priv_key_policy.activated_key_or_err()?,
+                    msg_transfer.clone(),
+                    timeout_height,
+                    memo.clone(),
+                    req.fee,
+                )
                 .await?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
@@ -198,9 +205,17 @@ impl TendermintToken {
 
             let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
-            let account_info = platform.my_account_info().await?;
+            let activated_priv_key = platform.priv_key_policy.activated_key_or_err()?;
+            let account_info = platform.account_info(&platform.account_id).await?;
             let tx_raw = platform
-                .any_to_signed_raw_tx(account_info, msg_transfer, fee, timeout_height, memo.clone())
+                .any_to_signed_raw_tx(
+                    activated_priv_key,
+                    account_info,
+                    msg_transfer,
+                    fee,
+                    timeout_height,
+                    memo.clone(),
+                )
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -517,7 +532,10 @@ impl MarketCoinOps for TendermintToken {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
-            let balance_denom = coin.platform_coin.balance_for_denom(coin.denom.to_string()).await?;
+            let balance_denom = coin
+                .platform_coin
+                .account_balance_for_denom(&coin.platform_coin.account_id, coin.denom.to_string())
+                .await?;
             Ok(CoinBalance {
                 spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
                 unspendable: BigDecimal::default(),
@@ -590,11 +608,11 @@ impl MmCoin for TendermintToken {
             }
 
             let (base_denom_balance, base_denom_balance_dec) = platform
-                .get_balance_as_unsigned_and_decimal(&platform.denom, token.decimals())
+                .get_account_balance_as_unsigned_and_decimal(&platform.account_id, &platform.denom, token.decimals())
                 .await?;
 
             let (balance_denom, balance_dec) = platform
-                .get_balance_as_unsigned_and_decimal(&token.denom, token.decimals())
+                .get_account_balance_as_unsigned_and_decimal(&platform.account_id, &token.denom, token.decimals())
                 .await?;
 
             let (amount_denom, amount_dec, total_amount) = if req.max {
@@ -655,7 +673,14 @@ impl MmCoin for TendermintToken {
             let (_, gas_limit) = platform.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = platform
-                .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone(), req.fee)
+                .calculate_account_fee_amount_as_u64(
+                    &platform.account_id,
+                    platform.priv_key_policy.activated_key_or_err()?,
+                    msg_send.clone(),
+                    timeout_height,
+                    memo.clone(),
+                    req.fee,
+                )
                 .await?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
@@ -675,9 +700,17 @@ impl MmCoin for TendermintToken {
 
             let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
-            let account_info = platform.my_account_info().await?;
+            let activated_priv_key = platform.priv_key_policy.activated_key_or_err()?;
+            let account_info = platform.account_info(&platform.account_id).await?;
             let tx_raw = platform
-                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, memo.clone())
+                .any_to_signed_raw_tx(
+                    activated_priv_key,
+                    account_info,
+                    msg_send,
+                    fee,
+                    timeout_height,
+                    memo.clone(),
+                )
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw

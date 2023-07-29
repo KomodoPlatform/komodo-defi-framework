@@ -234,7 +234,7 @@ pub struct TendermintCoinImpl {
     /// My address
     pub account_id: AccountId,
     pub(super) account_prefix: String,
-    priv_key_policy: TendermintPrivKeyPolicy,
+    pub(super) priv_key_policy: TendermintPrivKeyPolicy,
     pub(crate) decimals: u8,
     pub(super) denom: Denom,
     chain_id: ChainId,
@@ -443,7 +443,9 @@ impl TendermintCommons for TendermintCoin {
     }
 
     async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
-        let platform_balance_denom = self.balance_for_denom(self.denom.to_string()).await?;
+        let platform_balance_denom = self
+            .account_balance_for_denom(&self.account_id, self.denom.to_string())
+            .await?;
         let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.decimals);
         let ibc_assets_info = self.tokens_info.lock().clone();
 
@@ -451,7 +453,7 @@ impl TendermintCommons for TendermintCoin {
         for (ticker, info) in ibc_assets_info {
             let fut = async move {
                 let balance_denom = self
-                    .balance_for_denom(info.denom.to_string())
+                    .account_balance_for_denom(&self.account_id, info.denom.to_string())
                     .await
                     .map_err(|e| e.into_inner())?;
                 let balance_decimal = big_decimal_from_sat_unsigned(balance_denom, info.decimals);
@@ -555,6 +557,7 @@ impl TendermintCoin {
         })))
     }
 
+    // Todo: impl HD wallet for this
     pub fn ibc_withdraw(&self, req: IBCWithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
         let fut = async move {
@@ -562,7 +565,7 @@ impl TendermintCoin {
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
             let (balance_denom, balance_dec) = coin
-                .get_balance_as_unsigned_and_decimal(&coin.denom, coin.decimals())
+                .get_account_balance_as_unsigned_and_decimal(&coin.account_id, &coin.denom, coin.decimals())
                 .await?;
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
@@ -612,7 +615,14 @@ impl TendermintCoin {
             let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = coin
-                .calculate_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone(), req.fee)
+                .calculate_account_fee_amount_as_u64(
+                    &coin.account_id,
+                    coin.priv_key_policy.activated_key_or_err()?,
+                    msg_transfer.clone(),
+                    timeout_height,
+                    memo.clone(),
+                    req.fee,
+                )
                 .await?;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
@@ -658,9 +668,17 @@ impl TendermintCoin {
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let account_info = coin.my_account_info().await?;
+            let activated_priv_key = coin.priv_key_policy.activated_key_or_err()?;
+            let account_info = coin.account_info(&coin.account_id).await?;
             let tx_raw = coin
-                .any_to_signed_raw_tx(account_info, msg_transfer, fee, timeout_height, memo.clone())
+                .any_to_signed_raw_tx(
+                    activated_priv_key,
+                    account_info,
+                    msg_transfer,
+                    fee,
+                    timeout_height,
+                    memo.clone(),
+                )
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -817,10 +835,8 @@ impl TendermintCoin {
     // We must simulate the tx on rpc nodes in order to calculate network fee.
     // Right now cosmos doesn't expose any of gas price and fee informations directly.
     // Therefore, we can call SimulateRequest or CheckTx(doesn't work with using Abci interface) to get used gas or fee itself.
-    // Todo: avoid all these functions duplications
-    pub(super) fn gen_simulated_tx_with_priv_key(
+    pub(super) fn gen_simulated_tx(
         &self,
-        // Todo: should this include the private key for better structure?
         account_info: BaseAccount,
         priv_key: &Secp256k1Secret,
         tx_payload: Any,
@@ -839,25 +855,6 @@ impl TendermintCoin {
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
         sign_doc.sign(&signkey)?.to_bytes()
-    }
-
-    // We must simulate the tx on rpc nodes in order to calculate network fee.
-    // Right now cosmos doesn't expose any of gas price and fee informations directly.
-    // Therefore, we can call SimulateRequest or CheckTx(doesn't work with using Abci interface) to get used gas or fee itself.
-    pub(super) fn gen_simulated_tx(
-        &self,
-        account_info: BaseAccount,
-        tx_payload: Any,
-        timeout_height: u64,
-        memo: String,
-    ) -> cosmrs::Result<Vec<u8>> {
-        self.gen_simulated_tx_with_priv_key(
-            account_info,
-            self.priv_key_policy.activated_key_or_err()?,
-            tx_payload,
-            timeout_height,
-            memo,
-        )
     }
 
     /// This is converted from irismod and cosmos-sdk source codes written in golang.
@@ -898,7 +895,8 @@ impl TendermintCoin {
     ) -> Result<(String, Raw), TransactionErr> {
         let (tx_id, tx_raw) = loop {
             let tx_raw = try_tx_s!(self.any_to_signed_raw_tx(
-                try_tx_s!(self.my_account_info().await),
+                try_tx_s!(self.priv_key_policy.activated_key_or_err()),
+                try_tx_s!(self.account_info(&self.account_id).await),
                 tx_payload.clone(),
                 fee.clone(),
                 timeout_height,
@@ -932,9 +930,16 @@ impl TendermintCoin {
         let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
 
         let (response, raw_response) = loop {
-            let account_info = self.my_account_info().await?;
+            let account_info = self.account_info(&self.account_id).await?;
+            let activated_priv_key = self.priv_key_policy.activated_key_or_err()?;
             let tx_bytes = self
-                .gen_simulated_tx(account_info, msg.clone(), timeout_height, memo.clone())
+                .gen_simulated_tx(
+                    account_info,
+                    activated_priv_key,
+                    msg.clone(),
+                    timeout_height,
+                    memo.clone(),
+                )
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -1001,7 +1006,7 @@ impl TendermintCoin {
         let (response, raw_response) = loop {
             let account_info = self.account_info(account_id).await?;
             let tx_bytes = self
-                .gen_simulated_tx_with_priv_key(account_info, priv_key, msg.clone(), timeout_height, memo.clone())
+                .gen_simulated_tx(account_info, priv_key, msg.clone(), timeout_height, memo.clone())
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -1046,25 +1051,6 @@ impl TendermintCoin {
         Ok(((gas.gas_used as f64 * 1.5) * gas_price).ceil() as u64)
     }
 
-    #[allow(deprecated)]
-    pub(super) async fn calculate_fee_amount_as_u64(
-        &self,
-        msg: Any,
-        timeout_height: u64,
-        memo: String,
-        withdraw_fee: Option<WithdrawFee>,
-    ) -> MmResult<u64, TendermintCoinRpcError> {
-        self.calculate_account_fee_amount_as_u64(
-            &self.account_id,
-            self.priv_key_policy.activated_key_or_err()?,
-            msg,
-            timeout_height,
-            memo,
-            withdraw_fee,
-        )
-        .await
-    }
-
     pub(super) async fn account_info(&self, account_id: &AccountId) -> MmResult<BaseAccount, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_QUERY_ACCOUNT_PATH).expect("valid path");
         let request = QueryAccountRequest {
@@ -1100,10 +1086,6 @@ impl TendermintCoin {
         Ok(base_account)
     }
 
-    pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
-        self.account_info(&self.account_id).await
-    }
-
     pub(super) async fn account_balance_for_denom(
         &self,
         account_id: &AccountId,
@@ -1129,10 +1111,6 @@ impl TendermintCoin {
             .amount
             .parse()
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
-    }
-
-    pub(super) async fn balance_for_denom(&self, denom: String) -> MmResult<u64, TendermintCoinRpcError> {
-        self.account_balance_for_denom(&self.account_id, denom).await
     }
 
     fn gen_create_htlc_tx(
@@ -1182,7 +1160,7 @@ impl TendermintCoin {
         })
     }
 
-    pub(super) fn any_to_signed_raw_tx_with_priv_key(
+    pub(super) fn any_to_signed_raw_tx(
         &self,
         priv_key: &Secp256k1Secret,
         account_info: BaseAccount,
@@ -1196,24 +1174,6 @@ impl TendermintCoin {
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
         sign_doc.sign(&signkey)
-    }
-
-    pub(super) fn any_to_signed_raw_tx(
-        &self,
-        account_info: BaseAccount,
-        tx_payload: Any,
-        fee: Fee,
-        timeout_height: u64,
-        memo: String,
-    ) -> cosmrs::Result<Raw> {
-        self.any_to_signed_raw_tx_with_priv_key(
-            self.priv_key_policy.activated_key_or_err()?,
-            account_info,
-            tx_payload,
-            fee,
-            timeout_height,
-            memo,
-        )
     }
 
     pub fn add_activated_token_info(&self, ticker: String, decimals: u8, denom: Denom) {
@@ -1624,7 +1584,11 @@ impl TendermintCoin {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee_uamount = self
-            .calculate_fee_amount_as_u64(
+            .calculate_account_fee_amount_as_u64(
+                &self.account_id,
+                self.priv_key_policy
+                    .activated_key_or_err()
+                    .mm_err(|e| TradePreimageError::InternalError(e.to_string()))?,
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
@@ -1673,7 +1637,16 @@ impl TendermintCoin {
         .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
         let fee_uamount = self
-            .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, TX_DEFAULT_MEMO.to_owned(), None)
+            .calculate_account_fee_amount_as_u64(
+                &self.account_id,
+                self.priv_key_policy
+                    .activated_key_or_err()
+                    .mm_err(|e| TradePreimageError::InternalError(e.to_string()))?,
+                msg_send.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.to_owned(),
+                None,
+            )
             .await?;
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, decimals);
 
@@ -1694,15 +1667,6 @@ impl TendermintCoin {
         let denom_balance_dec = big_decimal_from_sat_unsigned(denom_ubalance, decimals);
 
         Ok((denom_ubalance, denom_balance_dec))
-    }
-
-    pub(super) async fn get_balance_as_unsigned_and_decimal(
-        &self,
-        denom: &Denom,
-        decimals: u8,
-    ) -> MmResult<(u64, BigDecimal), TendermintCoinRpcError> {
-        self.get_account_balance_as_unsigned_and_decimal(&self.account_id, denom, decimals)
-            .await
     }
 
     async fn request_tx(&self, hash: String) -> MmResult<Tx, TendermintCoinRpcError> {
@@ -2066,14 +2030,7 @@ impl MmCoin for TendermintCoin {
 
             let account_info = coin.account_info(&account_id).await?;
             let tx_raw = coin
-                .any_to_signed_raw_tx_with_priv_key(
-                    &priv_key,
-                    account_info,
-                    msg_send,
-                    fee,
-                    timeout_height,
-                    memo.clone(),
-                )
+                .any_to_signed_raw_tx(&priv_key, account_info, msg_send, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -2271,7 +2228,9 @@ impl MarketCoinOps for TendermintCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
-            let balance_denom = coin.balance_for_denom(coin.denom.to_string()).await?;
+            let balance_denom = coin
+                .account_balance_for_denom(&coin.account_id, coin.denom.to_string())
+                .await?;
             Ok(CoinBalance {
                 spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
                 unspendable: BigDecimal::default(),
