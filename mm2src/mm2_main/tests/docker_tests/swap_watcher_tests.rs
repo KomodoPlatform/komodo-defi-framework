@@ -2280,6 +2280,73 @@ fn test_watcher_validate_taker_payment_erc20() {
 }
 
 #[test]
+fn test_validate_watcher_refund_utxo() {
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
+    let time_lock_duration = get_payment_locktime();
+    let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
+    let time_lock = now_sec_u32() - 10;
+
+    let (_ctx, taker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+    let (_ctx, maker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+    let maker_pubkey = maker_coin.my_public_key().unwrap();
+
+    let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
+
+    let taker_payment = taker_coin
+        .send_taker_payment(SendPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: maker_pubkey,
+            secret_hash: secret_hash.as_slice(),
+            amount: BigDecimal::from(10),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            payment_instructions: &None,
+            watcher_reward: None,
+            wait_for_confirmation_until,
+        })
+        .wait()
+        .unwrap();
+
+    let confirm_payment_input = ConfirmPaymentInput {
+        payment_tx: taker_payment.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: timeout,
+        check_every: 1,
+    };
+    taker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+
+    let taker_payment_refund_preimage = taker_coin
+        .create_taker_payment_refund_preimage(
+            &taker_payment.tx_hex(),
+            time_lock,
+            maker_pubkey,
+            secret_hash.as_slice(),
+            &None,
+            &[],
+        )
+        .wait()
+        .unwrap();
+
+    let taker_payment_refund = taker_coin
+        .send_taker_payment_refund_preimage(RefundPaymentArgs {
+            payment_tx: &taker_payment_refund_preimage.tx_hex(),
+            other_pubkey: maker_pubkey,
+            secret_hash: secret_hash.as_slice(),
+            time_lock,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            watcher_reward: false,
+        })
+        .wait()
+        .unwrap();
+
+    let validate_watcher_refund = taker_coin.validate_watcher_spend(taker_payment_refund);
+    assert!(validate_watcher_refund.is_ok());
+}
+
+#[test]
 fn test_send_taker_payment_refund_preimage_utxo() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
