@@ -4,10 +4,11 @@ use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_priv
 use coins::coin_errors::ValidatePaymentError;
 use coins::utxo::{dhash160, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
-            SearchForSwapTxSpendInput, SendPaymentArgs, SwapOps, WatcherOps, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
-            INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
-            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps, WatcherOps,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG,
+            INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
+            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
+            OLD_TRANSACTION_ERR_LOG};
 use common::{block_on, now_sec_u32, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
@@ -2344,6 +2345,74 @@ fn test_validate_watcher_refund_utxo() {
 
     let validate_watcher_refund = taker_coin.validate_watcher_spend(taker_payment_refund);
     assert!(validate_watcher_refund.is_ok());
+}
+
+#[test]
+fn test_validate_watcher_spend_utxo() {
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
+    let time_lock_duration = get_payment_locktime();
+    let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
+    let time_lock = wait_for_confirmation_until as u32;
+
+    let (_ctx, taker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+    let (_ctx, maker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+    let taker_pubkey = taker_coin.my_public_key().unwrap();
+    let maker_pubkey = maker_coin.my_public_key().unwrap();
+
+    let secret = MakerSwap::generate_secret().unwrap();
+    let secret_hash = dhash160(&secret);
+
+    let maker_payment = maker_coin
+        .send_maker_payment(SendPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: taker_pubkey,
+            secret_hash: secret_hash.as_slice(),
+            amount: BigDecimal::from(10),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            payment_instructions: &None,
+            watcher_reward: None,
+            wait_for_confirmation_until,
+        })
+        .wait()
+        .unwrap();
+
+    maker_coin
+        .wait_for_confirmations(ConfirmPaymentInput {
+            payment_tx: maker_payment.tx_hex(),
+            confirmations: 1,
+            requires_nota: false,
+            wait_until: timeout,
+            check_every: 1,
+        })
+        .wait()
+        .unwrap();
+
+    let maker_payment_spend_preimage = taker_coin
+        .create_maker_payment_spend_preimage(
+            &maker_payment.tx_hex(),
+            time_lock,
+            maker_pubkey,
+            secret_hash.as_slice(),
+            &[],
+        )
+        .wait()
+        .unwrap();
+
+    let maker_payment_spend = taker_coin
+        .send_maker_payment_spend_preimage(SendMakerPaymentSpendPreimageInput {
+            preimage: &maker_payment_spend_preimage.tx_hex(),
+            secret_hash: secret_hash.as_slice(),
+            secret: secret.as_slice(),
+            taker_pub: taker_pubkey,
+            watcher_reward: false,
+        })
+        .wait()
+        .unwrap();
+
+    let validate_watcher_spend = taker_coin.validate_watcher_spend(maker_payment_spend);
+    assert!(validate_watcher_spend.is_ok());
 }
 
 #[test]
