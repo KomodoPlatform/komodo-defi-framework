@@ -375,7 +375,7 @@ pub struct NftTransferCommon {
     /// Transaction hash in hexadecimal format
     pub(crate) transaction_hash: String,
     pub(crate) transaction_index: Option<u64>,
-    pub(crate) log_index: u64,
+    pub(crate) log_index: u32,
     pub(crate) value: Option<BigDecimal>,
     pub(crate) transaction_type: Option<String>,
     pub(crate) token_address: Address,

@@ -132,7 +132,7 @@ pub trait NftTransferHistoryStorageOps {
         &self,
         chain: &Chain,
         transaction_hash: String,
-        log_index: u64,
+        log_index: u32,
     ) -> MmResult<Option<NftTransferHistory>, Self::Error>;
 
     async fn update_transfer_meta_by_hash_and_log_index(

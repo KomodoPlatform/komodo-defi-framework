@@ -839,7 +839,7 @@ impl NftTransferHistoryStorageOps for SqliteNftStorage {
         &self,
         chain: &Chain,
         transaction_hash: String,
-        log_index: u64,
+        log_index: u32,
     ) -> MmResult<Option<NftTransferHistory>, Self::Error> {
         let sql = get_transfer_by_tx_hash_and_log_index_sql(chain)?;
         let selfi = self.clone();

@@ -426,7 +426,7 @@ impl NftTransferHistoryStorageOps for IndexedDbNftStorage {
         &self,
         chain: &Chain,
         transaction_hash: String,
-        log_index: u64,
+        log_index: u32,
     ) -> MmResult<Option<NftTransferHistory>, Self::Error> {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
@@ -434,7 +434,7 @@ impl NftTransferHistoryStorageOps for IndexedDbNftStorage {
         let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_INDEX)
             .with_value(chain.to_string())?
             .with_value(&transaction_hash)?
-            .with_value(BeBigUint::from(log_index))?;
+            .with_value(log_index)?;
 
         if let Some((_item_id, item)) = table.get_item_by_unique_multi_index(index_keys).await? {
             Ok(Some(transfer_details_from_item(item)?))
@@ -455,7 +455,7 @@ impl NftTransferHistoryStorageOps for IndexedDbNftStorage {
         let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_INDEX)
             .with_value(chain.to_string())?
             .with_value(&transfer.common.transaction_hash)?
-            .with_value(BeBigUint::from(transfer.common.log_index))?;
+            .with_value(transfer.common.log_index)?;
 
         let item = NftTransferHistoryTable::from_transfer_history(&transfer)?;
         table.replace_item_by_unique_multi_index(index_keys, &item).await?;
@@ -483,7 +483,7 @@ impl NftTransferHistoryStorageOps for IndexedDbNftStorage {
             let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_INDEX)
                 .with_value(chain.to_string())?
                 .with_value(&transfer.common.transaction_hash)?
-                .with_value(BeBigUint::from(transfer.common.log_index))?;
+                .with_value(transfer.common.log_index)?;
 
             let item = NftTransferHistoryTable::from_transfer_history(&transfer)?;
             table.replace_item_by_unique_multi_index(index_keys, &item).await?;
@@ -621,7 +621,7 @@ impl TableSignature for NftListTable {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct NftTransferHistoryTable {
     transaction_hash: String,
-    log_index: BeBigUint,
+    log_index: u32,
     chain: String,
     block_number: BeBigUint,
     block_timestamp: BeBigUint,
@@ -649,7 +649,7 @@ impl NftTransferHistoryTable {
             json::to_value(transfer).map_to_mm(|e| WasmNftCacheError::ErrorSerializing(e.to_string()))?;
         Ok(NftTransferHistoryTable {
             transaction_hash: transfer.common.transaction_hash.clone(),
-            log_index: BeBigUint::from(transfer.common.log_index),
+            log_index: transfer.common.log_index,
             chain: transfer.chain.to_string(),
             block_number: BeBigUint::from(transfer.block_number),
             block_timestamp: BeBigUint::from(transfer.block_timestamp),

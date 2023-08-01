@@ -17,7 +17,7 @@ cfg_wasm32! {
 const TOKEN_ADD: &str = "0xfd913a305d70a60aac4faac70c739563738e1f81";
 const TOKEN_ID: &str = "214300044414";
 const TX_HASH: &str = "0x1e9f04e9b571b283bde02c98c2a97da39b2bb665b57c1f2b0b733f9b681debbe";
-const LOG_INDEX: u64 = 495;
+const LOG_INDEX: u32 = 495;
 
 pub(crate) fn nft() -> Nft {
     Nft {
