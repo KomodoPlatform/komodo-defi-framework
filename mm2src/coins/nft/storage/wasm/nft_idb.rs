@@ -1,4 +1,4 @@
-use crate::nft::storage::wasm::wasm_storage::{LastScannedBlockTable, NftListTable, NftTxHistoryTable};
+use crate::nft::storage::wasm::wasm_storage::{LastScannedBlockTable, NftListTable, NftTransferHistoryTable};
 use async_trait::async_trait;
 use mm2_db::indexed_db::InitDbResult;
 use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder};
@@ -19,7 +19,7 @@ impl DbInstance for NftCacheIDB {
         let inner = IndexedDbBuilder::new(db_id)
             .with_version(DB_VERSION)
             .with_table::<NftListTable>()
-            .with_table::<NftTxHistoryTable>()
+            .with_table::<NftTransferHistoryTable>()
             .with_table::<LastScannedBlockTable>()
             .build()
             .await?;
