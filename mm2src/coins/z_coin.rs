@@ -96,9 +96,6 @@ cfg_native!(
     use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
     use zcash_proofs::default_params_folder;
     use z_rpc::{init_native_client};
-
-    pub mod z_rpc_methods;
-    use crate::z_coin::z_rpc_methods::{GetMinimumHeightError, GetMinimumHeightResponse};
 );
 
 #[allow(unused)] mod z_coin_errors;
@@ -751,34 +748,6 @@ impl ZCoin {
             total_pages: calc_total_pages(sql_result.total_tx_count as usize, request.limit),
             paging_options: request.paging_options,
         })
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub async fn get_minimum_header_from_cache(&self) -> MmResult<GetMinimumHeightResponse, GetMinimumHeightError> {
-        let sync = self
-            .sync_status()
-            .await
-            .map_err(|err| GetMinimumHeightError::TemporaryError(err.to_string()))?;
-        let wallet_db = self.z_fields.light_wallet_db.db.lock();
-        let extrema = wallet_db
-            .block_height_extrema()
-            .map_to_mm(|err| GetMinimumHeightError::StorageError(err.to_string()))?;
-
-        match sync {
-            SyncStatus::UpdatingBlocksCache { .. } => MmError::err(GetMinimumHeightError::UpdatingBlocksCache(
-                "Blocks cache still bulding, try again later".to_string(),
-            )),
-            SyncStatus::BuildingWalletDb { .. } => MmError::err(GetMinimumHeightError::BuildingWalletDb(
-                "Wallets cache still bulding, try again later".to_string(),
-            )),
-            SyncStatus::TemporaryError(_) => MmError::err(GetMinimumHeightError::TemporaryError(
-                "Temporary error occured".to_string(),
-            )),
-            SyncStatus::Finished { .. } => Ok(GetMinimumHeightResponse {
-                height: extrema.map(|(min, _max)| min.into()),
-                status: "Finished".to_string(),
-            }),
-        }
     }
 }
 
