@@ -22,10 +22,10 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, C
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest};
+            ValidateOtherPubKeyErr, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -1518,7 +1518,11 @@ impl WatcherOps for SlpToken {
         unimplemented!();
     }
 
-    fn validate_watcher_spend(&self, _tx: TransactionEnum) -> Result<(), MmError<ValidatePaymentError>> {
+    fn validate_taker_payment_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        unimplemented!()
+    }
+
+    fn validate_maker_payment_spend(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
         unimplemented!()
     }
 

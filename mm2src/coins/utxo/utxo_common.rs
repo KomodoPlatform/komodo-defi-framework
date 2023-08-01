@@ -20,10 +20,10 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPayment
             RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut,
             TxFeeDetails, TxMarshalingErr, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult,
-            WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
-            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError, VerificationResult,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
+            WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
+            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
@@ -2081,30 +2081,31 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     )
 }
 
-pub fn validate_watcher_spend<T: UtxoCommonOps + SwapOps>(
+pub fn validate_payment_spend_or_refund<T: UtxoCommonOps + SwapOps>(
     coin: &T,
-    tx: TransactionEnum,
-) -> Result<(), MmError<ValidatePaymentError>> {
-    let mut payment_spend_tx: UtxoTx = deserialize(tx.tx_hex().as_slice())?;
+    input: ValidateWatcherSpendInput,
+) -> ValidatePaymentFut<()> {
+    let mut payment_spend_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
     payment_spend_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
-    let my_address = coin.as_ref().derivation_method.single_addr_or_err()?;
+    let my_address = try_f!(coin.as_ref().derivation_method.single_addr_or_err());
     let expected_script_pubkey = &output_script(my_address, ScriptType::P2PKH).to_bytes();
-    let actual_script_pubkey = match payment_spend_tx.outputs.get(DEFAULT_SWAP_VOUT) {
-        Some(output) => &output.script_pubkey,
-        None => {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                "Payment tx has no outputs".to_string(),
+    let output = try_f!(payment_spend_tx
+        .outputs
+        .get(DEFAULT_SWAP_VOUT)
+        .ok_or_else(|| ValidatePaymentError::WrongPaymentTx("Payment tx has no outputs".to_string(),)));
+
+    if expected_script_pubkey != &output.script_pubkey {
+        return Box::new(futures01::future::err(
+            ValidatePaymentError::WrongPaymentTx(format!(
+                "Provided payment tx script pubkey doesn't match expected {:?} {:?}",
+                output.script_pubkey, expected_script_pubkey
             ))
-        },
-    };
-    if expected_script_pubkey != actual_script_pubkey {
-        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-            "Provided payment tx script pubkey doesn't match expected {:?} {:?}",
-            actual_script_pubkey, expected_script_pubkey
-        )));
+            .into(),
+        ));
     }
-    Ok(())
+
+    Box::new(futures01::future::ok(()))
 }
 
 pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(

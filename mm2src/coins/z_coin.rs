@@ -22,9 +22,10 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
             TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
+            ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
+            WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash256;
@@ -1593,7 +1594,11 @@ impl WatcherOps for ZCoin {
         unimplemented!();
     }
 
-    fn validate_watcher_spend(&self, _tx: TransactionEnum) -> Result<(), MmError<ValidatePaymentError>> {
+    fn validate_taker_payment_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        unimplemented!()
+    }
+
+    fn validate_maker_payment_spend(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
         unimplemented!()
     }
 

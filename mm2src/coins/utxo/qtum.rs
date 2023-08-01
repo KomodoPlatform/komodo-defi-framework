@@ -32,9 +32,9 @@ use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithD
             SwapOps, TakerSwapMakerCoin, TradePreimageValue, TransactionFut, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
-            WithdrawSenderAddress};
+            ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
+            WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
 use common::executor::{AbortableSystem, AbortedError};
 use crypto::Bip44Chain;
 use ethereum_types::H160;
@@ -778,8 +778,13 @@ impl WatcherOps for QtumCoin {
     }
 
     #[inline]
-    fn validate_watcher_spend(&self, tx: TransactionEnum) -> Result<(), MmError<ValidatePaymentError>> {
-        utxo_common::validate_watcher_spend(self, tx)
+    fn validate_taker_payment_refund(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        utxo_common::validate_payment_spend_or_refund(self, input)
+    }
+
+    #[inline]
+    fn validate_maker_payment_spend(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        utxo_common::validate_payment_spend_or_refund(self, input)
     }
 
     async fn watcher_search_for_swap_tx_spend(

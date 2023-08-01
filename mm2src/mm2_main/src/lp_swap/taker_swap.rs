@@ -18,7 +18,7 @@ use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
             FoundSwapTxSpend, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee,
-            TradePreimageValue, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
+            TradePreimageValue, ValidatePaymentInput, ValidateWatcherSpendInput, WaitForHTLCTxSpendArgs};
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -2442,8 +2442,19 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: Ta
             Some(FoundSwapTxSpend::Spent(maker_payment_spend_tx)),
             Some(FoundSwapTxSpend::Spent(taker_payment_spend_tx)),
         ) => {
+            let validate_input = ValidateWatcherSpendInput {
+                payment_tx: maker_payment_spend_tx.tx_hex(),
+                maker_pub: other_maker_coin_htlc_pub.to_vec(),
+                swap_contract_address: maker_coin_swap_contract_address,
+                time_lock: swap.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                secret_hash: secret_hash.clone(),
+                amount: swap.maker_amount.to_decimal(),
+                watcher_reward: None,
+            };
             swap.taker_coin
-                .validate_watcher_spend(maker_payment_spend_tx.clone())
+                .validate_taker_payment_refund(validate_input)
+                .compat()
+                .await
                 .map_err(|e| e.to_string())?;
 
             if saved.is_finished() {
@@ -2505,8 +2516,20 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: Ta
         },
         (Some(FoundSwapTxSpend::Refunded(_)), Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx)))
         | (None, Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx))) => {
+            let validate_input = ValidateWatcherSpendInput {
+                payment_tx: taker_payment_refund_tx.tx_hex(),
+                maker_pub: other_maker_coin_htlc_pub.to_vec(),
+                swap_contract_address: taker_coin_swap_contract_address,
+                time_lock: taker_payment_lock,
+                secret_hash: secret_hash.clone(),
+                amount: swap.taker_amount.to_decimal(),
+                watcher_reward: None,
+            };
+
             swap.taker_coin
-                .validate_watcher_spend(taker_payment_refund_tx.clone())
+                .validate_taker_payment_refund(validate_input)
+                .compat()
+                .await
                 .map_err(|e| e.to_string())?;
 
             if saved.is_finished() {

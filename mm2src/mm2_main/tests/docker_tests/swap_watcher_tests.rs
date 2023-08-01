@@ -4,11 +4,11 @@ use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_priv
 use coins::coin_errors::ValidatePaymentError;
 use coins::utxo::{dhash160, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps, WatcherOps,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG,
-            INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
-            OLD_TRANSACTION_ERR_LOG};
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps,
+            ValidateWatcherSpendInput, WatcherOps, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
+            INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG,
+            INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use common::{block_on, now_sec_u32, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
@@ -2343,7 +2343,208 @@ fn test_validate_watcher_refund_utxo() {
         .wait()
         .unwrap();
 
-    let validate_watcher_refund = taker_coin.validate_watcher_spend(taker_payment_refund);
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: maker_pubkey.to_vec(),
+        swap_contract_address: None,
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: BigDecimal::from(10),
+        watcher_reward: None,
+    };
+
+    let validate_watcher_refund = taker_coin.validate_taker_payment_refund(validate_input).wait();
+    assert!(validate_watcher_refund.is_ok());
+}
+
+#[test]
+fn test_validate_watcher_refund_eth() {
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
+
+    let taker_coin = eth_distributor();
+    let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
+    let taker_pub = taker_keypair.public();
+
+    let maker_seed = get_passphrase!(".env.client", "BOB_PASSPHRASE").unwrap();
+    let maker_keypair = key_pair_from_seed(&maker_seed).unwrap();
+    let maker_pub = maker_keypair.public();
+
+    let time_lock_duration = get_payment_locktime();
+    let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
+    let time_lock = now_sec_u32() - 10;
+    let taker_amount = BigDecimal::from_str("0.01").unwrap();
+    let maker_amount = BigDecimal::from_str("0.01").unwrap();
+    let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
+
+    let watcher_reward = Some(
+        block_on(taker_coin.get_taker_watcher_reward(
+            &MmCoinEnum::from(taker_coin.clone()),
+            Some(taker_amount.clone()),
+            Some(maker_amount),
+            None,
+            wait_for_confirmation_until,
+        ))
+        .unwrap(),
+    );
+
+    let taker_payment = taker_coin
+        .send_taker_payment(SendPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: maker_pub,
+            secret_hash: secret_hash.as_slice(),
+            amount: taker_amount.clone(),
+            swap_contract_address: &taker_coin.swap_contract_address(),
+            swap_unique_data: &[],
+            payment_instructions: &None,
+            watcher_reward: watcher_reward.clone(),
+            wait_for_confirmation_until,
+        })
+        .wait()
+        .unwrap();
+
+    let confirm_payment_input = ConfirmPaymentInput {
+        payment_tx: taker_payment.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: timeout,
+        check_every: 1,
+    };
+    taker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+
+    let taker_payment_refund_preimage = taker_coin
+        .create_taker_payment_refund_preimage(
+            &taker_payment.tx_hex(),
+            time_lock,
+            taker_pub,
+            secret_hash.as_slice(),
+            &taker_coin.swap_contract_address(),
+            &[],
+        )
+        .wait()
+        .unwrap();
+
+    let taker_payment_refund = taker_coin
+        .send_taker_payment_refund_preimage(RefundPaymentArgs {
+            payment_tx: &taker_payment_refund_preimage.tx_hex(),
+            other_pubkey: taker_pub,
+            secret_hash: secret_hash.as_slice(),
+            time_lock,
+            swap_contract_address: &taker_coin.swap_contract_address(),
+            swap_unique_data: &[],
+            watcher_reward: true,
+        })
+        .wait()
+        .unwrap();
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: taker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: taker_amount,
+        watcher_reward,
+    };
+
+    let validate_watcher_refund = taker_coin.validate_taker_payment_refund(validate_input).wait();
+    assert!(validate_watcher_refund.is_ok());
+}
+
+#[test]
+fn test_validate_watcher_refund_erc20() {
+    let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
+
+    let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+    let taker_coin = generate_jst_with_seed(&seed);
+    let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
+    let taker_pub = taker_keypair.public();
+
+    let maker_seed = get_passphrase!(".env.client", "BOB_PASSPHRASE").unwrap();
+    let maker_keypair = key_pair_from_seed(&maker_seed).unwrap();
+    let maker_pub = maker_keypair.public();
+
+    let time_lock_duration = get_payment_locktime();
+    let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
+    let time_lock = now_sec_u32() - 10;
+
+    let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
+
+    let taker_amount = BigDecimal::from_str("0.01").unwrap();
+    let maker_amount = BigDecimal::from_str("0.01").unwrap();
+
+    let watcher_reward = Some(
+        block_on(taker_coin.get_taker_watcher_reward(
+            &MmCoinEnum::from(taker_coin.clone()),
+            Some(taker_amount.clone()),
+            Some(maker_amount),
+            None,
+            wait_for_confirmation_until,
+        ))
+        .unwrap(),
+    );
+
+    let taker_payment = taker_coin
+        .send_taker_payment(SendPaymentArgs {
+            time_lock_duration,
+            time_lock,
+            other_pubkey: maker_pub,
+            secret_hash: secret_hash.as_slice(),
+            amount: taker_amount.clone(),
+            swap_contract_address: &taker_coin.swap_contract_address(),
+            swap_unique_data: &[],
+            payment_instructions: &None,
+            watcher_reward: watcher_reward.clone(),
+            wait_for_confirmation_until,
+        })
+        .wait()
+        .unwrap();
+
+    let confirm_payment_input = ConfirmPaymentInput {
+        payment_tx: taker_payment.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: timeout,
+        check_every: 1,
+    };
+    taker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+
+    let taker_payment_refund_preimage = taker_coin
+        .create_taker_payment_refund_preimage(
+            &taker_payment.tx_hex(),
+            time_lock,
+            taker_pub,
+            secret_hash.as_slice(),
+            &taker_coin.swap_contract_address(),
+            &[],
+        )
+        .wait()
+        .unwrap();
+
+    let taker_payment_refund = taker_coin
+        .send_taker_payment_refund_preimage(RefundPaymentArgs {
+            payment_tx: &taker_payment_refund_preimage.tx_hex(),
+            other_pubkey: taker_pub,
+            secret_hash: secret_hash.as_slice(),
+            time_lock,
+            swap_contract_address: &taker_coin.swap_contract_address(),
+            swap_unique_data: &[],
+            watcher_reward: true,
+        })
+        .wait()
+        .unwrap();
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: taker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: taker_amount,
+        watcher_reward,
+    };
+
+    let validate_watcher_refund = taker_coin.validate_taker_payment_refund(validate_input).wait();
     assert!(validate_watcher_refund.is_ok());
 }
 
@@ -2411,7 +2612,17 @@ fn test_validate_watcher_spend_utxo() {
         .wait()
         .unwrap();
 
-    let validate_watcher_spend = taker_coin.validate_watcher_spend(maker_payment_spend);
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend.tx_hex(),
+        maker_pub: maker_pubkey.to_vec(),
+        swap_contract_address: None,
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: BigDecimal::from(10),
+        watcher_reward: None,
+    };
+
+    let validate_watcher_spend = taker_coin.validate_taker_payment_refund(validate_input).wait();
     assert!(validate_watcher_spend.is_ok());
 }
 

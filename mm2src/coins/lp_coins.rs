@@ -600,6 +600,17 @@ pub struct WatcherValidatePaymentInput {
     pub maker_coin: MmCoinEnum,
 }
 
+#[derive(Clone)]
+pub struct ValidateWatcherSpendInput {
+    pub payment_tx: Vec<u8>,
+    pub maker_pub: Vec<u8>,
+    pub swap_contract_address: Option<BytesJson>,
+    pub time_lock: u32,
+    pub secret_hash: Vec<u8>,
+    pub amount: BigDecimal,
+    pub watcher_reward: Option<WatcherReward>,
+}
+
 #[derive(Clone, Debug)]
 pub struct ValidatePaymentInput {
     pub payment_tx: Vec<u8>,
@@ -968,7 +979,9 @@ pub trait WatcherOps {
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
 
-    fn validate_watcher_spend(&self, _tx: TransactionEnum) -> Result<(), MmError<ValidatePaymentError>>;
+    fn validate_taker_payment_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()>;
+
+    fn validate_maker_payment_spend(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()>;
 
     async fn watcher_search_for_swap_tx_spend(
         &self,

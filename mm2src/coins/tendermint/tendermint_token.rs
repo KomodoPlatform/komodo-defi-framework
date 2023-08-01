@@ -19,7 +19,7 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
             WithdrawError, WithdrawFut, WithdrawRequest};
-use crate::{MmCoinEnum, PaymentInstructionArgs, WatcherReward, WatcherRewardError};
+use crate::{MmCoinEnum, PaymentInstructionArgs, ValidateWatcherSpendInput, WatcherReward, WatcherRewardError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -469,7 +469,11 @@ impl WatcherOps for TendermintToken {
         unimplemented!();
     }
 
-    fn validate_watcher_spend(&self, _tx: TransactionEnum) -> Result<(), MmError<ValidatePaymentError>> {
+    fn validate_taker_payment_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    fn validate_maker_payment_spend(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 

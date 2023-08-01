@@ -2,6 +2,7 @@
 
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
+use crate::ValidateWatcherSpendInput;
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
             ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MakerSwapTakerCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -270,7 +271,11 @@ impl WatcherOps for TestCoin {
         unimplemented!();
     }
 
-    fn validate_watcher_spend(&self, tx: TransactionEnum) -> Result<(), MmError<ValidatePaymentError>> {
+    fn validate_taker_payment_refund(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        unimplemented!()
+    }
+
+    fn validate_maker_payment_spend(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
         unimplemented!()
     }
 
