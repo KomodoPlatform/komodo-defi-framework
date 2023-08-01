@@ -54,21 +54,18 @@ trait EventsByState<S: ?Sized, E> {
 }
 
 pub trait StorableState {
-    type Event;
+    type StateMachine: StorableStateMachine;
 
-    fn get_events(&self) -> Vec<Self::Event>;
+    fn get_events(&self) -> Vec<<<Self::StateMachine as StorableStateMachine>::Storage as EventStorage>::Event>;
 }
 
-impl<
-        S: StorableStateMachine + EventsByState<T, <<S as StorableStateMachine>::Storage as EventStorage>::Event>,
-        T: State<StateMachine = S> + ?Sized,
-    > StorableState for T
-//where
-//    <<S as StorableStateMachine>::Storage as EventStorage>::Event = <T as StorableStateImpl>::Event,
-{
-    type Event = <<S as StorableStateMachine>::Storage as EventStorage>::Event;
+// + EventsByState<T, <<S as StorableStateMachine>::Storage as EventStorage>::Event>
+impl<S: StorableStateMachine, T: State<StateMachine = S> + ?Sized> StorableState for T {
+    type StateMachine = S;
 
-    fn get_events(&self) -> Vec<Self::Event> { S::events_by_state(self) }
+    fn get_events(&self) -> Vec<<<Self::StateMachine as StorableStateMachine>::Storage as EventStorage>::Event> {
+        vec![]
+    }
 }
 
 #[async_trait]
