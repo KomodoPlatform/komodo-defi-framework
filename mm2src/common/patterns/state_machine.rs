@@ -15,8 +15,6 @@ pub trait TransitionFrom<Prev> {}
 pub trait StateMachineTrait: Send + Sized + 'static {
     type Result: Send;
 
-    async fn on_new_state(&mut self, state: &dyn State<StateMachine = Self>);
-
     async fn run(&mut self, mut state: Box<dyn State<StateMachine = Self>>) -> Self::Result {
         loop {
             let result = state.on_changed(self).await;
@@ -24,57 +22,8 @@ pub trait StateMachineTrait: Send + Sized + 'static {
                 StateResult::ChangeState(ChangeGuard { next }) => next,
                 StateResult::Finish(ResultGuard { result }) => return result,
             };
-            self.on_new_state(next_state.as_ref()).await;
             state = next_state;
         }
-    }
-}
-
-#[async_trait]
-pub trait EventStorage: Sync {
-    type Event: Send;
-
-    async fn store_events(&self, events: Vec<Self::Event>);
-}
-
-#[async_trait]
-pub trait StorableStateMachine: Send + Sync + 'static {
-    type Storage: EventStorage;
-    type Result: Send;
-
-    fn storage(&self) -> &Self::Storage;
-
-    async fn store_events(&self, events: Vec<<Self::Storage as EventStorage>::Event>) {
-        self.storage().store_events(events).await
-    }
-}
-
-trait EventsByState<S: ?Sized, E> {
-    fn events_by_state(state: &S) -> Vec<E>;
-}
-
-pub trait StorableState {
-    type StateMachine: StorableStateMachine;
-
-    fn get_events(&self) -> Vec<<<Self::StateMachine as StorableStateMachine>::Storage as EventStorage>::Event>;
-}
-
-// + EventsByState<T, <<S as StorableStateMachine>::Storage as EventStorage>::Event>
-impl<S: StorableStateMachine, T: State<StateMachine = S> + ?Sized> StorableState for T {
-    type StateMachine = S;
-
-    fn get_events(&self) -> Vec<<<Self::StateMachine as StorableStateMachine>::Storage as EventStorage>::Event> {
-        vec![]
-    }
-}
-
-#[async_trait]
-impl<T: StorableStateMachine> StateMachineTrait for T {
-    type Result = T::Result;
-
-    async fn on_new_state(&mut self, state: &dyn State<StateMachine = Self>) {
-        let events = state.get_events();
-        self.store_events(events).await;
     }
 }
 
@@ -199,8 +148,6 @@ mod tests {
     #[async_trait]
     impl StateMachineTrait for AuthStateMachine {
         type Result = AuthResult;
-
-        async fn on_new_state(&mut self, _state: &dyn State<StateMachine = Self>) {}
     }
 
     struct ReadingState {

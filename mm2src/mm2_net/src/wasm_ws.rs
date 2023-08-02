@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use common::executor::SpawnFuture;
 use common::log::{debug, error};
-use common::state_machine::{LastState, State, StateExt, StateMachine, StateResult, TransitionFrom};
+use common::state_machine::{LastState, State, StateExt, StateMachineTrait, StateResult, TransitionFrom};
 use common::stringify_js_error;
 use futures::channel::mpsc::{self, SendError, TrySendError};
 use futures::channel::oneshot;
@@ -206,7 +206,7 @@ fn spawn_ws_transport<Spawner: SpawnFuture>(
     let user_shutdown = into_one_shutdown(incoming_shutdown, outgoing_shutdown);
 
     let state_event_rx = StateEventListener::new(outgoing_rx, ws_transport_rx, user_shutdown);
-    let ws_ctx = WsContext {
+    let mut state_machine = WsStateMachine {
         idx,
         ws,
         event_tx: incoming_tx,
@@ -214,8 +214,7 @@ fn spawn_ws_transport<Spawner: SpawnFuture>(
     };
 
     let fut = async move {
-        let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(ws_ctx);
-        state_machine.run(ConnectingState).await;
+        state_machine.run(Box::new(ConnectingState)).await;
     };
     spawner.spawn(fut);
 
@@ -367,7 +366,7 @@ impl Drop for WebSocketImpl {
     }
 }
 
-struct WsContext {
+struct WsStateMachine {
     idx: ConnIdx,
     ws: WebSocketImpl,
     /// The sender is used to send the transport events outside (to the userspace).
@@ -376,7 +375,11 @@ struct WsContext {
     state_event_rx: StateEventListener,
 }
 
-impl WsContext {
+impl StateMachineTrait for WsStateMachine {
+    type Result = ();
+}
+
+impl WsStateMachine {
     /// Send the `event` to the corresponding `WebSocketReceiver` instance.
     fn notify_listener(&mut self, event: WebSocketEvent) {
         if !self.event_tx.is_closed() {
@@ -406,10 +409,10 @@ impl WsContext {
     }
 }
 
-/// `WsContext` is not thread-safety `Send` because [`WebSocket::ws`] is not `Send` by default.
-/// Although wasm is currently single-threaded, we can implement the `Send` trait for `WsContext`,
+/// `WsStateMachine` is not thread-safety `Send` because [`WebSocket::ws`] is not `Send` by default.
+/// Although wasm is currently single-threaded, we can implement the `Send` trait for `WsStateMachine`,
 /// but it won't be safe when wasm becomes multi-threaded.
-unsafe impl Send for WsContext {}
+unsafe impl Send for WsStateMachine {}
 
 struct StateEventListener {
     rx: Box<dyn Stream<Item = StateEvent> + Unpin + Send>,
@@ -488,10 +491,9 @@ impl TransitionFrom<OpenState> for ClosedState {}
 
 #[async_trait]
 impl LastState for ClosedState {
-    type Ctx = WsContext;
-    type Result = ();
+    type StateMachine = WsStateMachine;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> Self::Result {
+    async fn on_changed(self: Box<Self>, ctx: &mut WsStateMachine) -> () {
         debug!("WebScoket idx={} => ClosedState", ctx.idx);
         // Notify the listener that the connection has been closed to prevent new outgoing messages.
         ctx.notify_listener(WebSocketEvent::Closed {
@@ -499,16 +501,15 @@ impl LastState for ClosedState {
         });
 
         // Please note that we don't need to close websocket via `ctx.ws.close_with_code()`.
-        // It will be closed on [`WsContext::drop`] right after the state machine is finished.
+        // It will be closed on [`WsStateMachine::drop`] right after the state machine is finished.
     }
 }
 
 #[async_trait]
 impl State for ConnectingState {
-    type Ctx = WsContext;
-    type Result = ();
+    type StateMachine = WsStateMachine;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
+    async fn on_changed(self: Box<Self>, ctx: &mut WsStateMachine) -> StateResult<Self::StateMachine> {
         debug!("WebSocket idx={} => ConnectingState", ctx.idx);
         while let Some(event) = ctx.state_event_rx.receive_one().await {
             match event {
@@ -544,10 +545,9 @@ impl State for ConnectingState {
 
 #[async_trait]
 impl State for OpenState {
-    type Ctx = WsContext;
-    type Result = ();
+    type StateMachine = WsStateMachine;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
+    async fn on_changed(self: Box<Self>, ctx: &mut WsStateMachine) -> StateResult<Self::StateMachine> {
         debug!("WebSocket idx={} => OpenState", ctx.idx);
         // notify the listener about the changed state
         ctx.notify_listener(WebSocketEvent::Establish);
