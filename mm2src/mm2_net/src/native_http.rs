@@ -28,7 +28,7 @@ use super::transport::{SlurpError, SlurpResult, SlurpResultJson};
 /// Provides requesting http through it
 ///
 /// Initially designed to be used with [hyper::Client] that could be constructed in different specific ways.
-/// one of wich is using with statically defined [HYPER] that is common client able to request https or https urls
+/// one of which is using with statically defined [HYPER] that is common client able to request https or https urls
 /// In the other case it can be a dangerous client that does not verify self signed signature
 ///
 /// # Examples
