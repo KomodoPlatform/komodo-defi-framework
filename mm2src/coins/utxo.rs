@@ -779,7 +779,11 @@ impl UtxoCoinFields {
             None
         };
 
-        let n_time = if self.conf.is_pos { Some(now_sec_u32()) } else { None };
+        let n_time = if self.conf.is_pos || self.conf.is_posv {
+            Some(now_sec_u32())
+        } else {
+            None
+        };
 
         TransactionInputSigner {
             version: self.conf.tx_version,
