@@ -179,7 +179,7 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
 
 #[test]
 fn test_tendermint_ibc_withdraw() {
-    // {rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000
+    // visit `{rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
     const IBC_SOURCE_CHANNEL: &str = "channel-93";
 
     const IBC_TARGET_ADDRESS: &str = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl";
