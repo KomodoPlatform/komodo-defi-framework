@@ -65,7 +65,7 @@ fn create_transfer_history_table_sql(chain: &Chain) -> MmResult<String, SqlError
     image_url TEXT,
     token_name TEXT,
     details_json TEXT,
-    PRIMARY KEY (transaction_hash, log_index, chain)
+    PRIMARY KEY (transaction_hash, log_index)
         );",
         table_name
     );
