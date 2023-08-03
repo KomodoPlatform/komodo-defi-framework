@@ -34,7 +34,7 @@ fn test_tendermint_activation_and_balance() {
 
     let result: RpcV2Response<TendermintActivationResult> = json::from_value(activation_result).unwrap();
     assert_eq!(result.result.address, expected_address);
-    let expected_balance: BigDecimal = "8.0959".parse().unwrap();
+    let expected_balance: BigDecimal = "0.575457".parse().unwrap();
     assert_eq!(result.result.balance.unwrap().spendable, expected_balance);
 
     let my_balance = block_on(my_balance(&mm, ATOM_TICKER));
@@ -179,7 +179,9 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
 
 #[test]
 fn test_tendermint_ibc_withdraw() {
-    const IBC_SOURCE_CHANNEL: &str = "channel-81";
+    // visit `{rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
+    const IBC_SOURCE_CHANNEL: &str = "channel-93";
+
     const IBC_TARGET_ADDRESS: &str = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl";
     const MY_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
 
