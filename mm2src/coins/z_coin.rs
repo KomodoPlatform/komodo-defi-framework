@@ -756,7 +756,7 @@ impl AsRef<UtxoCoinFields> for ZCoin {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum LightClientSyncParams {
+pub enum SyncStartPoint {
     Date(u64),
     Height(u64),
 }
@@ -771,7 +771,7 @@ pub enum ZcoinRpcMode {
         light_wallet_d_servers: Vec<String>,
         /// Specifies the parameters for synchronizing the wallet from a specific block. This overrides the
         /// `CheckPointBlockInfo` configuration in the coin settings.
-        sync_params: Option<LightClientSyncParams>,
+        sync_params: Option<SyncStartPoint>,
     },
 }
 
