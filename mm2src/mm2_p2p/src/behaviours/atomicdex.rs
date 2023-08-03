@@ -460,11 +460,9 @@ impl AtomicDexBehaviour {
                 message_id,
                 propagation_source,
             } => {
-                self.core.gossipsub.report_message_validation_result(
-                    &message_id,
-                    &propagation_source,
-                    MessageAcceptance::Accept,
-                )?;
+                self.core
+                    .gossipsub
+                    .propagate_message(&message_id, &propagation_source)?;
             },
         }
 
