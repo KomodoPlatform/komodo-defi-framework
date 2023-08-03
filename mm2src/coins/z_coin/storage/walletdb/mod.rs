@@ -1,13 +1,14 @@
-use crate::utxo::utxo_builder::DAY_IN_HOURS;
+use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
 use mm2_err_handle::prelude::*;
 
 cfg_native!(
-    use crate::utxo::utxo_builder::UtxoCoinBuilderCommonOps;
+    use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, DAY_IN_SECONDS};
     use crate::z_coin::{CheckPointBlockInfo, extended_spending_key_from_protocol_info_and_policy, LightClientSyncParams,
                     ZcoinConsensusParams, ZcoinRpcMode};
     use crate::z_coin::z_rpc::{create_wallet_db, ZRpcOps};
 
+    use common::now_sec;
     use hex::{FromHex, FromHexError};
     use parking_lot::Mutex;
     use rpc::v1::types::{Bytes, H256};
@@ -29,6 +30,7 @@ pub enum WalletDbError {
     IndexedDBError(String),
     GrpcError(String),
     DecodeError(String),
+    UtxoCoinBuildError(UtxoCoinBuildError),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -51,21 +53,21 @@ async fn checkpoint_block_from_height(
     height: u64,
     rpc: &mut impl ZRpcOps,
 ) -> Result<Option<CheckPointBlockInfo>, WalletDbError> {
-    let block = rpc
+    let tree_state = rpc
         .get_tree_state(height)
         .await
         .map_err(|err| WalletDbError::GrpcError(err.to_string()))?;
-    let hash = H256::from_str(&block.hash)
+    let hash = H256::from_str(&tree_state.hash)
         .map_err(|err| WalletDbError::DecodeError(err.to_string()))?
         .reversed();
     let sapling_tree = Bytes::new(
-        FromHex::from_hex(&block.tree).map_err(|err: FromHexError| WalletDbError::DecodeError(err.to_string()))?,
+        FromHex::from_hex(&tree_state.tree).map_err(|err: FromHexError| WalletDbError::DecodeError(err.to_string()))?,
     );
 
     Ok(Some(CheckPointBlockInfo {
-        height: block.height as u32,
+        height: tree_state.height as u32,
         hash,
-        time: block.time,
+        time: tree_state.time,
         sapling_tree,
     }))
 }
@@ -86,43 +88,21 @@ impl<'a> WalletDbShared {
             .get_block_height()
             .await
             .map_err(|err| WalletDbError::GrpcError(err.to_string()))?;
-
         let sync_block = match zcoin_builder.z_coin_params.mode.clone() {
             ZcoinRpcMode::Light { sync_params, .. } => {
                 let sync_height = match sync_params {
-                    Some(params) => match params {
-                        LightClientSyncParams::Date(date) => zcoin_builder
-                            .calculate_starting_height_from_date(date, current_block_height)
-                            .map_err(|err| {
-                                WalletDbError::ZcoinClientInitError(ZcoinClientInitError::ZcashDBError(err))
-                            })?,
-                        LightClientSyncParams::Height(height) => height,
-                    },
-                    None => {
-                        let avg_blocktime = zcoin_builder.conf()["avg_blocktime"].as_u64().ok_or_else(|| {
-                            WalletDbError::ZcoinClientInitError(ZcoinClientInitError::ZcashDBError(format!(
-                                "avg_blocktime not  specified in {} coin config",
-                                zcoin_builder.ticker()
-                            )))
-                        })?;
-                        let buffer = avg_blocktime * DAY_IN_HOURS;
-
-                        if current_block_height < buffer {
-                            return MmError::err(WalletDbError::ZcoinClientInitError(
-                                ZcoinClientInitError::ZcashDBError(format!(
-                                    "{} current_block_height: {current_block_height} must be greater than buffer: \
-                                        {buffer}",
-                                    zcoin_builder.ticker()
-                                )),
-                            ));
-                        }
-
-                        current_block_height - buffer
-                    },
+                    Some(LightClientSyncParams::Date(date)) => zcoin_builder
+                        .calculate_starting_height_from_date(date, current_block_height)
+                        .mm_err(WalletDbError::UtxoCoinBuildError)?,
+                    Some(LightClientSyncParams::Height(height)) => height,
+                    None => zcoin_builder
+                        .calculate_starting_height_from_date(now_sec() - DAY_IN_SECONDS, current_block_height)
+                        .mm_err(WalletDbError::UtxoCoinBuildError)?,
                 };
 
                 checkpoint_block_from_height(sync_height, rpc).await?
             },
+
             ZcoinRpcMode::Native => zcoin_builder.protocol_info.check_point_block.clone(),
         };
 

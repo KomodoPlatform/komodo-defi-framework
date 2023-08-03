@@ -771,11 +771,6 @@ pub enum ZcoinRpcMode {
         light_wallet_d_servers: Vec<String>,
         /// Specifies the parameters for synchronizing the wallet from a specific block. This overrides the
         /// `CheckPointBlockInfo` configuration in the coin settings.
-        ///
-        /// # Note:
-        /// The `LightClientSyncParams.date` field takes the highest priority, overriding both the
-        /// `LightClientSyncParams.height` and `CheckPointBlockInfo` if specified. Followed by `LightClientSyncParams
-        /// .height`.
         sync_params: Option<LightClientSyncParams>,
     },
 }
