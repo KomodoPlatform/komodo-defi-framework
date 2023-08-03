@@ -647,9 +647,11 @@ fn start_gossipsub(
             // Please note WASM nodes don't support `PeersExchange` currently,
             // so `get_all_network_seednodes` returns an empty list.
             for (peer_id, addr) in get_all_network_seednodes(netid) {
-                let multiaddr = addr.try_to_multiaddr(network_info)?;
-                peers_exchange.add_peer_addresses_to_known_peers(&peer_id, iter::once(multiaddr).collect());
-                gossipsub.add_explicit_relay(peer_id);
+                if peer_id != local_peer_id {
+                    let multiaddr = addr.try_to_multiaddr(network_info)?;
+                    peers_exchange.add_peer_addresses_to_known_peers(&peer_id, iter::once(multiaddr).collect());
+                    gossipsub.add_explicit_relay(peer_id);
+                }
             }
         }
 
