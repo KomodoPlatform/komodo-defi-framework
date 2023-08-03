@@ -10,7 +10,7 @@ use bitcrypto::sha256;
 use common::executor::Timer;
 use common::log;
 use common::state_machine::prelude::*;
-use common::state_machine::StateMachineTrait;
+use common::state_machine::{StandardStateMachine, StateMachineTrait};
 use cosmrs::tendermint::abci::Code as TxCode;
 use cosmrs::tendermint::abci::Event;
 use cosmrs::tx::Fee;
@@ -111,6 +111,11 @@ impl<Coin: CoinCapabilities, Storage: TxHistoryStorage> StateMachineTrait
     for TendermintTxHistoryStateMachine<Coin, Storage>
 {
     type Result = ();
+}
+
+impl<Coin: CoinCapabilities, Storage: TxHistoryStorage> StandardStateMachine
+    for TendermintTxHistoryStateMachine<Coin, Storage>
+{
 }
 
 struct TendermintInit<Coin, Storage> {

@@ -52,6 +52,11 @@ pub trait State: Send + Sync + 'static {
     async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine>;
 }
 
+#[async_trait]
+pub trait OnNewState<S> {
+    async fn on_new_state(&self, state: &S);
+}
+
 pub trait StateExt {
     /// Change the state to the `next_state`.
     /// This function performs the compile-time validation whether this state can transition to the `Next` state,
@@ -65,7 +70,26 @@ pub trait StateExt {
     }
 }
 
-impl<T: State> StateExt for T {}
+#[async_trait]
+pub trait OnNewStateExt {
+    /// Change the state to the `next_state`.
+    /// This function performs the compile-time validation whether this state can transition to the `Next` state,
+    /// i.e checks if `Next` implements [`Transition::from(ThisState)`].
+    async fn change_state<Next>(next_state: Next, machine: &Next::StateMachine) -> StateResult<Next::StateMachine>
+    where
+        Self: Sized,
+        Next: State + TransitionFrom<Self>,
+        Next::StateMachine: OnNewState<Next> + Sync,
+    {
+        machine.on_new_state(&next_state).await;
+        StateResult::ChangeState(ChangeGuard::next(next_state))
+    }
+}
+
+pub trait StandardStateMachine {}
+
+impl<S: StandardStateMachine, T: State<StateMachine = S>> StateExt for T {}
+impl<S: OnNewState<T>, T: State<StateMachine = S>> OnNewStateExt for T {}
 
 #[async_trait]
 pub trait LastState: Send + Sync + 'static {
@@ -110,6 +134,14 @@ impl<Machine: StateMachineTrait + 'static> ChangeGuard<Machine> {
     }
 }
 
+#[async_trait]
+impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> OnNewState<S> for T {
+    async fn on_new_state(&self, state: &S) {
+        let events = state.get_events();
+        self.store_events(events).await;
+    }
+}
+
 /// An instance of `ResultGuard` can be initialized within `state_machine` module only.
 pub struct ResultGuard<T> {
     /// The private field.
@@ -119,6 +151,30 @@ pub struct ResultGuard<T> {
 impl<T> ResultGuard<T> {
     /// The private constructor.
     fn new(result: T) -> Self { ResultGuard { result } }
+}
+
+#[async_trait]
+pub trait EventStorage: Sync {
+    type Event: Send;
+
+    async fn store_events(&self, events: Vec<Self::Event>);
+}
+
+#[async_trait]
+pub trait StorableStateMachine: StateMachineTrait {
+    type Storage: EventStorage;
+
+    fn storage(&self) -> &Self::Storage;
+
+    async fn store_events(&self, events: Vec<<Self::Storage as EventStorage>::Event>) {
+        self.storage().store_events(events).await
+    }
+}
+
+pub trait StorableState {
+    type StateMachine: StorableStateMachine;
+
+    fn get_events(&self) -> Vec<<<Self::StateMachine as StorableStateMachine>::Storage as EventStorage>::Event>;
 }
 
 #[cfg(test)]
@@ -149,6 +205,8 @@ mod tests {
     impl StateMachineTrait for AuthStateMachine {
         type Result = AuthResult;
     }
+
+    impl StandardStateMachine for AuthStateMachine {}
 
     struct ReadingState {
         rx: mpsc::Receiver<char>,

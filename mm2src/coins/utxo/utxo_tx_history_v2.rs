@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
 use common::state_machine::prelude::*;
-use common::state_machine::StateMachineTrait;
+use common::state_machine::{StandardStateMachine, StateMachineTrait};
 use derive_more::Display;
 use keys::Address;
 use mm2_err_handle::prelude::*;
@@ -148,6 +148,11 @@ struct UtxoTxHistoryStateMachine<Coin: UtxoTxHistoryOps, Storage: TxHistoryStora
 
 impl<Coin: UtxoTxHistoryOps, Storage: TxHistoryStorage> StateMachineTrait for UtxoTxHistoryStateMachine<Coin, Storage> {
     type Result = ();
+}
+
+impl<Coin: UtxoTxHistoryOps, Storage: TxHistoryStorage> StandardStateMachine
+    for UtxoTxHistoryStateMachine<Coin, Storage>
+{
 }
 
 impl<Coin, Storage> UtxoTxHistoryStateMachine<Coin, Storage>

@@ -9,7 +9,7 @@ use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, Re
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::state_machine::prelude::*;
-use common::state_machine::StateMachineTrait;
+use common::state_machine::{StandardStateMachine, StateMachineTrait};
 use common::{now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
@@ -42,6 +42,8 @@ struct WatcherStateMachine {
 impl StateMachineTrait for WatcherStateMachine {
     type Result = ();
 }
+
+impl StandardStateMachine for WatcherStateMachine {}
 
 impl WatcherStateMachine {
     fn taker_locktime(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration }

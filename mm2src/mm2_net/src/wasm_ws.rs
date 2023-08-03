@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use common::executor::SpawnFuture;
 use common::log::{debug, error};
-use common::state_machine::{LastState, State, StateExt, StateMachineTrait, StateResult, TransitionFrom};
+use common::state_machine::{LastState, StandardStateMachine, State, StateExt, StateMachineTrait, StateResult,
+                            TransitionFrom};
 use common::stringify_js_error;
 use futures::channel::mpsc::{self, SendError, TrySendError};
 use futures::channel::oneshot;
@@ -378,6 +379,8 @@ struct WsStateMachine {
 impl StateMachineTrait for WsStateMachine {
     type Result = ();
 }
+
+impl StandardStateMachine for WsStateMachine {}
 
 impl WsStateMachine {
     /// Send the `event` to the corresponding `WebSocketReceiver` instance.
