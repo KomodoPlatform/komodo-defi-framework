@@ -2,12 +2,9 @@
 //!
 //! See the usage examples in the `tests` module.
 
+use crate::prelude::StandardStateMachine;
 use crate::NotSame;
 use async_trait::async_trait;
-
-pub mod prelude {
-    pub use super::{LastState, State, StateExt, StateResult, TransitionFrom};
-}
 
 pub trait TransitionFrom<Prev> {}
 
@@ -44,7 +41,7 @@ impl<T> !TransitionFrom<T> for T {}
 pub trait State: Send + Sync + 'static {
     type StateMachine: StateMachineTrait;
     /// An action is called on entering this state.
-    /// To change the state to another one in the end of processing, use [`StateExt::change_state`].
+    /// To change the state to another one in the end of processing, use [`ChangeStateExt::change_state`].
     /// For example:
     /// ```rust
     /// return Self::change_state(next_state);
@@ -52,12 +49,7 @@ pub trait State: Send + Sync + 'static {
     async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine>;
 }
 
-#[async_trait]
-pub trait OnNewState<S> {
-    async fn on_new_state(&self, state: &S);
-}
-
-pub trait StateExt {
+pub trait ChangeStateExt {
     /// Change the state to the `next_state`.
     /// This function performs the compile-time validation whether this state can transition to the `Next` state,
     /// i.e checks if `Next` implements [`Transition::from(ThisState)`].
@@ -70,26 +62,7 @@ pub trait StateExt {
     }
 }
 
-#[async_trait]
-pub trait OnNewStateExt {
-    /// Change the state to the `next_state`.
-    /// This function performs the compile-time validation whether this state can transition to the `Next` state,
-    /// i.e checks if `Next` implements [`Transition::from(ThisState)`].
-    async fn change_state<Next>(next_state: Next, machine: &Next::StateMachine) -> StateResult<Next::StateMachine>
-    where
-        Self: Sized,
-        Next: State + TransitionFrom<Self>,
-        Next::StateMachine: OnNewState<Next> + Sync,
-    {
-        machine.on_new_state(&next_state).await;
-        StateResult::ChangeState(ChangeGuard::next(next_state))
-    }
-}
-
-pub trait StandardStateMachine {}
-
-impl<S: StandardStateMachine, T: State<StateMachine = S>> StateExt for T {}
-impl<S: OnNewState<T>, T: State<StateMachine = S>> OnNewStateExt for T {}
+impl<S: StandardStateMachine, T: State<StateMachine = S>> ChangeStateExt for T {}
 
 #[async_trait]
 pub trait LastState: Send + Sync + 'static {
@@ -127,18 +100,10 @@ pub struct ChangeGuard<Machine: StateMachineTrait> {
 
 impl<Machine: StateMachineTrait + 'static> ChangeGuard<Machine> {
     /// The private constructor.
-    fn next<Next: State<StateMachine = Machine>>(next_state: Next) -> Self {
+    pub(crate) fn next<Next: State<StateMachine = Machine>>(next_state: Next) -> Self {
         ChangeGuard {
             next: Box::new(next_state),
         }
-    }
-}
-
-#[async_trait]
-impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> OnNewState<S> for T {
-    async fn on_new_state(&self, state: &S) {
-        let events = state.get_events();
-        self.store_events(events).await;
     }
 }
 
@@ -153,35 +118,11 @@ impl<T> ResultGuard<T> {
     fn new(result: T) -> Self { ResultGuard { result } }
 }
 
-#[async_trait]
-pub trait EventStorage: Sync {
-    type Event: Send;
-
-    async fn store_events(&self, events: Vec<Self::Event>);
-}
-
-#[async_trait]
-pub trait StorableStateMachine: StateMachineTrait {
-    type Storage: EventStorage;
-
-    fn storage(&self) -> &Self::Storage;
-
-    async fn store_events(&self, events: Vec<<Self::Storage as EventStorage>::Event>) {
-        self.storage().store_events(events).await
-    }
-}
-
-pub trait StorableState {
-    type StateMachine: StorableStateMachine;
-
-    fn get_events(&self) -> Vec<<<Self::StateMachine as StorableStateMachine>::Storage as EventStorage>::Event>;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::block_on;
-    use crate::executor::spawn;
+    use common::block_on;
+    use common::executor::spawn;
     use futures::channel::mpsc;
     use futures::{SinkExt, StreamExt};
     use std::collections::HashMap;

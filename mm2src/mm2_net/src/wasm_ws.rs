@@ -1,13 +1,14 @@
 use async_trait::async_trait;
 use common::executor::SpawnFuture;
 use common::log::{debug, error};
-use common::state_machine::{LastState, StandardStateMachine, State, StateExt, StateMachineTrait, StateResult,
-                            TransitionFrom};
 use common::stringify_js_error;
 use futures::channel::mpsc::{self, SendError, TrySendError};
 use futures::channel::oneshot;
 use futures::{FutureExt, SinkExt, Stream, StreamExt};
 use mm2_err_handle::prelude::*;
+use mm2_state_machine::prelude::StandardStateMachine;
+use mm2_state_machine::state_machine::{ChangeStateExt, LastState, State, StateMachineTrait, StateResult,
+                                       TransitionFrom};
 use serde_json::{self as json, Value as Json};
 use std::future::Future;
 use std::pin::Pin;

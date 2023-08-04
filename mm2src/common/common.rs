@@ -11,12 +11,9 @@
 //!                   binary
 
 #![allow(uncommon_codepoints)]
-#![feature(allocator_api)]
 #![feature(integer_atomics, panic_info_message)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
-#![feature(negative_impls)]
-#![feature(auto_traits)]
 #![feature(drain_filter)]
 
 #[macro_use] extern crate arrayref;
@@ -120,7 +117,6 @@ pub mod custom_iter;
 pub mod number_type_casting;
 pub mod password_policy;
 pub mod seri;
-#[path = "patterns/state_machine.rs"] pub mod state_machine;
 pub mod time_cache;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -145,7 +141,6 @@ use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
 use serde_json::{self as json, Value as Json};
 use sha2::{Digest, Sha256};
-use std::alloc::Allocator;
 use std::convert::TryInto;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
@@ -197,11 +192,6 @@ lazy_static! {
 lazy_static! {
     pub(crate) static ref LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(open_log_file());
 }
-
-pub auto trait NotSame {}
-impl<X> !NotSame for (X, X) {}
-// Makes the error conversion work for structs/enums containing Box<dyn ...>
-impl<T: ?Sized, A: Allocator> NotSame for Box<T, A> {}
 
 /// Converts u64 satoshis to f64
 pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }

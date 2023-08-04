@@ -10,13 +10,13 @@ use crate::{BalanceError, BalanceResult, BlockHeightAndTime, HistorySyncState, M
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
-use common::state_machine::prelude::*;
-use common::state_machine::{StandardStateMachine, StateMachineTrait};
 use derive_more::Display;
 use keys::Address;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
+use mm2_state_machine::prelude::*;
+use mm2_state_machine::state_machine::StateMachineTrait;
 use rpc::v1::types::H256 as H256Json;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::iter::FromIterator;
