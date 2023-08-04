@@ -34,7 +34,7 @@ use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -1832,11 +1832,19 @@ impl TakerSwap {
         let secret_hash = self.r().secret_hash.clone();
         let swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
         let watcher_reward = self.r().watcher_reward;
+        let time_lock: u32 = match locktime.try_into() {
+            Ok(t) => t,
+            Err(e) => {
+                return Ok((Some(TakerSwapCommand::Finish), vec![
+                    TakerSwapEvent::TakerPaymentRefundFailed(ERRL!("!locktime.try_into: {}", e.to_string()).into()),
+                ]))
+            },
+        };
         let refund_result = self
             .taker_coin
             .send_taker_refunds_payment(RefundPaymentArgs {
                 payment_tx: &taker_payment,
-                time_lock: locktime as u32,
+                time_lock,
                 other_pubkey: other_taker_coin_htlc_pub.as_slice(),
                 secret_hash: &secret_hash,
                 swap_contract_address: &swap_contract_address,

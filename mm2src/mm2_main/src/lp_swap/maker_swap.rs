@@ -34,6 +34,7 @@ use parking_lot::Mutex as PaMutex;
 use primitives::hash::{H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use std::any::TypeId;
+use std::convert::TryInto;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -1219,11 +1220,19 @@ impl MakerSwap {
         let other_maker_coin_htlc_pub = self.r().other_maker_coin_htlc_pub;
         let maker_coin_swap_contract_address = self.r().data.maker_coin_swap_contract_address.clone();
         let watcher_reward = self.r().watcher_reward;
+        let time_lock: u32 = match locktime.try_into() {
+            Ok(t) => t,
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![
+                    MakerSwapEvent::MakerPaymentRefundFailed(ERRL!("!locktime.try_into: {}", e.to_string()).into()),
+                ]))
+            },
+        };
         let spend_result = self
             .maker_coin
             .send_maker_refunds_payment(RefundPaymentArgs {
                 payment_tx: &maker_payment,
-                time_lock: locktime as u32,
+                time_lock,
                 other_pubkey: other_maker_coin_htlc_pub.as_slice(),
                 secret_hash: self.secret_hash().as_slice(),
                 swap_contract_address: &maker_coin_swap_contract_address,

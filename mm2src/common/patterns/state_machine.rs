@@ -18,11 +18,12 @@ pub trait StateMachineTrait: Send + Sized + 'static {
     async fn run(&mut self, mut state: Box<dyn State<StateMachine = Self>>) -> Self::Result {
         loop {
             let result = state.on_changed(self).await;
-            let next_state = match result {
-                StateResult::ChangeState(ChangeGuard { next }) => next,
+            match result {
+                StateResult::ChangeState(ChangeGuard { next }) => {
+                    state = next;
+                },
                 StateResult::Finish(ResultGuard { result }) => return result,
             };
-            state = next_state;
         }
     }
 }
@@ -145,7 +146,6 @@ mod tests {
 
     type AuthResult = Result<UserId, ErrorType>;
 
-    #[async_trait]
     impl StateMachineTrait for AuthStateMachine {
         type Result = AuthResult;
     }
