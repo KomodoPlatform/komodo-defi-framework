@@ -312,7 +312,6 @@ where
         let sign_policy = match self.coin.as_ref().priv_key_policy {
             PrivKeyPolicy::Iguana(ref key_pair) => SignPolicy::WithKeyPair(key_pair),
             // InitUtxoWithdraw works only for hardware wallets so it's ok to use signing with activated keypair here as a placeholder.
-            // Todo: recheck above comment
             PrivKeyPolicy::HDWallet {
                 activated_key: ref activated_key_pair,
                 ..
@@ -377,7 +376,6 @@ impl<'a, Coin> InitUtxoWithdraw<'a, Coin> {
 pub struct StandardUtxoWithdraw<Coin> {
     coin: Coin,
     req: WithdrawRequest,
-    // Todo: revise this in refactors
     key_pair: KeyPair,
     my_address: Address,
     my_address_string: String,

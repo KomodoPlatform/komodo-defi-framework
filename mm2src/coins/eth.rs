@@ -772,7 +772,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 
     let (tx_hash, tx_hex) = match coin.priv_key_policy {
         EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {
-            // Todo: how nonce_lock should work with withdrawing from other addresses of the HD account? I will leave it for now
+            // Todo: nonce_lock is still global for all addresses but this needs to be per address
             let _nonce_lock = coin.nonce_lock.lock().await;
             let (nonce, _) = get_addr_nonce(my_address, coin.web3_instances.clone())
                 .compat()

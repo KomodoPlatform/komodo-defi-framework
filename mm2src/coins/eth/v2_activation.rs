@@ -261,10 +261,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
                 activated_key: key_pair,
                 ..
             },
-        ) => {
-            // Todo: need to test GUI authentication using only the activated keypair
-            build_http_transport(ctx, ticker.clone(), my_address_str, key_pair, &req.nodes).await?
-        },
+        ) => build_http_transport(ctx, ticker.clone(), my_address_str, key_pair, &req.nodes).await?,
         (EthRpcMode::Http, EthPrivKeyPolicy::Trezor) => {
             return MmError::err(EthActivationV2Error::PrivKeyPolicyNotAllowed(
                 PrivKeyPolicyNotAllowed::HardwareWalletNotSupported,

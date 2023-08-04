@@ -2776,7 +2776,6 @@ pub(crate) fn priv_key_policy_from_build_and_conf(
     priv_key_build_policy: PrivKeyBuildPolicy,
 ) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
     match priv_key_build_policy {
-        // Todo: refactor errors
         PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(TendermintPrivKeyPolicy::Iguana(iguana)),
         PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
             let derivation_path = conf.derivation_path.as_ref().or_mm_err(|| TendermintInitError {

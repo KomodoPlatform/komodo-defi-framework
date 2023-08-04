@@ -82,7 +82,6 @@ impl GlobalHDAccountCtx {
     }
 }
 
-// Todo: rethink having this as a public function and the refactor above
 pub fn derive_secp256k1_secret(
     bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
     derivation_path: &StandardHDPathToCoin,

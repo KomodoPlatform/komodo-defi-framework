@@ -594,7 +594,6 @@ pub struct UtxoCoinFields {
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
     /// This cache helps to prevent UTXO reuse in such cases
-    // Todo: this is also used in withdraw, check other fields/configs used in withdraw, it might also be used in other places, it can be updated to add more scriptpubkeys
     pub recently_spent_outpoints: AsyncMutex<RecentlySpentOutPoints>,
     pub tx_hash_algo: TxHashAlgo,
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
@@ -1481,7 +1480,6 @@ impl Default for ElectrumBuilderArgs {
 }
 
 #[derive(Debug)]
-// Todo: check this against priv_key_policy
 pub struct UtxoHDWallet {
     pub hd_wallet_rmd160: H160,
     pub hd_wallet_storage: HDWalletCoinStorage,

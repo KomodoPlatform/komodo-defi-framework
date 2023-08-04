@@ -675,7 +675,6 @@ impl MmCoin for SolanaCoin {
 
     fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
 
-    // Todo: add support for HD wallet withdraw if needed
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())
     }

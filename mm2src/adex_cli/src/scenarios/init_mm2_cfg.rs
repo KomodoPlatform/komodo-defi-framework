@@ -317,7 +317,6 @@ impl Mm2Cfg {
                 .with_formatter(DEFAULT_OPTION_BOOL_FORMATTER)
                 .with_default_value_formatter(DEFAULT_DEFAULT_OPTION_BOOL_FORMATTER)
                 .with_default(InquireOption::None)
-                // Todo: mention in PR comment that activation scheme data should be updated
                 .with_help_message(r#"Optional. If this value is set, the AtomicDEX-API will work in HD wallet mode only, coins will need to have a coin derivation path entry in the coins file for activation. path_to_address `/account'/change/address_index` will have to be set in coins activation to change the default HD wallet address that is used in swaps for a coin in the full derivation path as follows: m/purpose'/coin_type/account'/change/address_index"#)
                 .prompt()
                 .map_err(|error|

@@ -212,7 +212,6 @@ pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResu
 
 async fn get_moralis_nft_list(ctx: &MmArc, chain: &Chain, url: &Url) -> MmResult<Vec<Nft>, GetNftInfoError> {
     let mut res_list = Vec::new();
-    // Todo: implement HD account for NFTs
     let my_address = get_eth_address(ctx, &chain.to_ticker(), &StandardHDCoinAddress::default()).await?;
 
     let mut uri_without_cursor = url.clone();
@@ -265,7 +264,6 @@ async fn get_moralis_nft_transfers(
     url: &Url,
 ) -> MmResult<Vec<NftTransferHistory>, GetNftInfoError> {
     let mut res_list = Vec::new();
-    // Todo: implement HD account for NFTs
     let my_address = get_eth_address(ctx, &chain.to_ticker(), &StandardHDCoinAddress::default()).await?;
 
     let mut uri_without_cursor = url.clone();
@@ -380,7 +378,6 @@ async fn get_moralis_metadata(
 /// `withdraw_nft` function generates, signs and returns a transaction that transfers NFT
 /// from my address to recipient's address.
 /// This method generates a raw transaction which should then be broadcast using `send_raw_transaction`.
-// Todo: HD wallet withdraw support
 pub async fn withdraw_nft(ctx: MmArc, req: WithdrawNftReq) -> WithdrawNftResult {
     match req {
         WithdrawNftReq::WithdrawErc1155(erc1155_withdraw) => withdraw_erc1155(ctx, erc1155_withdraw).await,
@@ -502,7 +499,6 @@ async fn update_nft_list<T: NftListStorageOps + NftTxHistoryStorageOps>(
     let txs = storage.get_txs_from_block(chain, scan_from_block).await?;
     let req = MyAddressReq {
         coin: chain.to_ticker(),
-        // Todo: implement HD account for NFTs
         path_to_address: StandardHDCoinAddress::default(),
     };
     let my_address = get_my_address(ctx.clone(), req).await?.wallet_address.to_lowercase();

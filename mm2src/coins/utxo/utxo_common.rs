@@ -706,7 +706,6 @@ pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> MmRes
 pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
     match coin.priv_key_policy {
         PrivKeyPolicy::Iguana(ref key_pair) => Ok(key_pair.public()),
-        // Todo: recheck this since we can use any public key for any path_to_addr in swaps, etc.. using this, edit this comment if I will implement this in next PRs
         PrivKeyPolicy::HDWallet {
             activated_key: ref activated_key_pair,
             ..
@@ -2479,7 +2478,6 @@ pub fn current_block(coin: &UtxoCoinFields) -> Box<dyn Future<Item = u64, Error 
 pub fn display_priv_key(coin: &UtxoCoinFields) -> Result<String, String> {
     match coin.priv_key_policy {
         PrivKeyPolicy::Iguana(ref key_pair) => Ok(key_pair.private().to_string()),
-        // Todo: recheck this since we can use display any priv key for any path_to_addr using this, edit this comment if I will implement this in next PRs
         PrivKeyPolicy::HDWallet {
             activated_key: ref activated_key_pair,
             ..
@@ -4314,7 +4312,6 @@ where
 pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> KeyPair {
     match coin.priv_key_policy {
         PrivKeyPolicy::Iguana(k) => k,
-        // Todo: recheck this since we can derive any keypair for any path_to_addr in swaps using this, edit this comment if I will implement this in next PRs
         PrivKeyPolicy::HDWallet {
             activated_key: activated_key_pair,
             ..

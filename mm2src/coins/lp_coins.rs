@@ -2735,7 +2735,6 @@ pub enum PrivKeyActivationPolicy {
     Trezor,
 }
 
-// Todo: should default be changed to HD wallet?
 impl Default for PrivKeyActivationPolicy {
     fn default() -> Self { PrivKeyActivationPolicy::ContextPrivKey }
 }
@@ -2743,7 +2742,6 @@ impl Default for PrivKeyActivationPolicy {
 #[derive(Clone, Debug)]
 pub enum PrivKeyPolicy<T> {
     Iguana(T),
-    // Todo: fix withdraw for other coins (ETH, etc..)
     HDWallet {
         /// Derivation path of the coin.
         /// This derivation path consists of `purpose` and `coin_type` only
