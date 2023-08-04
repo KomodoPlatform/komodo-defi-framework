@@ -32,7 +32,6 @@ pub enum UtxoConfError {
     InvalidVersionGroupId(String),
     InvalidAddressFormat(String),
     InvalidDecimals(String),
-    SyncConfError(String),
 }
 
 impl From<Bip32Error> for UtxoConfError {
