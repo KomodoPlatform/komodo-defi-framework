@@ -1,6 +1,10 @@
-## v1.0.6-beta - 2023-07-07
+## v1.0.6-beta - 2023-07-24
 
 **Features:**
+- Komodo DeFi Framework was introduced in [#1903](https://github.com/KomodoPlatform/atomicDEX-API/issues/1903)
+   - The project/repo was renamed from AtomicDEX-API to Komodo-DeFi Framework
+   - The readme file, logo, links, and some references in the documentation were updated to reflect the new name/brand
+   - CI was updated to use the new name where it's needed.
 - Swap watcher nodes [#1431](https://github.com/KomodoPlatform/atomicDEX-API/issues/1431)
   - Using watcher nodes for swaps were enabled by default for UTXO coins in [#1859](https://github.com/KomodoPlatform/atomicDEX-API/pull/1859)
     - `use_watchers` configuration was set to true by default. It was later disabled in [#1897](https://github.com/KomodoPlatform/atomicDEX-API/pull/1897) due to this issue [#1887](https://github.com/KomodoPlatform/atomicDEX-API/issues/1887) 
@@ -13,6 +17,9 @@
   - Handling of `bafy` in IPFS Moralis links in a correct way was done in [#1877](https://github.com/KomodoPlatform/atomicDEX-API/pull/1877)
   - `get_uri_meta` function was added to optimize the retrieval of `UriMeta` from `token_uri` and `metadata` in [#1877](https://github.com/KomodoPlatform/atomicDEX-API/pull/1877)
   - `protect_from_spam` feature was added to redact URLs in specific fields and flag them as possible spam in [#1877](https://github.com/KomodoPlatform/atomicDEX-API/pull/1877)
+  - Address is now used instead of string in NFT and transaction objects in [#1914](https://github.com/KomodoPlatform/atomicDEX-API/pull/1914)
+  - `guard: Arc<AsyncMutex<()>>` from struct `NftCtx` is added to lock nft functions which uses db in [#1914](https://github.com/KomodoPlatform/atomicDEX-API/pull/1914)
+  - IndexedDB Cursor collect method was used to fix uncaught Error in [#1914](https://github.com/KomodoPlatform/atomicDEX-API/pull/1914)
 - HTTPS support was added for the RPC server in [#1861](https://github.com/KomodoPlatform/atomicDEX-API/pull/1861)
 - Adex-CLI [#1682](https://github.com/KomodoPlatform/atomicDEX-API/issues/1682)
   - New commands `enable`, `get-enabled`, `orderbook`,`sell`, `buy` were added to adex-cli in [#1768](https://github.com/KomodoPlatform/atomicDEX-API/pull/1768)
@@ -37,6 +44,11 @@
 - A bug was fixed for adex-cli to allow starting if configuration does not exist in [#1889](https://github.com/KomodoPlatform/atomicDEX-API/pull/1889)
 - IBC and standard withdrawals for Cosmos now allow users to specify the gas price and gas limit for each transaction [#1894](https://github.com/KomodoPlatform/atomicDEX-API/pull/1894)
 - A fix was introduced to adex-cli to allow starting mm2 from cli under regular user in macOS [#1856](https://github.com/KomodoPlatform/atomicDEX-API/pull/1856)
+- The repo logo was updated to be visible in GitHub light theme in [#1904](https://github.com/KomodoPlatform/atomicDEX-API/issues/1904)
+- A CI job was added to check if mm2 version was bumped before merging any pull request to main in [#1899](https://github.com/KomodoPlatform/atomicDEX-API/issues/1899)
+- All CI tests now run with the `--no-fail-fast` flag, allowing other tests to proceed despite any failures [#1907](https://github.com/KomodoPlatform/atomicDEX-API/issues/1907)
+- Index out of bounds errors in the `tx_details_by_hash` functions was fixed in [#1915](https://github.com/KomodoPlatform/atomicDEX-API/issues/1915)
+- Adex-CLI `test_activation_scheme` was fixed by removing the old file in [#1920](https://github.com/KomodoPlatform/atomicDEX-API/issues/1920)
 
 
 ## v1.0.5-beta - 2023-06-08

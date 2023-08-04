@@ -121,6 +121,8 @@ pub struct MmCtx {
     pub graceful_shutdown_registry: graceful_shutdown::GracefulShutdownRegistry,
     #[cfg(target_arch = "wasm32")]
     pub db_namespace: DbNamespaceId,
+    /// The context belonging to the `nft` mod: `NftCtx`.
+    pub nft_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
 }
 
 impl MmCtx {
@@ -162,6 +164,7 @@ impl MmCtx {
             graceful_shutdown_registry: graceful_shutdown::GracefulShutdownRegistry::default(),
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
+            nft_ctx: Mutex::new(None),
         }
     }
 

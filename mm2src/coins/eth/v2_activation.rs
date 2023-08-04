@@ -204,7 +204,7 @@ impl EthCoin {
             ticker,
             gas_station_url: self.gas_station_url.clone(),
             gas_station_decimals: self.gas_station_decimals,
-            gas_station_policy: self.gas_station_policy,
+            gas_station_policy: self.gas_station_policy.clone(),
             web3,
             web3_instances,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),

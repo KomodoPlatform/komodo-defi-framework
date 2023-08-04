@@ -10,7 +10,7 @@ use super::OrderbookConfig;
 use crate::activation_scheme_db::get_activation_scheme;
 use crate::adex_config::AdexConfig;
 use crate::transport::Transport;
-use crate::{error_anyhow, error_bail, warn_anyhow, warn_bail};
+use crate::{error_anyhow, error_bail, warn_anyhow};
 
 pub(crate) struct AdexProc<'trp, 'hand, 'cfg, T: Transport, H: ResponseHandler, C: AdexConfig + ?Sized> {
     pub(crate) transport: Option<&'trp T>,
@@ -37,9 +37,7 @@ impl<T: Transport, P: ResponseHandler, C: AdexConfig + 'static> AdexProc<'_, '_,
         info!("Enabling asset: {asset}");
 
         let activation_scheme = get_activation_scheme()?;
-        let Some(activation_method) = activation_scheme.get_activation_method(asset) else {
-            warn_bail!("Asset is not known: {asset}")
-        };
+        let activation_method = activation_scheme.get_activation_method(asset)?;
 
         let enable = Command::builder()
             .flatten_data(activation_method)

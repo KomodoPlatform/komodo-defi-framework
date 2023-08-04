@@ -1,6 +1,8 @@
+use crate::eth::eth_addr_to_hex;
 use crate::nft::nft_structs::{Chain, ContractType, Nft, NftCommon, NftTransferCommon, NftTransferHistory,
                               NftTxHistoryFilters, TransferStatus, TxMeta, UriMeta};
 use crate::nft::storage::{NftListStorageOps, NftStorageBuilder, NftTxHistoryStorageOps, RemoveNftResult};
+use ethereum_types::Address;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 use std::num::NonZeroUsize;
@@ -19,10 +21,10 @@ const TX_HASH: &str = "0x1e9f04e9b571b283bde02c98c2a97da39b2bb665b57c1f2b0b733f9
 pub(crate) fn nft() -> Nft {
     Nft {
         common: NftCommon {
-            token_address: "0x5c7d6712dfaf0cb079d48981781c8705e8417ca0".to_string(),
+            token_address: Address::from_str("0x5c7d6712dfaf0cb079d48981781c8705e8417ca0").unwrap(),
             token_id: Default::default(),
             amount: BigDecimal::from_str("2").unwrap(),
-            owner_of: "0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2".to_string(),
+            owner_of: Address::from_str("0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2").unwrap(),
             token_hash: Some("b34ddf294013d20a6d70691027625839".to_string()),
             collection_name: None,
             symbol: None,
@@ -63,10 +65,10 @@ fn tx() -> NftTransferHistory {
             log_index: Some(495),
             value: Default::default(),
             transaction_type: Some("Single".to_string()),
-            token_address: "0xfd913a305d70a60aac4faac70c739563738e1f81".to_string(),
+            token_address: Address::from_str("0xfd913a305d70a60aac4faac70c739563738e1f81").unwrap(),
             token_id: BigDecimal::from_str("214300047252").unwrap(),
-            from_address: "0x6fad0ec6bb76914b2a2a800686acc22970645820".to_string(),
-            to_address: "0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2".to_string(),
+            from_address: Address::from_str("0x6fad0ec6bb76914b2a2a800686acc22970645820").unwrap(),
+            to_address: Address::from_str("0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2").unwrap(),
             amount: BigDecimal::from_str("1").unwrap(),
             verified: Some(1),
             operator: None,
@@ -87,10 +89,10 @@ fn tx() -> NftTransferHistory {
 fn nft_list() -> Vec<Nft> {
     let nft = Nft {
         common: NftCommon {
-            token_address: "0x5c7d6712dfaf0cb079d48981781c8705e8417ca0".to_string(),
+            token_address: Address::from_str("0x5c7d6712dfaf0cb079d48981781c8705e8417ca0").unwrap(),
             token_id: Default::default(),
             amount: BigDecimal::from_str("2").unwrap(),
-            owner_of: "0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2".to_string(),
+            owner_of: Address::from_str("0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2").unwrap(),
             token_hash: Some("b34ddf294013d20a6d70691027625839".to_string()),
             collection_name: None,
             symbol: None,
@@ -119,10 +121,10 @@ fn nft_list() -> Vec<Nft> {
 
     let nft1 = Nft {
         common: NftCommon {
-            token_address: "0xfd913a305d70a60aac4faac70c739563738e1f81".to_string(),
+            token_address: Address::from_str("0xfd913a305d70a60aac4faac70c739563738e1f81").unwrap(),
             token_id: BigDecimal::from_str("214300047252").unwrap(),
             amount: BigDecimal::from_str("1").unwrap(),
-            owner_of: "0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2".to_string(),
+            owner_of: Address::from_str("0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2").unwrap(),
             token_hash: Some("c5d1cfd75a0535b0ec750c0156e6ddfe".to_string()),
             collection_name: Some("Binance NFT Mystery Box-Back to Blockchain Future".to_string()),
             symbol: Some("BMBBBF".to_string()),
@@ -157,10 +159,10 @@ fn nft_list() -> Vec<Nft> {
 
     let nft2 = Nft {
         common: NftCommon {
-            token_address: "0xfd913a305d70a60aac4faac70c739563738e1f81".to_string(),
+            token_address: Address::from_str("0xfd913a305d70a60aac4faac70c739563738e1f81").unwrap(),
             token_id: BigDecimal::from_str("214300044414").unwrap(),
             amount: BigDecimal::from_str("1").unwrap(),
-            owner_of: "0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2".to_string(),
+            owner_of: Address::from_str("0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2").unwrap(),
             token_hash: Some("125f8f4e952e107c257960000b4b250e".to_string()),
             collection_name: Some("Binance NFT Mystery Box-Back to Blockchain Future".to_string()),
             symbol: Some("BMBBBF".to_string()),
@@ -195,7 +197,7 @@ fn nft_list() -> Vec<Nft> {
     vec![nft, nft1, nft2]
 }
 
-fn nft_tx_historty() -> Vec<NftTransferHistory> {
+fn nft_tx_history() -> Vec<NftTransferHistory> {
     let tx = NftTransferHistory {
         common: NftTransferCommon {
             block_hash: Some("0xcb41654fc5cf2bf5d7fd3f061693405c74d419def80993caded0551ecfaeaae5".to_string()),
@@ -204,10 +206,10 @@ fn nft_tx_historty() -> Vec<NftTransferHistory> {
             log_index: Some(139),
             value: Default::default(),
             transaction_type: Some("Single".to_string()),
-            token_address: "0x5c7d6712dfaf0cb079d48981781c8705e8417ca0".to_string(),
+            token_address: Address::from_str("0x5c7d6712dfaf0cb079d48981781c8705e8417ca0").unwrap(),
             token_id: Default::default(),
-            from_address: "0x4ff0bbc9b64d635a4696d1a38554fb2529c103ff".to_string(),
-            to_address: "0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2".to_string(),
+            from_address: Address::from_str("0x4ff0bbc9b64d635a4696d1a38554fb2529c103ff").unwrap(),
+            to_address: Address::from_str("0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2").unwrap(),
             amount: BigDecimal::from_str("1").unwrap(),
             verified: Some(1),
             operator: Some("0x4ff0bbc9b64d635a4696d1a38554fb2529c103ff".to_string()),
@@ -232,10 +234,10 @@ fn nft_tx_historty() -> Vec<NftTransferHistory> {
             log_index: Some(495),
             value: Default::default(),
             transaction_type: Some("Single".to_string()),
-            token_address: "0xfd913a305d70a60aac4faac70c739563738e1f81".to_string(),
+            token_address: Address::from_str("0xfd913a305d70a60aac4faac70c739563738e1f81").unwrap(),
             token_id: BigDecimal::from_str("214300047252").unwrap(),
-            from_address: "0x6fad0ec6bb76914b2a2a800686acc22970645820".to_string(),
-            to_address: "0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2".to_string(),
+            from_address: Address::from_str("0x6fad0ec6bb76914b2a2a800686acc22970645820").unwrap(),
+            to_address: Address::from_str("0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2").unwrap(),
             amount: BigDecimal::from_str("1").unwrap(),
             verified: Some(1),
             operator: None,
@@ -262,10 +264,10 @@ fn nft_tx_historty() -> Vec<NftTransferHistory> {
             log_index: Some(201),
             value: Default::default(),
             transaction_type: Some("Single".to_string()),
-            token_address: "0xfd913a305d70a60aac4faac70c739563738e1f81".to_string(),
+            token_address: Address::from_str("0xfd913a305d70a60aac4faac70c739563738e1f81").unwrap(),
             token_id: BigDecimal::from_str("214300044414").unwrap(),
-            from_address: "0x6fad0ec6bb76914b2a2a800686acc22970645820".to_string(),
-            to_address: "0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2".to_string(),
+            from_address: Address::from_str("0x6fad0ec6bb76914b2a2a800686acc22970645820").unwrap(),
+            to_address: Address::from_str("0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2").unwrap(),
             amount: BigDecimal::from_str("1").unwrap(),
             verified: Some(1),
             operator: None,
@@ -387,7 +389,11 @@ pub(crate) async fn test_nft_amount_impl() {
     nft.common.amount -= BigDecimal::from(1);
     storage.update_nft_amount(&chain, nft.clone(), 25919800).await.unwrap();
     let amount = storage
-        .get_nft_amount(&chain, nft.common.token_address.clone(), nft.common.token_id.clone())
+        .get_nft_amount(
+            &chain,
+            eth_addr_to_hex(&nft.common.token_address),
+            nft.common.token_id.clone(),
+        )
         .await
         .unwrap()
         .unwrap();
@@ -402,7 +408,7 @@ pub(crate) async fn test_nft_amount_impl() {
         .await
         .unwrap();
     let amount = storage
-        .get_nft_amount(&chain, nft.common.token_address, nft.common.token_id)
+        .get_nft_amount(&chain, eth_addr_to_hex(&nft.common.token_address), nft.common.token_id)
         .await
         .unwrap()
         .unwrap();
@@ -422,7 +428,7 @@ pub(crate) async fn test_refresh_metadata_impl() {
         .unwrap();
     nft.common.symbol = Some(new_symbol.to_string());
     drop_mutability!(nft);
-    let token_add = nft.common.token_address.clone();
+    let token_add = eth_addr_to_hex(&nft.common.token_address);
     let token_id = nft.common.token_id.clone();
     storage.refresh_nft_metadata(&chain, nft).await.unwrap();
     let nft_upd = storage.get_nft(&chain, token_add, token_id).await.unwrap().unwrap();
@@ -432,7 +438,7 @@ pub(crate) async fn test_refresh_metadata_impl() {
 pub(crate) async fn test_add_get_txs_impl() {
     let chain = Chain::Bsc;
     let storage = init_nft_history_storage(&chain).await;
-    let txs = nft_tx_historty();
+    let txs = nft_tx_history();
     storage.add_txs_to_history(&chain, txs).await.unwrap();
 
     let token_id = BigDecimal::from_str(TOKEN_ID).unwrap();
@@ -457,7 +463,7 @@ pub(crate) async fn test_add_get_txs_impl() {
 pub(crate) async fn test_last_tx_block_impl() {
     let chain = Chain::Bsc;
     let storage = init_nft_history_storage(&chain).await;
-    let txs = nft_tx_historty();
+    let txs = nft_tx_history();
     storage.add_txs_to_history(&chain, txs).await.unwrap();
 
     let last_block = NftTxHistoryStorageOps::get_last_block_number(&storage, &chain)
@@ -470,7 +476,7 @@ pub(crate) async fn test_last_tx_block_impl() {
 pub(crate) async fn test_tx_history_impl() {
     let chain = Chain::Bsc;
     let storage = init_nft_history_storage(&chain).await;
-    let txs = nft_tx_historty();
+    let txs = nft_tx_history();
     storage.add_txs_to_history(&chain, txs).await.unwrap();
 
     let tx_history = storage
@@ -487,7 +493,7 @@ pub(crate) async fn test_tx_history_impl() {
 pub(crate) async fn test_tx_history_filters_impl() {
     let chain = Chain::Bsc;
     let storage = init_nft_history_storage(&chain).await;
-    let txs = nft_tx_historty();
+    let txs = nft_tx_history();
     storage.add_txs_to_history(&chain, txs).await.unwrap();
 
     let filters = NftTxHistoryFilters {
@@ -541,7 +547,7 @@ pub(crate) async fn test_tx_history_filters_impl() {
 pub(crate) async fn test_get_update_tx_meta_impl() {
     let chain = Chain::Bsc;
     let storage = init_nft_history_storage(&chain).await;
-    let txs = nft_tx_historty();
+    let txs = nft_tx_history();
     storage.add_txs_to_history(&chain, txs).await.unwrap();
 
     let vec_token_add_id = storage.get_txs_with_empty_meta(&chain).await.unwrap();

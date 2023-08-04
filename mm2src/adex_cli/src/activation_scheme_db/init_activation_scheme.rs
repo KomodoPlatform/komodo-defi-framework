@@ -30,7 +30,7 @@ pub(crate) async fn init_activation_scheme() -> Result<()> {
         .map_err(|error| error_anyhow!("Failed to write activation_scheme: {error}"))
 }
 
-pub(super) fn get_activation_scheme_path() -> Result<PathBuf> {
+pub(crate) fn get_activation_scheme_path() -> Result<PathBuf> {
     let mut config_path = AdexConfigImpl::get_config_dir()?;
     config_path.push(ACTIVATION_SCHEME_FILE);
     Ok(config_path)
