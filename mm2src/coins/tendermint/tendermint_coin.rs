@@ -151,8 +151,6 @@ pub struct TendermintConf {
     /// where the full `BIP44` address has the following structure:
     /// `m/purpose'/coin_type'.
     derivation_path: Option<StandardHDPathToCoin>,
-    /// /account'/change/address_index`.
-    path_to_address: StandardHDCoinAddress,
 }
 
 impl TendermintConf {
@@ -177,17 +175,9 @@ impl TendermintConf {
             kind: TendermintInitErrorKind::ErrorDeserializingDerivationPath(e.to_string()),
         })?;
 
-        let path_to_address = json::from_value::<Option<StandardHDCoinAddress>>(conf["path_to_address"].clone())
-            .map_to_mm(|e| TendermintInitError {
-                ticker: ticker.to_string(),
-                kind: TendermintInitErrorKind::ErrorDeserializingPathToAddress(e.to_string()),
-            })?
-            .unwrap_or_default();
-
         Ok(TendermintConf {
             avg_blocktime,
             derivation_path,
-            path_to_address,
         })
     }
 }
@@ -368,7 +358,7 @@ impl crate::Transaction for CosmosTransaction {
     }
 }
 
-fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {
+pub(crate) fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {
     let signing_key =
         SigningKey::from_bytes(priv_key).map_to_mm(|e| TendermintInitErrorKind::InvalidPrivKey(e.to_string()))?;
 
@@ -483,7 +473,7 @@ impl TendermintCoin {
         protocol_info: TendermintProtocolInfo,
         rpc_urls: Vec<String>,
         tx_history: bool,
-        priv_key_build_policy: PrivKeyBuildPolicy,
+        priv_key_policy: TendermintPrivKeyPolicy,
     ) -> MmResult<Self, TendermintInitError> {
         if rpc_urls.is_empty() {
             return MmError::err(TendermintInitError {
@@ -492,7 +482,6 @@ impl TendermintCoin {
             });
         }
 
-        let priv_key_policy = priv_key_policy_from_build_and_conf(&conf, &ticker, priv_key_build_policy)?;
         let priv_key = priv_key_policy.activated_key_or_err().mm_err(|e| TendermintInitError {
             ticker: ticker.clone(),
             kind: TendermintInitErrorKind::Internal(e.to_string()),
@@ -557,15 +546,32 @@ impl TendermintCoin {
         })))
     }
 
-    // Todo: impl HD wallet for this
     pub fn ibc_withdraw(&self, req: IBCWithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
         let fut = async move {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
+            let (account_id, priv_key) = match req.from {
+                Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+                    let priv_key = coin
+                        .priv_key_policy
+                        .hd_wallet_derived_priv_key_or_err(path_to_address)?;
+                    let account_id = account_id_from_privkey(priv_key.as_slice(), &coin.account_prefix)
+                        .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    (account_id, priv_key)
+                },
+                Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
+                    return MmError::err(WithdrawError::UnexpectedFromAddress(
+                        "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
+                            .to_string(),
+                    ))
+                },
+                None => (coin.account_id.clone(), *coin.priv_key_policy.activated_key_or_err()?),
+            };
+
             let (balance_denom, balance_dec) = coin
-                .get_account_balance_as_unsigned_and_decimal(&coin.account_id, &coin.denom, coin.decimals())
+                .get_account_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
                 .await?;
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
@@ -583,7 +589,7 @@ impl TendermintCoin {
                 });
             }
 
-            let received_by_me = if to_address == coin.account_id {
+            let received_by_me = if to_address == account_id {
                 amount_dec
             } else {
                 BigDecimal::default()
@@ -593,7 +599,7 @@ impl TendermintCoin {
 
             let msg_transfer = MsgTransfer::new_with_default_timeout(
                 req.ibc_source_channel.clone(),
-                coin.account_id.clone(),
+                account_id.clone(),
                 to_address.clone(),
                 Coin {
                     denom: coin.denom.clone(),
@@ -616,8 +622,8 @@ impl TendermintCoin {
 
             let fee_amount_u64 = coin
                 .calculate_account_fee_amount_as_u64(
-                    &coin.account_id,
-                    coin.priv_key_policy.activated_key_or_err()?,
+                    &account_id,
+                    &priv_key,
                     msg_transfer.clone(),
                     timeout_height,
                     memo.clone(),
@@ -658,7 +664,7 @@ impl TendermintCoin {
 
             let msg_transfer = MsgTransfer::new_with_default_timeout(
                 req.ibc_source_channel.clone(),
-                coin.account_id.clone(),
+                account_id.clone(),
                 to_address.clone(),
                 Coin {
                     denom: coin.denom.clone(),
@@ -668,17 +674,9 @@ impl TendermintCoin {
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let activated_priv_key = coin.priv_key_policy.activated_key_or_err()?;
-            let account_info = coin.account_info(&coin.account_id).await?;
+            let account_info = coin.account_info(&account_id).await?;
             let tx_raw = coin
-                .any_to_signed_raw_tx(
-                    activated_priv_key,
-                    account_info,
-                    msg_transfer,
-                    fee,
-                    timeout_height,
-                    memo.clone(),
-                )
+                .any_to_signed_raw_tx(&priv_key, account_info, msg_transfer, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -689,7 +687,7 @@ impl TendermintCoin {
             Ok(TransactionDetails {
                 tx_hash: hex::encode_upper(hash.as_slice()),
                 tx_hex: tx_bytes.into(),
-                from: vec![coin.account_id.to_string()],
+                from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
                 spent_by_me: total_amount.clone(),
@@ -1894,7 +1892,6 @@ impl MmCoin for TendermintCoin {
 
     fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
 
-    // Todo: add support for HD wallet withdraw in this PR
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
         let fut = async move {
@@ -2767,13 +2764,14 @@ impl WatcherOps for TendermintCoin {
     }
 }
 
-/// Processes the given `priv_key_policy` and returns corresponding `Secp256k1Secret`.
+/// Processes the given `priv_key_build_policy` and returns corresponding `TendermintPrivKeyPolicy`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
 /// or [`PrivKeyBuildPolicy::GlobalHDAccount`], otherwise returns `PrivKeyPolicyNotAllowed` error.
-pub(crate) fn priv_key_policy_from_build_and_conf(
+pub fn tendermint_priv_key_policy(
     conf: &TendermintConf,
     ticker: &str,
     priv_key_build_policy: PrivKeyBuildPolicy,
+    path_to_address: StandardHDCoinAddress,
 ) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
     match priv_key_build_policy {
         PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(TendermintPrivKeyPolicy::Iguana(iguana)),
@@ -2783,7 +2781,7 @@ pub(crate) fn priv_key_policy_from_build_and_conf(
                 kind: TendermintInitErrorKind::DerivationPathIsNotSet,
             })?;
             let activated_priv_key = global_hd
-                .derive_secp256k1_secret(derivation_path, &conf.path_to_address)
+                .derive_secp256k1_secret(derivation_path, &path_to_address)
                 .mm_err(|e| TendermintInitError {
                     ticker: ticker.to_string(),
                     kind: TendermintInitErrorKind::InvalidPrivKey(e.to_string()),
@@ -2895,11 +2893,10 @@ pub mod tendermint_coin_tests {
         let conf = TendermintConf {
             avg_blocktime: AVG_BLOCKTIME,
             derivation_path: None,
-            path_to_address: StandardHDCoinAddress::default(),
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3008,11 +3005,10 @@ pub mod tendermint_coin_tests {
         let conf = TendermintConf {
             avg_blocktime: AVG_BLOCKTIME,
             derivation_path: None,
-            path_to_address: StandardHDCoinAddress::default(),
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3067,11 +3063,10 @@ pub mod tendermint_coin_tests {
         let conf = TendermintConf {
             avg_blocktime: AVG_BLOCKTIME,
             derivation_path: None,
-            path_to_address: StandardHDCoinAddress::default(),
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3140,11 +3135,10 @@ pub mod tendermint_coin_tests {
         let conf = TendermintConf {
             avg_blocktime: AVG_BLOCKTIME,
             derivation_path: None,
-            path_to_address: StandardHDCoinAddress::default(),
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3335,11 +3329,10 @@ pub mod tendermint_coin_tests {
         let conf = TendermintConf {
             avg_blocktime: AVG_BLOCKTIME,
             derivation_path: None,
-            path_to_address: StandardHDCoinAddress::default(),
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3420,11 +3413,10 @@ pub mod tendermint_coin_tests {
         let conf = TendermintConf {
             avg_blocktime: AVG_BLOCKTIME,
             derivation_path: None,
-            path_to_address: StandardHDCoinAddress::default(),
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3495,11 +3487,10 @@ pub mod tendermint_coin_tests {
         let conf = TendermintConf {
             avg_blocktime: AVG_BLOCKTIME,
             derivation_path: None,
-            path_to_address: StandardHDCoinAddress::default(),
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3565,12 +3556,11 @@ pub mod tendermint_coin_tests {
         let conf = TendermintConf {
             avg_blocktime: AVG_BLOCKTIME,
             derivation_path: None,
-            path_to_address: StandardHDCoinAddress::default(),
         };
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = common::block_on(TendermintCoin::init(
             &ctx,
@@ -3618,12 +3608,11 @@ pub mod tendermint_coin_tests {
         let conf = TendermintConf {
             avg_blocktime: AVG_BLOCKTIME,
             derivation_path: None,
-            path_to_address: StandardHDCoinAddress::default(),
         };
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = common::block_on(TendermintCoin::init(
             &ctx,

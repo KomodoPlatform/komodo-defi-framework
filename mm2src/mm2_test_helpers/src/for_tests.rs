@@ -455,7 +455,8 @@ pub fn atom_testnet_conf() -> Json {
                 "account_prefix": "cosmos",
                 "chain_id": "theta-testnet-001",
             },
-        }
+        },
+        "derivation_path": "m/44'/118'",
     })
 }
 
@@ -2229,7 +2230,13 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> TransactionDetails {
+pub async fn withdraw_v1(
+    mm: &MarketMakerIt,
+    coin: &str,
+    to: &str,
+    amount: &str,
+    from: Option<StandardHDCoinAddress>,
+) -> TransactionDetails {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2237,6 +2244,7 @@ pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str)
             "coin": coin,
             "to": to,
             "amount": amount,
+            "from": from,
         }))
         .await
         .unwrap();
@@ -2250,6 +2258,7 @@ pub async fn ibc_withdraw(
     coin: &str,
     to: &str,
     amount: &str,
+    from: Option<StandardHDCoinAddress>,
 ) -> TransactionDetails {
     let request = mm
         .rpc(&json!({
@@ -2260,7 +2269,8 @@ pub async fn ibc_withdraw(
                 "ibc_source_channel": source_channel,
                 "coin": coin,
                 "to": to,
-                "amount": amount
+                "amount": amount,
+                "from": from,
             }
         }))
         .await
