@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::ops::Deref;
+#[cfg(unix)] use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use crate::error_anyhow;
@@ -22,6 +23,15 @@ where
     writer
         .write(&data)
         .map_err(|error| error_anyhow!("Failed to write data into {file}: {error}"))?;
+
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(crate) fn set_file_permissions(file: &str, unix_mode: u32) -> Result<()> {
+    let mut perms = fs::metadata(file)?.permissions();
+    perms.set_mode(unix_mode);
+    fs::set_permissions(file, perms)?;
     Ok(())
 }
 

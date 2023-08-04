@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::adex_proc::SmartFractPrecision;
 use crate::helpers::rewrite_json_file;
+#[cfg(unix)] use crate::helpers::set_file_permissions;
 use crate::logging::{error_anyhow, warn_bail};
 
 const PROJECT_QUALIFIER: &str = "com";
@@ -22,6 +23,8 @@ const VOLUME_PRECISION_MIN: usize = 2;
 const VOLUME_PRECISION_MAX: usize = 5;
 const VOLUME_PRECISION: SmartFractPrecision = (VOLUME_PRECISION_MIN, VOLUME_PRECISION_MAX);
 const PRICE_PRECISION: SmartFractPrecision = (PRICE_PRECISION_MIN, PRICE_PRECISION_MAX);
+#[cfg(unix)]
+const CFG_FILE_PERM_MODE: u32 = 0o660;
 
 pub(super) fn get_config() {
     let Ok(adex_cfg) = AdexConfigImpl::from_config_path() else { return; };
@@ -151,7 +154,12 @@ impl AdexConfigImpl {
         let adex_path_str = cfg_path
             .to_str()
             .ok_or_else(|| error_anyhow!("Failed to get cfg_path as str"))?;
-        rewrite_json_file(self, adex_path_str)
+        rewrite_json_file(self, adex_path_str)?;
+        #[cfg(unix)]
+        {
+            set_file_permissions(adex_path_str, CFG_FILE_PERM_MODE)?;
+        }
+        Ok(())
     }
 
     fn set_rpc_password(&mut self, rpc_password: String) { self.rpc_password.replace(rpc_password); }
