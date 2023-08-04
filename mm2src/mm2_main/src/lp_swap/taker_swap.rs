@@ -2451,8 +2451,8 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: Ta
                 amount: swap.maker_amount.to_decimal(),
                 watcher_reward: None,
             };
-            swap.taker_coin
-                .validate_taker_payment_refund(validate_input)
+            swap.maker_coin
+                .taker_validates_maker_payment_spend(validate_input)
                 .compat()
                 .await
                 .map_err(|e| e.to_string())?;
@@ -2527,7 +2527,7 @@ pub async fn check_watcher_payments(swap: &TakerSwap, ctx: &MmArc, mut saved: Ta
             };
 
             swap.taker_coin
-                .validate_taker_payment_refund(validate_input)
+                .taker_validates_taker_payment_refund(validate_input)
                 .compat()
                 .await
                 .map_err(|e| e.to_string())?;

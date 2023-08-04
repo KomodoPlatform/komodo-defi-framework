@@ -543,12 +543,12 @@ impl WatcherOps for UtxoStandardCoin {
     }
 
     #[inline]
-    fn validate_taker_payment_refund(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+    fn taker_validates_taker_payment_refund(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_payment_spend_or_refund(self, input)
     }
 
     #[inline]
-    fn validate_maker_payment_spend(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+    fn taker_validates_maker_payment_spend(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_payment_spend_or_refund(self, input)
     }
 

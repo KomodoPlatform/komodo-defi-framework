@@ -166,7 +166,7 @@ pub fn _fill_eth(to_addr: &str) {
 }
 
 // Generates an ethereum coin in the sepolia network with the given seed
-pub fn _generate_eth_coin_with_seed(seed: &str) -> EthCoin {
+pub fn generate_eth_coin_with_seed(seed: &str) -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "ETH",
