@@ -1907,7 +1907,6 @@ impl UtxoCommonOps for ZCoin {
 #[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl InitWithdrawCoin for ZCoin {
-    // Todo: add support for HD wallet
     async fn init_withdraw(
         &self,
         _ctx: MmArc,
@@ -2031,9 +2030,7 @@ fn extended_spending_key_from_global_hd_account(
         .map(|child| Zip32Child::from_index(child.0))
         // Push the hardened `account` index, so the derivation path looks like:
         // `m/purpose'/coin'/account'`.
-        .chain(iter::once(Zip32Child::Hardened(path_to_address.account)))
-        .chain(iter::once(Zip32Child::NonHardened(path_to_address.is_change as u32)))
-        .chain(iter::once(Zip32Child::NonHardened(path_to_address.address_index)));
+        .chain(iter::once(Zip32Child::Hardened(path_to_address.account)));
 
     let mut spending_key = ExtendedSpendingKey::master(global_hd.root_seed_bytes());
     for zip32_child in path_to_account {

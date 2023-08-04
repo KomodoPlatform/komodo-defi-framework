@@ -976,7 +976,7 @@ fn withdraw_and_send(
 
     assert_eq!(tx_details.to, vec![to.to_owned()]);
     assert_eq!(tx_details.my_balance_change, expected_bal_change);
-    // Todo: find a way to test from and make from_str -> from again
+    // Todo: Should check the from address for withdraws from another HD wallet address when there is an RPC method for addresses
     if from.is_none() {
         assert_eq!(tx_details.from, vec![from_str]);
     }
@@ -1155,7 +1155,6 @@ fn test_withdraw_and_send() {
 }
 
 // This test is ignored because it requires refilling addresses with coins
-// Todo: try more test cases
 #[test]
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
@@ -1163,7 +1162,6 @@ fn test_withdraw_and_send_hd() {
     const TX_HISTORY: bool = false;
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
-    // Todo: add more coins
     let coins = json!([rick_conf(), tbtc_segwit_conf(), eth_testnet_conf()]);
 
     let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
@@ -1196,7 +1194,7 @@ fn test_withdraw_and_send_hd() {
     let mut eth_enable_res = HashMap::new();
     eth_enable_res.insert("ETH", eth);
 
-    // Todo: add comment here
+    // Withdraw from HD account 0, change address 0, index 1
     let mut from_account_address = StandardHDCoinAddress {
         account: 0,
         is_change: false,

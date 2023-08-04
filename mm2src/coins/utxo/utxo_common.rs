@@ -2600,7 +2600,6 @@ where
             }
             HDAccountAddressId::from(derivation_path)
         },
-        // Todo: this is part of init_withdraw should be implemented and UnsupportedError removed or from address should be generated else where, check code after this block
         WithdrawFrom::HDWalletAddress(_) => {
             return MmError::err(WithdrawError::UnsupportedError(
                 "`WithdrawFrom::HDWalletAddress` is not supported for `get_withdraw_hd_sender`".to_string(),

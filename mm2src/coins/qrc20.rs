@@ -1293,7 +1293,6 @@ impl MmCoin for Qrc20Coin {
 
     fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.as_ref().abortable_system) }
 
-    // Todo: add support for HD wallet in this PR
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(qrc20_withdraw(self.clone(), req).boxed().compat())
     }

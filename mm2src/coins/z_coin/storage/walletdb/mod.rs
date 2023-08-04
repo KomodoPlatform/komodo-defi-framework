@@ -36,7 +36,6 @@ pub struct WalletDbShared {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl<'a> WalletDbShared {
-    // Todo: revise this
     pub async fn new(
         zcoin_builder: &ZCoinBuilder<'a>,
         path_to_address: &StandardHDCoinAddress,
@@ -75,7 +74,6 @@ cfg_wasm32!(
     pub type WalletDbInnerLocked<'a> = DbLocked<'a, WalletDbInner>;
 
     impl<'a> WalletDbShared {
-        // Todo: revise this
         pub async fn new(
             zcoin_builder: &ZCoinBuilder<'a>,
             _path_to_address: &StandardHDCoinAddress,

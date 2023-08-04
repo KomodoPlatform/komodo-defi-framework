@@ -415,14 +415,12 @@ where
 {
     #[allow(clippy::result_large_err)]
     pub fn new(coin: Coin, req: WithdrawRequest) -> Result<Self, MmError<WithdrawError>> {
-        // Todo: refactor this
-        let (key_pair, my_address, my_address_string) = match req.from {
+        let (key_pair, my_address) = match req.from {
             Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
                 let secret = coin
                     .as_ref()
                     .priv_key_policy
                     .hd_wallet_derived_priv_key_or_err(path_to_address)?;
-                // Todo: refactor this and check if there should be more fields included in coin fields etc.. (maybe save the generated addresses and private keys there also check UtxoHDWallet, etc..)
                 let private = Private {
                     prefix: coin.as_ref().conf.wif_prefix,
                     secret,
@@ -431,14 +429,12 @@ where
                 };
                 let key_pair =
                     KeyPair::from_private(private).map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-                // Todo: is there a better way to do this?
                 let addr_format = coin
                     .as_ref()
                     .derivation_method
                     .single_addr_or_err()?
                     .clone()
                     .addr_format;
-                // Todo: should I use address_by_coin_conf_and_pubkey_str here or similar function instead?
                 let my_address = Address {
                     prefix: coin.as_ref().conf.pub_addr_prefix,
                     t_addr_prefix: coin.as_ref().conf.pub_t_addr_prefix,
@@ -447,8 +443,7 @@ where
                     hrp: coin.as_ref().conf.bech32_hrp.clone(),
                     addr_format,
                 };
-                let my_address_string = my_address.display_address().map_to_mm(WithdrawError::InternalError)?;
-                (key_pair, my_address, my_address_string)
+                (key_pair, my_address)
             },
             Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
                 return MmError::err(WithdrawError::UnsupportedError(
@@ -458,10 +453,10 @@ where
             None => {
                 let key_pair = coin.as_ref().priv_key_policy.activated_key_or_err()?;
                 let my_address = coin.as_ref().derivation_method.single_addr_or_err()?.clone();
-                let my_address_string = coin.my_address()?;
-                (*key_pair, my_address, my_address_string)
+                (*key_pair, my_address)
             },
         };
+        let my_address_string = my_address.display_address().map_to_mm(WithdrawError::InternalError)?;
         Ok(StandardUtxoWithdraw {
             coin,
             req,

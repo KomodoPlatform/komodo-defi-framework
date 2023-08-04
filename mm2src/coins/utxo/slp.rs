@@ -1599,7 +1599,6 @@ impl MmCoin for SlpToken {
         )
     }
 
-    // Todo: add support for HD wallet withdraw in this PR
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
         let fut = async move {

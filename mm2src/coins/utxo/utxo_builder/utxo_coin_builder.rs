@@ -145,7 +145,6 @@ pub trait UtxoFieldsWithIguanaSecretBuilder: UtxoCoinBuilderCommonOps {
         priv_key: IguanaPrivKey,
     ) -> UtxoCoinBuildResult<UtxoCoinFields> {
         let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
-        // Todo: make this into a common function between UtxoFieldsWithIguanaSecretBuilder and UtxoFieldsWithGlobalHDBuilder
         let private = Private {
             prefix: conf.wif_prefix,
             secret: priv_key,
@@ -173,7 +172,6 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         let secret = global_hd_ctx
             .derive_secp256k1_secret(derivation_path, &self.activation_params().path_to_address)
             .mm_err(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
-        // Todo: make this into a common function between UtxoFieldsWithIguanaSecretBuilder and UtxoFieldsWithGlobalHDBuilder
         let private = Private {
             prefix: conf.wif_prefix,
             secret,
@@ -251,7 +249,6 @@ where
 
 #[async_trait]
 pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
-    // Todo: should something similar to this be used for HD wallet too instead build_utxo_fields_with_global_hd then build_utxo_coin_fields_with_conf_and_secret, the problem is this for only 1 account so we should have the ability to switch accounts
     async fn build_utxo_fields_with_trezor(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
         let ticker = self.ticker().to_owned();
         let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), &ticker).build()?;
