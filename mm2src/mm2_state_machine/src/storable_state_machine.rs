@@ -47,7 +47,7 @@ pub trait ChangeStateOnNewExt {
     async fn change_state<Next>(next_state: Next, machine: &Next::StateMachine) -> StateResult<Next::StateMachine>
     where
         Self: Sized,
-        Next: State + TransitionFrom<Self>,
+        Next: State + TransitionFrom<Self> + ChangeStateOnNewExt,
         Next::StateMachine: OnNewState<Next> + Sync,
     {
         machine.on_new_state(&next_state).await;
@@ -61,22 +61,76 @@ pub trait ChangeStateOnNewExt {
 impl<T: StorableStateMachine> !StandardStateMachine for T {}
 impl<S: OnNewState<T>, T: State<StateMachine = S>> ChangeStateOnNewExt for T {}
 
-struct StorageTest {}
-struct StorableStateMachineTest {}
+mod tests {
+    use super::*;
+    use common::block_on;
 
-impl StateMachineTrait for StorableStateMachineTest {
-    type Result = ();
-}
+    struct StorageTest {}
 
-#[async_trait]
-impl EventStorage for StorageTest {
-    type Event = ();
+    struct StorableStateMachineTest {
+        storage: StorageTest,
+    }
 
-    async fn store_events(&self, _events: Vec<Self::Event>) { todo!() }
-}
+    impl StateMachineTrait for StorableStateMachineTest {
+        type Result = ();
+    }
 
-impl StorableStateMachine for StorableStateMachineTest {
-    type Storage = StorageTest;
+    enum TestEvent {
+        ForStateTwo,
+    }
 
-    fn storage(&self) -> &Self::Storage { todo!() }
+    #[async_trait]
+    impl EventStorage for StorageTest {
+        type Event = TestEvent;
+
+        async fn store_events(&self, _events: Vec<Self::Event>) { todo!() }
+    }
+
+    impl StorableStateMachine for StorableStateMachineTest {
+        type Storage = StorageTest;
+
+        fn storage(&self) -> &Self::Storage { &self.storage }
+    }
+
+    struct StateOne {}
+
+    impl StorableState for StateOne {
+        type StateMachine = StorableStateMachineTest;
+
+        fn get_events(&self) -> Vec<TestEvent> { vec![] }
+    }
+
+    struct StateTwo {}
+
+    impl StorableState for StateTwo {
+        type StateMachine = StorableStateMachineTest;
+
+        fn get_events(&self) -> Vec<TestEvent> { vec![TestEvent::ForStateTwo] }
+    }
+
+    impl TransitionFrom<StateOne> for StateTwo {}
+
+    #[async_trait]
+    impl LastState for StateTwo {
+        type StateMachine = StorableStateMachineTest;
+
+        async fn on_changed(self: Box<Self>, _ctx: &mut Self::StateMachine) -> () {}
+    }
+
+    #[async_trait]
+    impl State for StateOne {
+        type StateMachine = StorableStateMachineTest;
+
+        async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+            Self::change_state(StateTwo {}, ctx).await
+        }
+    }
+
+    #[test]
+    fn run_storable_state_machine() {
+        let mut machine = StorableStateMachineTest {
+            storage: StorageTest {},
+        };
+        block_on(machine.run(Box::new(StateOne {})));
+    }
 }
