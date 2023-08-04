@@ -164,7 +164,7 @@ jobs:
 
       - name: Test
         run: |
-          Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh -UseBasicParsing | Invoke-Expression
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
           cargo test --test 'mm2_tests_main'
 
   docker-tests:
