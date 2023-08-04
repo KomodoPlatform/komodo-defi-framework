@@ -3,7 +3,7 @@ use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLAT
                   MATURE_CONFIRMATIONS_DEFAULT};
 use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
-use crypto::{Bip32Error, StandardHDCoinAddress, StandardHDPathToCoin};
+use crypto::{Bip32Error, StandardHDPathToCoin};
 use derive_more::Display;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
@@ -90,7 +90,6 @@ impl<'a> UtxoConfBuilder<'a> {
         let estimate_fee_blocks = self.estimate_fee_blocks();
         let trezor_coin = self.trezor_coin();
         let derivation_path = self.derivation_path()?;
-        let path_to_address = self.path_to_address();
         let avg_blocktime = self.avg_blocktime();
         let spv_conf = self.spv_conf()?;
 
@@ -127,7 +126,6 @@ impl<'a> UtxoConfBuilder<'a> {
             trezor_coin,
             spv_conf,
             derivation_path,
-            path_to_address,
             avg_blocktime,
         })
     }
@@ -295,8 +293,6 @@ impl<'a> UtxoConfBuilder<'a> {
         json::from_value(self.conf["derivation_path"].clone())
             .map_to_mm(|e| UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()))
     }
-
-    fn path_to_address(&self) -> StandardHDCoinAddress { self.params.path_to_address.clone() }
 
     fn avg_blocktime(&self) -> Option<u64> { self.conf["avg_blocktime"].as_u64() }
 }

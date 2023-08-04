@@ -865,7 +865,6 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
-        let path_to_address = utxo.conf.path_to_address.clone();
         let utxo_arc = UtxoArc::new(utxo);
 
         let z_spending_key = match self.z_spending_key {
@@ -873,7 +872,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
             None => extended_spending_key_from_protocol_info_and_policy(
                 &self.protocol_info,
                 &self.priv_key_policy,
-                &path_to_address,
+                &self.activation_params().path_to_address,
             )?,
         };
 
@@ -895,7 +894,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         );
 
         let blocks_db = self.blocks_db().await?;
-        let wallet_db = WalletDbShared::new(&self, &path_to_address)
+        let wallet_db = WalletDbShared::new(&self, &self.activation_params().path_to_address)
             .await
             .map_err(|err| ZCoinBuildError::ZcashDBError(err.to_string()))?;
 
