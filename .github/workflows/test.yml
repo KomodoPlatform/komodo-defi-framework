@@ -164,6 +164,7 @@ jobs:
 
       - name: Test
         run: |
+          Invoke-WebRequest -Uri https://github.com/KomodoPlatform/komodo/raw/d456be35acd1f8584e1e4f971aea27bd0644d5c5/zcutil/wget64.exe -OutFile \wget64.exe
           Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
           cargo test --test 'mm2_tests_main'
 
