@@ -87,6 +87,7 @@ pub enum UtxoCoinBuildError {
     Internal(String),
     #[display(fmt = "SPV params verificaiton failed. Error: {_0}")]
     SPVError(SPVError),
+    ErrorCalculatingStartingHeight(String),
 }
 
 impl From<UtxoConfError> for UtxoCoinBuildError {
@@ -680,26 +681,26 @@ pub trait UtxoCoinBuilderCommonOps {
         let avg_blocktime = self.conf()["avg_blocktime"]
             .as_u64()
             .ok_or_else(|| format!("avg_blocktime not specified in {} coin config", self.ticker()))
-            .map_to_mm(|err| UtxoCoinBuildError::ConfError(UtxoConfError::SyncConfError(err)))?;
-        let buffer = DAY_IN_SECONDS / avg_blocktime;
+            .map_to_mm(UtxoCoinBuildError::ErrorCalculatingStartingHeight)?;
+        let blocks_per_day = DAY_IN_SECONDS / avg_blocktime;
         let current_time_s = now_sec();
 
         if current_time_s < date {
-            return MmError::err(UtxoCoinBuildError::ConfError(UtxoConfError::SyncConfError(format!(
+            return MmError::err(UtxoCoinBuildError::ErrorCalculatingStartingHeight(format!(
                 "{} sync date must be earlier then current date",
                 self.ticker()
-            ))));
+            )));
         };
 
         let secs_since_date = current_time_s - date;
         let days_since_date = (secs_since_date / DAY_IN_SECONDS) - 1;
-        let blocks_to_sync = (days_since_date * buffer) + buffer;
+        let blocks_to_sync = (days_since_date * blocks_per_day) + blocks_per_day;
 
         if current_block_height < blocks_to_sync {
-            return MmError::err(UtxoCoinBuildError::ConfError(UtxoConfError::SyncConfError(format!(
+            return MmError::err(UtxoCoinBuildError::ErrorCalculatingStartingHeight(format!(
                 "{} current_block_height: {current_block_height} must be greater than blocks_to_sync: {blocks_to_sync}",
-                self.ticker()
-            ))));
+                self.ticker(),
+            )));
         }
 
         let block_to_sync_from = current_block_height - blocks_to_sync;

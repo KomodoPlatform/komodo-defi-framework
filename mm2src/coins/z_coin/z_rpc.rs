@@ -66,7 +66,7 @@ pub trait ZRpcOps {
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>>;
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn get_tree_state(&mut self, height: u64) -> Result<TreeState, MmError<ZcoinRpcError>>;
+    async fn get_tree_state(&mut self, height: u64) -> Result<TreeState, MmError<UpdateBlocksCacheErr>>;
 
     async fn scan_blocks(
         &mut self,
@@ -122,7 +122,7 @@ impl ZRpcOps for LightRpcClient {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn get_tree_state(&mut self, height: u64) -> Result<TreeState, MmError<ZcoinRpcError>> {
+    async fn get_tree_state(&mut self, height: u64) -> Result<TreeState, MmError<UpdateBlocksCacheErr>> {
         let request = tonic::Request::new(BlockId { height, hash: vec![] });
 
         Ok(self
@@ -130,7 +130,7 @@ impl ZRpcOps for LightRpcClient {
             .await?
             .get_tree_state(request)
             .await
-            .map_to_mm(ZcoinRpcError::GrpcError)?
+            .map_to_mm(UpdateBlocksCacheErr::GrpcError)?
             .into_inner())
     }
 
@@ -201,7 +201,7 @@ impl ZRpcOps for NativeClient {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn get_tree_state(&mut self, _height: u64) -> Result<TreeState, MmError<ZcoinRpcError>> { todo!() }
+    async fn get_tree_state(&mut self, _height: u64) -> Result<TreeState, MmError<UpdateBlocksCacheErr>> { todo!() }
 
     async fn scan_blocks(
         &mut self,

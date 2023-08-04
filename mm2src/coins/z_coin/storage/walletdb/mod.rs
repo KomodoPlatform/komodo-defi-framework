@@ -4,7 +4,7 @@ use mm2_err_handle::prelude::*;
 
 cfg_native!(
     use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, DAY_IN_SECONDS};
-    use crate::z_coin::{CheckPointBlockInfo, extended_spending_key_from_protocol_info_and_policy, LightClientSyncParams,
+    use crate::z_coin::{CheckPointBlockInfo, extended_spending_key_from_protocol_info_and_policy, SyncStartPoint,
                     ZcoinConsensusParams, ZcoinRpcMode};
     use crate::z_coin::z_rpc::{create_wallet_db, ZRpcOps};
 
@@ -52,11 +52,11 @@ pub struct WalletDbShared {
 async fn checkpoint_block_from_height(
     height: u64,
     rpc: &mut impl ZRpcOps,
-) -> Result<Option<CheckPointBlockInfo>, WalletDbError> {
+) -> MmResult<Option<CheckPointBlockInfo>, WalletDbError> {
     let tree_state = rpc
         .get_tree_state(height)
         .await
-        .map_err(|err| WalletDbError::GrpcError(err.to_string()))?;
+        .mm_err(|err| WalletDbError::GrpcError(err.to_string()))?;
     let hash = H256::from_str(&tree_state.hash)
         .map_err(|err| WalletDbError::DecodeError(err.to_string()))?
         .reversed();
@@ -88,13 +88,13 @@ impl<'a> WalletDbShared {
             .get_block_height()
             .await
             .map_err(|err| WalletDbError::GrpcError(err.to_string()))?;
-        let sync_block = match zcoin_builder.z_coin_params.mode.clone() {
+        let sync_block = match &zcoin_builder.z_coin_params.mode {
             ZcoinRpcMode::Light { sync_params, .. } => {
                 let sync_height = match sync_params {
-                    Some(LightClientSyncParams::Date(date)) => zcoin_builder
-                        .calculate_starting_height_from_date(date, current_block_height)
+                    Some(SyncStartPoint::Date(date)) => zcoin_builder
+                        .calculate_starting_height_from_date(*date, current_block_height)
                         .mm_err(WalletDbError::UtxoCoinBuildError)?,
-                    Some(LightClientSyncParams::Height(height)) => height,
+                    Some(SyncStartPoint::Height(height)) => *height,
                     None => zcoin_builder
                         .calculate_starting_height_from_date(now_sec() - DAY_IN_SECONDS, current_block_height)
                         .mm_err(WalletDbError::UtxoCoinBuildError)?,
