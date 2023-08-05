@@ -364,11 +364,8 @@ fn run_watcher_node(
 #[test]
 fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_fail_at_maker_payment_spend() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[
-        ("USE_WATCHERS", ""),
-        ("TAKER_FAIL_AT", "maker_payment_spend"),
-    ]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_WATCHERS", "")], &[&mm_alice.ip.to_string()]);
+    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[("TAKER_FAIL_AT", "maker_payment_spend")]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[&mm_alice.ip.to_string()]);
 
     let watcher_conf = WatcherConf {
         wait_taker_payment: 0.,
@@ -376,12 +373,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_fai
         refund_start_factor: 1.5,
         search_interval: 1.0,
     };
-    let mut mm_watcher = run_watcher_node(
-        &coins,
-        &[("USE_WATCHERS", "")],
-        &[&mm_alice.ip.to_string()],
-        watcher_conf,
-    );
+    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_alice.ip.to_string()], watcher_conf);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -397,18 +389,10 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_fai
     block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
     block_on(mm_watcher.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
 
-    restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_WATCHERS", "")],
-        &format!("[swap uuid={}] Finished", &uuids[0]),
-    );
+    restart_taker_and_wait_until(&alice_conf, &[], &format!("[swap uuid={}] Finished", &uuids[0]));
     block_on(mm_alice.stop()).unwrap();
 
-    let mm_alice = restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_WATCHERS", "")],
-        &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]),
-    );
+    let mm_alice = restart_taker_and_wait_until(&alice_conf, &[], &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]));
     let expected_events = [
         "Started",
         "Negotiated",
@@ -430,11 +414,9 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_fai
 #[test]
 fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_panic_at_wait_for_taker_payment_spend() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[
-        ("USE_WATCHERS", ""),
-        ("TAKER_FAIL_AT", "wait_for_taker_payment_spend_panic"),
-    ]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_WATCHERS", "")], &[&mm_alice.ip.to_string()]);
+    let (mut mm_alice, mut alice_conf) =
+        run_taker_node(&coins, &[("TAKER_FAIL_AT", "wait_for_taker_payment_spend_panic")]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[&mm_alice.ip.to_string()]);
 
     let watcher_conf = WatcherConf {
         wait_taker_payment: 0.,
@@ -442,12 +424,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_pan
         refund_start_factor: 1.5,
         search_interval: 1.0,
     };
-    let mut mm_watcher = run_watcher_node(
-        &coins,
-        &[("USE_WATCHERS", "")],
-        &[&mm_alice.ip.to_string()],
-        watcher_conf,
-    );
+    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_alice.ip.to_string()], watcher_conf);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -463,18 +440,10 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_pan
     block_on(mm_bob.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
     block_on(mm_watcher.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
 
-    restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_WATCHERS", "")],
-        &format!("[swap uuid={}] Finished", &uuids[0]),
-    );
+    restart_taker_and_wait_until(&alice_conf, &[], &format!("[swap uuid={}] Finished", &uuids[0]));
     block_on(mm_alice.stop()).unwrap();
 
-    let mm_alice = restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_WATCHERS", "")],
-        &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]),
-    );
+    let mm_alice = restart_taker_and_wait_until(&alice_conf, &[], &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]));
 
     let expected_events = [
         "Started",
@@ -497,13 +466,10 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_pan
 fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_fail_at_taker_payment_refund() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[
-        ("USE_WATCHERS", ""),
         ("USE_TEST_LOCKTIME", ""),
         ("TAKER_FAIL_AT", "taker_payment_refund"),
     ]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")], &[&mm_alice
-        .ip
-        .to_string()]);
+    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_alice.ip.to_string()]);
 
     let watcher_conf = WatcherConf {
         wait_taker_payment: 0.,
@@ -513,7 +479,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_fa
     };
     let mut mm_watcher = run_watcher_node(
         &coins,
-        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         &[&mm_alice.ip.to_string()],
         watcher_conf,
     );
@@ -536,14 +502,14 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_fa
 
     restart_taker_and_wait_until(
         &alice_conf,
-        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         &format!("[swap uuid={}] Finished", &uuids[0]),
     );
     block_on(mm_alice.stop()).unwrap();
 
     let mm_alice = restart_taker_and_wait_until(
         &alice_conf,
-        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]),
     );
 
@@ -571,13 +537,10 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_fa
 fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_panic_at_taker_payment_refund() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[
-        ("USE_WATCHERS", ""),
         ("USE_TEST_LOCKTIME", ""),
         ("TAKER_FAIL_AT", "taker_payment_refund_panic"),
     ]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")], &[&mm_alice
-        .ip
-        .to_string()]);
+    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_alice.ip.to_string()]);
 
     let watcher_conf = WatcherConf {
         wait_taker_payment: 0.,
@@ -587,7 +550,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
     };
     let mut mm_watcher = run_watcher_node(
         &coins,
-        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         &[&mm_alice.ip.to_string()],
         watcher_conf,
     );
@@ -610,14 +573,14 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
 
     restart_taker_and_wait_until(
         &alice_conf,
-        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         &format!("[swap uuid={}] Finished", &uuids[0]),
     );
     block_on(mm_alice.stop()).unwrap();
 
     let mm_alice = restart_taker_and_wait_until(
         &alice_conf,
-        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]),
     );
 
@@ -644,13 +607,10 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
 fn test_taker_adds_watcher_refund_not_found_event() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[
-        ("USE_WATCHERS", ""),
         ("USE_TEST_LOCKTIME", ""),
         ("TAKER_FAIL_AT", "taker_payment_refund"),
     ]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")], &[&mm_alice
-        .ip
-        .to_string()]);
+    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_alice.ip.to_string()]);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -668,14 +628,14 @@ fn test_taker_adds_watcher_refund_not_found_event() {
 
     restart_taker_and_wait_until(
         &alice_conf,
-        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         &format!("[swap uuid={}] Finished", &uuids[0]),
     );
     block_on(mm_alice.stop()).unwrap();
 
     let mm_alice = restart_taker_and_wait_until(
         &alice_conf,
-        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]),
     );
 
@@ -702,8 +662,8 @@ fn test_taker_adds_watcher_refund_not_found_event() {
 #[test]
 fn test_taker_completes_swap_after_restart() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[("USE_WATCHERS", "")]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_WATCHERS", "")], &[&mm_alice.ip.to_string()]);
+    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[&mm_alice.ip.to_string()]);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -722,7 +682,7 @@ fn test_taker_completes_swap_after_restart() {
         alice_conf.conf,
         alice_conf.rpc_password.clone(),
         None,
-        &[("USE_WATCHERS", "")],
+        &[],
     ))
     .unwrap();
 
@@ -752,7 +712,7 @@ fn test_watcher_spends_maker_payment_utxo_utxo() {
         25.,
         25.,
         2.,
-        &[("USE_WATCHERS", "")],
+        &[],
         SwapFlow::WatcherSpendsMakerPayment,
         &alice_privkey,
         &bob_privkey,
@@ -792,7 +752,7 @@ fn test_watcher_spends_maker_payment_utxo_eth() {
         0.01,
         0.01,
         1.,
-        &[("USE_WATCHERS", ""), ("USE_WATCHER_REWARD", "")],
+        &[("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -825,11 +785,7 @@ fn test_watcher_spends_maker_payment_eth_utxo() {
         100.,
         100.,
         0.01,
-        &[
-            ("USE_WATCHERS", ""),
-            ("TEST_COIN_PRICE", "0.01"),
-            ("USE_WATCHER_REWARD", ""),
-        ],
+        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -875,11 +831,7 @@ fn test_watcher_spends_maker_payment_eth_erc20() {
         100.,
         100.,
         0.01,
-        &[
-            ("USE_WATCHERS", ""),
-            ("TEST_COIN_PRICE", "0.01"),
-            ("USE_WATCHER_REWARD", ""),
-        ],
+        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -912,7 +864,7 @@ fn test_watcher_spends_maker_payment_erc20_eth() {
         0.01,
         0.01,
         1.,
-        &[("USE_WATCHERS", ""), ("USE_WATCHER_REWARD", "")],
+        &[("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -945,11 +897,7 @@ fn test_watcher_spends_maker_payment_utxo_erc20() {
         1.,
         1.,
         1.,
-        &[
-            ("USE_WATCHERS", ""),
-            ("TEST_COIN_PRICE", "0.01"),
-            ("USE_WATCHER_REWARD", ""),
-        ],
+        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -982,11 +930,7 @@ fn test_watcher_spends_maker_payment_erc20_utxo() {
         1.,
         1.,
         1.,
-        &[
-            ("USE_WATCHERS", ""),
-            ("TEST_COIN_PRICE", "0.01"),
-            ("USE_WATCHER_REWARD", ""),
-        ],
+        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -1038,7 +982,7 @@ fn test_watcher_refunds_taker_payment_utxo() {
         25.,
         25.,
         2.,
-        &[("USE_WATCHERS", ""), ("USE_TEST_LOCKTIME", "")],
+        &[("USE_TEST_LOCKTIME", "")],
         SwapFlow::WatcherRefundsTakerPayment,
         alice_privkey,
         bob_privkey,
@@ -1064,11 +1008,7 @@ fn test_watcher_refunds_taker_payment_eth() {
         0.01,
         0.01,
         1.,
-        &[
-            ("USE_WATCHERS", ""),
-            ("USE_TEST_LOCKTIME", ""),
-            ("USE_WATCHER_REWARD", ""),
-        ],
+        &[("USE_TEST_LOCKTIME", ""), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherRefundsTakerPayment,
         alice_privkey,
         bob_privkey,
@@ -1095,7 +1035,6 @@ fn test_watcher_refunds_taker_payment_erc20() {
         100.,
         0.01,
         &[
-            ("USE_WATCHERS", ""),
             ("USE_TEST_LOCKTIME", ""),
             ("TEST_COIN_PRICE", "0.01"),
             ("USE_WATCHER_REWARD", ""),
@@ -1127,7 +1066,7 @@ fn test_watcher_waits_for_taker_utxo() {
         25.,
         25.,
         2.,
-        &[("USE_WATCHERS", "")],
+        &[],
         SwapFlow::TakerSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
@@ -1147,11 +1086,7 @@ fn test_watcher_waits_for_taker_eth() {
         100.,
         100.,
         0.01,
-        &[
-            ("USE_WATCHERS", ""),
-            ("TEST_COIN_PRICE", "0.01"),
-            ("USE_WATCHER_REWARD", ""),
-        ],
+        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
         SwapFlow::TakerSpendsMakerPayment,
         alice_privkey,
         bob_privkey,
