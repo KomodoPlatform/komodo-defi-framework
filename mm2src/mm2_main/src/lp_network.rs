@@ -155,8 +155,6 @@ async fn process_p2p_message(
 ) {
     let mut to_propagate = false;
 
-    drop_mutability!(message);
-
     let mut split = message.topic.as_str().split(TOPIC_SEPARATOR);
     match split.next() {
         Some(lp_ordermatch::ORDERBOOK_PREFIX) => {

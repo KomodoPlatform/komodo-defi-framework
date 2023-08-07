@@ -10,7 +10,7 @@ use instant::Duration;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::ConnectedPoint;
 use libp2p::floodsub::{Floodsub, FloodsubEvent, Topic as FloodsubTopic};
-use libp2p::gossipsub::{MessageAcceptance, PublishError, SubscriptionError, ValidationMode};
+use libp2p::gossipsub::{PublishError, SubscriptionError, ValidationMode};
 use libp2p::multiaddr::Protocol;
 use libp2p::request_response::ResponseChannel;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent, ToSwarm};

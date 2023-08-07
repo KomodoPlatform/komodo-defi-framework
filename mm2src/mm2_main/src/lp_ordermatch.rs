@@ -556,6 +556,7 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
             if is_pubkey_banned(&ctx, &pubkey.unprefixed().into()) {
                 return MmError::err(OrderbookP2PHandlerError::PubkeyNotAllowed(pubkey.to_hex()));
             }
+            log::debug!("received ordermatch message {:?}", message);
             match message {
                 new_protocol::OrdermatchMessage::MakerOrderCreated(created_msg) => {
                     let order: OrderbookItem = (created_msg, hex::encode(pubkey.to_bytes().as_slice())).into();
@@ -1089,7 +1090,7 @@ fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
     });
     delete_my_order(&ctx, order.uuid, order.p2p_privkey);
     log::debug!("maker_order_cancelled_p2p_notify called, message {:?}", message);
-    broadcast_ordermatch_message(&ctx, vec![order.orderbook_topic()], message, order.p2p_keypair());
+    broadcast_ordermatch_message(&ctx, order.orderbook_topic(), message, order.p2p_keypair());
 }
 
 pub struct BalanceUpdateOrdermatchHandler {
@@ -2283,7 +2284,9 @@ fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook
         timestamp: now_sec(),
     };
 
-    broadcast_ordermatch_message(ctx, topics, message.into(), p2p_privkey);
+    for topic in topics {
+        broadcast_ordermatch_message(ctx, topic, message.clone().into(), p2p_privkey);
+    }
 }
 
 pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
@@ -2317,13 +2320,13 @@ pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
 
 fn broadcast_ordermatch_message(
     ctx: &MmArc,
-    topics: impl IntoIterator<Item = String>,
+    topic: String,
     msg: new_protocol::OrdermatchMessage,
     p2p_privkey: Option<&KeyPair>,
 ) {
     let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey);
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
-    broadcast_p2p_msg(ctx, topics.into_iter().collect(), encoded_msg, peer_id);
+    broadcast_p2p_msg(ctx, topic, encoded_msg, peer_id);
 }
 
 /// The order is ordered by [`OrderbookItem::price`] and [`OrderbookItem::uuid`].
@@ -3431,7 +3434,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
                     maker_order_uuid: reserved_msg.maker_order_uuid,
                 };
                 let topic = my_order.orderbook_topic();
-                broadcast_ordermatch_message(&ctx, vec![topic], connect.clone().into(), my_order.p2p_keypair());
+                broadcast_ordermatch_message(&ctx, topic, connect.clone().into(), my_order.p2p_keypair());
                 let taker_match = TakerMatch {
                     reserved: reserved_msg,
                     connect,
@@ -3578,7 +3581,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
-                broadcast_ordermatch_message(&ctx, vec![topic], reserved.clone().into(), order.p2p_keypair());
+                broadcast_ordermatch_message(&ctx, topic, reserved.clone().into(), order.p2p_keypair());
                 let maker_match = MakerMatch {
                     request: taker_request,
                     reserved,
@@ -3652,7 +3655,7 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
         my_order.started_swaps.push(order_match.request.uuid);
         lp_connect_start_bob(ctx.clone(), order_match, my_order.clone());
         let topic = my_order.orderbook_topic();
-        broadcast_ordermatch_message(&ctx, vec![topic.clone()], connected.into(), my_order.p2p_keypair());
+        broadcast_ordermatch_message(&ctx, topic.clone(), connected.into(), my_order.p2p_keypair());
 
         // If volume is less order will be cancelled a bit later
         if my_order.available_amount() >= my_order.min_base_vol {
@@ -3822,12 +3825,7 @@ pub async fn lp_auto_buy(
         )
         .await
     );
-    broadcast_ordermatch_message(
-        ctx,
-        vec![order.orderbook_topic()],
-        order.clone().into(),
-        order.p2p_keypair(),
-    );
+    broadcast_ordermatch_message(ctx, order.orderbook_topic(), order.clone().into(), order.p2p_keypair());
 
     let res = try_s!(json::to_vec(&Mm2RpcResult::new(SellBuyResponse {
         request: (&order.request).into(),
