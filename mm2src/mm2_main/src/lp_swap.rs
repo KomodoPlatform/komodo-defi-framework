@@ -1182,6 +1182,7 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         if swap.is_finished_and_success()
             || (swap.is_finished()
                 && (!swap.watcher_message_sent()
+                    || swap.refund_finished()
                     || swap.refunded_by_watcher()
                     || swap.watcher_spend_or_refund_not_found()))
         {

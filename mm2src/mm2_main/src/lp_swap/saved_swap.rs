@@ -73,6 +73,13 @@ impl SavedSwap {
         }
     }
 
+    pub fn refund_finished(&self) -> bool {
+        match &self {
+            SavedSwap::Taker(taker_swap) => taker_swap.refund_finished(),
+            _ => false,
+        }
+    }
+
     pub fn watcher_spend_or_refund_not_found(&self) -> bool {
         match &self {
             SavedSwap::Taker(taker_swap) => taker_swap
