@@ -1,27 +1,39 @@
 use crate::prelude::*;
-use crate::state_machine::ChangeGuard;
+use crate::state_machine::{ChangeGuard, ErrorGuard};
 use async_trait::async_trait;
 
 #[async_trait]
 pub trait OnNewState<S> {
-    async fn on_new_state(&mut self, state: &S);
+    type Error;
+
+    async fn on_new_state(&mut self, state: &S) -> Result<(), Self::Error>;
 }
 
 #[async_trait]
 pub trait StateMachineStorage: Send + Sync {
     type MachineId: Send;
     type Event: Send;
+    type Error: Send;
 
-    async fn store_events(&mut self, id: Self::MachineId, events: Vec<Self::Event>);
+    /// Implementors must ensure that either all or none events are saved at the att
+    /// E.g., events must be saved to SQLite DB in a single transaction
+    async fn store_events(&mut self, id: Self::MachineId, events: Vec<Self::Event>) -> Result<(), Self::Error>;
 
-    async fn get_unfinished(&self) -> Vec<Self::MachineId>;
+    async fn get_unfinished(&self) -> Result<Vec<Self::MachineId>, Self::Error>;
 
-    async fn mark_finished(&self, id: Self::MachineId);
+    async fn mark_finished(&mut self, id: Self::MachineId) -> Result<(), Self::Error>;
+}
+
+#[allow(dead_code)]
+pub struct RestoredMachine<M> {
+    machine: M,
+    current_state: Box<dyn State<StateMachine = M>>,
 }
 
 #[async_trait]
-pub trait StorableStateMachine: StateMachineTrait {
+pub trait StorableStateMachine: Send + Sized + 'static {
     type Storage: StateMachineStorage;
+    type Result: Send;
 
     fn storage(&mut self) -> &mut Self::Storage;
 
@@ -30,16 +42,29 @@ pub trait StorableStateMachine: StateMachineTrait {
     fn restore_from_storage(
         id: <Self::Storage as StateMachineStorage>::MachineId,
         storage: Self::Storage,
-    ) -> (Self, Box<dyn State<StateMachine = Self>>);
+    ) -> Result<RestoredMachine<Self>, <Self::Storage as StateMachineStorage>::Error>;
 
-    async fn store_events(&mut self, events: Vec<<Self::Storage as StateMachineStorage>::Event>) {
+    async fn store_events(
+        &mut self,
+        events: Vec<<Self::Storage as StateMachineStorage>::Event>,
+    ) -> Result<(), <Self::Storage as StateMachineStorage>::Error> {
         let id = self.id();
         self.storage().store_events(id, events).await
     }
 
-    async fn mark_finished(&mut self) {
+    async fn mark_finished(&mut self) -> Result<(), <Self::Storage as StateMachineStorage>::Error> {
         let id = self.id();
         self.storage().mark_finished(id).await
+    }
+}
+
+#[async_trait]
+impl<T: StorableStateMachine> StateMachineTrait for T {
+    type Result = T::Result;
+    type Error = <T::Storage as StateMachineStorage>::Error;
+
+    async fn on_finished(&mut self) -> Result<(), <T::Storage as StateMachineStorage>::Error> {
+        self.mark_finished().await
     }
 }
 
@@ -51,9 +76,11 @@ pub trait StorableState {
 
 #[async_trait]
 impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> OnNewState<S> for T {
-    async fn on_new_state(&mut self, state: &S) {
+    type Error = <T::Storage as StateMachineStorage>::Error;
+
+    async fn on_new_state(&mut self, state: &S) -> Result<(), <T::Storage as StateMachineStorage>::Error> {
         let events = state.get_events();
-        self.store_events(events).await;
+        self.store_events(events).await
     }
 }
 
@@ -66,9 +93,11 @@ pub trait ChangeStateOnNewExt {
     where
         Self: Sized,
         Next: State + TransitionFrom<Self> + ChangeStateOnNewExt,
-        Next::StateMachine: OnNewState<Next> + Sync,
+        Next::StateMachine: OnNewState<Next, Error = <Next::StateMachine as StateMachineTrait>::Error> + Sync,
     {
-        machine.on_new_state(&next_state).await;
+        if let Err(e) = machine.on_new_state(&next_state).await {
+            return StateResult::Error(ErrorGuard::new(e));
+        }
         StateResult::ChangeState(ChangeGuard::next(next_state))
     }
 }
@@ -79,11 +108,12 @@ pub trait ChangeStateOnNewExt {
 impl<T: StorableStateMachine> !StandardStateMachine for T {}
 impl<S: OnNewState<T>, T: State<StateMachine = S>> ChangeStateOnNewExt for T {}
 
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storable_state_machine::tests::TestEvent::{ForState3First, ForState3Second};
     use common::block_on;
     use std::collections::HashMap;
+    use std::convert::Infallible;
 
     struct StorageTest {
         events_unfinished: HashMap<usize, Vec<TestEvent>>,
@@ -104,10 +134,6 @@ mod tests {
         storage: StorageTest,
     }
 
-    impl StateMachineTrait for StorableStateMachineTest {
-        type Result = ();
-    }
-
     #[derive(Debug, Eq, PartialEq)]
     enum TestEvent {
         ForState2,
@@ -119,21 +145,30 @@ mod tests {
     impl StateMachineStorage for StorageTest {
         type MachineId = usize;
         type Event = TestEvent;
+        type Error = Infallible;
 
-        async fn store_events(&mut self, machine_id: usize, events: Vec<Self::Event>) {
+        async fn store_events(&mut self, machine_id: usize, events: Vec<Self::Event>) -> Result<(), Self::Error> {
             self.events_unfinished
                 .entry(machine_id)
                 .or_insert_with(Vec::new)
-                .extend(events)
+                .extend(events);
+            Ok(())
         }
 
-        async fn get_unfinished(&self) -> Vec<Self::MachineId> { vec![] }
+        async fn get_unfinished(&self) -> Result<Vec<Self::MachineId>, Self::Error> {
+            Ok(self.events_unfinished.keys().copied().collect())
+        }
 
-        async fn mark_finished(&self, id: Self::MachineId) { todo!() }
+        async fn mark_finished(&mut self, id: Self::MachineId) -> Result<(), Self::Error> {
+            let events = self.events_unfinished.remove(&id).unwrap();
+            self.events_finished.insert(id, events);
+            Ok(())
+        }
     }
 
     impl StorableStateMachine for StorableStateMachineTest {
         type Storage = StorageTest;
+        type Result = ();
 
         fn storage(&mut self) -> &mut Self::Storage { &mut self.storage }
 
@@ -142,12 +177,15 @@ mod tests {
         fn restore_from_storage(
             id: <Self::Storage as StateMachineStorage>::MachineId,
             storage: Self::Storage,
-        ) -> (Self, Box<dyn State<StateMachine = Self>>) {
-            let events = storage.events_unfinished.get(&id).unwrap().clone();
-            match events.last() {
-                Some(TestEvent::ForState2) => (StorableStateMachineTest { id, storage }, Box::new(State2 {})),
+        ) -> Result<RestoredMachine<Self>, <Self::Storage as StateMachineStorage>::Error> {
+            let events = storage.events_unfinished.get(&id).unwrap();
+            let current_state: Box<dyn State<StateMachine = Self>> = match events.last() {
+                None => Box::new(State1 {}),
+                Some(TestEvent::ForState2) => Box::new(State2 {}),
                 _ => unimplemented!(),
-            }
+            };
+            let machine = StorableStateMachineTest { id, storage };
+            Ok(RestoredMachine { machine, current_state })
         }
     }
 
@@ -174,7 +212,7 @@ mod tests {
     impl StorableState for State3 {
         type StateMachine = StorableStateMachineTest;
 
-        fn get_events(&self) -> Vec<TestEvent> { vec![TestEvent::ForState3First, ForState3Second] }
+        fn get_events(&self) -> Vec<TestEvent> { vec![TestEvent::ForState3First, TestEvent::ForState3Second] }
     }
 
     impl TransitionFrom<State2> for State3 {}
@@ -210,9 +248,13 @@ mod tests {
             id: 1,
             storage: StorageTest::empty(),
         };
-        block_on(machine.run(Box::new(State1 {})));
+        block_on(machine.run(Box::new(State1 {}))).unwrap();
 
-        let expected_events = HashMap::from_iter([(1, vec![TestEvent::ForState2, ForState3First, ForState3Second])]);
+        let expected_events = HashMap::from_iter([(1, vec![
+            TestEvent::ForState2,
+            TestEvent::ForState3First,
+            TestEvent::ForState3Second,
+        ])]);
         assert_eq!(expected_events, machine.storage.events_finished);
     }
 
@@ -221,11 +263,18 @@ mod tests {
         let mut storage = StorageTest::empty();
         let id = 1;
         storage.events_unfinished.insert(1, vec![TestEvent::ForState2]);
-        let (mut machine, state) = StorableStateMachineTest::restore_from_storage(id, storage);
+        let RestoredMachine {
+            mut machine,
+            current_state,
+        } = StorableStateMachineTest::restore_from_storage(id, storage).unwrap();
 
-        block_on(machine.run(state));
+        block_on(machine.run(current_state)).unwrap();
 
-        let expected_events = HashMap::from_iter([(1, vec![TestEvent::ForState2, ForState3First, ForState3Second])]);
+        let expected_events = HashMap::from_iter([(1, vec![
+            TestEvent::ForState2,
+            TestEvent::ForState3First,
+            TestEvent::ForState3Second,
+        ])]);
         assert_eq!(expected_events, machine.storage.events_finished);
     }
 }

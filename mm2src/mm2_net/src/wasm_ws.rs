@@ -10,6 +10,7 @@ use mm2_state_machine::prelude::StandardStateMachine;
 use mm2_state_machine::state_machine::{ChangeStateExt, LastState, State, StateMachineTrait, StateResult,
                                        TransitionFrom};
 use serde_json::{self as json, Value as Json};
+use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -216,7 +217,10 @@ fn spawn_ws_transport<Spawner: SpawnFuture>(
     };
 
     let fut = async move {
-        state_machine.run(Box::new(ConnectingState)).await;
+        state_machine
+            .run(Box::new(ConnectingState))
+            .await
+            .expect("The error of this machine is Infallible");
     };
     spawner.spawn(fut);
 
@@ -379,6 +383,7 @@ struct WsStateMachine {
 
 impl StateMachineTrait for WsStateMachine {
     type Result = ();
+    type Error = Infallible;
 }
 
 impl StandardStateMachine for WsStateMachine {}

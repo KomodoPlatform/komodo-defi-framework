@@ -19,6 +19,7 @@ use mm2_state_machine::prelude::*;
 use mm2_state_machine::state_machine::StateMachineTrait;
 use rpc::v1::types::H256 as H256Json;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::convert::Infallible;
 use std::iter::FromIterator;
 use std::str::FromStr;
 
@@ -148,6 +149,7 @@ struct UtxoTxHistoryStateMachine<Coin: UtxoTxHistoryOps, Storage: TxHistoryStora
 
 impl<Coin: UtxoTxHistoryOps, Storage: TxHistoryStorage> StateMachineTrait for UtxoTxHistoryStateMachine<Coin, Storage> {
     type Result = ();
+    type Error = Infallible;
 }
 
 impl<Coin: UtxoTxHistoryOps, Storage: TxHistoryStorage> StandardStateMachine
@@ -738,7 +740,10 @@ pub async fn bch_and_slp_history_loop(
         metrics,
         balances,
     };
-    state_machine.run(Box::new(Init::new())).await;
+    state_machine
+        .run(Box::new(Init::new()))
+        .await
+        .expect("The error of this machine is Infallible");
 }
 
 pub async fn utxo_history_loop<Coin, Storage>(
@@ -756,7 +761,10 @@ pub async fn utxo_history_loop<Coin, Storage>(
         metrics,
         balances: current_balances,
     };
-    state_machine.run(Box::new(Init::new())).await;
+    state_machine
+        .run(Box::new(Init::new()))
+        .await
+        .expect("The error of this machine is Infallible");
 }
 
 fn to_filtering_addresses(addresses: &HashSet<Address>) -> FilteringAddresses {

@@ -2,7 +2,7 @@
 //!
 //! See the usage examples in the `tests` module.
 
-use crate::prelude::StandardStateMachine;
+use crate::prelude::*;
 use crate::NotSame;
 use async_trait::async_trait;
 
@@ -11,8 +11,11 @@ pub trait TransitionFrom<Prev> {}
 #[async_trait]
 pub trait StateMachineTrait: Send + Sized + 'static {
     type Result: Send;
+    type Error: Send;
 
-    async fn run(&mut self, mut state: Box<dyn State<StateMachine = Self>>) -> Self::Result {
+    async fn on_finished(&mut self) -> Result<(), Self::Error> { Ok(()) }
+
+    async fn run(&mut self, mut state: Box<dyn State<StateMachine = Self>>) -> Result<Self::Result, Self::Error> {
         loop {
             let result = state.on_changed(self).await;
             match result {
@@ -20,6 +23,11 @@ pub trait StateMachineTrait: Send + Sized + 'static {
                     state = next;
                 },
                 StateResult::Finish(ResultGuard { result }) => return result,
+                StateResult::Finish(ResultGuard { result }) => {
+                    self.on_finished().await?;
+                    return Ok(result);
+                },
+                StateResult::Error(ErrorGuard { error }) => return Err(error),
             };
         }
     }
@@ -88,6 +96,7 @@ impl<T: LastState> State for T {
 pub enum StateResult<Machine: StateMachineTrait> {
     ChangeState(ChangeGuard<Machine>),
     Finish(ResultGuard<Machine::Result>),
+    Error(ErrorGuard<Machine::Error>),
 }
 
 /* vvv The access guards that prevents the user using this pattern from entering an invalid state vvv */
@@ -118,6 +127,15 @@ impl<T> ResultGuard<T> {
     fn new(result: T) -> Self { ResultGuard { result } }
 }
 
+/// An instance of `ErrorGuard` can be initialized within mm2_state_machine crate only.
+pub struct ErrorGuard<E> {
+    error: E,
+}
+
+impl<E> ErrorGuard<E> {
+    pub(crate) fn new(error: E) -> Self { ErrorGuard { error } }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,6 +144,7 @@ mod tests {
     use futures::channel::mpsc;
     use futures::{SinkExt, StreamExt};
     use std::collections::HashMap;
+    use std::convert::Infallible;
 
     type UserId = usize;
     type Login = String;
@@ -145,6 +164,7 @@ mod tests {
 
     impl StateMachineTrait for AuthStateMachine {
         type Result = AuthResult;
+        type Error = Infallible;
     }
 
     impl StandardStateMachine for AuthStateMachine {}
@@ -255,7 +275,7 @@ mod tests {
         let fut = async move {
             let initial_state: ReadingState = ReadingState { rx };
             let mut state_machine = AuthStateMachine { users };
-            state_machine.run(Box::new(initial_state)).await
+            state_machine.run(Box::new(initial_state)).await.unwrap()
         };
         block_on(fut)
     }

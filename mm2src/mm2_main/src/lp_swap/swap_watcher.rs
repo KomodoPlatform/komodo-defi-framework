@@ -18,6 +18,7 @@ use mm2_state_machine::state_machine::StateMachineTrait;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use std::cmp::min;
+use std::convert::Infallible;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -41,6 +42,7 @@ struct WatcherStateMachine {
 
 impl StateMachineTrait for WatcherStateMachine {
     type Result = ();
+    type Error = Infallible;
 }
 
 impl StandardStateMachine for WatcherStateMachine {}
@@ -635,7 +637,10 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
             conf,
             watcher_reward,
         };
-        state_machine.run(Box::new(ValidateTakerFee {})).await;
+        state_machine
+            .run(Box::new(ValidateTakerFee {}))
+            .await
+            .expect("The error of this machine is Infallible");
 
         // This allows to move the `taker_watcher_lock` value into this async block to keep it alive
         // until the Swap Watcher finishes.
