@@ -2681,10 +2681,8 @@ pub async fn save_swap_as_refunded(
 }
 
 pub async fn prepare_for_kickstart(ctx: &MmArc, mut saved: TakerSavedSwap) -> Result<bool, String> {
-    if saved.contains_failure() {
-        if saved.is_finished() {
-            saved.events.pop();
-        }
+    if saved.is_finished() {
+        saved.events.pop();
         let event = TakerSwapEvent::WatcherSpendOrRefundNotFound;
         let to_save = TakerSavedEvent {
             timestamp: now_ms(),
