@@ -15,9 +15,7 @@ pub trait StateMachineStorage: Send + Sync {
     type Event: Send;
     type Error: Send;
 
-    /// Implementors must ensure that either all or none events are saved at the att
-    /// E.g., events must be saved to SQLite DB in a single transaction
-    async fn store_events(&mut self, id: Self::MachineId, events: Vec<Self::Event>) -> Result<(), Self::Error>;
+    async fn store_event(&mut self, id: Self::MachineId, event: Self::Event) -> Result<(), Self::Error>;
 
     async fn get_unfinished(&self) -> Result<Vec<Self::MachineId>, Self::Error>;
 
@@ -44,12 +42,12 @@ pub trait StorableStateMachine: Send + Sized + 'static {
         storage: Self::Storage,
     ) -> Result<RestoredMachine<Self>, <Self::Storage as StateMachineStorage>::Error>;
 
-    async fn store_events(
+    async fn store_event(
         &mut self,
-        events: Vec<<Self::Storage as StateMachineStorage>::Event>,
+        event: <Self::Storage as StateMachineStorage>::Event,
     ) -> Result<(), <Self::Storage as StateMachineStorage>::Error> {
         let id = self.id();
-        self.storage().store_events(id, events).await
+        self.storage().store_event(id, event).await
     }
 
     async fn mark_finished(&mut self) -> Result<(), <Self::Storage as StateMachineStorage>::Error> {
@@ -71,7 +69,7 @@ impl<T: StorableStateMachine> StateMachineTrait for T {
 pub trait StorableState {
     type StateMachine: StorableStateMachine;
 
-    fn get_events(&self) -> Vec<<<Self::StateMachine as StorableStateMachine>::Storage as StateMachineStorage>::Event>;
+    fn get_event(&self) -> <<Self::StateMachine as StorableStateMachine>::Storage as StateMachineStorage>::Event;
 }
 
 #[async_trait]
@@ -79,8 +77,8 @@ impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> 
     type Error = <T::Storage as StateMachineStorage>::Error;
 
     async fn on_new_state(&mut self, state: &S) -> Result<(), <T::Storage as StateMachineStorage>::Error> {
-        let events = state.get_events();
-        self.store_events(events).await
+        let event = state.get_event();
+        self.store_event(event).await
     }
 }
 
@@ -137,9 +135,18 @@ mod tests {
     #[derive(Debug, Eq, PartialEq)]
     enum TestEvent {
         ForState2,
-        ForState3First,
-        ForState3Second,
+        ForState3,
+        ForState4,
     }
+
+    /*
+    #[async_trait]
+    impl OnNewState<State1> for StorableStateMachineTest {
+        type Error = Infallible;
+
+        async fn on_new_state(&mut self, _state: &State1) -> Result<(), Self::Error> { Ok(()) }
+    }
+     */
 
     #[async_trait]
     impl StateMachineStorage for StorageTest {
@@ -147,11 +154,11 @@ mod tests {
         type Event = TestEvent;
         type Error = Infallible;
 
-        async fn store_events(&mut self, machine_id: usize, events: Vec<Self::Event>) -> Result<(), Self::Error> {
+        async fn store_event(&mut self, machine_id: usize, events: Self::Event) -> Result<(), Self::Error> {
             self.events_unfinished
                 .entry(machine_id)
                 .or_insert_with(Vec::new)
-                .extend(events);
+                .push(events);
             Ok(())
         }
 
@@ -191,18 +198,12 @@ mod tests {
 
     struct State1 {}
 
-    impl StorableState for State1 {
-        type StateMachine = StorableStateMachineTest;
-
-        fn get_events(&self) -> Vec<TestEvent> { vec![] }
-    }
-
     struct State2 {}
 
     impl StorableState for State2 {
         type StateMachine = StorableStateMachineTest;
 
-        fn get_events(&self) -> Vec<TestEvent> { vec![TestEvent::ForState2] }
+        fn get_event(&self) -> TestEvent { TestEvent::ForState2 }
     }
 
     impl TransitionFrom<State1> for State2 {}
@@ -212,13 +213,23 @@ mod tests {
     impl StorableState for State3 {
         type StateMachine = StorableStateMachineTest;
 
-        fn get_events(&self) -> Vec<TestEvent> { vec![TestEvent::ForState3First, TestEvent::ForState3Second] }
+        fn get_event(&self) -> TestEvent { TestEvent::ForState3 }
     }
 
     impl TransitionFrom<State2> for State3 {}
 
+    struct State4 {}
+
+    impl StorableState for State4 {
+        type StateMachine = StorableStateMachineTest;
+
+        fn get_event(&self) -> TestEvent { TestEvent::ForState4 }
+    }
+
+    impl TransitionFrom<State3> for State4 {}
+
     #[async_trait]
-    impl LastState for State3 {
+    impl LastState for State4 {
         type StateMachine = StorableStateMachineTest;
 
         async fn on_changed(self: Box<Self>, _ctx: &mut Self::StateMachine) -> () {}
@@ -242,6 +253,15 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl State for State3 {
+        type StateMachine = StorableStateMachineTest;
+
+        async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+            Self::change_state(State4 {}, ctx).await
+        }
+    }
+
     #[test]
     fn run_storable_state_machine() {
         let mut machine = StorableStateMachineTest {
@@ -252,8 +272,8 @@ mod tests {
 
         let expected_events = HashMap::from_iter([(1, vec![
             TestEvent::ForState2,
-            TestEvent::ForState3First,
-            TestEvent::ForState3Second,
+            TestEvent::ForState3,
+            TestEvent::ForState4,
         ])]);
         assert_eq!(expected_events, machine.storage.events_finished);
     }
@@ -272,8 +292,8 @@ mod tests {
 
         let expected_events = HashMap::from_iter([(1, vec![
             TestEvent::ForState2,
-            TestEvent::ForState3First,
-            TestEvent::ForState3Second,
+            TestEvent::ForState3,
+            TestEvent::ForState4,
         ])]);
         assert_eq!(expected_events, machine.storage.events_finished);
     }
