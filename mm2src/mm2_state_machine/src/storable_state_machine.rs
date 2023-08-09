@@ -9,6 +9,8 @@ pub trait OnNewState<S> {
     async fn on_new_state(&mut self, state: &S) -> Result<(), Self::Error>;
 }
 
+pub trait InitialState {}
+
 #[async_trait]
 pub trait StateMachineStorage: Send + Sync {
     type MachineId: Send;
@@ -72,6 +74,8 @@ pub trait StorableState {
     fn get_event(&self) -> <<Self::StateMachine as StorableStateMachine>::Storage as StateMachineStorage>::Event;
 }
 
+impl<S: StorableStateMachine, T: StorableState<StateMachine = S>> !InitialState for T {}
+
 #[async_trait]
 impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> OnNewState<S> for T {
     type Error = <T::Storage as StateMachineStorage>::Error;
@@ -105,6 +109,13 @@ pub trait ChangeStateOnNewExt {
 // This prevents ChangeStateExt to be implemented StorableStateMachine's states
 impl<T: StorableStateMachine> !StandardStateMachine for T {}
 impl<S: OnNewState<T>, T: State<StateMachine = S>> ChangeStateOnNewExt for T {}
+
+#[async_trait]
+impl<T: StorableStateMachine, S: InitialState> OnNewState<S> for T {
+    type Error = <T::Storage as StateMachineStorage>::Error;
+
+    async fn on_new_state(&mut self, _state: &S) -> Result<(), Self::Error> { Ok(()) }
+}
 
 #[cfg(test)]
 mod tests {
