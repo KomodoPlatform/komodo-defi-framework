@@ -1319,13 +1319,22 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
     // TODO validate premium amount. Might be a bit tricky in the case of dynamic miner fee
     // TODO validate that output amounts are larger than dust
 
+    let premium = match actual_preimage_tx.outputs.get(1) {
+        Some(o) => o.value,
+        None => {
+            return MmError::err(ValidateDexFeeSpendPreimageError::InvalidPreimage(
+                "Preimage doesn't have output 1".into(),
+            ))
+        },
+    };
+
     // Here, we have to use the exact lock time and premium amount from the preimage because maker
     // can get different values (e.g. if MTP advances during preimage exchange/fee rate changes)
     let expected_preimage = gen_dex_fee_spend_preimage(
         coin,
         gen_args,
         LocktimeSetting::UseExact(actual_preimage_tx.lock_time),
-        CalcPremiumBy::UseExactAmount(actual_preimage_tx.outputs[1].value),
+        CalcPremiumBy::UseExactAmount(premium),
     )
     .await?;
     let redeem_script =
@@ -1346,7 +1355,9 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
     };
     let expected_preimage_tx: UtxoTx = expected_preimage.into();
     if expected_preimage_tx != actual_preimage_tx {
-        return MmError::err(ValidateDexFeeSpendPreimageError::InvalidPreimage);
+        return MmError::err(ValidateDexFeeSpendPreimageError::InvalidPreimage(
+            "Preimage is not equal to expected".into(),
+        ));
     }
     Ok(())
 }

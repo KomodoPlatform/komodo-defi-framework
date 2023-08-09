@@ -1075,7 +1075,7 @@ impl From<UtxoRpcError> for ValidateDexFeeError {
 pub enum ValidateDexFeeSpendPreimageError {
     InvalidPubkey(String),
     InvalidTakerSignature,
-    InvalidPreimage,
+    InvalidPreimage(String),
     SignatureVerificationFailure(String),
     TxDeserialization(String),
     TxGenError(String),
