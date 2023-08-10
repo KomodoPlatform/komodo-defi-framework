@@ -57,7 +57,7 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Finished",
 ];
 
-pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 12] = [
+pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 13] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -69,6 +69,7 @@ pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 12] = [
     "WatcherMessageSent",
     "TakerPaymentSpent",
     "MakerPaymentSpent",
+    "MakerPaymentSpentByWatcher",
     "Finished",
 ];
 
@@ -297,9 +298,6 @@ impl TakerSavedSwap {
     pub fn is_success(&self) -> Result<bool, String> {
         if !self.is_finished() {
             return ERR!("Can not determine is_success state for not finished swap");
-        }
-        if self.maker_payment_spent_by_watcher() {
-            return Ok(true);
         }
         for event in self.events.iter() {
             if event.event.is_error() {
@@ -736,41 +734,6 @@ impl TakerSwapEvent {
             TakerSwapEvent::TakerPaymentRefundFinished => "Taker payment refund finished...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundedByWatcher(_) => "Taker payment refunded by watcher...".to_owned(),
             TakerSwapEvent::WatcherSpendOrRefundNotFound => "Watcher refund could not be found...".to_owned(),
-            TakerSwapEvent::Finished => "Finished".to_owned(),
-        }
-    }
-
-    pub fn to_str(&self) -> String {
-        match self {
-            TakerSwapEvent::Started(_) => "Started".to_owned(),
-            TakerSwapEvent::StartFailed(_) => "StartFailed".to_owned(),
-            TakerSwapEvent::Negotiated(_) => "Negotiated".to_owned(),
-            TakerSwapEvent::NegotiateFailed(_) => "NegotiateFailed".to_owned(),
-            TakerSwapEvent::TakerFeeSent(_) => "TakerFeeSent".to_owned(),
-            TakerSwapEvent::TakerFeeSendFailed(_) => "TakerFeeSendFailed".to_owned(),
-            TakerSwapEvent::TakerPaymentInstructionsReceived(_) => "TakerPaymentInstructionsReceived".to_owned(),
-            TakerSwapEvent::MakerPaymentReceived(_) => "MakerPaymentReceived".to_owned(),
-            TakerSwapEvent::MakerPaymentWaitConfirmStarted => "MakerPaymentWaitConfirmStarted".to_owned(),
-            TakerSwapEvent::MakerPaymentValidatedAndConfirmed => "MakerPaymentValidatedAndConfirmed".to_owned(),
-            TakerSwapEvent::MakerPaymentValidateFailed(_) => "MakerPaymentValidateFailed".to_owned(),
-            TakerSwapEvent::MakerPaymentWaitConfirmFailed(_) => "MakerPaymentWaitConfirmFailed".to_owned(),
-            TakerSwapEvent::TakerPaymentSent(_) => "TakerPaymentSent".to_owned(),
-            TakerSwapEvent::WatcherMessageSent(_, _) => "WatcherMessageSent".to_owned(),
-            TakerSwapEvent::TakerPaymentTransactionFailed(_) => "TakerPaymentTransactionFailed".to_owned(),
-            TakerSwapEvent::TakerPaymentDataSendFailed(_) => "TakerPaymentDataSendFailed".to_owned(),
-            TakerSwapEvent::TakerPaymentWaitConfirmFailed(_) => "TakerPaymentWaitConfirmFailed".to_owned(),
-            TakerSwapEvent::TakerPaymentSpent(_) => "TakerPaymentSpent".to_owned(),
-            TakerSwapEvent::TakerPaymentWaitForSpendFailed(_) => "TakerPaymentWaitForSpendFailed".to_owned(),
-            TakerSwapEvent::MakerPaymentSpent(_) => "MakerPaymentSpent".to_owned(),
-            TakerSwapEvent::MakerPaymentSpentByWatcher(_) => "MakerPaymentSpentByWatcher".to_owned(),
-            TakerSwapEvent::MakerPaymentSpendFailed(_) => "MakerPaymentSpendFailed".to_owned(),
-            TakerSwapEvent::TakerPaymentWaitRefundStarted { .. } => "TakerPaymentWaitRefundStarted".to_owned(),
-            TakerSwapEvent::TakerPaymentRefundStarted => "TakerPaymentRefundStarted".to_owned(),
-            TakerSwapEvent::TakerPaymentRefunded(_) => "TakerPaymentRefunded".to_owned(),
-            TakerSwapEvent::TakerPaymentRefundFailed(_) => "TakerPaymentRefundFailed".to_owned(),
-            TakerSwapEvent::TakerPaymentRefundFinished => "TakerPaymentRefundFinished".to_owned(),
-            TakerSwapEvent::TakerPaymentRefundedByWatcher(_) => "TakerPaymentRefundedByWatcher".to_owned(),
-            TakerSwapEvent::WatcherSpendOrRefundNotFound => "WatcherRefundNotFound".to_owned(),
             TakerSwapEvent::Finished => "Finished".to_owned(),
         }
     }
@@ -2527,7 +2490,11 @@ pub async fn save_swap_as_successful(
         .await
         .map_err(|e| e.to_string())?;
 
-    if saved.is_finished() {
+    while !(matches!(
+        saved.events.last().unwrap().event,
+        TakerSwapEvent::WatcherMessageSent(_, _)
+    ) || matches!(saved.events.last().unwrap().event, TakerSwapEvent::TakerPaymentSpent(_)))
+    {
         saved.events.pop();
     }
 
@@ -2613,10 +2580,6 @@ pub async fn save_swap_as_successful(
         event,
     };
     saved.events.push(to_save);
-
-    let mut success_events: Vec<String> = saved.events.iter().map(|e| e.event.to_str()).collect();
-    success_events.push("Finished".into());
-    saved.success_events = success_events;
 
     let new_swap = SavedSwap::Taker(saved);
     try_s!(new_swap.save_to_db(ctx).await);

@@ -26,7 +26,7 @@ use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
 use num_traits::{One, Zero};
 use primitives::hash::H256;
-use serde_json::{self as json, Value};
+use serde_json::Value;
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
@@ -260,12 +260,6 @@ fn start_swaps_and_get_balances(
     }
 }
 
-fn check_actual_and_success_events(mm_alice: &MarketMakerIt, uuid: &str, expected_events: &[&'static str]) {
-    let status_response = check_actual_events(mm_alice, uuid, expected_events);
-    let success_events: Vec<String> = json::from_value(status_response["result"]["success_events"].clone()).unwrap();
-    assert_eq!(expected_events, success_events.as_slice());
-}
-
 fn check_actual_events(mm_alice: &MarketMakerIt, uuid: &str, expected_events: &[&'static str]) -> Value {
     let status_response = block_on(my_swap_status(mm_alice, uuid));
     let events_array = status_response["result"]["events"].as_array().unwrap();
@@ -404,11 +398,10 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_fai
         "TakerPaymentSent",
         "WatcherMessageSent",
         "TakerPaymentSpent",
-        "MakerPaymentSpendFailed",
         "MakerPaymentSpentByWatcher",
         "Finished",
     ];
-    check_actual_and_success_events(&mm_alice, &uuids[0], &expected_events);
+    check_actual_events(&mm_alice, &uuids[0], &expected_events);
 }
 
 #[test]
@@ -459,7 +452,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_pan
         "MakerPaymentSpentByWatcher",
         "Finished",
     ];
-    check_actual_and_success_events(&mm_alice, &uuids[0], &expected_events);
+    check_actual_events(&mm_alice, &uuids[0], &expected_events);
 }
 
 #[test]
