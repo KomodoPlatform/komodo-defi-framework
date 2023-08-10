@@ -2269,23 +2269,26 @@ fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook
         None => return,
     };
 
-    let mut trie_roots = HashMap::new();
-    let mut topics = HashSet::new();
     for (alb_pair, root) in state.trie_roots.iter() {
+        let mut trie_roots = HashMap::new();
+
         if *root == H64::default() && *root == hashed_null_node::<Layout>() {
             continue;
         }
-        topics.insert(orderbook_topic_from_ordered_pair(alb_pair));
+
         trie_roots.insert(alb_pair.clone(), *root);
-    }
 
-    let message = new_protocol::PubkeyKeepAlive {
-        trie_roots,
-        timestamp: now_sec(),
-    };
+        let message = new_protocol::PubkeyKeepAlive {
+            trie_roots,
+            timestamp: now_sec(),
+        };
 
-    for topic in topics {
-        broadcast_ordermatch_message(ctx, topic, message.clone().into(), p2p_privkey);
+        broadcast_ordermatch_message(
+            ctx,
+            orderbook_topic_from_ordered_pair(alb_pair),
+            message.clone().into(),
+            p2p_privkey,
+        );
     }
 }
 
