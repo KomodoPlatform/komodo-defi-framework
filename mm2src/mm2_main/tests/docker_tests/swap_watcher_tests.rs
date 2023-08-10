@@ -2298,6 +2298,7 @@ fn test_taker_validates_taker_payment_refund_eth() {
     let maker_seed = get_passphrase!(".env.client", "BOB_PASSPHRASE").unwrap();
     let maker_keypair = key_pair_from_seed(&maker_seed).unwrap();
     let maker_pub = maker_keypair.public();
+    let maker_coin = generate_eth_coin_with_seed(&maker_seed);
 
     let time_lock_duration = get_payment_locktime();
     let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
@@ -2306,16 +2307,14 @@ fn test_taker_validates_taker_payment_refund_eth() {
     let maker_amount = BigDecimal::from_str("0.001").unwrap();
     let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
 
-    let watcher_reward = Some(
-        block_on(taker_coin.get_taker_watcher_reward(
-            &MmCoinEnum::from(taker_coin.clone()),
-            Some(taker_amount.clone()),
-            Some(maker_amount),
-            None,
-            wait_for_confirmation_until,
-        ))
-        .unwrap(),
-    );
+    let watcher_reward = block_on(taker_coin.get_taker_watcher_reward(
+        &MmCoinEnum::from(taker_coin.clone()),
+        Some(taker_amount.clone()),
+        Some(maker_amount),
+        None,
+        wait_for_confirmation_until,
+    ))
+    .unwrap();
 
     let taker_payment = taker_coin
         .send_taker_payment(SendPaymentArgs {
@@ -2327,7 +2326,7 @@ fn test_taker_validates_taker_payment_refund_eth() {
             swap_contract_address: &taker_coin.swap_contract_address(),
             swap_unique_data: &[],
             payment_instructions: &None,
-            watcher_reward: watcher_reward.clone(),
+            watcher_reward: Some(watcher_reward.clone()),
             wait_for_confirmation_until,
         })
         .wait()
@@ -2354,6 +2353,32 @@ fn test_taker_validates_taker_payment_refund_eth() {
         .wait()
         .unwrap();
 
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund_preimage.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: taker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: taker_amount.clone(),
+        watcher_reward: Some(watcher_reward.clone()),
+    };
+
+    let error = taker_coin
+        .taker_validates_taker_payment_refund(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::UnexpectedPaymentState(err) => {
+            assert!(err.contains("Payment state is not PAYMENT_STATE_REFUNDED"))
+        },
+        _ => panic!(
+            "Expected `UnexpectedPaymentState` {}, found {:?}",
+            "Payment state is not PAYMENT_STATE_REFUNDED", error
+        ),
+    }
+
     let taker_payment_refund = taker_coin
         .send_taker_payment_refund_preimage(RefundPaymentArgs {
             payment_tx: &taker_payment_refund_preimage.tx_hex(),
@@ -2373,12 +2398,202 @@ fn test_taker_validates_taker_payment_refund_eth() {
         swap_contract_address: taker_coin.swap_contract_address(),
         time_lock,
         secret_hash: secret_hash.to_vec(),
-        amount: taker_amount,
-        watcher_reward,
+        amount: taker_amount.clone(),
+        watcher_reward: Some(watcher_reward.clone()),
     };
 
     let validate_watcher_refund = taker_coin.taker_validates_taker_payment_refund(validate_input).wait();
     assert!(validate_watcher_refund.is_ok());
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: Some("9130b257d37a52e52f21054c4da3450c72f595ce".into()),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: taker_amount.clone(),
+        watcher_reward: Some(watcher_reward.clone()),
+    };
+    let error = taker_coin
+        .taker_validates_taker_payment_refund(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("was sent to wrong address"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid contract address", error
+        ),
+    }
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: taker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: taker_amount.clone(),
+        watcher_reward: Some(watcher_reward.clone()),
+    };
+
+    let error = maker_coin
+        .taker_validates_taker_payment_refund(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Refund tx sender arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid refund tx sender arg", error
+        ),
+    }
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: taker_pub.to_vec(),
+        swap_contract_address: taker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: taker_amount.clone(),
+        watcher_reward: Some(watcher_reward.clone()),
+    };
+
+    let error = taker_coin
+        .taker_validates_taker_payment_refund(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Refund tx receiver arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid refund tx receiver arg", error
+        ),
+    }
+
+    let mut wrong_watcher_reward = watcher_reward.clone();
+    wrong_watcher_reward.reward_target = RewardTarget::PaymentReceiver;
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: taker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: taker_amount.clone(),
+        watcher_reward: Some(wrong_watcher_reward),
+    };
+
+    let error = taker_coin
+        .taker_validates_taker_payment_refund(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Refund tx reward target arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid refund tx reward target arg", error
+        ),
+    }
+
+    let mut wrong_watcher_reward = watcher_reward.clone();
+    wrong_watcher_reward.send_contract_reward_on_spend = true;
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: taker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: taker_amount.clone(),
+        watcher_reward: Some(wrong_watcher_reward),
+    };
+
+    let error = taker_coin
+        .taker_validates_taker_payment_refund(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Refund tx sends contract reward on spend arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid refund tx sends contract reward on spend arg", error
+        ),
+    }
+
+    let mut wrong_watcher_reward = watcher_reward.clone();
+    wrong_watcher_reward.amount = BigDecimal::one();
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: taker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: taker_amount,
+        watcher_reward: Some(wrong_watcher_reward),
+    };
+
+    let error = taker_coin
+        .taker_validates_taker_payment_refund(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Refund tx watcher reward amount arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid refund tx watcher reward amount arg", error
+        ),
+    }
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: taker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: BigDecimal::one(),
+        watcher_reward: Some(watcher_reward),
+    };
+
+    let error = taker_coin
+        .taker_validates_taker_payment_refund(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Refund tx amount arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid refund tx amount arg", error
+        ),
+    }
 }
 
 #[test]
@@ -2471,11 +2686,37 @@ fn test_taker_validates_taker_payment_refund_erc20() {
         time_lock,
         secret_hash: secret_hash.to_vec(),
         amount: taker_amount,
-        watcher_reward,
+        watcher_reward: watcher_reward.clone(),
     };
 
     let validate_watcher_refund = taker_coin.taker_validates_taker_payment_refund(validate_input).wait();
     assert!(validate_watcher_refund.is_ok());
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: taker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: BigDecimal::one(),
+        watcher_reward,
+    };
+
+    let error = taker_coin
+        .taker_validates_taker_payment_refund(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Refund tx amount arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid refund tx amount arg", error
+        ),
+    }
 }
 
 #[test]

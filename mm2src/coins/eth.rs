@@ -1491,18 +1491,6 @@ impl WatcherOps for EthCoin {
             try_f!(addr_from_raw_pubkey(&input.maker_pub).map_to_mm(ValidatePaymentError::InvalidParameter));
         let trade_amount = try_f!(wei_from_big_decimal(&(input.amount), decimals));
         let fut = async move {
-            let status = selfi
-                .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
-                .compat()
-                .await
-                .map_to_mm(ValidatePaymentError::Transport)?;
-            if status != U256::from(PaymentState::Refunded as u8) {
-                return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                    "Payment state is not PAYMENT_STATE_REFUNDED, got {}",
-                    status
-                )));
-            }
-
             match tx.action {
                 Call(contract_address) => {
                     if contract_address != expected_swap_contract_address {
@@ -1518,6 +1506,18 @@ impl WatcherOps for EthCoin {
                     ));
                 },
             };
+
+            let status = selfi
+                .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
+                .compat()
+                .await
+                .map_to_mm(ValidatePaymentError::Transport)?;
+            if status != U256::from(PaymentState::Refunded as u8) {
+                return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                    "Payment state is not PAYMENT_STATE_REFUNDED, got {}",
+                    status
+                )));
+            }
 
             let function_name = get_function_name("senderRefund", true);
             let function = SWAP_CONTRACT
@@ -1581,7 +1581,7 @@ impl WatcherOps for EthCoin {
                 .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
             if contract_reward_input != Token::Bool(watcher_reward.send_contract_reward_on_spend) {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Refund tx sends_contract_reward_on_spend arg {:?} is invalid, expected {:?}",
+                    "Refund tx sends contract reward on spend arg {:?} is invalid, expected {:?}",
                     contract_reward_input,
                     Token::Bool(watcher_reward.send_contract_reward_on_spend)
                 )));
@@ -1689,18 +1689,6 @@ impl WatcherOps for EthCoin {
         let trade_amount = try_f!(wei_from_big_decimal(&(input.amount), decimals));
 
         let fut = async move {
-            let status = selfi
-                .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
-                .compat()
-                .await
-                .map_to_mm(ValidatePaymentError::Transport)?;
-            if status != U256::from(PaymentState::Spent as u8) {
-                return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                    "Payment state is not PAYMENT_STATE_SPENT, got {}",
-                    status
-                )));
-            }
-
             match tx.action {
                 Call(contract_address) => {
                     if contract_address != expected_swap_contract_address {
@@ -1716,6 +1704,18 @@ impl WatcherOps for EthCoin {
                     ));
                 },
             };
+
+            let status = selfi
+                .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
+                .compat()
+                .await
+                .map_to_mm(ValidatePaymentError::Transport)?;
+            if status != U256::from(PaymentState::Spent as u8) {
+                return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                    "Payment state is not PAYMENT_STATE_SPENT, got {}",
+                    status
+                )));
+            }
 
             let function_name = get_function_name("receiverSpend", true);
             let function = SWAP_CONTRACT
