@@ -6,8 +6,6 @@ use crate::prelude::*;
 use crate::NotSame;
 use async_trait::async_trait;
 
-pub trait TransitionFrom<Prev> {}
-
 #[async_trait]
 pub trait StateMachineTrait: Send + Sized + 'static {
     type Result: Send;

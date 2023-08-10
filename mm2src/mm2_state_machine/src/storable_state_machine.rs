@@ -9,8 +9,6 @@ pub trait OnNewState<S> {
     async fn on_new_state(&mut self, state: &S) -> Result<(), Self::Error>;
 }
 
-pub trait InitialState {}
-
 #[async_trait]
 pub trait StateMachineStorage: Send + Sync {
     type MachineId: Send;
@@ -74,8 +72,6 @@ pub trait StorableState {
     fn get_event(&self) -> <<Self::StateMachine as StorableStateMachine>::Storage as StateMachineStorage>::Event;
 }
 
-impl<S: StorableStateMachine, T: StorableState<StateMachine = S>> !InitialState for T {}
-
 #[async_trait]
 impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> OnNewState<S> for T {
     type Error = <T::Storage as StateMachineStorage>::Error;
@@ -84,6 +80,17 @@ impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> 
         let event = state.get_event();
         self.store_event(event).await
     }
+}
+
+async fn change_state_impl<Next>(next_state: Next, machine: &mut Next::StateMachine) -> StateResult<Next::StateMachine>
+where
+    Next: State + ChangeStateOnNewExt,
+    Next::StateMachine: OnNewState<Next, Error = <Next::StateMachine as StateMachineTrait>::Error> + Sync,
+{
+    if let Err(e) = machine.on_new_state(&next_state).await {
+        return StateResult::Error(ErrorGuard::new(e));
+    }
+    StateResult::ChangeState(ChangeGuard::next(next_state))
 }
 
 #[async_trait]
@@ -97,24 +104,41 @@ pub trait ChangeStateOnNewExt {
         Next: State + TransitionFrom<Self> + ChangeStateOnNewExt,
         Next::StateMachine: OnNewState<Next, Error = <Next::StateMachine as StateMachineTrait>::Error> + Sync,
     {
-        if let Err(e) = machine.on_new_state(&next_state).await {
-            return StateResult::Error(ErrorGuard::new(e));
-        }
-        StateResult::ChangeState(ChangeGuard::next(next_state))
+        change_state_impl(next_state, machine).await
     }
 }
 
-// Users of StorableStateMachine must be prevented from using ChangeStateExt::change_state
-// because it doesn't call machine.on_new_state
-// This prevents ChangeStateExt to be implemented StorableStateMachine's states
-impl<T: StorableStateMachine> !StandardStateMachine for T {}
-impl<S: OnNewState<T>, T: State<StateMachine = S>> ChangeStateOnNewExt for T {}
-
+// Even if StorableState is implemented for initial state, the on_new_state and following
+// get_event won't be executed, because it is called for *next* state.
+// Having an event that won't be ever saved or unimplemented!() would be at least strange.
+// The duplicate trait is a workaround for this situation.
 #[async_trait]
-impl<T: StorableStateMachine, S: InitialState> OnNewState<S> for T {
-    type Error = <T::Storage as StateMachineStorage>::Error;
+pub trait ChangeInitialStateExt: InitialState {
+    /// Change the state to the `next_state`.
+    /// This function performs the compile-time validation whether this state can transition to the `Next` state,
+    /// i.e checks if `Next` implements [`Transition::from(ThisState)`].
+    async fn change_state<Next>(next_state: Next, machine: &mut Next::StateMachine) -> StateResult<Next::StateMachine>
+    where
+        Self: Sized,
+        Next: State + TransitionFrom<Self> + ChangeStateOnNewExt,
+        Next::StateMachine: OnNewState<Next, Error = <Next::StateMachine as StateMachineTrait>::Error> + Sync,
+    {
+        change_state_impl(next_state, machine).await
+    }
+}
 
-    async fn on_new_state(&mut self, _state: &S) -> Result<(), Self::Error> { Ok(()) }
+// Ensure that StandardStateMachine won't be occasionally implemented for StorableStateMachine.
+// Users of StorableStateMachine must be prevented from using ChangeStateExt::change_state
+// because it doesn't call machine.on_new_state.
+impl<T: StorableStateMachine> !StandardStateMachine for T {}
+// Prevent implementing both StorableState and InitialState at the same time
+impl<T: StorableState> !InitialState for T {}
+
+impl<M: StorableStateMachine, T: StorableState<StateMachine = M>> ChangeStateOnNewExt for T {}
+impl<M: StorableStateMachine, T: InitialState<StateMachine = M>> ChangeInitialStateExt for T {}
+
+pub trait InitialState {
+    type StateMachine: StorableStateMachine;
 }
 
 #[cfg(test)]
@@ -149,15 +173,6 @@ mod tests {
         ForState3,
         ForState4,
     }
-
-    /*
-    #[async_trait]
-    impl OnNewState<State1> for StorableStateMachineTest {
-        type Error = Infallible;
-
-        async fn on_new_state(&mut self, _state: &State1) -> Result<(), Self::Error> { Ok(()) }
-    }
-     */
 
     #[async_trait]
     impl StateMachineStorage for StorageTest {
@@ -208,6 +223,10 @@ mod tests {
     }
 
     struct State1 {}
+
+    impl InitialState for State1 {
+        type StateMachine = StorableStateMachineTest;
+    }
 
     struct State2 {}
 
