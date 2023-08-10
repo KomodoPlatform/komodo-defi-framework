@@ -1769,6 +1769,7 @@ impl WatcherOps for EthCoin {
 
             let reward_target_input = get_function_input_data(&decoded, function, 6)
                 .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+
             if reward_target_input != Token::Uint(U256::from(watcher_reward.reward_target as u8)) {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Payment spend tx reward target arg {:?} is invalid, expected {:?}",
@@ -1780,7 +1781,7 @@ impl WatcherOps for EthCoin {
                 .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
             if contract_reward_input != Token::Bool(watcher_reward.send_contract_reward_on_spend) {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Payment spend tx sends_contract_reward_on_spend arg {:?} is invalid, expected {:?}",
+                    "Payment spend tx sends contract reward on spend arg {:?} is invalid, expected {:?}",
                     contract_reward_input, watcher_reward.send_contract_reward_on_spend
                 )));
             }
@@ -1805,7 +1806,12 @@ impl WatcherOps for EthCoin {
                 EthCoinType::Eth => {
                     let amount_input = get_function_input_data(&decoded, function, 1)
                         .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
-                    let total_amount = trade_amount + expected_reward_amount;
+                    let total_amount = if let RewardTarget::None = watcher_reward.reward_target {
+                        trade_amount
+                    } else {
+                        trade_amount + expected_reward_amount
+                    };
+
                     if amount_input != Token::Uint(total_amount) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment spend tx amount arg {:?} is invalid, expected {:?}",

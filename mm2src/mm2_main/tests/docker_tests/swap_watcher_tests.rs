@@ -2813,22 +2813,18 @@ fn test_taker_validates_maker_payment_spend_eth() {
     let time_lock_duration = get_payment_locktime();
     let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
     let time_lock = wait_for_confirmation_until as u32;
-    let taker_amount = BigDecimal::from_str("0.001").unwrap();
     let maker_amount = BigDecimal::from_str("0.001").unwrap();
 
     let secret = MakerSwap::generate_secret().unwrap();
     let secret_hash = dhash160(&secret);
 
-    let watcher_reward = Some(
-        block_on(maker_coin.get_taker_watcher_reward(
-            &MmCoinEnum::from(maker_coin.clone()),
-            Some(taker_amount),
-            Some(maker_amount.clone()),
-            None,
-            wait_for_confirmation_until,
-        ))
-        .unwrap(),
-    );
+    let watcher_reward = block_on(maker_coin.get_maker_watcher_reward(
+        &MmCoinEnum::from(taker_coin.clone()),
+        None,
+        wait_for_confirmation_until,
+    ))
+    .unwrap()
+    .unwrap();
 
     let maker_payment = maker_coin
         .send_maker_payment(SendPaymentArgs {
@@ -2840,7 +2836,7 @@ fn test_taker_validates_maker_payment_spend_eth() {
             swap_contract_address: &maker_coin.swap_contract_address(),
             swap_unique_data: &[],
             payment_instructions: &None,
-            watcher_reward: watcher_reward.clone(),
+            watcher_reward: Some(watcher_reward.clone()),
             wait_for_confirmation_until,
         })
         .wait()
@@ -2868,6 +2864,32 @@ fn test_taker_validates_maker_payment_spend_eth() {
         .wait()
         .unwrap();
 
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend_preimage.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: maker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: maker_amount.clone(),
+        watcher_reward: Some(watcher_reward.clone()),
+    };
+
+    let error = taker_coin
+        .taker_validates_maker_payment_spend(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::UnexpectedPaymentState(err) => {
+            assert!(err.contains("Payment state is not PAYMENT_STATE_SPENT"))
+        },
+        _ => panic!(
+            "Expected `UnexpectedPaymentState` {}, found {:?}",
+            "invalid payment state", error
+        ),
+    }
+
     let maker_payment_spend = taker_coin
         .send_maker_payment_spend_preimage(SendMakerPaymentSpendPreimageInput {
             preimage: &maker_payment_spend_preimage.tx_hex(),
@@ -2885,12 +2907,203 @@ fn test_taker_validates_maker_payment_spend_eth() {
         swap_contract_address: maker_coin.swap_contract_address(),
         time_lock,
         secret_hash: secret_hash.to_vec(),
-        amount: maker_amount,
-        watcher_reward,
+        amount: maker_amount.clone(),
+        watcher_reward: Some(watcher_reward.clone()),
     };
 
     let validate_watcher_spend = taker_coin.taker_validates_maker_payment_spend(validate_input).wait();
     assert!(validate_watcher_spend.is_ok());
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: Some("9130b257d37a52e52f21054c4da3450c72f595ce".into()),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: maker_amount.clone(),
+        watcher_reward: Some(watcher_reward.clone()),
+    };
+
+    let error = taker_coin
+        .taker_validates_maker_payment_spend(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("was sent to wrong address"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid contract address", error
+        ),
+    };
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend.tx_hex(),
+        maker_pub: taker_pub.to_vec(),
+        swap_contract_address: maker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: maker_amount.clone(),
+        watcher_reward: Some(watcher_reward.clone()),
+    };
+
+    let error = taker_coin
+        .taker_validates_maker_payment_spend(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Payment spend tx sender arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid payment spend tx sender arg", error
+        ),
+    };
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: maker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: maker_amount.clone(),
+        watcher_reward: Some(watcher_reward.clone()),
+    };
+
+    let error = maker_coin
+        .taker_validates_maker_payment_spend(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Payment spend tx receiver arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid payment spend tx receiver arg", error
+        ),
+    };
+
+    let mut wrong_watcher_reward = watcher_reward.clone();
+    wrong_watcher_reward.reward_target = RewardTarget::Contract;
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: maker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: maker_amount.clone(),
+        watcher_reward: Some(wrong_watcher_reward),
+    };
+
+    let error = taker_coin
+        .taker_validates_maker_payment_spend(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Payment spend tx reward target arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid payment spend tx reward target arg", error
+        ),
+    };
+
+    let mut wrong_watcher_reward = watcher_reward.clone();
+    wrong_watcher_reward.send_contract_reward_on_spend = false;
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: maker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: maker_amount.clone(),
+        watcher_reward: Some(wrong_watcher_reward),
+    };
+
+    let error = taker_coin
+        .taker_validates_maker_payment_spend(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Payment spend tx sends contract reward on spend arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid payment spend tx sends contract reward on spend arg", error
+        ),
+    };
+
+    let mut wrong_watcher_reward = watcher_reward.clone();
+    wrong_watcher_reward.amount = BigDecimal::one();
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: maker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: maker_amount,
+        watcher_reward: Some(wrong_watcher_reward),
+    };
+
+    let error = taker_coin
+        .taker_validates_maker_payment_spend(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Payment spend tx watcher reward amount arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid payment spend tx watcher reward amount arg", error
+        ),
+    };
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: maker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: BigDecimal::one(),
+        watcher_reward: Some(watcher_reward),
+    };
+
+    let error = taker_coin
+        .taker_validates_maker_payment_spend(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Payment spend tx amount arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid payment spend tx amount arg", error
+        ),
+    };
 }
 
 #[test]
@@ -2910,22 +3123,17 @@ fn test_taker_validates_maker_payment_spend_erc20() {
     let time_lock_duration = get_payment_locktime();
     let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
     let time_lock = wait_for_confirmation_until as u32;
-    let taker_amount = BigDecimal::from_str("0.001").unwrap();
     let maker_amount = BigDecimal::from_str("0.001").unwrap();
 
     let secret = MakerSwap::generate_secret().unwrap();
     let secret_hash = dhash160(&secret);
 
-    let watcher_reward = Some(
-        block_on(maker_coin.get_taker_watcher_reward(
-            &MmCoinEnum::from(maker_coin.clone()),
-            Some(taker_amount),
-            Some(maker_amount.clone()),
-            None,
-            wait_for_confirmation_until,
-        ))
-        .unwrap(),
-    );
+    let watcher_reward = block_on(maker_coin.get_maker_watcher_reward(
+        &MmCoinEnum::from(taker_coin.clone()),
+        None,
+        wait_for_confirmation_until,
+    ))
+    .unwrap();
 
     let maker_payment = maker_coin
         .send_maker_payment(SendPaymentArgs {
@@ -2983,11 +3191,37 @@ fn test_taker_validates_maker_payment_spend_erc20() {
         time_lock,
         secret_hash: secret_hash.to_vec(),
         amount: maker_amount,
-        watcher_reward,
+        watcher_reward: watcher_reward.clone(),
     };
 
     let validate_watcher_spend = taker_coin.taker_validates_maker_payment_spend(validate_input).wait();
     assert!(validate_watcher_spend.is_ok());
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend.tx_hex(),
+        maker_pub: maker_pub.to_vec(),
+        swap_contract_address: maker_coin.swap_contract_address(),
+        time_lock,
+        secret_hash: secret_hash.to_vec(),
+        amount: BigDecimal::one(),
+        watcher_reward,
+    };
+
+    let error = taker_coin
+        .taker_validates_maker_payment_spend(validate_input)
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Payment spend tx amount arg"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` {}, found {:?}",
+            "invalid payment spend tx amount arg", error
+        ),
+    };
 }
 
 #[test]
