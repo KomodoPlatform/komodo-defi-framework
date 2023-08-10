@@ -1,10 +1,10 @@
-use crate::nft::nft_structs::{Chain, ContractType, Nft, NftList, NftTransferHistory, NftsTransferHistoryList,
+use crate::eth::eth_addr_to_hex;
+use crate::nft::nft_structs::{Chain, ContractType, Nft, NftCtx, NftList, NftTransferHistory, NftsTransferHistoryList,
                               TransferStatus, TxMeta};
 use crate::nft::storage::wasm::nft_idb::{NftCacheIDB, NftCacheIDBLocked};
 use crate::nft::storage::wasm::{WasmNftCacheError, WasmNftCacheResult};
 use crate::nft::storage::{get_offset_limit, CreateNftStorageError, NftListStorageOps, NftTokenAddrId,
                           NftTxHistoryFilters, NftTxHistoryStorageOps, RemoveNftResult};
-use crate::CoinsContext;
 use async_trait::async_trait;
 use common::is_initial_upgrade;
 use mm2_core::mm_ctx::MmArc;
@@ -26,9 +26,9 @@ pub struct IndexedDbNftStorage {
 
 impl IndexedDbNftStorage {
     pub fn new(ctx: &MmArc) -> MmResult<Self, CreateNftStorageError> {
-        let coins_ctx = CoinsContext::from_ctx(ctx).map_to_mm(CreateNftStorageError::Internal)?;
+        let nft_ctx = NftCtx::from_ctx(ctx).map_to_mm(CreateNftStorageError::Internal)?;
         Ok(IndexedDbNftStorage {
-            db: coins_ctx.nft_cache_db.clone(),
+            db: nft_ctx.nft_cache_db.clone(),
         })
     }
 
@@ -236,7 +236,7 @@ impl NftListStorageOps for IndexedDbNftStorage {
         let table = db_transaction.table::<NftListTable>().await?;
         let index_keys = MultiIndex::new(NftListTable::CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
             .with_value(chain.to_string())?
-            .with_value(&nft.common.token_address)?
+            .with_value(eth_addr_to_hex(&nft.common.token_address))?
             .with_value(nft.common.token_id.to_string())?;
 
         let nft_item = NftListTable::from_nft(&nft)?;
@@ -274,7 +274,7 @@ impl NftListStorageOps for IndexedDbNftStorage {
 
         let index_keys = MultiIndex::new(NftListTable::CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
             .with_value(chain.to_string())?
-            .with_value(&nft.common.token_address)?
+            .with_value(eth_addr_to_hex(&nft.common.token_address))?
             .with_value(nft.common.token_id.to_string())?;
 
         let nft_item = NftListTable::from_nft(&nft)?;
@@ -299,7 +299,7 @@ impl NftListStorageOps for IndexedDbNftStorage {
 
         let index_keys = MultiIndex::new(NftListTable::CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
             .with_value(chain.to_string())?
-            .with_value(&nft.common.token_address)?
+            .with_value(eth_addr_to_hex(&nft.common.token_address))?
             .with_value(nft.common.token_id.to_string())?;
 
         let nft_item = NftListTable::from_nft(&nft)?;
@@ -379,21 +379,20 @@ impl NftTxHistoryStorageOps for IndexedDbNftStorage {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
         let table = db_transaction.table::<NftTxHistoryTable>().await?;
-        let mut cursor = table
+        let items = table
             .cursor_builder()
             .only("chain", chain.to_string())
             .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
             .bound("block_number", BeBigUint::from(from_block), BeBigUint::from(u64::MAX))
             .open_cursor(NftTxHistoryTable::CHAIN_BLOCK_NUMBER_INDEX)
             .await
+            .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
+            .collect()
+            .await
             .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?;
 
         let mut res = Vec::new();
-        while let Some((_item_id, item)) = cursor
-            .next()
-            .await
-            .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
-        {
+        for (_item_id, item) in items.into_iter() {
             let tx = tx_details_from_item(item)?;
             res.push(tx);
         }
@@ -484,20 +483,19 @@ impl NftTxHistoryStorageOps for IndexedDbNftStorage {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
         let table = db_transaction.table::<NftTxHistoryTable>().await?;
-        let mut cursor = table
+        let items = table
             .cursor_builder()
             .only("chain", chain.to_string())
             .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
             .open_cursor("chain")
             .await
+            .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
+            .collect()
+            .await
             .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?;
 
         let mut res = HashSet::new();
-        while let Some((_item_id, item)) = cursor
-            .next()
-            .await
-            .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
-        {
+        for (_item_id, item) in items.into_iter() {
             if item.token_uri.is_none()
                 && item.collection_name.is_none()
                 && item.image_url.is_none()
@@ -519,27 +517,26 @@ async fn get_last_block_from_table(
     table: DbTable<'_, impl TableSignature + BlockNumberTable>,
     cursor: &str,
 ) -> MmResult<Option<u64>, WasmNftCacheError> {
-    let maybe_item = table
+    let items = table
         .cursor_builder()
         .only("chain", chain.to_string())
         .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
         // Sets lower and upper bounds for block_number field
         .bound("block_number", BeBigUint::from(0u64), BeBigUint::from(u64::MAX))
-        // Cursor returns values from the lowest to highest key indexes.
-        // But we need to get the most highest block_number, so reverse the cursor direction.
-        .reverse()
         // Opens a cursor by the specified index.
         // In get_last_block_from_table case it is CHAIN_BLOCK_NUMBER_INDEX, as we need to search block_number for specific chain.
+        // Cursor returns values from the lowest to highest key indexes.
         .open_cursor(cursor)
         .await
         .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
-        // Advances the iterator and returns the next value.
-        // Please note that the items are sorted by the index keys.
-        .next()
+        .collect()
         .await
         .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?;
-    let maybe_item = maybe_item
-        .map(|(_, item)| {
+
+    let maybe_item = items
+        .into_iter()
+        .last()
+        .map(|(_item_id, item)| {
             item.get_block_number()
                 .to_u64()
                 .ok_or_else(|| WasmNftCacheError::GetLastNftBlockError("height is too large".to_string()))
@@ -579,7 +576,7 @@ impl NftListTable {
     fn from_nft(nft: &Nft) -> WasmNftCacheResult<NftListTable> {
         let details_json = json::to_value(nft).map_to_mm(|e| WasmNftCacheError::ErrorSerializing(e.to_string()))?;
         Ok(NftListTable {
-            token_address: nft.common.token_address.clone(),
+            token_address: eth_addr_to_hex(&nft.common.token_address),
             token_id: nft.common.token_id.to_string(),
             chain: nft.chain.to_string(),
             amount: nft.common.amount.to_string(),
@@ -642,7 +639,7 @@ impl NftTxHistoryTable {
             block_number: BeBigUint::from(tx.block_number),
             block_timestamp: BeBigUint::from(tx.block_timestamp),
             contract_type: tx.contract_type,
-            token_address: tx.common.token_address.clone(),
+            token_address: eth_addr_to_hex(&tx.common.token_address),
             token_id: tx.common.token_id.to_string(),
             status: tx.status,
             amount: tx.common.amount.to_string(),

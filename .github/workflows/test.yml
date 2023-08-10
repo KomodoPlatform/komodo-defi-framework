@@ -31,7 +31,7 @@ jobs:
       - name: Test
         run: |
           # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-          cargo test --bins --lib
+          cargo test --bins --lib --no-fail-fast
 
   mac-x86-64-unit:
     timeout-minutes: 90
@@ -56,7 +56,7 @@ jobs:
       - name: Test
         run: |
           # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-          cargo test --bins --lib --target x86_64-apple-darwin
+          cargo test --bins --lib --target x86_64-apple-darwin --no-fail-fast
 
   win-x86-64-unit:
     timeout-minutes: 90
@@ -95,7 +95,7 @@ jobs:
           # Restart-Service docker
           # Get-Service docker
 
-          cargo test --bins --lib
+          cargo test --bins --lib --no-fail-fast
 
   linux-x86-64-mm2-integration:
     timeout-minutes: 90
@@ -119,7 +119,7 @@ jobs:
       - name: Test
         run: |
           wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-          cargo test --test 'mm2_tests_main'
+          cargo test --test 'mm2_tests_main' --no-fail-fast
 
   # https://docs.github.com/en/actions/learn-github-actions/usage-limits-billing-and-administration#usage-limits
   # https://github.com/KomodoPlatform/atomicDEX-API/actions/runs/4419618128/jobs/7748266141#step:4:1790
@@ -166,7 +166,7 @@ jobs:
         run: |
           Invoke-WebRequest -Uri https://github.com/KomodoPlatform/komodo/raw/d456be35acd1f8584e1e4f971aea27bd0644d5c5/zcutil/wget64.exe -OutFile \wget64.exe
           Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
-          cargo test --test 'mm2_tests_main'
+          cargo test --test 'mm2_tests_main' --no-fail-fast
 
   docker-tests:
     timeout-minutes: 90
@@ -190,7 +190,7 @@ jobs:
       - name: Test
         run: |
           wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-          cargo test --test 'docker_tests_main' --features run-docker-tests
+          cargo test --test 'docker_tests_main' --features run-docker-tests --no-fail-fast
 
   wasm:
     timeout-minutes: 90

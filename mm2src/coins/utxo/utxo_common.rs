@@ -32,7 +32,6 @@ use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::{error, warn};
-use common::{one_hundred, ten_f64};
 use crypto::{Bip32DerPathOps, Bip44Chain, RpcDerivationPath, StandardHDPath, StandardHDPathError};
 use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
@@ -85,15 +84,6 @@ lazy_static! {
 }
 
 pub const HISTORY_TOO_LARGE_ERR_CODE: i64 = -1;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct UtxoMergeParams {
-    merge_at: usize,
-    #[serde(default = "ten_f64")]
-    check_every: f64,
-    #[serde(default = "one_hundred")]
-    max_merge_at_once: usize,
-}
 
 pub async fn get_tx_fee(coin: &UtxoCoinFields) -> UtxoRpcResult<ActualTxFee> {
     let conf = &coin.conf;
@@ -2928,11 +2918,20 @@ where
                     if e.get().should_update_timestamp() || e.get().firo_negative_fee() {
                         mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => coin.as_ref().conf.ticker.clone(), "method" => "tx_detail_by_hash");
 
-                        if let Ok(tx_details) = coin.tx_details_by_hash(&txid.0, &mut input_transactions).await {
-                            mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => coin.as_ref().conf.ticker.clone(), "method" => "tx_detail_by_hash");
-                            // replace with new tx details in case we need to update any data
-                            e.insert(tx_details);
-                            updated = true;
+                        match coin.tx_details_by_hash(&txid.0, &mut input_transactions).await {
+                            Ok(tx_details) => {
+                                mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => coin.as_ref().conf.ticker.clone(), "method" => "tx_detail_by_hash");
+                                // replace with new tx details in case we need to update any data
+                                e.insert(tx_details);
+                                updated = true;
+                            },
+                            Err(e) => log_tag!(
+                                ctx,
+                                "",
+                                "tx_history",
+                                "coin" => coin.as_ref().conf.ticker;
+                                fmt = "Error {:?} on getting the details of {:?}, skipping the tx", e, txid
+                            ),
                         }
                     }
                 },
@@ -3116,16 +3115,19 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
         let prev_tx = &mut prev_tx.tx;
         prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
-        let prev_tx_value = prev_tx.outputs[input.previous_output.index as usize].value;
-        input_amount += prev_tx_value;
-        let from: Vec<Address> = try_s!(coin.addresses_from_script(
-            &prev_tx.outputs[input.previous_output.index as usize]
-                .script_pubkey
-                .clone()
-                .into()
-        ));
+        let prev_output_index: usize = try_s!(input.previous_output.index.try_into());
+        let prev_tx_output = prev_tx.outputs.get(prev_output_index).ok_or(ERRL!(
+            "Previous output index is out of bound: coin={}, prev_output_index={}, prev_tx_hash={}, tx_hash={}, tx_hex={:02x}",
+            ticker,
+            prev_output_index,
+            prev_tx_hash,
+            hash,
+            verbose_tx.hex,
+        ))?;
+        input_amount += prev_tx_output.value;
+        let from: Vec<Address> = try_s!(coin.addresses_from_script(&prev_tx_output.script_pubkey.clone().into()));
         if from.contains(my_address) {
-            spent_by_me += prev_tx_value;
+            spent_by_me += prev_tx_output.value;
         }
         from_addresses.extend(from.into_iter());
     }

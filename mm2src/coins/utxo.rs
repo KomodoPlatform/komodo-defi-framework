@@ -67,6 +67,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
+use mm2_rpc::data::legacy::UtxoMergeParams;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H160, H256, H264};
@@ -777,7 +778,11 @@ impl UtxoCoinFields {
             None
         };
 
-        let n_time = if self.conf.is_pos { Some(now_sec_u32()) } else { None };
+        let n_time = if self.conf.is_pos || self.conf.is_posv {
+            Some(now_sec_u32())
+        } else {
+            None
+        };
 
         TransactionInputSigner {
             version: self.conf.tx_version,
@@ -1339,15 +1344,6 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
             .unbounded_send(ElectrumProtoVerifierEvent::Disconnected(address)));
         Ok(())
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct UtxoMergeParams {
-    pub merge_at: usize,
-    #[serde(default = "common::ten_f64")]
-    pub check_every: f64,
-    #[serde(default = "common::one_hundred")]
-    pub max_merge_at_once: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
