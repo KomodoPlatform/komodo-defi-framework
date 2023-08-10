@@ -468,6 +468,7 @@ fn trade_rick_zombie_light() {
 
 // ignored because it requires a long-running Zcoin initialization process
 #[test]
+#[ignore]
 fn activate_pirate_light() {
     let coins = json!([pirate_conf()]);
 
