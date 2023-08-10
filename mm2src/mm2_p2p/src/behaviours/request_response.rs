@@ -18,9 +18,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::io;
 
+use super::atomicdex::MAX_BUFFER_SIZE;
 use crate::{decode_message, encode_message};
-
-const MAX_BUFFER_SIZE: usize = 1024 * 1024 - 100;
 
 macro_rules! try_io {
     ($e: expr) => {

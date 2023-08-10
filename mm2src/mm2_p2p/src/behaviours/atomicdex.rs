@@ -43,6 +43,9 @@ pub type AdexCmdTx = Sender<AdexBehaviourCmd>;
 pub type AdexEventRx = Receiver<AdexBehaviourEvent>;
 
 pub const PEERS_TOPIC: &str = "PEERS";
+
+pub(crate) const MAX_BUFFER_SIZE: usize = 1024 * 1024 - 100;
+
 const CONNECTED_RELAYS_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
@@ -630,7 +633,7 @@ fn start_gossipsub(
             .mesh_n_high(mesh_n_high)
             .validate_messages()
             .validation_mode(ValidationMode::Permissive)
-            .max_transmit_size(1024 * 1024 - 100)
+            .max_transmit_size(MAX_BUFFER_SIZE)
             .build()
             .map_err(|e| AdexBehaviourError::InitializationError(e.to_owned()))?;
 
