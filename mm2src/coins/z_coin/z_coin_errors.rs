@@ -27,6 +27,7 @@ pub enum UpdateBlocksCacheErr {
     JsonRpcError(JsonRpcError),
     GetLiveLightClientError(String),
     ZcashDBError(String),
+    DecodeError(String),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -59,6 +60,13 @@ pub enum ZcoinClientInitError {
     EmptyLightwalletdUris,
     #[display(fmt = "Fail to init clients while iterating lightwalletd urls {:?}", _0)]
     UrlIterFailure(Vec<UrlIterError>),
+    CalculateStartingBLockHeightError(String),
+    UpdateBlocksCacheErr(UpdateBlocksCacheErr),
+    UtxoCoinBuildError(UtxoCoinBuildError),
+}
+
+impl From<UpdateBlocksCacheErr> for ZcoinClientInitError {
+    fn from(err: UpdateBlocksCacheErr) -> Self { ZcoinClientInitError::UpdateBlocksCacheErr(err) }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

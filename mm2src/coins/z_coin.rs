@@ -904,8 +904,10 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                 init_native_client(&self, native_client, blocks_db).await?
             },
             ZcoinRpcMode::Light {
-                light_wallet_d_servers, ..
-            } => init_light_client(&self, light_wallet_d_servers.clone(), blocks_db).await?,
+                light_wallet_d_servers,
+                sync_params,
+                ..
+            } => init_light_client(&self, light_wallet_d_servers.clone(), blocks_db, sync_params).await?,
         };
         let z_fields = ZCoinFields {
             dex_fee_addr,
