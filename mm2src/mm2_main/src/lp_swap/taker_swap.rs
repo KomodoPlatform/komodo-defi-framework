@@ -327,6 +327,18 @@ impl TakerSavedSwap {
             .any(|e| matches!(e.event, TakerSwapEvent::TakerPaymentRefunded(_)))
     }
 
+    pub fn refunded_by_watcher(&self) -> bool {
+        self.events
+            .iter()
+            .any(|e| matches!(e.event, TakerSwapEvent::TakerPaymentRefundedByWatcher(_)))
+    }
+
+    pub fn watcher_spend_or_refund_not_found(&self) -> bool {
+        self.events
+            .iter()
+            .any(|e| matches!(e.event, TakerSwapEvent::WatcherSpendOrRefundNotFound))
+    }
+
     pub fn taker_payment_spent(&self) -> bool {
         self.events
             .iter()
@@ -2029,8 +2041,8 @@ impl TakerSwap {
             saved.uuid,
             Some(saved.uuid),
             conf_settings,
-            maker_coin,
-            taker_coin,
+            maker_coin.clone(),
+            taker_coin.clone(),
             data.lock_duration,
             data.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
             #[cfg(any(test, feature = "run-docker-tests"))]
@@ -2041,7 +2053,10 @@ impl TakerSwap {
             swap.apply_event(saved_event.event.clone());
         }
 
-        if check_watcher_payments(&swap, &ctx, saved).await? {
+        if taker_coin.is_supported_by_watchers()
+            && maker_coin.is_supported_by_watchers()
+            && check_watcher_payments(&swap, &ctx, saved).await?
+        {
             return Ok((swap, Some(TakerSwapCommand::Finish)));
         }
 

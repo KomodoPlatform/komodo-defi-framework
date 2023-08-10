@@ -56,6 +56,20 @@ impl SavedSwap {
         }
     }
 
+    pub fn finished_and_watcher_check_not_required(&self) -> bool {
+        match self {
+            SavedSwap::Maker(swap) => swap.is_finished(),
+            SavedSwap::Taker(swap) => {
+                self.is_finished_and_success()
+                    || (swap.is_finished()
+                        && (!swap.watcher_message_sent()
+                            || swap.refund_finished()
+                            || swap.refunded_by_watcher()
+                            || swap.watcher_spend_or_refund_not_found()))
+            },
+        }
+    }
+
     pub fn watcher_message_sent(&self) -> bool {
         match &self {
             SavedSwap::Taker(taker_swap) => taker_swap.watcher_message_sent(),
@@ -65,10 +79,7 @@ impl SavedSwap {
 
     pub fn refunded_by_watcher(&self) -> bool {
         match &self {
-            SavedSwap::Taker(taker_swap) => taker_swap
-                .events
-                .iter()
-                .any(|e| matches!(e.event, TakerSwapEvent::TakerPaymentRefundedByWatcher(_))),
+            SavedSwap::Taker(taker_swap) => taker_swap.refunded_by_watcher(),
             _ => false,
         }
     }
@@ -82,10 +93,7 @@ impl SavedSwap {
 
     pub fn watcher_spend_or_refund_not_found(&self) -> bool {
         match &self {
-            SavedSwap::Taker(taker_swap) => taker_swap
-                .events
-                .iter()
-                .any(|e| matches!(e.event, TakerSwapEvent::WatcherSpendOrRefundNotFound)),
+            SavedSwap::Taker(taker_swap) => taker_swap.watcher_spend_or_refund_not_found(),
             _ => false,
         }
     }
