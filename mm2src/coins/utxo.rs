@@ -562,7 +562,7 @@ pub struct UtxoCoinConf {
     /// Derivation path of the coin.
     /// This derivation path consists of `purpose` and `coin_type` only
     /// where the full `BIP44` address has the following structure:
-    /// `m/purpose'/coin_type'`.
+    /// `m/purpose'/coin_type'/account'/change/address_index`.
     pub derivation_path: Option<StandardHDPathToCoin>,
     /// The average time in seconds needed to mine a new block for this coin.
     pub avg_blocktime: Option<u64>,

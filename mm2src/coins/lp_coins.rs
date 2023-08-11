@@ -2746,7 +2746,7 @@ pub enum PrivKeyPolicy<T> {
         /// Derivation path of the coin.
         /// This derivation path consists of `purpose` and `coin_type` only
         /// where the full `BIP44` address has the following structure:
-        /// `m/purpose'/coin_type'`.
+        /// `m/purpose'/coin_type'/account'/change/address_index`.
         derivation_path: StandardHDPathToCoin,
         activated_key: T,
         bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
@@ -4016,13 +4016,13 @@ pub trait RpcCommonOps {
 /// Currently supports only coins with `ETH` protocol type.
 pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletAddress, GetMyAddressError> {
     let ticker = req.coin.as_str();
-    let coins_en = coin_conf(&ctx, ticker);
-    coins_conf_check(&ctx, &coins_en, ticker, None).map_to_mm(GetMyAddressError::CoinsConfCheckError)?;
+    let conf = coin_conf(&ctx, ticker);
+    coins_conf_check(&ctx, &conf, ticker, None).map_to_mm(GetMyAddressError::CoinsConfCheckError)?;
 
-    let protocol: CoinProtocol = json::from_value(coins_en["protocol"].clone())?;
+    let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&ctx, ticker, &req.path_to_address).await?,
+        CoinProtocol::ETH => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",

@@ -6527,6 +6527,36 @@ fn test_get_public_key_hash() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_get_my_address_hd() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([eth_testnet_conf()]);
+
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!("log path: {}", mm.log_path.display());
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "get_my_address",
+        "params": {
+            "coin": "ETH",
+        }
+    })))
+    .unwrap();
+
+    assert_eq!(resp.0, StatusCode::OK);
+    let my_wallet_address: Json = json::from_str(&resp.1).unwrap();
+    assert_eq!(
+        my_wallet_address["result"]["wallet_address"],
+        "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93"
+    )
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_get_orderbook_with_same_orderbook_ticker() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},

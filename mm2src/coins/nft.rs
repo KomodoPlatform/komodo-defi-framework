@@ -8,7 +8,7 @@ pub(crate) mod storage;
 
 #[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;
 
-use crate::{get_my_address, MyAddressReq, WithdrawError};
+use crate::{coin_conf, get_my_address, MyAddressReq, WithdrawError};
 use nft_errors::{GetInfoFromUriError, GetNftInfoError, UpdateNftError};
 use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftList, NftListReq, NftMetadataReq,
                   NftTransferHistory, NftTransfersReq, NftTxHistoryFromMoralis, NftsTransferHistoryList,
@@ -212,7 +212,9 @@ pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResu
 
 async fn get_moralis_nft_list(ctx: &MmArc, chain: &Chain, url: &Url) -> MmResult<Vec<Nft>, GetNftInfoError> {
     let mut res_list = Vec::new();
-    let my_address = get_eth_address(ctx, &chain.to_ticker(), &StandardHDCoinAddress::default()).await?;
+    let ticker = chain.to_ticker();
+    let conf = coin_conf(ctx, &ticker);
+    let my_address = get_eth_address(ctx, &conf, &ticker, &StandardHDCoinAddress::default()).await?;
 
     let mut uri_without_cursor = url.clone();
     uri_without_cursor.set_path(MORALIS_API_ENDPOINT);
@@ -264,7 +266,9 @@ async fn get_moralis_nft_transfers(
     url: &Url,
 ) -> MmResult<Vec<NftTransferHistory>, GetNftInfoError> {
     let mut res_list = Vec::new();
-    let my_address = get_eth_address(ctx, &chain.to_ticker(), &StandardHDCoinAddress::default()).await?;
+    let ticker = chain.to_ticker();
+    let conf = coin_conf(ctx, &ticker);
+    let my_address = get_eth_address(ctx, &conf, &ticker, &StandardHDCoinAddress::default()).await?;
 
     let mut uri_without_cursor = url.clone();
     uri_without_cursor.set_path(MORALIS_API_ENDPOINT);

@@ -168,10 +168,10 @@ lazy_static! {
     pub static ref ERC1155_CONTRACT: Contract = Contract::load(ERC1155_ABI.as_bytes()).unwrap();
 }
 
-type EthPrivKeyPolicy = PrivKeyPolicy<KeyPair>;
 pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>> + Send>;
 pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
 pub type GasStationResult = Result<GasStationData, MmError<GasStationReqErr>>;
+type EthPrivKeyPolicy = PrivKeyPolicy<KeyPair>;
 type GasDetails = (U256, U256);
 
 #[derive(Debug, Display)]
@@ -5424,6 +5424,7 @@ impl From<CryptoCtxError> for GetEthAddressError {
 /// Note: result address has mixed-case checksum form.
 pub async fn get_eth_address(
     ctx: &MmArc,
+    conf: &Json,
     ticker: &str,
     path_to_address: &StandardHDCoinAddress,
 ) -> MmResult<MyWalletAddress, GetEthAddressError> {
@@ -5431,7 +5432,7 @@ pub async fn get_eth_address(
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
     let priv_key_policy = EthPrivKeyBuildPolicy::try_from(priv_key_policy)?;
 
-    let (my_address, ..) = build_address_and_priv_key_policy(&ctx.conf, priv_key_policy, path_to_address).await?;
+    let (my_address, ..) = build_address_and_priv_key_policy(conf, priv_key_policy, path_to_address).await?;
     let wallet_address = checksum_address(&format!("{:#02x}", my_address));
 
     Ok(MyWalletAddress {
