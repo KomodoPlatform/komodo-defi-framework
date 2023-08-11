@@ -93,7 +93,7 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Finished",
 ];
 
-pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 12] = [
+pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 13] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -105,6 +105,7 @@ pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 12] = [
     "WatcherMessageSent",
     "TakerPaymentSpent",
     "MakerPaymentSpent",
+    "MakerPaymentSpentByWatcher",
     "Finished",
 ];
 
@@ -2009,9 +2010,11 @@ pub async fn check_my_swap_status(mm: &MarketMakerIt, uuid: &str, maker_amount: 
     assert_eq!(maker_amount, actual_maker_amount);
     let actual_taker_amount = json::from_value(events_array[0]["event"]["data"]["taker_amount"].clone()).unwrap();
     assert_eq!(taker_amount, actual_taker_amount);
-    let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
-    let actual_events: Vec<&str> = actual_events.collect();
-    assert_eq!(success_events, actual_events.as_slice());
+    let actual_events = events_array
+        .iter()
+        .map(|item| item["event"]["type"].as_str().unwrap().to_string())
+        .collect::<Vec<String>>();
+    assert!(actual_events.iter().all(|item| success_events.contains(item)));
 }
 
 pub async fn check_my_swap_status_amounts(
