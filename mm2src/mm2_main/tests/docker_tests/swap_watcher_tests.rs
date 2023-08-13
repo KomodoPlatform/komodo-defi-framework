@@ -356,55 +356,6 @@ fn run_watcher_node(
 }
 
 #[test]
-fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_fail_at_maker_payment_spend() {
-    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[("TAKER_FAIL_AT", "maker_payment_spend")]);
-    let mut mm_bob = run_maker_node(&coins, &[], &[&mm_alice.ip.to_string()]);
-
-    let watcher_conf = WatcherConf {
-        wait_taker_payment: 0.,
-        wait_maker_payment_spend_factor: 0.,
-        refund_start_factor: 1.5,
-        search_interval: 1.0,
-    };
-    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_alice.ip.to_string()], watcher_conf);
-
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("MYCOIN1", "MYCOIN")],
-        25.,
-        25.,
-        2.,
-    ));
-    alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
-
-    block_on(mm_bob.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
-    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
-    block_on(mm_watcher.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
-
-    restart_taker_and_wait_until(&alice_conf, &[], &format!("[swap uuid={}] Finished", &uuids[0]));
-    block_on(mm_alice.stop()).unwrap();
-
-    let mm_alice = restart_taker_and_wait_until(&alice_conf, &[], &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]));
-    let expected_events = [
-        "Started",
-        "Negotiated",
-        "TakerFeeSent",
-        "TakerPaymentInstructionsReceived",
-        "MakerPaymentReceived",
-        "MakerPaymentWaitConfirmStarted",
-        "MakerPaymentValidatedAndConfirmed",
-        "TakerPaymentSent",
-        "WatcherMessageSent",
-        "TakerPaymentSpent",
-        "MakerPaymentSpentByWatcher",
-        "Finished",
-    ];
-    check_actual_events(&mm_alice, &uuids[0], &expected_events);
-}
-
-#[test]
 fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_panic_at_wait_for_taker_payment_spend() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let (mut mm_alice, mut alice_conf) =
@@ -450,77 +401,6 @@ fn test_taker_saves_the_swap_as_successful_after_restart_maker_payment_spent_pan
         "WatcherMessageSent",
         "TakerPaymentSpent",
         "MakerPaymentSpentByWatcher",
-        "Finished",
-    ];
-    check_actual_events(&mm_alice, &uuids[0], &expected_events);
-}
-
-#[test]
-fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_fail_at_taker_payment_refund() {
-    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[
-        ("USE_TEST_LOCKTIME", ""),
-        ("TAKER_FAIL_AT", "taker_payment_refund"),
-    ]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_alice.ip.to_string()]);
-
-    let watcher_conf = WatcherConf {
-        wait_taker_payment: 0.,
-        wait_maker_payment_spend_factor: 1.,
-        refund_start_factor: 0.,
-        search_interval: 1.,
-    };
-    let mut mm_watcher = run_watcher_node(
-        &coins,
-        &[("USE_TEST_LOCKTIME", "")],
-        &[&mm_alice.ip.to_string()],
-        watcher_conf,
-    );
-
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("MYCOIN1", "MYCOIN")],
-        25.,
-        25.,
-        2.,
-    ));
-    alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
-
-    block_on(mm_bob.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SENT_LOG))).unwrap();
-    block_on(mm_bob.stop()).unwrap();
-
-    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
-    block_on(mm_watcher.wait_for_log(120., |log| log.contains(TAKER_PAYMENT_REFUND_SENT_LOG))).unwrap();
-
-    restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_TEST_LOCKTIME", "")],
-        &format!("[swap uuid={}] Finished", &uuids[0]),
-    );
-    block_on(mm_alice.stop()).unwrap();
-
-    let mm_alice = restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_TEST_LOCKTIME", "")],
-        &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]),
-    );
-
-    let expected_events = [
-        "Started",
-        "Negotiated",
-        "TakerFeeSent",
-        "TakerPaymentInstructionsReceived",
-        "MakerPaymentReceived",
-        "MakerPaymentWaitConfirmStarted",
-        "MakerPaymentValidatedAndConfirmed",
-        "TakerPaymentSent",
-        "WatcherMessageSent",
-        "TakerPaymentWaitForSpendFailed",
-        "TakerPaymentWaitRefundStarted",
-        "TakerPaymentRefundStarted",
-        "TakerPaymentRefundFailed",
-        "TakerPaymentRefundedByWatcher",
         "Finished",
     ];
     check_actual_events(&mm_alice, &uuids[0], &expected_events);
@@ -591,62 +471,6 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         "TakerPaymentWaitRefundStarted",
         "TakerPaymentRefundStarted",
         "TakerPaymentRefundedByWatcher",
-        "Finished",
-    ];
-    check_actual_events(&mm_alice, &uuids[0], &expected_events);
-}
-
-#[test]
-fn test_taker_adds_watcher_refund_not_found_event() {
-    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[
-        ("USE_TEST_LOCKTIME", ""),
-        ("TAKER_FAIL_AT", "taker_payment_refund"),
-    ]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_alice.ip.to_string()]);
-
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("MYCOIN1", "MYCOIN")],
-        25.,
-        25.,
-        2.,
-    ));
-    alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
-
-    block_on(mm_bob.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SENT_LOG))).unwrap();
-    block_on(mm_bob.stop()).unwrap();
-    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
-
-    restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_TEST_LOCKTIME", "")],
-        &format!("[swap uuid={}] Finished", &uuids[0]),
-    );
-    block_on(mm_alice.stop()).unwrap();
-
-    let mm_alice = restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_TEST_LOCKTIME", "")],
-        &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]),
-    );
-
-    let expected_events = [
-        "Started",
-        "Negotiated",
-        "TakerFeeSent",
-        "TakerPaymentInstructionsReceived",
-        "MakerPaymentReceived",
-        "MakerPaymentWaitConfirmStarted",
-        "MakerPaymentValidatedAndConfirmed",
-        "TakerPaymentSent",
-        "WatcherMessageSent",
-        "TakerPaymentWaitForSpendFailed",
-        "TakerPaymentWaitRefundStarted",
-        "TakerPaymentRefundStarted",
-        "TakerPaymentRefundFailed",
-        "WatcherSpendOrRefundNotFound",
         "Finished",
     ];
     check_actual_events(&mm_alice, &uuids[0], &expected_events);

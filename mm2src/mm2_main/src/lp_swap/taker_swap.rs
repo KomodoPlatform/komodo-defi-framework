@@ -315,28 +315,10 @@ impl TakerSavedSwap {
             .any(|e| matches!(e.event, TakerSwapEvent::WatcherMessageSent(_, _)))
     }
 
-    pub fn refund_finished(&self) -> bool {
-        self.events
-            .iter()
-            .any(|e| matches!(e.event, TakerSwapEvent::TakerPaymentRefundFinished))
-    }
-
     pub fn refunded(&self) -> bool {
         self.events
             .iter()
             .any(|e| matches!(e.event, TakerSwapEvent::TakerPaymentRefunded(_)))
-    }
-
-    pub fn refunded_by_watcher(&self) -> bool {
-        self.events
-            .iter()
-            .any(|e| matches!(e.event, TakerSwapEvent::TakerPaymentRefundedByWatcher(_)))
-    }
-
-    pub fn watcher_spend_or_refund_not_found(&self) -> bool {
-        self.events
-            .iter()
-            .any(|e| matches!(e.event, TakerSwapEvent::WatcherSpendOrRefundNotFound))
     }
 
     pub fn taker_payment_spent(&self) -> bool {

@@ -1179,7 +1179,7 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
     let mut coins = HashSet::new();
     let swaps = try_s!(SavedSwap::load_all_my_swaps_from_db(&ctx).await);
     for swap in swaps {
-        if swap.finished_and_watcher_check_not_required() {
+        if swap.is_finished() {
             info!("{} {}", SWAP_FINISHED_LOG, swap.uuid());
             continue;
         }
