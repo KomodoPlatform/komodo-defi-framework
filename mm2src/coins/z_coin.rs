@@ -757,7 +757,9 @@ impl AsRef<UtxoCoinFields> for ZCoin {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SyncStartPoint {
+    #[serde(rename = "date")]
     Date(u64),
+    #[serde(rename = "height")]
     Height(u64),
 }
 

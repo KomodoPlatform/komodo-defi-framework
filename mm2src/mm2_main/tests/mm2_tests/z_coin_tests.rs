@@ -48,7 +48,6 @@ async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Tra
 
 // ignored because it requires a long-running Zcoin initialization process
 #[test]
-#[ignore]
 fn activate_z_coin_light() {
     let coins = json!([zombie_conf()]);
 
@@ -66,7 +65,7 @@ fn activate_z_coin_light() {
         EnableCoinBalance::Iguana(iguana) => iguana,
         _ => panic!("Expected EnableCoinBalance::Iguana"),
     };
-    assert_eq!(balance.balance.spendable, BigDecimal::from_str("3.1").unwrap());
+    assert_eq!(balance.balance.spendable, BigDecimal::default());
 }
 
 #[test]
