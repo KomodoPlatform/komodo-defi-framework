@@ -24,11 +24,6 @@ pub enum WalletDbError {
     GrpcError(String),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-impl From<tonic::Status> for WalletDbError {
-    fn from(err: tonic::Status) -> Self { WalletDbError::GrpcError(err.to_string()) }
-}
-
 #[derive(Clone)]
 pub struct WalletDbShared {
     #[cfg(not(target_arch = "wasm32"))]

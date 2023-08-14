@@ -80,6 +80,11 @@ pub trait ZRpcOps {
 
     async fn check_tx_existence(&mut self, tx_id: TxId) -> bool;
 
+    /// Retrieves checkpoint block information from the database at a specific height.
+    ///
+    /// checkpoint_block_from_height retrieves tree state information from rpc corresponding to the given
+    /// height and constructs a `CheckPointBlockInfo` struct containing some needed details such as
+    /// block height, hash, time, and sapling tree.
     #[cfg(not(target_arch = "wasm32"))]
     async fn checkpoint_block_from_height(
         &mut self,
@@ -436,10 +441,10 @@ pub(super) async fn init_light_client<'a>(
             .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?,
     };
     let maybe_checkpointblock = light_rpc_clients.checkpoint_block_from_height(sync_height).await?;
-
     let wallet_db = WalletDbShared::new(builder, maybe_checkpointblock)
         .await
         .mm_err(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
+
     let sync_handle = SaplingSyncLoopHandle {
         coin,
         current_block: BlockHeight::from_u32(0),
