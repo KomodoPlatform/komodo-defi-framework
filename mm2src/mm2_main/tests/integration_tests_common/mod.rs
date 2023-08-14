@@ -88,9 +88,9 @@ pub async fn enable_z_coin_light(
     coin: &str,
     electrums: &[&str],
     lightwalletd_urls: &[&str],
-    path_to_address: Option<StandardHDCoinAddress>,
+    account: Option<u32>,
 ) -> CoinActivationResult {
-    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, path_to_address).await;
+    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, account).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(12000000);
 

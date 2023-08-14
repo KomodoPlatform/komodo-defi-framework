@@ -2334,7 +2334,7 @@ pub async fn init_z_coin_light(
     coin: &str,
     electrums: &[&str],
     lightwalletd_urls: &[&str],
-    path_to_address: Option<StandardHDCoinAddress>,
+    account: Option<u32>,
 ) -> Json {
     let request = mm
         .rpc(&json!({
@@ -2351,7 +2351,7 @@ pub async fn init_z_coin_light(
                             "light_wallet_d_servers": lightwalletd_urls,
                         },
                     },
-                    "path_to_address": path_to_address.unwrap_or_default(),
+                    "account": account.unwrap_or_default(),
                 },
             }
         }))

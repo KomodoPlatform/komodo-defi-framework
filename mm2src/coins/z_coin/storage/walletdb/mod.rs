@@ -1,5 +1,4 @@
 use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
-use crypto::StandardHDCoinAddress;
 use mm2_err_handle::prelude::*;
 
 cfg_native!(
@@ -36,16 +35,13 @@ pub struct WalletDbShared {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl<'a> WalletDbShared {
-    pub async fn new(
-        zcoin_builder: &ZCoinBuilder<'a>,
-        path_to_address: &StandardHDCoinAddress,
-    ) -> MmResult<Self, WalletDbError> {
+    pub async fn new(zcoin_builder: &ZCoinBuilder<'a>, account: u32) -> MmResult<Self, WalletDbError> {
         let z_spending_key = match zcoin_builder.z_spending_key {
             Some(ref z_spending_key) => z_spending_key.clone(),
             None => extended_spending_key_from_protocol_info_and_policy(
                 &zcoin_builder.protocol_info,
                 &zcoin_builder.priv_key_policy,
-                path_to_address,
+                account,
             )
             .map_err(|err| WalletDbError::ZCoinBuildError(err.to_string()))?,
         };

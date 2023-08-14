@@ -1,7 +1,6 @@
 use crate::integration_tests_common::*;
 use common::executor::Timer;
 use common::{block_on, log, now_ms, wait_until_ms};
-use crypto::StandardHDCoinAddress;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::electrums::rick_electrums;
 use mm2_test_helpers::for_tests::{init_withdraw, pirate_conf, rick_conf, send_raw_transaction, withdraw_status,
@@ -76,11 +75,6 @@ fn activate_z_coin_light() {
 fn activate_z_coin_with_hd_account() {
     let coins = json!([zombie_conf()]);
 
-    let path_to_address = StandardHDCoinAddress {
-        account: 0,
-        is_change: false,
-        address_index: 0,
-    };
     let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
@@ -89,7 +83,7 @@ fn activate_z_coin_with_hd_account() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        Some(path_to_address),
+        Some(0),
     ));
 
     let actual = match activation_result.wallet_balance {
