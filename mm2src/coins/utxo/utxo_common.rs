@@ -700,7 +700,7 @@ pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<Unexpecte
             activated_key: ref activated_key_pair,
             ..
         } => Ok(activated_key_pair.public()),
-        // Hardware Wallets requires BIP39/BIP44 derivation path to extract a public key.
+        // Hardware Wallets requires BIP32/BIP44 derivation path to extract a public key.
         PrivKeyPolicy::Trezor => MmError::err(UnexpectedDerivationMethod::Trezor),
         #[cfg(target_arch = "wasm32")]
         PrivKeyPolicy::Metamask(_) => MmError::err(UnexpectedDerivationMethod::UnsupportedError(

@@ -894,7 +894,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         );
 
         let blocks_db = self.blocks_db().await?;
-        let wallet_db = WalletDbShared::new(&self, self.z_coin_params.account)
+        let wallet_db = WalletDbShared::new(&self, &z_spending_key)
             .await
             .map_err(|err| ZCoinBuildError::ZcashDBError(err.to_string()))?;
 

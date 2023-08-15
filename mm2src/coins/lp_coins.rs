@@ -2768,7 +2768,7 @@ impl<T> From<T> for PrivKeyPolicy<T> {
 }
 
 impl<T> PrivKeyPolicy<T> {
-    pub fn activated_key(&self) -> Option<&T> {
+    fn activated_key(&self) -> Option<&T> {
         match self {
             PrivKeyPolicy::Iguana(key_pair) => Some(key_pair),
             PrivKeyPolicy::HDWallet {
@@ -2781,16 +2781,16 @@ impl<T> PrivKeyPolicy<T> {
         }
     }
 
-    pub fn activated_key_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
+    fn activated_key_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
         self.activated_key().or_mm_err(|| {
             PrivKeyPolicyNotAllowed::UnsupportedMethod(
-                "`key_pair_or_err` is supported only for `PrivKeyPolicy::KeyPair` or `PrivKeyPolicy::HDWallet`"
+                "`activated_key_or_err` is supported only for `PrivKeyPolicy::KeyPair` or `PrivKeyPolicy::HDWallet`"
                     .to_string(),
             )
         })
     }
 
-    pub fn bip39_secp_priv_key(&self) -> Option<&ExtendedPrivateKey<secp256k1::SecretKey>> {
+    fn bip39_secp_priv_key(&self) -> Option<&ExtendedPrivateKey<secp256k1::SecretKey>> {
         match self {
             PrivKeyPolicy::HDWallet {
                 bip39_secp_priv_key, ..
@@ -2801,7 +2801,7 @@ impl<T> PrivKeyPolicy<T> {
         }
     }
 
-    pub fn bip39_secp_priv_key_or_err(
+    fn bip39_secp_priv_key_or_err(
         &self,
     ) -> Result<&ExtendedPrivateKey<secp256k1::SecretKey>, MmError<PrivKeyPolicyNotAllowed>> {
         self.bip39_secp_priv_key().or_mm_err(|| {
@@ -2811,7 +2811,7 @@ impl<T> PrivKeyPolicy<T> {
         })
     }
 
-    pub fn derivation_path(&self) -> Option<&StandardHDPathToCoin> {
+    fn derivation_path(&self) -> Option<&StandardHDPathToCoin> {
         match self {
             PrivKeyPolicy::HDWallet { derivation_path, .. } => Some(derivation_path),
             PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor => None,
@@ -2820,7 +2820,7 @@ impl<T> PrivKeyPolicy<T> {
         }
     }
 
-    pub fn derivation_path_or_err(&self) -> Result<&StandardHDPathToCoin, MmError<PrivKeyPolicyNotAllowed>> {
+    fn derivation_path_or_err(&self) -> Result<&StandardHDPathToCoin, MmError<PrivKeyPolicyNotAllowed>> {
         self.derivation_path().or_mm_err(|| {
             PrivKeyPolicyNotAllowed::UnsupportedMethod(
                 "`derivation_path_or_err` is supported only for `PrivKeyPolicy::HDWallet`".to_string(),
@@ -2828,7 +2828,7 @@ impl<T> PrivKeyPolicy<T> {
         })
     }
 
-    pub fn hd_wallet_derived_priv_key_or_err(
+    fn hd_wallet_derived_priv_key_or_err(
         &self,
         path_to_address: &StandardHDCoinAddress,
     ) -> Result<Secp256k1Secret, MmError<PrivKeyPolicyNotAllowed>> {

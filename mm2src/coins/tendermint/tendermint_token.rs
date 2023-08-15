@@ -133,11 +133,11 @@ impl TendermintToken {
             };
 
             let (base_denom_balance, base_denom_balance_dec) = platform
-                .get_account_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())
+                .get_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())
                 .await?;
 
             let (balance_denom, balance_dec) = platform
-                .get_account_balance_as_unsigned_and_decimal(&account_id, &token.denom, token.decimals())
+                .get_balance_as_unsigned_and_decimal(&account_id, &token.denom, token.decimals())
                 .await?;
 
             let (amount_denom, amount_dec, total_amount) = if req.max {
@@ -642,11 +642,11 @@ impl MmCoin for TendermintToken {
             };
 
             let (base_denom_balance, base_denom_balance_dec) = platform
-                .get_account_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())
+                .get_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())
                 .await?;
 
             let (balance_denom, balance_dec) = platform
-                .get_account_balance_as_unsigned_and_decimal(&account_id, &token.denom, token.decimals())
+                .get_balance_as_unsigned_and_decimal(&account_id, &token.denom, token.decimals())
                 .await?;
 
             let (amount_denom, amount_dec, total_amount) = if req.max {

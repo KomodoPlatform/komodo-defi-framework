@@ -571,7 +571,7 @@ impl TendermintCoin {
             };
 
             let (balance_denom, balance_dec) = coin
-                .get_account_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
+                .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
                 .await?;
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
@@ -1640,7 +1640,7 @@ impl TendermintCoin {
                 self.priv_key_policy
                     .activated_key_or_err()
                     .mm_err(|e| TradePreimageError::InternalError(e.to_string()))?,
-                msg_send.clone(),
+                msg_send,
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
                 None,
@@ -1655,7 +1655,7 @@ impl TendermintCoin {
         })
     }
 
-    pub(super) async fn get_account_balance_as_unsigned_and_decimal(
+    pub(super) async fn get_balance_as_unsigned_and_decimal(
         &self,
         account_id: &AccountId,
         denom: &Denom,
@@ -1923,7 +1923,7 @@ impl MmCoin for TendermintCoin {
             };
 
             let (balance_denom, balance_dec) = coin
-                .get_account_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
+                .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
                 .await?;
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
@@ -1976,7 +1976,7 @@ impl MmCoin for TendermintCoin {
                 .calculate_account_fee_amount_as_u64(
                     &account_id,
                     &priv_key,
-                    msg_send.clone(),
+                    msg_send,
                     timeout_height,
                     memo.clone(),
                     req.fee,
