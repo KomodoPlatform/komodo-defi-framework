@@ -2349,47 +2349,26 @@ pub async fn check_watcher_payments(
         TakerSwapCommand::ValidateMakerPayment => Ok(Some(command)),
         TakerSwapCommand::SendTakerPayment => Ok(Some(command)),
         TakerSwapCommand::WaitForTakerPaymentSpend => {
-            match check_maker_payment_spend(swap).await {
-                Ok(Some(FoundSwapTxSpend::Spent(maker_payment_spend_tx))) => {
-                    validate_maker_payment_spend(swap, &maker_payment_spend_tx).await?;
-                    let taker_payment_spend_tx = match check_taker_payment_spend(swap).await {
-                        Ok(Some(FoundSwapTxSpend::Spent(taker_payment_spend_tx))) => taker_payment_spend_tx,
-                        Ok(Some(FoundSwapTxSpend::Refunded(payment_refund_tx))) => {
-                            return ERR!(
-                                "A refund transaction {:#?} is found while spend was expected",
-                                payment_refund_tx.tx_hash()
-                            )
+            match check_taker_payment_spend(swap).await {
+                Ok(Some(FoundSwapTxSpend::Spent(taker_payment_spend_tx))) => {
+                    add_taker_payment_spent_event(swap, &mut saved, &taker_payment_spend_tx).await?;
+                    match check_maker_payment_spend(swap).await {
+                        Ok(Some(FoundSwapTxSpend::Spent(maker_payment_spend_tx))) => {
+                            add_maker_payment_spent_by_watcher_event(saved, ctx, maker_payment_spend_tx).await?;
+                            Ok(Some(TakerSwapCommand::Finish))
                         },
-                        Ok(None) => return ERR!("Taker payment spend could not be found while maker payment is already spent"),
-                        Err(e) => return ERR!("Error {} when trying to find taker payment spend", e),
-                    };
-                    add_taker_payment_spent_event(swap, &mut saved, taker_payment_spend_tx).await?;
-                    add_maker_payment_spent_by_watcher_event(saved, ctx, maker_payment_spend_tx).await?;
-                    Ok(Some(TakerSwapCommand::Finish))
+                        Ok(Some(FoundSwapTxSpend::Refunded(maker_payment_refund_tx))) => ERR!("Maker has cheated by both spending the taker payment with transaction {:#?}, and refunding the maker payment with transaction {:#?}", taker_payment_spend_tx.tx_hash(), maker_payment_refund_tx.tx_hash()),
+                        Ok(None) => Ok(Some(TakerSwapCommand::SpendMakerPayment)),
+                        Err(e) => ERR!("Error {} when trying to find maker payment spend", e),
+                    }
                 },
-                Ok(Some(FoundSwapTxSpend::Refunded(maker_payment_refund_tx))) => {
-                    let taker_payment_refund_tx = match check_taker_payment_spend(swap).await {
-                        Ok(Some(FoundSwapTxSpend::Spent(payment_spend_tx))) => return ERR!("Maker has cheated by both spending the taker payment with transaction {:#?}, and refunding the maker payment with transaction {:#?}", payment_spend_tx.tx_hash(), maker_payment_refund_tx.tx_hash()),
-                        Ok(Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx))) => taker_payment_refund_tx,
-                        Ok(None) => return Ok(Some(command)),
-                        Err(e) => return ERR!("Error {} when trying to find taker payment spend", e),
-                    };
+                Ok(Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx))) => {
                     validate_taker_payment_refund(swap, &taker_payment_refund_tx).await?;
                     add_taker_payment_refunded_by_watcher_event(saved, ctx, taker_payment_refund_tx).await?;
                     Ok(Some(TakerSwapCommand::Finish))
                 },
-                Ok(None) => {
-                    let taker_payment_refund_tx = match check_taker_payment_spend(swap).await {
-                        Ok(Some(FoundSwapTxSpend::Spent(_))) => return Ok(Some(command)),
-                        Ok(Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx))) => taker_payment_refund_tx,
-                        Ok(None) => return Ok(Some(command)),
-                        Err(e) => return ERR!("Error {} when trying to find taker payment spend", e),
-                    };
-                    validate_taker_payment_refund(swap, &taker_payment_refund_tx).await?;
-                    add_taker_payment_refunded_by_watcher_event(saved, ctx, taker_payment_refund_tx).await?;
-                    Ok(Some(TakerSwapCommand::Finish))
-                },
-                Err(e) => ERR!("Error {} when trying to find maker payment spend", e)
+                Ok(None) => Ok(Some(command)),
+                Err(e) => ERR!("Error {} when trying to find taker payment spend", e),
             }
         },
         TakerSwapCommand::SpendMakerPayment => {
@@ -2538,7 +2517,7 @@ pub async fn validate_taker_payment_refund(
 pub async fn add_taker_payment_spent_event(
     swap: &TakerSwap,
     saved: &mut TakerSavedSwap,
-    taker_payment_spend_tx: TransactionEnum,
+    taker_payment_spend_tx: &TransactionEnum,
 ) -> Result<(), String> {
     let secret_hash = swap.r().secret_hash.0.clone();
     let watcher_reward = swap.r().watcher_reward;
