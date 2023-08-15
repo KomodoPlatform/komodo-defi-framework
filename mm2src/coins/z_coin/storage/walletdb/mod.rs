@@ -70,10 +70,7 @@ cfg_wasm32!(
     pub type WalletDbInnerLocked<'a> = DbLocked<'a, WalletDbInner>;
 
     impl<'a> WalletDbShared {
-        pub async fn new(
-            zcoin_builder: &ZCoinBuilder<'a>,
-            _path_to_address: &StandardHDCoinAddress,
-        ) -> MmResult<Self, WalletDbError> {
+        pub async fn new(zcoin_builder: &ZCoinBuilder<'a>, _account: u32) -> MmResult<Self, WalletDbError> {
             Ok(Self {
                 db: ConstructibleDb::new(zcoin_builder.ctx).into_shared(),
                 ticker: zcoin_builder.ticker.to_string(),
