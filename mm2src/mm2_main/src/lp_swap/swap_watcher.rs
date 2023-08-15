@@ -56,9 +56,9 @@ impl WatcherContext {
 pub struct WatcherConf {
     #[serde(default = "common::sixty_f64")]
     wait_taker_payment: f64,
-    #[serde(default = "common::one_f64")]
+    #[serde(default = "default_watcher_maker_payment_spend_factor")]
     wait_maker_payment_spend_factor: f64,
-    #[serde(default = "common::one_and_half_f64")]
+    #[serde(default = "default_watcher_refund_factor")]
     refund_start_factor: f64,
     #[serde(default = "common::three_hundred_f64")]
     search_interval: f64,
@@ -68,12 +68,16 @@ impl Default for WatcherConf {
     fn default() -> Self {
         WatcherConf {
             wait_taker_payment: common::sixty_f64(),
-            wait_maker_payment_spend_factor: common::one_f64(),
-            refund_start_factor: common::one_and_half_f64(),
+            wait_maker_payment_spend_factor: default_watcher_maker_payment_spend_factor(),
+            refund_start_factor: default_watcher_refund_factor(),
             search_interval: common::three_hundred_f64(),
         }
     }
 }
+
+pub fn default_watcher_maker_payment_spend_factor() -> f64 { common::one_f64() }
+
+pub fn default_watcher_refund_factor() -> f64 { common::one_and_half_f64() }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SwapWatcherMsg {

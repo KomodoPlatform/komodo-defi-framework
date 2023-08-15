@@ -41,6 +41,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
+#[cfg(not(any(test, feature = "run-docker-tests")))]
+use super::swap_watcher::{default_watcher_maker_payment_spend_factor, default_watcher_refund_factor};
+
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
@@ -2336,8 +2339,12 @@ pub async fn check_watcher_payments(
     command: Option<TakerSwapCommand>,
 ) -> Result<Option<TakerSwapCommand>, String> {
     #[cfg(not(any(test, feature = "run-docker-tests")))]
-    if now_sec() < swap.r().data.taker_payment_lock {
-        return Ok(command);
+    {
+        let watcher_refund_time = swap.r().data.started_at
+            + (default_watcher_maker_payment_spend_factor() * swap.r().data.lock_duration as f64) as u64;
+        if now_sec() < watcher_refund_time {
+            return Ok(command);
+        }
     }
 
     let command = command.expect("Finished swaps should not enter to load_from_saved function");
@@ -2385,6 +2392,14 @@ pub async fn check_watcher_payments(
         },
         TakerSwapCommand::PrepareForTakerPaymentRefund |
         TakerSwapCommand::RefundTakerPayment => {
+            #[cfg(not(any(test, feature = "run-docker-tests")))]
+            {
+                let watcher_refund_time = swap.r().data.started_at + (default_watcher_refund_factor() * swap.r().data.lock_duration as f64) as u64;
+                if now_sec() < watcher_refund_time {
+                    return Ok(Some(command));
+                }
+            }
+
             let taker_payment_refund_tx = match check_taker_payment_spend(swap).await {
                 Ok(Some(FoundSwapTxSpend::Spent(_))) => return ERR!("Taker payment is not expected to be spent at this point"),
                 Ok(Some(FoundSwapTxSpend::Refunded(taker_payment_refund_tx))) => taker_payment_refund_tx,
