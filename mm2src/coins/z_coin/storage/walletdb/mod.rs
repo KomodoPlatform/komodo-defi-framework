@@ -21,7 +21,6 @@ pub enum WalletDbError {
     ZcoinClientInitError(ZcoinClientInitError),
     ZCoinBuildError(String),
     IndexedDBError(String),
-    GrpcError(String),
 }
 
 #[derive(Clone)]
