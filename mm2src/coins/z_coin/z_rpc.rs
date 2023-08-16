@@ -1,5 +1,6 @@
 use super::{z_coin_errors::*, BlockDbImpl, WalletDbShared, ZCoinBuilder, ZcoinConsensusParams};
 use crate::utxo::rpc_clients::NativeClient;
+use crate::z_coin::z_rpc::z_coin_grpc::{Empty, LightdInfo};
 use crate::z_coin::SyncStartPoint;
 use async_trait::async_trait;
 use common::executor::{spawn_abortable, AbortOnDropHandle};
@@ -90,6 +91,8 @@ pub trait ZRpcOps {
         &mut self,
         height: u64,
     ) -> MmResult<Option<CheckPointBlockInfo>, UpdateBlocksCacheErr>;
+
+    async fn get_lightd_info(&mut self) -> MmResult<LightdInfo, UpdateBlocksCacheErr>;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -227,6 +230,19 @@ impl ZRpcOps for LightRpcClient {
             sapling_tree,
         }))
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn get_lightd_info(&mut self) -> MmResult<LightdInfo, UpdateBlocksCacheErr> {
+        let request = tonic::Request::new(Empty {});
+        Ok(self
+            .get_live_client()
+            .await?
+            .get_lightd_info(request)
+            .await
+            .map_to_mm(UpdateBlocksCacheErr::GrpcError)?
+            // return the message
+            .into_inner())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -343,6 +359,9 @@ impl ZRpcOps for NativeClient {
     ) -> MmResult<Option<CheckPointBlockInfo>, UpdateBlocksCacheErr> {
         todo!()
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn get_lightd_info(&mut self) -> MmResult<LightdInfo, UpdateBlocksCacheErr> { todo!() }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -431,16 +450,21 @@ pub(super) async fn init_light_client<'a>(
         .get_block_height()
         .await
         .mm_err(ZcoinClientInitError::UpdateBlocksCacheErr)?;
+    let sapling_activation_height = builder.protocol_info.consensus_params.sapling_activation_height as u64;
     let sync_height = match sync_params {
         Some(SyncStartPoint::Date(date)) => builder
             .calculate_starting_height_from_date(*date, current_block_height)
             .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?,
         Some(SyncStartPoint::Height(height)) => *height,
+        Some(SyncStartPoint::Earliest) => sapling_activation_height,
         None => builder
             .calculate_starting_height_from_date(now_sec() - DAY_IN_SECONDS, current_block_height)
             .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?,
     };
-    let maybe_checkpointblock = light_rpc_clients.checkpoint_block_from_height(sync_height).await?;
+    let maybe_checkpointblock = light_rpc_clients
+        .checkpoint_block_from_height(sync_height.max(sapling_activation_height))
+        .await?;
+
     let wallet_db = WalletDbShared::new(builder, maybe_checkpointblock)
         .await
         .mm_err(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
@@ -456,6 +480,7 @@ pub(super) async fn init_light_client<'a>(
         watch_for_tx: None,
         scan_blocks_per_iteration: builder.z_coin_params.scan_blocks_per_iteration,
         scan_interval_ms: builder.z_coin_params.scan_interval_ms,
+        is_sync_height_pre_sapling: sync_height < sapling_activation_height,
     };
 
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(light_rpc_clients)));
@@ -501,6 +526,7 @@ pub(super) async fn init_native_client<'a>(
         watch_for_tx: None,
         scan_blocks_per_iteration: builder.z_coin_params.scan_blocks_per_iteration,
         scan_interval_ms: builder.z_coin_params.scan_interval_ms,
+        is_sync_height_pre_sapling: false,
     };
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(native_client)));
 
@@ -563,14 +589,17 @@ pub enum SyncStatus {
     UpdatingBlocksCache {
         current_scanned_block: u64,
         latest_block: u64,
+        additional_info: Option<String>,
     },
     BuildingWalletDb {
         current_scanned_block: u64,
         latest_block: u64,
+        additional_info: Option<String>,
     },
     TemporaryError(String),
     Finished {
         block_number: u64,
+        additional_info: Option<String>,
     },
 }
 
@@ -589,15 +618,29 @@ pub struct SaplingSyncLoopHandle {
     watch_for_tx: Option<TxId>,
     scan_blocks_per_iteration: u32,
     scan_interval_ms: u64,
+    is_sync_height_pre_sapling: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl SaplingSyncLoopHandle {
+    fn additional_sync_info(&self) -> Option<String> {
+        if self.is_sync_height_pre_sapling {
+            Some(format!(
+                "{} provided/derived sync height/date from activation config is pre sapling, hence, sync height has \
+                been modified to use sapling_activation_height {:?} from coin config",
+                self.coin, self.consensus_params.sapling_activation_height
+            ))
+        } else {
+            None
+        }
+    }
+
     fn notify_blocks_cache_status(&mut self, current_scanned_block: u64, latest_block: u64) {
         self.sync_status_notifier
             .try_send(SyncStatus::UpdatingBlocksCache {
                 current_scanned_block,
                 latest_block,
+                additional_info: self.additional_sync_info(),
             })
             .debug_log_with_msg("No one seems interested in SyncStatus");
     }
@@ -607,6 +650,7 @@ impl SaplingSyncLoopHandle {
             .try_send(SyncStatus::BuildingWalletDb {
                 current_scanned_block,
                 latest_block,
+                additional_info: self.additional_sync_info(),
             })
             .debug_log_with_msg("No one seems interested in SyncStatus");
     }
@@ -621,6 +665,7 @@ impl SaplingSyncLoopHandle {
         self.sync_status_notifier
             .try_send(SyncStatus::Finished {
                 block_number: self.current_block.into(),
+                additional_info: self.additional_sync_info(),
             })
             .debug_log_with_msg("No one seems interested in SyncStatus");
     }

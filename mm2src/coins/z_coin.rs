@@ -307,7 +307,10 @@ impl ZCoin {
 
     #[inline]
     pub async fn is_sapling_state_synced(&self) -> bool {
-        matches!(self.sync_status().await, Ok(SyncStatus::Finished { block_number: _ }))
+        matches!(
+            self.sync_status().await,
+            Ok(SyncStatus::Finished { block_number: _, .. })
+        )
     }
 
     #[inline]
@@ -756,11 +759,11 @@ impl AsRef<UtxoCoinFields> for ZCoin {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SyncStartPoint {
-    #[serde(rename = "date")]
     Date(u64),
-    #[serde(rename = "height")]
     Height(u64),
+    Earliest,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

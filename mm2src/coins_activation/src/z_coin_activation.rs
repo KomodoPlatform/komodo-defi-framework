@@ -35,6 +35,7 @@ pub struct ZcoinActivationResult {
     pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: CoinBalanceReport,
+    pub additional_info: Option<String>,
 }
 
 impl CurrentBlock for ZcoinActivationResult {
@@ -54,10 +55,12 @@ pub enum ZcoinInProgressStatus {
     UpdatingBlocksCache {
         current_scanned_block: u64,
         latest_block: u64,
+        additional_info: Option<String>,
     },
     BuildingWalletDb {
         current_scanned_block: u64,
         latest_block: u64,
+        additional_info: Option<String>,
     },
     TemporaryError(String),
     RequestingWalletBalance,
@@ -222,16 +225,20 @@ impl InitStandaloneCoinActivationOps for ZCoin {
                 SyncStatus::UpdatingBlocksCache {
                     current_scanned_block,
                     latest_block,
+                    additional_info,
                 } => ZcoinInProgressStatus::UpdatingBlocksCache {
                     current_scanned_block,
                     latest_block,
+                    additional_info,
                 },
                 SyncStatus::BuildingWalletDb {
                     current_scanned_block,
                     latest_block,
+                    additional_info,
                 } => ZcoinInProgressStatus::BuildingWalletDb {
                     current_scanned_block,
                     latest_block,
+                    additional_info,
                 },
                 SyncStatus::TemporaryError(e) => ZcoinInProgressStatus::TemporaryError(e),
                 SyncStatus::Finished { .. } => break,
@@ -256,6 +263,11 @@ impl InitStandaloneCoinActivationOps for ZCoin {
             .map_to_mm(ZcoinInitError::CouldNotGetBlockCount)?;
 
         let balance = self.my_balance().compat().await?;
+        let additional_info = match self.sync_status().await? {
+            SyncStatus::Finished { additional_info, .. } => additional_info,
+            _ => None,
+        };
+
         Ok(ZcoinActivationResult {
             ticker: self.ticker().into(),
             current_block,
@@ -263,6 +275,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
                 address: self.my_z_address_encoded(),
                 balance,
             }),
+            additional_info,
         })
     }
 
