@@ -451,7 +451,7 @@ pub(super) async fn init_light_client<'a>(
         .get_block_height()
         .await
         .mm_err(ZcoinClientInitError::UpdateBlocksCacheErr)?;
-    let sapling_activation_height = builder.protocol_info.consensus_params.sapling_activation_height as u64;
+    let sapling_activation_height = light_rpc_clients.get_lightd_info().await?.sapling_activation_height;
     let sync_height = match sync_params {
         Some(SyncStartPoint::Date(date)) => builder
             .calculate_starting_height_from_date(*date, current_block_height)
@@ -462,11 +462,11 @@ pub(super) async fn init_light_client<'a>(
             .calculate_starting_height_from_date(now_sec() - DAY_IN_SECONDS, current_block_height)
             .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?,
     };
-    let maybe_checkpointblock = light_rpc_clients
+    let maybe_checkpoint_block = light_rpc_clients
         .checkpoint_block_from_height(sync_height.max(sapling_activation_height))
         .await?;
 
-    let wallet_db = WalletDbShared::new(builder, maybe_checkpointblock)
+    let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block)
         .await
         .mm_err(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
 
@@ -481,7 +481,11 @@ pub(super) async fn init_light_client<'a>(
         watch_for_tx: None,
         scan_blocks_per_iteration: builder.z_coin_params.scan_blocks_per_iteration,
         scan_interval_ms: builder.z_coin_params.scan_interval_ms,
-        is_sync_height_pre_sapling: sync_height < sapling_activation_height,
+        first_sync_block: Some(FirstSyncBlock {
+            requested: sync_height,
+            is_pre_sapling: sync_height < sapling_activation_height,
+            actual: sapling_activation_height,
+        }),
     };
 
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(light_rpc_clients)));
@@ -527,7 +531,7 @@ pub(super) async fn init_native_client<'a>(
         watch_for_tx: None,
         scan_blocks_per_iteration: builder.z_coin_params.scan_blocks_per_iteration,
         scan_interval_ms: builder.z_coin_params.scan_interval_ms,
-        is_sync_height_pre_sapling: false,
+        first_sync_block: None,
     };
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(native_client)));
 
@@ -590,18 +594,25 @@ pub enum SyncStatus {
     UpdatingBlocksCache {
         current_scanned_block: u64,
         latest_block: u64,
-        additional_info: Option<String>,
+        first_sync_block: Option<FirstSyncBlock>,
     },
     BuildingWalletDb {
         current_scanned_block: u64,
         latest_block: u64,
-        additional_info: Option<String>,
+        first_sync_block: Option<FirstSyncBlock>,
     },
     TemporaryError(String),
     Finished {
         block_number: u64,
-        additional_info: Option<String>,
+        first_sync_block: Option<FirstSyncBlock>,
     },
+}
+
+#[derive(Clone, Serialize)]
+pub struct FirstSyncBlock {
+    pub requested: u64,
+    pub is_pre_sapling: bool,
+    pub actual: u64,
 }
 
 #[allow(unused)]
@@ -619,29 +630,19 @@ pub struct SaplingSyncLoopHandle {
     watch_for_tx: Option<TxId>,
     scan_blocks_per_iteration: u32,
     scan_interval_ms: u64,
-    is_sync_height_pre_sapling: bool,
+    first_sync_block: Option<FirstSyncBlock>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl SaplingSyncLoopHandle {
-    fn additional_sync_info(&self) -> Option<String> {
-        if self.is_sync_height_pre_sapling {
-            Some(format!(
-                "{} provided/derived sync height/date from activation config is pre sapling, hence, sync height has \
-                been modified to use sapling_activation_height {:?} from coin config",
-                self.coin, self.consensus_params.sapling_activation_height
-            ))
-        } else {
-            None
-        }
-    }
+    fn first_sync_block(&self) -> Option<FirstSyncBlock> { self.first_sync_block.clone() }
 
     fn notify_blocks_cache_status(&mut self, current_scanned_block: u64, latest_block: u64) {
         self.sync_status_notifier
             .try_send(SyncStatus::UpdatingBlocksCache {
                 current_scanned_block,
                 latest_block,
-                additional_info: self.additional_sync_info(),
+                first_sync_block: self.first_sync_block(),
             })
             .debug_log_with_msg("No one seems interested in SyncStatus");
     }
@@ -651,7 +652,7 @@ impl SaplingSyncLoopHandle {
             .try_send(SyncStatus::BuildingWalletDb {
                 current_scanned_block,
                 latest_block,
-                additional_info: self.additional_sync_info(),
+                first_sync_block: self.first_sync_block(),
             })
             .debug_log_with_msg("No one seems interested in SyncStatus");
     }
@@ -666,7 +667,7 @@ impl SaplingSyncLoopHandle {
         self.sync_status_notifier
             .try_send(SyncStatus::Finished {
                 block_number: self.current_block.into(),
-                additional_info: self.additional_sync_info(),
+                first_sync_block: self.first_sync_block(),
             })
             .debug_log_with_msg("No one seems interested in SyncStatus");
     }

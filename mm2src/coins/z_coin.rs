@@ -76,7 +76,7 @@ use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
 use z_rpc::init_light_client;
-pub use z_rpc::SyncStatus;
+pub use z_rpc::{FirstSyncBlock, SyncStatus};
 
 cfg_native!(
     use crate::{NumConversError, TransactionDetails, TxFeeDetails};
