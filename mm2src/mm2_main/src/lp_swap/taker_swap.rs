@@ -190,7 +190,6 @@ impl TakerSavedEvent {
             TakerSwapEvent::TakerPaymentRefundFailed(_) => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::TakerPaymentRefundFinished => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::TakerPaymentRefundedByWatcher(_) => Some(TakerSwapCommand::Finish),
-            TakerSwapEvent::WatcherSpendOrRefundNotFound => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::Finished => None,
         }
     }
@@ -665,7 +664,6 @@ pub enum TakerSwapEvent {
     TakerPaymentRefundFailed(SwapError),
     TakerPaymentRefundFinished,
     TakerPaymentRefundedByWatcher(Option<TransactionIdentifier>),
-    WatcherSpendOrRefundNotFound,
     Finished,
 }
 
@@ -706,7 +704,6 @@ impl TakerSwapEvent {
             TakerSwapEvent::TakerPaymentRefundFailed(_) => "Taker payment refund failed...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundFinished => "Taker payment refund finished...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundedByWatcher(_) => "Taker payment refunded by watcher...".to_owned(),
-            TakerSwapEvent::WatcherSpendOrRefundNotFound => "Watcher refund could not be found...".to_owned(),
             TakerSwapEvent::Finished => "Finished".to_owned(),
         }
     }
@@ -844,7 +841,6 @@ impl TakerSwap {
             TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::TakerPaymentRefundFinished => (),
             TakerSwapEvent::TakerPaymentRefundedByWatcher(tx) => self.w().taker_payment_refund = tx,
-            TakerSwapEvent::WatcherSpendOrRefundNotFound => (),
             TakerSwapEvent::Finished => self.finished_at.store(now_sec(), Ordering::Relaxed),
         }
     }
