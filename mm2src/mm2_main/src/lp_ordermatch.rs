@@ -61,6 +61,7 @@ use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
 use std::collections::{BTreeSet, HashSet};
 use std::convert::TryInto;
 use std::fmt;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -3688,8 +3689,8 @@ pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     try_s!(
         check_balance_for_taker_swap(
             &ctx,
-            &rel_coin,
-            &base_coin,
+            rel_coin.deref(),
+            base_coin.deref(),
             my_amount,
             None,
             None,
@@ -3719,8 +3720,8 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     try_s!(
         check_balance_for_taker_swap(
             &ctx,
-            &base_coin,
-            &rel_coin,
+            base_coin.deref(),
+            rel_coin.deref(),
             input.volume.clone(),
             None,
             None,
@@ -4471,7 +4472,7 @@ pub async fn check_other_coin_balance_for_order_issue(ctx: &MmArc, other_coin: &
         .compat()
         .await
         .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
-    check_other_coin_balance_for_swap(ctx, other_coin, None, trade_fee).await
+    check_other_coin_balance_for_swap(ctx, other_coin.deref(), None, trade_fee).await
 }
 
 pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String, balance: Option<BigDecimal>) {
@@ -4527,8 +4528,8 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         let balance = try_s!(
             check_balance_for_maker_swap(
                 ctx,
-                &base_coin,
-                &rel_coin,
+                base_coin.deref(),
+                rel_coin.deref(),
                 req.volume.clone(),
                 None,
                 None,
@@ -4706,8 +4707,8 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
         try_s!(
             check_balance_for_maker_swap(
                 ctx,
-                &base_coin,
-                &rel_coin,
+                base_coin.deref(),
+                rel_coin.deref(),
                 volume.clone(),
                 None,
                 None,

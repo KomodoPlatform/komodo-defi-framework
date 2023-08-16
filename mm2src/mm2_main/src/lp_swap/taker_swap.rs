@@ -16,7 +16,7 @@ use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed
                           wait_for_maker_payment_conf_duration, TakerSwapWatcherData};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee,
             TradePreimageValue, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
 use common::executor::Timer;
@@ -35,6 +35,7 @@ use primitives::hash::H264;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
 use std::convert::{TryFrom, TryInto};
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -965,7 +966,8 @@ impl TakerSwap {
     async fn start(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         // do not use self.r().data here as it is not initialized at this step yet
         let stage = FeeApproxStage::StartSwap;
-        let dex_fee = dex_fee_amount_from_taker_coin(&self.taker_coin, self.maker_coin.ticker(), &self.taker_amount);
+        let dex_fee =
+            dex_fee_amount_from_taker_coin(self.taker_coin.deref(), self.maker_coin.ticker(), &self.taker_amount);
         let preimage_value = TradePreimageValue::Exact(self.taker_amount.to_decimal());
 
         let fee_to_send_dex_fee_fut = self
@@ -1006,8 +1008,8 @@ impl TakerSwap {
         };
         let check_balance_f = check_balance_for_taker_swap(
             &self.ctx,
-            &self.taker_coin,
-            &self.maker_coin,
+            self.taker_coin.deref(),
+            self.maker_coin.deref(),
             self.taker_amount.clone(),
             Some(&self.uuid),
             Some(params),
@@ -1241,7 +1243,7 @@ impl TakerSwap {
         }
 
         let fee_amount =
-            dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &self.taker_amount);
+            dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &self.taker_amount);
         let fee_tx = self
             .taker_coin
             .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), self.uuid.as_bytes())
@@ -2230,7 +2232,7 @@ impl AtomicSwap for TakerSwap {
 
         // if taker fee is not sent yet it must be virtually locked
         let taker_fee_amount =
-            dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &self.taker_amount);
+            dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &self.taker_amount);
         let trade_fee = self.r().data.fee_to_send_taker_fee.clone().map(TradeFee::from);
         if self.r().taker_fee.is_none() {
             result.push(LockedAmount {
@@ -2288,8 +2290,8 @@ pub struct TakerSwapPreparedParams {
 
 pub async fn check_balance_for_taker_swap(
     ctx: &MmArc,
-    my_coin: &MmCoinEnum,
-    other_coin: &MmCoinEnum,
+    my_coin: &dyn MmCoin,
+    other_coin: &dyn MmCoin,
     volume: MmNumber,
     swap_uuid: Option<&Uuid>,
     prepared_params: Option<TakerSwapPreparedParams>,
@@ -2386,7 +2388,7 @@ pub async fn taker_swap_trade_preimage(
         TakerAction::Buy => rel_amount.clone(),
     };
 
-    let dex_amount = dex_fee_amount_from_taker_coin(&my_coin, other_coin_ticker, &my_coin_volume);
+    let dex_amount = dex_fee_amount_from_taker_coin(my_coin.deref(), other_coin_ticker, &my_coin_volume);
     let taker_fee = TradeFee {
         coin: my_coin_ticker.to_owned(),
         amount: dex_amount.clone(),
@@ -2417,8 +2419,8 @@ pub async fn taker_swap_trade_preimage(
     };
     check_balance_for_taker_swap(
         ctx,
-        &my_coin,
-        &other_coin,
+        my_coin.deref(),
+        other_coin.deref(),
         my_coin_volume.clone(),
         None,
         Some(prepared_params),
@@ -2532,7 +2534,7 @@ pub async fn calc_max_taker_vol(
     let max_vol = if my_coin == max_trade_fee.coin {
         // second case
         let max_possible_2 = &max_possible - &max_trade_fee.amount;
-        let max_dex_fee = dex_fee_amount_from_taker_coin(coin, other_coin, &max_possible_2);
+        let max_dex_fee = dex_fee_amount_from_taker_coin(coin.deref(), other_coin, &max_possible_2);
         let max_fee_to_send_taker_fee = coin
             .get_fee_to_send_taker_fee(max_dex_fee.to_decimal(), stage)
             .await

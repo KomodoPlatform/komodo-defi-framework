@@ -15,7 +15,7 @@ use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::MakerOrderBuilder;
 use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration};
 use coins::lp_price::fetch_swap_coins_price;
-use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend,
+use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MmCoin,
             MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee, TradePreimageValue,
             TransactionEnum, ValidateFeeArgs, ValidatePaymentInput};
@@ -35,6 +35,7 @@ use primitives::hash::{H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use std::any::TypeId;
 use std::convert::TryInto;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -504,8 +505,8 @@ impl MakerSwap {
         };
         match check_balance_for_maker_swap(
             &self.ctx,
-            &self.maker_coin,
-            &self.taker_coin,
+            self.maker_coin.deref(),
+            self.taker_coin.deref(),
             self.maker_amount.clone().into(),
             Some(&self.uuid),
             Some(params),
@@ -754,7 +755,8 @@ impl MakerSwap {
         info!("Taker fee tx {:02x}", hash);
 
         let taker_amount = MmNumber::from(self.taker_amount.clone());
-        let fee_amount = dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &taker_amount);
+        let fee_amount =
+            dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &taker_amount);
         let other_taker_coin_htlc_pub = self.r().other_taker_coin_htlc_pub;
         let taker_coin_start_block = self.r().data.taker_coin_start_block;
 
@@ -2174,8 +2176,8 @@ pub struct MakerSwapPreparedParams {
 
 pub async fn check_balance_for_maker_swap(
     ctx: &MmArc,
-    my_coin: &MmCoinEnum,
-    other_coin: &MmCoinEnum,
+    my_coin: &dyn MmCoin,
+    other_coin: &dyn MmCoin,
     volume: MmNumber,
     swap_uuid: Option<&Uuid>,
     prepared_params: Option<MakerSwapPreparedParams>,
@@ -2255,7 +2257,7 @@ pub async fn maker_swap_trade_preimage(
     if req.max {
         // Note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient.
         // So we have to check the balance of the other coin only.
-        check_other_coin_balance_for_swap(ctx, &rel_coin, None, rel_coin_fee.clone()).await?
+        check_other_coin_balance_for_swap(ctx, rel_coin.deref(), None, rel_coin_fee.clone()).await?
     } else {
         let prepared_params = MakerSwapPreparedParams {
             maker_payment_trade_fee: base_coin_fee.clone(),
@@ -2263,8 +2265,8 @@ pub async fn maker_swap_trade_preimage(
         };
         check_balance_for_maker_swap(
             ctx,
-            &base_coin,
-            &rel_coin,
+            base_coin.deref(),
+            rel_coin.deref(),
             volume.clone(),
             None,
             Some(prepared_params),
