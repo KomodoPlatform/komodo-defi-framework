@@ -31,6 +31,7 @@ use keys::hash::H256;
 use keys::{Address, Type as ScriptType};
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, BigInt, MmNumber};
+use mm2_rpc::data::legacy::ElectrumProtocol;
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
@@ -1382,30 +1383,6 @@ pub fn electrum_script_hash(script: &[u8]) -> Vec<u8> {
     let mut result = sha_256(script);
     result.reverse();
     result
-}
-
-#[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-/// Deserializable Electrum protocol representation for RPC
-pub enum ElectrumProtocol {
-    /// TCP
-    TCP,
-    /// SSL/TLS
-    SSL,
-    /// Insecure WebSocket.
-    WS,
-    /// Secure WebSocket.
-    WSS,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl Default for ElectrumProtocol {
-    fn default() -> Self { ElectrumProtocol::TCP }
-}
-
-#[cfg(target_arch = "wasm32")]
-impl Default for ElectrumProtocol {
-    fn default() -> Self { ElectrumProtocol::WS }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

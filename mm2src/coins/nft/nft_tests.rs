@@ -1,11 +1,12 @@
 const NFT_LIST_URL_TEST: &str = "https://moralis-proxy.komodo.earth/api/v2/0x394d86994f954ed931b86791b62fe64f4c5dac37/nft?chain=POLYGON&format=decimal";
-const NFT_HISTORY_URL_TEST: &str = "https://moralis-proxy.komodo.earth/api/v2/0x394d86994f954ed931b86791b62fe64f4c5dac37/nft/transfers?chain=POLYGON&format=decimal&direction=both";
+const NFT_HISTORY_URL_TEST: &str = "https://moralis-proxy.komodo.earth/api/v2/0x394d86994f954ed931b86791b62fe64f4c5dac37/nft/transfers?chain=POLYGON&format=decimal";
 const NFT_METADATA_URL_TEST: &str = "https://moralis-proxy.komodo.earth/api/v2/nft/0xed55e4477b795eaa9bb4bca24df42214e1a05c18/1111777?chain=POLYGON&format=decimal";
 const TEST_WALLET_ADDR_EVM: &str = "0x394d86994f954ed931b86791b62fe64f4c5dac37";
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod native_tests {
-    use crate::nft::nft_structs::{NftFromMoralis, NftTxHistoryFromMoralis, UriMeta};
+    use crate::eth::eth_addr_to_hex;
+    use crate::nft::nft_structs::{NftFromMoralis, NftTransferHistoryFromMoralis, UriMeta};
     use crate::nft::nft_tests::{NFT_HISTORY_URL_TEST, NFT_LIST_URL_TEST, NFT_METADATA_URL_TEST, TEST_WALLET_ADDR_EVM};
     use crate::nft::storage::db_test_helpers::*;
     use crate::nft::{check_and_redact_if_spam, check_moralis_ipfs_bafy, check_nft_metadata_for_spam,
@@ -66,15 +67,19 @@ mod native_tests {
         let nfts_list = response_nft_list["result"].as_array().unwrap();
         for nft_json in nfts_list {
             let nft_moralis: NftFromMoralis = serde_json::from_str(&nft_json.to_string()).unwrap();
-            assert_eq!(TEST_WALLET_ADDR_EVM, nft_moralis.common.owner_of);
+            assert_eq!(TEST_WALLET_ADDR_EVM, eth_addr_to_hex(&nft_moralis.common.owner_of));
         }
 
-        let response_tx_history = block_on(send_request_to_uri(NFT_HISTORY_URL_TEST)).unwrap();
-        let mut transfer_list = response_tx_history["result"].as_array().unwrap().clone();
+        let response_transfer_history = block_on(send_request_to_uri(NFT_HISTORY_URL_TEST)).unwrap();
+        let mut transfer_list = response_transfer_history["result"].as_array().unwrap().clone();
         assert!(!transfer_list.is_empty());
-        let first_tx = transfer_list.remove(transfer_list.len() - 1);
-        let transfer_moralis: NftTxHistoryFromMoralis = serde_json::from_str(&first_tx.to_string()).unwrap();
-        assert_eq!(TEST_WALLET_ADDR_EVM, transfer_moralis.common.to_address);
+        let first_transfer = transfer_list.remove(transfer_list.len() - 1);
+        let transfer_moralis: NftTransferHistoryFromMoralis =
+            serde_json::from_str(&first_transfer.to_string()).unwrap();
+        assert_eq!(
+            TEST_WALLET_ADDR_EVM,
+            eth_addr_to_hex(&transfer_moralis.common.to_address)
+        );
 
         let response_meta = block_on(send_request_to_uri(NFT_METADATA_URL_TEST)).unwrap();
         let nft_moralis: NftFromMoralis = serde_json::from_str(&response_meta.to_string()).unwrap();
@@ -103,24 +108,25 @@ mod native_tests {
     fn test_nft_amount() { block_on(test_nft_amount_impl()) }
 
     #[test]
-    fn test_add_get_txs() { block_on(test_add_get_txs_impl()) }
+    fn test_add_get_transfers() { block_on(test_add_get_transfers_impl()) }
 
     #[test]
-    fn test_last_tx_block() { block_on(test_last_tx_block_impl()) }
+    fn test_last_transfer_block() { block_on(test_last_transfer_block_impl()) }
 
     #[test]
-    fn test_tx_history() { block_on(test_tx_history_impl()) }
+    fn test_transfer_history() { block_on(test_transfer_history_impl()) }
 
     #[test]
-    fn test_tx_history_filters() { block_on(test_tx_history_filters_impl()) }
+    fn test_transfer_history_filters() { block_on(test_transfer_history_filters_impl()) }
 
     #[test]
-    fn test_get_update_tx_meta() { block_on(test_get_update_tx_meta_impl()) }
+    fn test_get_update_transfer_meta() { block_on(test_get_update_transfer_meta_impl()) }
 }
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
-    use crate::nft::nft_structs::{NftFromMoralis, NftTxHistoryFromMoralis};
+    use crate::eth::eth_addr_to_hex;
+    use crate::nft::nft_structs::{NftFromMoralis, NftTransferHistoryFromMoralis};
     use crate::nft::nft_tests::{NFT_HISTORY_URL_TEST, NFT_LIST_URL_TEST, NFT_METADATA_URL_TEST, TEST_WALLET_ADDR_EVM};
     use crate::nft::send_request_to_uri;
     use crate::nft::storage::db_test_helpers::*;
@@ -134,15 +140,19 @@ mod wasm_tests {
         let nfts_list = response_nft_list["result"].as_array().unwrap();
         for nft_json in nfts_list {
             let nft_moralis: NftFromMoralis = serde_json::from_str(&nft_json.to_string()).unwrap();
-            assert_eq!(TEST_WALLET_ADDR_EVM, nft_moralis.common.owner_of);
+            assert_eq!(TEST_WALLET_ADDR_EVM, eth_addr_to_hex(&nft_moralis.common.owner_of));
         }
 
-        let response_tx_history = send_request_to_uri(NFT_HISTORY_URL_TEST).await.unwrap();
-        let mut transfer_list = response_tx_history["result"].as_array().unwrap().clone();
+        let response_transfer_history = send_request_to_uri(NFT_HISTORY_URL_TEST).await.unwrap();
+        let mut transfer_list = response_transfer_history["result"].as_array().unwrap().clone();
         assert!(!transfer_list.is_empty());
-        let first_tx = transfer_list.remove(transfer_list.len() - 1);
-        let transfer_moralis: NftTxHistoryFromMoralis = serde_json::from_str(&first_tx.to_string()).unwrap();
-        assert_eq!(TEST_WALLET_ADDR_EVM, transfer_moralis.common.to_address);
+        let first_transfer = transfer_list.remove(transfer_list.len() - 1);
+        let transfer_moralis: NftTransferHistoryFromMoralis =
+            serde_json::from_str(&first_transfer.to_string()).unwrap();
+        assert_eq!(
+            TEST_WALLET_ADDR_EVM,
+            eth_addr_to_hex(&transfer_moralis.common.to_address)
+        );
 
         let response_meta = send_request_to_uri(NFT_METADATA_URL_TEST).await.unwrap();
         let nft_moralis: NftFromMoralis = serde_json::from_str(&response_meta.to_string()).unwrap();
@@ -168,17 +178,17 @@ mod wasm_tests {
     async fn test_refresh_metadata() { test_refresh_metadata_impl().await }
 
     #[wasm_bindgen_test]
-    async fn test_add_get_txs() { test_add_get_txs_impl().await }
+    async fn test_add_get_transfers() { test_add_get_transfers_impl().await }
 
     #[wasm_bindgen_test]
-    async fn test_last_tx_block() { test_last_tx_block_impl().await }
+    async fn test_last_transfer_block() { test_last_transfer_block_impl().await }
 
     #[wasm_bindgen_test]
-    async fn test_tx_history() { test_tx_history_impl().await }
+    async fn test_transfer_history() { test_transfer_history_impl().await }
 
     #[wasm_bindgen_test]
-    async fn test_tx_history_filters() { test_tx_history_filters_impl().await }
+    async fn test_transfer_history_filters() { test_transfer_history_filters_impl().await }
 
     #[wasm_bindgen_test]
-    async fn test_get_update_tx_meta() { test_get_update_tx_meta_impl().await }
+    async fn test_get_update_transfer_meta() { test_get_update_transfer_meta_impl().await }
 }

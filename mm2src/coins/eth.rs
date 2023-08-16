@@ -53,6 +53,7 @@ use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
+use mm2_rpc::data::legacy::GasStationPricePolicy;
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
@@ -4648,7 +4649,7 @@ impl EthCoin {
             // TODO refactor to error_log_passthrough once simple maker bot is merged
             let gas_station_price = match &coin.gas_station_url {
                 Some(url) => {
-                    match GasStationData::get_gas_price(url, coin.gas_station_decimals, coin.gas_station_policy)
+                    match GasStationData::get_gas_price(url, coin.gas_station_decimals, coin.gas_station_policy.clone())
                         .compat()
                         .await
                     {
@@ -5401,21 +5402,6 @@ pub struct GasStationData {
     fast: MmNumber,
 }
 
-/// Using tagged representation to allow adding variants with coefficients, percentage, etc in the future.
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(tag = "policy", content = "additional_data")]
-pub enum GasStationPricePolicy {
-    /// Use mean between average and fast values, default and recommended to use on ETH mainnet due to
-    /// gas price big spikes.
-    MeanAverageFast,
-    /// Use average value only. Useful for non-heavily congested networks (Matic, etc.)
-    Average,
-}
-
-impl Default for GasStationPricePolicy {
-    fn default() -> Self { GasStationPricePolicy::MeanAverageFast }
-}
-
 impl GasStationData {
     fn average_gwei(&self, decimals: u8, gas_price_policy: GasStationPricePolicy) -> NumConversResult<U256> {
         let gas_price = match gas_price_policy {
@@ -5694,6 +5680,10 @@ fn checksum_address(addr: &str) -> String {
     result
 }
 
+/// `eth_addr_to_hex` converts Address to hex format.
+/// Note: the result will be in lowercase.
+pub(crate) fn eth_addr_to_hex(address: &Address) -> String { format!("{:#02x}", address) }
+
 /// Checks that input is valid mixed-case checksum form address
 /// The input must be 0x prefixed hex string
 fn is_valid_checksum_addr(addr: &str) -> bool { addr == checksum_address(addr) }
@@ -5809,6 +5799,7 @@ impl From<CryptoCtxError> for GetEthAddressError {
 }
 
 /// `get_eth_address` returns wallet address for coin with `ETH` protocol type.
+/// Note: result address has mixed-case checksum form.
 pub async fn get_eth_address(ctx: &MmArc, ticker: &str) -> MmResult<MyWalletAddress, GetEthAddressError> {
     let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(ctx)?;
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.

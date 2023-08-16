@@ -1,11 +1,13 @@
 use anyhow::{anyhow, bail, Result};
-use log::{debug, error};
 use serde_json::Value as Json;
 use std::collections::HashMap;
+
+use common::log::{debug, error};
 
 use super::init_activation_scheme::get_activation_scheme_path;
 use crate::helpers::read_json_file;
 use crate::logging::{error_anyhow, error_bail};
+use crate::rpc_data::ActivationRequest;
 
 #[derive(Default)]
 pub(crate) struct ActivationScheme {
@@ -13,7 +15,15 @@ pub(crate) struct ActivationScheme {
 }
 
 impl ActivationScheme {
-    pub(crate) fn get_activation_method(&self, coin: &str) -> Option<&Json> { self.scheme.get(coin) }
+    pub(crate) fn get_activation_method(&self, coin: &str) -> Result<ActivationRequest> {
+        let method_json = self
+            .scheme
+            .get(coin)
+            .ok_or_else(|| error_anyhow!("Coin is not in activation scheme data: {}", coin))?;
+        let method: ActivationRequest = serde_json::from_value(method_json.clone())
+            .map_err(|error| error_anyhow!("Failed to deserialize json data: {:?}, error: {}", method_json, error))?;
+        Ok(method)
+    }
 
     fn init(&mut self) -> Result<()> {
         let mut scheme_source: Vec<Json> = Self::load_json_file()?;

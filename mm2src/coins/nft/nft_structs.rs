@@ -1,6 +1,9 @@
+use crate::nft::eth_addr_to_hex;
 use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 use common::ten;
 use ethereum_types::Address;
+use futures::lock::Mutex as AsyncMutex;
+use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_number::BigDecimal;
 use rpc::v1::types::Bytes as BytesJson;
 use serde::Deserialize;
@@ -8,7 +11,14 @@ use serde_json::Value as Json;
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
+use std::sync::Arc;
 use url::Url;
+
+#[cfg(target_arch = "wasm32")]
+use mm2_db::indexed_db::{ConstructibleDb, SharedDb};
+
+#[cfg(target_arch = "wasm32")]
+use crate::nft::storage::wasm::nft_idb::NftCacheIDB;
 
 #[derive(Debug, Deserialize)]
 pub struct NftListReq {
@@ -41,7 +51,7 @@ pub struct RefreshMetadataReq {
 
 #[derive(Debug, Display)]
 pub enum ParseChainTypeError {
-    UnsupportedCainType,
+    UnsupportedChainType,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -93,7 +103,7 @@ impl FromStr for Chain {
             "ETH" => Ok(Chain::Eth),
             "FANTOM" => Ok(Chain::Fantom),
             "POLYGON" => Ok(Chain::Polygon),
-            _ => Err(ParseChainTypeError::UnsupportedCainType),
+            _ => Err(ParseChainTypeError::UnsupportedChainType),
         }
     }
 }
@@ -188,10 +198,10 @@ impl UriMeta {
 /// [`NftCommon`] structure contains common fields from [`Nft`] and [`NftFromMoralis`]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NftCommon {
-    pub(crate) token_address: String,
+    pub(crate) token_address: Address,
     pub(crate) token_id: BigDecimal,
     pub(crate) amount: BigDecimal,
-    pub(crate) owner_of: String,
+    pub(crate) owner_of: Address,
     pub(crate) token_hash: Option<String>,
     #[serde(rename = "name")]
     pub(crate) collection_name: Option<String>,
@@ -315,7 +325,7 @@ pub struct TransactionNftDetails {
 #[derive(Debug, Deserialize)]
 pub struct NftTransfersReq {
     pub(crate) chains: Vec<Chain>,
-    pub(crate) filters: Option<NftTxHistoryFilters>,
+    pub(crate) filters: Option<NftTransferHistoryFilters>,
     #[serde(default)]
     pub(crate) max: bool,
     #[serde(default = "ten")]
@@ -358,20 +368,20 @@ impl fmt::Display for TransferStatus {
     }
 }
 
-/// [`NftTransferCommon`] structure contains common fields from [`NftTransferHistory`] and [`NftTxHistoryFromMoralis`]
+/// [`NftTransferCommon`] structure contains common fields from [`NftTransferHistory`] and [`NftTransferHistoryFromMoralis`]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NftTransferCommon {
     pub(crate) block_hash: Option<String>,
     /// Transaction hash in hexadecimal format
     pub(crate) transaction_hash: String,
     pub(crate) transaction_index: Option<u64>,
-    pub(crate) log_index: Option<u64>,
+    pub(crate) log_index: u32,
     pub(crate) value: Option<BigDecimal>,
     pub(crate) transaction_type: Option<String>,
-    pub(crate) token_address: String,
+    pub(crate) token_address: Address,
     pub(crate) token_id: BigDecimal,
-    pub(crate) from_address: String,
-    pub(crate) to_address: String,
+    pub(crate) from_address: Address,
+    pub(crate) to_address: Address,
     pub(crate) amount: BigDecimal,
     pub(crate) verified: Option<u64>,
     pub(crate) operator: Option<String>,
@@ -394,9 +404,9 @@ pub struct NftTransferHistory {
     pub(crate) status: TransferStatus,
 }
 
-/// This structure is for deserializing moralis NFT transaction json to struct.
+/// This structure is for deserializing moralis NFT transfer json to struct.
 #[derive(Debug, Deserialize)]
-pub(crate) struct NftTxHistoryFromMoralis {
+pub(crate) struct NftTransferHistoryFromMoralis {
     #[serde(flatten)]
     pub(crate) common: NftTransferCommon,
     pub(crate) block_number: SerdeStringWrap<u64>,
@@ -412,7 +422,7 @@ pub struct NftsTransferHistoryList {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
-pub struct NftTxHistoryFilters {
+pub struct NftTransferHistoryFilters {
     #[serde(default)]
     pub receive: bool,
     #[serde(default)]
@@ -434,7 +444,7 @@ pub struct NftTokenAddrId {
 }
 
 #[derive(Debug)]
-pub struct TxMeta {
+pub struct TransferMeta {
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
     pub(crate) token_uri: Option<String>,
@@ -443,15 +453,33 @@ pub struct TxMeta {
     pub(crate) token_name: Option<String>,
 }
 
-impl From<Nft> for TxMeta {
+impl From<Nft> for TransferMeta {
     fn from(nft_db: Nft) -> Self {
-        TxMeta {
-            token_address: nft_db.common.token_address,
+        TransferMeta {
+            token_address: eth_addr_to_hex(&nft_db.common.token_address),
             token_id: nft_db.common.token_id,
             token_uri: nft_db.common.token_uri,
             collection_name: nft_db.common.collection_name,
             image_url: nft_db.uri_meta.image_url,
             token_name: nft_db.uri_meta.token_name,
         }
+    }
+}
+
+pub(crate) struct NftCtx {
+    pub(crate) guard: Arc<AsyncMutex<()>>,
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) nft_cache_db: SharedDb<NftCacheIDB>,
+}
+
+impl NftCtx {
+    pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
+        Ok(try_s!(from_ctx(&ctx.nft_ctx, move || {
+            Ok(NftCtx {
+                guard: Arc::new(AsyncMutex::new(())),
+                #[cfg(target_arch = "wasm32")]
+                nft_cache_db: ConstructibleDb::new(ctx).into_shared(),
+            })
+        })))
     }
 }
