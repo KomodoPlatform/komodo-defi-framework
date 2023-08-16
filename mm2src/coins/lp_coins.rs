@@ -443,6 +443,7 @@ pub enum PrivKeyPolicyNotAllowed {
     HardwareWalletNotSupported,
     #[display(fmt = "Unsupported method: {}", _0)]
     UnsupportedMethod(String),
+    #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }
 
@@ -465,6 +466,7 @@ pub enum UnexpectedDerivationMethod {
     Trezor,
     #[display(fmt = "Unsupported error: {}", _0)]
     UnsupportedError(String),
+    #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }
 
