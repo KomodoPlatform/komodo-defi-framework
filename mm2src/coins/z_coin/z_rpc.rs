@@ -1,6 +1,5 @@
 use super::{z_coin_errors::*, BlockDbImpl, WalletDbShared, ZCoinBuilder, ZcoinConsensusParams};
 use crate::utxo::rpc_clients::NativeClient;
-use crate::z_coin::z_rpc::z_coin_grpc::{Empty, LightdInfo};
 use crate::z_coin::SyncStartPoint;
 use async_trait::async_trait;
 use common::executor::{spawn_abortable, AbortOnDropHandle};
@@ -20,6 +19,7 @@ cfg_native!(
     use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, DAY_IN_SECONDS};
     use crate::z_coin::storage::BlockDbError;
     use crate::z_coin::CheckPointBlockInfo;
+    use crate::z_coin::z_rpc::z_coin_grpc::{Empty, LightdInfo};
 
     use db_common::sqlite::rusqlite::Connection;
     use db_common::sqlite::{query_single_row, run_optimization_pragmas};
@@ -92,6 +92,7 @@ pub trait ZRpcOps {
         height: u64,
     ) -> MmResult<Option<CheckPointBlockInfo>, UpdateBlocksCacheErr>;
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn get_lightd_info(&mut self) -> MmResult<LightdInfo, UpdateBlocksCacheErr>;
 }
 
