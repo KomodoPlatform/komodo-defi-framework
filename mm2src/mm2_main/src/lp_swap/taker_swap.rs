@@ -2006,15 +2006,17 @@ impl TakerSwap {
             #[cfg(any(test, feature = "run-docker-tests"))]
             fail_at,
         );
+
+        for saved_event in &saved.events {
+            swap.apply_event(saved_event.event.clone());
+        }
+
         let mut command = saved
             .events
             .last()
             .unwrap()
             .get_command()
             .ok_or("Finished swaps should not enter to load_from_saved function")?;
-        for saved_event in &saved.events {
-            swap.apply_event(saved_event.event.clone());
-        }
 
         if taker_coin.is_supported_by_watchers()
             && maker_coin.is_supported_by_watchers()
@@ -2022,6 +2024,7 @@ impl TakerSwap {
         {
             command = get_command_based_on_watcher_activity(&swap, &ctx, saved, command).await?;
         }
+        drop_mutability!(command);
 
         Ok((swap, Some(command)))
     }
