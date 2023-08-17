@@ -484,7 +484,7 @@ pub(super) async fn init_light_client<'a>(
         first_sync_block: Some(FirstSyncBlock {
             requested: sync_height,
             is_pre_sapling: sync_height < sapling_activation_height,
-            actual: sapling_activation_height,
+            actual: sync_height.max(sapling_activation_height),
         }),
     };
 
