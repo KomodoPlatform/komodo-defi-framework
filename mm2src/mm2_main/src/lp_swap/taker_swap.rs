@@ -2019,7 +2019,7 @@ impl TakerSwap {
             && maker_coin.is_supported_by_watchers()
             && saved.watcher_message_sent()
         {
-            command = get_command_based_on_watcher_activity(&swap, &ctx, saved, command).await?;
+            command = get_command_based_on_watcher_activity(&ctx, &swap, saved, command).await?;
         }
         drop_mutability!(command);
 
