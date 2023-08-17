@@ -912,7 +912,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                 light_wallet_d_servers,
                 sync_params,
                 ..
-            } => init_light_client(&self, light_wallet_d_servers.clone(), blocks_db, sync_params).await?,
+            } => init_light_client(&self, light_wallet_d_servers.clone(), sync_params).await?,
         };
         let z_fields = ZCoinFields {
             dex_fee_addr,
