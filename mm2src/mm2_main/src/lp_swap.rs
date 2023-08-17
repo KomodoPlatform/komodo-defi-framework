@@ -122,11 +122,10 @@ pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData,
                        MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT_SEC,
                        WATCHER_PREFIX};
 use taker_swap::TakerSwapEvent;
-pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, get_command_based_on_watcher_activity,
-                     max_taker_vol, max_taker_vol_from_available, run_taker_swap, taker_swap_trade_preimage,
-                     RunTakerSwapInput, TakerSavedSwap, TakerSwap, TakerSwapData, TakerSwapPreparedParams,
-                     TakerTradePreimage, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG, REFUND_TEST_FAILURE_LOG,
-                     WATCHER_MESSAGE_SENT_LOG};
+pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
+                     run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
+                     TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG,
+                     REFUND_TEST_FAILURE_LOG, WATCHER_MESSAGE_SENT_LOG};
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
