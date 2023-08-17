@@ -5,10 +5,10 @@ use coins::coin_errors::ValidatePaymentError;
 use coins::utxo::{dhash160, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
             SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps,
-            ValidateWatcherSpendInput, WatcherOps, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
-            INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG,
-            INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            ValidateWatcherSpendInput, WatcherOps, WatcherSpendType, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
+            INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
+            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use common::{block_on, now_sec_u32, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
@@ -2230,9 +2230,12 @@ fn test_taker_validates_taker_payment_refund_utxo() {
         secret_hash: secret_hash.to_vec(),
         amount: BigDecimal::from(10),
         watcher_reward: None,
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
-    let validate_watcher_refund = taker_coin.taker_validates_taker_payment_refund(validate_input).wait();
+    let validate_watcher_refund = taker_coin
+        .taker_validates_payment_spend_or_refund(validate_input)
+        .wait();
     assert!(validate_watcher_refund.is_ok());
 }
 
@@ -2310,21 +2313,22 @@ fn test_taker_validates_taker_payment_refund_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: taker_amount.clone(),
         watcher_reward: Some(watcher_reward.clone()),
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
     let error = taker_coin
-        .taker_validates_taker_payment_refund(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::UnexpectedPaymentState(err) => {
-            assert!(err.contains("Payment state is not PAYMENT_STATE_REFUNDED"))
+            assert!(err.contains("Payment state is not"))
         },
         _ => panic!(
             "Expected `UnexpectedPaymentState` {}, found {:?}",
-            "Payment state is not PAYMENT_STATE_REFUNDED", error
+            "Payment state is not 3", error
         ),
     }
 
@@ -2349,9 +2353,12 @@ fn test_taker_validates_taker_payment_refund_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: taker_amount.clone(),
         watcher_reward: Some(watcher_reward.clone()),
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
-    let validate_watcher_refund = taker_coin.taker_validates_taker_payment_refund(validate_input).wait();
+    let validate_watcher_refund = taker_coin
+        .taker_validates_payment_spend_or_refund(validate_input)
+        .wait();
     assert!(validate_watcher_refund.is_ok());
 
     let validate_input = ValidateWatcherSpendInput {
@@ -2362,9 +2369,10 @@ fn test_taker_validates_taker_payment_refund_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: taker_amount.clone(),
         watcher_reward: Some(watcher_reward.clone()),
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
     let error = taker_coin
-        .taker_validates_taker_payment_refund(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
@@ -2387,17 +2395,18 @@ fn test_taker_validates_taker_payment_refund_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: taker_amount.clone(),
         watcher_reward: Some(watcher_reward.clone()),
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
     let error = maker_coin
-        .taker_validates_taker_payment_refund(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Refund tx sender arg"))
+            assert!(err.contains("Transaction sender arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -2413,17 +2422,18 @@ fn test_taker_validates_taker_payment_refund_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: taker_amount.clone(),
         watcher_reward: Some(watcher_reward.clone()),
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
     let error = taker_coin
-        .taker_validates_taker_payment_refund(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Refund tx receiver arg"))
+            assert!(err.contains("Transaction receiver arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -2442,17 +2452,18 @@ fn test_taker_validates_taker_payment_refund_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: taker_amount.clone(),
         watcher_reward: Some(wrong_watcher_reward),
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
     let error = taker_coin
-        .taker_validates_taker_payment_refund(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Refund tx reward target arg"))
+            assert!(err.contains("Transaction reward target arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -2471,17 +2482,18 @@ fn test_taker_validates_taker_payment_refund_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: taker_amount.clone(),
         watcher_reward: Some(wrong_watcher_reward),
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
     let error = taker_coin
-        .taker_validates_taker_payment_refund(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Refund tx sends contract reward on spend arg"))
+            assert!(err.contains("Transaction sends contract reward on spend arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -2500,17 +2512,18 @@ fn test_taker_validates_taker_payment_refund_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: taker_amount,
         watcher_reward: Some(wrong_watcher_reward),
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
     let error = taker_coin
-        .taker_validates_taker_payment_refund(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Refund tx watcher reward amount arg"))
+            assert!(err.contains("Transaction watcher reward amount arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -2526,17 +2539,18 @@ fn test_taker_validates_taker_payment_refund_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: BigDecimal::one(),
         watcher_reward: Some(watcher_reward),
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
     let error = taker_coin
-        .taker_validates_taker_payment_refund(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Refund tx amount arg"))
+            assert!(err.contains("Transaction amount arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -2636,9 +2650,12 @@ fn test_taker_validates_taker_payment_refund_erc20() {
         secret_hash: secret_hash.to_vec(),
         amount: taker_amount,
         watcher_reward: watcher_reward.clone(),
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
-    let validate_watcher_refund = taker_coin.taker_validates_taker_payment_refund(validate_input).wait();
+    let validate_watcher_refund = taker_coin
+        .taker_validates_payment_spend_or_refund(validate_input)
+        .wait();
     assert!(validate_watcher_refund.is_ok());
 
     let validate_input = ValidateWatcherSpendInput {
@@ -2649,17 +2666,18 @@ fn test_taker_validates_taker_payment_refund_erc20() {
         secret_hash: secret_hash.to_vec(),
         amount: BigDecimal::one(),
         watcher_reward,
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
     let error = taker_coin
-        .taker_validates_taker_payment_refund(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Refund tx amount arg"))
+            assert!(err.contains("Transaction amount arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -2740,9 +2758,12 @@ fn test_taker_validates_maker_payment_spend_utxo() {
         secret_hash: secret_hash.to_vec(),
         amount: BigDecimal::from(10),
         watcher_reward: None,
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
-    let validate_watcher_spend = taker_coin.taker_validates_taker_payment_refund(validate_input).wait();
+    let validate_watcher_spend = taker_coin
+        .taker_validates_payment_spend_or_refund(validate_input)
+        .wait();
     assert!(validate_watcher_spend.is_ok());
 }
 
@@ -2821,17 +2842,18 @@ fn test_taker_validates_maker_payment_spend_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: maker_amount.clone(),
         watcher_reward: Some(watcher_reward.clone()),
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
     let error = taker_coin
-        .taker_validates_maker_payment_spend(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::UnexpectedPaymentState(err) => {
-            assert!(err.contains("Payment state is not PAYMENT_STATE_SPENT"))
+            assert!(err.contains("Payment state is not"))
         },
         _ => panic!(
             "Expected `UnexpectedPaymentState` {}, found {:?}",
@@ -2858,9 +2880,12 @@ fn test_taker_validates_maker_payment_spend_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: maker_amount.clone(),
         watcher_reward: Some(watcher_reward.clone()),
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
-    let validate_watcher_spend = taker_coin.taker_validates_maker_payment_spend(validate_input).wait();
+    let validate_watcher_spend = taker_coin
+        .taker_validates_payment_spend_or_refund(validate_input)
+        .wait();
     assert!(validate_watcher_spend.is_ok());
 
     let validate_input = ValidateWatcherSpendInput {
@@ -2871,10 +2896,11 @@ fn test_taker_validates_maker_payment_spend_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: maker_amount.clone(),
         watcher_reward: Some(watcher_reward.clone()),
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
     let error = taker_coin
-        .taker_validates_maker_payment_spend(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
@@ -2897,17 +2923,18 @@ fn test_taker_validates_maker_payment_spend_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: maker_amount.clone(),
         watcher_reward: Some(watcher_reward.clone()),
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
     let error = taker_coin
-        .taker_validates_maker_payment_spend(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Payment spend tx sender arg"))
+            assert!(err.contains("Transaction sender arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -2923,17 +2950,18 @@ fn test_taker_validates_maker_payment_spend_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: maker_amount.clone(),
         watcher_reward: Some(watcher_reward.clone()),
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
     let error = maker_coin
-        .taker_validates_maker_payment_spend(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Payment spend tx receiver arg"))
+            assert!(err.contains("Transaction receiver arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -2952,17 +2980,18 @@ fn test_taker_validates_maker_payment_spend_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: maker_amount.clone(),
         watcher_reward: Some(wrong_watcher_reward),
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
     let error = taker_coin
-        .taker_validates_maker_payment_spend(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Payment spend tx reward target arg"))
+            assert!(err.contains("Transaction reward target arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -2981,17 +3010,18 @@ fn test_taker_validates_maker_payment_spend_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: maker_amount.clone(),
         watcher_reward: Some(wrong_watcher_reward),
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
     let error = taker_coin
-        .taker_validates_maker_payment_spend(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Payment spend tx sends contract reward on spend arg"))
+            assert!(err.contains("Transaction sends contract reward on spend arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -3010,17 +3040,18 @@ fn test_taker_validates_maker_payment_spend_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: maker_amount,
         watcher_reward: Some(wrong_watcher_reward),
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
     let error = taker_coin
-        .taker_validates_maker_payment_spend(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Payment spend tx watcher reward amount arg"))
+            assert!(err.contains("Transaction watcher reward amount arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -3036,17 +3067,18 @@ fn test_taker_validates_maker_payment_spend_eth() {
         secret_hash: secret_hash.to_vec(),
         amount: BigDecimal::one(),
         watcher_reward: Some(watcher_reward),
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
     let error = taker_coin
-        .taker_validates_maker_payment_spend(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Payment spend tx amount arg"))
+            assert!(err.contains("Transaction amount arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",
@@ -3141,9 +3173,12 @@ fn test_taker_validates_maker_payment_spend_erc20() {
         secret_hash: secret_hash.to_vec(),
         amount: maker_amount,
         watcher_reward: watcher_reward.clone(),
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
-    let validate_watcher_spend = taker_coin.taker_validates_maker_payment_spend(validate_input).wait();
+    let validate_watcher_spend = taker_coin
+        .taker_validates_payment_spend_or_refund(validate_input)
+        .wait();
     assert!(validate_watcher_spend.is_ok());
 
     let validate_input = ValidateWatcherSpendInput {
@@ -3154,17 +3189,18 @@ fn test_taker_validates_maker_payment_spend_erc20() {
         secret_hash: secret_hash.to_vec(),
         amount: BigDecimal::one(),
         watcher_reward,
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
     let error = taker_coin
-        .taker_validates_maker_payment_spend(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .wait()
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Payment spend tx amount arg"))
+            assert!(err.contains("Transaction amount arg"))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` {}, found {:?}",

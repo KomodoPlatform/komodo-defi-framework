@@ -8,7 +8,7 @@ use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, TransactionEnum, ValidateWatcherSpendInput,
-            WaitForHTLCTxSpendArgs, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WaitForHTLCTxSpendArgs, WatcherSearchForSwapTxSpendInput, WatcherSpendType, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
@@ -825,9 +825,10 @@ pub async fn validate_maker_payment_spend(
         secret_hash: secret_hash.clone(),
         amount: swap.maker_amount.to_decimal(),
         watcher_reward: None,
+        spend_type: WatcherSpendType::MakerPaymentSpend,
     };
     swap.maker_coin
-        .taker_validates_maker_payment_spend(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .compat()
         .await
         .map_err(|e| e.to_string())?;
@@ -854,10 +855,11 @@ pub async fn validate_taker_payment_refund(
         secret_hash: secret_hash.clone(),
         amount: swap.taker_amount.to_decimal(),
         watcher_reward: None,
+        spend_type: WatcherSpendType::TakerPaymentRefund,
     };
 
     swap.taker_coin
-        .taker_validates_taker_payment_refund(validate_input)
+        .taker_validates_payment_spend_or_refund(validate_input)
         .compat()
         .await
         .map_err(|e| e.to_string())?;

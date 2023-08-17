@@ -1518,11 +1518,7 @@ impl WatcherOps for SlpToken {
         unimplemented!();
     }
 
-    fn taker_validates_taker_payment_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
-        unimplemented!()
-    }
-
-    fn taker_validates_maker_payment_spend(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
         unimplemented!()
     }
 

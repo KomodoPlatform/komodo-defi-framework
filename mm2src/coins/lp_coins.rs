@@ -600,6 +600,12 @@ pub struct WatcherValidatePaymentInput {
 }
 
 #[derive(Clone)]
+pub enum WatcherSpendType {
+    TakerPaymentRefund,
+    MakerPaymentSpend,
+}
+
+#[derive(Clone)]
 pub struct ValidateWatcherSpendInput {
     pub payment_tx: Vec<u8>,
     pub maker_pub: Vec<u8>,
@@ -608,6 +614,7 @@ pub struct ValidateWatcherSpendInput {
     pub secret_hash: Vec<u8>,
     pub amount: BigDecimal,
     pub watcher_reward: Option<WatcherReward>,
+    pub spend_type: WatcherSpendType,
 }
 
 #[derive(Clone, Debug)]
@@ -978,9 +985,7 @@ pub trait WatcherOps {
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
 
-    fn taker_validates_taker_payment_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()>;
-
-    fn taker_validates_maker_payment_spend(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()>;
+    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()>;
 
     async fn watcher_search_for_swap_tx_spend(
         &self,

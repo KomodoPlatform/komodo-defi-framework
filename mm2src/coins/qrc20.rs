@@ -1135,12 +1135,8 @@ impl WatcherOps for Qrc20Coin {
         unimplemented!();
     }
 
-    fn taker_validates_taker_payment_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
         unimplemented!()
-    }
-
-    fn taker_validates_maker_payment_spend(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
     }
 
     async fn watcher_search_for_swap_tx_spend(
