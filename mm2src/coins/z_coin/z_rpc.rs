@@ -533,7 +533,6 @@ pub(super) async fn init_light_client<'a>(
 pub(super) async fn init_light_client<'a>(
     _builder: &ZCoinBuilder<'a>,
     _lightwalletd_urls: Vec<String>,
-    _blocks_db: BlockDbImpl,
     _sync_params: &Option<SyncStartPoint>,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     todo!()
