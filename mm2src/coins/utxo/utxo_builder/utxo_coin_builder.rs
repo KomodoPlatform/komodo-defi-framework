@@ -702,10 +702,6 @@ pub trait UtxoCoinBuilderCommonOps {
 
         if current_block_height < blocks_to_sync {
             return Ok(None);
-            //            return MmError::err(UtxoCoinBuildError::ErrorCalculatingStartingHeight(format!(
-            //                "{} current_block_height: {current_block_height} must be greater than blocks_to_sync: {blocks_to_sync}",
-            //                self.ticker(),
-            //            )));
         }
 
         let block_to_sync_from = current_block_height - blocks_to_sync;

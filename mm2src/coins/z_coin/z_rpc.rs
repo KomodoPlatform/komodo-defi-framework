@@ -377,7 +377,7 @@ pub async fn create_wallet_db(
             let db = WalletDb::for_path(wallet_db_path, consensus_params)
                 .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
             let extrema = db.block_height_extrema()?;
-            let prev_sync_height = extrema.map(|(min, _)| u32::from(min));
+            let min_sync_height = extrema.map(|(min, _)| u32::from(min));
             let init_block_height = checkpoint_block.clone().map(|block| block.height);
 
             run_optimization_pragmas(db.sql_conn())
@@ -387,8 +387,8 @@ pub async fn create_wallet_db(
             // Check if the initial block height is less than the previous synchronization height,
             // Rewind the walletdb to the minimum possible height.
             // and if a checkpoint block is available, intitialize the walletdb with this block.
-            if init_block_height < prev_sync_height {
-                info!("Older sync height detected!, rewinding walletdb to new height: {init_block_height:?}");
+            if init_block_height != min_sync_height {
+                info!("Older/Newer sync height detected!, rewinding walletdb to new height: {init_block_height:?}");
                 let mut wallet_ops = db.get_update_ops().expect("get_update_ops always returns Ok");
                 wallet_ops
                     .rewind_to_height(u32::MIN.into())
@@ -499,7 +499,7 @@ pub(super) async fn init_light_client<'a>(
 
     // Get min_height in blockdb and rewind blockdb to 0 if sync_height < min_height
     let min_height = blocks_db.get_earliest_block().await?;
-    if sync_height < min_height as u64 {
+    if sync_height != min_height as u64 {
         blocks_db
             .rewind_to_height(u32::MIN)
             .map_err(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
