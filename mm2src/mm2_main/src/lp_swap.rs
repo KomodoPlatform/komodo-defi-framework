@@ -91,7 +91,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 #[path = "lp_swap/check_balance.rs"] mod check_balance;
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
-#[path = "lp_swap/maker_swap_v2.rs"] mod maker_swap_v2;
+#[path = "lp_swap/maker_swap_v2.rs"] pub mod maker_swap_v2;
 #[path = "lp_swap/max_maker_vol_rpc.rs"] mod max_maker_vol_rpc;
 #[path = "lp_swap/my_swaps_storage.rs"] mod my_swaps_storage;
 #[path = "lp_swap/pubkey_banning.rs"] mod pubkey_banning;

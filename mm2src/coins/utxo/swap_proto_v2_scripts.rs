@@ -5,7 +5,7 @@ use keys::Public;
 use script::{Builder, Opcode, Script};
 
 /// Builds a script for refundable dex_fee + premium taker transaction
-pub fn dex_fee_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1: &Public) -> Script {
+pub fn taker_payment_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1: &Public) -> Script {
     let mut builder = Builder::default()
         // Dex fee refund path, same lock time as for taker payment
         .push_opcode(Opcode::OP_IF)

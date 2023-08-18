@@ -15,14 +15,14 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::watcher_common::validate_watcher_reward;
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GenAndSignDexFeeSpendResult,
-            GenDexFeeSpendArgs, GetWithdrawSenderAddress, HDAccountAddressId, RawTransactionError,
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GenTakerPaymentSpendArgs,
+            GenTakerPaymentSpendResult, GetWithdrawSenderAddress, HDAccountAddressId, RawTransactionError,
             RawTransactionRequest, RawTransactionRes, RefundPaymentArgs, RewardTarget, SearchForSwapTxSpendInput,
             SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
             SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TransactionResult,
-            TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateDexFeeArgs,
-            ValidateDexFeeError, ValidateDexFeeResult, ValidateDexFeeSpendPreimageError,
-            ValidateDexFeeSpendPreimageResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateDexFeeResult,
+            ValidateDexFeeSpendPreimageError, ValidateDexFeeSpendPreimageResult, ValidateOtherPubKeyErr,
+            ValidatePaymentFut, ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentError,
             VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
             EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
@@ -1212,38 +1212,39 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
 
 pub type GenDexFeeSpendResult = MmResult<TransactionInputSigner, TxGenError>;
 
-enum CalcPremiumBy {
+enum CalcMakerAmountBy {
     DeductMinerFee,
     UseExactAmount(u64),
 }
 
-async fn gen_dex_fee_spend_preimage<T: UtxoCommonOps>(
+async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
-    args: &GenDexFeeSpendArgs<'_>,
+    args: &GenTakerPaymentSpendArgs<'_>,
     lock_time: LocktimeSetting,
-    calc_premium: CalcPremiumBy,
+    calc_premium: CalcMakerAmountBy,
 ) -> GenDexFeeSpendResult {
-    let mut prev_tx: UtxoTx =
-        deserialize(args.dex_fee_tx).map_to_mm(|e| TxGenError::TxDeserialization(e.to_string()))?;
+    let mut prev_tx: UtxoTx = deserialize(args.taker_tx).map_to_mm(|e| TxGenError::TxDeserialization(e.to_string()))?;
     prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_tx);
 
     let dex_fee_sat = sat_from_big_decimal(&args.dex_fee_amount, coin.as_ref().decimals)?;
-    let premium_sat = match calc_premium {
-        CalcPremiumBy::UseExactAmount(sat) => sat,
-        CalcPremiumBy::DeductMinerFee => {
+    let maker_sat = match calc_premium {
+        CalcMakerAmountBy::UseExactAmount(sat) => sat,
+        CalcMakerAmountBy::DeductMinerFee => {
             let miner_fee = coin
                 .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
                 .await?;
 
             let premium_sat = sat_from_big_decimal(&args.premium_amount, coin.as_ref().decimals)?;
-            if miner_fee + coin.as_ref().dust_amount > premium_sat {
-                return MmError::err(TxGenError::MinerFeeExceedsPremium {
+            let trading_sat = sat_from_big_decimal(&args.trading_amount, coin.as_ref().decimals)?;
+
+            if miner_fee + coin.as_ref().dust_amount > premium_sat + trading_sat {
+                return MmError::err(TxGenError::MinerFeeExceedsMakerAmount {
                     miner_fee: big_decimal_from_sat_unsigned(miner_fee, coin.as_ref().decimals),
-                    premium: args.premium_amount.clone(),
+                    maker_amount: &args.trading_amount + &args.premium_amount,
                 });
             }
-            premium_sat - miner_fee
+            trading_sat + premium_sat - miner_fee
         },
     };
 
@@ -1261,7 +1262,7 @@ async fn gen_dex_fee_spend_preimage<T: UtxoCommonOps>(
         script_pubkey: Builder::build_p2pkh(&dex_fee_address.hash).to_bytes(),
     };
 
-    let premium_address = address_from_raw_pubkey(
+    let maker_address = address_from_raw_pubkey(
         args.maker_pub,
         coin.as_ref().conf.pub_addr_prefix,
         coin.as_ref().conf.pub_t_addr_prefix,
@@ -1269,37 +1270,38 @@ async fn gen_dex_fee_spend_preimage<T: UtxoCommonOps>(
         coin.as_ref().conf.bech32_hrp.clone(),
         coin.addr_format().clone(),
     )
-    .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive premium_address: {}", e)))?;
-    let premium_output = TransactionOutput {
-        value: premium_sat,
-        script_pubkey: Builder::build_p2pkh(&premium_address.hash).to_bytes(),
+    .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive maker_address: {}", e)))?;
+    let maker_output = TransactionOutput {
+        value: maker_sat,
+        script_pubkey: Builder::build_p2pkh(&maker_address.hash).to_bytes(),
     };
 
     p2sh_spending_tx_preimage(coin, &prev_tx, lock_time, SEQUENCE_FINAL, vec![
         dex_fee_output,
-        premium_output,
+        maker_output,
     ])
     .await
     .map_to_mm(TxGenError::Legacy)
 }
 
-pub async fn gen_and_sign_dex_fee_spend_preimage<T: UtxoCommonOps>(
+pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
-    args: &GenDexFeeSpendArgs<'_>,
+    args: &GenTakerPaymentSpendArgs<'_>,
     htlc_keypair: &KeyPair,
-) -> GenAndSignDexFeeSpendResult {
+) -> GenTakerPaymentSpendResult {
     let maker_pub = Public::from_slice(args.maker_pub).map_to_mm(|e| TxGenError::InvalidPubkey(e.to_string()))?;
     let taker_pub = Public::from_slice(args.taker_pub).map_to_mm(|e| TxGenError::InvalidPubkey(e.to_string()))?;
 
-    let preimage = gen_dex_fee_spend_preimage(
+    let preimage = gen_taker_payment_spend_preimage(
         coin,
         args,
         LocktimeSetting::CalcByHtlcLocktime(args.time_lock),
-        CalcPremiumBy::DeductMinerFee,
+        CalcMakerAmountBy::DeductMinerFee,
     )
     .await?;
 
-    let redeem_script = swap_proto_v2_scripts::dex_fee_script(args.time_lock, args.secret_hash, &taker_pub, &maker_pub);
+    let redeem_script =
+        swap_proto_v2_scripts::taker_payment_script(args.time_lock, args.secret_hash, &taker_pub, &maker_pub);
     let signature = calc_and_sign_sighash(
         &preimage,
         DEFAULT_SWAP_VOUT,
@@ -1315,9 +1317,9 @@ pub async fn gen_and_sign_dex_fee_spend_preimage<T: UtxoCommonOps>(
     })
 }
 
-pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
+pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
-    gen_args: &GenDexFeeSpendArgs<'_>,
+    gen_args: &GenTakerPaymentSpendArgs<'_>,
     preimage: &TxPreimageWithSig,
 ) -> ValidateDexFeeSpendPreimageResult {
     // TODO validate that preimage has exactly 2 outputs
@@ -1343,15 +1345,15 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
 
     // Here, we have to use the exact lock time and premium amount from the preimage because maker
     // can get different values (e.g. if MTP advances during preimage exchange/fee rate changes)
-    let expected_preimage = gen_dex_fee_spend_preimage(
+    let expected_preimage = gen_taker_payment_spend_preimage(
         coin,
         gen_args,
         LocktimeSetting::UseExact(actual_preimage_tx.lock_time),
-        CalcPremiumBy::UseExactAmount(premium),
+        CalcMakerAmountBy::UseExactAmount(actual_preimage_tx.outputs[1].value),
     )
     .await?;
     let redeem_script =
-        swap_proto_v2_scripts::dex_fee_script(gen_args.time_lock, gen_args.secret_hash, &taker_pub, &maker_pub);
+        swap_proto_v2_scripts::taker_payment_script(gen_args.time_lock, gen_args.secret_hash, &taker_pub, &maker_pub);
     let sig_hash = signature_hash_to_sign(
         &expected_preimage,
         DEFAULT_SWAP_VOUT,
@@ -1375,25 +1377,25 @@ pub async fn validate_dex_fee_spend_preimage<T: UtxoCommonOps + SwapOps>(
     Ok(())
 }
 
-pub async fn sign_and_broadcast_dex_fee_spend<T: UtxoCommonOps>(
+pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     coin: &T,
     preimage: &TxPreimageWithSig,
-    gen_args: &GenDexFeeSpendArgs<'_>,
+    gen_args: &GenTakerPaymentSpendArgs<'_>,
     secret: &[u8],
     htlc_keypair: &KeyPair,
 ) -> TransactionResult {
     let taker_pub = try_tx_s!(Public::from_slice(gen_args.taker_pub));
 
-    let mut dex_fee_tx: UtxoTx = try_tx_s!(deserialize(gen_args.dex_fee_tx));
-    dex_fee_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
-    drop_mutability!(dex_fee_tx);
+    let mut taker_tx: UtxoTx = try_tx_s!(deserialize(gen_args.taker_tx));
+    taker_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    drop_mutability!(taker_tx);
 
     let mut preimage_tx: UtxoTx = try_tx_s!(deserialize(preimage.preimage.as_slice()));
     preimage_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(preimage_tx);
 
     let secret_hash = dhash160(secret);
-    let redeem_script = swap_proto_v2_scripts::dex_fee_script(
+    let redeem_script = swap_proto_v2_scripts::taker_payment_script(
         gen_args.time_lock,
         secret_hash.as_slice(),
         &taker_pub,
@@ -1401,7 +1403,7 @@ pub async fn sign_and_broadcast_dex_fee_spend<T: UtxoCommonOps>(
     );
 
     let mut signer: TransactionInputSigner = preimage_tx.clone().into();
-    signer.inputs[0].amount = dex_fee_tx.outputs[0].value;
+    signer.inputs[0].amount = taker_tx.outputs[0].value;
     signer.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
     drop_mutability!(signer);
 
@@ -1836,10 +1838,13 @@ async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
         SwapPaymentType::TakerOrMakerPayment => {
             payment_script(args.time_lock, args.secret_hash, key_pair.public(), &other_public).into()
         },
-        SwapPaymentType::DexFeeWithPremium => {
-            swap_proto_v2_scripts::dex_fee_script(args.time_lock, args.secret_hash, key_pair.public(), &other_public)
-                .into()
-        },
+        SwapPaymentType::TakerPaymentV2 => swap_proto_v2_scripts::taker_payment_script(
+            args.time_lock,
+            args.secret_hash,
+            key_pair.public(),
+            &other_public,
+        )
+        .into(),
     };
     let time_lock = args.time_lock;
     let fee = try_tx_s!(
@@ -4210,7 +4215,7 @@ struct SwapPaymentOutputsResult {
 
 enum SwapPaymentType {
     TakerOrMakerPayment,
-    DexFeeWithPremium,
+    TakerPaymentV2,
 }
 
 fn generate_swap_payment_outputs<T>(
@@ -4229,8 +4234,8 @@ where
     let other_public = try_s!(Public::from_slice(other_pub));
     let redeem_script = match payment_type {
         SwapPaymentType::TakerOrMakerPayment => payment_script(time_lock, secret_hash, &my_public, &other_public),
-        SwapPaymentType::DexFeeWithPremium => {
-            swap_proto_v2_scripts::dex_fee_script(time_lock, secret_hash, &my_public, &other_public)
+        SwapPaymentType::TakerPaymentV2 => {
+            swap_proto_v2_scripts::taker_payment_script(time_lock, secret_hash, &my_public, &other_public)
         },
     };
     let redeem_script_hash = dhash160(&redeem_script);
@@ -4586,12 +4591,12 @@ where
         .collect()
 }
 
-pub async fn send_dex_fee_with_premium<T>(coin: T, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult
+pub async fn send_combined_taker_payment<T>(coin: T, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
     let taker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
-    let total_amount = &args.dex_fee_amount + &args.premium_amount;
+    let total_amount = &args.dex_fee_amount + &args.premium_amount + &args.trading_amount;
 
     let SwapPaymentOutputsResult {
         payment_address,
@@ -4603,7 +4608,7 @@ where
         args.other_pub,
         args.secret_hash,
         total_amount,
-        SwapPaymentType::DexFeeWithPremium,
+        SwapPaymentType::TakerPaymentV2,
     ));
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
         let addr_string = try_tx_s!(payment_address.display_address());
@@ -4616,24 +4621,24 @@ where
     send_outputs_from_my_address(coin, outputs).compat().await
 }
 
-pub async fn validate_dex_fee_with_premium<T>(coin: &T, args: ValidateDexFeeArgs<'_>) -> ValidateDexFeeResult
+pub async fn validate_combined_taker_payment<T>(coin: &T, args: ValidateTakerPaymentArgs<'_>) -> ValidateDexFeeResult
 where
     T: UtxoCommonOps + SwapOps,
 {
     let dex_fee_tx: UtxoTx =
-        deserialize(args.dex_fee_tx).map_to_mm(|e| ValidateDexFeeError::TxDeserialization(e.to_string()))?;
+        deserialize(args.taker_tx).map_to_mm(|e| ValidateTakerPaymentError::TxDeserialization(e.to_string()))?;
     if dex_fee_tx.outputs.len() < 2 {
-        return MmError::err(ValidateDexFeeError::TxLacksOfOutputs);
+        return MmError::err(ValidateTakerPaymentError::TxLacksOfOutputs);
     }
 
     let taker_pub =
-        Public::from_slice(args.other_pub).map_to_mm(|e| ValidateDexFeeError::InvalidPubkey(e.to_string()))?;
+        Public::from_slice(args.other_pub).map_to_mm(|e| ValidateTakerPaymentError::InvalidPubkey(e.to_string()))?;
     let maker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
-    let total_expected_amount = &args.dex_fee_amount + &args.premium_amount;
+    let total_expected_amount = &args.dex_fee_amount + &args.premium_amount + &args.trading_amount;
 
     let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals)?;
 
-    let redeem_script = swap_proto_v2_scripts::dex_fee_script(
+    let redeem_script = swap_proto_v2_scripts::taker_payment_script(
         args.time_lock,
         args.secret_hash,
         &taker_pub,
@@ -4645,7 +4650,7 @@ where
     };
 
     if dex_fee_tx.outputs[0] != expected_output {
-        return MmError::err(ValidateDexFeeError::InvalidDestinationOrAmount(format!(
+        return MmError::err(ValidateTakerPaymentError::InvalidDestinationOrAmount(format!(
             "Expected {:?}, got {:?}",
             expected_output, dex_fee_tx.outputs[0]
         )));
@@ -4657,10 +4662,10 @@ where
         .get_transaction_bytes(&dex_fee_tx.hash().reversed().into())
         .compat()
         .await?;
-    if tx_bytes_from_rpc.0 != args.dex_fee_tx {
-        return MmError::err(ValidateDexFeeError::TxBytesMismatch {
+    if tx_bytes_from_rpc.0 != args.taker_tx {
+        return MmError::err(ValidateTakerPaymentError::TxBytesMismatch {
             from_rpc: tx_bytes_from_rpc,
-            actual: args.dex_fee_tx.into(),
+            actual: args.taker_tx.into(),
         });
     }
     Ok(())
@@ -4670,7 +4675,7 @@ pub async fn refund_dex_fee_with_premium<T>(coin: T, args: RefundPaymentArgs<'_>
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
-    refund_htlc_payment(coin, args, SwapPaymentType::DexFeeWithPremium).await
+    refund_htlc_payment(coin, args, SwapPaymentType::TakerPaymentV2).await
 }
 
 #[test]

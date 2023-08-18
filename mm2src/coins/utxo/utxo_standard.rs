@@ -23,15 +23,15 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
-            GenAndSignDexFeeSpendResult, GenDexFeeSpendArgs, GetWithdrawSenderAddress, IguanaPrivKey,
+            GenTakerPaymentSpendArgs, GenTakerPaymentSpendResult, GetWithdrawSenderAddress, IguanaPrivKey,
             MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions,
             PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundPaymentArgs, RefundResult,
             SearchForSwapTxSpendInput, SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SignatureResult, SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin, TradePreimageValue,
             TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
-            ValidateDexFeeArgs, ValidateDexFeeResult, ValidateDexFeeSpendPreimageResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
+            ValidateDexFeeResult, ValidateDexFeeSpendPreimageResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateTakerPaymentArgs, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
             WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
 use common::executor::{AbortableSystem, AbortedError};
@@ -584,44 +584,44 @@ impl WatcherOps for UtxoStandardCoin {
 
 #[async_trait]
 impl SwapOpsV2 for UtxoStandardCoin {
-    async fn send_dex_fee_with_premium(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult {
-        utxo_common::send_dex_fee_with_premium(self.clone(), args).await
+    async fn send_combined_taker_payment(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult {
+        utxo_common::send_combined_taker_payment(self.clone(), args).await
     }
 
-    async fn validate_dex_fee_with_premium(&self, args: ValidateDexFeeArgs<'_>) -> ValidateDexFeeResult {
-        utxo_common::validate_dex_fee_with_premium(self, args).await
+    async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateDexFeeResult {
+        utxo_common::validate_combined_taker_payment(self, args).await
     }
 
-    async fn refund_dex_fee_with_premium(&self, args: RefundPaymentArgs<'_>) -> TransactionResult {
+    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult {
         utxo_common::refund_dex_fee_with_premium(self.clone(), args).await
     }
 
-    async fn gen_and_sign_dex_fee_spend_preimage(
+    async fn gen_taker_payment_spend_preimage(
         &self,
-        args: &GenDexFeeSpendArgs<'_>,
+        args: &GenTakerPaymentSpendArgs<'_>,
         swap_unique_data: &[u8],
-    ) -> GenAndSignDexFeeSpendResult {
+    ) -> GenTakerPaymentSpendResult {
         let key_pair = self.derive_htlc_key_pair(swap_unique_data);
-        utxo_common::gen_and_sign_dex_fee_spend_preimage(self, args, &key_pair).await
+        utxo_common::gen_and_sign_taker_payment_spend_preimage(self, args, &key_pair).await
     }
 
-    async fn validate_dex_fee_spend_preimage(
+    async fn validate_taker_payment_spend_preimage(
         &self,
-        gen_args: &GenDexFeeSpendArgs<'_>,
+        gen_args: &GenTakerPaymentSpendArgs<'_>,
         preimage: &TxPreimageWithSig,
     ) -> ValidateDexFeeSpendPreimageResult {
-        utxo_common::validate_dex_fee_spend_preimage(self, gen_args, preimage).await
+        utxo_common::validate_taker_payment_spend_preimage(self, gen_args, preimage).await
     }
 
-    async fn sign_and_broadcast_dex_fee_spend(
+    async fn sign_and_broadcast_taker_payment_spend(
         &self,
         preimage: &TxPreimageWithSig,
-        gen_args: &GenDexFeeSpendArgs<'_>,
+        gen_args: &GenTakerPaymentSpendArgs<'_>,
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionResult {
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
-        utxo_common::sign_and_broadcast_dex_fee_spend(self, preimage, gen_args, secret, &htlc_keypair).await
+        utxo_common::sign_and_broadcast_taker_payment_spend(self, preimage, gen_args, secret, &htlc_keypair).await
     }
 }
 

@@ -313,8 +313,8 @@ pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransaction
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
-pub type GenAndSignDexFeeSpendResult = MmResult<TxPreimageWithSig, TxGenError>;
-pub type ValidateDexFeeResult = MmResult<(), ValidateDexFeeError>;
+pub type GenTakerPaymentSpendResult = MmResult<TxPreimageWithSig, TxGenError>;
+pub type ValidateDexFeeResult = MmResult<(), ValidateTakerPaymentError>;
 pub type ValidateDexFeeSpendPreimageResult = MmResult<(), ValidateDexFeeSpendPreimageError>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
@@ -1023,21 +1023,23 @@ pub struct SendDexFeeWithPremiumArgs<'a> {
     pub other_pub: &'a [u8],
     pub dex_fee_amount: BigDecimal,
     pub premium_amount: BigDecimal,
+    pub trading_amount: BigDecimal,
     pub swap_unique_data: &'a [u8],
 }
 
-pub struct ValidateDexFeeArgs<'a> {
-    pub dex_fee_tx: &'a [u8],
+pub struct ValidateTakerPaymentArgs<'a> {
+    pub taker_tx: &'a [u8],
     pub time_lock: u32,
     pub secret_hash: &'a [u8],
     pub other_pub: &'a [u8],
     pub dex_fee_amount: BigDecimal,
     pub premium_amount: BigDecimal,
+    pub trading_amount: BigDecimal,
     pub swap_unique_data: &'a [u8],
 }
 
-pub struct GenDexFeeSpendArgs<'a> {
-    pub dex_fee_tx: &'a [u8],
+pub struct GenTakerPaymentSpendArgs<'a> {
+    pub taker_tx: &'a [u8],
     pub time_lock: u32,
     pub secret_hash: &'a [u8],
     pub maker_pub: &'a [u8],
@@ -1045,6 +1047,7 @@ pub struct GenDexFeeSpendArgs<'a> {
     pub dex_fee_pub: &'a [u8],
     pub dex_fee_amount: BigDecimal,
     pub premium_amount: BigDecimal,
+    pub trading_amount: BigDecimal,
 }
 
 pub struct TxPreimageWithSig {
@@ -1060,7 +1063,10 @@ pub enum TxGenError {
     TxDeserialization(String),
     InvalidPubkey(String),
     Signing(String),
-    MinerFeeExceedsPremium { miner_fee: BigDecimal, premium: BigDecimal },
+    MinerFeeExceedsMakerAmount {
+        miner_fee: BigDecimal,
+        maker_amount: BigDecimal,
+    },
     Legacy(String),
 }
 
@@ -1077,7 +1083,7 @@ impl From<UtxoSignWithKeyPairError> for TxGenError {
 }
 
 #[derive(Debug)]
-pub enum ValidateDexFeeError {
+pub enum ValidateTakerPaymentError {
     InvalidDestinationOrAmount(String),
     InvalidPubkey(String),
     NumConversion(String),
@@ -1087,12 +1093,12 @@ pub enum ValidateDexFeeError {
     TxLacksOfOutputs,
 }
 
-impl From<NumConversError> for ValidateDexFeeError {
-    fn from(err: NumConversError) -> Self { ValidateDexFeeError::NumConversion(err.to_string()) }
+impl From<NumConversError> for ValidateTakerPaymentError {
+    fn from(err: NumConversError) -> Self { ValidateTakerPaymentError::NumConversion(err.to_string()) }
 }
 
-impl From<UtxoRpcError> for ValidateDexFeeError {
-    fn from(err: UtxoRpcError) -> Self { ValidateDexFeeError::Rpc(err.to_string()) }
+impl From<UtxoRpcError> for ValidateTakerPaymentError {
+    fn from(err: UtxoRpcError) -> Self { ValidateTakerPaymentError::Rpc(err.to_string()) }
 }
 
 #[derive(Debug)]
@@ -1117,28 +1123,28 @@ impl From<TxGenError> for ValidateDexFeeSpendPreimageError {
 
 #[async_trait]
 pub trait SwapOpsV2 {
-    async fn send_dex_fee_with_premium(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult;
+    async fn send_combined_taker_payment(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult;
 
-    async fn validate_dex_fee_with_premium(&self, args: ValidateDexFeeArgs<'_>) -> ValidateDexFeeResult;
+    async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateDexFeeResult;
 
-    async fn refund_dex_fee_with_premium(&self, args: RefundPaymentArgs<'_>) -> TransactionResult;
+    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult;
 
-    async fn gen_and_sign_dex_fee_spend_preimage(
+    async fn gen_taker_payment_spend_preimage(
         &self,
-        args: &GenDexFeeSpendArgs<'_>,
+        args: &GenTakerPaymentSpendArgs<'_>,
         swap_unique_data: &[u8],
-    ) -> GenAndSignDexFeeSpendResult;
+    ) -> GenTakerPaymentSpendResult;
 
-    async fn validate_dex_fee_spend_preimage(
+    async fn validate_taker_payment_spend_preimage(
         &self,
-        gen_args: &GenDexFeeSpendArgs<'_>,
+        gen_args: &GenTakerPaymentSpendArgs<'_>,
         preimage: &TxPreimageWithSig,
     ) -> ValidateDexFeeSpendPreimageResult;
 
-    async fn sign_and_broadcast_dex_fee_spend(
+    async fn sign_and_broadcast_taker_payment_spend(
         &self,
         preimage: &TxPreimageWithSig,
-        gen_args: &GenDexFeeSpendArgs<'_>,
+        gen_args: &GenTakerPaymentSpendArgs<'_>,
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionResult;

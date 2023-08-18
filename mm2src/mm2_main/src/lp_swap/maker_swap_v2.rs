@@ -1,18 +1,19 @@
-use crate::mm2::lp_swap::{check_balance_for_maker_swap, TransactionIdentifier};
+use crate::mm2::lp_swap::{check_balance_for_maker_swap, SwapConfirmationsSettings, TransactionIdentifier};
 use async_trait::async_trait;
 use coins::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
 use coins::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, GenAndSignDexFeeSpendResult, GenDexFeeSpendArgs, HistorySyncState, MakerSwapTakerCoin,
-            MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
-            PaymentInstructions, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, RefundPaymentArgs,
-            RefundResult, SearchForSwapTxSpendInput, SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
-            TransactionResult, TxMarshalingErr, TxPreimageWithSig, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateDexFeeArgs, ValidateDexFeeResult, ValidateDexFeeSpendPreimageResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
+            FoundSwapTxSpend, GenTakerPaymentSpendArgs, GenTakerPaymentSpendResult, HistorySyncState,
+            MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RawTransactionFut,
+            RawTransactionRequest, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
+            SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureResult,
+            SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionEnum, TransactionFut, TransactionResult, TxMarshalingErr,
+            TxPreimageWithSig, UnexpectedDerivationMethod, ValidateAddressResult, ValidateDexFeeResult,
+            ValidateDexFeeSpendPreimageResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentInput, ValidateTakerPaymentArgs, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use common::executor::AbortedError;
 use common::{block_on, Future01CompatExt};
 use futures01::Future;
@@ -22,6 +23,7 @@ use mm2_err_handle::mm_error::{MmError, MmResult};
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::storable_state_machine::*;
+use primitives::hash::H256;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -65,11 +67,15 @@ pub enum MakerSwapEvent {
     Completed,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum MakerSwapStateMachineError {}
 
 pub struct DummyMakerSwapStorage {
     events: HashMap<Uuid, Vec<MakerSwapEvent>>,
+}
+
+impl DummyMakerSwapStorage {
+    pub fn new() -> Self { DummyMakerSwapStorage { events: HashMap::new() } }
 }
 
 #[async_trait]
@@ -91,16 +97,17 @@ impl StateMachineStorage for DummyMakerSwapStorage {
 }
 
 pub struct MakerSwapStateMachine<MakerCoin, TakerCoin> {
-    ctx: MmArc,
-    storage: DummyMakerSwapStorage,
-    maker_coin: MakerCoin,
-    maker_volume: MmNumber,
-    taker_coin: TakerCoin,
-    taker_volume: MmNumber,
-    taker_premium: MmNumber,
-    taker_payment_confs: u64,
-    taker_payment_nota: bool,
-    uuid: Uuid,
+    pub ctx: MmArc,
+    pub storage: DummyMakerSwapStorage,
+    pub maker_coin: MakerCoin,
+    pub maker_volume: MmNumber,
+    pub secret: H256,
+    pub taker_coin: TakerCoin,
+    pub taker_volume: MmNumber,
+    pub taker_premium: MmNumber,
+    pub conf_settings: SwapConfirmationsSettings,
+    pub uuid: Uuid,
+    pub p2p_keypair: Option<KeyPair>,
 }
 
 impl<MakerCoin, TakerCoin> MakerSwapStateMachine<MakerCoin, TakerCoin> {
@@ -125,9 +132,18 @@ impl<MakerCoin: Send + 'static, TakerCoin: Send + 'static> StorableStateMachine
     }
 }
 
-struct Initialize<MakerCoin, TakerCoin> {
+pub struct Initialize<MakerCoin, TakerCoin> {
     maker_coin: PhantomData<MakerCoin>,
     taker_coin: PhantomData<TakerCoin>,
+}
+
+impl<MakerCoin, TakerCoin> Initialize<MakerCoin, TakerCoin> {
+    pub fn new() -> Self {
+        Initialize {
+            maker_coin: Default::default(),
+            taker_coin: Default::default(),
+        }
+    }
 }
 
 impl<MakerCoin: Send + 'static, TakerCoin: Send + 'static> InitialState for Initialize<MakerCoin, TakerCoin> {
@@ -277,8 +293,8 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: MarketCoinOps + Send + Sync + 
 
         let input = ConfirmPaymentInput {
             payment_tx: taker_payment.tx_hex.0.clone(),
-            confirmations: ctx.taker_payment_confs,
-            requires_nota: ctx.taker_payment_nota,
+            confirmations: ctx.conf_settings.taker_coin_confs,
+            requires_nota: ctx.conf_settings.taker_coin_nota,
             wait_until: ctx.taker_payment_conf_timeout(),
             check_every: 10,
         };
@@ -865,32 +881,36 @@ fn just_run_it() {
 
     #[async_trait]
     impl SwapOpsV2 for Coin {
-        async fn send_dex_fee_with_premium(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult { todo!() }
-
-        async fn validate_dex_fee_with_premium(&self, args: ValidateDexFeeArgs<'_>) -> ValidateDexFeeResult { todo!() }
-
-        async fn refund_dex_fee_with_premium(&self, args: RefundPaymentArgs<'_>) -> TransactionResult { todo!() }
-
-        async fn gen_and_sign_dex_fee_spend_preimage(
-            &self,
-            args: &GenDexFeeSpendArgs<'_>,
-            swap_unique_data: &[u8],
-        ) -> GenAndSignDexFeeSpendResult {
+        async fn send_combined_taker_payment(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult {
             todo!()
         }
 
-        async fn validate_dex_fee_spend_preimage(
+        async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateDexFeeResult {
+            todo!()
+        }
+
+        async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult { todo!() }
+
+        async fn validate_taker_payment_spend_preimage(
             &self,
-            gen_args: &GenDexFeeSpendArgs<'_>,
+            gen_args: &GenTakerPaymentSpendArgs<'_>,
             preimage: &TxPreimageWithSig,
         ) -> ValidateDexFeeSpendPreimageResult {
             todo!()
         }
 
-        async fn sign_and_broadcast_dex_fee_spend(
+        async fn gen_taker_payment_spend_preimage(
+            &self,
+            args: &GenTakerPaymentSpendArgs<'_>,
+            swap_unique_data: &[u8],
+        ) -> GenTakerPaymentSpendResult {
+            todo!()
+        }
+
+        async fn sign_and_broadcast_taker_payment_spend(
             &self,
             preimage: &TxPreimageWithSig,
-            gen_args: &GenDexFeeSpendArgs<'_>,
+            gen_args: &GenTakerPaymentSpendArgs<'_>,
             secret: &[u8],
             swap_unique_data: &[u8],
         ) -> TransactionResult {
@@ -904,8 +924,12 @@ fn just_run_it() {
         ctx,
         maker_coin: Coin {},
         maker_volume: Default::default(),
-        taker_payment_confs: 0,
-        taker_payment_nota: false,
+        conf_settings: SwapConfirmationsSettings {
+            maker_coin_confs: 0,
+            maker_coin_nota: false,
+            taker_coin_confs: 0,
+            taker_coin_nota: false,
+        },
         taker_coin: Coin {},
         taker_volume: Default::default(),
         uuid,
@@ -913,6 +937,8 @@ fn just_run_it() {
             events: Default::default(),
         },
         taker_premium: Default::default(),
+        secret: Default::default(),
+        p2p_keypair: None,
     };
 
     block_on(machine.run(Box::new(Initialize {
