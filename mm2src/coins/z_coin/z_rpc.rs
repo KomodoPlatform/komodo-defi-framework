@@ -387,7 +387,7 @@ pub async fn create_wallet_db(
             // Check if the initial block height is less than the previous synchronization height,
             // Rewind the walletdb to the minimum possible height.
             // and if a checkpoint block is available, intitialize the walletdb with this block.
-            if init_block_height != min_sync_height {
+            if db.get_extended_full_viewing_keys()?.is_empty() || init_block_height != min_sync_height {
                 info!("Older/Newer sync height detected!, rewinding walletdb to new height: {init_block_height:?}");
                 let mut wallet_ops = db.get_update_ops().expect("get_update_ops always returns Ok");
                 wallet_ops
@@ -406,15 +406,6 @@ pub async fn create_wallet_db(
 
             if db.get_extended_full_viewing_keys()?.is_empty() {
                 init_accounts_table(&db, &[evk])?;
-                if let Some(block) = checkpoint_block {
-                    init_blocks_table(
-                        &db,
-                        BlockHeight::from_u32(block.height),
-                        BlockHash(block.hash.0),
-                        block.time,
-                        &block.sapling_tree.0,
-                    )?;
-                }
             }
             Ok(db)
         }
