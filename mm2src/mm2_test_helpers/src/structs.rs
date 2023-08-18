@@ -549,7 +549,7 @@ pub struct ZCoinActivationResult {
     pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: EnableCoinBalance,
-    pub first_sync_block: FirstSyncBlock,
+    pub first_sync_block: Option<FirstSyncBlock>,
 }
 
 #[derive(Debug, Deserialize)]
