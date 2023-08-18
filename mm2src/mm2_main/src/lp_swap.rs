@@ -98,6 +98,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "lp_swap/saved_swap.rs"] mod saved_swap;
 #[path = "lp_swap/swap_lock.rs"] mod swap_lock;
 #[path = "lp_swap/swap_watcher.rs"] pub(crate) mod swap_watcher;
+#[path = "lp_swap/taker_restart.rs"]
+pub(crate) mod taker_restart;
 #[path = "lp_swap/taker_swap.rs"] pub(crate) mod taker_swap;
 #[path = "lp_swap/trade_preimage.rs"] mod trade_preimage;
 
