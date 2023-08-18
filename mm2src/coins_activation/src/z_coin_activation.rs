@@ -55,12 +55,12 @@ pub enum ZcoinInProgressStatus {
     UpdatingBlocksCache {
         current_scanned_block: u64,
         latest_block: u64,
-        first_sync_block: Option<FirstSyncBlock>,
+        first_sync_block: FirstSyncBlock,
     },
     BuildingWalletDb {
         current_scanned_block: u64,
         latest_block: u64,
-        first_sync_block: Option<FirstSyncBlock>,
+        first_sync_block: FirstSyncBlock,
     },
     TemporaryError(String),
     RequestingWalletBalance,
@@ -264,7 +264,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
 
         let balance = self.my_balance().compat().await?;
         let first_sync_block = match self.sync_status().await? {
-            SyncStatus::Finished { first_sync_block, .. } => first_sync_block,
+            SyncStatus::Finished { first_sync_block, .. } => Some(first_sync_block),
             _ => None,
         };
 
