@@ -677,7 +677,11 @@ pub trait UtxoCoinBuilderCommonOps {
     /// * `date`: The date in seconds representing the desired starting date.
     /// * `current_block_height`: The current block height at the time of calculation.
     ///
-    fn calculate_starting_height_from_date(&self, date: u64, current_block_height: u64) -> UtxoCoinBuildResult<u64> {
+    fn calculate_starting_height_from_date(
+        &self,
+        date_s: u64,
+        current_block_height: u64,
+    ) -> UtxoCoinBuildResult<Option<u64>> {
         let avg_blocktime = self.conf()["avg_blocktime"]
             .as_u64()
             .ok_or_else(|| format!("avg_blocktime not specified in {} coin config", self.ticker()))
@@ -685,27 +689,28 @@ pub trait UtxoCoinBuilderCommonOps {
         let blocks_per_day = DAY_IN_SECONDS / avg_blocktime;
         let current_time_s = now_sec();
 
-        if current_time_s < date {
+        if current_time_s < date_s {
             return MmError::err(UtxoCoinBuildError::ErrorCalculatingStartingHeight(format!(
                 "{} sync date must be earlier then current date",
                 self.ticker()
             )));
         };
 
-        let secs_since_date = current_time_s - date;
+        let secs_since_date = current_time_s - date_s;
         let days_since_date = (secs_since_date / DAY_IN_SECONDS) - 1;
         let blocks_to_sync = (days_since_date * blocks_per_day) + blocks_per_day;
 
         if current_block_height < blocks_to_sync {
-            return MmError::err(UtxoCoinBuildError::ErrorCalculatingStartingHeight(format!(
-                "{} current_block_height: {current_block_height} must be greater than blocks_to_sync: {blocks_to_sync}",
-                self.ticker(),
-            )));
+            return Ok(None);
+            //            return MmError::err(UtxoCoinBuildError::ErrorCalculatingStartingHeight(format!(
+            //                "{} current_block_height: {current_block_height} must be greater than blocks_to_sync: {blocks_to_sync}",
+            //                self.ticker(),
+            //            )));
         }
 
         let block_to_sync_from = current_block_height - blocks_to_sync;
 
-        Ok(block_to_sync_from)
+        Ok(Some(block_to_sync_from))
     }
 }
 

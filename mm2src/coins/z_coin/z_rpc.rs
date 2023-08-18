@@ -426,6 +426,7 @@ pub async fn create_wallet_db(
 pub(super) async fn init_light_client<'a>(
     builder: &ZCoinBuilder<'a>,
     lightwalletd_urls: Vec<String>,
+    blocks_db: BlockDbImpl,
     sync_params: &Option<SyncStartPoint>,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
@@ -479,12 +480,14 @@ pub(super) async fn init_light_client<'a>(
     let sync_height = match sync_params {
         Some(SyncStartPoint::Date(date)) => builder
             .calculate_starting_height_from_date(*date, current_block_height)
-            .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?,
+            .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?
+            .unwrap_or(sapling_activation_height),
         Some(SyncStartPoint::Height(height)) => *height,
         Some(SyncStartPoint::Earliest) => sapling_activation_height,
         None => builder
             .calculate_starting_height_from_date(now_sec() - DAY_IN_SECONDS, current_block_height)
-            .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?,
+            .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?
+            .unwrap_or(sapling_activation_height),
     };
     let maybe_checkpoint_block = light_rpc_clients
         .checkpoint_block_from_height(sync_height.max(sapling_activation_height))
@@ -493,7 +496,7 @@ pub(super) async fn init_light_client<'a>(
     let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block.clone())
         .await
         .mm_err(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
-    let blocks_db = builder.blocks_db().await?;
+
     // Get min_height in blockdb and rewind blockdb to 0 if sync_height < min_height
     let min_height = blocks_db.get_earliest_block().await?;
     if sync_height < min_height as u64 {
@@ -533,6 +536,7 @@ pub(super) async fn init_light_client<'a>(
 pub(super) async fn init_light_client<'a>(
     _builder: &ZCoinBuilder<'a>,
     _lightwalletd_urls: Vec<String>,
+    _blocks_db: BlockDbImpl,
     _sync_params: &Option<SyncStartPoint>,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     todo!()

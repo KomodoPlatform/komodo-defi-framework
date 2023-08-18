@@ -537,6 +537,22 @@ pub enum EnableCoinBalance {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct FirstSyncBlock {
+    pub requested: u64,
+    pub is_pre_sapling: bool,
+    pub actual: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ZCoinActivationResult {
+    pub ticker: String,
+    pub current_block: u64,
+    pub wallet_balance: EnableCoinBalance,
+    pub first_sync_block: FirstSyncBlock,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CoinActivationResult {
     pub ticker: String,
@@ -576,7 +592,7 @@ pub enum MmRpcResult<T> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitZcoinStatus {
-    Ok(CoinActivationResult),
+    Ok(ZCoinActivationResult),
     Error(Json),
     InProgress(Json),
     UserActionRequired(Json),
