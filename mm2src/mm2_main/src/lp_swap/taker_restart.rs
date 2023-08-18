@@ -108,7 +108,22 @@ pub async fn check_maker_payment_spend_and_add_event(
             Err(e) => return ERR!("Error {} when trying to find maker payment spend", e)
         };
 
-    validate_maker_payment_spend(swap, &maker_payment_spend_tx).await?;
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: maker_payment_spend_tx.tx_hex(),
+        maker_pub: other_maker_coin_htlc_pub.to_vec(),
+        swap_contract_address: maker_coin_swap_contract_address,
+        time_lock: swap.maker_payment_lock.load(Ordering::Relaxed) as u32,
+        secret_hash: secret_hash.clone(),
+        amount: swap.maker_amount.to_decimal(),
+        watcher_reward: None,
+        spend_type: WatcherSpendType::MakerPaymentSpend,
+    };
+    swap.maker_coin
+        .taker_validates_payment_spend_or_refund(validate_input)
+        .compat()
+        .await
+        .map_err(|e| e.to_string())?;
+
     let tx_hash = maker_payment_spend_tx.tx_hash();
     info!("Watcher maker payment spend tx {:02x}", tx_hash);
     let tx_ident = TransactionIdentifier {
@@ -160,63 +175,6 @@ pub async fn check_taker_payment_spend(swap: &TakerSwap) -> Result<Option<FoundS
         .await
 }
 
-pub async fn validate_maker_payment_spend(
-    swap: &TakerSwap,
-    maker_payment_spend_tx: &TransactionEnum,
-) -> Result<(), String> {
-    let other_maker_coin_htlc_pub = swap.r().other_maker_coin_htlc_pub;
-    let secret_hash = swap.r().secret_hash.0.clone();
-    let maker_coin_swap_contract_address = swap.r().data.maker_coin_swap_contract_address.clone();
-
-    let validate_input = ValidateWatcherSpendInput {
-        payment_tx: maker_payment_spend_tx.tx_hex(),
-        maker_pub: other_maker_coin_htlc_pub.to_vec(),
-        swap_contract_address: maker_coin_swap_contract_address,
-        time_lock: swap.maker_payment_lock.load(Ordering::Relaxed) as u32,
-        secret_hash: secret_hash.clone(),
-        amount: swap.maker_amount.to_decimal(),
-        watcher_reward: None,
-        spend_type: WatcherSpendType::MakerPaymentSpend,
-    };
-    swap.maker_coin
-        .taker_validates_payment_spend_or_refund(validate_input)
-        .compat()
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-pub async fn validate_taker_payment_refund(
-    swap: &TakerSwap,
-    taker_payment_refund_tx: &TransactionEnum,
-) -> Result<(), String> {
-    let other_maker_coin_htlc_pub = swap.r().other_maker_coin_htlc_pub;
-    let taker_coin_swap_contract_address = swap.r().data.taker_coin_swap_contract_address.clone();
-    let taker_payment_lock = match std::env::var("USE_TEST_LOCKTIME") {
-        Ok(_) => swap.r().data.started_at as u32,
-        Err(_) => swap.r().data.taker_payment_lock as u32,
-    };
-    let secret_hash = swap.r().secret_hash.0.clone();
-
-    let validate_input = ValidateWatcherSpendInput {
-        payment_tx: taker_payment_refund_tx.tx_hex(),
-        maker_pub: other_maker_coin_htlc_pub.to_vec(),
-        swap_contract_address: taker_coin_swap_contract_address,
-        time_lock: taker_payment_lock,
-        secret_hash: secret_hash.clone(),
-        amount: swap.taker_amount.to_decimal(),
-        watcher_reward: None,
-        spend_type: WatcherSpendType::TakerPaymentRefund,
-    };
-
-    swap.taker_coin
-        .taker_validates_payment_spend_or_refund(validate_input)
-        .compat()
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 pub async fn add_taker_payment_spent_event(
     swap: &TakerSwap,
     saved: &mut TakerSavedSwap,
@@ -260,7 +218,31 @@ pub async fn add_taker_payment_refunded_by_watcher_event(
     mut saved: TakerSavedSwap,
     taker_payment_refund_tx: TransactionEnum,
 ) -> Result<TakerSwapCommand, String> {
-    validate_taker_payment_refund(swap, &taker_payment_refund_tx).await?;
+    let other_maker_coin_htlc_pub = swap.r().other_maker_coin_htlc_pub;
+    let taker_coin_swap_contract_address = swap.r().data.taker_coin_swap_contract_address.clone();
+    let taker_payment_lock = match std::env::var("USE_TEST_LOCKTIME") {
+        Ok(_) => swap.r().data.started_at as u32,
+        Err(_) => swap.r().data.taker_payment_lock as u32,
+    };
+    let secret_hash = swap.r().secret_hash.0.clone();
+
+    let validate_input = ValidateWatcherSpendInput {
+        payment_tx: taker_payment_refund_tx.tx_hex(),
+        maker_pub: other_maker_coin_htlc_pub.to_vec(),
+        swap_contract_address: taker_coin_swap_contract_address,
+        time_lock: taker_payment_lock,
+        secret_hash: secret_hash.clone(),
+        amount: swap.taker_amount.to_decimal(),
+        watcher_reward: None,
+        spend_type: WatcherSpendType::TakerPaymentRefund,
+    };
+
+    swap.taker_coin
+        .taker_validates_payment_spend_or_refund(validate_input)
+        .compat()
+        .await
+        .map_err(|e| e.to_string())?;
+
     let tx_hash = taker_payment_refund_tx.tx_hash();
     info!("Taker refund tx hash {:02x}", tx_hash);
     let tx_ident = TransactionIdentifier {
