@@ -100,6 +100,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "lp_swap/swap_lock.rs"] mod swap_lock;
 #[path = "lp_swap/swap_watcher.rs"] pub(crate) mod swap_watcher;
 #[path = "lp_swap/taker_swap.rs"] mod taker_swap;
+#[path = "lp_swap/taker_swap_v2.rs"] pub mod taker_swap_v2;
 #[path = "lp_swap/trade_preimage.rs"] mod trade_preimage;
 
 #[cfg(target_arch = "wasm32")]

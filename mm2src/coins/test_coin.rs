@@ -3,15 +3,17 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
-            ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MakerSwapTakerCoin, MmCoinEnum,
-            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignatureResult, SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
+            ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, GenTakerPaymentSpendArgs,
+            GenTakerPaymentSpendResult, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs, RefundResult,
+            SearchForSwapTxSpendInput, SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignatureResult, SpendPaymentArgs, SwapOpsV2, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionResult, TxMarshalingErr, TxPreimageWithSig, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateDexFeeResult, ValidateDexFeeSpendPreimageResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, ValidateTakerPaymentArgs, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use common::executor::AbortedError;
 use futures01::Future;
@@ -377,4 +379,44 @@ impl MmCoin for TestCoin {
     fn on_disabled(&self) -> Result<(), AbortedError> { Ok(()) }
 
     fn on_token_deactivated(&self, _ticker: &str) { () }
+}
+
+#[async_trait]
+#[mockable]
+impl SwapOpsV2 for TestCoin {
+    async fn send_combined_taker_payment(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult {
+        unimplemented!()
+    }
+
+    async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateDexFeeResult {
+        unimplemented!()
+    }
+
+    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult { unimplemented!() }
+
+    async fn gen_taker_payment_spend_preimage(
+        &self,
+        args: &GenTakerPaymentSpendArgs<'_>,
+        swap_unique_data: &[u8],
+    ) -> GenTakerPaymentSpendResult {
+        unimplemented!()
+    }
+
+    async fn validate_taker_payment_spend_preimage(
+        &self,
+        gen_args: &GenTakerPaymentSpendArgs<'_>,
+        preimage: &TxPreimageWithSig,
+    ) -> ValidateDexFeeSpendPreimageResult {
+        unimplemented!()
+    }
+
+    async fn sign_and_broadcast_taker_payment_spend(
+        &self,
+        preimage: &TxPreimageWithSig,
+        gen_args: &GenTakerPaymentSpendArgs<'_>,
+        secret: &[u8],
+        swap_unique_data: &[u8],
+    ) -> TransactionResult {
+        unimplemented!()
+    }
 }
