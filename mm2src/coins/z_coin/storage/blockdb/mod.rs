@@ -144,13 +144,14 @@ impl BlockDbImpl {
     }
 
     pub(crate) async fn get_earliest_block(&self) -> Result<u32, ZcashClientError> {
-        Ok(query_single_row(
+        let height = query_single_row(
             &self.db.lock().unwrap(),
-            "SELECT height FROM compactblocks ORDER BY height ASC LIMIT 1",
+            "SELECT MIN(height) from compactblocks",
             [],
-            |row| row.get(0),
-        )?
-        .unwrap_or(0))
+            |row| row.get::<_, Option<u32>>(0),
+        )?;
+        let height = height.map(|e| e.unwrap_or(0));
+        Ok(height.unwrap_or(0))
     }
 }
 

@@ -19,7 +19,6 @@ cfg_native!(
     use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, DAY_IN_SECONDS};
     use crate::z_coin::storage::BlockDbError;
     use crate::z_coin::CheckPointBlockInfo;
-    use crate::z_coin::z_rpc::z_coin_grpc::{Empty, LightdInfo};
 
     use db_common::sqlite::rusqlite::Connection;
     use db_common::sqlite::{query_single_row, run_optimization_pragmas};
@@ -91,9 +90,6 @@ pub trait ZRpcOps {
         &mut self,
         height: u64,
     ) -> MmResult<Option<CheckPointBlockInfo>, UpdateBlocksCacheErr>;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    async fn get_lightd_info(&mut self) -> MmResult<LightdInfo, UpdateBlocksCacheErr>;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -231,19 +227,6 @@ impl ZRpcOps for LightRpcClient {
             sapling_tree,
         }))
     }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    async fn get_lightd_info(&mut self) -> MmResult<LightdInfo, UpdateBlocksCacheErr> {
-        let request = tonic::Request::new(Empty {});
-        Ok(self
-            .get_live_client()
-            .await?
-            .get_lightd_info(request)
-            .await
-            .map_to_mm(UpdateBlocksCacheErr::GrpcError)?
-            // return the message
-            .into_inner())
-    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -360,9 +343,6 @@ impl ZRpcOps for NativeClient {
     ) -> MmResult<Option<CheckPointBlockInfo>, UpdateBlocksCacheErr> {
         todo!()
     }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    async fn get_lightd_info(&mut self) -> MmResult<LightdInfo, UpdateBlocksCacheErr> { todo!() }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -384,9 +364,8 @@ pub async fn create_wallet_db(
                 .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
             init_wallet_db(&db).map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
 
-            // Check if the initial block height is less than the previous synchronization height,
-            // Rewind the walletdb to the minimum possible height.
-            // and if a checkpoint block is available, intitialize the walletdb with this block.
+            // Check if the initial block height is less than the previous synchronization height and
+            // Rewind walletdb to the minimum possible height.
             if db.get_extended_full_viewing_keys()?.is_empty() || init_block_height != min_sync_height {
                 info!("Older/Newer sync height detected!, rewinding walletdb to new height: {init_block_height:?}");
                 let mut wallet_ops = db.get_update_ops().expect("get_update_ops always returns Ok");
@@ -467,7 +446,7 @@ pub(super) async fn init_light_client<'a>(
         .get_block_height()
         .await
         .mm_err(ZcoinClientInitError::UpdateBlocksCacheErr)?;
-    let sapling_activation_height = light_rpc_clients.get_lightd_info().await?.sapling_activation_height;
+    let sapling_activation_height = builder.protocol_info.consensus_params.sapling_activation_height as u64;
     let sync_height = match sync_params {
         Some(SyncStartPoint::Date(date)) => builder
             .calculate_starting_height_from_date(*date, current_block_height)
@@ -484,11 +463,11 @@ pub(super) async fn init_light_client<'a>(
         .checkpoint_block_from_height(sync_height.max(sapling_activation_height))
         .await?;
 
-    let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block.clone())
+    let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block)
         .await
         .mm_err(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
 
-    // Get min_height in blockdb and rewind blockdb to 0 if sync_height < min_height
+    // Get min_height in blocks_db and rewind blocks_db to 0 if sync_height != min_height
     let min_height = blocks_db.get_earliest_block().await?;
     if sync_height != min_height as u64 {
         blocks_db
@@ -626,23 +605,24 @@ impl SaplingSyncRespawnGuard {
 
 pub enum SyncStatus {
     UpdatingBlocksCache {
+        first_sync_block: FirstSyncBlock,
         current_scanned_block: u64,
         latest_block: u64,
-        first_sync_block: FirstSyncBlock,
     },
     BuildingWalletDb {
+        first_sync_block: FirstSyncBlock,
         current_scanned_block: u64,
         latest_block: u64,
-        first_sync_block: FirstSyncBlock,
     },
     TemporaryError(String),
     Finished {
-        block_number: u64,
         first_sync_block: FirstSyncBlock,
+        block_number: u64,
     },
 }
 
 #[derive(Clone, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct FirstSyncBlock {
     pub requested: u64,
     pub is_pre_sapling: bool,

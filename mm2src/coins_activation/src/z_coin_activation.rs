@@ -53,14 +53,14 @@ impl GetAddressesBalances for ZcoinActivationResult {
 pub enum ZcoinInProgressStatus {
     ActivatingCoin,
     UpdatingBlocksCache {
+        first_sync_block: FirstSyncBlock,
         current_scanned_block: u64,
         latest_block: u64,
-        first_sync_block: FirstSyncBlock,
     },
     BuildingWalletDb {
+        first_sync_block: FirstSyncBlock,
         current_scanned_block: u64,
         latest_block: u64,
-        first_sync_block: FirstSyncBlock,
     },
     TemporaryError(String),
     RequestingWalletBalance,
@@ -223,22 +223,22 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         loop {
             let in_progress_status = match coin.sync_status().await? {
                 SyncStatus::UpdatingBlocksCache {
+                    first_sync_block,
                     current_scanned_block,
                     latest_block,
-                    first_sync_block,
                 } => ZcoinInProgressStatus::UpdatingBlocksCache {
+                    first_sync_block,
                     current_scanned_block,
                     latest_block,
-                    first_sync_block,
                 },
                 SyncStatus::BuildingWalletDb {
+                    first_sync_block,
                     current_scanned_block,
                     latest_block,
-                    first_sync_block,
                 } => ZcoinInProgressStatus::BuildingWalletDb {
+                    first_sync_block,
                     current_scanned_block,
                     latest_block,
-                    first_sync_block,
                 },
                 SyncStatus::TemporaryError(e) => ZcoinInProgressStatus::TemporaryError(e),
                 SyncStatus::Finished { .. } => break,
@@ -264,7 +264,9 @@ impl InitStandaloneCoinActivationOps for ZCoin {
 
         let balance = self.my_balance().compat().await?;
         let first_sync_block = match self.sync_status().await? {
-            SyncStatus::Finished { first_sync_block, .. } => Some(first_sync_block),
+            SyncStatus::Finished { first_sync_block, .. }
+            | SyncStatus::BuildingWalletDb { first_sync_block, .. }
+            | SyncStatus::UpdatingBlocksCache { first_sync_block, .. } => Some(first_sync_block),
             _ => None,
         };
 

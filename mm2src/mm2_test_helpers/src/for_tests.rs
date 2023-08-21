@@ -5,7 +5,7 @@ use crate::structs::*;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
-use common::{cfg_native, now_float, now_ms, repeatable, wait_until_ms, PagingOptionsEnum};
+use common::{cfg_native, now_float, now_ms, now_sec, repeatable, wait_until_ms, PagingOptionsEnum};
 use common::{get_utc_timestamp, log};
 use crypto::CryptoCtx;
 use gstuff::{try_s, ERR, ERRL};
@@ -2279,7 +2279,17 @@ pub async fn init_z_coin_native(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn init_z_coin_light(mm: &MarketMakerIt, coin: &str, electrums: &[&str], lightwalletd_urls: &[&str]) -> Json {
+pub async fn init_z_coin_light(
+    mm: &MarketMakerIt,
+    coin: &str,
+    electrums: &[&str],
+    lightwalletd_urls: &[&str],
+    starting_date: Option<u64>,
+) -> Json {
+    // Number of seconds in a day
+    let one_day_seconds = 24 * 60 * 60;
+    let day_ago = starting_date.unwrap_or(now_sec() - one_day_seconds);
+
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2293,6 +2303,9 @@ pub async fn init_z_coin_light(mm: &MarketMakerIt, coin: &str, electrums: &[&str
                         "rpc_data": {
                             "electrum_servers": electrum_servers_rpc(electrums),
                             "light_wallet_d_servers": lightwalletd_urls,
+                            "sync_params": {
+                                "date": day_ago
+                            }
                         },
                     }
                 },

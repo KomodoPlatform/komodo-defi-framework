@@ -46,7 +46,6 @@ async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Tra
     }
 }
 
-// ignored because it requires a long-running Zcoin initialization process
 #[test]
 fn activate_z_coin_light() {
     let coins = json!([zombie_conf()]);
@@ -55,6 +54,27 @@ fn activate_z_coin_light() {
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
+        &mm,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+    ));
+
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalance::Iguana(iguana) => iguana,
+        _ => panic!("Expected EnableCoinBalance::Iguana"),
+    };
+    assert_eq!(balance.balance.spendable, BigDecimal::default());
+}
+
+#[test]
+fn activate_z_coin_light_with_changing_height() {
+    let coins = json!([zombie_conf()]);
+
+    let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let activation_result = block_on(enable_z_coin_light_with_changing_height(
         &mm,
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
