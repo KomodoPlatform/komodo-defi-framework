@@ -158,15 +158,15 @@ async fn process_p2p_message(
     let mut split = message.topic.as_str().split(TOPIC_SEPARATOR);
     match split.next() {
         Some(lp_ordermatch::ORDERBOOK_PREFIX) => {
-            let fut = lp_ordermatch::handle_orderbook_msg(
+            if let Err(e) = lp_ordermatch::handle_orderbook_msg(
                 ctx.clone(),
                 &message.topic,
                 peer_id.to_string(),
                 &message.data,
                 i_am_relay,
-            );
-
-            if let Err(e) = fut.await {
+            )
+            .await
+            {
                 if e.get_inner().is_warning() {
                     log::warn!("{}", e);
                 } else {

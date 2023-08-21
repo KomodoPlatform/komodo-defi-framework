@@ -524,29 +524,14 @@ pub async fn handle_orderbook_msg(
     msg: &[u8],
     i_am_relay: bool,
 ) -> OrderbookP2PHandlerResult {
-    if let Err(e) = decode_signed::<new_protocol::OrdermatchMessage>(msg) {
-        return MmError::err(OrderbookP2PHandlerError::DecodeError(e.to_string()));
-    };
-
-    let mut orderbook_pairs = vec![];
-
-    let mut split = topic.as_str().split(TOPIC_SEPARATOR);
-    match (split.next(), split.next()) {
-        (Some(ORDERBOOK_PREFIX), Some(pair)) => {
-            orderbook_pairs.push(pair.to_string());
-        },
-        _ => {
-            return MmError::err(OrderbookP2PHandlerError::InvalidTopic(topic.as_str().to_owned()));
-        },
-    };
-
-    drop_mutability!(orderbook_pairs);
-
-    if !orderbook_pairs.is_empty() {
+    let topic_str = topic.as_str();
+    let mut split = topic_str.split(TOPIC_SEPARATOR);
+    if let (Some(ORDERBOOK_PREFIX), Some(_pair)) = (split.next(), split.next()) {
         process_msg(ctx, from_peer, msg, i_am_relay).await?;
+        Ok(())
+    } else {
+        MmError::err(OrderbookP2PHandlerError::InvalidTopic(topic_str.to_owned()))
     }
-
-    Ok(())
 }
 
 /// Attempts to decode a message and process it returning whether the message is valid and worth rebroadcasting
