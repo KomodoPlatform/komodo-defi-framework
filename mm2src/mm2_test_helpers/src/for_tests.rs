@@ -109,7 +109,7 @@ pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 13] = [
     "Finished",
 ];
 
-pub const TAKER_ERROR_EVENTS: [&str; 15] = [
+pub const TAKER_ERROR_EVENTS: [&str; 16] = [
     "StartFailed",
     "NegotiateFailed",
     "TakerFeeSendFailed",
@@ -123,6 +123,7 @@ pub const TAKER_ERROR_EVENTS: [&str; 15] = [
     "TakerPaymentWaitRefundStarted",
     "TakerPaymentRefundStarted",
     "TakerPaymentRefunded",
+    "TakerPaymentRefundedByWatcher",
     "TakerPaymentRefundFailed",
     "TakerPaymentRefundFinished",
 ];
