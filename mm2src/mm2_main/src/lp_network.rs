@@ -213,6 +213,19 @@ async fn process_p2p_message(
                 inform_about_break(topic.as_str(), &message.topics);
                 break;
             },
+            Some(lp_swap::SWAP_PREFIX_V2) => {
+                if let Err(e) =
+                    lp_swap::process_swap_msg_v2(ctx.clone(), split.next().unwrap_or_default(), &message.data).await
+                {
+                    log::error!("{}", e);
+                    return;
+                }
+
+                to_propagate = true;
+
+                inform_about_break(topic.as_str(), &message.topics);
+                break;
+            },
             Some(lp_swap::WATCHER_PREFIX) => {
                 if ctx.is_watcher() {
                     if let Err(e) = lp_swap::process_watcher_msg(ctx.clone(), &message.data) {

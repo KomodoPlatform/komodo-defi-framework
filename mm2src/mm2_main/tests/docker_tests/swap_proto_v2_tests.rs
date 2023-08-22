@@ -1,9 +1,11 @@
-use crate::{generate_utxo_coin_with_random_privkey, MYCOIN};
+use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
 use coins::{GenTakerPaymentSpendArgs, RefundPaymentArgs, SendDexFeeWithPremiumArgs, SwapOpsV2, Transaction,
             TransactionEnum, ValidateTakerPaymentArgs};
 use common::{block_on, now_sec_u32, DEX_FEE_ADDR_RAW_PUBKEY};
+use mm2_test_helpers::for_tests::{enable_native, mm_dump, mycoin1_conf, mycoin_conf, start_swaps, MarketMakerIt,
+                                  Mm2TestConf};
 use script::{Builder, Opcode};
 
 #[test]
@@ -131,4 +133,37 @@ fn send_and_spend_taker_payment() {
     ))
     .unwrap();
     println!("dex_fee_spend hash {:02x}", dex_fee_spend.tx_hash());
+}
+
+#[test]
+fn test_v2_swap_utxo_utxo() {
+    let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
+    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN1, 1000.into());
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+
+    let bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+    let alice_conf =
+        Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
+            .ip
+            .to_string()]);
+    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+
+    let uuids = block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[(MYCOIN, MYCOIN1)],
+        1.0,
+        1.0,
+        100.,
+    ));
+    println!("{:?}", uuids);
 }

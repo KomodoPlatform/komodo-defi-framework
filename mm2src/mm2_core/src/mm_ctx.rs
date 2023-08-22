@@ -289,9 +289,7 @@ impl MmCtx {
 
     pub fn p2p_in_memory_port(&self) -> Option<u64> { self.conf["p2p_in_memory_port"].as_u64() }
 
-    pub fn use_upgraded_trading_proto(&self) -> bool {
-        self.conf["use_upgraded_trading_proto"].as_bool().unwrap_or_default()
-    }
+    pub fn use_trading_proto_v2(&self) -> bool { self.conf["use_trading_proto_v2"].as_bool().unwrap_or_default() }
 
     /// Returns the cloneable `MmFutSpawner`.
     pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.abortable_system) }

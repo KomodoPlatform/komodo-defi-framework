@@ -2966,7 +2966,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
-        if ctx.use_upgraded_trading_proto() {
+        if ctx.use_trading_proto_v2() {
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut maker_swap_state_machine = MakerSwapStateMachine {
@@ -3095,7 +3095,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             error!("Error {} on new swap insertion", e);
         }
 
-        if ctx.use_upgraded_trading_proto() {
+        if ctx.use_trading_proto_v2() {
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut taker_swap_state_machine = TakerSwapStateMachine {

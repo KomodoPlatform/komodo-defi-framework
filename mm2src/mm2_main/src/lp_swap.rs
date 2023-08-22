@@ -130,6 +130,7 @@ pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
+pub const SWAP_PREFIX_V2: TopicPrefix = "swapv2";
 
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 
@@ -309,7 +310,62 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
     Ok(())
 }
 
+pub async fn process_swap_msg_v2(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequestResult<()> {
+    let uuid = Uuid::from_str(topic).map_to_mm(|e| P2PRequestError::DecodeError(e.to_string()))?;
+
+    let msg = match decode_signed::<SwapMsg>(msg) {
+        Ok(m) => m,
+        Err(swap_msg_err) => {
+            #[cfg(not(target_arch = "wasm32"))]
+            return match json::from_slice::<SwapStatus>(msg) {
+                Ok(mut status) => {
+                    status.data.fetch_and_set_usd_prices().await;
+                    if let Err(e) = save_stats_swap(&ctx, &status.data).await {
+                        error!("Error saving the swap {} status: {}", status.data.uuid(), e);
+                    }
+                    Ok(())
+                },
+                Err(swap_status_err) => {
+                    let error = format!(
+                        "Couldn't deserialize swap msg to either 'SwapMsg': {} or to 'SwapStatus': {}",
+                        swap_msg_err, swap_status_err
+                    );
+                    MmError::err(P2PRequestError::DecodeError(error))
+                },
+            };
+
+            #[cfg(target_arch = "wasm32")]
+            return MmError::err(P2PRequestError::DecodeError(format!(
+                "Couldn't deserialize 'SwapMsg': {}",
+                swap_msg_err
+            )));
+        },
+    };
+
+    debug!("Processing swap msg {:?} for uuid {}", msg, uuid);
+    let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
+    let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
+    if let Some(msg_store) = msgs.get_mut(&uuid) {
+        if msg_store.accept_only_from.bytes == msg.2.unprefixed() {
+            match msg.0 {
+                SwapMsg::Negotiation(data) => msg_store.negotiation = Some(data),
+                SwapMsg::NegotiationReply(data) => msg_store.negotiation_reply = Some(data),
+                SwapMsg::Negotiated(negotiated) => msg_store.negotiated = Some(negotiated),
+                SwapMsg::TakerFee(data) => msg_store.taker_fee = Some(data),
+                SwapMsg::MakerPayment(data) => msg_store.maker_payment = Some(data),
+                SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
+            }
+        } else {
+            warn!("Received message from unexpected sender for swap {}", uuid);
+        }
+    };
+
+    Ok(())
+}
+
 pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }
+
+pub fn swap_topic_v2(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX_V2, &uuid.to_string()) }
 
 /// Formats and returns a topic format for `txhlp`.
 ///
