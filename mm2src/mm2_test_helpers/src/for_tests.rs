@@ -2288,7 +2288,7 @@ pub async fn init_z_coin_light(
 ) -> Json {
     // Number of seconds in a day
     let one_day_seconds = 24 * 60 * 60;
-    let day_ago = starting_date.unwrap_or(now_sec() - one_day_seconds);
+    let starting_date = starting_date.unwrap_or(now_sec() - one_day_seconds);
 
     let request = mm
         .rpc(&json!({
@@ -2304,7 +2304,7 @@ pub async fn init_z_coin_light(
                             "electrum_servers": electrum_servers_rpc(electrums),
                             "light_wallet_d_servers": lightwalletd_urls,
                             "sync_params": {
-                                "date": day_ago
+                                "date": starting_date
                             }
                         },
                     }

@@ -1,14 +1,13 @@
 use common::executor::Timer;
-use common::log::{info, LogLevel};
-use common::{block_on, log, now_ms, now_sec, wait_until_ms};
+use common::log::LogLevel;
+use common::{block_on, log, now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_seed;
 use mm2_main::mm2::{lp_main, LpMainParams};
-use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::electrums::{morty_electrums, rick_electrums};
-use mm2_test_helpers::for_tests::{disable_coin, enable_native as enable_native_impl, init_utxo_electrum,
-                                  init_utxo_status, init_z_coin_light, init_z_coin_status, MarketMakerIt};
-use mm2_test_helpers::structs::{EnableCoinBalance, InitTaskResult, InitUtxoStatus, InitZcoinStatus, RpcV2Response,
+use mm2_test_helpers::for_tests::{enable_native as enable_native_impl, init_utxo_electrum, init_utxo_status,
+                                  init_z_coin_light, init_z_coin_status, MarketMakerIt};
+use mm2_test_helpers::structs::{InitTaskResult, InitUtxoStatus, InitZcoinStatus, RpcV2Response,
                                 UtxoStandardActivationResult, ZCoinActivationResult};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
@@ -73,8 +72,9 @@ pub async fn enable_z_coin_light(
     coin: &str,
     electrums: &[&str],
     lightwalletd_urls: &[&str],
+    starting_date: Option<u64>,
 ) -> ZCoinActivationResult {
-    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, None).await;
+    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, starting_date).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(60000);
 
@@ -92,71 +92,6 @@ pub async fn enable_z_coin_light(
             _ => Timer::sleep(1.).await,
         }
     }
-}
-pub async fn enable_z_coin_light_with_changing_height(
-    mm: &MarketMakerIt,
-    coin: &str,
-    electrums: &[&str],
-    lightwalletd_urls: &[&str],
-) -> ZCoinActivationResult {
-    // Initial activation
-    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, None).await;
-    let init_result: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-
-    // Loop until activation status is obtained or timeout
-    let f_activation_result = loop_until_status_ok(mm, &init_result.result, wait_until_ms(60000)).await;
-    log!("init_utxo_status: {:?}", f_activation_result);
-    let balance = match f_activation_result.wallet_balance {
-        EnableCoinBalance::Iguana(iguana) => iguana,
-        _ => panic!("Expected EnableCoinBalance::Iguana"),
-    };
-    assert_eq!(balance.balance.spendable, BigDecimal::default());
-    // disable coin
-    disable_coin(mm, coin, true).await;
-
-    // Perform activation with changed height
-    // Calculate timestamp for 2 days ago
-    let two_day_seconds = 2 * 24 * 60 * 60;
-    let two_days_ago = now_sec() - two_day_seconds;
-    info!(
-        "Re-running enable_z_coin_light_with_changing_height with new starting date {}",
-        two_days_ago
-    );
-
-    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, Some(two_days_ago)).await;
-    let new_init_result: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-
-    // Loop until new activation status is obtained or timeout
-    let s_activation_result = loop_until_status_ok(mm, &new_init_result.result, wait_until_ms(60000)).await;
-
-    // let's check to make sure first activation starting height is different from current one
-    assert_ne!(
-        f_activation_result.first_sync_block.as_ref().unwrap().actual,
-        s_activation_result.first_sync_block.as_ref().unwrap().actual
-    );
-    // let's check to make sure first activation starting height is greater than current one since we used date later
-    // than current date
-    assert!(
-        f_activation_result.first_sync_block.unwrap().actual
-            > s_activation_result.first_sync_block.as_ref().unwrap().actual
-    );
-
-    s_activation_result
-}
-
-async fn loop_until_status_ok(mm: &MarketMakerIt, init_result: &InitTaskResult, timeout: u64) -> ZCoinActivationResult {
-    while now_ms() <= timeout {
-        let status = init_z_coin_status(mm, init_result.task_id).await;
-        println!("Status {}", json::to_string(&status).unwrap());
-        let status: RpcV2Response<InitZcoinStatus> = json::from_value(status.clone()).unwrap();
-        match status.result {
-            InitZcoinStatus::Ok(res) => return res,
-            InitZcoinStatus::Error(e) => panic!("Initialization error {:?}", e),
-            _ => Timer::sleep(1.).await,
-        }
-    }
-
-    panic!("Initialization timed out")
 }
 
 pub async fn enable_utxo_v2_electrum(
