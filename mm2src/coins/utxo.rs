@@ -31,6 +31,7 @@ pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;
 pub mod spv;
+pub mod swap_proto_v2_scripts;
 pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
@@ -973,6 +974,8 @@ pub trait UtxoCommonOps:
         utxo_tx_map: &'b mut HistoryUtxoTxMap,
     ) -> UtxoRpcResult<&'b mut HistoryUtxoTx>;
 
+    /// Generates a transaction spending P2SH vout (typically, with 0 index [`utxo_common::DEFAULT_SWAP_VOUT`]) of input.prev_transaction
+    /// Works only if single signature is required!
     async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String>;
 
     /// Loads verbose transactions from cache or requests it using RPC client.
