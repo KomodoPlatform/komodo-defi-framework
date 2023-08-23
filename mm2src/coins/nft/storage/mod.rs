@@ -1,5 +1,5 @@
-use crate::nft::nft_structs::{Chain, Nft, NftList, NftTokenAddrId, NftTransferHistory, NftTxHistoryFilters,
-                              NftsTransferHistoryList, TxMeta};
+use crate::nft::nft_structs::{Chain, Nft, NftList, NftTokenAddrId, NftTransferHistory, NftTransferHistoryFilters,
+                              NftsTransferHistoryList, TransferMeta};
 use crate::WithdrawError;
 use async_trait::async_trait;
 use derive_more::Display;
@@ -88,7 +88,7 @@ pub trait NftListStorageOps {
 }
 
 #[async_trait]
-pub trait NftTxHistoryStorageOps {
+pub trait NftTransferHistoryStorageOps {
     type Error: NftStorageError;
 
     /// Initializes tables in storage for the specified chain type.
@@ -97,48 +97,57 @@ pub trait NftTxHistoryStorageOps {
     /// Whether tables are initialized for the specified chain.
     async fn is_initialized(&self, chain: &Chain) -> MmResult<bool, Self::Error>;
 
-    async fn get_tx_history(
+    async fn get_transfer_history(
         &self,
         chains: Vec<Chain>,
         max: bool,
         limit: usize,
         page_number: Option<NonZeroUsize>,
-        filters: Option<NftTxHistoryFilters>,
+        filters: Option<NftTransferHistoryFilters>,
     ) -> MmResult<NftsTransferHistoryList, Self::Error>;
 
-    async fn add_txs_to_history<I>(&self, chain: &Chain, txs: I) -> MmResult<(), Self::Error>
+    async fn add_transfers_to_history<I>(&self, chain: &Chain, transfers: I) -> MmResult<(), Self::Error>
     where
         I: IntoIterator<Item = NftTransferHistory> + Send + 'static,
         I::IntoIter: Send;
 
     async fn get_last_block_number(&self, chain: &Chain) -> MmResult<Option<u64>, Self::Error>;
 
-    /// `get_txs_from_block` function returns transfers sorted by
+    /// `get_transfers_from_block` function returns transfers sorted by
     /// block_number in ascending order. It is needed to update the NFT LIST table correctly.
-    async fn get_txs_from_block(
+    async fn get_transfers_from_block(
         &self,
         chain: &Chain,
         from_block: u64,
     ) -> MmResult<Vec<NftTransferHistory>, Self::Error>;
 
-    async fn get_txs_by_token_addr_id(
+    async fn get_transfers_by_token_addr_id(
         &self,
         chain: &Chain,
         token_address: String,
         token_id: BigDecimal,
     ) -> MmResult<Vec<NftTransferHistory>, Self::Error>;
 
-    async fn get_tx_by_tx_hash(
+    async fn get_transfer_by_tx_hash_and_log_index(
         &self,
         chain: &Chain,
         transaction_hash: String,
+        log_index: u32,
     ) -> MmResult<Option<NftTransferHistory>, Self::Error>;
 
-    async fn update_tx_meta_by_hash(&self, chain: &Chain, tx: NftTransferHistory) -> MmResult<(), Self::Error>;
+    async fn update_transfer_meta_by_hash_and_log_index(
+        &self,
+        chain: &Chain,
+        transfer: NftTransferHistory,
+    ) -> MmResult<(), Self::Error>;
 
-    async fn update_txs_meta_by_token_addr_id(&self, chain: &Chain, tx_meta: TxMeta) -> MmResult<(), Self::Error>;
+    async fn update_transfers_meta_by_token_addr_id(
+        &self,
+        chain: &Chain,
+        transfer_meta: TransferMeta,
+    ) -> MmResult<(), Self::Error>;
 
-    async fn get_txs_with_empty_meta(&self, chain: &Chain) -> MmResult<Vec<NftTokenAddrId>, Self::Error>;
+    async fn get_transfers_with_empty_meta(&self, chain: &Chain) -> MmResult<Vec<NftTokenAddrId>, Self::Error>;
 }
 
 #[derive(Debug, Deserialize, Display, Serialize)]
@@ -155,7 +164,7 @@ impl From<CreateNftStorageError> for WithdrawError {
 }
 
 /// `NftStorageBuilder` is used to create an instance that implements the [`NftListStorageOps`]
-/// and [`NftTxHistoryStorageOps`] traits.Also has guard to lock write operations.
+/// and [`NftTransferHistoryStorageOps`] traits.Also has guard to lock write operations.
 pub struct NftStorageBuilder<'a> {
     ctx: &'a MmArc,
 }
@@ -164,9 +173,9 @@ impl<'a> NftStorageBuilder<'a> {
     #[inline]
     pub fn new(ctx: &MmArc) -> NftStorageBuilder<'_> { NftStorageBuilder { ctx } }
 
-    /// `build` function is used to build nft storage which implements [`NftListStorageOps`] and [`NftTxHistoryStorageOps`] traits.
+    /// `build` function is used to build nft storage which implements [`NftListStorageOps`] and [`NftTransferHistoryStorageOps`] traits.
     #[inline]
-    pub fn build(&self) -> MmResult<impl NftListStorageOps + NftTxHistoryStorageOps, CreateNftStorageError> {
+    pub fn build(&self) -> MmResult<impl NftListStorageOps + NftTransferHistoryStorageOps, CreateNftStorageError> {
         #[cfg(target_arch = "wasm32")]
         return wasm::wasm_storage::IndexedDbNftStorage::new(self.ctx);
         #[cfg(not(target_arch = "wasm32"))]

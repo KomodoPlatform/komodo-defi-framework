@@ -422,10 +422,7 @@ fn test_maker_refunds_payment() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let refund = coin
-        .send_maker_refunds_payment(maker_refunds_payment_args)
-        .wait()
-        .unwrap();
+    let refund = block_on(coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
     let refund_tx_hash = refund.tx_hash();
     let refund_tx_hex = refund.tx_hex();
     log!("Maker refunds payment: {:?}", refund_tx_hash);
@@ -495,10 +492,7 @@ fn test_taker_refunds_payment() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let refund = coin
-        .send_taker_refunds_payment(taker_refunds_payment_args)
-        .wait()
-        .unwrap();
+    let refund = block_on(coin.send_taker_refunds_payment(taker_refunds_payment_args)).unwrap();
     let refund_tx_hash = refund.tx_hash();
     let refund_tx_hex = refund.tx_hex();
     log!("Taker refunds payment: {:?}", refund_tx_hash);
@@ -701,10 +695,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let refund = maker_coin
-        .send_maker_refunds_payment(maker_refunds_payment_args)
-        .wait()
-        .unwrap();
+    let refund = block_on(maker_coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
     let refund_tx_hash = refund.tx_hash();
     let refund_tx_hex = refund.tx_hex();
     log!("Maker refunds tx: {:?}", refund_tx_hash);
@@ -1556,10 +1547,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let refund_tx = coin
-        .send_maker_refunds_payment(maker_refunds_payment_args)
-        .wait()
-        .unwrap();
+    let refund_tx = block_on(coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx.tx_hex(),
@@ -1625,10 +1613,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let refund_tx = coin
-        .send_maker_refunds_payment(maker_refunds_payment_args)
-        .wait()
-        .unwrap();
+    let refund_tx = block_on(coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx.tx_hex(),

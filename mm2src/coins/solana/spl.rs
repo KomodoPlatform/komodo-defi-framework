@@ -7,8 +7,8 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, ConfirmPayment
             PaymentInstructions, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, RefundError,
             RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
             SendPaymentArgs, SignatureResult, SolanaCoin, SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionResult,
+            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
             ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherReward, WatcherRewardError,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
@@ -303,11 +303,19 @@ impl SwapOps for SplToken {
         unimplemented!()
     }
 
-    fn send_taker_refunds_payment(&self, _taker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
+    async fn send_taker_refunds_payment(
+        &self,
+        _taker_refunds_payment_args: RefundPaymentArgs<'_>,
+    ) -> TransactionResult {
         unimplemented!()
     }
 
-    fn send_maker_refunds_payment(&self, _maker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut { todo!() }
+    async fn send_maker_refunds_payment(
+        &self,
+        _maker_refunds_payment_args: RefundPaymentArgs<'_>,
+    ) -> TransactionResult {
+        todo!()
+    }
 
     fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> { unimplemented!() }
 

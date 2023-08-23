@@ -110,7 +110,7 @@ use crate::nft::{find_wallet_nft_amount, WithdrawNftResult};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod nonce;
-use crate::{PrivKeyPolicy, WithdrawFrom};
+use crate::{PrivKeyPolicy, TransactionResult, WithdrawFrom};
 use nonce::ParityNonce;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -1094,18 +1094,18 @@ impl SwapOps for EthCoin {
         )
     }
 
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
-        Box::new(
-            self.refund_hash_time_locked_payment(taker_refunds_payment_args)
-                .map(TransactionEnum::from),
-        )
+    async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
+        self.refund_hash_time_locked_payment(taker_refunds_payment_args)
+            .map(TransactionEnum::from)
+            .compat()
+            .await
     }
 
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
-        Box::new(
-            self.refund_hash_time_locked_payment(maker_refunds_payment_args)
-                .map(TransactionEnum::from),
-        )
+    async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
+        self.refund_hash_time_locked_payment(maker_refunds_payment_args)
+            .map(TransactionEnum::from)
+            .compat()
+            .await
     }
 
     fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {

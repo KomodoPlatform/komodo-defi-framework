@@ -325,7 +325,7 @@ pub struct TransactionNftDetails {
 #[derive(Debug, Deserialize)]
 pub struct NftTransfersReq {
     pub(crate) chains: Vec<Chain>,
-    pub(crate) filters: Option<NftTxHistoryFilters>,
+    pub(crate) filters: Option<NftTransferHistoryFilters>,
     #[serde(default)]
     pub(crate) max: bool,
     #[serde(default = "ten")]
@@ -368,14 +368,14 @@ impl fmt::Display for TransferStatus {
     }
 }
 
-/// [`NftTransferCommon`] structure contains common fields from [`NftTransferHistory`] and [`NftTxHistoryFromMoralis`]
+/// [`NftTransferCommon`] structure contains common fields from [`NftTransferHistory`] and [`NftTransferHistoryFromMoralis`]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NftTransferCommon {
     pub(crate) block_hash: Option<String>,
     /// Transaction hash in hexadecimal format
     pub(crate) transaction_hash: String,
     pub(crate) transaction_index: Option<u64>,
-    pub(crate) log_index: Option<u64>,
+    pub(crate) log_index: u32,
     pub(crate) value: Option<BigDecimal>,
     pub(crate) transaction_type: Option<String>,
     pub(crate) token_address: Address,
@@ -404,9 +404,9 @@ pub struct NftTransferHistory {
     pub(crate) status: TransferStatus,
 }
 
-/// This structure is for deserializing moralis NFT transaction json to struct.
+/// This structure is for deserializing moralis NFT transfer json to struct.
 #[derive(Debug, Deserialize)]
-pub(crate) struct NftTxHistoryFromMoralis {
+pub(crate) struct NftTransferHistoryFromMoralis {
     #[serde(flatten)]
     pub(crate) common: NftTransferCommon,
     pub(crate) block_number: SerdeStringWrap<u64>,
@@ -422,7 +422,7 @@ pub struct NftsTransferHistoryList {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
-pub struct NftTxHistoryFilters {
+pub struct NftTransferHistoryFilters {
     #[serde(default)]
     pub receive: bool,
     #[serde(default)]
@@ -444,7 +444,7 @@ pub struct NftTokenAddrId {
 }
 
 #[derive(Debug)]
-pub struct TxMeta {
+pub struct TransferMeta {
     pub(crate) token_address: String,
     pub(crate) token_id: BigDecimal,
     pub(crate) token_uri: Option<String>,
@@ -453,9 +453,9 @@ pub struct TxMeta {
     pub(crate) token_name: Option<String>,
 }
 
-impl From<Nft> for TxMeta {
+impl From<Nft> for TransferMeta {
     fn from(nft_db: Nft) -> Self {
-        TxMeta {
+        TransferMeta {
             token_address: eth_addr_to_hex(&nft_db.common.token_address),
             token_id: nft_db.common.token_id,
             token_uri: nft_db.common.token_uri,
