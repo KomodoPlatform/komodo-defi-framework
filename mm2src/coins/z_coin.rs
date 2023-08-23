@@ -488,7 +488,7 @@ impl ZCoin {
             received_by_me,
             spent_by_me: sat_from_big_decimal(&total_input_amount, self.decimals())?,
             fee_amount: sat_from_big_decimal(&tx_fee, self.decimals())?,
-            unused_change: None,
+            unused_change: 0,
             kmd_rewards: None,
         };
         Ok((tx, additional_data, sync_guard))
@@ -1753,8 +1753,9 @@ impl UtxoTxGenerationOps for ZCoin {
         unsigned: TransactionInputSigner,
         data: AdditionalTxData,
         my_script_pub: Bytes,
+        dust: u64,
     ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
+        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub, dust).await
     }
 }
 

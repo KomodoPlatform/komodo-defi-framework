@@ -226,7 +226,7 @@ fn test_generate_transaction() {
     assert_eq!(generated.0.outputs.len(), 1);
 
     assert_eq!(generated.1.fee_amount, 1000);
-    assert_eq!(generated.1.unused_change, Some(999));
+    assert_eq!(generated.1.unused_change, 999);
     assert_eq!(generated.1.received_by_me, 0);
     assert_eq!(generated.1.spent_by_me, 100000);
 
@@ -251,7 +251,7 @@ fn test_generate_transaction() {
     assert_eq!(generated.0.outputs.len(), 1);
 
     assert_eq!(generated.1.fee_amount, 1000);
-    assert_eq!(generated.1.unused_change, None);
+    assert_eq!(generated.1.unused_change, 0);
     assert_eq!(generated.1.received_by_me, 99000);
     assert_eq!(generated.1.spent_by_me, 100000);
     assert_eq!(generated.0.outputs[0].value, 99000);
@@ -1156,7 +1156,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
 
     // generated transaction fee must be equal to relay fee if calculated dynamic fee is lower than relay
     assert_eq!(generated.1.fee_amount, 100000000);
-    assert_eq!(generated.1.unused_change, None);
+    assert_eq!(generated.1.unused_change, 0);
     assert_eq!(generated.1.received_by_me, 0);
     assert_eq!(generated.1.spent_by_me, 1000000000);
     assert!(unsafe { GET_RELAY_FEE_CALLED });
@@ -1201,7 +1201,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower_and_ded
 
     // generated transaction fee must be equal to relay fee if calculated dynamic fee is lower than relay
     assert_eq!(generated.1.fee_amount, 100000000);
-    assert_eq!(generated.1.unused_change, None);
+    assert_eq!(generated.1.unused_change, 0);
     assert_eq!(generated.1.received_by_me, 0);
     assert_eq!(generated.1.spent_by_me, 1000000000);
     assert!(unsafe { GET_RELAY_FEE_CALLED });
@@ -1248,7 +1248,7 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
 
     // resulting signed transaction size would be 3032 bytes so fee is 3032 sat
     assert_eq!(generated.1.fee_amount, 3032);
-    assert_eq!(generated.1.unused_change, None);
+    assert_eq!(generated.1.unused_change, 0);
     assert_eq!(generated.1.received_by_me, 999996968);
     assert_eq!(generated.1.spent_by_me, 20000000000);
     assert!(unsafe { GET_RELAY_FEE_CALLED });

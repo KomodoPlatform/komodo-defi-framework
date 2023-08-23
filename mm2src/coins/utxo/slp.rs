@@ -1072,9 +1072,10 @@ impl UtxoTxGenerationOps for SlpToken {
         unsigned: TransactionInputSigner,
         data: AdditionalTxData,
         my_script_pub: Bytes,
+        dust: u64,
     ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
         self.platform_coin
-            .calc_interest_if_required(unsigned, data, my_script_pub)
+            .calc_interest_if_required(unsigned, data, my_script_pub, dust)
             .await
     }
 }

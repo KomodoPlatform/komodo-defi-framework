@@ -545,7 +545,7 @@ impl Qrc20Coin {
             self.utxo.conf.fork_id,
         )?;
 
-        let miner_fee = data.fee_amount + data.unused_change.unwrap_or_default();
+        let miner_fee = data.fee_amount + data.unused_change;
         Ok(GenerateQrc20TxResult {
             signed,
             miner_fee,
@@ -616,8 +616,9 @@ impl UtxoTxGenerationOps for Qrc20Coin {
         unsigned: TransactionInputSigner,
         data: AdditionalTxData,
         my_script_pub: ScriptBytes,
+        dust: u64,
     ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
+        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub, dust).await
     }
 }
 
