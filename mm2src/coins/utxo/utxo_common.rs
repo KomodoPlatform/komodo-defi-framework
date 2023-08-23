@@ -1065,12 +1065,13 @@ pub async fn calc_interest_if_required<T: UtxoCommonOps>(
         match output_to_me {
             Some(ref mut output) => output.value += interest,
             None => {
-                if interest + data.unused_change > dust {
-                    let interest_output = TransactionOutput {
+                let maybe_change_output_value = interest + data.unused_change;
+                if maybe_change_output_value > dust {
+                    let change_output = TransactionOutput {
                         script_pubkey: my_script_pub,
-                        value: interest + data.unused_change,
+                        value: maybe_change_output_value,
                     };
-                    unsigned.outputs.push(interest_output);
+                    unsigned.outputs.push(change_output);
                     data.unused_change = 0;
                 } else {
                     data.unused_change += interest;
