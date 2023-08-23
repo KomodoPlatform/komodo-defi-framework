@@ -109,6 +109,38 @@ pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 13] = [
     "Finished",
 ];
 
+// Taker using watchers and watcher spends maker payment
+pub const TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
+    "Started",
+    "Negotiated",
+    "TakerFeeSent",
+    "TakerPaymentInstructionsReceived",
+    "MakerPaymentReceived",
+    "MakerPaymentWaitConfirmStarted",
+    "MakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSent",
+    "WatcherMessageSent",
+    "TakerPaymentSpent",
+    "MakerPaymentSpentByWatcher",
+    "Finished",
+];
+
+// Taker using watchers and spends maker payment instead of watcher
+pub const TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
+    "Started",
+    "Negotiated",
+    "TakerFeeSent",
+    "TakerPaymentInstructionsReceived",
+    "MakerPaymentReceived",
+    "MakerPaymentWaitConfirmStarted",
+    "MakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSent",
+    "WatcherMessageSent",
+    "TakerPaymentSpent",
+    "MakerPaymentSpent",
+    "Finished",
+];
+
 pub const TAKER_ERROR_EVENTS: [&str; 16] = [
     "StartFailed",
     "NegotiateFailed",
@@ -2046,7 +2078,8 @@ pub async fn check_stats_swap_status(mm: &MarketMakerIt, uuid: &str) {
     assert_eq!(maker_actual_events.as_slice(), MAKER_SUCCESS_EVENTS);
     assert!(
         taker_actual_events.as_slice() == TAKER_SUCCESS_EVENTS
-            || taker_actual_events.as_slice() == TAKER_USING_WATCHERS_SUCCESS_EVENTS
+            || taker_actual_events.as_slice() == TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT
+            || taker_actual_events.as_slice() == TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT
     );
 }
 
