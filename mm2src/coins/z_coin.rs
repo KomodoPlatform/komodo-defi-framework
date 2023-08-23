@@ -771,6 +771,7 @@ pub enum SyncStartPoint {
 pub enum ZcoinRpcMode {
     #[cfg(not(target_arch = "wasm32"))]
     Native,
+    #[serde(alias = "Electrum")]
     Light {
         electrum_servers: Vec<ElectrumRpcRequest>,
         light_wallet_d_servers: Vec<String>,

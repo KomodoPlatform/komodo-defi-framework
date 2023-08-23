@@ -1,6 +1,5 @@
 use crate::integration_tests_common::*;
 use common::executor::Timer;
-use common::log::info;
 use common::{block_on, log, now_ms, now_sec, wait_until_ms};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::electrums::rick_electrums;
@@ -98,7 +97,7 @@ fn activate_z_coin_light_with_changing_height() {
     // Calculate timestamp for 2 days ago
     let two_day_seconds = 2 * 24 * 60 * 60;
     let two_days_ago = now_sec() - two_day_seconds;
-    info!(
+    log!(
         "Re-running enable_z_coin_light_with_changing_height with new starting date {}",
         two_days_ago
     );
