@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package komodefi.swap_v2.pb;
+
+message SignedMessage {
+  bytes from = 1;
+  bytes signature = 2;
+  bytes payload = 3;
+}
+
+message MakerNegotiation {}
+
+message TakerNegotiation {}
+
+message MakerNegotiated {}
+
+message TakerPaymentInfo {
+  bytes tx_bytes = 1;
+  optional bytes next_step_instructions = 2;
+}
+
+message MakerPaymentInfo {}
+
+message SwapMessage {
+  oneof inner {
+    MakerNegotiation maker_negotiation = 1;
+    TakerNegotiation taker_negotiation = 2;
+    MakerNegotiated maker_negotiated = 3;
+    TakerPaymentInfo taker_payment_info = 4;
+    MakerPaymentInfo maker_payment_info = 5;
+  }
+}

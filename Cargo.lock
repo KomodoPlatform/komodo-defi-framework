@@ -4291,6 +4291,8 @@ dependencies = [
  "parity-util-mem",
  "parking_lot 0.12.0",
  "primitives",
+ "prost",
+ "prost-build",
  "rand 0.6.5",
  "rand 0.7.3",
  "rcgen",

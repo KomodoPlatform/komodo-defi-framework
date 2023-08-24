@@ -43,6 +43,7 @@ use crate::mm2::lp_ordermatch;
 use crate::mm2::{lp_stats, lp_swap};
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
+pub type P2PProcessResult<T> = Result<T, MmError<P2PProcessError>>;
 
 pub trait Libp2pPeerId {
     fn libp2p_peer_id(&self) -> PeerId;
@@ -62,6 +63,13 @@ pub enum P2PRequestError {
     ResponseError(String),
     #[display(fmt = "Expected 1 response, found {}", _0)]
     ExpectedSingleResponseError(usize),
+}
+
+#[derive(Debug, Display)]
+#[allow(clippy::enum_variant_names)]
+pub enum P2PProcessError {
+    DecodeError(String),
+    InvalidSignature(String),
 }
 
 impl From<rmp_serde::encode::Error> for P2PRequestError {
@@ -213,9 +221,9 @@ async fn process_p2p_message(
                 inform_about_break(topic.as_str(), &message.topics);
                 break;
             },
-            Some(lp_swap::SWAP_PREFIX_V2) => {
+            Some(lp_swap::SWAP_V2_PREFIX) => {
                 if let Err(e) =
-                    lp_swap::process_swap_msg_v2(ctx.clone(), split.next().unwrap_or_default(), &message.data).await
+                    lp_swap::process_swap_v2_msg(ctx.clone(), split.next().unwrap_or_default(), &message.data)
                 {
                     log::error!("{}", e);
                     return;

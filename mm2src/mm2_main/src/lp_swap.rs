@@ -58,7 +58,7 @@
 //
 
 use super::lp_network::P2PRequestResult;
-use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PRequestError};
+use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
 use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
@@ -76,6 +76,7 @@ use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPre
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use secp256k1::{PublicKey, SecretKey, Signature};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
@@ -98,6 +99,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "lp_swap/recreate_swap_data.rs"] mod recreate_swap_data;
 #[path = "lp_swap/saved_swap.rs"] mod saved_swap;
 #[path = "lp_swap/swap_lock.rs"] mod swap_lock;
+#[path = "lp_swap/komodefi.swap_v2.pb.rs"] mod swap_v2_pb;
 #[path = "lp_swap/swap_watcher.rs"] pub(crate) mod swap_watcher;
 #[path = "lp_swap/taker_swap.rs"] mod taker_swap;
 #[path = "lp_swap/taker_swap_v2.rs"] pub mod taker_swap_v2;
@@ -109,7 +111,7 @@ mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
 use crypto::CryptoCtx;
-use keys::KeyPair;
+use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, get_max_maker_vol, maker_swap_trade_preimage,
                      run_maker_swap, CoinVolumeInfo, MakerSavedEvent, MakerSavedSwap, MakerSwap,
@@ -120,6 +122,7 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
+use swap_v2_pb::*;
 pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
                        MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT_SEC,
                        WATCHER_PREFIX};
@@ -130,7 +133,8 @@ pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
-pub const SWAP_PREFIX_V2: TopicPrefix = "swapv2";
+
+pub const SWAP_V2_PREFIX: TopicPrefix = "swapv2";
 
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 
@@ -159,6 +163,16 @@ pub struct SwapMsgStore {
     taker_fee: Option<SwapTxDataMsg>,
     maker_payment: Option<SwapTxDataMsg>,
     taker_payment: Option<Vec<u8>>,
+    accept_only_from: bits256,
+}
+
+#[derive(Debug, Default)]
+pub struct SwapV2MsgStore {
+    maker_negotiation: Option<MakerNegotiation>,
+    taker_negotiation: Option<TakerNegotiation>,
+    maker_negotiated: Option<MakerNegotiated>,
+    taker_payment: Option<TakerPaymentInfo>,
+    maker_payment: Option<MakerPaymentInfo>,
     accept_only_from: bits256,
 }
 
@@ -310,62 +324,7 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
     Ok(())
 }
 
-pub async fn process_swap_msg_v2(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequestResult<()> {
-    let uuid = Uuid::from_str(topic).map_to_mm(|e| P2PRequestError::DecodeError(e.to_string()))?;
-
-    let msg = match decode_signed::<SwapMsg>(msg) {
-        Ok(m) => m,
-        Err(swap_msg_err) => {
-            #[cfg(not(target_arch = "wasm32"))]
-            return match json::from_slice::<SwapStatus>(msg) {
-                Ok(mut status) => {
-                    status.data.fetch_and_set_usd_prices().await;
-                    if let Err(e) = save_stats_swap(&ctx, &status.data).await {
-                        error!("Error saving the swap {} status: {}", status.data.uuid(), e);
-                    }
-                    Ok(())
-                },
-                Err(swap_status_err) => {
-                    let error = format!(
-                        "Couldn't deserialize swap msg to either 'SwapMsg': {} or to 'SwapStatus': {}",
-                        swap_msg_err, swap_status_err
-                    );
-                    MmError::err(P2PRequestError::DecodeError(error))
-                },
-            };
-
-            #[cfg(target_arch = "wasm32")]
-            return MmError::err(P2PRequestError::DecodeError(format!(
-                "Couldn't deserialize 'SwapMsg': {}",
-                swap_msg_err
-            )));
-        },
-    };
-
-    debug!("Processing swap msg {:?} for uuid {}", msg, uuid);
-    let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-    let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
-    if let Some(msg_store) = msgs.get_mut(&uuid) {
-        if msg_store.accept_only_from.bytes == msg.2.unprefixed() {
-            match msg.0 {
-                SwapMsg::Negotiation(data) => msg_store.negotiation = Some(data),
-                SwapMsg::NegotiationReply(data) => msg_store.negotiation_reply = Some(data),
-                SwapMsg::Negotiated(negotiated) => msg_store.negotiated = Some(negotiated),
-                SwapMsg::TakerFee(data) => msg_store.taker_fee = Some(data),
-                SwapMsg::MakerPayment(data) => msg_store.maker_payment = Some(data),
-                SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
-            }
-        } else {
-            warn!("Received message from unexpected sender for swap {}", uuid);
-        }
-    };
-
-    Ok(())
-}
-
 pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }
-
-pub fn swap_topic_v2(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX_V2, &uuid.to_string()) }
 
 /// Formats and returns a topic format for `txhlp`.
 ///
@@ -500,6 +459,7 @@ struct SwapsContext {
     running_swaps: Mutex<Vec<Weak<dyn AtomicSwap>>>,
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
+    swap_v2_msgs: Mutex<HashMap<Uuid, SwapV2MsgStore>>,
     taker_swap_watchers: PaMutex<DuplicateCache<Vec<u8>>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
@@ -513,6 +473,7 @@ impl SwapsContext {
                 running_swaps: Mutex::new(vec![]),
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 swap_msgs: Mutex::new(HashMap::new()),
+                swap_v2_msgs: Mutex::new(HashMap::new()),
                 taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(
                     TAKER_SWAP_ENTRY_TIMEOUT_SEC,
                 ))),
@@ -1471,6 +1432,74 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
 pub struct SwapPubkeys {
     pub maker: String,
     pub taker: String,
+}
+
+pub fn swap_v2_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_V2_PREFIX, &uuid.to_string()) }
+
+/// Broadcast the swap v2 message once
+pub fn broadcast_swap_v2_message<T: prost::Message>(ctx: &MmArc, topic: String, msg: T, p2p_privkey: &Option<KeyPair>) {
+    use prost::Message;
+
+    let (p2p_private, from) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey.as_ref());
+    let encoded_msg = msg.encode_to_vec();
+
+    let secp_secret = SecretKey::from_slice(&p2p_private).expect("valid secret key");
+    let secp_message =
+        secp256k1::Message::from_slice(sha256(&encoded_msg).as_slice()).expect("sha256 is 32 bytes hash");
+    let signature = SECP_SIGN.sign(&secp_message, &secp_secret);
+
+    let signed_message = SignedMessage {
+        from: PublicKey::from_secret_key(&*SECP_SIGN, &secp_secret).serialize().into(),
+        signature: signature.serialize_compact().into(),
+        payload: encoded_msg,
+    };
+    broadcast_p2p_msg(ctx, vec![topic], signed_message.encode_to_vec(), from);
+}
+
+pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessResult<()> {
+    use prost::Message;
+
+    let uuid = Uuid::from_str(topic).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+    let signed_message = SignedMessage::decode(msg).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+
+    let pubkey =
+        PublicKey::from_slice(&signed_message.from).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+    let signature = Signature::from_compact(&signed_message.signature)
+        .map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+    let secp_message =
+        secp256k1::Message::from_slice(sha256(&signed_message.payload).as_slice()).expect("sha256 is 32 bytes hash");
+
+    SECP_VERIFY
+        .verify(&secp_message, &signature, &pubkey)
+        .map_to_mm(|e| P2PProcessError::InvalidSignature(e.to_string()))?;
+
+    let swap_message = SwapMessage::decode(signed_message.payload.as_slice())
+        .map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+
+    debug!("Processing swap v2 msg {:?} for uuid {}", msg, uuid);
+    let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
+    let mut msgs = swap_ctx.swap_v2_msgs.lock().unwrap();
+    if let Some(msg_store) = msgs.get_mut(&uuid) {
+        match swap_message.inner {
+            Some(swap_v2_pb::swap_message::Inner::MakerNegotiation(maker_negotiation)) => {
+                msg_store.maker_negotiation = Some(maker_negotiation)
+            },
+            Some(swap_v2_pb::swap_message::Inner::TakerNegotiation(taker_negotiation)) => {
+                msg_store.taker_negotiation = Some(taker_negotiation)
+            },
+            Some(swap_v2_pb::swap_message::Inner::MakerNegotiated(maker_negotiated)) => {
+                msg_store.maker_negotiated = Some(maker_negotiated)
+            },
+            Some(swap_v2_pb::swap_message::Inner::TakerPaymentInfo(taker_payment)) => {
+                msg_store.taker_payment = Some(taker_payment)
+            },
+            Some(swap_v2_pb::swap_message::Inner::MakerPaymentInfo(maker_payment)) => {
+                msg_store.maker_payment = Some(maker_payment)
+            },
+            None => return MmError::err(P2PProcessError::DecodeError("swap_message.inner is None".into())),
+        }
+    }
+    Ok(())
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
