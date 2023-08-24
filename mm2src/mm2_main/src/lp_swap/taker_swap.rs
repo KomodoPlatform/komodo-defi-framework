@@ -2027,10 +2027,6 @@ impl TakerSwap {
 
         let mut command = match saved.events.last().unwrap().get_command() {
             Some(command) => command,
-            #[cfg(not(test))]
-            None => return ERR!("Finished swaps should not enter to load_from_saved function"),
-            // load_from_saved is used in tests to load finished swaps
-            #[cfg(test)]
             None => return Ok((swap, None)),
         };
 
