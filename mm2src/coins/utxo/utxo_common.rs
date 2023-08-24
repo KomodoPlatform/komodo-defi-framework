@@ -1008,11 +1008,9 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
                 }
             });
             received_by_me += change;
-            None
-        } else if change > 0 {
-            Some(change)
+            0
         } else {
-            None
+            change
         };
 
         let data = AdditionalTxData {
@@ -1025,7 +1023,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         };
 
         Ok(coin
-            .calc_interest_if_required(self.tx, data, change_script_pubkey)
+            .calc_interest_if_required(self.tx, data, change_script_pubkey, dust)
             .await?)
     }
 }
@@ -1038,6 +1036,7 @@ pub async fn calc_interest_if_required<T: UtxoCommonOps>(
     mut unsigned: TransactionInputSigner,
     mut data: AdditionalTxData,
     my_script_pub: Bytes,
+    dust: u64,
 ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
     if coin.as_ref().conf.ticker != "KMD" {
         return Ok((unsigned, data));
@@ -1069,11 +1068,17 @@ pub async fn calc_interest_if_required<T: UtxoCommonOps>(
         match output_to_me {
             Some(ref mut output) => output.value += interest,
             None => {
-                let interest_output = TransactionOutput {
-                    script_pubkey: my_script_pub,
-                    value: interest,
-                };
-                unsigned.outputs.push(interest_output);
+                let maybe_change_output_value = interest + data.unused_change;
+                if maybe_change_output_value > dust {
+                    let change_output = TransactionOutput {
+                        script_pubkey: my_script_pub,
+                        value: maybe_change_output_value,
+                    };
+                    unsigned.outputs.push(change_output);
+                    data.unused_change = 0;
+                } else {
+                    data.unused_change += interest;
+                }
             },
         };
     } else {

@@ -257,7 +257,7 @@ pub struct AdditionalTxData {
     pub received_by_me: u64,
     pub spent_by_me: u64,
     pub fee_amount: u64,
-    pub unused_change: Option<u64>,
+    pub unused_change: u64,
     pub kmd_rewards: Option<KmdRewardsDetails>,
 }
 
@@ -839,6 +839,7 @@ pub trait UtxoTxGenerationOps {
         mut unsigned: TransactionInputSigner,
         mut data: AdditionalTxData,
         my_script_pub: Bytes,
+        dust: u64,
     ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)>;
 }
 

@@ -111,8 +111,9 @@ impl UtxoTxGenerationOps for UtxoStandardCoin {
         unsigned: TransactionInputSigner,
         data: AdditionalTxData,
         my_script_pub: Bytes,
+        dust: u64,
     ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
+        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub, dust).await
     }
 }
 
