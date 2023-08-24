@@ -20,10 +20,10 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             RawTransactionRequest, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
             SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs,
             SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            TransactionEnum, TransactionFut, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
@@ -488,7 +488,7 @@ impl ZCoin {
             received_by_me,
             spent_by_me: sat_from_big_decimal(&total_input_amount, self.decimals())?,
             fee_amount: sat_from_big_decimal(&tx_fee, self.decimals())?,
-            unused_change: None,
+            unused_change: 0,
             kmd_rewards: None,
         };
         Ok((tx, additional_data, sync_guard))
@@ -1277,60 +1277,53 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut {
-        let tx = try_tx_fus!(ZTransaction::read(taker_refunds_payment_args.payment_tx));
+    async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
+        let tx = try_tx_s!(ZTransaction::read(taker_refunds_payment_args.payment_tx));
         let key_pair = self.derive_htlc_key_pair(taker_refunds_payment_args.swap_unique_data);
         let time_lock = taker_refunds_payment_args.time_lock;
         let redeem_script = payment_script(
             time_lock,
             taker_refunds_payment_args.secret_hash,
             key_pair.public(),
-            &try_tx_fus!(Public::from_slice(taker_refunds_payment_args.other_pubkey)),
+            &try_tx_s!(Public::from_slice(taker_refunds_payment_args.other_pubkey)),
         );
         let script_data = ScriptBuilder::default().push_opcode(Opcode::OP_1).into_script();
-        let selfi = self.clone();
-        let fut = async move {
-            let tx_fut = z_p2sh_spend(
-                &selfi,
-                tx,
-                time_lock,
-                SEQUENCE_FINAL - 1,
-                redeem_script,
-                script_data,
-                &key_pair,
-            );
-            let tx = try_ztx_s!(tx_fut.await);
-            Ok(tx.into())
-        };
-        Box::new(fut.boxed().compat())
+
+        let tx_fut = z_p2sh_spend(
+            self,
+            tx,
+            time_lock,
+            SEQUENCE_FINAL - 1,
+            redeem_script,
+            script_data,
+            &key_pair,
+        );
+        let tx = try_ztx_s!(tx_fut.await);
+        Ok(tx.into())
     }
 
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut {
-        let tx = try_tx_fus!(ZTransaction::read(maker_refunds_payment_args.payment_tx));
+    async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
+        let tx = try_tx_s!(ZTransaction::read(maker_refunds_payment_args.payment_tx));
         let key_pair = self.derive_htlc_key_pair(maker_refunds_payment_args.swap_unique_data);
         let time_lock = maker_refunds_payment_args.time_lock;
         let redeem_script = payment_script(
             time_lock,
             maker_refunds_payment_args.secret_hash,
             key_pair.public(),
-            &try_tx_fus!(Public::from_slice(maker_refunds_payment_args.other_pubkey)),
+            &try_tx_s!(Public::from_slice(maker_refunds_payment_args.other_pubkey)),
         );
         let script_data = ScriptBuilder::default().push_opcode(Opcode::OP_1).into_script();
-        let selfi = self.clone();
-        let fut = async move {
-            let tx_fut = z_p2sh_spend(
-                &selfi,
-                tx,
-                time_lock,
-                SEQUENCE_FINAL - 1,
-                redeem_script,
-                script_data,
-                &key_pair,
-            );
-            let tx = try_ztx_s!(tx_fut.await);
-            Ok(tx.into())
-        };
-        Box::new(fut.boxed().compat())
+        let tx_fut = z_p2sh_spend(
+            self,
+            tx,
+            time_lock,
+            SEQUENCE_FINAL - 1,
+            redeem_script,
+            script_data,
+            &key_pair,
+        );
+        let tx = try_ztx_s!(tx_fut.await);
+        Ok(tx.into())
     }
 
     fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
@@ -1753,8 +1746,9 @@ impl UtxoTxGenerationOps for ZCoin {
         unsigned: TransactionInputSigner,
         data: AdditionalTxData,
         my_script_pub: Bytes,
+        dust: u64,
     ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
+        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub, dust).await
     }
 }
 

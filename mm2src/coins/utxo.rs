@@ -31,6 +31,7 @@ pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;
 pub mod spv;
+pub mod swap_proto_v2_scripts;
 pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
@@ -67,6 +68,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
+use mm2_rpc::data::legacy::UtxoMergeParams;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H160, H256, H264};
@@ -255,7 +257,7 @@ pub struct AdditionalTxData {
     pub received_by_me: u64,
     pub spent_by_me: u64,
     pub fee_amount: u64,
-    pub unused_change: Option<u64>,
+    pub unused_change: u64,
     pub kmd_rewards: Option<KmdRewardsDetails>,
 }
 
@@ -777,7 +779,11 @@ impl UtxoCoinFields {
             None
         };
 
-        let n_time = if self.conf.is_pos { Some(now_sec_u32()) } else { None };
+        let n_time = if self.conf.is_pos || self.conf.is_posv {
+            Some(now_sec_u32())
+        } else {
+            None
+        };
 
         TransactionInputSigner {
             version: self.conf.tx_version,
@@ -833,6 +839,7 @@ pub trait UtxoTxGenerationOps {
         mut unsigned: TransactionInputSigner,
         mut data: AdditionalTxData,
         my_script_pub: Bytes,
+        dust: u64,
     ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)>;
 }
 
@@ -968,6 +975,8 @@ pub trait UtxoCommonOps:
         utxo_tx_map: &'b mut HistoryUtxoTxMap,
     ) -> UtxoRpcResult<&'b mut HistoryUtxoTx>;
 
+    /// Generates a transaction spending P2SH vout (typically, with 0 index [`utxo_common::DEFAULT_SWAP_VOUT`]) of input.prev_transaction
+    /// Works only if single signature is required!
     async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String>;
 
     /// Loads verbose transactions from cache or requests it using RPC client.
@@ -1339,15 +1348,6 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
             .unbounded_send(ElectrumProtoVerifierEvent::Disconnected(address)));
         Ok(())
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct UtxoMergeParams {
-    pub merge_at: usize,
-    #[serde(default = "common::ten_f64")]
-    pub check_every: f64,
-    #[serde(default = "common::one_hundred")]
-    pub max_merge_at_once: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

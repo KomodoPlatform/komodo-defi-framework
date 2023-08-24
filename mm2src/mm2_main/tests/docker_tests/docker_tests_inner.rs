@@ -60,10 +60,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let refund_tx = coin
-        .send_maker_refunds_payment(maker_refunds_payment_args)
-        .wait()
-        .unwrap();
+    let refund_tx = block_on(coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx.tx_hex(),
@@ -148,10 +145,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let refund_tx = coin
-        .send_maker_refunds_payment(maker_refunds_payment_args)
-        .wait()
-        .unwrap();
+    let refund_tx = block_on(coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: refund_tx.tx_hex(),

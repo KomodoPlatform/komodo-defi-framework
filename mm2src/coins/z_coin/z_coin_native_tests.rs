@@ -65,7 +65,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
         swap_unique_data: pk_data.as_slice(),
         watcher_reward: false,
     };
-    let refund_tx = coin.send_maker_refunds_payment(refund_args).wait().unwrap();
+    let refund_tx = block_on(coin.send_maker_refunds_payment(refund_args)).unwrap();
     println!("refund tx {}", hex::encode(refund_tx.tx_hash().0));
 }
 

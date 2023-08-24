@@ -291,6 +291,7 @@ pub mod z_coin;
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
+pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
 pub type NonZeroBalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<GetNonZeroBalance>> + Send>;
@@ -310,6 +311,9 @@ pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransaction
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
+pub type GenAndSignDexFeeSpendResult = MmResult<TxPreimageWithSig, TxGenError>;
+pub type ValidateDexFeeResult = MmResult<(), ValidateDexFeeError>;
+pub type ValidateDexFeeSpendPreimageResult = MmResult<(), ValidateDexFeeSpendPreimageError>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
 
@@ -821,9 +825,9 @@ pub trait SwapOps {
 
     fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut;
 
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut;
+    async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult;
 
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut;
+    async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult;
 
     fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()>;
 
@@ -987,6 +991,133 @@ pub trait WatcherOps {
         reward_amount: Option<BigDecimal>,
         wait_until: u64,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
+}
+
+pub struct SendDexFeeWithPremiumArgs<'a> {
+    pub time_lock: u32,
+    pub secret_hash: &'a [u8],
+    pub other_pub: &'a [u8],
+    pub dex_fee_amount: BigDecimal,
+    pub premium_amount: BigDecimal,
+    pub swap_unique_data: &'a [u8],
+}
+
+pub struct ValidateDexFeeArgs<'a> {
+    pub dex_fee_tx: &'a [u8],
+    pub time_lock: u32,
+    pub secret_hash: &'a [u8],
+    pub other_pub: &'a [u8],
+    pub dex_fee_amount: BigDecimal,
+    pub premium_amount: BigDecimal,
+    pub swap_unique_data: &'a [u8],
+}
+
+pub struct GenDexFeeSpendArgs<'a> {
+    pub dex_fee_tx: &'a [u8],
+    pub time_lock: u32,
+    pub secret_hash: &'a [u8],
+    pub maker_pub: &'a [u8],
+    pub taker_pub: &'a [u8],
+    pub dex_fee_pub: &'a [u8],
+    pub dex_fee_amount: BigDecimal,
+    pub premium_amount: BigDecimal,
+}
+
+pub struct TxPreimageWithSig {
+    preimage: Vec<u8>,
+    signature: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub enum TxGenError {
+    Rpc(String),
+    NumConversion(String),
+    AddressDerivation(String),
+    TxDeserialization(String),
+    InvalidPubkey(String),
+    Signing(String),
+    MinerFeeExceedsPremium { miner_fee: BigDecimal, premium: BigDecimal },
+    Legacy(String),
+}
+
+impl From<UtxoRpcError> for TxGenError {
+    fn from(err: UtxoRpcError) -> Self { TxGenError::Rpc(err.to_string()) }
+}
+
+impl From<NumConversError> for TxGenError {
+    fn from(err: NumConversError) -> Self { TxGenError::NumConversion(err.to_string()) }
+}
+
+impl From<UtxoSignWithKeyPairError> for TxGenError {
+    fn from(err: UtxoSignWithKeyPairError) -> Self { TxGenError::Signing(err.to_string()) }
+}
+
+#[derive(Debug)]
+pub enum ValidateDexFeeError {
+    InvalidDestinationOrAmount(String),
+    InvalidPubkey(String),
+    NumConversion(String),
+    Rpc(String),
+    TxBytesMismatch { from_rpc: BytesJson, actual: BytesJson },
+    TxDeserialization(String),
+    TxLacksOfOutputs,
+}
+
+impl From<NumConversError> for ValidateDexFeeError {
+    fn from(err: NumConversError) -> Self { ValidateDexFeeError::NumConversion(err.to_string()) }
+}
+
+impl From<UtxoRpcError> for ValidateDexFeeError {
+    fn from(err: UtxoRpcError) -> Self { ValidateDexFeeError::Rpc(err.to_string()) }
+}
+
+#[derive(Debug)]
+pub enum ValidateDexFeeSpendPreimageError {
+    InvalidPubkey(String),
+    InvalidTakerSignature,
+    InvalidPreimage(String),
+    SignatureVerificationFailure(String),
+    TxDeserialization(String),
+    TxGenError(String),
+}
+
+impl From<UtxoSignWithKeyPairError> for ValidateDexFeeSpendPreimageError {
+    fn from(err: UtxoSignWithKeyPairError) -> Self {
+        ValidateDexFeeSpendPreimageError::SignatureVerificationFailure(err.to_string())
+    }
+}
+
+impl From<TxGenError> for ValidateDexFeeSpendPreimageError {
+    fn from(err: TxGenError) -> Self { ValidateDexFeeSpendPreimageError::TxGenError(format!("{:?}", err)) }
+}
+
+#[async_trait]
+pub trait SwapOpsV2 {
+    async fn send_dex_fee_with_premium(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult;
+
+    async fn validate_dex_fee_with_premium(&self, args: ValidateDexFeeArgs<'_>) -> ValidateDexFeeResult;
+
+    async fn refund_dex_fee_with_premium(&self, args: RefundPaymentArgs<'_>) -> TransactionResult;
+
+    async fn gen_and_sign_dex_fee_spend_preimage(
+        &self,
+        args: &GenDexFeeSpendArgs<'_>,
+        swap_unique_data: &[u8],
+    ) -> GenAndSignDexFeeSpendResult;
+
+    async fn validate_dex_fee_spend_preimage(
+        &self,
+        gen_args: &GenDexFeeSpendArgs<'_>,
+        preimage: &TxPreimageWithSig,
+    ) -> ValidateDexFeeSpendPreimageResult;
+
+    async fn sign_and_broadcast_dex_fee_spend(
+        &self,
+        preimage: &TxPreimageWithSig,
+        gen_args: &GenDexFeeSpendArgs<'_>,
+        secret: &[u8],
+        swap_unique_data: &[u8],
+    ) -> TransactionResult;
 }
 
 /// Operations that coins have independently from the MarketMaker.

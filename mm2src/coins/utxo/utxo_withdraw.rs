@@ -187,7 +187,7 @@ where
         // Finish by generating `TransactionDetails` from the signed transaction.
         self.on_finishing()?;
 
-        let fee_amount = data.fee_amount + data.unused_change.unwrap_or_default();
+        let fee_amount = data.fee_amount + data.unused_change;
         let fee_details = UtxoFeeDetails {
             coin: Some(ticker.clone()),
             amount: big_decimal_from_sat(fee_amount as i64, decimals),

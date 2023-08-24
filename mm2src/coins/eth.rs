@@ -52,6 +52,7 @@ use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
+use mm2_rpc::data::legacy::GasStationPricePolicy;
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
@@ -109,6 +110,7 @@ use crate::nft::{find_wallet_nft_amount, WithdrawNftResult};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod nonce;
+use crate::TransactionResult;
 use nonce::ParityNonce;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -1094,18 +1096,18 @@ impl SwapOps for EthCoin {
         )
     }
 
-    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
-        Box::new(
-            self.refund_hash_time_locked_payment(taker_refunds_payment_args)
-                .map(TransactionEnum::from),
-        )
+    async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
+        self.refund_hash_time_locked_payment(taker_refunds_payment_args)
+            .map(TransactionEnum::from)
+            .compat()
+            .await
     }
 
-    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
-        Box::new(
-            self.refund_hash_time_locked_payment(maker_refunds_payment_args)
-                .map(TransactionEnum::from),
-        )
+    async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
+        self.refund_hash_time_locked_payment(maker_refunds_payment_args)
+            .map(TransactionEnum::from)
+            .compat()
+            .await
     }
 
     fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
@@ -4247,7 +4249,7 @@ impl EthCoin {
             // TODO refactor to error_log_passthrough once simple maker bot is merged
             let gas_station_price = match &coin.gas_station_url {
                 Some(url) => {
-                    match GasStationData::get_gas_price(url, coin.gas_station_decimals, coin.gas_station_policy)
+                    match GasStationData::get_gas_price(url, coin.gas_station_decimals, coin.gas_station_policy.clone())
                         .compat()
                         .await
                     {
@@ -4998,21 +5000,6 @@ pub struct GasStationData {
     #[serde(alias = "average", alias = "standard")]
     average: MmNumber,
     fast: MmNumber,
-}
-
-/// Using tagged representation to allow adding variants with coefficients, percentage, etc in the future.
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(tag = "policy", content = "additional_data")]
-pub enum GasStationPricePolicy {
-    /// Use mean between average and fast values, default and recommended to use on ETH mainnet due to
-    /// gas price big spikes.
-    MeanAverageFast,
-    /// Use average value only. Useful for non-heavily congested networks (Matic, etc.)
-    Average,
-}
-
-impl Default for GasStationPricePolicy {
-    fn default() -> Self { GasStationPricePolicy::MeanAverageFast }
 }
 
 impl GasStationData {
