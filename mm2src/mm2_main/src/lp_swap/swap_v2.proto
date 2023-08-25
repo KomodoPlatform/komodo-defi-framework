@@ -8,18 +8,56 @@ message SignedMessage {
   bytes payload = 3;
 }
 
-message MakerNegotiation {}
+message MakerNegotiation {
+  uint64 started_at = 1;
+  uint64 payment_locktime = 2;
+  bytes secret_hash = 3;
+  bytes maker_coin_htlc_pub = 4;
+  bytes taker_coin_htlc_pub = 5;
+  optional bytes maker_coin_swap_contract = 6;
+  optional bytes taker_coin_swap_contract = 7;
+}
 
-message TakerNegotiation {}
+message Abort {
+  string reason = 1;
+}
 
-message MakerNegotiated {}
+message TakerNegotiationData {
+  uint64 started_at = 1;
+  uint64 payment_locktime = 2;
+  // add bytes secret_hash = 3 if required
+  bytes maker_coin_htlc_pub = 4;
+  bytes taker_coin_htlc_pub = 5;
+  optional bytes maker_coin_swap_contract = 6;
+  optional bytes taker_coin_swap_contract = 7;
+}
+
+message TakerNegotiation {
+  oneof action {
+      TakerNegotiationData continue = 1;
+      Abort abort = 2;
+  }
+}
+
+message MakerNegotiated {
+  bool negotiated = 1;
+  optional string reason = 2;
+}
 
 message TakerPaymentInfo {
   bytes tx_bytes = 1;
   optional bytes next_step_instructions = 2;
 }
 
-message MakerPaymentInfo {}
+message MakerPaymentInfo {
+  bytes tx_bytes = 1;
+  optional bytes next_step_instructions = 2;
+}
+
+message TakerPaymentSpendPreimage {
+  bytes signature = 1;
+  optional bytes tx_preimage = 2;
+}
 
 message SwapMessage {
   oneof inner {
@@ -28,5 +66,6 @@ message SwapMessage {
     MakerNegotiated maker_negotiated = 3;
     TakerPaymentInfo taker_payment_info = 4;
     MakerPaymentInfo maker_payment_info = 5;
+    TakerPaymentSpendPreimage taker_payment_spend_preimage = 6;
   }
 }

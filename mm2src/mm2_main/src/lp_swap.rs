@@ -173,6 +173,7 @@ pub struct SwapV2MsgStore {
     maker_negotiated: Option<MakerNegotiated>,
     taker_payment: Option<TakerPaymentInfo>,
     maker_payment: Option<MakerPaymentInfo>,
+    taker_payment_spend_preimage: Option<TakerPaymentSpendPreimage>,
     accept_only_from: bits256,
 }
 
@@ -1437,7 +1438,12 @@ pub struct SwapPubkeys {
 pub fn swap_v2_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_V2_PREFIX, &uuid.to_string()) }
 
 /// Broadcast the swap v2 message once
-pub fn broadcast_swap_v2_message<T: prost::Message>(ctx: &MmArc, topic: String, msg: T, p2p_privkey: &Option<KeyPair>) {
+pub fn broadcast_swap_v2_message<T: prost::Message>(
+    ctx: &MmArc,
+    topic: String,
+    msg: &T,
+    p2p_privkey: &Option<KeyPair>,
+) {
     use prost::Message;
 
     let (p2p_private, from) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey.as_ref());
@@ -1454,6 +1460,24 @@ pub fn broadcast_swap_v2_message<T: prost::Message>(ctx: &MmArc, topic: String, 
         payload: encoded_msg,
     };
     broadcast_p2p_msg(ctx, vec![topic], signed_message.encode_to_vec(), from);
+}
+
+/// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
+/// to stop it
+pub fn broadcast_swap_v2_msg_every<T: prost::Message + 'static>(
+    ctx: MmArc,
+    topic: String,
+    msg: T,
+    interval_sec: f64,
+    p2p_privkey: Option<KeyPair>,
+) -> AbortOnDropHandle {
+    let fut = async move {
+        loop {
+            broadcast_swap_v2_message(&ctx, topic.clone(), &msg, &p2p_privkey);
+            Timer::sleep(interval_sec).await;
+        }
+    };
+    spawn_abortable(fut)
 }
 
 pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessResult<()> {
@@ -1496,10 +1520,38 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
             Some(swap_v2_pb::swap_message::Inner::MakerPaymentInfo(maker_payment)) => {
                 msg_store.maker_payment = Some(maker_payment)
             },
+            Some(swap_v2_pb::swap_message::Inner::TakerPaymentSpendPreimage(preimage)) => {
+                msg_store.taker_payment_spend_preimage = Some(preimage)
+            },
             None => return MmError::err(P2PProcessError::DecodeError("swap_message.inner is None".into())),
         }
     }
     Ok(())
+}
+
+async fn recv_swap_v2_msg<T>(
+    ctx: MmArc,
+    mut getter: impl FnMut(&mut SwapMsgStore) -> Option<T>,
+    uuid: &Uuid,
+    timeout: u64,
+) -> Result<T, String> {
+    let started = now_sec();
+    let timeout = BASIC_COMM_TIMEOUT + timeout;
+    let wait_until = started + timeout;
+    loop {
+        Timer::sleep(1.).await;
+        let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
+        let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
+        if let Some(msg_store) = msgs.get_mut(uuid) {
+            if let Some(msg) = getter(msg_store) {
+                return Ok(msg);
+            }
+        }
+        let now = now_sec();
+        if now > wait_until {
+            return ERR!("Timeout ({} > {})", now - started, timeout);
+        }
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
