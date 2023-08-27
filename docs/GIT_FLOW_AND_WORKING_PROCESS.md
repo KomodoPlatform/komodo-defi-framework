@@ -31,5 +31,5 @@ Cons:
 [@artemii235](https://github.com/artemii235)
 [@sergeyboyko0791](https://github.com/sergeyboyko0791)
 [@shamardy](https://github.com/shamardy)
-[@ozkanonur](https://github.com/ozkanonur)
+[@onur-ozkan](https://github.com/onur-ozkan)
 
