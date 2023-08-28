@@ -7,6 +7,8 @@ use common::{block_on, now_sec_u32, DEX_FEE_ADDR_RAW_PUBKEY};
 use mm2_test_helpers::for_tests::{enable_native, mm_dump, mycoin1_conf, mycoin_conf, start_swaps, MarketMakerIt,
                                   Mm2TestConf};
 use script::{Builder, Opcode};
+use std::thread;
+use std::time::Duration;
 
 #[test]
 fn send_and_refund_taker_payment() {
@@ -166,4 +168,6 @@ fn test_v2_swap_utxo_utxo() {
         100.,
     ));
     println!("{:?}", uuids);
+
+    block_on(mm_alice.wait_for_log(10., |log| log.contains("Received maker negotiation message"))).unwrap();
 }

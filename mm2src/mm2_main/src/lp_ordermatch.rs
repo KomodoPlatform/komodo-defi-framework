@@ -76,9 +76,9 @@ use crate::mm2::lp_swap::taker_swap_v2::{self, DummyTakerSwapStorage, TakerSwapS
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
                           check_other_coin_balance_for_swap, get_max_maker_vol, insert_new_swap_to_db,
                           is_pubkey_banned, lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
-                          p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, AtomicLocktimeVersion,
-                          CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap, RunMakerSwapInput,
-                          RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
+                          p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, swap_v2_topic,
+                          AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap,
+                          RunMakerSwapInput, RunTakerSwapInput, SecretHashAlgo, SwapConfirmationsSettings, TakerSwap};
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 pub use orderbook_depth::orderbook_depth_rpc;
@@ -2972,6 +2972,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                     let mut maker_swap_state_machine = MakerSwapStateMachine {
                         ctx,
                         storage: DummyMakerSwapStorage::new(),
+                        started_at: now_sec(),
                         maker_coin: m.clone(),
                         maker_volume: maker_amount.into(),
                         secret,
@@ -2979,8 +2980,11 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                         taker_volume: taker_amount.into(),
                         taker_premium: Default::default(),
                         conf_settings: my_conf_settings,
+                        p2p_topic: swap_v2_topic(&uuid),
                         uuid,
                         p2p_keypair: maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                        secret_hash_algo: SecretHashAlgo::DHASH160,
+                        lock_duration: lock_time,
                     };
                     maker_swap_state_machine
                         .run(Box::new(maker_swap_v2::Initialize::new()))
@@ -3102,11 +3106,12 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                         ctx,
                         storage: DummyTakerSwapStorage::new(),
                         maker_coin: m.clone(),
-                        maker_volume: maker_amount.into(),
+                        maker_volume: maker_amount,
                         taker_coin: t.clone(),
-                        taker_volume: taker_amount.into(),
+                        taker_volume: taker_amount,
                         taker_premium: Default::default(),
                         conf_settings: my_conf_settings,
+                        p2p_topic: swap_v2_topic(&uuid),
                         uuid,
                         p2p_keypair: taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
                     };

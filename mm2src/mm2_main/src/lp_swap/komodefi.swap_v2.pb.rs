@@ -64,6 +64,7 @@ pub mod taker_negotiation {
 pub struct MakerNegotiated {
     #[prost(bool, tag="1")]
     pub negotiated: bool,
+    /// used when negotiated is false
     #[prost(string, optional, tag="2")]
     pub reason: ::core::option::Option<::prost::alloc::string::String>,
 }

@@ -41,6 +41,7 @@ message TakerNegotiation {
 
 message MakerNegotiated {
   bool negotiated = 1;
+  // used when negotiated is false
   optional string reason = 2;
 }
 

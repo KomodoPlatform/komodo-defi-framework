@@ -1,34 +1,23 @@
-use crate::mm2::lp_swap::{check_balance_for_maker_swap, SwapConfirmationsSettings, TransactionIdentifier};
+use crate::mm2::lp_network::subscribe_to_topic;
+use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg, swap_v2_pb,
+                          SecretHashAlgo, SwapConfirmationsSettings, TransactionIdentifier};
 use async_trait::async_trait;
-use coins::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
-use coins::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, GenTakerPaymentSpendArgs, GenTakerPaymentSpendResult, HistorySyncState,
-            MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RawTransactionFut,
-            RawTransactionRequest, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
-            SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureResult,
-            SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin, TestCoin, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, TransactionResult,
-            TxMarshalingErr, TxPreimageWithSig, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateDexFeeResult, ValidateDexFeeSpendPreimageResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentInput, ValidateTakerPaymentArgs, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
-use common::executor::AbortedError;
-use common::{block_on, Future01CompatExt};
-use futures01::Future;
+use bitcrypto::{dhash160, sha256};
+use coins::{ConfirmPaymentInput, FeeApproxStage, MarketCoinOps, MmCoin, SwapOpsV2};
+use common::log::{debug, info};
+use common::Future01CompatExt;
 use keys::KeyPair;
-use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_err_handle::mm_error::{MmError, MmResult};
-use mm2_number::{BigDecimal, MmNumber};
+use mm2_core::mm_ctx::MmArc;
+use mm2_number::MmNumber;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::storable_state_machine::*;
 use primitives::hash::H256;
-use rpc::v1::types::Bytes as BytesJson;
-use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use uuid::Uuid;
+
+// This is needed to have Debug on messages
+#[allow(unused_imports)] use prost::Message;
 
 #[derive(Debug, PartialEq)]
 pub enum MakerSwapEvent {
@@ -102,16 +91,34 @@ pub struct MakerSwapStateMachine<MakerCoin, TakerCoin> {
     pub maker_coin: MakerCoin,
     pub maker_volume: MmNumber,
     pub secret: H256,
+    pub secret_hash_algo: SecretHashAlgo,
+    pub started_at: u64,
+    pub lock_duration: u64,
     pub taker_coin: TakerCoin,
     pub taker_volume: MmNumber,
     pub taker_premium: MmNumber,
     pub conf_settings: SwapConfirmationsSettings,
     pub uuid: Uuid,
+    pub p2p_topic: String,
     pub p2p_keypair: Option<KeyPair>,
 }
 
 impl<MakerCoin, TakerCoin> MakerSwapStateMachine<MakerCoin, TakerCoin> {
+    #[inline]
     fn taker_payment_conf_timeout(&self) -> u64 { 0 }
+
+    #[inline]
+    fn maker_payment_locktime(&self) -> u64 { self.started_at + self.lock_duration }
+
+    fn secret_hash(&self) -> Vec<u8> {
+        match self.secret_hash_algo {
+            SecretHashAlgo::DHASH160 => dhash160(self.secret.as_slice()).take().into(),
+            SecretHashAlgo::SHA256 => sha256(self.secret.as_slice()).take().into(),
+        }
+    }
+
+    #[inline]
+    fn unique_data(&self) -> Vec<u8> { self.secret_hash() }
 }
 
 impl<MakerCoin: Send + 'static, TakerCoin: Send + 'static> StorableStateMachine
@@ -156,38 +163,41 @@ impl<MakerCoin: MmCoin + SwapOpsV2 + Send + Sync + 'static, TakerCoin: MmCoin + 
 {
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
-        let maker_coin_start_block = match ctx.maker_coin.current_block().compat().await {
+    async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+        subscribe_to_topic(&state_machine.ctx, state_machine.p2p_topic.clone());
+
+        let maker_coin_start_block = match state_machine.maker_coin.current_block().compat().await {
             Ok(b) => b,
-            Err(e) => return Self::change_state(Aborted::new(e), ctx).await,
+            Err(e) => return Self::change_state(Aborted::new(e), state_machine).await,
         };
 
-        let taker_coin_start_block = match ctx.taker_coin.current_block().compat().await {
+        let taker_coin_start_block = match state_machine.taker_coin.current_block().compat().await {
             Ok(b) => b,
-            Err(e) => return Self::change_state(Aborted::new(e), ctx).await,
+            Err(e) => return Self::change_state(Aborted::new(e), state_machine).await,
         };
 
         if let Err(e) = check_balance_for_maker_swap(
-            &ctx.ctx,
-            &ctx.maker_coin,
-            &ctx.taker_coin,
-            ctx.maker_volume.clone(),
-            Some(&ctx.uuid),
+            &state_machine.ctx,
+            &state_machine.maker_coin,
+            &state_machine.taker_coin,
+            state_machine.maker_volume.clone(),
+            Some(&state_machine.uuid),
             None,
             FeeApproxStage::StartSwap,
         )
         .await
         {
-            return Self::change_state(Aborted::new(e.to_string()), ctx).await;
+            return Self::change_state(Aborted::new(e.to_string()), state_machine).await;
         }
 
+        info!("Maker swap {} has successfully started", state_machine.uuid);
         let negotiate = Initialized {
             maker_coin: Default::default(),
             taker_coin: Default::default(),
             maker_coin_start_block,
             taker_coin_start_block,
         };
-        Self::change_state(negotiate, ctx).await
+        Self::change_state(negotiate, state_machine).await
     }
 }
 
@@ -212,19 +222,58 @@ impl<MakerCoin: Send + 'static, TakerCoin: Send + 'static> StorableState for Ini
 }
 
 #[async_trait]
-impl<MakerCoin: Send + Sync + 'static, TakerCoin: MarketCoinOps + Send + Sync + 'static> State
+impl<MakerCoin: MmCoin + Send + Sync + 'static, TakerCoin: MmCoin + Send + Sync + 'static> State
     for Initialized<MakerCoin, TakerCoin>
 {
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+    async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+        const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
+        let unique_data = state_machine.unique_data();
+
+        let maker_negotiation_msg = swap_v2_pb::MakerNegotiation {
+            started_at: state_machine.started_at,
+            payment_locktime: state_machine.maker_payment_locktime(),
+            secret_hash: state_machine.secret_hash(),
+            maker_coin_htlc_pub: state_machine.maker_coin.derive_htlc_pubkey(&unique_data),
+            taker_coin_htlc_pub: state_machine.taker_coin.derive_htlc_pubkey(&unique_data),
+            maker_coin_swap_contract: state_machine.maker_coin.swap_contract_address().map(|bytes| bytes.0),
+            taker_coin_swap_contract: state_machine.taker_coin.swap_contract_address().map(|bytes| bytes.0),
+        };
+        debug!("Sending maker negotiation message {:?}", maker_negotiation_msg);
+        let swap_msg = swap_v2_pb::SwapMessage {
+            inner: Some(swap_v2_pb::swap_message::Inner::MakerNegotiation(maker_negotiation_msg)),
+        };
+        let abort_handle = broadcast_swap_v2_msg_every(
+            state_machine.ctx.clone(),
+            state_machine.p2p_topic.clone(),
+            swap_msg,
+            30.,
+            state_machine.p2p_keypair,
+        );
+
+        let recv_fut = recv_swap_v2_msg(
+            state_machine.ctx.clone(),
+            |store| store.taker_negotiation.take(),
+            &state_machine.uuid,
+            NEGOTIATION_TIMEOUT_SEC,
+        );
+        let taker_negotiation = match recv_fut.await {
+            Ok(d) => d,
+            Err(e) => {
+                let next_state = Aborted::new(format!("Failed to receive TakerNegotiation: {}", e));
+                return Self::change_state(next_state, state_machine).await;
+            },
+        };
+
+        debug!("Received taker negotiation message {:?}", taker_negotiation);
         let next_state = Negotiated {
             maker_coin: Default::default(),
             taker_coin: Default::default(),
             maker_coin_start_block: self.maker_coin_start_block,
             taker_coin_start_block: self.taker_coin_start_block,
         };
-        Self::change_state(next_state, ctx).await
+        Self::change_state(next_state, state_machine).await
     }
 }
 
@@ -243,7 +292,7 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: MarketCoinOps + Send + Sync + 
 {
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+    async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
         let next_state = MakerPaymentSent {
             maker_coin: Default::default(),
             taker_coin: Default::default(),
@@ -254,7 +303,7 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: MarketCoinOps + Send + Sync + 
                 tx_hash: Default::default(),
             },
         };
-        Self::change_state(next_state, ctx).await
+        Self::change_state(next_state, state_machine).await
     }
 }
 
@@ -285,7 +334,7 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: MarketCoinOps + Send + Sync + 
 {
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+    async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
         let taker_payment = TransactionIdentifier {
             tx_hex: Default::default(),
             tx_hash: Default::default(),
@@ -293,18 +342,18 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: MarketCoinOps + Send + Sync + 
 
         let input = ConfirmPaymentInput {
             payment_tx: taker_payment.tx_hex.0.clone(),
-            confirmations: ctx.conf_settings.taker_coin_confs,
-            requires_nota: ctx.conf_settings.taker_coin_nota,
-            wait_until: ctx.taker_payment_conf_timeout(),
+            confirmations: state_machine.conf_settings.taker_coin_confs,
+            requires_nota: state_machine.conf_settings.taker_coin_nota,
+            wait_until: state_machine.taker_payment_conf_timeout(),
             check_every: 10,
         };
-        if let Err(e) = ctx.taker_coin.wait_for_confirmations(input).compat().await {
+        if let Err(e) = state_machine.taker_coin.wait_for_confirmations(input).compat().await {
             let next_state = MakerPaymentRefundRequired {
                 maker_coin: Default::default(),
                 taker_coin: Default::default(),
                 maker_payment: self.maker_payment,
             };
-            return Self::change_state(next_state, ctx).await;
+            return Self::change_state(next_state, state_machine).await;
         }
 
         let next_state = BothPaymentsSentAndConfirmed {
@@ -315,7 +364,7 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: MarketCoinOps + Send + Sync + 
             maker_payment: self.maker_payment,
             taker_payment,
         };
-        Self::change_state(next_state, ctx).await
+        Self::change_state(next_state, state_machine).await
     }
 }
 
@@ -348,7 +397,7 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: MarketCoinOps + Send + Sync + 
 {
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+    async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
         unimplemented!()
     }
 }
@@ -385,7 +434,7 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: Send + Sync + 'static> State
 {
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+    async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
         let next_state = TakerPaymentSpent {
             maker_coin: Default::default(),
             taker_coin: Default::default(),
@@ -398,7 +447,7 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: Send + Sync + 'static> State
                 tx_hash: Default::default(),
             },
         };
-        Self::change_state(next_state, ctx).await
+        Self::change_state(next_state, state_machine).await
     }
 }
 
@@ -438,8 +487,8 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: Send + Sync + 'static> State
 {
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
-        Self::change_state(Completed::new(), ctx).await
+    async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+        Self::change_state(Completed::new(), state_machine).await
     }
 }
 
@@ -479,7 +528,7 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: Send + Sync + 'static> LastSta
 
     async fn on_changed(
         self: Box<Self>,
-        _ctx: &mut Self::StateMachine,
+        _state_machine: &mut Self::StateMachine,
     ) -> <Self::StateMachine as StateMachineTrait>::Result {
         //TODO just log something here?
     }
@@ -526,118 +575,10 @@ impl<MakerCoin: Send + Sync + 'static, TakerCoin: Send + Sync + 'static> LastSta
 
     async fn on_changed(
         self: Box<Self>,
-        _ctx: &mut Self::StateMachine,
+        _state_machine: &mut Self::StateMachine,
     ) -> <Self::StateMachine as StateMachineTrait>::Result {
         //TODO just log something here?
     }
 }
 
 impl<MakerCoin, TakerCoin> TransitionFrom<TakerPaymentSpent<MakerCoin, TakerCoin>> for Completed<MakerCoin, TakerCoin> {}
-
-#[test]
-fn just_run_it() {
-    use mocktopus::mocking::{MockResult, Mockable};
-    TestCoin::current_block.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(1000))));
-    TestCoin::get_sender_trade_fee.mock_safe(|_, _, _| {
-        MockResult::Return(Box::pin(futures::future::ok(TradeFee {
-            coin: "test".to_string(),
-            amount: Default::default(),
-            paid_from_trading_vol: false,
-        })))
-    });
-
-    TestCoin::get_receiver_trade_fee.mock_safe(|_, _| {
-        MockResult::Return(Box::new(futures01::future::ok(TradeFee {
-            coin: "test".to_string(),
-            amount: Default::default(),
-            paid_from_trading_vol: false,
-        })))
-    });
-
-    TestCoin::my_balance.mock_safe(|_| {
-        MockResult::Return(Box::new(futures01::future::ok(CoinBalance {
-            spendable: 100.into(),
-            unspendable: Default::default(),
-        })))
-    });
-
-    TestCoin::wait_for_confirmations.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(()))));
-
-    let ctx = MmCtxBuilder::default().into_mm_arc();
-    let uuid = Uuid::default();
-    let mut machine = MakerSwapStateMachine {
-        ctx,
-        maker_coin: TestCoin::default(),
-        maker_volume: Default::default(),
-        conf_settings: SwapConfirmationsSettings {
-            maker_coin_confs: 0,
-            maker_coin_nota: false,
-            taker_coin_confs: 0,
-            taker_coin_nota: false,
-        },
-        taker_coin: TestCoin::default(),
-        taker_volume: Default::default(),
-        uuid,
-        storage: DummyMakerSwapStorage {
-            events: Default::default(),
-        },
-        taker_premium: Default::default(),
-        secret: Default::default(),
-        p2p_keypair: None,
-    };
-
-    block_on(machine.run(Box::new(Initialize {
-        maker_coin: Default::default(),
-        taker_coin: Default::default(),
-    })))
-    .unwrap();
-
-    let expected_events = vec![
-        MakerSwapEvent::Initialized {
-            maker_coin_start_block: 1000,
-            taker_coin_start_block: 1000,
-        },
-        MakerSwapEvent::Negotiated {
-            maker_coin_start_block: 1000,
-            taker_coin_start_block: 1000,
-        },
-        MakerSwapEvent::MakerPaymentSent {
-            maker_coin_start_block: 1000,
-            taker_coin_start_block: 1000,
-            maker_payment: TransactionIdentifier {
-                tx_hex: Default::default(),
-                tx_hash: Default::default(),
-            },
-        },
-        MakerSwapEvent::BothPaymentsSentAndConfirmed {
-            maker_coin_start_block: 1000,
-            taker_coin_start_block: 1000,
-            maker_payment: TransactionIdentifier {
-                tx_hex: Default::default(),
-                tx_hash: Default::default(),
-            },
-            taker_payment: TransactionIdentifier {
-                tx_hex: Default::default(),
-                tx_hash: Default::default(),
-            },
-        },
-        MakerSwapEvent::TakerPaymentSpent {
-            maker_coin_start_block: 1000,
-            taker_coin_start_block: 1000,
-            maker_payment: TransactionIdentifier {
-                tx_hex: Default::default(),
-                tx_hash: Default::default(),
-            },
-            taker_payment: TransactionIdentifier {
-                tx_hex: Default::default(),
-                tx_hash: Default::default(),
-            },
-            taker_payment_spend: TransactionIdentifier {
-                tx_hex: Default::default(),
-                tx_hash: Default::default(),
-            },
-        },
-        MakerSwapEvent::Completed,
-    ];
-    assert_eq!(expected_events, *machine.storage.events.get(&uuid).unwrap());
-}

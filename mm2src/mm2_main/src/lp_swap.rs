@@ -1388,7 +1388,7 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     Ok(try_s!(Response::builder().body(res)))
 }
 
-enum SecretHashAlgo {
+pub enum SecretHashAlgo {
     /// ripemd160(sha256(secret))
     DHASH160,
     /// sha256(secret)
@@ -1531,7 +1531,7 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
 
 async fn recv_swap_v2_msg<T>(
     ctx: MmArc,
-    mut getter: impl FnMut(&mut SwapMsgStore) -> Option<T>,
+    mut getter: impl FnMut(&mut SwapV2MsgStore) -> Option<T>,
     uuid: &Uuid,
     timeout: u64,
 ) -> Result<T, String> {
@@ -1541,7 +1541,7 @@ async fn recv_swap_v2_msg<T>(
     loop {
         Timer::sleep(1.).await;
         let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-        let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
+        let mut msgs = swap_ctx.swap_v2_msgs.lock().unwrap();
         if let Some(msg_store) = msgs.get_mut(uuid) {
             if let Some(msg) = getter(msg_store) {
                 return Ok(msg);
