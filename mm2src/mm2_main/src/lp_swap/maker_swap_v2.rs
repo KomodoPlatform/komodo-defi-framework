@@ -1,11 +1,11 @@
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg, swap_v2_pb,
-                          SecretHashAlgo, SwapConfirmationsSettings, TransactionIdentifier};
+                          SecretHashAlgo, SwapConfirmationsSettings, SwapsContext, TransactionIdentifier};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{ConfirmPaymentInput, FeeApproxStage, MarketCoinOps, MmCoin, SwapOpsV2};
 use common::log::{debug, info};
-use common::Future01CompatExt;
+use common::{bits256, Future01CompatExt};
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_number::MmNumber;
@@ -165,6 +165,8 @@ impl<MakerCoin: MmCoin + SwapOpsV2 + Send + Sync + 'static, TakerCoin: MmCoin + 
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
         subscribe_to_topic(&state_machine.ctx, state_machine.p2p_topic.clone());
+        let swap_ctx = SwapsContext::from_ctx(&state_machine.ctx).expect("SwapsContext::from_ctx should not fail");
+        swap_ctx.init_msg_v2_store(state_machine.uuid, bits256::default());
 
         let maker_coin_start_block = match state_machine.maker_coin.current_block().compat().await {
             Ok(b) => b,

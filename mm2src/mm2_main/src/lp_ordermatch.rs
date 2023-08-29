@@ -3105,6 +3105,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                     let mut taker_swap_state_machine = TakerSwapStateMachine {
                         ctx,
                         storage: DummyTakerSwapStorage::new(),
+                        started_at: now_sec(),
                         maker_coin: m.clone(),
                         maker_volume: maker_amount,
                         taker_coin: t.clone(),

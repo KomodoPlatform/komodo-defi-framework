@@ -170,4 +170,6 @@ fn test_v2_swap_utxo_utxo() {
     println!("{:?}", uuids);
 
     block_on(mm_alice.wait_for_log(10., |log| log.contains("Received maker negotiation message"))).unwrap();
+    block_on(mm_bob.wait_for_log(10., |log| log.contains("Received taker negotiation message"))).unwrap();
+    block_on(mm_alice.wait_for_log(10., |log| log.contains("Received maker negotiated message"))).unwrap();
 }
