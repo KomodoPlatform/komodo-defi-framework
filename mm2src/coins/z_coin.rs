@@ -773,6 +773,7 @@ pub enum ZcoinRpcMode {
     Native,
     #[serde(alias = "Electrum")]
     Light {
+        #[serde(alias = "servers")]
         electrum_servers: Vec<ElectrumRpcRequest>,
         light_wallet_d_servers: Vec<String>,
         /// Specifies the parameters for synchronizing the wallet from a specific block. This overrides the
