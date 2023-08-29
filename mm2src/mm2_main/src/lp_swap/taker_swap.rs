@@ -267,6 +267,7 @@ impl TakerSavedSwap {
                 | TakerSwapEvent::TakerPaymentRefunded(_)
                 | TakerSwapEvent::TakerPaymentRefundedByWatcher(_)
                 | TakerSwapEvent::MakerPaymentSpent(_)
+                | TakerSwapEvent::MakerPaymentSpentByWatcher(_)
                 | TakerSwapEvent::MakerPaymentWaitConfirmFailed(_) => {
                     return false;
                 },
