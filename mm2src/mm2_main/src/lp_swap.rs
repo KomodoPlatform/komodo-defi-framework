@@ -166,6 +166,15 @@ pub struct SwapMsgStore {
     accept_only_from: bits256,
 }
 
+impl SwapMsgStore {
+    pub fn new(accept_only_from: bits256) -> Self {
+        SwapMsgStore {
+            accept_only_from,
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct SwapV2MsgStore {
     maker_negotiation: Option<MakerNegotiation>,
@@ -177,9 +186,9 @@ pub struct SwapV2MsgStore {
     accept_only_from: bits256,
 }
 
-impl SwapMsgStore {
+impl SwapV2MsgStore {
     pub fn new(accept_only_from: bits256) -> Self {
-        SwapMsgStore {
+        SwapV2MsgStore {
             accept_only_from,
             ..Default::default()
         }
@@ -487,6 +496,11 @@ impl SwapsContext {
     pub fn init_msg_store(&self, uuid: Uuid, accept_only_from: bits256) {
         let store = SwapMsgStore::new(accept_only_from);
         self.swap_msgs.lock().unwrap().insert(uuid, store);
+    }
+
+    pub fn init_msg_v2_store(&self, uuid: Uuid, accept_only_from: bits256) {
+        let store = SwapV2MsgStore::new(accept_only_from);
+        self.swap_v2_msgs.lock().unwrap().insert(uuid, store);
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -1484,26 +1498,27 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
     use prost::Message;
 
     let uuid = Uuid::from_str(topic).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
-    let signed_message = SignedMessage::decode(msg).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
 
-    let pubkey =
-        PublicKey::from_slice(&signed_message.from).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
-    let signature = Signature::from_compact(&signed_message.signature)
-        .map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
-    let secp_message =
-        secp256k1::Message::from_slice(sha256(&signed_message.payload).as_slice()).expect("sha256 is 32 bytes hash");
-
-    SECP_VERIFY
-        .verify(&secp_message, &signature, &pubkey)
-        .map_to_mm(|e| P2PProcessError::InvalidSignature(e.to_string()))?;
-
-    let swap_message = SwapMessage::decode(signed_message.payload.as_slice())
-        .map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
-
-    debug!("Processing swap v2 msg {:?} for uuid {}", msg, uuid);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     let mut msgs = swap_ctx.swap_v2_msgs.lock().unwrap();
     if let Some(msg_store) = msgs.get_mut(&uuid) {
+        let signed_message = SignedMessage::decode(msg).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+
+        let pubkey =
+            PublicKey::from_slice(&signed_message.from).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+        let signature = Signature::from_compact(&signed_message.signature)
+            .map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+        let secp_message = secp256k1::Message::from_slice(sha256(&signed_message.payload).as_slice())
+            .expect("sha256 is 32 bytes hash");
+
+        SECP_VERIFY
+            .verify(&secp_message, &signature, &pubkey)
+            .map_to_mm(|e| P2PProcessError::InvalidSignature(e.to_string()))?;
+
+        let swap_message = SwapMessage::decode(signed_message.payload.as_slice())
+            .map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+
+        debug!("Processing swap v2 msg {:?} for uuid {}", swap_message, uuid);
         match swap_message.inner {
             Some(swap_v2_pb::swap_message::Inner::MakerNegotiation(maker_negotiation)) => {
                 msg_store.maker_negotiation = Some(maker_negotiation)
