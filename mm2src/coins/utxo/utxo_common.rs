@@ -18,7 +18,7 @@ use crate::watcher_common::validate_watcher_reward;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GenTakerPaymentSpendArgs,
             GenTakerPaymentSpendResult, GetWithdrawSenderAddress, HDAccountAddressId, RawTransactionError,
             RawTransactionRequest, RawTransactionRes, RefundPaymentArgs, RewardTarget, SearchForSwapTxSpendInput,
-            SendDexFeeWithPremiumArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
+            SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
             SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TransactionResult,
             TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateDexFeeResult,
             ValidateDexFeeSpendPreimageError, ValidateDexFeeSpendPreimageResult, ValidateOtherPubKeyErr,
@@ -4591,7 +4591,7 @@ where
         .collect()
 }
 
-pub async fn send_combined_taker_payment<T>(coin: T, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult
+pub async fn send_combined_taker_payment<T>(coin: T, args: SendCombinedTakerPaymentArgs<'_>) -> TransactionResult
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
@@ -4603,7 +4603,7 @@ where
         outputs,
     } = try_tx_s!(generate_swap_payment_outputs(
         &coin,
-        args.time_lock,
+        try_tx_s!(args.time_lock.try_into()),
         taker_htlc_key_pair.public_slice(),
         args.other_pub,
         args.secret_hash,
@@ -4638,8 +4638,13 @@ where
 
     let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals)?;
 
+    let time_lock = args
+        .time_lock
+        .try_into()
+        .map_to_mm(|e: TryFromIntError| ValidateTakerPaymentError::LocktimeOverflow(e.to_string()))?;
+
     let redeem_script = swap_proto_v2_scripts::taker_payment_script(
-        args.time_lock,
+        time_lock,
         args.secret_hash,
         &taker_pub,
         maker_htlc_key_pair.public(),

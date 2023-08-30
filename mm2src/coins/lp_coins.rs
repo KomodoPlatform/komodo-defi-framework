@@ -1017,8 +1017,8 @@ pub trait WatcherOps {
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
 }
 
-pub struct SendDexFeeWithPremiumArgs<'a> {
-    pub time_lock: u32,
+pub struct SendCombinedTakerPaymentArgs<'a> {
+    pub time_lock: u64,
     pub secret_hash: &'a [u8],
     pub other_pub: &'a [u8],
     pub dex_fee_amount: BigDecimal,
@@ -1029,7 +1029,7 @@ pub struct SendDexFeeWithPremiumArgs<'a> {
 
 pub struct ValidateTakerPaymentArgs<'a> {
     pub taker_tx: &'a [u8],
-    pub time_lock: u32,
+    pub time_lock: u64,
     pub secret_hash: &'a [u8],
     pub other_pub: &'a [u8],
     pub dex_fee_amount: BigDecimal,
@@ -1091,6 +1091,7 @@ pub enum ValidateTakerPaymentError {
     TxBytesMismatch { from_rpc: BytesJson, actual: BytesJson },
     TxDeserialization(String),
     TxLacksOfOutputs,
+    LocktimeOverflow(String),
 }
 
 impl From<NumConversError> for ValidateTakerPaymentError {
@@ -1123,7 +1124,7 @@ impl From<TxGenError> for ValidateDexFeeSpendPreimageError {
 
 #[async_trait]
 pub trait SwapOpsV2 {
-    async fn send_combined_taker_payment(&self, args: SendDexFeeWithPremiumArgs<'_>) -> TransactionResult;
+    async fn send_combined_taker_payment(&self, args: SendCombinedTakerPaymentArgs<'_>) -> TransactionResult;
 
     async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateDexFeeResult;
 

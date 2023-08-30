@@ -1,12 +1,13 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
-use coins::{GenTakerPaymentSpendArgs, RefundPaymentArgs, SendDexFeeWithPremiumArgs, SwapOpsV2, Transaction,
+use coins::{GenTakerPaymentSpendArgs, RefundPaymentArgs, SendCombinedTakerPaymentArgs, SwapOpsV2, Transaction,
             TransactionEnum, ValidateTakerPaymentArgs};
-use common::{block_on, now_sec_u32, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{block_on, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use mm2_test_helpers::for_tests::{enable_native, mm_dump, mycoin1_conf, mycoin_conf, start_swaps, MarketMakerIt,
                                   Mm2TestConf};
 use script::{Builder, Opcode};
+use std::convert::TryInto;
 use std::thread;
 use std::time::Duration;
 
@@ -14,11 +15,11 @@ use std::time::Duration;
 fn send_and_refund_taker_payment() {
     let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
-    let time_lock = now_sec_u32() - 1000;
+    let time_lock = now_sec() - 1000;
     let secret_hash = &[0; 20];
     let other_pub = coin.my_public_key().unwrap();
 
-    let send_args = SendDexFeeWithPremiumArgs {
+    let send_args = SendCombinedTakerPaymentArgs {
         time_lock,
         secret_hash,
         other_pub,
@@ -62,7 +63,7 @@ fn send_and_refund_taker_payment() {
 
     let refund_args = RefundPaymentArgs {
         payment_tx: &taker_payment_bytes,
-        time_lock,
+        time_lock: time_lock.try_into().unwrap(),
         other_pubkey: coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
         swap_unique_data: &[],
@@ -79,10 +80,10 @@ fn send_and_spend_taker_payment() {
     let (_, taker_coin, _) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
     let (_, maker_coin, _) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
-    let time_lock = now_sec_u32() - 1000;
+    let time_lock = now_sec() - 1000;
     let secret = [1; 32];
     let secret_hash = dhash160(&secret);
-    let send_args = SendDexFeeWithPremiumArgs {
+    let send_args = SendCombinedTakerPaymentArgs {
         time_lock,
         secret_hash: secret_hash.as_slice(),
         other_pub: maker_coin.my_public_key().unwrap(),
@@ -113,7 +114,7 @@ fn send_and_spend_taker_payment() {
 
     let gen_preimage_args = GenTakerPaymentSpendArgs {
         taker_tx: &taker_payment_utxo_tx.tx_hex(),
-        time_lock,
+        time_lock: time_lock.try_into().unwrap(),
         secret_hash: secret_hash.as_slice(),
         maker_pub: maker_coin.my_public_key().unwrap(),
         taker_pub: taker_coin.my_public_key().unwrap(),
@@ -172,4 +173,5 @@ fn test_v2_swap_utxo_utxo() {
     block_on(mm_alice.wait_for_log(10., |log| log.contains("Received maker negotiation message"))).unwrap();
     block_on(mm_bob.wait_for_log(10., |log| log.contains("Received taker negotiation message"))).unwrap();
     block_on(mm_alice.wait_for_log(10., |log| log.contains("Received maker negotiated message"))).unwrap();
+    block_on(mm_bob.wait_for_log(10., |log| log.contains("Received taker payment info message"))).unwrap();
 }

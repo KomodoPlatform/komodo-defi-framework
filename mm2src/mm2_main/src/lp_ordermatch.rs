@@ -74,11 +74,12 @@ use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_p
 use crate::mm2::lp_swap::maker_swap_v2::{self, DummyMakerSwapStorage, MakerSwapStateMachine};
 use crate::mm2::lp_swap::taker_swap_v2::{self, DummyTakerSwapStorage, TakerSwapStateMachine};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                          check_other_coin_balance_for_swap, get_max_maker_vol, insert_new_swap_to_db,
-                          is_pubkey_banned, lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
-                          p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, swap_v2_topic,
-                          AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap,
-                          RunMakerSwapInput, RunTakerSwapInput, SecretHashAlgo, SwapConfirmationsSettings, TakerSwap};
+                          check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, get_max_maker_vol,
+                          insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
+                          p2p_keypair_and_peer_id_to_broadcast, p2p_private_and_peer_id_to_broadcast, run_maker_swap,
+                          run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult,
+                          CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SecretHashAlgo,
+                          SwapConfirmationsSettings, TakerSwap};
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 pub use orderbook_depth::orderbook_depth_rpc;
@@ -3106,9 +3107,11 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                         ctx,
                         storage: DummyTakerSwapStorage::new(),
                         started_at: now_sec(),
+                        lock_duration: locktime,
                         maker_coin: m.clone(),
                         maker_volume: maker_amount,
                         taker_coin: t.clone(),
+                        dex_fee: dex_fee_amount_from_taker_coin(&t, maker_coin_ticker, &taker_amount),
                         taker_volume: taker_amount,
                         taker_premium: Default::default(),
                         conf_settings: my_conf_settings,
