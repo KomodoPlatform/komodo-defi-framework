@@ -1291,17 +1291,21 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
 ) -> GenTakerPaymentSpendResult {
     let maker_pub = Public::from_slice(args.maker_pub).map_to_mm(|e| TxGenError::InvalidPubkey(e.to_string()))?;
     let taker_pub = Public::from_slice(args.taker_pub).map_to_mm(|e| TxGenError::InvalidPubkey(e.to_string()))?;
+    let time_lock = args
+        .time_lock
+        .try_into()
+        .map_to_mm(|e: TryFromIntError| TxGenError::LocktimeOverflow(e.to_string()))?;
 
     let preimage = gen_taker_payment_spend_preimage(
         coin,
         args,
-        LocktimeSetting::CalcByHtlcLocktime(args.time_lock),
+        LocktimeSetting::CalcByHtlcLocktime(time_lock),
         CalcMakerAmountBy::DeductMinerFee,
     )
     .await?;
 
     let redeem_script =
-        swap_proto_v2_scripts::taker_payment_script(args.time_lock, args.secret_hash, &taker_pub, &maker_pub);
+        swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, &taker_pub, &maker_pub);
     let signature = calc_and_sign_sighash(
         &preimage,
         DEFAULT_SWAP_VOUT,
@@ -1352,8 +1356,13 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
         CalcMakerAmountBy::UseExactAmount(actual_preimage_tx.outputs[1].value),
     )
     .await?;
+
+    let time_lock = gen_args
+        .time_lock
+        .try_into()
+        .map_to_mm(|e: TryFromIntError| ValidateDexFeeSpendPreimageError::LocktimeOverflow(e.to_string()))?;
     let redeem_script =
-        swap_proto_v2_scripts::taker_payment_script(gen_args.time_lock, gen_args.secret_hash, &taker_pub, &maker_pub);
+        swap_proto_v2_scripts::taker_payment_script(time_lock, gen_args.secret_hash, &taker_pub, &maker_pub);
     let sig_hash = signature_hash_to_sign(
         &expected_preimage,
         DEFAULT_SWAP_VOUT,
@@ -1396,7 +1405,7 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
 
     let secret_hash = dhash160(secret);
     let redeem_script = swap_proto_v2_scripts::taker_payment_script(
-        gen_args.time_lock,
+        try_tx_s!(gen_args.time_lock.try_into()),
         secret_hash.as_slice(),
         &taker_pub,
         htlc_keypair.public(),

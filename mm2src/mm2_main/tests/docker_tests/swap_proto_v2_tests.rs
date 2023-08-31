@@ -174,4 +174,7 @@ fn test_v2_swap_utxo_utxo() {
     block_on(mm_bob.wait_for_log(10., |log| log.contains("Received taker negotiation message"))).unwrap();
     block_on(mm_alice.wait_for_log(10., |log| log.contains("Received maker negotiated message"))).unwrap();
     block_on(mm_bob.wait_for_log(10., |log| log.contains("Received taker payment info message"))).unwrap();
+    block_on(mm_alice.wait_for_log(10., |log| log.contains("Received maker payment info message"))).unwrap();
+    block_on(mm_bob.wait_for_log(30., |log| log.contains("Received taker payment spend preimage message"))).unwrap();
+    block_on(mm_alice.wait_for_log(30., |log| log.contains("Found taker payment spend"))).unwrap();
 }

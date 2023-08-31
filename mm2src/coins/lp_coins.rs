@@ -1040,7 +1040,7 @@ pub struct ValidateTakerPaymentArgs<'a> {
 
 pub struct GenTakerPaymentSpendArgs<'a> {
     pub taker_tx: &'a [u8],
-    pub time_lock: u32,
+    pub time_lock: u64,
     pub secret_hash: &'a [u8],
     pub maker_pub: &'a [u8],
     pub taker_pub: &'a [u8],
@@ -1051,8 +1051,8 @@ pub struct GenTakerPaymentSpendArgs<'a> {
 }
 
 pub struct TxPreimageWithSig {
-    preimage: Vec<u8>,
-    signature: Vec<u8>,
+    pub preimage: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -1068,6 +1068,7 @@ pub enum TxGenError {
         maker_amount: BigDecimal,
     },
     Legacy(String),
+    LocktimeOverflow(String),
 }
 
 impl From<UtxoRpcError> for TxGenError {
@@ -1110,6 +1111,7 @@ pub enum ValidateDexFeeSpendPreimageError {
     SignatureVerificationFailure(String),
     TxDeserialization(String),
     TxGenError(String),
+    LocktimeOverflow(String),
 }
 
 impl From<UtxoSignWithKeyPairError> for ValidateDexFeeSpendPreimageError {
@@ -1123,7 +1125,7 @@ impl From<TxGenError> for ValidateDexFeeSpendPreimageError {
 }
 
 #[async_trait]
-pub trait SwapOpsV2 {
+pub trait SwapOpsV2: Send + Sync + 'static {
     async fn send_combined_taker_payment(&self, args: SendCombinedTakerPaymentArgs<'_>) -> TransactionResult;
 
     async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateDexFeeResult;

@@ -26,7 +26,7 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
-            FeeApproxStage, MmCoinEnum};
+            FeeApproxStage, MarketCoinOps, MmCoinEnum};
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
@@ -2910,8 +2910,8 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
         let alice = bits256::from(maker_match.request.sender_pubkey.0);
-        let maker_amount = maker_match.reserved.get_base_amount().to_decimal();
-        let taker_amount = maker_match.reserved.get_rel_amount().to_decimal();
+        let maker_amount = maker_match.reserved.get_base_amount().clone();
+        let taker_amount = maker_match.reserved.get_rel_amount().clone();
 
         // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
@@ -2975,10 +2975,11 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                         storage: DummyMakerSwapStorage::new(),
                         started_at: now_sec(),
                         maker_coin: m.clone(),
-                        maker_volume: maker_amount.into(),
+                        maker_volume: maker_amount,
                         secret,
                         taker_coin: t.clone(),
-                        taker_volume: taker_amount.into(),
+                        dex_fee_amount: dex_fee_amount_from_taker_coin(&t, m.ticker(), &taker_amount),
+                        taker_volume: taker_amount,
                         taker_premium: Default::default(),
                         conf_settings: my_conf_settings,
                         p2p_topic: swap_v2_topic(&uuid),
@@ -2998,8 +2999,8 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             let maker_swap = MakerSwap::new(
                 ctx.clone(),
                 alice,
-                maker_amount,
-                taker_amount,
+                maker_amount.to_decimal(),
+                taker_amount.to_decimal(),
                 my_persistent_pub,
                 uuid,
                 Some(maker_order.uuid),
