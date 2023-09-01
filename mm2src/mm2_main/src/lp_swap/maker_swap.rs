@@ -812,7 +812,7 @@ impl MakerSwap {
         let transaction_f = self
             .maker_coin
             .check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
-                time_lock: self.r().data.maker_payment_lock as u32,
+                time_lock: self.r().data.maker_payment_lock,
                 other_pub: &*self.r().other_maker_coin_htlc_pub,
                 secret_hash: secret_hash.as_slice(),
                 search_from_block: self.r().data.maker_coin_start_block,
@@ -848,7 +848,7 @@ impl MakerSwap {
                 None => {
                     let payment_fut = self.maker_coin.send_maker_payment(SendPaymentArgs {
                         time_lock_duration: self.r().data.lock_duration,
-                        time_lock: self.r().data.maker_payment_lock as u32,
+                        time_lock: self.r().data.maker_payment_lock,
                         other_pubkey: &*self.r().other_maker_coin_htlc_pub,
                         secret_hash: secret_hash.as_slice(),
                         amount: self.maker_amount.clone(),
@@ -1036,7 +1036,7 @@ impl MakerSwap {
 
         let validate_input = ValidatePaymentInput {
             payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
-            time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
+            time_lock: self.taker_payment_lock.load(Ordering::Relaxed),
             time_lock_duration: self.r().data.lock_duration,
             other_pub: self.r().other_taker_coin_htlc_pub.to_vec(),
             unique_swap_data: self.unique_swap_data(),
@@ -1085,7 +1085,7 @@ impl MakerSwap {
 
         let spend_fut = self.taker_coin.send_maker_spends_taker_payment(SpendPaymentArgs {
             other_payment_tx: &self.r().taker_payment.clone().unwrap().tx_hex,
-            time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
+            time_lock: self.taker_payment_lock.load(Ordering::Relaxed),
             other_pubkey: &*self.r().other_taker_coin_htlc_pub,
             secret: &self.r().data.secret.0,
             secret_hash: &self.secret_hash(),
@@ -1234,7 +1234,7 @@ impl MakerSwap {
             .maker_coin
             .send_maker_refunds_payment(RefundPaymentArgs {
                 payment_tx: &maker_payment,
-                time_lock,
+                time_lock: locktime,
                 other_pubkey: other_maker_coin_htlc_pub.as_slice(),
                 secret_hash: self.secret_hash().as_slice(),
                 swap_contract_address: &maker_coin_swap_contract_address,
@@ -1389,7 +1389,7 @@ impl MakerSwap {
 
             // have to do this because std::sync::RwLockReadGuard returned by r() is not Send,
             // so it can't be used across await
-            let timelock = selfi.taker_payment_lock.load(Ordering::Relaxed) as u32;
+            let timelock = selfi.taker_payment_lock.load(Ordering::Relaxed);
             let other_taker_coin_htlc_pub = selfi.r().other_taker_coin_htlc_pub;
 
             let taker_coin_start_block = selfi.r().data.taker_coin_start_block;
@@ -1463,7 +1463,7 @@ impl MakerSwap {
 
         // have to do this because std::sync::RwLockReadGuard returned by r() is not Send,
         // so it can't be used across await
-        let maker_payment_lock = self.r().data.maker_payment_lock as u32;
+        let maker_payment_lock = self.r().data.maker_payment_lock;
         let other_maker_coin_htlc_pub = self.r().other_maker_coin_htlc_pub;
         let maker_coin_start_block = self.r().data.maker_coin_start_block;
         let maker_coin_swap_contract_address = self.r().data.maker_coin_swap_contract_address.clone();
@@ -1529,12 +1529,7 @@ impl MakerSwap {
                     return ERR!("Maker payment will be refunded automatically!");
                 }
 
-                let can_refund_htlc = try_s!(
-                    self.maker_coin
-                        .can_refund_htlc(maker_payment_lock as u64)
-                        .compat()
-                        .await
-                );
+                let can_refund_htlc = try_s!(self.maker_coin.can_refund_htlc(maker_payment_lock).compat().await);
                 if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund_htlc {
                     return ERR!("Too early to refund, wait until {}", wait_until_sec(seconds_to_wait));
                 }

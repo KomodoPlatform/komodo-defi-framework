@@ -183,6 +183,7 @@ pub struct SwapV2MsgStore {
     taker_payment: Option<TakerPaymentInfo>,
     maker_payment: Option<MakerPaymentInfo>,
     taker_payment_spend_preimage: Option<TakerPaymentSpendPreimage>,
+    #[allow(dead_code)]
     accept_only_from: bits256,
 }
 

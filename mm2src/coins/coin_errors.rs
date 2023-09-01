@@ -3,6 +3,7 @@ use crate::{eth::Web3RpcError, my_tx_history_v2::MyTxHistoryErrorV2, utxo::rpc_c
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
+use std::num::TryFromIntError;
 
 pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<ValidatePaymentError>> + Send>;
 
@@ -20,6 +21,7 @@ pub enum ValidatePaymentError {
     // Transaction has wrong properties, for example, it has been sent to a wrong address
     WrongPaymentTx(String),
     WatcherRewardError(String),
+    TimelockOverflow(TryFromIntError),
 }
 
 impl From<rlp::DecoderError> for ValidatePaymentError {

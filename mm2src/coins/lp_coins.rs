@@ -618,7 +618,7 @@ pub struct WatcherValidateTakerFeeInput {
 pub struct WatcherValidatePaymentInput {
     pub payment_tx: Vec<u8>,
     pub taker_payment_refund_preimage: Vec<u8>,
-    pub time_lock: u32,
+    pub time_lock: u64,
     pub taker_pub: Vec<u8>,
     pub maker_pub: Vec<u8>,
     pub secret_hash: Vec<u8>,
@@ -631,7 +631,7 @@ pub struct WatcherValidatePaymentInput {
 pub struct ValidatePaymentInput {
     pub payment_tx: Vec<u8>,
     pub time_lock_duration: u64,
-    pub time_lock: u32,
+    pub time_lock: u64,
     pub other_pub: Vec<u8>,
     pub secret_hash: Vec<u8>,
     pub amount: BigDecimal,
@@ -663,7 +663,7 @@ pub struct SendMakerPaymentSpendPreimageInput<'a> {
 }
 
 pub struct SearchForSwapTxSpendInput<'a> {
-    pub time_lock: u32,
+    pub time_lock: u64,
     pub other_pub: &'a [u8],
     pub secret_hash: &'a [u8],
     pub tx: &'a [u8],
@@ -693,7 +693,7 @@ pub struct WatcherReward {
 #[derive(Clone, Debug)]
 pub struct SendPaymentArgs<'a> {
     pub time_lock_duration: u64,
-    pub time_lock: u32,
+    pub time_lock: u64,
     /// This is either:
     /// * Taker's pubkey if this structure is used in [`SwapOps::send_maker_payment`].
     /// * Maker's pubkey if this structure is used in [`SwapOps::send_taker_payment`].
@@ -713,7 +713,7 @@ pub struct SpendPaymentArgs<'a> {
     /// * Taker's payment tx if this structure is used in [`SwapOps::send_maker_spends_taker_payment`].
     /// * Maker's payment tx if this structure is used in [`SwapOps::send_taker_spends_maker_payment`].
     pub other_payment_tx: &'a [u8],
-    pub time_lock: u32,
+    pub time_lock: u64,
     /// This is either:
     /// * Taker's pubkey if this structure is used in [`SwapOps::send_maker_spends_taker_payment`].
     /// * Maker's pubkey if this structure is used in [`SwapOps::send_taker_spends_maker_payment`].
@@ -728,7 +728,7 @@ pub struct SpendPaymentArgs<'a> {
 #[derive(Clone, Debug)]
 pub struct RefundPaymentArgs<'a> {
     pub payment_tx: &'a [u8],
-    pub time_lock: u32,
+    pub time_lock: u64,
     /// This is either:
     /// * Taker's pubkey if this structure is used in [`SwapOps::send_maker_refunds_payment`].
     /// * Maker's pubkey if this structure is used in [`SwapOps::send_taker_refunds_payment`].
@@ -741,7 +741,7 @@ pub struct RefundPaymentArgs<'a> {
 
 #[derive(Clone, Debug)]
 pub struct CheckIfMyPaymentSentArgs<'a> {
-    pub time_lock: u32,
+    pub time_lock: u64,
     pub other_pub: &'a [u8],
     pub secret_hash: &'a [u8],
     pub search_from_block: u64,
@@ -974,26 +974,26 @@ pub trait WatcherOps {
 
     fn create_taker_payment_refund_preimage(
         &self,
-        _taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
+        taker_payment_tx: &[u8],
+        time_lock: u64,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut;
 
     fn create_maker_payment_spend_preimage(
         &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_unique_data: &[u8],
+        maker_payment_tx: &[u8],
+        time_lock: u64,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        swap_unique_data: &[u8],
     ) -> TransactionFut;
 
     fn watcher_validate_taker_fee(&self, input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()>;
 
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
+    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
 
     async fn watcher_search_for_swap_tx_spend(
         &self,
@@ -1055,7 +1055,7 @@ pub struct TxPreimageWithSig {
     pub signature: Vec<u8>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum TxGenError {
     Rpc(String),
     NumConversion(String),
@@ -1063,6 +1063,7 @@ pub enum TxGenError {
     TxDeserialization(String),
     InvalidPubkey(String),
     Signing(String),
+    #[display(fmt = "miner fee {} exceeds maker amount {}", miner_fee, maker_amount)]
     MinerFeeExceedsMakerAmount {
         miner_fee: BigDecimal,
         maker_amount: BigDecimal,
@@ -1103,7 +1104,7 @@ impl From<UtxoRpcError> for ValidateTakerPaymentError {
     fn from(err: UtxoRpcError) -> Self { ValidateTakerPaymentError::Rpc(err.to_string()) }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum ValidateDexFeeSpendPreimageError {
     InvalidPubkey(String),
     InvalidTakerSignature,

@@ -7,9 +7,6 @@ use common::{block_on, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use mm2_test_helpers::for_tests::{enable_native, mm_dump, mycoin1_conf, mycoin_conf, start_swaps, MarketMakerIt,
                                   Mm2TestConf};
 use script::{Builder, Opcode};
-use std::convert::TryInto;
-use std::thread;
-use std::time::Duration;
 
 #[test]
 fn send_and_refund_taker_payment() {
@@ -63,7 +60,7 @@ fn send_and_refund_taker_payment() {
 
     let refund_args = RefundPaymentArgs {
         payment_tx: &taker_payment_bytes,
-        time_lock: time_lock.try_into().unwrap(),
+        time_lock,
         other_pubkey: coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
         swap_unique_data: &[],
@@ -114,7 +111,7 @@ fn send_and_spend_taker_payment() {
 
     let gen_preimage_args = GenTakerPaymentSpendArgs {
         taker_tx: &taker_payment_utxo_tx.tx_hex(),
-        time_lock: time_lock.try_into().unwrap(),
+        time_lock,
         secret_hash: secret_hash.as_slice(),
         maker_pub: maker_coin.my_public_key().unwrap(),
         taker_pub: taker_coin.my_public_key().unwrap(),
@@ -170,11 +167,9 @@ fn test_v2_swap_utxo_utxo() {
     ));
     println!("{:?}", uuids);
 
-    block_on(mm_alice.wait_for_log(10., |log| log.contains("Received maker negotiation message"))).unwrap();
-    block_on(mm_bob.wait_for_log(10., |log| log.contains("Received taker negotiation message"))).unwrap();
-    block_on(mm_alice.wait_for_log(10., |log| log.contains("Received maker negotiated message"))).unwrap();
-    block_on(mm_bob.wait_for_log(10., |log| log.contains("Received taker payment info message"))).unwrap();
-    block_on(mm_alice.wait_for_log(10., |log| log.contains("Received maker payment info message"))).unwrap();
-    block_on(mm_bob.wait_for_log(30., |log| log.contains("Received taker payment spend preimage message"))).unwrap();
-    block_on(mm_alice.wait_for_log(30., |log| log.contains("Found taker payment spend"))).unwrap();
+    for uuid in uuids {
+        let expected_msg = format!("Swap {} has been completed", uuid);
+        block_on(mm_bob.wait_for_log(60., |log| log.contains(&expected_msg))).unwrap();
+        block_on(mm_alice.wait_for_log(60., |log| log.contains(&expected_msg))).unwrap();
+    }
 }

@@ -2972,7 +2972,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut maker_swap_state_machine = MakerSwapStateMachine {
                         ctx,
-                        storage: DummyMakerSwapStorage::new(),
+                        storage: DummyMakerSwapStorage::default(),
                         started_at: now_sec(),
                         maker_coin: m.clone(),
                         maker_volume: maker_amount,
@@ -2988,8 +2988,9 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                         secret_hash_algo: SecretHashAlgo::DHASH160,
                         lock_duration: lock_time,
                     };
+                    #[allow(clippy::box_default)]
                     maker_swap_state_machine
-                        .run(Box::new(maker_swap_v2::Initialize::new()))
+                        .run(Box::new(maker_swap_v2::Initialize::default()))
                         .await
                         .error_log();
                 },
@@ -3106,7 +3107,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut taker_swap_state_machine = TakerSwapStateMachine {
                         ctx,
-                        storage: DummyTakerSwapStorage::new(),
+                        storage: DummyTakerSwapStorage::default(),
                         started_at: now_sec(),
                         lock_duration: locktime,
                         maker_coin: m.clone(),
@@ -3120,8 +3121,9 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                         uuid,
                         p2p_keypair: taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
                     };
+                    #[allow(clippy::box_default)]
                     taker_swap_state_machine
-                        .run(Box::new(taker_swap_v2::Initialize::new()))
+                        .run(Box::new(taker_swap_v2::Initialize::default()))
                         .await
                         .error_log();
                 },

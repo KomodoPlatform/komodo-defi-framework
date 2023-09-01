@@ -1479,7 +1479,7 @@ where
         outputs,
     } = try_tx_fus!(generate_swap_payment_outputs(
         &coin,
-        args.time_lock,
+        try_tx_fus!(args.time_lock.try_into()),
         maker_htlc_key_pair.public_slice(),
         args.other_pubkey,
         args.secret_hash,
@@ -1516,7 +1516,7 @@ where
         outputs,
     } = try_tx_fus!(generate_swap_payment_outputs(
         &coin,
-        args.time_lock,
+        try_tx_fus!(args.time_lock.try_into()),
         taker_htlc_key_pair.public_slice(),
         args.other_pubkey,
         args.secret_hash,
@@ -1554,14 +1554,14 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(coin: T, args
         .push_opcode(Opcode::OP_0)
         .into_script();
 
+    let time_lock = try_tx_fus!(args.time_lock.try_into());
     let redeem_script = payment_script(
-        args.time_lock,
+        time_lock,
         args.secret_hash,
         &try_tx_fus!(Public::from_slice(args.other_pubkey)),
         key_pair.public(),
     )
     .into();
-    let time_lock = args.time_lock;
     let fut = async move {
         let fee = try_tx_s!(
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
@@ -1780,15 +1780,16 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(coin: T, args
         .push_data(args.secret)
         .push_opcode(Opcode::OP_0)
         .into_script();
+
+    let time_lock = try_tx_fus!(args.time_lock.try_into());
     let redeem_script = payment_script(
-        args.time_lock,
+        time_lock,
         args.secret_hash,
         &try_tx_fus!(Public::from_slice(args.other_pubkey)),
         key_pair.public(),
     )
     .into();
 
-    let time_lock = args.time_lock;
     let fut = async move {
         let fee = try_tx_s!(
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
@@ -1843,19 +1844,17 @@ async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
 
     let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
+    let time_lock = try_tx_s!(args.time_lock.try_into());
+
     let redeem_script = match payment_type {
         SwapPaymentType::TakerOrMakerPayment => {
-            payment_script(args.time_lock, args.secret_hash, key_pair.public(), &other_public).into()
+            payment_script(time_lock, args.secret_hash, key_pair.public(), &other_public).into()
         },
-        SwapPaymentType::TakerPaymentV2 => swap_proto_v2_scripts::taker_payment_script(
-            args.time_lock,
-            args.secret_hash,
-            key_pair.public(),
-            &other_public,
-        )
-        .into(),
+        SwapPaymentType::TakerPaymentV2 => {
+            swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, key_pair.public(), &other_public)
+                .into()
+        },
     };
-    let time_lock = args.time_lock;
     let fee = try_tx_s!(
         coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
             .await
@@ -2208,6 +2207,10 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     let other_pub =
         &try_f!(Public::from_slice(&input.other_pub)
             .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string())));
+    let time_lock = try_f!(input
+        .time_lock
+        .try_into()
+        .map_to_mm(ValidatePaymentError::TimelockOverflow));
     validate_payment(
         coin.clone(),
         tx,
@@ -2217,7 +2220,7 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
         &input.secret_hash,
         input.amount,
         input.watcher_reward,
-        input.time_lock,
+        time_lock,
         input.try_spv_proof_until,
         input.confirmations,
     )
@@ -2235,7 +2238,11 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     let maker_pub = &try_f!(
         Public::from_slice(&input.maker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
-    let expected_redeem = payment_script(input.time_lock, &input.secret_hash, taker_pub, maker_pub);
+    let time_lock = try_f!(input
+        .time_lock
+        .try_into()
+        .map_to_mm(ValidatePaymentError::TimelockOverflow));
+    let expected_redeem = payment_script(time_lock, &input.secret_hash, taker_pub, maker_pub);
     let coin = coin.clone();
 
     let fut = async move {
@@ -2307,7 +2314,10 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     let other_pub =
         &try_f!(Public::from_slice(&input.other_pub)
             .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string())));
-
+    let time_lock = try_f!(input
+        .time_lock
+        .try_into()
+        .map_to_mm(ValidatePaymentError::TimelockOverflow));
     validate_payment(
         coin.clone(),
         tx,
@@ -2317,7 +2327,7 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         &input.secret_hash,
         input.amount,
         input.watcher_reward,
-        input.time_lock,
+        time_lock,
         input.try_spv_proof_until,
         input.confirmations,
     )
@@ -2409,7 +2419,7 @@ pub async fn search_for_swap_tx_spend_my<T: AsRef<UtxoCoinFields> + SwapOps>(
 ) -> Result<Option<FoundSwapTxSpend>, String> {
     search_for_swap_output_spend(
         coin.as_ref(),
-        input.time_lock,
+        try_s!(input.time_lock.try_into()),
         coin.derive_htlc_key_pair(input.swap_unique_data).public(),
         &try_s!(Public::from_slice(input.other_pub)),
         input.secret_hash,
@@ -2427,7 +2437,7 @@ pub async fn search_for_swap_tx_spend_other<T: AsRef<UtxoCoinFields> + SwapOps>(
 ) -> Result<Option<FoundSwapTxSpend>, String> {
     search_for_swap_output_spend(
         coin.as_ref(),
-        input.time_lock,
+        try_s!(input.time_lock.try_into()),
         &try_s!(Public::from_slice(input.other_pub)),
         coin.derive_htlc_key_pair(input.swap_unique_data).public(),
         input.secret_hash,
@@ -2493,52 +2503,23 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
 /// Note spender could generate the spend with several inputs where the only one input is the p2sh script.
 pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
     let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!("{:?}", e)));
-    for (input_idx, input) in spend_tx.inputs.into_iter().enumerate() {
+    let expected_secret_hash = if secret_hash.len() == 32 {
+        ripemd160(secret_hash)
+    } else {
+        H160::from(secret_hash)
+    };
+    for input in spend_tx.inputs.into_iter() {
         let script: Script = input.script_sig.clone().into();
-        let instruction = match script.get_instruction(1) {
-            Some(Ok(instr)) => instr,
-            Some(Err(e)) => {
-                warn!("{:?}", e);
-                continue;
-            },
-            None => {
-                warn!("Couldn't find secret in {:?} input", input_idx);
-                continue;
-            },
-        };
-
-        if instruction.opcode != Opcode::OP_PUSHBYTES_32 {
-            warn!(
-                "Expected {:?} opcode, found {:?} in {:?} input",
-                Opcode::OP_PUSHBYTES_32,
-                instruction.opcode,
-                input_idx
-            );
-            continue;
+        for instruction in script.iter().flatten() {
+            if instruction.opcode == Opcode::OP_PUSHBYTES_32 {
+                if let Some(secret) = instruction.data {
+                    let actual_secret_hash = dhash160(secret);
+                    if actual_secret_hash == expected_secret_hash {
+                        return Ok(secret.to_vec());
+                    }
+                }
+            }
         }
-
-        let secret = match instruction.data {
-            Some(data) => data.to_vec(),
-            None => {
-                warn!("Secret is empty in {:?} input", input_idx);
-                continue;
-            },
-        };
-
-        let expected_secret_hash = if secret_hash.len() == 32 {
-            ripemd160(secret_hash)
-        } else {
-            H160::from(secret_hash)
-        };
-        let actual_secret_hash = dhash160(&secret);
-        if actual_secret_hash != expected_secret_hash {
-            warn!(
-                "Invalid secret hash {:?}, expected {:?}",
-                actual_secret_hash, expected_secret_hash
-            );
-            continue;
-        }
-        return Ok(secret);
     }
     ERR!("Couldn't extract secret")
 }

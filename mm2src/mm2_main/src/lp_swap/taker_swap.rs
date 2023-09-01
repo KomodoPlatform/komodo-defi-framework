@@ -1398,7 +1398,7 @@ impl TakerSwap {
         let validate_input = ValidatePaymentInput {
             payment_tx: self.r().maker_payment.clone().unwrap().tx_hex.0,
             time_lock_duration: self.r().data.lock_duration,
-            time_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+            time_lock: self.maker_payment_lock.load(Ordering::Relaxed),
             other_pub: self.r().other_maker_coin_htlc_pub.to_vec(),
             secret_hash: self.r().secret_hash.0.to_vec(),
             amount: self.maker_amount.to_decimal(),
@@ -1465,7 +1465,7 @@ impl TakerSwap {
 
         let unique_data = self.unique_swap_data();
         let f = self.taker_coin.check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
-            time_lock: self.r().data.taker_payment_lock as u32,
+            time_lock: self.r().data.taker_payment_lock,
             other_pub: self.r().other_taker_coin_htlc_pub.as_slice(),
             secret_hash: &self.r().secret_hash.0,
             search_from_block: self.r().data.taker_coin_start_block,
@@ -1507,8 +1507,8 @@ impl TakerSwap {
                 Some(tx) => tx,
                 None => {
                     let time_lock = match std::env::var("USE_TEST_LOCKTIME") {
-                        Ok(_) => self.r().data.started_at as u32,
-                        Err(_) => self.r().data.taker_payment_lock as u32,
+                        Ok(_) => self.r().data.started_at,
+                        Err(_) => self.r().data.taker_payment_lock,
                     };
                     let payment_fut = self.taker_coin.send_taker_payment(SendPaymentArgs {
                         time_lock_duration: self.r().data.lock_duration,
@@ -1557,15 +1557,15 @@ impl TakerSwap {
         {
             let maker_payment_spend_preimage_fut = self.maker_coin.create_maker_payment_spend_preimage(
                 &self.r().maker_payment.as_ref().unwrap().tx_hex,
-                self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                self.maker_payment_lock.load(Ordering::Relaxed),
                 self.r().other_maker_coin_htlc_pub.as_slice(),
                 &self.r().secret_hash.0,
                 &self.unique_swap_data()[..],
             );
 
             let time_lock = match std::env::var("USE_TEST_LOCKTIME") {
-                Ok(_) => try_s!(u32::try_from(self.r().data.started_at)),
-                Err(_) => try_s!(u32::try_from(self.r().data.taker_payment_lock)),
+                Ok(_) => self.r().data.started_at,
+                Err(_) => self.r().data.taker_payment_lock,
             };
             let taker_payment_refund_preimage_fut = self.taker_coin.create_taker_payment_refund_preimage(
                 &transaction.tx_hex(),
@@ -1738,7 +1738,7 @@ impl TakerSwap {
         }
         let spend_fut = self.maker_coin.send_taker_spends_maker_payment(SpendPaymentArgs {
             other_payment_tx: &self.r().maker_payment.clone().unwrap().tx_hex,
-            time_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+            time_lock: self.maker_payment_lock.load(Ordering::Relaxed),
             other_pubkey: &*self.r().other_maker_coin_htlc_pub,
             secret: &self.r().secret.0,
             secret_hash: &self.r().secret_hash.0,
@@ -1846,7 +1846,7 @@ impl TakerSwap {
             .taker_coin
             .send_taker_refunds_payment(RefundPaymentArgs {
                 payment_tx: &taker_payment,
-                time_lock,
+                time_lock: locktime,
                 other_pubkey: other_taker_coin_htlc_pub.as_slice(),
                 secret_hash: &secret_hash,
                 swap_contract_address: &swap_contract_address,
@@ -2017,7 +2017,7 @@ impl TakerSwap {
             // validate that maker payment is not spent
             () => {
                 let search_input = SearchForSwapTxSpendInput {
-                    time_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                    time_lock: self.maker_payment_lock.load(Ordering::Relaxed),
                     other_pub: other_maker_coin_htlc_pub.as_slice(),
                     secret_hash: &secret_hash,
                     tx: &maker_payment,
@@ -2057,7 +2057,7 @@ impl TakerSwap {
                 let maybe_sent = try_s!(
                     self.taker_coin
                         .check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
-                            time_lock: taker_payment_lock as u32,
+                            time_lock: taker_payment_lock,
                             other_pub: other_taker_coin_htlc_pub.as_slice(),
                             secret_hash: &secret_hash,
                             search_from_block: taker_coin_start_block,
@@ -2086,7 +2086,7 @@ impl TakerSwap {
 
             let fut = self.maker_coin.send_taker_spends_maker_payment(SpendPaymentArgs {
                 other_payment_tx: &maker_payment,
-                time_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                time_lock: self.maker_payment_lock.load(Ordering::Relaxed),
                 other_pubkey: other_maker_coin_htlc_pub.as_slice(),
                 secret: &secret,
                 secret_hash: &secret_hash,
@@ -2119,7 +2119,7 @@ impl TakerSwap {
         }
 
         let search_input = SearchForSwapTxSpendInput {
-            time_lock: taker_payment_lock as u32,
+            time_lock: taker_payment_lock,
             other_pub: other_taker_coin_htlc_pub.as_slice(),
             secret_hash: &secret_hash,
             tx: &taker_payment,
@@ -2144,7 +2144,7 @@ impl TakerSwap {
 
                     let fut = self.maker_coin.send_taker_spends_maker_payment(SpendPaymentArgs {
                         other_payment_tx: &maker_payment,
-                        time_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                        time_lock: self.maker_payment_lock.load(Ordering::Relaxed),
                         other_pubkey: other_maker_coin_htlc_pub.as_slice(),
                         secret: &secret,
                         secret_hash: &secret_hash,
@@ -2192,7 +2192,7 @@ impl TakerSwap {
 
                 let fut = self.taker_coin.send_taker_refunds_payment(RefundPaymentArgs {
                     payment_tx: &taker_payment,
-                    time_lock: taker_payment_lock as u32,
+                    time_lock: taker_payment_lock,
                     other_pubkey: other_taker_coin_htlc_pub.as_slice(),
                     secret_hash: &secret_hash,
                     swap_contract_address: &taker_coin_swap_contract_address,

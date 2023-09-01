@@ -248,8 +248,8 @@ impl State for ValidateTakerPayment {
             payment_tx: taker_payment_hex.clone(),
             taker_payment_refund_preimage: watcher_ctx.data.taker_payment_refund_preimage.clone(),
             time_lock: match std::env::var("USE_TEST_LOCKTIME") {
-                Ok(_) => watcher_ctx.data.swap_started_at as u32,
-                Err(_) => watcher_ctx.taker_locktime() as u32,
+                Ok(_) => watcher_ctx.data.swap_started_at,
+                Err(_) => watcher_ctx.taker_locktime(),
             },
             taker_pub: watcher_ctx.verified_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
@@ -459,7 +459,7 @@ impl State for RefundTakerPayment {
                 swap_contract_address: &None,
                 secret_hash: &watcher_ctx.data.secret_hash,
                 other_pubkey: &watcher_ctx.verified_pub,
-                time_lock: watcher_ctx.taker_locktime() as u32,
+                time_lock: watcher_ctx.taker_locktime(),
                 swap_unique_data: &[],
                 watcher_reward: watcher_ctx.watcher_reward,
             });

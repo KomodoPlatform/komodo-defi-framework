@@ -8,7 +8,7 @@ use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoin
             WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
             INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
             INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
-use common::{block_on, now_sec_u32, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{block_on, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
 use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, dex_fee_threshold, get_payment_locktime,
@@ -1095,7 +1095,7 @@ fn test_watcher_validate_taker_payment_utxo() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let time_lock_duration = get_payment_locktime();
     let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
-    let time_lock = wait_for_confirmation_until as u32;
+    let time_lock = wait_for_confirmation_until;
 
     let (_ctx, taker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let taker_pubkey = taker_coin.my_public_key().unwrap();
@@ -1315,7 +1315,7 @@ fn test_watcher_validate_taker_payment_eth() {
 
     let time_lock_duration = get_payment_locktime();
     let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
-    let time_lock = wait_for_confirmation_until as u32;
+    let time_lock = wait_for_confirmation_until;
     let taker_amount = BigDecimal::from_str("0.01").unwrap();
     let maker_amount = BigDecimal::from_str("0.01").unwrap();
     let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
@@ -1559,7 +1559,7 @@ fn test_watcher_validate_taker_payment_erc20() {
 
     let time_lock_duration = get_payment_locktime();
     let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
-    let time_lock = wait_for_confirmation_until as u32;
+    let time_lock = wait_for_confirmation_until;
 
     let secret_hash = dhash160(&MakerSwap::generate_secret().unwrap());
 
@@ -1797,7 +1797,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let my_public_key = coin.my_public_key().unwrap();
 
-    let time_lock = now_sec_u32() - 3600;
+    let time_lock = now_sec() - 3600;
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
