@@ -99,7 +99,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "lp_swap/recreate_swap_data.rs"] mod recreate_swap_data;
 #[path = "lp_swap/saved_swap.rs"] mod saved_swap;
 #[path = "lp_swap/swap_lock.rs"] mod swap_lock;
-#[path = "lp_swap/komodefi.swap_v2.pb.rs"] mod swap_v2_pb;
+#[path = "lp_swap/komodefi.swap_v2.pb.rs"]
+#[rustfmt::skip]
+mod swap_v2_pb;
 #[path = "lp_swap/swap_watcher.rs"] pub(crate) mod swap_watcher;
 #[path = "lp_swap/taker_swap.rs"] mod taker_swap;
 #[path = "lp_swap/taker_swap_v2.rs"] pub mod taker_swap_v2;
