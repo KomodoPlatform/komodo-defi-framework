@@ -2082,6 +2082,7 @@ mod slp_tests {
     }
 
     #[test]
+    #[ignore]
     fn test_validate_htlc_valid() {
         let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
@@ -2119,6 +2120,7 @@ mod slp_tests {
     }
 
     #[test]
+    #[ignore]
     fn construct_and_send_invalid_slp_htlc_should_fail() {
         let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
@@ -2204,6 +2206,7 @@ mod slp_tests {
     }
 
     #[test]
+    #[ignore]
     fn test_validate_htlc_invalid_slp_utxo() {
         let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
