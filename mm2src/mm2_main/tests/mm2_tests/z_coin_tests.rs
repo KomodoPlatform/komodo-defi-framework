@@ -60,6 +60,7 @@ fn activate_z_coin_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
     ));
 
     let balance = match activation_result.wallet_balance {
@@ -74,8 +75,7 @@ fn activate_z_coin_light() {
 fn activate_z_coin_with_hd_account() {
     let coins = json!([zombie_conf()]);
 
-    let hd_account_id = 0;
-    let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, hd_account_id, &coins);
+    let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
@@ -83,6 +83,7 @@ fn activate_z_coin_with_hd_account() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        Some(0),
     ));
 
     let actual = match activation_result.wallet_balance {
@@ -109,6 +110,7 @@ fn test_z_coin_tx_history() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
     ));
 
     let tx_history = block_on(z_coin_tx_history(&mm, ZOMBIE_TICKER, 5, None));
@@ -352,6 +354,7 @@ fn withdraw_z_coin_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
     ));
 
     println!("{:?}", activation_result);
@@ -393,11 +396,12 @@ fn trade_rick_zombie_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
     ));
 
     println!("Bob ZOMBIE activation {:?}", zombie_activation);
 
-    let rick_activation = block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums()));
+    let rick_activation = block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums(), None));
 
     println!("Bob RICK activation {:?}", rick_activation);
 
@@ -425,11 +429,12 @@ fn trade_rick_zombie_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
     ));
 
     println!("Alice ZOMBIE activation {:?}", zombie_activation);
 
-    let rick_activation = block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums()));
+    let rick_activation = block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums(), None));
 
     println!("Alice RICK activation {:?}", rick_activation);
 
@@ -481,6 +486,7 @@ fn activate_pirate_light() {
         ARRR,
         PIRATE_ELECTRUMS,
         PIRATE_LIGHTWALLETD_URLS,
+        None,
     ));
 
     let balance = match activation_result.wallet_balance {

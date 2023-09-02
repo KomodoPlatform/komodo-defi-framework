@@ -646,7 +646,7 @@ impl SlpToken {
         unsigned.lock_time = tx_locktime;
         unsigned.inputs[0].sequence = input_sequence;
 
-        let my_key_pair = self.platform_coin.as_ref().priv_key_policy.key_pair_or_err()?;
+        let my_key_pair = self.platform_coin.as_ref().priv_key_policy.activated_key_or_err()?;
         let signed_p2sh_input = p2sh_spend(
             &unsigned,
             0,
@@ -1596,7 +1596,7 @@ impl MmCoin for SlpToken {
         let coin = self.clone();
         let fut = async move {
             let my_address = coin.platform_coin.as_ref().derivation_method.single_addr_or_err()?;
-            let key_pair = coin.platform_coin.as_ref().priv_key_policy.key_pair_or_err()?;
+            let key_pair = coin.platform_coin.as_ref().priv_key_policy.activated_key_or_err()?;
 
             let address = CashAddress::decode(&req.to).map_to_mm(WithdrawError::InvalidAddress)?;
             if address.prefix != *coin.slp_prefix() {

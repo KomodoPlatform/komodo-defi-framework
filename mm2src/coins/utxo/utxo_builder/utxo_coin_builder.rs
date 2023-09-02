@@ -17,8 +17,8 @@ use common::executor::{abortable_queue::AbortableQueue, AbortSettings, Abortable
                        Timer};
 use common::log::{error, info, LogOnError};
 use common::small_rng;
-use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, Secp256k1Secret,
-             StandardHDPathError, StandardHDPathToCoin};
+use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, StandardHDPathError,
+             StandardHDPathToCoin};
 use derive_more::Display;
 use futures::channel::mpsc::{channel, unbounded, Receiver as AsyncReceiver, UnboundedReceiver};
 use futures::compat::Future01CompatExt;
@@ -112,6 +112,10 @@ impl From<AbortedError> for UtxoCoinBuildError {
     fn from(e: AbortedError) -> Self { UtxoCoinBuildError::Internal(e.to_string()) }
 }
 
+impl From<PrivKeyPolicyNotAllowed> for UtxoCoinBuildError {
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self { UtxoCoinBuildError::PrivKeyPolicyNotAllowed(e) }
+}
+
 #[async_trait]
 pub trait UtxoCoinBuilder:
     UtxoFieldsWithIguanaSecretBuilder + UtxoFieldsWithGlobalHDBuilder + UtxoFieldsWithHardwareWalletBuilder
@@ -141,7 +145,15 @@ pub trait UtxoFieldsWithIguanaSecretBuilder: UtxoCoinBuilderCommonOps {
         priv_key: IguanaPrivKey,
     ) -> UtxoCoinBuildResult<UtxoCoinFields> {
         let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
-        build_utxo_coin_fields_with_conf_and_secret(self, conf, priv_key).await
+        let private = Private {
+            prefix: conf.wif_prefix,
+            secret: priv_key,
+            compressed: true,
+            checksum_type: conf.checksum_type,
+        };
+        let key_pair = KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
+        let priv_key_policy = PrivKeyPolicy::Iguana(key_pair);
+        build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy).await
     }
 }
 
@@ -158,27 +170,34 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
             .as_ref()
             .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
         let secret = global_hd_ctx
-            .derive_secp256k1_secret(derivation_path)
+            .derive_secp256k1_secret(derivation_path, &self.activation_params().path_to_address)
             .mm_err(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
-        build_utxo_coin_fields_with_conf_and_secret(self, conf, secret).await
+        let private = Private {
+            prefix: conf.wif_prefix,
+            secret,
+            compressed: true,
+            checksum_type: conf.checksum_type,
+        };
+        let activated_key_pair =
+            KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
+        let priv_key_policy = PrivKeyPolicy::HDWallet {
+            derivation_path: derivation_path.clone(),
+            activated_key: activated_key_pair,
+            bip39_secp_priv_key: global_hd_ctx.root_priv_key().clone(),
+        };
+        build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy).await
     }
 }
 
-async fn build_utxo_coin_fields_with_conf_and_secret<Builder>(
+async fn build_utxo_coin_fields_with_conf_and_policy<Builder>(
     builder: &Builder,
     conf: UtxoCoinConf,
-    secret: Secp256k1Secret,
+    priv_key_policy: PrivKeyPolicy<KeyPair>,
 ) -> UtxoCoinBuildResult<UtxoCoinFields>
 where
     Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
 {
-    let private = Private {
-        prefix: conf.wif_prefix,
-        secret,
-        compressed: true,
-        checksum_type: conf.checksum_type,
-    };
-    let key_pair = KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
+    let key_pair = priv_key_policy.activated_key_or_err()?;
     let addr_format = builder.address_format()?;
     let my_address = Address {
         prefix: conf.pub_addr_prefix,
@@ -191,7 +210,6 @@ where
 
     let my_script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
     let derivation_method = DerivationMethod::SingleAddress(my_address);
-    let priv_key_policy = PrivKeyPolicy::KeyPair(key_pair);
 
     // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
     // all spawned futures related to this `UTXO` coin will be aborted as well.

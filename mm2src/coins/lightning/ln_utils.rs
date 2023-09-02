@@ -92,7 +92,7 @@ pub fn init_keys_manager(platform: &Platform) -> EnableLightningResult<Arc<KeysM
         .coin
         .as_ref()
         .priv_key_policy
-        .key_pair_or_err()?
+        .activated_key_or_err()?
         .private()
         .secret
         .into();

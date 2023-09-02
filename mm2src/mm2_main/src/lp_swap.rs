@@ -1425,6 +1425,7 @@ mod lp_swap_tests {
     use coins::MarketCoinOps;
     use coins::PrivKeyActivationPolicy;
     use common::{block_on, new_uuid};
+    use crypto::StandardHDCoinAddress;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 
@@ -1802,6 +1803,7 @@ mod lp_swap_tests {
             enable_params: Default::default(),
             priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
             check_utxo_maturity: None,
+            path_to_address: StandardHDCoinAddress::default(),
         }
     }
 

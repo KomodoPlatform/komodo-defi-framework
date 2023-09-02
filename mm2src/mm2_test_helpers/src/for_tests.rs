@@ -7,7 +7,7 @@ use common::executor::Timer;
 use common::log::debug;
 use common::{cfg_native, now_float, now_ms, repeatable, wait_until_ms, PagingOptionsEnum};
 use common::{get_utc_timestamp, log};
-use crypto::CryptoCtx;
+use crypto::{CryptoCtx, StandardHDCoinAddress};
 use gstuff::{try_s, ERR, ERRL};
 use http::{HeaderMap, StatusCode};
 use lazy_static::lazy_static;
@@ -191,7 +191,7 @@ impl Mm2TestConf {
         }
     }
 
-    pub fn seednode_with_hd_account(passphrase: &str, hd_account_id: u32, coins: &Json) -> Self {
+    pub fn seednode_with_hd_account(passphrase: &str, coins: &Json) -> Self {
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",
@@ -200,7 +200,7 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
-                "hd_account_id": hd_account_id,
+                "enable_hd": true,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -236,7 +236,7 @@ impl Mm2TestConf {
         }
     }
 
-    pub fn light_node_with_hd_account(passphrase: &str, hd_account_id: u32, coins: &Json, seednodes: &[&str]) -> Self {
+    pub fn light_node_with_hd_account(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",
@@ -245,7 +245,7 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
-                "hd_account_id": hd_account_id,
+                "enable_hd": true,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -275,26 +275,26 @@ impl Mm2TestConfForSwap {
     const ALICE_HD_PASSPHRASE: &'static str =
         "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
-    pub fn bob_conf_with_policy(priv_key_policy: Mm2InitPrivKeyPolicy, coins: &Json) -> Mm2TestConf {
+    pub fn bob_conf_with_policy(priv_key_policy: &Mm2InitPrivKeyPolicy, coins: &Json) -> Mm2TestConf {
         match priv_key_policy {
             Mm2InitPrivKeyPolicy::Iguana => {
                 let bob_passphrase = crate::get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
                 Mm2TestConf::seednode(&bob_passphrase, coins)
             },
-            Mm2InitPrivKeyPolicy::GlobalHDAccount(hd_account_id) => {
-                Mm2TestConf::seednode_with_hd_account(Self::BOB_HD_PASSPHRASE, hd_account_id, coins)
+            Mm2InitPrivKeyPolicy::GlobalHDAccount => {
+                Mm2TestConf::seednode_with_hd_account(Self::BOB_HD_PASSPHRASE, coins)
             },
         }
     }
 
-    pub fn alice_conf_with_policy(priv_key_policy: Mm2InitPrivKeyPolicy, coins: &Json, bob_ip: &str) -> Mm2TestConf {
+    pub fn alice_conf_with_policy(priv_key_policy: &Mm2InitPrivKeyPolicy, coins: &Json, bob_ip: &str) -> Mm2TestConf {
         match priv_key_policy {
             Mm2InitPrivKeyPolicy::Iguana => {
                 let alice_passphrase = crate::get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
                 Mm2TestConf::light_node(&alice_passphrase, coins, &[bob_ip])
             },
-            Mm2InitPrivKeyPolicy::GlobalHDAccount(hd_account_id) => {
-                Mm2TestConf::light_node_with_hd_account(Self::ALICE_HD_PASSPHRASE, hd_account_id, coins, &[bob_ip])
+            Mm2InitPrivKeyPolicy::GlobalHDAccount => {
+                Mm2TestConf::light_node_with_hd_account(Self::ALICE_HD_PASSPHRASE, coins, &[bob_ip])
             },
         }
     }
@@ -302,7 +302,7 @@ impl Mm2TestConfForSwap {
 
 pub enum Mm2InitPrivKeyPolicy {
     Iguana,
-    GlobalHDAccount(u32),
+    GlobalHDAccount,
 }
 
 pub fn zombie_conf() -> Json {
@@ -455,7 +455,8 @@ pub fn atom_testnet_conf() -> Json {
                 "account_prefix": "cosmos",
                 "chain_id": "theta-testnet-001",
             },
-        }
+        },
+        "derivation_path": "m/44'/118'",
     })
 }
 
@@ -579,6 +580,7 @@ pub fn tbtc_segwit_conf() -> Json {
         "txfee": 0,
         "estimate_fee_mode": "ECONOMICAL",
         "required_confirmations": 0,
+        "derivation_path": "m/84'/1'",
         "address_format": {
             "format": "segwit"
         },
@@ -625,6 +627,7 @@ pub fn eth_testnet_conf() -> Json {
     json!({
         "coin": "ETH",
         "name": "ethereum",
+        "mm2": 1,
         "derivation_path": "m/44'/60'",
         "protocol": {
             "type": "ETH"
@@ -1466,14 +1469,26 @@ pub fn mm_spat() -> (&'static str, MarketMakerIt, RaiiDump, RaiiDump) {
 
 /// Asks MM to enable the given currency in electrum mode
 /// fresh list of servers at https://github.com/jl777/coins/blob/master/electrums/.
-pub async fn enable_electrum(mm: &MarketMakerIt, coin: &str, tx_history: bool, urls: &[&str]) -> Json {
+pub async fn enable_electrum(
+    mm: &MarketMakerIt,
+    coin: &str,
+    tx_history: bool,
+    urls: &[&str],
+    path_to_address: Option<StandardHDCoinAddress>,
+) -> Json {
     let servers = urls.iter().map(|url| json!({ "url": url })).collect();
-    enable_electrum_json(mm, coin, tx_history, servers).await
+    enable_electrum_json(mm, coin, tx_history, servers, path_to_address).await
 }
 
 /// Asks MM to enable the given currency in electrum mode
 /// fresh list of servers at https://github.com/jl777/coins/blob/master/electrums/.
-pub async fn enable_electrum_json(mm: &MarketMakerIt, coin: &str, tx_history: bool, servers: Vec<Json>) -> Json {
+pub async fn enable_electrum_json(
+    mm: &MarketMakerIt,
+    coin: &str,
+    tx_history: bool,
+    servers: Vec<Json>,
+    path_to_address: Option<StandardHDCoinAddress>,
+) -> Json {
     let electrum = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -1482,6 +1497,7 @@ pub async fn enable_electrum_json(mm: &MarketMakerIt, coin: &str, tx_history: bo
             "servers": servers,
             "mm2": 1,
             "tx_history": tx_history,
+            "path_to_address": path_to_address.unwrap_or_default(),
         }))
         .await
         .unwrap();
@@ -1495,7 +1511,13 @@ pub async fn enable_electrum_json(mm: &MarketMakerIt, coin: &str, tx_history: bo
     json::from_str(&electrum.1).unwrap()
 }
 
-pub async fn enable_qrc20(mm: &MarketMakerIt, coin: &str, urls: &[&str], swap_contract_address: &str) -> Json {
+pub async fn enable_qrc20(
+    mm: &MarketMakerIt,
+    coin: &str,
+    urls: &[&str],
+    swap_contract_address: &str,
+    path_to_address: Option<StandardHDCoinAddress>,
+) -> Json {
     let servers: Vec<_> = urls.iter().map(|url| json!({ "url": url })).collect();
     let electrum = mm
         .rpc(&json!({
@@ -1505,6 +1527,7 @@ pub async fn enable_qrc20(mm: &MarketMakerIt, coin: &str, urls: &[&str], swap_co
             "servers": servers,
             "mm2": 1,
             "swap_contract_address": swap_contract_address,
+            "path_to_address": path_to_address.unwrap_or_default(),
         }))
         .await
         .unwrap();
@@ -1573,7 +1596,12 @@ pub fn get_passphrase(path: &dyn AsRef<Path>, env: &str) -> Result<String, Strin
 
 /// Asks MM to enable the given currency in native mode.
 /// Returns the RPC reply containing the corresponding wallet address.
-pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> Json {
+pub async fn enable_native(
+    mm: &MarketMakerIt,
+    coin: &str,
+    urls: &[&str],
+    path_to_address: Option<StandardHDCoinAddress>,
+) -> Json {
     let native = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -1582,6 +1610,7 @@ pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> Jso
             "urls": urls,
             // Dev chain swap contract address
             "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+            "path_to_address": path_to_address.unwrap_or_default(),
             "mm2": 1,
         }))
         .await
@@ -1697,6 +1726,7 @@ pub async fn enable_bch_with_tokens(
     tokens: &[&str],
     mode: UtxoRpcMode,
     tx_history: bool,
+    path_to_address: Option<StandardHDCoinAddress>,
 ) -> Json {
     let slp_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
 
@@ -1712,6 +1742,7 @@ pub async fn enable_bch_with_tokens(
                 "mode": mode,
                 "tx_history": tx_history,
                 "slp_tokens_requests": slp_requests,
+                "path_to_address": path_to_address.unwrap_or_default(),
             }
         }))
         .await
@@ -2200,7 +2231,13 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> TransactionDetails {
+pub async fn withdraw_v1(
+    mm: &MarketMakerIt,
+    coin: &str,
+    to: &str,
+    amount: &str,
+    from: Option<StandardHDCoinAddress>,
+) -> TransactionDetails {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2208,6 +2245,7 @@ pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str)
             "coin": coin,
             "to": to,
             "amount": amount,
+            "from": from,
         }))
         .await
         .unwrap();
@@ -2221,6 +2259,7 @@ pub async fn ibc_withdraw(
     coin: &str,
     to: &str,
     amount: &str,
+    from: Option<StandardHDCoinAddress>,
 ) -> TransactionDetails {
     let request = mm
         .rpc(&json!({
@@ -2231,7 +2270,8 @@ pub async fn ibc_withdraw(
                 "ibc_source_channel": source_channel,
                 "coin": coin,
                 "to": to,
-                "amount": amount
+                "amount": amount,
+                "from": from,
             }
         }))
         .await
@@ -2289,7 +2329,13 @@ pub async fn init_z_coin_native(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn init_z_coin_light(mm: &MarketMakerIt, coin: &str, electrums: &[&str], lightwalletd_urls: &[&str]) -> Json {
+pub async fn init_z_coin_light(
+    mm: &MarketMakerIt,
+    coin: &str,
+    electrums: &[&str],
+    lightwalletd_urls: &[&str],
+    account: Option<u32>,
+) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2304,7 +2350,8 @@ pub async fn init_z_coin_light(mm: &MarketMakerIt, coin: &str, electrums: &[&str
                             "electrum_servers": electrum_servers_rpc(electrums),
                             "light_wallet_d_servers": lightwalletd_urls,
                         },
-                    }
+                    },
+                    "account": account.unwrap_or_default(),
                 },
             }
         }))

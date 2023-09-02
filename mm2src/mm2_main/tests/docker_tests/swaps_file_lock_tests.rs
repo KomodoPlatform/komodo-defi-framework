@@ -48,8 +48,8 @@ fn swap_file_lock_prevents_double_swap_start_on_kick_start(swap_json: &str) {
     });
     let mut mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("Kick starting the swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15")
     }))
@@ -104,10 +104,10 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     let mut mm_alice = MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
-    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
-    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
@@ -153,8 +153,8 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     drop(mm_bob);
     let mut mm_bob_dup = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dup_dump_log, _bob_dup_dump_dashboard) = mm_dump(&mm_bob_dup.log_path);
-    log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN", &[])));
-    log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[], None)));
 
     block_on(mm_bob_dup.wait_for_log(50., |log| log.contains(&format!("Swap {} kick started.", uuid)))).unwrap();
 
@@ -167,8 +167,8 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     alice_conf["skip_seednodes_check"] = true.into();
     let mut mm_alice_dup = MarketMakerIt::start(alice_conf, "pass".to_string(), None).unwrap();
     let (_alice_dup_dump_log, _alice_dup_dump_dashboard) = mm_dump(&mm_alice_dup.log_path);
-    log!("{:?}", block_on(enable_native(&mm_alice_dup, "MYCOIN", &[])));
-    log!("{:?}", block_on(enable_native(&mm_alice_dup, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice_dup, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice_dup, "MYCOIN1", &[], None)));
 
     block_on(mm_alice_dup.wait_for_log(50., |log| log.contains(&format!("Swap {} kick started.", uuid)))).unwrap();
 }
@@ -214,8 +214,8 @@ fn swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(
     });
     let mut mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("Kick starting the swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15")
     }))

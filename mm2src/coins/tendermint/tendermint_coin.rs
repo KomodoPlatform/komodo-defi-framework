@@ -17,7 +17,7 @@ use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
             CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
             MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
             RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps, SearchForSwapTxSpendInput,
             SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs,
@@ -27,8 +27,8 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
             ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
             WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest};
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom,
+            WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
@@ -50,7 +50,8 @@ use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
-use crypto::{privkey::key_pair_from_secret, Secp256k1Secret, StandardHDPathToCoin};
+use crypto::privkey::key_pair_from_secret;
+use crypto::{Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin};
 use derive_more::Display;
 use futures::future::try_join_all;
 use futures::lock::Mutex as AsyncMutex;
@@ -103,6 +104,8 @@ const MAX_TIME_LOCK: i64 = 34560;
 const MIN_TIME_LOCK: i64 = 50;
 
 const ACCOUNT_SEQUENCE_ERR: &str = "incorrect account sequence";
+
+type TendermintPrivKeyPolicy = PrivKeyPolicy<Secp256k1Secret>;
 
 #[async_trait]
 pub trait TendermintCommons {
@@ -222,7 +225,7 @@ pub struct TendermintCoinImpl {
     /// My address
     pub account_id: AccountId,
     pub(super) account_prefix: String,
-    priv_key: Vec<u8>,
+    pub(super) priv_key_policy: TendermintPrivKeyPolicy,
     pub(crate) decimals: u8,
     pub(super) denom: Denom,
     chain_id: ChainId,
@@ -262,8 +265,14 @@ pub enum TendermintInitErrorKind {
     InvalidDenom(String),
     #[display(fmt = "'derivation_path' field is not found in config")]
     DerivationPathIsNotSet,
+    #[display(fmt = "'account' field is not found in config")]
+    AccountIsNotSet,
+    #[display(fmt = "'address_index' field is not found in config")]
+    AddressIndexIsNotSet,
     #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
     ErrorDeserializingDerivationPath(String),
+    #[display(fmt = "Error deserializing 'path_to_address': {}", _0)]
+    ErrorDeserializingPathToAddress(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     RpcError(String),
     #[display(fmt = "avg_blocktime is missing in coin configuration")]
@@ -283,6 +292,10 @@ pub enum TendermintCoinRpcError {
 
 impl From<DecodeError> for TendermintCoinRpcError {
     fn from(err: DecodeError) -> Self { TendermintCoinRpcError::Prost(err) }
+}
+
+impl From<PrivKeyPolicyNotAllowed> for TendermintCoinRpcError {
+    fn from(err: PrivKeyPolicyNotAllowed) -> Self { TendermintCoinRpcError::InternalError(err.to_string()) }
 }
 
 impl From<TendermintCoinRpcError> for WithdrawError {
@@ -346,7 +359,7 @@ impl crate::Transaction for CosmosTransaction {
     }
 }
 
-fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {
+pub(crate) fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {
     let signing_key =
         SigningKey::from_bytes(priv_key).map_to_mm(|e| TendermintInitErrorKind::InvalidPrivKey(e.to_string()))?;
 
@@ -421,7 +434,9 @@ impl TendermintCommons for TendermintCoin {
     }
 
     async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
-        let platform_balance_denom = self.balance_for_denom(self.denom.to_string()).await?;
+        let platform_balance_denom = self
+            .account_balance_for_denom(&self.account_id, self.denom.to_string())
+            .await?;
         let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.decimals);
         let ibc_assets_info = self.tokens_info.lock().clone();
 
@@ -429,7 +444,7 @@ impl TendermintCommons for TendermintCoin {
         for (ticker, info) in ibc_assets_info {
             let fut = async move {
                 let balance_denom = self
-                    .balance_for_denom(info.denom.to_string())
+                    .account_balance_for_denom(&self.account_id, info.denom.to_string())
                     .await
                     .map_err(|e| e.into_inner())?;
                 let balance_decimal = big_decimal_from_sat_unsigned(balance_denom, info.decimals);
@@ -459,7 +474,7 @@ impl TendermintCoin {
         protocol_info: TendermintProtocolInfo,
         rpc_urls: Vec<String>,
         tx_history: bool,
-        priv_key_policy: PrivKeyBuildPolicy,
+        priv_key_policy: TendermintPrivKeyPolicy,
     ) -> MmResult<Self, TendermintInitError> {
         if rpc_urls.is_empty() {
             return MmError::err(TendermintInitError {
@@ -468,7 +483,10 @@ impl TendermintCoin {
             });
         }
 
-        let priv_key = secret_from_priv_key_policy(&conf, &ticker, priv_key_policy)?;
+        let priv_key = priv_key_policy.activated_key_or_err().mm_err(|e| TendermintInitError {
+            ticker: ticker.clone(),
+            kind: TendermintInitErrorKind::Internal(e.to_string()),
+        })?;
 
         let account_id =
             account_id_from_privkey(priv_key.as_slice(), &protocol_info.account_prefix).mm_err(|kind| {
@@ -515,7 +533,7 @@ impl TendermintCoin {
             ticker,
             account_id,
             account_prefix: protocol_info.account_prefix,
-            priv_key: priv_key.to_vec(),
+            priv_key_policy,
             decimals: protocol_info.decimals,
             denom,
             chain_id,
@@ -535,8 +553,26 @@ impl TendermintCoin {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
+            let (account_id, priv_key) = match req.from {
+                Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+                    let priv_key = coin
+                        .priv_key_policy
+                        .hd_wallet_derived_priv_key_or_err(path_to_address)?;
+                    let account_id = account_id_from_privkey(priv_key.as_slice(), &coin.account_prefix)
+                        .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    (account_id, priv_key)
+                },
+                Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
+                    return MmError::err(WithdrawError::UnexpectedFromAddress(
+                        "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
+                            .to_string(),
+                    ))
+                },
+                None => (coin.account_id.clone(), *coin.priv_key_policy.activated_key_or_err()?),
+            };
+
             let (balance_denom, balance_dec) = coin
-                .get_balance_as_unsigned_and_decimal(&coin.denom, coin.decimals())
+                .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
                 .await?;
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
@@ -554,7 +590,7 @@ impl TendermintCoin {
                 });
             }
 
-            let received_by_me = if to_address == coin.account_id {
+            let received_by_me = if to_address == account_id {
                 amount_dec
             } else {
                 BigDecimal::default()
@@ -564,7 +600,7 @@ impl TendermintCoin {
 
             let msg_transfer = MsgTransfer::new_with_default_timeout(
                 req.ibc_source_channel.clone(),
-                coin.account_id.clone(),
+                account_id.clone(),
                 to_address.clone(),
                 Coin {
                     denom: coin.denom.clone(),
@@ -586,7 +622,14 @@ impl TendermintCoin {
             let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = coin
-                .calculate_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone(), req.fee)
+                .calculate_account_fee_amount_as_u64(
+                    &account_id,
+                    &priv_key,
+                    msg_transfer.clone(),
+                    timeout_height,
+                    memo.clone(),
+                    req.fee,
+                )
                 .await?;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
@@ -622,7 +665,7 @@ impl TendermintCoin {
 
             let msg_transfer = MsgTransfer::new_with_default_timeout(
                 req.ibc_source_channel.clone(),
-                coin.account_id.clone(),
+                account_id.clone(),
                 to_address.clone(),
                 Coin {
                     denom: coin.denom.clone(),
@@ -632,9 +675,9 @@ impl TendermintCoin {
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let account_info = coin.my_account_info().await?;
+            let account_info = coin.account_info(&account_id).await?;
             let tx_raw = coin
-                .any_to_signed_raw_tx(account_info, msg_transfer, fee, timeout_height, memo.clone())
+                .any_to_signed_raw_tx(&priv_key, account_info, msg_transfer, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -645,7 +688,7 @@ impl TendermintCoin {
             Ok(TransactionDetails {
                 tx_hash: hex::encode_upper(hash.as_slice()),
                 tx_hex: tx_bytes.into(),
-                from: vec![coin.account_id.to_string()],
+                from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
                 spent_by_me: total_amount.clone(),
@@ -794,6 +837,7 @@ impl TendermintCoin {
     pub(super) fn gen_simulated_tx(
         &self,
         account_info: BaseAccount,
+        priv_key: &Secp256k1Secret,
         tx_payload: Any,
         timeout_height: u64,
         memo: String,
@@ -805,7 +849,7 @@ impl TendermintCoin {
 
         let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
 
-        let signkey = SigningKey::from_bytes(&self.priv_key)?;
+        let signkey = SigningKey::from_bytes(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
@@ -850,7 +894,8 @@ impl TendermintCoin {
     ) -> Result<(String, Raw), TransactionErr> {
         let (tx_id, tx_raw) = loop {
             let tx_raw = try_tx_s!(self.any_to_signed_raw_tx(
-                try_tx_s!(self.my_account_info().await),
+                try_tx_s!(self.priv_key_policy.activated_key_or_err()),
+                try_tx_s!(self.account_info(&self.account_id).await),
                 tx_payload.clone(),
                 fee.clone(),
                 timeout_height,
@@ -884,9 +929,16 @@ impl TendermintCoin {
         let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
 
         let (response, raw_response) = loop {
-            let account_info = self.my_account_info().await?;
+            let account_info = self.account_info(&self.account_id).await?;
+            let activated_priv_key = self.priv_key_policy.activated_key_or_err()?;
             let tx_bytes = self
-                .gen_simulated_tx(account_info, msg.clone(), timeout_height, memo.clone())
+                .gen_simulated_tx(
+                    account_info,
+                    activated_priv_key,
+                    msg.clone(),
+                    timeout_height,
+                    memo.clone(),
+                )
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -939,8 +991,10 @@ impl TendermintCoin {
     }
 
     #[allow(deprecated)]
-    pub(super) async fn calculate_fee_amount_as_u64(
+    pub(super) async fn calculate_account_fee_amount_as_u64(
         &self,
+        account_id: &AccountId,
+        priv_key: &Secp256k1Secret,
         msg: Any,
         timeout_height: u64,
         memo: String,
@@ -949,9 +1003,9 @@ impl TendermintCoin {
         let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
 
         let (response, raw_response) = loop {
-            let account_info = self.my_account_info().await?;
+            let account_info = self.account_info(account_id).await?;
             let tx_bytes = self
-                .gen_simulated_tx(account_info, msg.clone(), timeout_height, memo.clone())
+                .gen_simulated_tx(account_info, priv_key, msg.clone(), timeout_height, memo.clone())
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -996,10 +1050,10 @@ impl TendermintCoin {
         Ok(((gas.gas_used as f64 * 1.5) * gas_price).ceil() as u64)
     }
 
-    pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
+    pub(super) async fn account_info(&self, account_id: &AccountId) -> MmResult<BaseAccount, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_QUERY_ACCOUNT_PATH).expect("valid path");
         let request = QueryAccountRequest {
-            address: self.account_id.to_string(),
+            address: account_id.to_string(),
         };
         let request = AbciRequest::new(
             Some(path),
@@ -1031,10 +1085,14 @@ impl TendermintCoin {
         Ok(base_account)
     }
 
-    pub(super) async fn balance_for_denom(&self, denom: String) -> MmResult<u64, TendermintCoinRpcError> {
+    pub(super) async fn account_balance_for_denom(
+        &self,
+        account_id: &AccountId,
+        denom: String,
+    ) -> MmResult<u64, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_QUERY_BALANCE_PATH).expect("valid path");
         let request = QueryBalanceRequest {
-            address: self.account_id.to_string(),
+            address: account_id.to_string(),
             denom,
         };
         let request = AbciRequest::new(
@@ -1103,13 +1161,14 @@ impl TendermintCoin {
 
     pub(super) fn any_to_signed_raw_tx(
         &self,
+        priv_key: &Secp256k1Secret,
         account_info: BaseAccount,
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
         memo: String,
     ) -> cosmrs::Result<Raw> {
-        let signkey = SigningKey::from_bytes(&self.priv_key)?;
+        let signkey = SigningKey::from_bytes(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
@@ -1524,7 +1583,11 @@ impl TendermintCoin {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee_uamount = self
-            .calculate_fee_amount_as_u64(
+            .calculate_account_fee_amount_as_u64(
+                &self.account_id,
+                self.priv_key_policy
+                    .activated_key_or_err()
+                    .mm_err(|e| TradePreimageError::InternalError(e.to_string()))?,
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
@@ -1573,7 +1636,16 @@ impl TendermintCoin {
         .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
         let fee_uamount = self
-            .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, TX_DEFAULT_MEMO.to_owned(), None)
+            .calculate_account_fee_amount_as_u64(
+                &self.account_id,
+                self.priv_key_policy
+                    .activated_key_or_err()
+                    .mm_err(|e| TradePreimageError::InternalError(e.to_string()))?,
+                msg_send,
+                timeout_height,
+                TX_DEFAULT_MEMO.to_owned(),
+                None,
+            )
             .await?;
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, decimals);
 
@@ -1586,10 +1658,11 @@ impl TendermintCoin {
 
     pub(super) async fn get_balance_as_unsigned_and_decimal(
         &self,
+        account_id: &AccountId,
         denom: &Denom,
         decimals: u8,
     ) -> MmResult<(u64, BigDecimal), TendermintCoinRpcError> {
-        let denom_ubalance = self.balance_for_denom(denom.to_string()).await?;
+        let denom_ubalance = self.account_balance_for_denom(account_id, denom.to_string()).await?;
         let denom_balance_dec = big_decimal_from_sat_unsigned(denom_ubalance, decimals);
 
         Ok((denom_ubalance, denom_balance_dec))
@@ -1832,8 +1905,26 @@ impl MmCoin for TendermintCoin {
                 )));
             }
 
+            let (account_id, priv_key) = match req.from {
+                Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+                    let priv_key = coin
+                        .priv_key_policy
+                        .hd_wallet_derived_priv_key_or_err(path_to_address)?;
+                    let account_id = account_id_from_privkey(priv_key.as_slice(), &coin.account_prefix)
+                        .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    (account_id, priv_key)
+                },
+                Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
+                    return MmError::err(WithdrawError::UnexpectedFromAddress(
+                        "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
+                            .to_string(),
+                    ))
+                },
+                None => (coin.account_id.clone(), *coin.priv_key_policy.activated_key_or_err()?),
+            };
+
             let (balance_denom, balance_dec) = coin
-                .get_balance_as_unsigned_and_decimal(&coin.denom, coin.decimals())
+                .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
                 .await?;
 
             // << BEGIN TX SIMULATION FOR FEE CALCULATION
@@ -1853,14 +1944,14 @@ impl MmCoin for TendermintCoin {
                 });
             }
 
-            let received_by_me = if to_address == coin.account_id {
+            let received_by_me = if to_address == account_id {
                 amount_dec
             } else {
                 BigDecimal::default()
             };
 
             let msg_send = MsgSend {
-                from_address: coin.account_id.clone(),
+                from_address: account_id.clone(),
                 to_address: to_address.clone(),
                 amount: vec![Coin {
                     denom: coin.denom.clone(),
@@ -1883,7 +1974,14 @@ impl MmCoin for TendermintCoin {
             let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = coin
-                .calculate_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone(), req.fee)
+                .calculate_account_fee_amount_as_u64(
+                    &account_id,
+                    &priv_key,
+                    msg_send,
+                    timeout_height,
+                    memo.clone(),
+                    req.fee,
+                )
                 .await?;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
@@ -1918,7 +2016,7 @@ impl MmCoin for TendermintCoin {
             };
 
             let msg_send = MsgSend {
-                from_address: coin.account_id.clone(),
+                from_address: account_id.clone(),
                 to_address,
                 amount: vec![Coin {
                     denom: coin.denom.clone(),
@@ -1928,9 +2026,9 @@ impl MmCoin for TendermintCoin {
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let account_info = coin.my_account_info().await?;
+            let account_info = coin.account_info(&account_id).await?;
             let tx_raw = coin
-                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, memo.clone())
+                .any_to_signed_raw_tx(&priv_key, account_info, msg_send, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -1942,7 +2040,7 @@ impl MmCoin for TendermintCoin {
             Ok(TransactionDetails {
                 tx_hash: hex::encode_upper(hash.as_slice()),
                 tx_hex: tx_bytes.into(),
-                from: vec![coin.account_id.to_string()],
+                from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
                 spent_by_me: total_amount.clone(),
@@ -2105,7 +2203,8 @@ impl MarketCoinOps for TendermintCoin {
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        let key = SigningKey::from_bytes(&self.priv_key).expect("privkey validity is checked on coin creation");
+        let key = SigningKey::from_bytes(self.priv_key_policy.activated_key_or_err()?.as_slice())
+            .expect("privkey validity is checked on coin creation");
         Ok(key.public_key().to_string())
     }
 
@@ -2127,7 +2226,9 @@ impl MarketCoinOps for TendermintCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
-            let balance_denom = coin.balance_for_denom(coin.denom.to_string()).await?;
+            let balance_denom = coin
+                .account_balance_for_denom(&coin.account_id, coin.denom.to_string())
+                .await?;
             Ok(CoinBalance {
                 spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
                 unspendable: BigDecimal::default(),
@@ -2285,7 +2386,13 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn display_priv_key(&self) -> Result<String, String> { Ok(hex::encode(&self.priv_key)) }
+    fn display_priv_key(&self) -> Result<String, String> {
+        Ok(self
+            .priv_key_policy
+            .activated_key_or_err()
+            .map_err(|e| e.to_string())?
+            .to_string())
+    }
 
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.decimals) }
 
@@ -2524,7 +2631,13 @@ impl SwapOps for TendermintCoin {
 
     #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
-        key_pair_from_secret(&self.priv_key).expect("valid priv key")
+        key_pair_from_secret(
+            self.priv_key_policy
+                .activated_key_or_err()
+                .expect("valid priv key")
+                .as_ref(),
+        )
+        .expect("valid priv key")
     }
 
     #[inline]
@@ -2652,27 +2765,34 @@ impl WatcherOps for TendermintCoin {
     }
 }
 
-/// Processes the given `priv_key_policy` and returns corresponding `Secp256k1Secret`.
+/// Processes the given `priv_key_build_policy` and returns corresponding `TendermintPrivKeyPolicy`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
 /// or [`PrivKeyBuildPolicy::GlobalHDAccount`], otherwise returns `PrivKeyPolicyNotAllowed` error.
-pub(crate) fn secret_from_priv_key_policy(
+pub fn tendermint_priv_key_policy(
     conf: &TendermintConf,
     ticker: &str,
-    priv_key_policy: PrivKeyBuildPolicy,
-) -> MmResult<Secp256k1Secret, TendermintInitError> {
-    match priv_key_policy {
-        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(iguana),
+    priv_key_build_policy: PrivKeyBuildPolicy,
+    path_to_address: StandardHDCoinAddress,
+) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
+    match priv_key_build_policy {
+        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(TendermintPrivKeyPolicy::Iguana(iguana)),
         PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
             let derivation_path = conf.derivation_path.as_ref().or_mm_err(|| TendermintInitError {
                 ticker: ticker.to_string(),
                 kind: TendermintInitErrorKind::DerivationPathIsNotSet,
             })?;
-            global_hd
-                .derive_secp256k1_secret(derivation_path)
+            let activated_priv_key = global_hd
+                .derive_secp256k1_secret(derivation_path, &path_to_address)
                 .mm_err(|e| TendermintInitError {
                     ticker: ticker.to_string(),
                     kind: TendermintInitErrorKind::InvalidPrivKey(e.to_string()),
-                })
+                })?;
+            let bip39_secp_priv_key = global_hd.root_priv_key().clone();
+            Ok(TendermintPrivKeyPolicy::HDWallet {
+                derivation_path: derivation_path.clone(),
+                activated_key: activated_priv_key,
+                bip39_secp_priv_key,
+            })
         },
         PrivKeyBuildPolicy::Trezor => {
             let kind =
@@ -2777,7 +2897,7 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -2889,7 +3009,7 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -2947,7 +3067,7 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3019,7 +3139,7 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3213,7 +3333,7 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3297,7 +3417,7 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3371,7 +3491,7 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3441,7 +3561,7 @@ pub mod tendermint_coin_tests {
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = common::block_on(TendermintCoin::init(
             &ctx,
@@ -3493,7 +3613,7 @@ pub mod tendermint_coin_tests {
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
+        let priv_key_policy = TendermintPrivKeyPolicy::Iguana(key_pair.private().secret);
 
         let coin = common::block_on(TendermintCoin::init(
             &ctx,

@@ -2,7 +2,6 @@ use crate::hw_client::{HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingE
 use crate::hw_error::HwError;
 use crate::trezor::TrezorSession;
 use crate::{mm2_internal_der_path, HwWalletType};
-use bip32::ChildNumber;
 use bitcrypto::dhash160;
 use common::log::warn;
 use hw_common::primitives::{EcdsaCurve, Secp256k1ExtendedPublicKey};
@@ -119,9 +118,7 @@ impl HardwareWalletCtx {
     where
         Processor: TrezorRequestProcessor + Sync,
     {
-        const ADDRESS_INDEX: Option<ChildNumber> = None;
-
-        let path = mm2_internal_der_path(ADDRESS_INDEX);
+        let path = mm2_internal_der_path();
         let mm2_internal_xpub = trezor
             .get_public_key(
                 path,

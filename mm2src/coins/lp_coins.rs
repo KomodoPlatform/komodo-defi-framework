@@ -43,13 +43,14 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
+use bip32::ExtendedPrivateKey;
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
 use common::log::{warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
-use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy,
-             Secp256k1Secret, WithHwRpcError};
+use crypto::{derive_secp256k1_secret, Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc,
+             HwRpcError, KeyPairPolicy, Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin, WithHwRpcError};
 use derive_more::Display;
 use enum_from::{EnumFromStringify, EnumFromTrait};
 use ethereum_types::H256;
@@ -96,6 +97,7 @@ cfg_native! {
 }
 
 cfg_wasm32! {
+    use ethereum_types::{H264 as EthH264, H520 as EthH520};
     use hd_wallet_storage::HDWalletDb;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
@@ -411,6 +413,8 @@ pub struct RawTransactionRes {
 #[derive(Debug, Deserialize)]
 pub struct MyAddressReq {
     coin: String,
+    #[serde(default)]
+    path_to_address: StandardHDCoinAddress,
 }
 
 #[derive(Debug, Serialize)]
@@ -441,6 +445,10 @@ pub enum TxHistoryError {
 pub enum PrivKeyPolicyNotAllowed {
     #[display(fmt = "Hardware Wallet is not supported")]
     HardwareWalletNotSupported,
+    #[display(fmt = "Unsupported method: {}", _0)]
+    UnsupportedMethod(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
 }
 
 impl Serialize for PrivKeyPolicyNotAllowed {
@@ -458,6 +466,22 @@ pub enum UnexpectedDerivationMethod {
     ExpectedSingleAddress,
     #[display(fmt = "Expected 'HDWallet' derivationMethod")]
     ExpectedHDWallet,
+    #[display(fmt = "Trezor derivation method is not supported yet!")]
+    Trezor,
+    #[display(fmt = "Unsupported error: {}", _0)]
+    UnsupportedError(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+}
+
+impl From<PrivKeyPolicyNotAllowed> for UnexpectedDerivationMethod {
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        match e {
+            PrivKeyPolicyNotAllowed::HardwareWalletNotSupported => UnexpectedDerivationMethod::Trezor,
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(method) => UnexpectedDerivationMethod::UnsupportedError(method),
+            PrivKeyPolicyNotAllowed::InternalError(e) => UnexpectedDerivationMethod::InternalError(e),
+        }
+    }
 }
 
 pub trait Transaction: fmt::Debug + 'static {
@@ -1234,10 +1258,9 @@ pub trait GetWithdrawSenderAddress {
     ) -> MmResult<WithdrawSenderAddress<Self::Address, Self::Pubkey>, WithdrawError>;
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum WithdrawFrom {
-    // AccountId { account_id: u32 },
     AddressId(HDAccountAddressId),
     /// Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
     /// `serde::Deserialize` returns "data did not match any variant of untagged enum WithdrawFrom".
@@ -1245,6 +1268,7 @@ pub enum WithdrawFrom {
     DerivationPath {
         derivation_path: String,
     },
+    HDWalletAddress(StandardHDCoinAddress),
 }
 
 #[derive(Clone, Deserialize)]
@@ -2030,6 +2054,8 @@ pub enum WithdrawError {
     #[from_stringify("NumConversError", "UnexpectedDerivationMethod", "PrivKeyPolicyNotAllowed")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "Unsupported error: {}", _0)]
+    UnsupportedError(String),
     #[display(fmt = "{} coin doesn't support NFT withdrawing", coin)]
     CoinDoesntSupportNftWithdraw {
         coin: String,
@@ -2078,6 +2104,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
             | WithdrawError::UnexpectedUserAction { .. }
+            | WithdrawError::UnsupportedError(_)
             | WithdrawError::ActionNotAllowed(_)
             | WithdrawError::GetNftInfoError(_)
             | WithdrawError::AddressMismatchError { .. }
@@ -2145,6 +2172,13 @@ impl From<EthGasDetailsErr> for WithdrawError {
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
         }
+    }
+}
+
+impl From<Bip32Error> for WithdrawError {
+    fn from(e: Bip32Error) -> Self {
+        let error = format!("Error deriving key: {}", e);
+        WithdrawError::InternalError(error)
     }
 }
 
@@ -2838,23 +2872,103 @@ impl Default for PrivKeyActivationPolicy {
     fn default() -> Self { PrivKeyActivationPolicy::ContextPrivKey }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum PrivKeyPolicy<T> {
-    KeyPair(T),
+    Iguana(T),
+    HDWallet {
+        /// Derivation path of the coin.
+        /// This derivation path consists of `purpose` and `coin_type` only
+        /// where the full `BIP44` address has the following structure:
+        /// `m/purpose'/coin_type'/account'/change/address_index`.
+        derivation_path: StandardHDPathToCoin,
+        activated_key: T,
+        bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
+    },
     Trezor,
+    #[cfg(target_arch = "wasm32")]
+    Metamask(EthMetamaskPolicy),
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone, Debug)]
+pub struct EthMetamaskPolicy {
+    pub(crate) public_key: EthH264,
+    pub(crate) public_key_uncompressed: EthH520,
+}
+
+impl<T> From<T> for PrivKeyPolicy<T> {
+    fn from(key_pair: T) -> Self { PrivKeyPolicy::Iguana(key_pair) }
 }
 
 impl<T> PrivKeyPolicy<T> {
-    pub fn key_pair(&self) -> Option<&T> {
+    fn activated_key(&self) -> Option<&T> {
         match self {
-            PrivKeyPolicy::KeyPair(key_pair) => Some(key_pair),
+            PrivKeyPolicy::Iguana(key_pair) => Some(key_pair),
+            PrivKeyPolicy::HDWallet {
+                activated_key: activated_key_pair,
+                ..
+            } => Some(activated_key_pair),
             PrivKeyPolicy::Trezor => None,
+            #[cfg(target_arch = "wasm32")]
+            PrivKeyPolicy::Metamask(_) => None,
         }
     }
 
-    pub fn key_pair_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
-        self.key_pair()
-            .or_mm_err(|| PrivKeyPolicyNotAllowed::HardwareWalletNotSupported)
+    fn activated_key_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
+        self.activated_key().or_mm_err(|| {
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`activated_key_or_err` is supported only for `PrivKeyPolicy::KeyPair` or `PrivKeyPolicy::HDWallet`"
+                    .to_string(),
+            )
+        })
+    }
+
+    fn bip39_secp_priv_key(&self) -> Option<&ExtendedPrivateKey<secp256k1::SecretKey>> {
+        match self {
+            PrivKeyPolicy::HDWallet {
+                bip39_secp_priv_key, ..
+            } => Some(bip39_secp_priv_key),
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor => None,
+            #[cfg(target_arch = "wasm32")]
+            PrivKeyPolicy::Metamask(_) => None,
+        }
+    }
+
+    fn bip39_secp_priv_key_or_err(
+        &self,
+    ) -> Result<&ExtendedPrivateKey<secp256k1::SecretKey>, MmError<PrivKeyPolicyNotAllowed>> {
+        self.bip39_secp_priv_key().or_mm_err(|| {
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`bip39_secp_priv_key_or_err` is supported only for `PrivKeyPolicy::HDWallet`".to_string(),
+            )
+        })
+    }
+
+    fn derivation_path(&self) -> Option<&StandardHDPathToCoin> {
+        match self {
+            PrivKeyPolicy::HDWallet { derivation_path, .. } => Some(derivation_path),
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor => None,
+            #[cfg(target_arch = "wasm32")]
+            PrivKeyPolicy::Metamask(_) => None,
+        }
+    }
+
+    fn derivation_path_or_err(&self) -> Result<&StandardHDPathToCoin, MmError<PrivKeyPolicyNotAllowed>> {
+        self.derivation_path().or_mm_err(|| {
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`derivation_path_or_err` is supported only for `PrivKeyPolicy::HDWallet`".to_string(),
+            )
+        })
+    }
+
+    fn hd_wallet_derived_priv_key_or_err(
+        &self,
+        path_to_address: &StandardHDCoinAddress,
+    ) -> Result<Secp256k1Secret, MmError<PrivKeyPolicyNotAllowed>> {
+        let bip39_secp_priv_key = self.bip39_secp_priv_key_or_err()?;
+        let derivation_path = self.derivation_path_or_err()?;
+        derive_secp256k1_secret(bip39_secp_priv_key.clone(), derivation_path, path_to_address)
+            .mm_err(|e| PrivKeyPolicyNotAllowed::InternalError(e.to_string()))
     }
 }
 
@@ -4035,13 +4149,13 @@ pub trait RpcCommonOps {
 /// Currently supports only coins with `ETH` protocol type.
 pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletAddress, GetMyAddressError> {
     let ticker = req.coin.as_str();
-    let coins_en = coin_conf(&ctx, ticker);
-    coins_conf_check(&ctx, &coins_en, ticker, None).map_to_mm(GetMyAddressError::CoinsConfCheckError)?;
+    let conf = coin_conf(&ctx, ticker);
+    coins_conf_check(&ctx, &conf, ticker, None).map_to_mm(GetMyAddressError::CoinsConfCheckError)?;
 
-    let protocol: CoinProtocol = json::from_value(coins_en["protocol"].clone())?;
+    let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&ctx, ticker).await?,
+        CoinProtocol::ETH => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",

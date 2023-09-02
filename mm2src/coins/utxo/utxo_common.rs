@@ -698,9 +698,17 @@ pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> MmRes
 
 pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
     match coin.priv_key_policy {
-        PrivKeyPolicy::KeyPair(ref key_pair) => Ok(key_pair.public()),
-        // Hardware Wallets requires BIP39/BIP44 derivation path to extract a public key.
-        PrivKeyPolicy::Trezor => MmError::err(UnexpectedDerivationMethod::ExpectedSingleAddress),
+        PrivKeyPolicy::Iguana(ref key_pair) => Ok(key_pair.public()),
+        PrivKeyPolicy::HDWallet {
+            activated_key: ref activated_key_pair,
+            ..
+        } => Ok(activated_key_pair.public()),
+        // Hardware Wallets requires BIP32/BIP44 derivation path to extract a public key.
+        PrivKeyPolicy::Trezor => MmError::err(UnexpectedDerivationMethod::Trezor),
+        #[cfg(target_arch = "wasm32")]
+        PrivKeyPolicy::Metamask(_) => MmError::err(UnexpectedDerivationMethod::UnsupportedError(
+            "`PrivKeyPolicy::Metamask` is not supported in this context".to_string(),
+        )),
     }
 }
 
@@ -2548,7 +2556,7 @@ pub fn sign_message_hash(coin: &UtxoCoinFields, message: &str) -> Option<[u8; 32
 
 pub fn sign_message(coin: &UtxoCoinFields, message: &str) -> SignatureResult<String> {
     let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
-    let private_key = coin.priv_key_policy.key_pair_or_err()?.private();
+    let private_key = coin.priv_key_policy.activated_key_or_err()?.private();
     let signature = private_key.sign_compact(&H256::from(message_hash))?;
     Ok(base64::encode(&*signature))
 }
@@ -2689,8 +2697,14 @@ pub fn current_block(coin: &UtxoCoinFields) -> Box<dyn Future<Item = u64, Error 
 
 pub fn display_priv_key(coin: &UtxoCoinFields) -> Result<String, String> {
     match coin.priv_key_policy {
-        PrivKeyPolicy::KeyPair(ref key_pair) => Ok(key_pair.private().to_string()),
+        PrivKeyPolicy::Iguana(ref key_pair) => Ok(key_pair.private().to_string()),
+        PrivKeyPolicy::HDWallet {
+            activated_key: ref activated_key_pair,
+            ..
+        } => Ok(activated_key_pair.private().to_string()),
         PrivKeyPolicy::Trezor => ERR!("'display_priv_key' doesn't support Hardware Wallets"),
+        #[cfg(target_arch = "wasm32")]
+        PrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' doesn't support Metamask"),
     }
 }
 
@@ -2815,6 +2829,11 @@ where
                 return MmError::err(WithdrawError::UnexpectedFromAddress(error));
             }
             HDAccountAddressId::from(derivation_path)
+        },
+        WithdrawFrom::HDWalletAddress(_) => {
+            return MmError::err(WithdrawError::UnsupportedError(
+                "`WithdrawFrom::HDWalletAddress` is not supported for `get_withdraw_hd_sender`".to_string(),
+            ))
         },
     };
 
@@ -4525,8 +4544,14 @@ where
 #[inline]
 pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> KeyPair {
     match coin.priv_key_policy {
-        PrivKeyPolicy::KeyPair(k) => k,
+        PrivKeyPolicy::Iguana(k) => k,
+        PrivKeyPolicy::HDWallet {
+            activated_key: activated_key_pair,
+            ..
+        } => activated_key_pair,
         PrivKeyPolicy::Trezor => todo!(),
+        #[cfg(target_arch = "wasm32")]
+        PrivKeyPolicy::Metamask(_) => panic!("`PrivKeyPolicy::Metamask` is not supported for UTXO coins"),
     }
 }
 

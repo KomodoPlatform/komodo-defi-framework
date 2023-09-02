@@ -18,7 +18,7 @@ mod xpub;
 
 pub use bip32_child::{Bip32Child, Bip32DerPathError, Bip32DerPathOps, Bip44Tail};
 pub use crypto_ctx::{CryptoCtx, CryptoCtxError, CryptoInitError, CryptoInitResult, HwCtxInitError, KeyPairPolicy};
-pub use global_hd_ctx::GlobalHDAccountArc;
+pub use global_hd_ctx::{derive_secp256k1_secret, GlobalHDAccountArc};
 pub use hw_client::{HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingError, HwPubkey, HwWalletType,
                     TrezorConnectProcessor};
 pub use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath, EcdsaCurve, ExtendedPublicKey,
@@ -26,8 +26,8 @@ pub use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath, EcdsaCu
 pub use hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 pub use hw_error::{from_hw_error, HwError, HwResult, HwRpcError, WithHwRpcError};
 pub use keys::Secret as Secp256k1Secret;
-pub use standard_hd_path::{Bip44Chain, StandardHDPath, StandardHDPathError, StandardHDPathToAccount,
-                           StandardHDPathToCoin, UnknownChainError};
+pub use standard_hd_path::{Bip44Chain, StandardHDCoinAddress, StandardHDPath, StandardHDPathError,
+                           StandardHDPathToAccount, StandardHDPathToCoin, UnknownChainError};
 pub use trezor;
 pub use xpub::{XPubConverter, XpubError};
 
@@ -48,11 +48,9 @@ use std::str::FromStr;
 /// * `account = (2 ^ 31 - 1) = 2147483647` - latest available account index.
 ///   This number is chosen so that it does not cross with real accounts;
 /// * `change = 0` - nothing special.
-/// * `address_index` - is ether specified by the config or default `0`.
-pub(crate) fn mm2_internal_der_path(address_index: Option<ChildNumber>) -> DerivationPath {
-    let mut der_path = DerivationPath::from_str("m/44'/141'/2147483647/0").expect("valid derivation path");
-    der_path.push(address_index.unwrap_or_default());
-    der_path
+/// * `address_index = 0`.
+pub(crate) fn mm2_internal_der_path() -> DerivationPath {
+    DerivationPath::from_str("m/44'/141'/2147483647/0/0").expect("valid derivation path")
 }
 
 #[derive(Clone, Debug, PartialEq)]

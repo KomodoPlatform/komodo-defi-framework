@@ -6,12 +6,13 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
-use coins::tendermint::{TendermintCoin, TendermintCommons, TendermintConf, TendermintInitError,
-                        TendermintInitErrorKind, TendermintProtocolInfo, TendermintToken,
+use coins::tendermint::{tendermint_priv_key_policy, TendermintCoin, TendermintCommons, TendermintConf,
+                        TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo, TendermintToken,
                         TendermintTokenActivationParams, TendermintTokenInitError, TendermintTokenProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::{true_f, Future01CompatExt};
+use crypto::StandardHDCoinAddress;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -37,6 +38,9 @@ pub struct TendermintActivationParams {
     tx_history: bool,
     #[serde(default = "true_f")]
     pub get_balances: bool,
+    /// /account'/change/address_index`.
+    #[serde(default)]
+    pub path_to_address: StandardHDCoinAddress,
 }
 
 impl TxHistory for TendermintActivationParams {
@@ -168,10 +172,18 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let conf = TendermintConf::try_from_json(&ticker, &coin_conf)?;
 
-        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).mm_err(|e| TendermintInitError {
-            ticker: ticker.clone(),
-            kind: TendermintInitErrorKind::Internal(e.to_string()),
-        })?;
+        let priv_key_build_policy =
+            PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).mm_err(|e| TendermintInitError {
+                ticker: ticker.clone(),
+                kind: TendermintInitErrorKind::Internal(e.to_string()),
+            })?;
+
+        let priv_key_policy = tendermint_priv_key_policy(
+            &conf,
+            &ticker,
+            priv_key_build_policy,
+            activation_request.path_to_address,
+        )?;
 
         TendermintCoin::init(
             &ctx,

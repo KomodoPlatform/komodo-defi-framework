@@ -840,19 +840,19 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QICK")));
     log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QORTY")));
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
-    log!("{:?}", block_on(enable_native(&mm_bob, "QTUM", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_bob, "QTUM", &[], None)));
     log!("{:?}", block_on(enable_native_bch(&mm_bob, "FORSLP", &[])));
-    log!("{:?}", block_on(enable_native(&mm_bob, "ADEXSLP", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "ADEXSLP", &[], None)));
 
     log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QICK")));
     log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QORTY")));
-    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
-    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
-    log!("{:?}", block_on(enable_native(&mm_alice, "QTUM", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice, "QTUM", &[], None)));
     log!("{:?}", block_on(enable_native_bch(&mm_alice, "FORSLP", &[])));
-    log!("{:?}", block_on(enable_native(&mm_alice, "ADEXSLP", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "ADEXSLP", &[], None)));
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
