@@ -191,21 +191,6 @@ impl Mm2TestConf {
         }
     }
 
-    pub fn seednode_with_hd_account(passphrase: &str, coins: &Json) -> Self {
-        Mm2TestConf {
-            conf: json!({
-                "gui": "nogui",
-                "netid": 9998,
-                "passphrase": passphrase,
-                "coins": coins,
-                "rpc_password": DEFAULT_RPC_PASSWORD,
-                "i_am_seed": true,
-                "enable_hd": true,
-            }),
-            rpc_password: DEFAULT_RPC_PASSWORD.into(),
-        }
-    }
-
     pub fn seednode_trade_v2(passphrase: &str, coins: &Json) -> Self {
         Mm2TestConf {
             conf: json!({
@@ -221,7 +206,7 @@ impl Mm2TestConf {
         }
     }
 
-    pub fn seednode_with_hd_account(passphrase: &str, hd_account_id: u32, coins: &Json) -> Self {
+    pub fn seednode_with_hd_account(passphrase: &str, coins: &Json) -> Self {
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",

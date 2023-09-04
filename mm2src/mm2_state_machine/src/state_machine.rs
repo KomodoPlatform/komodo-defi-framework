@@ -20,7 +20,6 @@ pub trait StateMachineTrait: Send + Sized + 'static {
                 StateResult::ChangeState(ChangeGuard { next }) => {
                     state = next;
                 },
-                StateResult::Finish(ResultGuard { result }) => return result,
                 StateResult::Finish(ResultGuard { result }) => {
                     self.on_finished().await?;
                     return Ok(result);

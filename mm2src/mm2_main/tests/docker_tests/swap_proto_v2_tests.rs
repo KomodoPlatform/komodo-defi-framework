@@ -152,10 +152,10 @@ fn test_v2_swap_utxo_utxo() {
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
-    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
-    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,

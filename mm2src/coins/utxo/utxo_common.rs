@@ -1338,7 +1338,7 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     // TODO validate premium amount. Might be a bit tricky in the case of dynamic miner fee
     // TODO validate that output amounts are larger than dust
 
-    let premium = match actual_preimage_tx.outputs.get(1) {
+    let maker_amount = match actual_preimage_tx.outputs.get(1) {
         Some(o) => o.value,
         None => {
             return MmError::err(ValidateDexFeeSpendPreimageError::InvalidPreimage(
@@ -1353,7 +1353,7 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
         coin,
         gen_args,
         LocktimeSetting::UseExact(actual_preimage_tx.lock_time),
-        CalcMakerAmountBy::UseExactAmount(actual_preimage_tx.outputs[1].value),
+        CalcMakerAmountBy::UseExactAmount(maker_amount),
     )
     .await?;
 
