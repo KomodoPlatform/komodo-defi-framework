@@ -59,6 +59,7 @@ fn activate_z_coin_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     let balance = match activation_result.wallet_balance {
@@ -72,7 +73,7 @@ fn activate_z_coin_light() {
 fn activate_z_coin_light_with_changing_height() {
     let coins = json!([zombie_conf()]);
 
-    let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);
+    let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
@@ -81,6 +82,7 @@ fn activate_z_coin_light_with_changing_height() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        Some(0),
     ));
 
     let old_first_sync_block = activation_result.first_sync_block;
@@ -132,7 +134,7 @@ fn activate_z_coin_with_hd_account() {
     let coins = json!([zombie_conf()]);
 
     let hd_account_id = 0;
-    let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, hd_account_id, &coins);
+    let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
@@ -141,6 +143,7 @@ fn activate_z_coin_with_hd_account() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        Some(0),
     ));
 
     let actual = match activation_result.wallet_balance {
@@ -167,6 +170,7 @@ fn test_z_coin_tx_history() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
         None,
     ));
 
@@ -412,6 +416,7 @@ fn withdraw_z_coin_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     println!("{:?}", activation_result);
@@ -454,11 +459,12 @@ fn trade_rick_zombie_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     println!("Bob ZOMBIE activation {:?}", zombie_activation);
 
-    let rick_activation = block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums()));
+    let rick_activation = block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums(), None));
 
     println!("Bob RICK activation {:?}", rick_activation);
 
@@ -487,11 +493,12 @@ fn trade_rick_zombie_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     println!("Alice ZOMBIE activation {:?}", zombie_activation);
 
-    let rick_activation = block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums()));
+    let rick_activation = block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums(), None));
 
     println!("Alice RICK activation {:?}", rick_activation);
 
@@ -543,6 +550,7 @@ fn activate_pirate_light() {
         ARRR,
         PIRATE_ELECTRUMS,
         PIRATE_LIGHTWALLETD_URLS,
+        None,
         None,
     ));
 

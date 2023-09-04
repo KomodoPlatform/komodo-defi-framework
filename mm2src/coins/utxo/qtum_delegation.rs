@@ -105,7 +105,7 @@ impl QtumDelegationOps for QtumCoin {
         let mut buffer = b"\x15Qtum Signed Message:\n\x28".to_vec();
         buffer.append(&mut addr_hash.to_string().into_bytes());
         let hashed = dhash256(&buffer);
-        let key_pair = self.as_ref().priv_key_policy.key_pair_or_err()?;
+        let key_pair = self.as_ref().priv_key_policy.activated_key_or_err()?;
         let signature = key_pair
             .private()
             .sign_compact(&hashed)
@@ -268,7 +268,7 @@ impl QtumCoin {
     ) -> DelegationResult {
         let utxo = self.as_ref();
 
-        let key_pair = utxo.priv_key_policy.key_pair_or_err()?;
+        let key_pair = utxo.priv_key_policy.activated_key_or_err()?;
         let my_address = utxo.derivation_method.single_addr_or_err()?;
 
         let (unspents, _) = self.get_unspent_ordered_list(my_address).await?;
@@ -299,7 +299,7 @@ impl QtumCoin {
             utxo.conf.fork_id,
         )?;
 
-        let miner_fee = data.fee_amount + data.unused_change.unwrap_or_default();
+        let miner_fee = data.fee_amount + data.unused_change;
         let generated_tx = GenerateQrc20TxResult {
             signed,
             miner_fee,

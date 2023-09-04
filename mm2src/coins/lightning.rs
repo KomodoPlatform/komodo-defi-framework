@@ -22,10 +22,10 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, C
             RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr,
-            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
-            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            TransactionFut, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
@@ -660,16 +660,22 @@ impl SwapOps for LightningCoin {
         self.spend_swap_payment(taker_spends_payment_args)
     }
 
-    fn send_taker_refunds_payment(&self, _taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut {
-        Box::new(futures01::future::err(TransactionErr::Plain(
+    async fn send_taker_refunds_payment(
+        &self,
+        _taker_refunds_payment_args: RefundPaymentArgs<'_>,
+    ) -> TransactionResult {
+        Err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to refund lightning HTLC".into(),
-        )))
+        ))
     }
 
-    fn send_maker_refunds_payment(&self, _maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionFut {
-        Box::new(futures01::future::err(TransactionErr::Plain(
+    async fn send_maker_refunds_payment(
+        &self,
+        _maker_refunds_payment_args: RefundPaymentArgs<'_>,
+    ) -> TransactionResult {
+        Err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to refund lightning HTLC".into(),
-        )))
+        ))
     }
 
     // Todo: This validates the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning

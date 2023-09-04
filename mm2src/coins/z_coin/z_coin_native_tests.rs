@@ -38,7 +38,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
     .unwrap();
 
     let time_lock = now_sec_u32() - 3600;
-    let taker_pub = coin.utxo_arc.priv_key_policy.key_pair_or_err().unwrap().public();
+    let taker_pub = coin.utxo_arc.priv_key_policy.activated_key_or_err().unwrap().public();
     let secret_hash = [0; 20];
 
     let args = SendPaymentArgs {
@@ -65,7 +65,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
         swap_unique_data: pk_data.as_slice(),
         watcher_reward: false,
     };
-    let refund_tx = coin.send_maker_refunds_payment(refund_args).wait().unwrap();
+    let refund_tx = block_on(coin.send_maker_refunds_payment(refund_args)).unwrap();
     println!("refund tx {}", hex::encode(refund_tx.tx_hash().0));
 }
 
@@ -95,7 +95,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
     .unwrap();
 
     let lock_time = now_sec_u32() - 1000;
-    let taker_pub = coin.utxo_arc.priv_key_policy.key_pair_or_err().unwrap().public();
+    let taker_pub = coin.utxo_arc.priv_key_policy.activated_key_or_err().unwrap().public();
     let secret = [0; 32];
     let secret_hash = dhash160(&secret);
 
@@ -289,5 +289,6 @@ fn default_zcoin_activation_params() -> ZcoinActivationParams {
         zcash_params_path: None,
         scan_blocks_per_iteration: 0,
         scan_interval_ms: 0,
+        account: 0,
     }
 }

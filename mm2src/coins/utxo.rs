@@ -31,6 +31,7 @@ pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;
 pub mod spv;
+pub mod swap_proto_v2_scripts;
 pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
@@ -51,7 +52,7 @@ use common::jsonrpc_client::JsonRpcError;
 use common::log::LogOnError;
 use common::{now_sec, now_sec_u32};
 use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey,
-             StandardHDPathError, StandardHDPathToAccount, StandardHDPathToCoin};
+             StandardHDCoinAddress, StandardHDPathError, StandardHDPathToAccount, StandardHDPathToCoin};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedSender};
@@ -256,7 +257,7 @@ pub struct AdditionalTxData {
     pub received_by_me: u64,
     pub spent_by_me: u64,
     pub fee_amount: u64,
-    pub unused_change: Option<u64>,
+    pub unused_change: u64,
     pub kmd_rewards: Option<KmdRewardsDetails>,
 }
 
@@ -838,6 +839,7 @@ pub trait UtxoTxGenerationOps {
         mut unsigned: TransactionInputSigner,
         mut data: AdditionalTxData,
         my_script_pub: Bytes,
+        dust: u64,
     ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)>;
 }
 
@@ -944,7 +946,7 @@ pub trait UtxoCommonOps:
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64;
 
-    /// Get a public key that matches [`PrivKeyPolicy::KeyPair`].
+    /// Get a public key that matches [`PrivKeyPolicy::Iguana`].
     ///
     /// # Fail
     ///
@@ -973,6 +975,8 @@ pub trait UtxoCommonOps:
         utxo_tx_map: &'b mut HistoryUtxoTxMap,
     ) -> UtxoRpcResult<&'b mut HistoryUtxoTx>;
 
+    /// Generates a transaction spending P2SH vout (typically, with 0 index [`utxo_common::DEFAULT_SWAP_VOUT`]) of input.prev_transaction
+    /// Works only if single signature is required!
     async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String>;
 
     /// Loads verbose transactions from cache or requests it using RPC client.
@@ -1365,6 +1369,10 @@ pub struct UtxoActivationParams {
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
     pub check_utxo_maturity: Option<bool>,
+    /// This determines which Address of the HD account to be used for swaps for this UTXO coin.
+    /// If not specified, the first non-change address for the first account is used.
+    #[serde(default)]
+    pub path_to_address: StandardHDCoinAddress,
 }
 
 #[derive(Debug, Display)]
@@ -1380,6 +1388,8 @@ pub enum UtxoFromLegacyReqErr {
     InvalidScanPolicy(json::Error),
     InvalidMinAddressesNumber(json::Error),
     InvalidPrivKeyPolicy(json::Error),
+    InvalidAccount(json::Error),
+    InvalidAddressIndex(json::Error),
 }
 
 impl UtxoActivationParams {
@@ -1417,6 +1427,9 @@ impl UtxoActivationParams {
         let priv_key_policy = json::from_value::<Option<PrivKeyActivationPolicy>>(req["priv_key_policy"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidPrivKeyPolicy)?
             .unwrap_or(PrivKeyActivationPolicy::ContextPrivKey);
+        let path_to_address = json::from_value::<Option<StandardHDCoinAddress>>(req["path_to_address"].clone())
+            .map_to_mm(UtxoFromLegacyReqErr::InvalidAddressIndex)?
+            .unwrap_or_default();
 
         Ok(UtxoActivationParams {
             mode,
@@ -1429,6 +1442,7 @@ impl UtxoActivationParams {
             enable_params,
             priv_key_policy,
             check_utxo_maturity,
+            path_to_address,
         })
     }
 }
@@ -1786,7 +1800,7 @@ where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err());
-    let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.key_pair_or_err());
+    let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.activated_key_or_err());
 
     let mut builder = UtxoTxBuilder::new(coin)
         .add_available_inputs(unspents)
@@ -1858,6 +1872,8 @@ pub fn address_by_conf_and_pubkey_str(
         enable_params: EnabledCoinBalanceParams::default(),
         priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
         check_utxo_maturity: None,
+        // This will not be used since the pubkey from orderbook/etc.. will be used to generate the address
+        path_to_address: StandardHDCoinAddress::default(),
     };
     let conf_builder = UtxoConfBuilder::new(conf, &params, coin);
     let utxo_conf = try_s!(conf_builder.build());

@@ -10,6 +10,7 @@ use bitcrypto::sha256;
 use common::executor::Timer;
 use common::log;
 use common::state_machine::prelude::*;
+use common::state_machine::StateMachineTrait;
 use cosmrs::tendermint::abci::Code as TxCode;
 use cosmrs::tendermint::abci::Event;
 use cosmrs::tx::Fee;
@@ -98,12 +99,18 @@ impl CoinWithTxHistoryV2 for TendermintToken {
     }
 }
 
-struct TendermintTxHistoryCtx<Coin: CoinCapabilities, Storage: TxHistoryStorage> {
+struct TendermintTxHistoryStateMachine<Coin: CoinCapabilities, Storage: TxHistoryStorage> {
     coin: Coin,
     storage: Storage,
     balances: AllBalancesResult,
     last_received_page: u32,
     last_spent_page: u32,
+}
+
+impl<Coin: CoinCapabilities, Storage: TxHistoryStorage> StateMachineTrait
+    for TendermintTxHistoryStateMachine<Coin, Storage>
+{
+    type Result = ();
 }
 
 struct TendermintInit<Coin, Storage> {
@@ -181,10 +188,12 @@ where
     Coin: CoinCapabilities,
     Storage: TxHistoryStorage,
 {
-    type Ctx = TendermintTxHistoryCtx<Coin, Storage>;
-    type Result = ();
+    type StateMachine = TendermintTxHistoryStateMachine<Coin, Storage>;
 
-    async fn on_changed(mut self: Box<Self>, _ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
+    async fn on_changed(
+        mut self: Box<Self>,
+        _ctx: &mut TendermintTxHistoryStateMachine<Coin, Storage>,
+    ) -> StateResult<TendermintTxHistoryStateMachine<Coin, Storage>> {
         Timer::sleep(30.).await;
 
         // retry history fetching process from last saved block
@@ -233,10 +242,12 @@ where
     Coin: CoinCapabilities,
     Storage: TxHistoryStorage,
 {
-    type Ctx = TendermintTxHistoryCtx<Coin, Storage>;
-    type Result = ();
+    type StateMachine = TendermintTxHistoryStateMachine<Coin, Storage>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
+    async fn on_changed(
+        self: Box<Self>,
+        ctx: &mut TendermintTxHistoryStateMachine<Coin, Storage>,
+    ) -> StateResult<TendermintTxHistoryStateMachine<Coin, Storage>> {
         loop {
             Timer::sleep(30.).await;
 
@@ -268,10 +279,12 @@ where
     Coin: CoinCapabilities,
     Storage: TxHistoryStorage,
 {
-    type Ctx = TendermintTxHistoryCtx<Coin, Storage>;
-    type Result = ();
+    type StateMachine = TendermintTxHistoryStateMachine<Coin, Storage>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
+    async fn on_changed(
+        self: Box<Self>,
+        ctx: &mut TendermintTxHistoryStateMachine<Coin, Storage>,
+    ) -> StateResult<TendermintTxHistoryStateMachine<Coin, Storage>> {
         const TX_PAGE_SIZE: u8 = 50;
 
         const DEFAULT_TRANSFER_EVENT_COUNT: usize = 1;
@@ -821,10 +834,12 @@ where
     Coin: CoinCapabilities,
     Storage: TxHistoryStorage,
 {
-    type Ctx = TendermintTxHistoryCtx<Coin, Storage>;
-    type Result = ();
+    type StateMachine = TendermintTxHistoryStateMachine<Coin, Storage>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
+    async fn on_changed(
+        self: Box<Self>,
+        ctx: &mut TendermintTxHistoryStateMachine<Coin, Storage>,
+    ) -> StateResult<TendermintTxHistoryStateMachine<Coin, Storage>> {
         const INITIAL_SEARCH_HEIGHT: u64 = 0;
 
         ctx.coin.set_history_sync_state(HistorySyncState::NotStarted);
@@ -855,10 +870,9 @@ where
     Coin: CoinCapabilities,
     Storage: TxHistoryStorage,
 {
-    type Ctx = TendermintTxHistoryCtx<Coin, Storage>;
-    type Result = ();
+    type StateMachine = TendermintTxHistoryStateMachine<Coin, Storage>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> Self::Result {
+    async fn on_changed(self: Box<Self>, ctx: &mut TendermintTxHistoryStateMachine<Coin, Storage>) -> () {
         log::info!(
             "Stopping tx history fetching for {}. Reason: {:?}",
             ctx.coin.ticker(),
@@ -887,7 +901,7 @@ pub async fn tendermint_history_loop(
         },
     };
 
-    let ctx = TendermintTxHistoryCtx {
+    let mut state_machine = TendermintTxHistoryStateMachine {
         coin,
         storage,
         balances,
@@ -895,6 +909,5 @@ pub async fn tendermint_history_loop(
         last_spent_page: 1,
     };
 
-    let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(ctx);
-    state_machine.run(TendermintInit::new()).await;
+    state_machine.run(Box::new(TendermintInit::new())).await;
 }

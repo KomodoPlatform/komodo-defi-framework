@@ -3,14 +3,14 @@ use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
 use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
 use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionDetails, WithdrawError,
-            WithdrawFee, WithdrawRequest, WithdrawResult};
+            WithdrawFee, WithdrawFrom, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
 use common::now_sec;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
 use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, DerivationPath, HwError, HwProcessingError, HwRpcError};
-use keys::{Public as PublicKey, Type as ScriptType};
+use keys::{AddressHashEnum, KeyPair, Private, Public as PublicKey, Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::ToTxHash;
@@ -187,7 +187,7 @@ where
         // Finish by generating `TransactionDetails` from the signed transaction.
         self.on_finishing()?;
 
-        let fee_amount = data.fee_amount + data.unused_change.unwrap_or_default();
+        let fee_amount = data.fee_amount + data.unused_change;
         let fee_details = UtxoFeeDetails {
             coin: Some(ticker.clone()),
             amount: big_decimal_from_sat(fee_amount as i64, decimals),
@@ -310,10 +310,21 @@ where
             .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
 
         let sign_policy = match self.coin.as_ref().priv_key_policy {
-            PrivKeyPolicy::KeyPair(ref key_pair) => SignPolicy::WithKeyPair(key_pair),
+            PrivKeyPolicy::Iguana(ref key_pair) => SignPolicy::WithKeyPair(key_pair),
+            // InitUtxoWithdraw works only for hardware wallets so it's ok to use signing with activated keypair here as a placeholder.
+            PrivKeyPolicy::HDWallet {
+                activated_key: ref activated_key_pair,
+                ..
+            } => SignPolicy::WithKeyPair(activated_key_pair),
             PrivKeyPolicy::Trezor => {
                 let trezor_session = hw_ctx.trezor().await?;
                 SignPolicy::WithTrezor(trezor_session)
+            },
+            #[cfg(target_arch = "wasm32")]
+            PrivKeyPolicy::Metamask(_) => {
+                return MmError::err(WithdrawError::UnsupportedError(
+                    "`PrivKeyPolicy::Metamask` is not supported for UTXO coins!".to_string(),
+                ))
             },
         };
 
@@ -365,6 +376,7 @@ impl<'a, Coin> InitUtxoWithdraw<'a, Coin> {
 pub struct StandardUtxoWithdraw<Coin> {
     coin: Coin,
     req: WithdrawRequest,
+    key_pair: KeyPair,
     my_address: Address,
     my_address_string: String,
 }
@@ -387,10 +399,9 @@ where
     fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> { Ok(()) }
 
     async fn sign_tx(&self, unsigned_tx: TransactionInputSigner) -> Result<UtxoTx, MmError<WithdrawError>> {
-        let key_pair = self.coin.as_ref().priv_key_policy.key_pair_or_err()?;
         Ok(with_key_pair::sign_tx(
             unsigned_tx,
-            key_pair,
+            &self.key_pair,
             self.prev_script(),
             self.signature_version(),
             self.coin.as_ref().conf.fork_id,
@@ -404,11 +415,52 @@ where
 {
     #[allow(clippy::result_large_err)]
     pub fn new(coin: Coin, req: WithdrawRequest) -> Result<Self, MmError<WithdrawError>> {
-        let my_address = coin.as_ref().derivation_method.single_addr_or_err()?.clone();
-        let my_address_string = coin.my_address()?;
+        let (key_pair, my_address) = match req.from {
+            Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+                let secret = coin
+                    .as_ref()
+                    .priv_key_policy
+                    .hd_wallet_derived_priv_key_or_err(path_to_address)?;
+                let private = Private {
+                    prefix: coin.as_ref().conf.wif_prefix,
+                    secret,
+                    compressed: true,
+                    checksum_type: coin.as_ref().conf.checksum_type,
+                };
+                let key_pair =
+                    KeyPair::from_private(private).map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+                let addr_format = coin
+                    .as_ref()
+                    .derivation_method
+                    .single_addr_or_err()?
+                    .clone()
+                    .addr_format;
+                let my_address = Address {
+                    prefix: coin.as_ref().conf.pub_addr_prefix,
+                    t_addr_prefix: coin.as_ref().conf.pub_t_addr_prefix,
+                    hash: AddressHashEnum::AddressHash(key_pair.public().address_hash()),
+                    checksum_type: coin.as_ref().conf.checksum_type,
+                    hrp: coin.as_ref().conf.bech32_hrp.clone(),
+                    addr_format,
+                };
+                (key_pair, my_address)
+            },
+            Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
+                return MmError::err(WithdrawError::UnsupportedError(
+                    "Only `WithdrawFrom::HDWalletAddress` is supported for `StandardUtxoWithdraw`".to_string(),
+                ))
+            },
+            None => {
+                let key_pair = coin.as_ref().priv_key_policy.activated_key_or_err()?;
+                let my_address = coin.as_ref().derivation_method.single_addr_or_err()?.clone();
+                (*key_pair, my_address)
+            },
+        };
+        let my_address_string = my_address.display_address().map_to_mm(WithdrawError::InternalError)?;
         Ok(StandardUtxoWithdraw {
             coin,
             req,
+            key_pair,
             my_address,
             my_address_string,
         })

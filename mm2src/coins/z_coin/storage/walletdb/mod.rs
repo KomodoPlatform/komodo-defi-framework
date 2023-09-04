@@ -1,7 +1,9 @@
 use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
 use mm2_err_handle::prelude::*;
+use zcash_primitives::zip32::ExtendedSpendingKey;
 
 cfg_native!(
+    use crate::z_coin::{ZcoinConsensusParams};
     use crate::z_coin::{CheckPointBlockInfo, extended_spending_key_from_protocol_info_and_policy, ZcoinConsensusParams};
     use crate::z_coin::z_rpc::create_wallet_db;
 
@@ -38,6 +40,7 @@ impl<'a> WalletDbShared {
     pub async fn new(
         zcoin_builder: &ZCoinBuilder<'a>,
         checkpoint_block: Option<CheckPointBlockInfo>,
+        z_spending_key: &ExtendedSpendingKey,
     ) -> MmResult<Self, WalletDbError> {
         let z_spending_key = match zcoin_builder.z_spending_key {
             Some(ref z_spending_key) => z_spending_key.clone(),
@@ -73,7 +76,10 @@ cfg_wasm32!(
     pub type WalletDbInnerLocked<'a> = DbLocked<'a, WalletDbInner>;
 
     impl<'a> WalletDbShared {
-        pub async fn new(zcoin_builder: &ZCoinBuilder<'a>) -> MmResult<Self, WalletDbError> {
+        pub async fn new(
+            zcoin_builder: &ZCoinBuilder<'a>,
+            _z_spending_key: &ExtendedSpendingKey,
+        ) -> MmResult<Self, WalletDbError> {
             Ok(Self {
                 db: ConstructibleDb::new(zcoin_builder.ctx).into_shared(),
                 ticker: zcoin_builder.ticker.to_string(),

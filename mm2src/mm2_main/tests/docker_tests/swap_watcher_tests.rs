@@ -50,7 +50,7 @@ struct BalanceResult {
 
 fn enable_coin(mm_node: &MarketMakerIt, coin: &str) {
     if coin == "MYCOIN" {
-        log!("{:?}", block_on(enable_native(mm_node, coin, &[])));
+        log!("{:?}", block_on(enable_native(mm_node, coin, &[], None)));
     } else {
         enable_eth(mm_node, coin);
     }

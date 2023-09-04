@@ -11,7 +11,7 @@
 //
 // Because we had limited time for the HTLC implementation, for now
 // we can use their unit tests in order to acquire IBC assets.
-// For that, clone https://github.com/ozkanonur/irishub-sdk-js repository and check
+// For that, clone https://github.com/onur-ozkan/irishub-sdk-js repository and check
 // dummy.test.ts file(change the asset, amount, target address if needed)
 // and then run the following commands:
 // - yarn
