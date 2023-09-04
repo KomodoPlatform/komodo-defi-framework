@@ -3,8 +3,7 @@ use mm2_err_handle::prelude::*;
 use zcash_primitives::zip32::ExtendedSpendingKey;
 
 cfg_native!(
-    use crate::z_coin::{ZcoinConsensusParams};
-    use crate::z_coin::{CheckPointBlockInfo, extended_spending_key_from_protocol_info_and_policy, ZcoinConsensusParams};
+    use crate::z_coin::{CheckPointBlockInfo, ZcoinConsensusParams};
     use crate::z_coin::z_rpc::create_wallet_db;
 
     use parking_lot::Mutex;
@@ -42,22 +41,13 @@ impl<'a> WalletDbShared {
         checkpoint_block: Option<CheckPointBlockInfo>,
         z_spending_key: &ExtendedSpendingKey,
     ) -> MmResult<Self, WalletDbError> {
-        let z_spending_key = match zcoin_builder.z_spending_key {
-            Some(ref z_spending_key) => z_spending_key.clone(),
-            None => extended_spending_key_from_protocol_info_and_policy(
-                &zcoin_builder.protocol_info,
-                &zcoin_builder.priv_key_policy,
-            )
-            .mm_err(|err| WalletDbError::ZCoinBuildError(err.to_string()))?,
-        };
-
         let wallet_db = create_wallet_db(
             zcoin_builder
                 .db_dir_path
                 .join(format!("{}_wallet.db", zcoin_builder.ticker)),
             zcoin_builder.protocol_info.consensus_params.clone(),
             checkpoint_block,
-            ExtendedFullViewingKey::from(&z_spending_key),
+            ExtendedFullViewingKey::from(z_spending_key),
         )
         .await
         .mm_err(WalletDbError::ZcoinClientInitError)?;

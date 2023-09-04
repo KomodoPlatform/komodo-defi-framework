@@ -12,6 +12,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
+use zcash_primitives::zip32::ExtendedSpendingKey;
 
 cfg_native!(
     use crate::{RpcCommonOps, ZTransaction};
@@ -398,6 +399,7 @@ pub(super) async fn init_light_client<'a>(
     lightwalletd_urls: Vec<String>,
     blocks_db: BlockDbImpl,
     sync_params: &Option<SyncStartPoint>,
+    z_spending_key: &ExtendedSpendingKey,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -463,7 +465,7 @@ pub(super) async fn init_light_client<'a>(
         .checkpoint_block_from_height(sync_height.max(sapling_activation_height))
         .await?;
 
-    let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block)
+    let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block, z_spending_key)
         .await
         .mm_err(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
 
@@ -508,6 +510,7 @@ pub(super) async fn init_light_client<'a>(
     _lightwalletd_urls: Vec<String>,
     _blocks_db: BlockDbImpl,
     _sync_params: &Option<SyncStartPoint>,
+    z_spending_key: &ExtendedSpendingKey,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     todo!()
 }
@@ -517,6 +520,7 @@ pub(super) async fn init_native_client<'a>(
     builder: &ZCoinBuilder<'a>,
     native_client: NativeClient,
     blocks_db: BlockDbImpl,
+    z_spending_key: &ExtendedSpendingKey,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -529,7 +533,7 @@ pub(super) async fn init_native_client<'a>(
         is_pre_sapling: false,
         actual: checkpoint_height,
     };
-    let wallet_db = WalletDbShared::new(builder, checkpoint_block)
+    let wallet_db = WalletDbShared::new(builder, checkpoint_block, z_spending_key)
         .await
         .mm_err(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
 
@@ -559,6 +563,7 @@ pub(super) async fn _init_native_client<'a>(
     _builder: &ZCoinBuilder<'a>,
     mut _native_client: NativeClient,
     _blocks_db: BlockDbImpl,
+    _z_spending_key: &ExtendedSpendingKey,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     todo!()
 }

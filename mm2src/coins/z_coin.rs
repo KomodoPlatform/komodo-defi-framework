@@ -910,21 +910,26 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         );
 
         let blocks_db = self.blocks_db().await?;
-        let wallet_db = WalletDbShared::new(&self, &z_spending_key)
-            .await
-            .map_err(|err| ZCoinBuildError::ZcashDBError(err.to_string()))?;
-
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => {
                 let native_client = self.native_client()?;
-                init_native_client(&self, native_client, blocks_db).await?
+                init_native_client(&self, native_client, blocks_db, &z_spending_key).await?
             },
             ZcoinRpcMode::Light {
                 light_wallet_d_servers,
                 sync_params,
                 ..
-            } => init_light_client(&self, light_wallet_d_servers.clone(), blocks_db, sync_params).await?,
+            } => {
+                init_light_client(
+                    &self,
+                    light_wallet_d_servers.clone(),
+                    blocks_db,
+                    sync_params,
+                    &z_spending_key,
+                )
+                .await?
+            },
         };
         let z_fields = ZCoinFields {
             dex_fee_addr,

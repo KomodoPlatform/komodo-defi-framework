@@ -110,6 +110,7 @@ fn activate_z_coin_light_with_changing_height() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         Some(two_days_ago),
+        None,
     ));
 
     let new_first_sync_block = activation_result.first_sync_block;
@@ -143,7 +144,7 @@ fn activate_z_coin_with_hd_account() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
-        Some(0),
+        Some(hd_account_id),
     ));
 
     let actual = match activation_result.wallet_balance {

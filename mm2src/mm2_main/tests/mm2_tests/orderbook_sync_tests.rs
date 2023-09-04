@@ -1437,6 +1437,7 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     let set_price_json = json!({
@@ -1500,6 +1501,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     let set_price_json = json!({
@@ -1528,6 +1530,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
         None,
     ));
 
