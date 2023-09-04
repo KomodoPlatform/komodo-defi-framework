@@ -5,7 +5,6 @@ use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::fs;
-#[cfg(unix)] use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use crate::adex_proc::SmartFractPrecision;
@@ -164,6 +163,7 @@ impl AdexConfigImpl {
 
     #[cfg(unix)]
     fn warn_on_insecure_mode(file_path: &str) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
         let perms = fs::metadata(file_path)?.permissions();
         let mode = perms.mode() & 0o777;
         if mode != CFG_FILE_PERM_MODE {
