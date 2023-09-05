@@ -350,6 +350,12 @@ impl<MakerCoin: MmCoin, TakerCoin: MmCoin + SwapOpsV2> State for Negotiated<Make
                 return Self::change_state(next_state, state_machine).await;
             },
         };
+        info!(
+            "Sent combined taker payment {} tx {:02x} during swap {}",
+            state_machine.taker_coin.ticker(),
+            taker_payment.tx_hash(),
+            state_machine.uuid
+        );
 
         let next_state = TakerPaymentSent {
             maker_coin: Default::default(),
@@ -652,7 +658,12 @@ impl<MakerCoin: MmCoin, TakerCoin: MmCoin + SwapOpsV2> State for MakerPaymentCon
                 return Self::change_state(next_state, state_machine).await;
             },
         };
-        debug!("Found taker payment spend {:?}", taker_payment_spend);
+        info!(
+            "Found taker payment spend {} tx {:02x} during swap {}",
+            state_machine.taker_coin.ticker(),
+            taker_payment_spend.tx_hash(),
+            state_machine.uuid
+        );
 
         let next_state = TakerPaymentSpent {
             maker_coin: Default::default(),
@@ -755,6 +766,12 @@ impl<MakerCoin: MmCoin + Send + Sync + 'static, TakerCoin: MmCoin + SwapOpsV2> S
                 return Self::change_state(next_state, state_machine).await;
             },
         };
+        info!(
+            "Spent maker payment {} tx {:02x} during swap {}",
+            state_machine.maker_coin.ticker(),
+            maker_payment_spend.tx_hash(),
+            state_machine.uuid
+        );
         let next_state = MakerPaymentSpent {
             maker_coin: Default::default(),
             taker_coin: Default::default(),

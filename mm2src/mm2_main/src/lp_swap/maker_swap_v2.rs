@@ -430,7 +430,12 @@ impl<MakerCoin: MmCoin, TakerCoin: MmCoin + SwapOpsV2> State for TakerPaymentRec
                 return Self::change_state(next_state, state_machine).await;
             },
         };
-
+        info!(
+            "Sent maker payment {} tx {:02x} during swap {}",
+            state_machine.maker_coin.ticker(),
+            maker_payment.tx_hash(),
+            state_machine.uuid
+        );
         let next_state = MakerPaymentSent {
             maker_coin: Default::default(),
             taker_coin: Default::default(),
@@ -700,6 +705,12 @@ impl<MakerCoin: MmCoin, TakerCoin: MmCoin + SwapOpsV2> State for TakerPaymentCon
                 return Self::change_state(next_state, state_machine).await;
             },
         };
+        info!(
+            "Spent taker payment {} tx {:02x} during swap {}",
+            state_machine.taker_coin.ticker(),
+            taker_payment_spend.tx_hash(),
+            state_machine.uuid
+        );
         let next_state = TakerPaymentSpent {
             maker_coin: Default::default(),
             taker_coin: Default::default(),
