@@ -125,14 +125,14 @@ fn send_and_spend_taker_payment() {
 
     block_on(maker_coin.validate_taker_payment_spend_preimage(&gen_preimage_args, &preimage_with_taker_sig)).unwrap();
 
-    let dex_fee_spend = block_on(maker_coin.sign_and_broadcast_taker_payment_spend(
+    let taker_payment_spend = block_on(maker_coin.sign_and_broadcast_taker_payment_spend(
         &preimage_with_taker_sig,
         &gen_preimage_args,
         &secret,
         &[],
     ))
     .unwrap();
-    println!("dex_fee_spend hash {:02x}", dex_fee_spend.tx_hash());
+    println!("taker_payment_spend hash {:02x}", taker_payment_spend.tx_hash());
 }
 
 #[test]

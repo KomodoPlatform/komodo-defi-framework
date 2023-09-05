@@ -58,7 +58,8 @@ use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::Ordering as AtomicOrdering;
-use utxo_signer::with_key_pair::{calc_and_sign_sighash, p2sh_spend, signature_hash_to_sign};
+use utxo_signer::with_key_pair::{calc_and_sign_sighash, p2sh_spend, signature_hash_to_sign, SIGHASH_ALL,
+                                 SIGHASH_SINGLE};
 use utxo_signer::UtxoSignerOps;
 
 pub use chain::Transaction as UtxoTx;
@@ -1212,41 +1213,16 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
 
 pub type GenDexFeeSpendResult = MmResult<TransactionInputSigner, TxGenError>;
 
-enum CalcMakerAmountBy {
-    DeductMinerFee,
-    UseExactAmount(u64),
-}
-
 async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_>,
     lock_time: LocktimeSetting,
-    calc_premium: CalcMakerAmountBy,
 ) -> GenDexFeeSpendResult {
     let mut prev_tx: UtxoTx = deserialize(args.taker_tx).map_to_mm(|e| TxGenError::TxDeserialization(e.to_string()))?;
     prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_tx);
 
     let dex_fee_sat = sat_from_big_decimal(&args.dex_fee_amount, coin.as_ref().decimals)?;
-    let maker_sat = match calc_premium {
-        CalcMakerAmountBy::UseExactAmount(sat) => sat,
-        CalcMakerAmountBy::DeductMinerFee => {
-            let miner_fee = coin
-                .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-                .await?;
-
-            let premium_sat = sat_from_big_decimal(&args.premium_amount, coin.as_ref().decimals)?;
-            let trading_sat = sat_from_big_decimal(&args.trading_amount, coin.as_ref().decimals)?;
-
-            if miner_fee + coin.as_ref().dust_amount > premium_sat + trading_sat {
-                return MmError::err(TxGenError::MinerFeeExceedsMakerAmount {
-                    miner_fee: big_decimal_from_sat_unsigned(miner_fee, coin.as_ref().decimals),
-                    maker_amount: &args.trading_amount + &args.premium_amount,
-                });
-            }
-            trading_sat + premium_sat - miner_fee
-        },
-    };
 
     let dex_fee_address = address_from_raw_pubkey(
         args.dex_fee_pub,
@@ -1262,26 +1238,9 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
         script_pubkey: Builder::build_p2pkh(&dex_fee_address.hash).to_bytes(),
     };
 
-    let maker_address = address_from_raw_pubkey(
-        args.maker_pub,
-        coin.as_ref().conf.pub_addr_prefix,
-        coin.as_ref().conf.pub_t_addr_prefix,
-        coin.as_ref().conf.checksum_type,
-        coin.as_ref().conf.bech32_hrp.clone(),
-        coin.addr_format().clone(),
-    )
-    .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive maker_address: {}", e)))?;
-    let maker_output = TransactionOutput {
-        value: maker_sat,
-        script_pubkey: Builder::build_p2pkh(&maker_address.hash).to_bytes(),
-    };
-
-    p2sh_spending_tx_preimage(coin, &prev_tx, lock_time, SEQUENCE_FINAL, vec![
-        dex_fee_output,
-        maker_output,
-    ])
-    .await
-    .map_to_mm(TxGenError::Legacy)
+    p2sh_spending_tx_preimage(coin, &prev_tx, lock_time, SEQUENCE_FINAL, vec![dex_fee_output])
+        .await
+        .map_to_mm(TxGenError::Legacy)
 }
 
 pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
@@ -1296,13 +1255,7 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
         .try_into()
         .map_to_mm(|e: TryFromIntError| TxGenError::LocktimeOverflow(e.to_string()))?;
 
-    let preimage = gen_taker_payment_spend_preimage(
-        coin,
-        args,
-        LocktimeSetting::CalcByHtlcLocktime(time_lock),
-        CalcMakerAmountBy::DeductMinerFee,
-    )
-    .await?;
+    let preimage = gen_taker_payment_spend_preimage(coin, args, LocktimeSetting::CalcByHtlcLocktime(time_lock)).await?;
 
     let redeem_script =
         swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, &taker_pub, &maker_pub);
@@ -1312,6 +1265,7 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
         &redeem_script,
         htlc_keypair,
         coin.as_ref().conf.signature_version,
+        SIGHASH_SINGLE,
         coin.as_ref().conf.fork_id,
     )?;
     let preimage_tx: UtxoTx = preimage.into();
@@ -1338,24 +1292,11 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     // TODO validate premium amount. Might be a bit tricky in the case of dynamic miner fee
     // TODO validate that output amounts are larger than dust
 
-    let maker_amount = match actual_preimage_tx.outputs.get(1) {
-        Some(o) => o.value,
-        None => {
-            return MmError::err(ValidateDexFeeSpendPreimageError::InvalidPreimage(
-                "Preimage doesn't have output 1".into(),
-            ))
-        },
-    };
-
-    // Here, we have to use the exact lock time and premium amount from the preimage because maker
+    // Here, we have to use the exact lock time from the preimage because maker
     // can get different values (e.g. if MTP advances during preimage exchange/fee rate changes)
-    let expected_preimage = gen_taker_payment_spend_preimage(
-        coin,
-        gen_args,
-        LocktimeSetting::UseExact(actual_preimage_tx.lock_time),
-        CalcMakerAmountBy::UseExactAmount(maker_amount),
-    )
-    .await?;
+    let expected_preimage =
+        gen_taker_payment_spend_preimage(coin, gen_args, LocktimeSetting::UseExact(actual_preimage_tx.lock_time))
+            .await?;
 
     let time_lock = gen_args
         .time_lock
@@ -1368,6 +1309,7 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
         DEFAULT_SWAP_VOUT,
         &redeem_script,
         coin.as_ref().conf.signature_version,
+        SIGHASH_SINGLE,
         coin.as_ref().conf.fork_id,
     )?;
 
@@ -1414,6 +1356,24 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     let mut signer: TransactionInputSigner = preimage_tx.clone().into();
     signer.inputs[0].amount = taker_tx.outputs[0].value;
     signer.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
+
+    let miner_fee = try_tx_s!(
+        coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+            .await
+    );
+
+    let maker_amount = &gen_args.trading_amount + &gen_args.premium_amount;
+    let maker_sat = try_tx_s!(sat_from_big_decimal(&maker_amount, coin.as_ref().decimals));
+    if miner_fee + coin.as_ref().dust_amount > maker_sat {
+        return TX_PLAIN_ERR!("Maker amount is too small to cover miner fee");
+    }
+
+    let maker_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err());
+    let maker_output = TransactionOutput {
+        value: maker_sat - miner_fee,
+        script_pubkey: output_script(maker_address, ScriptType::P2PKH).to_bytes(),
+    };
+    signer.outputs.push(maker_output);
     drop_mutability!(signer);
 
     let maker_signature = try_tx_s!(calc_and_sign_sighash(
@@ -1422,13 +1382,15 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
         &redeem_script,
         htlc_keypair,
         coin.as_ref().conf.signature_version,
+        SIGHASH_ALL,
         coin.as_ref().conf.fork_id
     ));
-    let sig_hash_all_fork_id = 1 | coin.as_ref().conf.fork_id as u8;
+    let sig_hash_single_fork_id = (SIGHASH_SINGLE | coin.as_ref().conf.fork_id) as u8;
     let mut taker_signature_with_sighash = preimage.signature.clone();
-    taker_signature_with_sighash.push(sig_hash_all_fork_id);
+    taker_signature_with_sighash.push(sig_hash_single_fork_id);
     drop_mutability!(taker_signature_with_sighash);
 
+    let sig_hash_all_fork_id = (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8;
     let mut maker_signature_with_sighash: Vec<u8> = maker_signature.take();
     maker_signature_with_sighash.push(sig_hash_all_fork_id);
     drop_mutability!(maker_signature_with_sighash);
