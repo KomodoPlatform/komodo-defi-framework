@@ -44,6 +44,7 @@ cfg_native! {
     use std::path::{Path, PathBuf};
 }
 
+/// Number of seconds in a day (24 hours * 60 * 60)
 pub const DAY_IN_SECONDS: u64 = 86400;
 
 pub type UtxoCoinBuildResult<T> = Result<T, MmError<UtxoCoinBuildError>>;

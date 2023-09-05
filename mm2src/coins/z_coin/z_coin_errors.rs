@@ -17,6 +17,7 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
+/// Represents possible errors that might occur while interacting with Zcoin rpc.
 #[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {

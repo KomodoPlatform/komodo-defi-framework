@@ -305,6 +305,9 @@ impl ZCoin {
     #[inline]
     pub fn consensus_params_ref(&self) -> &ZcoinConsensusParams { &self.z_fields.consensus_params }
 
+    /// Asynchronously checks the synchronization status and returns `true` if
+    /// the Sapling state has finished synchronizing, meaning that the block number is available.
+    /// Otherwise, it returns `false`.
     #[inline]
     pub async fn is_sapling_state_synced(&self) -> bool {
         matches!(
@@ -758,14 +761,21 @@ impl AsRef<UtxoCoinFields> for ZCoin {
     fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
+/// SyncStartPoint represents the starting point for synchronizing a wallet's blocks and transaction history.
+/// This can be specified as a date, a block height, or starting from the earliest available data.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SyncStartPoint {
+    /// Synchronize from a specific date (in Unix timestamp format).
     Date(u64),
+    /// Synchronize from a specific block height.
     Height(u64),
+    /// Synchronize from the earliest available data(`sapling_activation_height` from coin config).
     Earliest,
 }
 
+// ZcoinRpcMode reprs available RPC modes for interacting with the Zcoin network. It includes
+/// modes for both native and light client, each with their own configuration options.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "rpc", content = "rpc_data")]
 pub enum ZcoinRpcMode {

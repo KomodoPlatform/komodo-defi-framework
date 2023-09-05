@@ -48,6 +48,21 @@ impl GetAddressesBalances for ZcoinActivationResult {
     }
 }
 
+/// `ZcoinInProgressStatus` enumerates different states that may occur during the execution of
+/// Zcoin-related operations during coin activation.
+///
+/// - `ActivatingCoin`: Indicates that Zcoin is in the process of activating.
+/// - `UpdatingBlocksCache`: Represents the state of updating the blocks cache, with associated data
+///   about the first synchronization block, the current scanned block, and the latest block.
+/// - `BuildingWalletDb`: Denotes the state of building the wallet db, with associated data about
+///   the first synchronization block, the current scanned block, and the latest block.
+/// - `TemporaryError(String)`: Represents a temporary error state, with an associated error message
+///   providing details about the error.
+/// - `RequestingWalletBalance`: Indicates the process of requesting the wallet balance.
+/// - `Finishing`: Represents the finishing state of an operation.
+/// - `WaitingForTrezorToConnect`: Denotes a state where Zcoin is waiting for a Trezor device to connect.
+/// - `WaitingForUserToConfirmPubkey`: Represents a state where Zcoin is waiting for the user to confirm
+///   or decline an address on their device, without requiring explicit user action.
 #[derive(Clone, Serialize)]
 #[non_exhaustive]
 pub enum ZcoinInProgressStatus {

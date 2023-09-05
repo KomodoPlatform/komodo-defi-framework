@@ -65,13 +65,22 @@ pub type OnCompactBlockFn<'a> = dyn FnMut(TonicCompactBlock) -> Result<(), MmErr
 #[allow(unused)]
 pub type OnCompactBlockFn<'a> = dyn FnMut(String) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + 'a;
 
+/// ZRpcOps trait provides asynchronous methods for performing various operations related to
+/// Zcoin blockchain and wallet synchronization.
 #[async_trait]
 pub trait ZRpcOps {
+    /// Asynchronously retrieve the current block height from the Zcoin network.
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>>;
 
+    /// Asynchronously retrieve the tree state for a specific block height from the Zcoin network.
     #[cfg(not(target_arch = "wasm32"))]
     async fn get_tree_state(&mut self, height: u64) -> Result<TreeState, MmError<UpdateBlocksCacheErr>>;
 
+    /// Asynchronously scan and process blocks within a specified block height range.
+    ///
+    /// This method allows for scanning and processing blocks starting from `start_block` up to
+    /// and including `last_block`. It invokes the provided `on_block` function for each compact
+    /// block within the specified range.
     async fn scan_blocks(
         &mut self,
         start_block: u64,
@@ -346,6 +355,10 @@ impl ZRpcOps for NativeClient {
     }
 }
 
+/// `create_wallet_db` is responsible for creating a new Zcoin wallet database, initializing it
+/// with the provided parameters, and executing various initialization steps. These steps include checking and
+/// potentially rewinding the database to a specified synchronization height, performing optimizations, and
+/// setting up the initial state of the wallet database.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn create_wallet_db(
     wallet_db_path: PathBuf,
@@ -608,6 +621,17 @@ impl SaplingSyncRespawnGuard {
     }
 }
 
+/// `SyncStatus` enumerates different states that may occur during the execution of
+/// Zcoin-related operations during block sync.
+///
+/// - `UpdatingBlocksCache`: Represents the state of updating the blocks cache, with associated data
+///   about the first synchronization block, the current scanned block, and the latest block.
+/// - `BuildingWalletDb`: Denotes the state of building the wallet db, with associated data about
+///   the first synchronization block, the current scanned block, and the latest block.
+/// - `TemporaryError(String)`: Represents a temporary error state, with an associated error message
+///   providing details about the error.
+/// - `RequestingWalletBalance`: Indicates the process of requesting the wallet balance.
+/// - `Finishing`: Represents the finishing state of an operation.
 pub enum SyncStatus {
     UpdatingBlocksCache {
         first_sync_block: FirstSyncBlock,
@@ -626,6 +650,14 @@ pub enum SyncStatus {
     },
 }
 
+/// The `FirstSyncBlock` struct contains details about the block block that is used to start the synchronization
+/// process.
+/// It includes information about the requested block height, whether it predates the Sapling activation, and the
+/// actual starting block height used during synchronization.
+///
+/// - `requested`: The requested block height during synchronization.
+/// - `is_pre_sapling`: Indicates whether the block predates the Sapling activation.
+/// - `actual`: The actual block height used for synchronization(may be altered).
 #[derive(Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FirstSyncBlock {
@@ -634,6 +666,8 @@ pub struct FirstSyncBlock {
     pub actual: u64,
 }
 
+/// The `SaplingSyncLoopHandle` struct is used to manage and control Zcoin synchronization loop.
+/// It includes information about the coin being synchronized, the current block height, database access, etc.
 #[allow(unused)]
 pub struct SaplingSyncLoopHandle {
     coin: String,
