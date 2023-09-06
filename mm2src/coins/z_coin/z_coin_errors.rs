@@ -54,6 +54,10 @@ impl From<JsonRpcError> for UpdateBlocksCacheErr {
     fn from(err: JsonRpcError) -> Self { UpdateBlocksCacheErr::JsonRpcError(err) }
 }
 
+/// This enum encompasses various error scenarios that may arise
+/// when configuring and activating a Zcoin, such as invalid
+/// configuration settings, network connectivity issues, or other
+/// initialization failures.
 #[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum ZcoinClientInitError {

@@ -30,6 +30,15 @@ pub type ZcoinRpcTaskHandle = InitStandaloneCoinTaskHandle<ZCoin>;
 pub type ZcoinAwaitingStatus = HwRpcTaskAwaitingStatus;
 pub type ZcoinUserAction = HwRpcTaskUserAction;
 
+/// `ZCoinActivationResult` provides information/data for Zcoin activation. It includes
+/// details such as the ticker, the current block height, the wallet balance, and the result
+/// of the first synchronization block (if applicable).
+///
+/// - `ticker`: A string representing the ticker of the Zcoin.
+/// - `current_block`: The current block height at the time of this activation result.
+/// - `wallet_balance`: Information about the wallet's coin balance and status.
+/// - `first_sync_block`: An optional field containing details about the first synchronization block
+///   during the activation process. It may be `None` if no first synchronization block is available.
 #[derive(Clone, Serialize)]
 pub struct ZcoinActivationResult {
     pub ticker: String,
