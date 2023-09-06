@@ -9,9 +9,9 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
             SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOpsV2, TakerSwapMakerCoin, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateDexFeeResult,
-            ValidateDexFeeSpendPreimageResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateTakerPaymentArgs,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateTakerPaymentArgs, ValidateTakerPaymentResult, ValidateTakerPaymentSpendPreimageResult,
             VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
             WithdrawRequest};
@@ -389,7 +389,7 @@ impl SwapOpsV2 for TestCoin {
         unimplemented!()
     }
 
-    async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateDexFeeResult {
+    async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateTakerPaymentResult {
         unimplemented!()
     }
 
@@ -407,7 +407,7 @@ impl SwapOpsV2 for TestCoin {
         &self,
         gen_args: &GenTakerPaymentSpendArgs<'_>,
         preimage: &TxPreimageWithSig,
-    ) -> ValidateDexFeeSpendPreimageResult {
+    ) -> ValidateTakerPaymentSpendPreimageResult {
         unimplemented!()
     }
 

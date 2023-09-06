@@ -20,13 +20,13 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPayment
             RawTransactionRequest, RawTransactionRes, RefundPaymentArgs, RewardTarget, SearchForSwapTxSpendInput,
             SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
             SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TransactionResult,
-            TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateDexFeeResult,
-            ValidateDexFeeSpendPreimageError, ValidateDexFeeSpendPreimageResult, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentError,
-            VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
-            EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
-            INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
+            ValidateDexFeeSpendPreimageError, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateTakerPaymentArgs, ValidateTakerPaymentError, ValidateTakerPaymentResult,
+            ValidateTakerPaymentSpendPreimageResult, VerificationError, VerificationResult,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
+            WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
+            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
@@ -1325,7 +1325,7 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     gen_args: &GenTakerPaymentSpendArgs<'_>,
     preimage: &TxPreimageWithSig,
-) -> ValidateDexFeeSpendPreimageResult {
+) -> ValidateTakerPaymentSpendPreimageResult {
     // TODO validate that preimage has exactly 2 outputs
     let actual_preimage_tx: UtxoTx = deserialize(preimage.preimage.as_slice())
         .map_to_mm(|e| ValidateDexFeeSpendPreimageError::TxDeserialization(e.to_string()))?;
@@ -4611,7 +4611,10 @@ where
     send_outputs_from_my_address(coin, outputs).compat().await
 }
 
-pub async fn validate_combined_taker_payment<T>(coin: &T, args: ValidateTakerPaymentArgs<'_>) -> ValidateDexFeeResult
+pub async fn validate_combined_taker_payment<T>(
+    coin: &T,
+    args: ValidateTakerPaymentArgs<'_>,
+) -> ValidateTakerPaymentResult
 where
     T: UtxoCommonOps + SwapOps,
 {

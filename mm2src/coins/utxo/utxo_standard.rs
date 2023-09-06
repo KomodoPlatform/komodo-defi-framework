@@ -29,11 +29,11 @@ use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDeriva
             SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
             SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin,
             TradePreimageValue, TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
-            ValidateAddressResult, ValidateDexFeeResult, ValidateDexFeeSpendPreimageResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateTakerPaymentArgs, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateTakerPaymentArgs,
+            ValidateTakerPaymentResult, ValidateTakerPaymentSpendPreimageResult, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
 use common::executor::{AbortableSystem, AbortedError};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
@@ -588,7 +588,7 @@ impl SwapOpsV2 for UtxoStandardCoin {
         utxo_common::send_combined_taker_payment(self.clone(), args).await
     }
 
-    async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateDexFeeResult {
+    async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateTakerPaymentResult {
         utxo_common::validate_combined_taker_payment(self, args).await
     }
 
@@ -609,7 +609,7 @@ impl SwapOpsV2 for UtxoStandardCoin {
         &self,
         gen_args: &GenTakerPaymentSpendArgs<'_>,
         preimage: &TxPreimageWithSig,
-    ) -> ValidateDexFeeSpendPreimageResult {
+    ) -> ValidateTakerPaymentSpendPreimageResult {
         utxo_common::validate_taker_payment_spend_preimage(self, gen_args, preimage).await
     }
 
