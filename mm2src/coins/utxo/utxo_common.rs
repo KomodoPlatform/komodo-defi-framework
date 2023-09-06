@@ -21,8 +21,8 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPayment
             SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
             SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TransactionResult,
             TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
-            ValidateDexFeeSpendPreimageError, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateTakerPaymentArgs, ValidateTakerPaymentError, ValidateTakerPaymentResult,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateTakerPaymentArgs,
+            ValidateTakerPaymentError, ValidateTakerPaymentResult, ValidateTakerPaymentSpendPreimageError,
             ValidateTakerPaymentSpendPreimageResult, VerificationError, VerificationResult,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
             WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
@@ -1275,6 +1275,8 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
     })
 }
 
+/// Common implementation of taker payment spend preimage validation for UTXO coins.
+/// Checks taker's signature and compares received preimage with the expected tx.
 pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     gen_args: &GenTakerPaymentSpendArgs<'_>,
@@ -1282,12 +1284,12 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 ) -> ValidateTakerPaymentSpendPreimageResult {
     // TODO validate that preimage has exactly 2 outputs
     let actual_preimage_tx: UtxoTx = deserialize(preimage.preimage.as_slice())
-        .map_to_mm(|e| ValidateDexFeeSpendPreimageError::TxDeserialization(e.to_string()))?;
+        .map_to_mm(|e| ValidateTakerPaymentSpendPreimageError::TxDeserialization(e.to_string()))?;
 
     let maker_pub = Public::from_slice(gen_args.maker_pub)
-        .map_to_mm(|e| ValidateDexFeeSpendPreimageError::InvalidPubkey(e.to_string()))?;
+        .map_to_mm(|e| ValidateTakerPaymentSpendPreimageError::InvalidPubkey(e.to_string()))?;
     let taker_pub = Public::from_slice(gen_args.taker_pub)
-        .map_to_mm(|e| ValidateDexFeeSpendPreimageError::InvalidPubkey(e.to_string()))?;
+        .map_to_mm(|e| ValidateTakerPaymentSpendPreimageError::InvalidPubkey(e.to_string()))?;
 
     // TODO validate premium amount. Might be a bit tricky in the case of dynamic miner fee
     // TODO validate that output amounts are larger than dust
@@ -1301,7 +1303,7 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     let time_lock = gen_args
         .time_lock
         .try_into()
-        .map_to_mm(|e: TryFromIntError| ValidateDexFeeSpendPreimageError::LocktimeOverflow(e.to_string()))?;
+        .map_to_mm(|e: TryFromIntError| ValidateTakerPaymentSpendPreimageError::LocktimeOverflow(e.to_string()))?;
     let redeem_script =
         swap_proto_v2_scripts::taker_payment_script(time_lock, gen_args.secret_hash, &taker_pub, &maker_pub);
     let sig_hash = signature_hash_to_sign(
@@ -1315,19 +1317,21 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 
     if !taker_pub
         .verify(&sig_hash, &preimage.signature.clone().into())
-        .map_to_mm(|e| ValidateDexFeeSpendPreimageError::SignatureVerificationFailure(e.to_string()))?
+        .map_to_mm(|e| ValidateTakerPaymentSpendPreimageError::SignatureVerificationFailure(e.to_string()))?
     {
-        return MmError::err(ValidateDexFeeSpendPreimageError::InvalidTakerSignature);
+        return MmError::err(ValidateTakerPaymentSpendPreimageError::InvalidTakerSignature);
     };
     let expected_preimage_tx: UtxoTx = expected_preimage.into();
     if expected_preimage_tx != actual_preimage_tx {
-        return MmError::err(ValidateDexFeeSpendPreimageError::InvalidPreimage(
+        return MmError::err(ValidateTakerPaymentSpendPreimageError::InvalidPreimage(
             "Preimage is not equal to expected".into(),
         ));
     }
     Ok(())
 }
 
+/// Common implementation of taker payment spend finalization and broadcast for UTXO coins.
+/// Appends maker output to the preimage, signs it with SIGHASH_ALL and submits the resulting tx to coin's RPC.
 pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     coin: &T,
     preimage: &TxPreimageWithSig,
@@ -4543,6 +4547,7 @@ where
         .collect()
 }
 
+/// Common implementation of combined taker payment generation and broadcast for UTXO coins.
 pub async fn send_combined_taker_payment<T>(coin: T, args: SendCombinedTakerPaymentArgs<'_>) -> TransactionResult
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
@@ -4573,6 +4578,7 @@ where
     send_outputs_from_my_address(coin, outputs).compat().await
 }
 
+/// Common implementation of combined taker payment validation for UTXO coins.
 pub async fn validate_combined_taker_payment<T>(
     coin: &T,
     args: ValidateTakerPaymentArgs<'_>,
@@ -4631,7 +4637,8 @@ where
     Ok(())
 }
 
-pub async fn refund_dex_fee_with_premium<T>(coin: T, args: RefundPaymentArgs<'_>) -> TransactionResult
+/// Common implementation of combined taker payment refund for UTXO coins.
+pub async fn refund_combined_taker_payment<T>(coin: T, args: RefundPaymentArgs<'_>) -> TransactionResult
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {

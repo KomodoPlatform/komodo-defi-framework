@@ -177,6 +177,7 @@ impl SwapMsgStore {
     }
 }
 
+/// Storage for P2P messages, which are exchanged during SwapV2 protocol execution.
 #[derive(Debug, Default)]
 pub struct SwapV2MsgStore {
     maker_negotiation: Option<MakerNegotiation>,
@@ -190,6 +191,7 @@ pub struct SwapV2MsgStore {
 }
 
 impl SwapV2MsgStore {
+    /// Creates new SwapV2MsgStore
     pub fn new(accept_only_from: bits256) -> Self {
         SwapV2MsgStore {
             accept_only_from,
@@ -501,6 +503,7 @@ impl SwapsContext {
         self.swap_msgs.lock().unwrap().insert(uuid, store);
     }
 
+    /// Initializes storage for the swap with specific uuid.
     pub fn init_msg_v2_store(&self, uuid: Uuid, accept_only_from: bits256) {
         let store = SwapV2MsgStore::new(accept_only_from);
         self.swap_v2_msgs.lock().unwrap().insert(uuid, store);
@@ -741,6 +744,7 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, dex_fee_th
     }
 }
 
+/// Calculates DEX fee with a threshold based on min tx amount of the taker coin.
 pub fn dex_fee_amount_from_taker_coin(taker_coin: &dyn MmCoin, maker_coin: &str, trade_amount: &MmNumber) -> MmNumber {
     let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
     let dex_fee_threshold = dex_fee_threshold(min_tx_amount);
@@ -1405,6 +1409,7 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     Ok(try_s!(Response::builder().body(res)))
 }
 
+/// Algorithm used to hash swap secret.
 pub enum SecretHashAlgo {
     /// ripemd160(sha256(secret))
     DHASH160,
@@ -1452,6 +1457,7 @@ pub struct SwapPubkeys {
     pub taker: String,
 }
 
+/// P2P topic used to broadcast messages during execution of the upgraded swap protocol.
 pub fn swap_v2_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_V2_PREFIX, &uuid.to_string()) }
 
 /// Broadcast the swap v2 message once
@@ -1497,6 +1503,7 @@ pub fn broadcast_swap_v2_msg_every<T: prost::Message + 'static>(
     spawn_abortable(fut)
 }
 
+/// Processes messages received during execution of the upgraded swap protocol.
 pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessResult<()> {
     use prost::Message;
 

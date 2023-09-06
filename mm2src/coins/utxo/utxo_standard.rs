@@ -593,7 +593,7 @@ impl SwapOpsV2 for UtxoStandardCoin {
     }
 
     async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult {
-        utxo_common::refund_dex_fee_with_premium(self.clone(), args).await
+        utxo_common::refund_combined_taker_payment(self.clone(), args).await
     }
 
     async fn gen_taker_payment_spend_preimage(

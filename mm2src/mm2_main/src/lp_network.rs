@@ -65,10 +65,13 @@ pub enum P2PRequestError {
     ExpectedSingleResponseError(usize),
 }
 
+/// Enum covering error cases that can happen during P2P message processing.
 #[derive(Debug, Display)]
 #[allow(clippy::enum_variant_names)]
 pub enum P2PProcessError {
+    /// The message could not be decoded.
     DecodeError(String),
+    /// Message signature is invalid.
     InvalidSignature(String),
 }
 
