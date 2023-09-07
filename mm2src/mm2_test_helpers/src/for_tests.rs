@@ -191,6 +191,7 @@ impl Mm2TestConf {
         }
     }
 
+    /// Generates a seed node conf enabling use_trading_proto_v2
     pub fn seednode_trade_v2(passphrase: &str, coins: &Json) -> Self {
         Mm2TestConf {
             conf: json!({
@@ -235,6 +236,7 @@ impl Mm2TestConf {
         }
     }
 
+    /// Generates a light node conf enabling use_trading_proto_v2
     pub fn light_node_trade_v2(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
         Mm2TestConf {
             conf: json!({

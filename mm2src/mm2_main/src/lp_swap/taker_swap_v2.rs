@@ -20,29 +20,36 @@ use uuid::Uuid;
 // This is needed to have Debug on messages
 #[allow(unused_imports)] use prost::Message;
 
+/// If a certain P2P message is not received, swap will be aborted after this time expires.
 const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
 
+/// Represents events produced by taker swap states.
 #[derive(Debug, PartialEq)]
 pub enum TakerSwapEvent {
+    /// Swap has been successfully initialized.
     Initialized {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
     },
+    /// Negotiated swap data with maker.
     Negotiated {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
         secret_hash: BytesJson,
     },
+    /// Sent taker payment.
     TakerPaymentSent {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
         taker_payment: TransactionIdentifier,
         secret_hash: BytesJson,
     },
+    /// Something went wrong, so taker payment refund is required.
     TakerPaymentRefundRequired {
         taker_payment: TransactionIdentifier,
         secret_hash: BytesJson,
     },
+    /// Both payments are confirmed on-chain
     BothPaymentsSentAndConfirmed {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
@@ -50,6 +57,7 @@ pub enum TakerSwapEvent {
         taker_payment: TransactionIdentifier,
         secret_hash: BytesJson,
     },
+    /// Maker spent taker's payment and taker discovered the tx on-chain.
     TakerPaymentSpent {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
@@ -58,6 +66,7 @@ pub enum TakerSwapEvent {
         taker_payment_spend: TransactionIdentifier,
         secret: BytesJson,
     },
+    /// Taker spent maker's payment.
     MakerPaymentSpent {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
@@ -66,15 +75,17 @@ pub enum TakerSwapEvent {
         taker_payment_spend: TransactionIdentifier,
         maker_payment_spend: TransactionIdentifier,
     },
-    Aborted {
-        reason: String,
-    },
+    /// Swap has been aborted before taker payment was sent.
+    Aborted { reason: String },
+    /// Swap completed successfully.
     Completed,
 }
 
+/// Represents errors that can be produced by [`TakerSwapStateMachine`] run.
 #[derive(Debug, Display)]
 pub enum TakerSwapStateMachineError {}
 
+/// Dummy storage for taker swap events (used temporary).
 #[derive(Default)]
 pub struct DummyTakerSwapStorage {
     events: HashMap<Uuid, Vec<TakerSwapEvent>>,
@@ -98,20 +109,35 @@ impl StateMachineStorage for DummyTakerSwapStorage {
     async fn mark_finished(&mut self, _id: Self::MachineId) -> Result<(), Self::Error> { Ok(()) }
 }
 
+/// Represents the state machine for taker's side of the Trading Protocol Upgrade swap (v2).
 pub struct TakerSwapStateMachine<MakerCoin, TakerCoin> {
+    /// MM2 context.
     pub ctx: MmArc,
+    /// Storage.
     pub storage: DummyTakerSwapStorage,
+    /// The timestamp when the swap was started.
     pub started_at: u64,
+    /// The duration of HTLC timelock in seconds.
     pub lock_duration: u64,
+    /// Maker coin.
     pub maker_coin: MakerCoin,
+    /// The amount swapped by maker.
     pub maker_volume: MmNumber,
+    /// Taker coin.
     pub taker_coin: TakerCoin,
+    /// The amount swapped by taker.
     pub taker_volume: MmNumber,
+    /// DEX fee amount.
     pub dex_fee: MmNumber,
+    /// Premium amount, which might be paid to maker as additional reward.
     pub taker_premium: MmNumber,
+    /// Swap transactions' confirmations settings.
     pub conf_settings: SwapConfirmationsSettings,
+    /// UUID of the swap.
     pub uuid: Uuid,
+    /// The gossipsub topic used for peer-to-peer communication in swap process.
     pub p2p_topic: String,
+    /// If Some, used to sign P2P messages of this swap.
     pub p2p_keypair: Option<KeyPair>,
 }
 
@@ -141,6 +167,7 @@ impl<MakerCoin: Send + 'static, TakerCoin: Send + 'static> StorableStateMachine
     }
 }
 
+/// Represents a state used to start a new taker swap.
 pub struct Initialize<MakerCoin, TakerCoin> {
     maker_coin: PhantomData<MakerCoin>,
     taker_coin: PhantomData<TakerCoin>,

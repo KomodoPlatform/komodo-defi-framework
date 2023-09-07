@@ -19,40 +19,46 @@ use std::marker::PhantomData;
 use uuid::Uuid;
 
 // This is needed to have Debug on messages
-use crate::mm2::lp_swap::maker_swap_v2::MakerPaymentRefundReason::TakerPaymentSpendBroadcastFailed;
 #[allow(unused_imports)] use prost::Message;
 
+/// If a certain P2P message is not received, swap will be aborted after this time expires.
 const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
 
+/// Represents events produced by maker swap states.
 #[derive(Debug, PartialEq)]
 pub enum MakerSwapEvent {
+    /// Swap has been successfully initialized.
     Initialized {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
     },
+    /// Started waiting for taker payment.
     WaitingForTakerPayment {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
     },
+    /// Received taker payment info.
     TakerPaymentReceived {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
         taker_payment: TransactionIdentifier,
     },
+    /// Sent maker payment.
     MakerPaymentSent {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
         maker_payment: TransactionIdentifier,
     },
-    MakerPaymentRefundRequired {
-        maker_payment: TransactionIdentifier,
-    },
+    /// Something went wrong, so maker payment refund is required.
+    MakerPaymentRefundRequired { maker_payment: TransactionIdentifier },
+    /// Taker payment has been confirmed on-chain.
     TakerPaymentConfirmed {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
         maker_payment: TransactionIdentifier,
         taker_payment: TransactionIdentifier,
     },
+    /// Maker successfully spent taker's payment.
     TakerPaymentSpent {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
@@ -60,15 +66,17 @@ pub enum MakerSwapEvent {
         taker_payment: TransactionIdentifier,
         taker_payment_spend: TransactionIdentifier,
     },
-    Aborted {
-        reason: String,
-    },
+    /// Swap has been aborted before maker payment was sent.
+    Aborted { reason: String },
+    /// Swap completed successfully.
     Completed,
 }
 
+/// Represents errors that can be produced by [`MakerSwapStateMachine`] run.
 #[derive(Debug, Display)]
 pub enum MakerSwapStateMachineError {}
 
+/// Dummy storage for maker swap events (used temporary).
 #[derive(Default)]
 pub struct DummyMakerSwapStorage {
     events: HashMap<Uuid, Vec<MakerSwapEvent>>,
@@ -92,32 +100,52 @@ impl StateMachineStorage for DummyMakerSwapStorage {
     async fn mark_finished(&mut self, _id: Self::MachineId) -> Result<(), Self::Error> { Ok(()) }
 }
 
+/// Represents the state machine for maker's side of the Trading Protocol Upgrade swap (v2).
 pub struct MakerSwapStateMachine<MakerCoin, TakerCoin> {
+    /// MM2 context
     pub ctx: MmArc,
+    /// Storage
     pub storage: DummyMakerSwapStorage,
+    /// Maker coin
     pub maker_coin: MakerCoin,
+    /// The amount swapped by maker.
     pub maker_volume: MmNumber,
+    /// The secret used in HTLC hashlock.
     pub secret: H256,
+    /// Algorithm used to hash the swap secret.
     pub secret_hash_algo: SecretHashAlgo,
+    /// The timestamp when the swap was started.
     pub started_at: u64,
+    /// The duration of HTLC timelock in seconds.
     pub lock_duration: u64,
+    /// Taker coin
     pub taker_coin: TakerCoin,
+    /// The amount swapped by taker.
     pub taker_volume: MmNumber,
+    /// Premium amount, which might be paid to maker as additional reward.
     pub taker_premium: MmNumber,
+    /// DEX fee amount
     pub dex_fee_amount: MmNumber,
+    /// Swap transactions' confirmations settings
     pub conf_settings: SwapConfirmationsSettings,
+    /// UUID of the swap
     pub uuid: Uuid,
+    /// The gossipsub topic used for peer-to-peer communication in swap process.
     pub p2p_topic: String,
+    /// If Some, used to sign P2P messages of this swap.
     pub p2p_keypair: Option<KeyPair>,
 }
 
 impl<MakerCoin, TakerCoin> MakerSwapStateMachine<MakerCoin, TakerCoin> {
+    /// Timeout for taker payment's on-chain confirmation.
     #[inline]
     fn taker_payment_conf_timeout(&self) -> u64 { self.started_at + self.lock_duration * 2 / 3 }
 
+    /// Returns timestamp of maker payment's locktime.
     #[inline]
-    fn maker_payment_locktime(&self) -> u64 { self.started_at + self.lock_duration }
+    fn maker_payment_locktime(&self) -> u64 { self.started_at + 2 * self.lock_duration }
 
+    /// Returns secret hash generated using selected [SecretHashAlgo].
     fn secret_hash(&self) -> Vec<u8> {
         match self.secret_hash_algo {
             SecretHashAlgo::DHASH160 => dhash160(self.secret.as_slice()).take().into(),
@@ -125,6 +153,7 @@ impl<MakerCoin, TakerCoin> MakerSwapStateMachine<MakerCoin, TakerCoin> {
         }
     }
 
+    /// Returns data that is unique for this swap.
     #[inline]
     fn unique_data(&self) -> Vec<u8> { self.secret_hash() }
 }
@@ -147,6 +176,7 @@ impl<MakerCoin: Send + 'static, TakerCoin: Send + 'static> StorableStateMachine
     }
 }
 
+/// Represents a state used to start a new maker swap.
 pub struct Initialize<MakerCoin, TakerCoin> {
     maker_coin: PhantomData<MakerCoin>,
     taker_coin: PhantomData<TakerCoin>,
@@ -700,7 +730,7 @@ impl<MakerCoin: MmCoin, TakerCoin: MmCoin + SwapOpsV2> State for TakerPaymentCon
                     maker_coin: Default::default(),
                     taker_coin: Default::default(),
                     maker_payment: self.maker_payment,
-                    reason: TakerPaymentSpendBroadcastFailed(format!("{:?}", e)),
+                    reason: MakerPaymentRefundReason::TakerPaymentSpendBroadcastFailed(format!("{:?}", e)),
                 };
                 return Self::change_state(next_state, state_machine).await;
             },
