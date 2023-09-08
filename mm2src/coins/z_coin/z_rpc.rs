@@ -50,6 +50,7 @@ cfg_native!(
 
     mod z_coin_grpc {
         tonic::include_proto!("cash.z.wallet.sdk.rpc");
+        tonic::include_proto!("pirate.wallet.sdk.rpc");
     }
     use z_coin_grpc::TreeState;
     use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
