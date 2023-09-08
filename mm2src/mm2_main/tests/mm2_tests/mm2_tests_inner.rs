@@ -1328,7 +1328,7 @@ fn test_withdraw_legacy() {
     let alice_passphrase = var("ALICE_PASSPHRASE")
         .ok()
         .or(alice_file_passphrase)
-        .expect("No ALICE_PASSPHRASE or .env.client/PASSPHRASE");
+        .expect("No ALICE_PASSPHRASE or .env.client/ALICE_PASSPHRASE");
 
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
@@ -3881,7 +3881,7 @@ fn test_validateaddress() {
     let bob_passphrase = var("BOB_PASSPHRASE")
         .ok()
         .or(bob_file_passphrase)
-        .expect("No BOB_PASSPHRASE or .env.seed/PASSPHRASE");
+        .expect("No BOB_PASSPHRASE or .env.seed/BOB_PASSPHRASE");
 
     let mm = MarketMakerIt::start(
         json!({
