@@ -9,11 +9,11 @@
    [Unix/Linux](https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.sh)
 5. Create `.env.client` file with the following content
    ```
-   PASSPHRASE=spice describe gravity federal blast come thank unfair canal monkey style afraid
+   ALICE_PASSPHRASE=spice describe gravity federal blast come thank unfair canal monkey style afraid
    ```
 6. Create `.env.seed` file with the following content
    ```
-   PASSPHRASE=also shoot benefit prefer juice shell elder veteran woman mimic image kidney
+   BOB_PASSPHRASE=also shoot benefit prefer juice shell elder veteran woman mimic image kidney
    ```
 7. MacOS specific: run script (required after each reboot)
    ```shell
