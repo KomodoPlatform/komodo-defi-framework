@@ -66,7 +66,7 @@
    CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless mm2src/mm2_main
    ```
    Please note `CC` and `AR` must be specified in the same line as `wasm-pack test mm2src/mm2_main`.
-#### Running WASM tests with Cargo</br>   
+#### Running specific WASM tests with Cargo</br>   
    - Install `wasm-bindgen-cli`: </br>
       Make sure you have wasm-bindgen-cli installed with a version that matches the one specified in your Cargo.toml file.
       You can install it using Cargo with the following command:
