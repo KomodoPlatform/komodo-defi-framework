@@ -1,4 +1,4 @@
-use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
+use crate::z_coin::{SyncStartPoint, ZCoinBuilder, ZcoinClientInitError};
 use mm2_err_handle::prelude::*;
 use zcash_primitives::zip32::ExtendedSpendingKey;
 
@@ -40,6 +40,7 @@ impl<'a> WalletDbShared {
         zcoin_builder: &ZCoinBuilder<'a>,
         checkpoint_block: Option<CheckPointBlockInfo>,
         z_spending_key: &ExtendedSpendingKey,
+        sync_params: Option<SyncStartPoint>,
     ) -> MmResult<Self, WalletDbError> {
         let wallet_db = create_wallet_db(
             zcoin_builder
@@ -48,6 +49,7 @@ impl<'a> WalletDbShared {
             zcoin_builder.protocol_info.consensus_params.clone(),
             checkpoint_block,
             ExtendedFullViewingKey::from(z_spending_key),
+            sync_params,
         )
         .await
         .mm_err(WalletDbError::ZcoinClientInitError)?;
