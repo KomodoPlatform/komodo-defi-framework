@@ -1,3 +1,32 @@
+## v1.0.7-beta - 2023-09-08
+**Features:**
+- Trading Protocol Upgrade [#1895](https://github.com/KomodoPlatform/atomicDEX-API/issues/1895)
+   - SwapOpsV2 trait was added containing methods of the new protocol (WIP) in [#1927](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1927)
+   - SwapOpsV2 was implemented for UtxoStandardCoin in [#1927](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1927)
+   - Dockerized integration tests added, sending and spending/refunding "dex fee + premium" UTXO in [#1927](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1927)
+- HD Wallet [#1838](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1838)
+   - Global enabling of an account'/change/address_index path for all coins using hd_account_id config parameter was replaced by enable_hd which is a bool that defaults to false in [#1933](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1933)
+   - path_to_address parameter was added to coins activation requests to set the default account'/change/address_index path that will be used for swaps. If not provided, the default will be 0'/0/0 in [#1933](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1933)
+   - HD withdrawal from any account'/change/address_index path was implemented for UTXO, EVM and Tendermint coins in [#1933](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1933)
+- Pirate Integration [#927](https://github.com/KomodoPlatform/komodo-defi-framework/issues/927)
+   - ARRR synchronization now supports using a specific start date. This allows users to specify a specific date as the starting point for synchronization as a substitute for the checkpoint block from config or syncing from the first block [#1922](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1922)
+
+**Enhancements/Fixes:**
+- Adex-CLI [#1682](https://github.com/KomodoPlatform/atomicDEX-API/issues/1682)
+   - The file permissions of the cli config file is now set to 660 in unix to disallow reading by other users [#1913](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1913)
+   - Activation types have been introduced to prevent malicious substitution of them in the activation scheme file [#1912](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1912)
+   - HTTPS connection support was added in [#1910](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1910)
+   - Activation scheme was changed so the related data types were refactored to be fit for it in [#1938](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1938)
+- PoSV coins withdrawal issue was fixed. The issue was a missing n_time field in the generated transaction. The fix now correctly considers when n_time is required, and the rawtransaction can be broadcasted [#1925](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1925)
+- Latest relayer channel is now used for tendermint test [#1929](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1929)
+- Price urls were updated in [#1928](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1928)
+- NFT transactions that transfer multiple NFT tokens were fixed in db, log_index is now used as part of the transfers history table primary key [#1926](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1926)
+- State machine was refactored as a preparation step for StorableStateMachine pattern extension in [#1927](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1927)
+- A fix was introduced to use kmd rewards for fees if change + interest is below dust threshold in [#1944](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1944)
+- Debug info was removed from release binary to reduce the file size in [#1954](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1954)
+- Failing tests due to BCHD were ignored in [#1955](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1955)
+
+
 ## v1.0.6-beta - 2023-07-24
 
 **Features:**

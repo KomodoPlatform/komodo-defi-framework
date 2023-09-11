@@ -7,8 +7,8 @@ use async_trait::async_trait;
 use coins::coin_balance::{CoinBalanceReport, IguanaWalletBalance};
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::CreateTxHistoryStorageError;
-use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, SyncStatus, ZCoin, ZCoinBuildError,
-                    ZcoinActivationParams, ZcoinProtocolInfo};
+use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, FirstSyncBlock, SyncStatus, ZCoin,
+                    ZCoinBuildError, ZcoinActivationParams, ZcoinProtocolInfo};
 use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
@@ -30,11 +30,21 @@ pub type ZcoinRpcTaskHandle = InitStandaloneCoinTaskHandle<ZCoin>;
 pub type ZcoinAwaitingStatus = HwRpcTaskAwaitingStatus;
 pub type ZcoinUserAction = HwRpcTaskUserAction;
 
+/// `ZCoinActivationResult` provides information/data for Zcoin activation. It includes
+/// details such as the ticker, the current block height, the wallet balance, and the result
+/// of the first synchronization block (if applicable).
+///
+/// - `ticker`: A string representing the ticker of the Zcoin.
+/// - `current_block`: The current block height at the time of this activation result.
+/// - `wallet_balance`: Information about the wallet's coin balance and status.
+/// - `first_sync_block`: An optional field containing details about the first synchronization block
+///   during the activation process. It may be `None` if no first synchronization block is available.
 #[derive(Clone, Serialize)]
 pub struct ZcoinActivationResult {
     pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: CoinBalanceReport,
+    pub first_sync_block: Option<FirstSyncBlock>,
 }
 
 impl CurrentBlock for ZcoinActivationResult {
@@ -47,15 +57,32 @@ impl GetAddressesBalances for ZcoinActivationResult {
     }
 }
 
+/// `ZcoinInProgressStatus` enumerates different states that may occur during the execution of
+/// Zcoin-related operations during coin activation.
+///
+/// - `ActivatingCoin`: Indicates that Zcoin is in the process of activating.
+/// - `UpdatingBlocksCache`: Represents the state of updating the blocks cache, with associated data
+///   about the first synchronization block, the current scanned block, and the latest block.
+/// - `BuildingWalletDb`: Denotes the state of building the wallet db, with associated data about
+///   the first synchronization block, the current scanned block, and the latest block.
+/// - `TemporaryError(String)`: Represents a temporary error state, with an associated error message
+///   providing details about the error.
+/// - `RequestingWalletBalance`: Indicates the process of requesting the wallet balance.
+/// - `Finishing`: Represents the finishing state of an operation.
+/// - `WaitingForTrezorToConnect`: Denotes a state where Zcoin is waiting for a Trezor device to connect.
+/// - `WaitingForUserToConfirmPubkey`: Represents a state where Zcoin is waiting for the user to confirm
+///   or decline an address on their device, without requiring explicit user action.
 #[derive(Clone, Serialize)]
 #[non_exhaustive]
 pub enum ZcoinInProgressStatus {
     ActivatingCoin,
     UpdatingBlocksCache {
+        first_sync_block: FirstSyncBlock,
         current_scanned_block: u64,
         latest_block: u64,
     },
     BuildingWalletDb {
+        first_sync_block: FirstSyncBlock,
         current_scanned_block: u64,
         latest_block: u64,
     },
@@ -220,16 +247,20 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         loop {
             let in_progress_status = match coin.sync_status().await? {
                 SyncStatus::UpdatingBlocksCache {
+                    first_sync_block,
                     current_scanned_block,
                     latest_block,
                 } => ZcoinInProgressStatus::UpdatingBlocksCache {
+                    first_sync_block,
                     current_scanned_block,
                     latest_block,
                 },
                 SyncStatus::BuildingWalletDb {
+                    first_sync_block,
                     current_scanned_block,
                     latest_block,
                 } => ZcoinInProgressStatus::BuildingWalletDb {
+                    first_sync_block,
                     current_scanned_block,
                     latest_block,
                 },
@@ -256,6 +287,13 @@ impl InitStandaloneCoinActivationOps for ZCoin {
             .map_to_mm(ZcoinInitError::CouldNotGetBlockCount)?;
 
         let balance = self.my_balance().compat().await?;
+        let first_sync_block = match self.sync_status().await? {
+            SyncStatus::Finished { first_sync_block, .. }
+            | SyncStatus::BuildingWalletDb { first_sync_block, .. }
+            | SyncStatus::UpdatingBlocksCache { first_sync_block, .. } => Some(first_sync_block),
+            _ => None,
+        };
+
         Ok(ZcoinActivationResult {
             ticker: self.ticker().into(),
             current_block,
@@ -263,6 +301,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
                 address: self.my_z_address_encoded(),
                 balance,
             }),
+            first_sync_block,
         })
     }
 

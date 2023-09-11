@@ -43,9 +43,6 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::CouldNotFetchBalance(e) | EthActivationV2Error::UnreachableNodes(e) => {
                 EnablePlatformCoinWithTokensError::Transport(e)
             },
-            EthActivationV2Error::DerivationPathIsNotSet => EnablePlatformCoinWithTokensError::InvalidPayload(
-                "'derivation_path' field is not found in config".to_string(),
-            ),
             EthActivationV2Error::ErrorDeserializingDerivationPath(e) => {
                 EnablePlatformCoinWithTokensError::InvalidPayload(e)
             },

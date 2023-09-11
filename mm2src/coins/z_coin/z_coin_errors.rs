@@ -17,6 +17,7 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
+/// Represents possible errors that might occur while interacting with Zcoin rpc.
 #[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {
@@ -27,6 +28,7 @@ pub enum UpdateBlocksCacheErr {
     JsonRpcError(JsonRpcError),
     GetLiveLightClientError(String),
     ZcashDBError(String),
+    DecodeError(String),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -52,6 +54,10 @@ impl From<JsonRpcError> for UpdateBlocksCacheErr {
     fn from(err: JsonRpcError) -> Self { UpdateBlocksCacheErr::JsonRpcError(err) }
 }
 
+/// This enum encompasses various error scenarios that may arise
+/// when configuring and activating a Zcoin, such as invalid
+/// configuration settings, network connectivity issues, or other
+/// initialization failures.
 #[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum ZcoinClientInitError {
@@ -59,6 +65,12 @@ pub enum ZcoinClientInitError {
     EmptyLightwalletdUris,
     #[display(fmt = "Fail to init clients while iterating lightwalletd urls {:?}", _0)]
     UrlIterFailure(Vec<UrlIterError>),
+    UpdateBlocksCacheErr(UpdateBlocksCacheErr),
+    UtxoCoinBuildError(UtxoCoinBuildError),
+}
+
+impl From<UpdateBlocksCacheErr> for ZcoinClientInitError {
+    fn from(err: UpdateBlocksCacheErr) -> Self { ZcoinClientInitError::UpdateBlocksCacheErr(err) }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

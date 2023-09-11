@@ -536,6 +536,39 @@ pub enum EnableCoinBalance {
     HD(HDWalletBalance),
 }
 
+/// The `FirstSyncBlock` struct contains details about the block block that is used to start the synchronization
+/// process.
+/// It includes information about the requested block height, whether it predates the Sapling activation, and the
+/// actual starting block height used during synchronization.
+///
+/// - `requested`: The requested block height during synchronization.
+/// - `is_pre_sapling`: Indicates whether the block predates the Sapling activation.
+/// - `actual`: The actual block height used for synchronization(may be altered).
+#[derive(Debug, Deserialize)]
+pub struct FirstSyncBlock {
+    pub requested: u64,
+    pub is_pre_sapling: bool,
+    pub actual: u64,
+}
+
+/// `ZCoinActivationResult` provides information/data for Zcoin activation. It includes
+/// details such as the ticker, the current block height, the wallet balance, and the result
+/// of the first synchronization block (if applicable).
+///
+/// - `ticker`: A string representing the ticker of the Zcoin.
+/// - `current_block`: The current block height at the time of this activation result.
+/// - `wallet_balance`: Information about the wallet's coin balance and status.
+/// - `first_sync_block`: An optional field containing details about the first synchronization block
+///   during the activation process. It may be `None` if no first synchronization block is available.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ZCoinActivationResult {
+    pub ticker: String,
+    pub current_block: u64,
+    pub wallet_balance: EnableCoinBalance,
+    pub first_sync_block: Option<FirstSyncBlock>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CoinActivationResult {
@@ -573,10 +606,22 @@ pub enum MmRpcResult<T> {
     Err(Json),
 }
 
+/// `InitZcoinStatus` encapsulates different states that may occur during the initialization of Zcoin,
+/// These states include successful initialization, error conditions, ongoing
+/// progress, and situations where user action is required.
+///
+/// - `Ok(ZCoinActivationResult)`: Indicates that Zcoin initialization was successful, with an associated
+///   `ZCoinActivationResult` containing activation and status information.
+/// - `Error(Json)`: Represents an error state during initialization, with an associated JSON object (`Json`)
+///   providing details about the error.
+/// - `InProgress(Json)`: Indicates that initialization is in progress, with an associated JSON object (`Json`)
+///   containing information about the ongoing process.
+/// - `UserActionRequired(Json)`: Denotes a state where user action is required for initialization to proceed,
+///   with an associated JSON object (`Json`) providing instructions or requirements.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitZcoinStatus {
-    Ok(CoinActivationResult),
+    Ok(ZCoinActivationResult),
     Error(Json),
     InProgress(Json),
     UserActionRequired(Json),

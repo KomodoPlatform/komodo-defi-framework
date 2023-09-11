@@ -56,7 +56,7 @@ struct BalanceResult {
 
 fn enable_coin(mm_node: &MarketMakerIt, coin: &str) {
     if coin == "MYCOIN" {
-        log!("{:?}", block_on(enable_native(mm_node, coin, &[])));
+        log!("{:?}", block_on(enable_native(mm_node, coin, &[], None)));
     } else {
         enable_eth(mm_node, coin);
     }
@@ -1677,7 +1677,7 @@ fn test_watcher_validate_taker_payment_eth() {
     let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
     let taker_pub = taker_keypair.public();
 
-    let maker_seed = get_passphrase!(".env.client", "BOB_PASSPHRASE").unwrap();
+    let maker_seed = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let maker_keypair = key_pair_from_seed(&maker_seed).unwrap();
     let maker_pub = maker_keypair.public();
 
@@ -1921,7 +1921,7 @@ fn test_watcher_validate_taker_payment_erc20() {
     let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
     let taker_pub = taker_keypair.public();
 
-    let maker_seed = get_passphrase!(".env.client", "BOB_PASSPHRASE").unwrap();
+    let maker_seed = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let maker_keypair = key_pair_from_seed(&maker_seed).unwrap();
     let maker_pub = maker_keypair.public();
 

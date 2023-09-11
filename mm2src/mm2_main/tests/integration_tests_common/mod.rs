@@ -2,13 +2,14 @@ use common::executor::Timer;
 use common::log::LogLevel;
 use common::{block_on, log, now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_seed;
+use crypto::StandardHDCoinAddress;
 use mm2_main::mm2::{lp_main, LpMainParams};
 use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::electrums::{morty_electrums, rick_electrums};
 use mm2_test_helpers::for_tests::{enable_native as enable_native_impl, init_utxo_electrum, init_utxo_status,
                                   init_z_coin_light, init_z_coin_status, MarketMakerIt};
-use mm2_test_helpers::structs::{CoinActivationResult, InitTaskResult, InitUtxoStatus, InitZcoinStatus, RpcV2Response,
-                                UtxoStandardActivationResult};
+use mm2_test_helpers::structs::{InitTaskResult, InitUtxoStatus, InitZcoinStatus, RpcV2Response,
+                                UtxoStandardActivationResult, ZCoinActivationResult};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::env::var;
@@ -33,10 +34,16 @@ pub fn test_mm_start_impl() {
 }
 
 /// Ideally, this function should be replaced everywhere with `enable_electrum_json`.
-pub async fn enable_electrum(mm: &MarketMakerIt, coin: &str, tx_history: bool, urls: &[&str]) -> CoinInitResponse {
+pub async fn enable_electrum(
+    mm: &MarketMakerIt,
+    coin: &str,
+    tx_history: bool,
+    urls: &[&str],
+    path_to_address: Option<StandardHDCoinAddress>,
+) -> CoinInitResponse {
     use mm2_test_helpers::for_tests::enable_electrum as enable_electrum_impl;
 
-    let value = enable_electrum_impl(mm, coin, tx_history, urls).await;
+    let value = enable_electrum_impl(mm, coin, tx_history, urls, path_to_address).await;
     json::from_value(value).unwrap()
 }
 
@@ -45,24 +52,33 @@ pub async fn enable_electrum_json(
     coin: &str,
     tx_history: bool,
     servers: Vec<Json>,
+    path_to_address: Option<StandardHDCoinAddress>,
 ) -> CoinInitResponse {
     use mm2_test_helpers::for_tests::enable_electrum_json as enable_electrum_impl;
 
-    let value = enable_electrum_impl(mm, coin, tx_history, servers).await;
+    let value = enable_electrum_impl(mm, coin, tx_history, servers, path_to_address).await;
     json::from_value(value).unwrap()
 }
 
-pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> CoinInitResponse {
-    let value = enable_native_impl(mm, coin, urls).await;
+pub async fn enable_native(
+    mm: &MarketMakerIt,
+    coin: &str,
+    urls: &[&str],
+    path_to_address: Option<StandardHDCoinAddress>,
+) -> CoinInitResponse {
+    let value = enable_native_impl(mm, coin, urls, path_to_address).await;
     json::from_value(value).unwrap()
 }
 
 pub async fn enable_coins_rick_morty_electrum(mm: &MarketMakerIt) -> HashMap<&'static str, CoinInitResponse> {
     let mut replies = HashMap::new();
-    replies.insert("RICK", enable_electrum_json(mm, "RICK", false, rick_electrums()).await);
+    replies.insert(
+        "RICK",
+        enable_electrum_json(mm, "RICK", false, rick_electrums(), None).await,
+    );
     replies.insert(
         "MORTY",
-        enable_electrum_json(mm, "MORTY", false, morty_electrums()).await,
+        enable_electrum_json(mm, "MORTY", false, morty_electrums(), None).await,
     );
     replies
 }
@@ -72,10 +88,12 @@ pub async fn enable_z_coin_light(
     coin: &str,
     electrums: &[&str],
     lightwalletd_urls: &[&str],
-) -> CoinActivationResult {
-    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls).await;
+    starting_date: Option<u64>,
+    account: Option<u32>,
+) -> ZCoinActivationResult {
+    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, starting_date, account).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = wait_until_ms(12000000);
+    let timeout = wait_until_ms(60000);
 
     loop {
         if now_ms() > timeout {
@@ -122,15 +140,19 @@ pub async fn enable_utxo_v2_electrum(
 pub async fn enable_coins_eth_electrum(
     mm: &MarketMakerIt,
     eth_urls: &[&str],
+    path_to_address: Option<StandardHDCoinAddress>,
 ) -> HashMap<&'static str, CoinInitResponse> {
     let mut replies = HashMap::new();
-    replies.insert("RICK", enable_electrum_json(mm, "RICK", false, rick_electrums()).await);
+    replies.insert(
+        "RICK",
+        enable_electrum_json(mm, "RICK", false, rick_electrums(), path_to_address.clone()).await,
+    );
     replies.insert(
         "MORTY",
-        enable_electrum_json(mm, "MORTY", false, morty_electrums()).await,
+        enable_electrum_json(mm, "MORTY", false, morty_electrums(), path_to_address.clone()).await,
     );
-    replies.insert("ETH", enable_native(mm, "ETH", eth_urls).await);
-    replies.insert("JST", enable_native(mm, "JST", eth_urls).await);
+    replies.insert("ETH", enable_native(mm, "ETH", eth_urls, path_to_address.clone()).await);
+    replies.insert("JST", enable_native(mm, "JST", eth_urls, path_to_address).await);
     replies
 }
 

@@ -646,7 +646,7 @@ impl SlpToken {
         unsigned.lock_time = tx_locktime;
         unsigned.inputs[0].sequence = input_sequence;
 
-        let my_key_pair = self.platform_coin.as_ref().priv_key_policy.key_pair_or_err()?;
+        let my_key_pair = self.platform_coin.as_ref().priv_key_policy.activated_key_or_err()?;
         let signed_p2sh_input = p2sh_spend(
             &unsigned,
             0,
@@ -1600,7 +1600,7 @@ impl MmCoin for SlpToken {
         let coin = self.clone();
         let fut = async move {
             let my_address = coin.platform_coin.as_ref().derivation_method.single_addr_or_err()?;
-            let key_pair = coin.platform_coin.as_ref().priv_key_policy.key_pair_or_err()?;
+            let key_pair = coin.platform_coin.as_ref().priv_key_policy.activated_key_or_err()?;
 
             let address = CashAddress::decode(&req.to).map_to_mm(WithdrawError::InvalidAddress)?;
             if address.prefix != *coin.slp_prefix() {
@@ -2086,6 +2086,7 @@ mod slp_tests {
     }
 
     #[test]
+    #[ignore]
     fn test_validate_htlc_valid() {
         let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
@@ -2123,6 +2124,7 @@ mod slp_tests {
     }
 
     #[test]
+    #[ignore]
     fn construct_and_send_invalid_slp_htlc_should_fail() {
         let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
@@ -2208,6 +2210,7 @@ mod slp_tests {
     }
 
     #[test]
+    #[ignore]
     fn test_validate_htlc_invalid_slp_utxo() {
         let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");

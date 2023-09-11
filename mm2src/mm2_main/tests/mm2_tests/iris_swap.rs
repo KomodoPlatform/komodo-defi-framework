@@ -94,7 +94,7 @@ pub async fn trade_base_rel_iris(
         )
         .await
     );
-    dbg!(enable_electrum(&mm_bob, "RICK", false, RICK_ELECTRUM_ADDRS).await);
+    dbg!(enable_electrum(&mm_bob, "RICK", false, RICK_ELECTRUM_ADDRS, None).await);
 
     dbg!(
         enable_tendermint(
@@ -106,7 +106,7 @@ pub async fn trade_base_rel_iris(
         )
         .await
     );
-    dbg!(enable_electrum(&mm_alice, "RICK", false, RICK_ELECTRUM_ADDRS).await);
+    dbg!(enable_electrum(&mm_alice, "RICK", false, RICK_ELECTRUM_ADDRS, None).await);
     dbg!(enable_eth_coin(&mm_bob, "tBNB", TBNB_URLS, TBNB_SWAP_CONTRACT, None, false).await);
     dbg!(enable_eth_coin(&mm_alice, "tBNB", TBNB_URLS, TBNB_SWAP_CONTRACT, None, false).await);
 

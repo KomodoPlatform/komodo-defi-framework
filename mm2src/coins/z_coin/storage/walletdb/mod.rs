@@ -1,8 +1,9 @@
 use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
 use mm2_err_handle::prelude::*;
+use zcash_primitives::zip32::ExtendedSpendingKey;
 
 cfg_native!(
-    use crate::z_coin::{extended_spending_key_from_protocol_info_and_policy, ZcoinConsensusParams};
+    use crate::z_coin::{CheckPointBlockInfo, ZcoinConsensusParams};
     use crate::z_coin::z_rpc::create_wallet_db;
 
     use parking_lot::Mutex;
@@ -35,25 +36,21 @@ pub struct WalletDbShared {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl<'a> WalletDbShared {
-    pub async fn new(zcoin_builder: &ZCoinBuilder<'a>) -> MmResult<Self, WalletDbError> {
-        let z_spending_key = match zcoin_builder.z_spending_key {
-            Some(ref z_spending_key) => z_spending_key.clone(),
-            None => extended_spending_key_from_protocol_info_and_policy(
-                &zcoin_builder.protocol_info,
-                &zcoin_builder.priv_key_policy,
-            )
-            .map_err(|err| WalletDbError::ZCoinBuildError(err.to_string()))?,
-        };
+    pub async fn new(
+        zcoin_builder: &ZCoinBuilder<'a>,
+        checkpoint_block: Option<CheckPointBlockInfo>,
+        z_spending_key: &ExtendedSpendingKey,
+    ) -> MmResult<Self, WalletDbError> {
         let wallet_db = create_wallet_db(
             zcoin_builder
                 .db_dir_path
                 .join(format!("{}_wallet.db", zcoin_builder.ticker)),
             zcoin_builder.protocol_info.consensus_params.clone(),
-            zcoin_builder.protocol_info.check_point_block.clone(),
-            ExtendedFullViewingKey::from(&z_spending_key),
+            checkpoint_block,
+            ExtendedFullViewingKey::from(z_spending_key),
         )
         .await
-        .map_err(|err| MmError::new(WalletDbError::ZcoinClientInitError(err.into_inner())))?;
+        .mm_err(WalletDbError::ZcoinClientInitError)?;
 
         Ok(Self {
             db: Arc::new(Mutex::new(wallet_db)),
@@ -69,7 +66,10 @@ cfg_wasm32!(
     pub type WalletDbInnerLocked<'a> = DbLocked<'a, WalletDbInner>;
 
     impl<'a> WalletDbShared {
-        pub async fn new(zcoin_builder: &ZCoinBuilder<'a>) -> MmResult<Self, WalletDbError> {
+        pub async fn new(
+            zcoin_builder: &ZCoinBuilder<'a>,
+            _z_spending_key: &ExtendedSpendingKey,
+        ) -> MmResult<Self, WalletDbError> {
             Ok(Self {
                 db: ConstructibleDb::new(zcoin_builder.ctx).into_shared(),
                 ticker: zcoin_builder.ticker.to_string(),
