@@ -1,9 +1,9 @@
-use crate::z_coin::{SyncStartPoint, ZCoinBuilder, ZcoinClientInitError};
+use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
 use mm2_err_handle::prelude::*;
 use zcash_primitives::zip32::ExtendedSpendingKey;
 
 cfg_native!(
-    use crate::z_coin::{CheckPointBlockInfo, ZcoinConsensusParams};
+    use crate::z_coin::{CheckPointBlockInfo, SyncStartPoint, ZcoinConsensusParams};
     use crate::z_coin::z_rpc::create_wallet_db;
 
     use parking_lot::Mutex;
