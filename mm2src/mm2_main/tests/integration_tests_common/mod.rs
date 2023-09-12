@@ -8,8 +8,8 @@ use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::electrums::{morty_electrums, rick_electrums};
 use mm2_test_helpers::for_tests::{enable_native as enable_native_impl, init_utxo_electrum, init_utxo_status,
                                   init_z_coin_light, init_z_coin_status, MarketMakerIt};
-use mm2_test_helpers::structs::{CoinActivationResult, InitTaskResult, InitUtxoStatus, InitZcoinStatus, RpcV2Response,
-                                UtxoStandardActivationResult};
+use mm2_test_helpers::structs::{InitTaskResult, InitUtxoStatus, InitZcoinStatus, RpcV2Response,
+                                UtxoStandardActivationResult, ZCoinActivationResult};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::env::var;
@@ -88,11 +88,12 @@ pub async fn enable_z_coin_light(
     coin: &str,
     electrums: &[&str],
     lightwalletd_urls: &[&str],
+    starting_date: Option<u64>,
     account: Option<u32>,
-) -> CoinActivationResult {
-    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, account).await;
+) -> ZCoinActivationResult {
+    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, starting_date, account).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = wait_until_ms(12000000);
+    let timeout = wait_until_ms(600000);
 
     loop {
         if now_ms() > timeout {

@@ -78,7 +78,7 @@ async fn enable_eth_with_tokens_without_balance(
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_disable_eth_coin_with_token() {
-    let passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
+    let passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf(),]);
     let conf = Mm2TestConf::seednode(&passphrase, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
@@ -123,7 +123,7 @@ fn test_disable_eth_coin_with_token() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_disable_eth_coin_with_token_without_balance() {
-    let passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
+    let passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf(),]);
     let conf = Mm2TestConf::seednode(&passphrase, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();

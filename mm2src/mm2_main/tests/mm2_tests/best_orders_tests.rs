@@ -468,7 +468,7 @@ fn test_best_orders_v2_exclude_mine() {
         assert!(status.is_success(), "!setprice: {}", data);
     }
 
-    let alice_passphrase = get_passphrase(&".env.seed", "ALICE_PASSPHRASE").unwrap();
+    let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
     let mm_alice = MarketMakerIt::start(
         json! ({
             "gui": "nogui",

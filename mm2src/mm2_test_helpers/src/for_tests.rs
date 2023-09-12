@@ -5,7 +5,7 @@ use crate::structs::*;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
-use common::{cfg_native, now_float, now_ms, repeatable, wait_until_ms, PagingOptionsEnum};
+use common::{cfg_native, now_float, now_ms, now_sec, repeatable, wait_until_ms, PagingOptionsEnum};
 use common::{get_utc_timestamp, log};
 use crypto::{CryptoCtx, StandardHDCoinAddress};
 use gstuff::{try_s, ERR, ERRL};
@@ -140,8 +140,18 @@ pub const MORTY_ELECTRUM_ADDRS: &[&str] = &[
 ];
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
 pub const ARRR: &str = "ARRR";
-pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.dragonhound.info:10033"];
-pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.dragonhound.info:443"];
+pub const ZOMBIE_ELECTRUMS: &[&str] = &[
+    "electrum1.cipig.net:10008",
+    "electrum2.cipig.net:10008",
+    "electrum3.cipig.net:10008",
+];
+pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &[
+    "https://lightd1.pirate.black:443",
+    "https://piratelightd1.cryptoforge.cc:443",
+    "https://piratelightd2.cryptoforge.cc:443",
+    "https://piratelightd3.cryptoforge.cc:443",
+    "https://piratelightd4.cryptoforge.cc:443",
+];
 pub const PIRATE_ELECTRUMS: &[&str] = &["node1.chainkeeper.pro:10132"];
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://node1.chainkeeper.pro:443"];
 pub const DEFAULT_RPC_PASSWORD: &str = "pass";
@@ -344,6 +354,7 @@ pub fn zombie_conf() -> Json {
         "txversion":4,
         "overwintered":1,
         "mm2":1,
+        "avg_blocktime": 60,
         "protocol":{
             "type":"ZHTLC",
             "protocol_data": {
@@ -360,12 +371,6 @@ pub fn zombie_conf() -> Json {
                     "b58_pubkey_address_prefix": [ 28, 184 ],
                     "b58_script_address_prefix": [ 28, 189 ]
                 },
-                "check_point_block": {
-                    "height": 290000,
-                    "time": 1664200629,
-                    "hash": "106BAA72C53E7FA52E30E6D3D15B37001207E3CF3B9FCE9BAB6C6D4AF9ED9200",
-                    "sapling_tree": "017797D05B070D29A47EFEBE3FAD3F29345D31BE608C46A5131CD55D201A631C13000D000119CE6220D0CB0F82AD6466B677828A0B4C2983662DAB181A86F913F7E9FB9C28000139C4399E4CA741CBABBDDAEB6DCC3541BA902343E394160EEECCDF20C289BA65011823D28B592E9612A6C3CF4778F174E10B1B714B4FF85E6E58EE19DD4A0D5734016FA4682B0007E61B63A0442B85E0B8C0CE2409E665F219013B5E24E385F6066B00000001A325043E11CD6A431A0BD99141C4C6E9632A156185EB9B0DBEF665EEC803DD6F00000103C11FCCC90C2EC1A126635F708311EDEF9B93D3E752E053D3AA9EFA0AF9D526"
-                },
                 "z_derivation_path": "m/32'/133'",
             }
         },
@@ -381,6 +386,7 @@ pub fn pirate_conf() -> Json {
         "txversion":4,
         "overwintered":1,
         "mm2":1,
+        "avg_blocktime": 60,
         "protocol":{
             "type":"ZHTLC",
             "protocol_data": {
@@ -396,12 +402,6 @@ pub fn pirate_conf() -> Json {
                     "hrp_sapling_payment_address": "zs",
                     "b58_pubkey_address_prefix": [ 28, 184 ],
                     "b58_script_address_prefix": [ 28, 189 ]
-                },
-                "check_point_block": {
-                    "height": 2010000,
-                    "time": 1659288887,
-                    "hash": "b9024dc7a9b1bb0fe5c3f84175be91c572706d3268f1dc74bbe5121a00000000",
-                    "sapling_tree": "019b6df2c6f4f42d867ac881f9f728e7954ed2e6922801a60c492b4ff85ef5f0400135609f387dd5034be026b7223ec5a85037b6a9d58f9afac8b7373e2606a5be6f150104bdb768da2504afb2f1963c340668490873885c22a06a7a9ac866320f10030d010e2e8e76a1e8bf8a1146661b48296ff36d5ce2082284193346b8ee7e4ec0e33600012f7f502f94a659eee3425e22a66ab4656fb7791ca0a2ac8a558a5fca7e4fbf630000019a9f3d2f985e10841c71bd70b84bb209a51a15680943842fa232e8ad4dc0b8590001b289928cbcc0c951720f14d35db6ea6383e67e62cebbf6d60103f4b0faadbd63000001ff9a30c61d63bb599e967dcac24ab6fedc0e8daa618a0efbd0314366fa05994200014d7ad3b2f0ee6ec7fa8cb4a0e9fadbaac4a3ed7d07f5643171a8eba26f93fc5a0001efa2884b5610614c3676441010863dc4fa6959f4df7a8018e74b93bb26b9d412014b705396332773077e58f73fe5a4c2c1d7ad2a1058bd5856670fb9529d1cd61c01e29681aab902f9876726a6fada746879e13af24d3675ae53fcc20629a85e196b010b5fd8e7610754075f936463780e85841f3ab8ca2978f9afdf7c2c250f16a75f01db56bc66eb1cd54ec6861e5cf24af2f4a17991556a52ca781007569e95b9842401c03877ecdd98378b321250640a1885604d675aaa50380e49da8cfa6ff7deaf15"
                 },
             }
         },
@@ -1577,7 +1577,7 @@ pub async fn enable_qrc20(
 pub fn from_env_file(env: Vec<u8>) -> (Option<String>, Option<String>) {
     use regex::bytes::Regex;
     let (mut passphrase, mut userpass) = (None, None);
-    for cap in Regex::new(r"(?m)^(PASSPHRASE|USERPASS)=(\w[\w ]+)$")
+    for cap in Regex::new(r"^\w+_(PASSPHRASE|USERPASS)=(\w+( \w+)+)\s*")
         .unwrap()
         .captures_iter(&env)
     {
@@ -1613,6 +1613,9 @@ macro_rules! get_passphrase {
 }
 
 /// Reads passphrase from file or environment.
+/// Note that if you try to read the passphrase file from the current directory
+/// the current directory could be different depending on how you run tests
+/// (it could be either the workspace directory or the module source directory)
 #[cfg(not(target_arch = "wasm32"))]
 pub fn get_passphrase(path: &dyn AsRef<Path>, env: &str) -> Result<String, String> {
     if let (Some(file_passphrase), _file_userpass) = from_env_file(try_s!(slurp(path))) {
@@ -2366,8 +2369,13 @@ pub async fn init_z_coin_light(
     coin: &str,
     electrums: &[&str],
     lightwalletd_urls: &[&str],
+    starting_date: Option<u64>,
     account: Option<u32>,
 ) -> Json {
+    // Number of seconds in a day
+    let one_day_seconds = 24 * 60 * 60;
+    let starting_date = starting_date.unwrap_or(now_sec() - one_day_seconds);
+
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2381,6 +2389,9 @@ pub async fn init_z_coin_light(
                         "rpc_data": {
                             "electrum_servers": electrum_servers_rpc(electrums),
                             "light_wallet_d_servers": lightwalletd_urls,
+                            "sync_params": {
+                                "date": starting_date
+                            }
                         },
                     },
                     "account": account.unwrap_or_default(),
@@ -3018,4 +3029,30 @@ pub async fn get_locked_amount(mm: &MarketMakerIt, coin: &str) -> GetLockedAmoun
     println!("get_locked_amount response {}", request.1);
     let response: RpcV2Response<GetLockedAmountResponse> = json::from_str(&request.1).unwrap();
     response.result
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_parse_env_file() {
+    let env_client =
+        b"ALICE_PASSPHRASE=spice describe gravity federal blast come thank unfair canal monkey style afraid";
+    let env_client_new_line =
+        b"ALICE_PASSPHRASE=spice describe gravity federal blast come thank unfair canal monkey style afraid\n";
+    let env_client_space =
+        b"ALICE_PASSPHRASE=spice describe gravity federal blast come thank unfair canal monkey style afraid  ";
+
+    let parsed1 = from_env_file(env_client.to_vec());
+    let parsed2 = from_env_file(env_client_new_line.to_vec());
+    let parsed3 = from_env_file(env_client_space.to_vec());
+    assert_eq!(parsed1, parsed2);
+    assert_eq!(parsed1, parsed3);
+    assert_eq!(
+        parsed1,
+        (
+            Some(String::from(
+                "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+            )),
+            None
+        )
+    );
 }

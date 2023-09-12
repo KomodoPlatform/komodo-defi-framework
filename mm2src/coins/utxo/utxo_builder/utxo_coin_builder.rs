@@ -16,7 +16,7 @@ use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        Timer};
 use common::log::{error, info, LogOnError};
-use common::small_rng;
+use common::{now_sec, small_rng};
 use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, StandardHDPathError,
              StandardHDPathToCoin};
 use derive_more::Display;
@@ -43,6 +43,9 @@ cfg_native! {
     use dirs::home_dir;
     use std::path::{Path, PathBuf};
 }
+
+/// Number of seconds in a day (24 hours * 60 * 60)
+pub const DAY_IN_SECONDS: u64 = 86400;
 
 pub type UtxoCoinBuildResult<T> = Result<T, MmError<UtxoCoinBuildError>>;
 
@@ -85,6 +88,7 @@ pub enum UtxoCoinBuildError {
     Internal(String),
     #[display(fmt = "SPV params verificaiton failed. Error: {_0}")]
     SPVError(SPVError),
+    ErrorCalculatingStartingHeight(String),
 }
 
 impl From<UtxoConfError> for UtxoCoinBuildError {
@@ -684,6 +688,44 @@ pub trait UtxoCoinBuilderCommonOps {
         };
 
         (None, None)
+    }
+
+    /// Calculates the starting block height based on a given date and the current block height.
+    ///
+    /// # Arguments
+    /// * `date`: The date in seconds representing the desired starting date.
+    /// * `current_block_height`: The current block height at the time of calculation.
+    ///
+    fn calculate_starting_height_from_date(
+        &self,
+        date_s: u64,
+        current_block_height: u64,
+    ) -> UtxoCoinBuildResult<Option<u64>> {
+        let avg_blocktime = self.conf()["avg_blocktime"]
+            .as_u64()
+            .ok_or_else(|| format!("avg_blocktime not specified in {} coin config", self.ticker()))
+            .map_to_mm(UtxoCoinBuildError::ErrorCalculatingStartingHeight)?;
+        let blocks_per_day = DAY_IN_SECONDS / avg_blocktime;
+        let current_time_s = now_sec();
+
+        if current_time_s < date_s {
+            return MmError::err(UtxoCoinBuildError::ErrorCalculatingStartingHeight(format!(
+                "{} sync date must be earlier then current date",
+                self.ticker()
+            )));
+        };
+
+        let secs_since_date = current_time_s - date_s;
+        let days_since_date = (secs_since_date / DAY_IN_SECONDS) - 1;
+        let blocks_to_sync = (days_since_date * blocks_per_day) + blocks_per_day;
+
+        if current_block_height < blocks_to_sync {
+            return Ok(None);
+        }
+
+        let block_to_sync_from = current_block_height - blocks_to_sync;
+
+        Ok(Some(block_to_sync_from))
     }
 }
 
