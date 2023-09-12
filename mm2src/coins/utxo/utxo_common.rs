@@ -1121,9 +1121,7 @@ async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
     sequence: u32,
     outputs: Vec<TransactionOutput>,
 ) -> Result<TransactionInputSigner, String> {
-    if prev_tx.outputs.is_empty() {
-        return ERR!("Previous transaction doesn't have any output");
-    }
+    let amount = try_s!(prev_tx.first_output()).value;
     let lock_time = match lock_time {
         LocktimeSetting::CalcByHtlcLocktime(lock) => try_s!(coin.p2sh_tx_locktime(lock).await),
         LocktimeSetting::UseExact(lock) => lock,
@@ -1150,7 +1148,7 @@ async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
                 hash: prev_tx.hash(),
                 index: DEFAULT_SWAP_VOUT as u32,
             },
-            amount: prev_tx.outputs[0].value,
+            amount,
             witness: Vec::new(),
         }],
         outputs,
@@ -1358,7 +1356,9 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     );
 
     let mut signer: TransactionInputSigner = preimage_tx.clone().into();
-    signer.inputs[0].amount = taker_tx.outputs[0].value;
+    let payment_input = try_tx_s!(signer.inputs.first_mut().ok_or("Preimage doesn't have inputs"));
+    let payment_output = try_tx_s!(taker_tx.first_output());
+    payment_input.amount = payment_output.value;
     signer.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
 
     let miner_fee = try_tx_s!(
@@ -1369,7 +1369,7 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     let maker_amount = &gen_args.trading_amount + &gen_args.premium_amount;
     let maker_sat = try_tx_s!(sat_from_big_decimal(&maker_amount, coin.as_ref().decimals));
     if miner_fee + coin.as_ref().dust_amount > maker_sat {
-        return TX_PLAIN_ERR!("Maker amount is too small to cover miner fee");
+        return TX_PLAIN_ERR!("Maker amount is too small to cover miner fee + dust");
     }
 
     let maker_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err());
@@ -1408,7 +1408,8 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
         .push_data(&redeem_script)
         .into_bytes();
     let mut final_tx: UtxoTx = signer.into();
-    final_tx.inputs[0].script_sig = script_sig;
+    let final_tx_input = try_tx_s!(final_tx.inputs.first_mut().ok_or("Final tx doesn't have inputs"));
+    final_tx_input.script_sig = script_sig;
     drop_mutability!(final_tx);
 
     try_tx_s!(coin.broadcast_tx(&final_tx).await, final_tx);
@@ -1510,9 +1511,8 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(coin: T, args
     let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
-    if prev_transaction.outputs.is_empty() {
-        return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any output"));
-    }
+
+    let payment_value = try_tx_fus!(prev_transaction.first_output()).value;
 
     let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let script_data = Builder::default()
@@ -1533,16 +1533,16 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(coin: T, args
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
                 .await
         );
-        if fee >= prev_transaction.outputs[0].value {
+        if fee >= payment_value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
                 fee,
-                prev_transaction.outputs[0].value
+                payment_value
             );
         }
         let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
-            value: prev_transaction.outputs[0].value - fee,
+            value: payment_value - fee,
             script_pubkey,
         };
 
@@ -1620,9 +1620,7 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
-    if prev_transaction.outputs.is_empty() {
-        return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any output"));
-    }
+    let payment_value = try_tx_fus!(prev_transaction.first_output()).value;
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
 
@@ -1641,16 +1639,16 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
                 .await
         );
 
-        if fee >= prev_transaction.outputs[0].value {
+        if fee >= payment_value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
                 fee,
-                prev_transaction.outputs[0].value
+                payment_value
             );
         }
         let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
-            value: prev_transaction.outputs[0].value - fee,
+            value: payment_value - fee,
             script_pubkey,
         };
 
@@ -1684,9 +1682,7 @@ pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
         try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
-    if prev_transaction.outputs.is_empty() {
-        return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any output"));
-    }
+    let payment_value = try_tx_fus!(prev_transaction.first_output()).value;
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
@@ -1702,16 +1698,16 @@ pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WatcherPreimage)
                 .await
         );
-        if fee >= prev_transaction.outputs[0].value {
+        if fee >= payment_value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
                 fee,
-                prev_transaction.outputs[0].value
+                payment_value
             );
         }
         let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
-            value: prev_transaction.outputs[0].value - fee,
+            value: payment_value - fee,
             script_pubkey,
         };
 
@@ -1736,9 +1732,7 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(coin: T, args
     let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
-    if prev_transaction.outputs.is_empty() {
-        return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any output"));
-    }
+    let payment_value = try_tx_fus!(prev_transaction.first_output()).value;
 
     let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
 
@@ -1761,16 +1755,16 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(coin: T, args
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
                 .await
         );
-        if fee >= prev_transaction.outputs[0].value {
+        if fee >= payment_value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
                 fee,
-                prev_transaction.outputs[0].value
+                payment_value
             );
         }
         let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
-            value: prev_transaction.outputs[0].value - fee,
+            value: payment_value - fee,
             script_pubkey,
         };
 
@@ -1803,9 +1797,7 @@ async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
         try_tx_s!(deserialize(args.payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
-    if prev_transaction.outputs.is_empty() {
-        return try_tx_s!(TX_PLAIN_ERR!("Transaction doesn't have any output"));
-    }
+    let payment_value = try_tx_s!(prev_transaction.first_output()).value;
     let other_public = try_tx_s!(Public::from_slice(args.other_pubkey));
 
     let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
@@ -1825,16 +1817,16 @@ async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
         coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
             .await
     );
-    if fee >= prev_transaction.outputs[0].value {
+    if fee >= payment_value {
         return TX_PLAIN_ERR!(
             "HTLC spend fee {} is greater than transaction output {}",
             fee,
-            prev_transaction.outputs[0].value
+            payment_value
         );
     }
     let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
     let output = TransactionOutput {
-        value: prev_transaction.outputs[0].value - fee,
+        value: payment_value - fee,
         script_pubkey,
     };
 
