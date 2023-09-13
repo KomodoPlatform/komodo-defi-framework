@@ -2595,10 +2595,16 @@ pub fn wait_for_output_spend(
     let tx_hash_algo = coin.tx_hash_algo;
     let fut = async move {
         loop {
+            let script_pubkey = &try_tx_s!(tx
+                .outputs
+                .get(output_index)
+                .ok_or(ERRL!("No output with index {}", output_index)))
+            .script_pubkey;
+
             match client
                 .find_output_spend(
                     tx.hash(),
-                    &tx.outputs[output_index].script_pubkey,
+                    script_pubkey,
                     output_index,
                     BlockHashOrHeight::Height(from_block as i64),
                 )
@@ -4111,10 +4117,17 @@ async fn search_for_swap_output_spend(
     }
     let script = payment_script(time_lock, secret_hash, first_pub, second_pub);
     let expected_script_pubkey = Builder::build_p2sh(&dhash160(&script).into()).to_bytes();
-    if tx.outputs[0].script_pubkey != expected_script_pubkey {
+    let script_pubkey = &tx
+        .outputs
+        .get(output_index)
+        .ok_or(ERRL!("No output with index {}", output_index))?
+        .script_pubkey;
+
+    if *script_pubkey != expected_script_pubkey {
         return ERR!(
-            "Transaction {:?} output 0 script_pubkey doesn't match expected {:?}",
+            "Transaction {:?} output {} script_pubkey doesn't match expected {:?}",
             tx,
+            output_index,
             expected_script_pubkey
         );
     }
@@ -4123,7 +4136,7 @@ async fn search_for_swap_output_spend(
         coin.rpc_client
             .find_output_spend(
                 tx.hash(),
-                &tx.outputs[output_index].script_pubkey,
+                script_pubkey,
                 output_index,
                 BlockHashOrHeight::Height(search_from_block as i64)
             )
@@ -4607,10 +4620,11 @@ where
         script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&redeem_script))).into(),
     };
 
-    if dex_fee_tx.outputs[0] != expected_output {
+    if dex_fee_tx.outputs.get(0) != Some(&expected_output) {
         return MmError::err(ValidateTakerPaymentError::InvalidDestinationOrAmount(format!(
             "Expected {:?}, got {:?}",
-            expected_output, dex_fee_tx.outputs[0]
+            expected_output,
+            dex_fee_tx.outputs.get(0)
         )));
     }
 
