@@ -1,3 +1,4 @@
+use super::{NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_swap::swap_v2_pb::*;
 use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_swap, recv_swap_v2_msg,
@@ -19,9 +20,6 @@ use uuid::Uuid;
 
 // This is needed to have Debug on messages
 #[allow(unused_imports)] use prost::Message;
-
-/// If a certain P2P message is not received, swap will be aborted after this time expires.
-const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
 
 /// Represents events produced by taker swap states.
 #[derive(Debug, PartialEq)]
@@ -295,7 +293,7 @@ impl<MakerCoin: MmCoin + Send + Sync + 'static, TakerCoin: MmCoin + SwapOpsV2 + 
             state_machine.ctx.clone(),
             state_machine.p2p_topic.clone(),
             swap_msg,
-            30.,
+            NEGOTIATE_SEND_INTERVAL,
             state_machine.p2p_keypair,
         );
 

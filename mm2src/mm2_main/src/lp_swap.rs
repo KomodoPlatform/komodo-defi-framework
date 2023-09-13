@@ -140,6 +140,11 @@ pub const SWAP_V2_PREFIX: TopicPrefix = "swapv2";
 
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 
+const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
+
+/// If a certain P2P message is not received, swap will be aborted after this time expires.
+const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
+
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
     use swap_wasm_db::{InitDbResult, SwapDb};

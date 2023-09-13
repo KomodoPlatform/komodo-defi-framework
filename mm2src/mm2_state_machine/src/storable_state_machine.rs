@@ -10,10 +10,7 @@ pub trait InitialState {
 
 /// A trait for handling new states in a state machine.
 #[async_trait]
-pub trait OnNewState<S> {
-    /// The error type associated with handling new states.
-    type Error;
-
+pub trait OnNewState<S>: StateMachineTrait {
     /// Handles a new state.
     ///
     /// # Parameters
@@ -22,8 +19,8 @@ pub trait OnNewState<S> {
     ///
     /// # Returns
     ///
-    /// A `Result` indicating success (`Ok(())`) or an error (`Err(Self::Error)`).
-    async fn on_new_state(&mut self, state: &S) -> Result<(), Self::Error>;
+    /// A `Result` indicating success (`Ok(())`) or an error (`Err(<Self as StateMachineTrait>::Error)`).
+    async fn on_new_state(&mut self, state: &S) -> Result<(), <Self as StateMachineTrait>::Error>;
 }
 
 /// A trait for the storage of state machine events.
@@ -160,9 +157,6 @@ pub trait StorableState {
 /// Implementation of `OnNewState` for storable state machines and their related states.
 #[async_trait]
 impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> OnNewState<S> for T {
-    /// The error type associated with handling new states.
-    type Error = <T::Storage as StateMachineStorage>::Error;
-
     /// Handles a new state.
     ///
     /// # Parameters
@@ -195,7 +189,7 @@ impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> 
 async fn change_state_impl<Next>(next_state: Next, machine: &mut Next::StateMachine) -> StateResult<Next::StateMachine>
 where
     Next: State + ChangeStateOnNewExt,
-    Next::StateMachine: OnNewState<Next, Error = <Next::StateMachine as StateMachineTrait>::Error> + Sync,
+    Next::StateMachine: OnNewState<Next> + Sync,
 {
     if let Err(e) = machine.on_new_state(&next_state).await {
         return StateResult::Error(ErrorGuard::new(e));
@@ -224,7 +218,7 @@ pub trait ChangeStateOnNewExt {
     where
         Self: Sized,
         Next: State + TransitionFrom<Self> + ChangeStateOnNewExt,
-        Next::StateMachine: OnNewState<Next, Error = <Next::StateMachine as StateMachineTrait>::Error> + Sync,
+        Next::StateMachine: OnNewState<Next> + Sync,
     {
         change_state_impl(next_state, machine).await
     }
@@ -253,7 +247,7 @@ pub trait ChangeInitialStateExt: InitialState {
     where
         Self: Sized,
         Next: State + TransitionFrom<Self> + ChangeStateOnNewExt,
-        Next::StateMachine: OnNewState<Next, Error = <Next::StateMachine as StateMachineTrait>::Error> + Sync,
+        Next::StateMachine: OnNewState<Next> + Sync,
     {
         change_state_impl(next_state, machine).await
     }
