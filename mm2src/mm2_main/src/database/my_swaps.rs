@@ -27,7 +27,72 @@ macro_rules! CREATE_MY_SWAPS_TABLE {
         );"
     };
 }
+
+/// Adds new fields required for trading protocol upgrade implementation (swap v2)
+pub const TRADING_PROTO_UPGRADE_MIGRATION: &[&str] = &[
+    "ALTER TABLE my_swaps ADD COLUMN is_finished BOOLEAN NOT NULL DEFAULT 0;",
+    "ALTER TABLE my_swaps ADD COLUMN events_json TEXT NOT NULL DEFAULT '[]';",
+    "ALTER TABLE my_swaps ADD COLUMN swap_type INTEGER;",
+    // Storing rational numbers as text to maintain precision
+    "ALTER TABLE my_swaps ADD COLUMN maker_volume TEXT;",
+    // Storing rational numbers as text to maintain precision
+    "ALTER TABLE my_swaps ADD COLUMN taker_volume TEXT;",
+    // Storing rational numbers as text to maintain precision
+    "ALTER TABLE my_swaps ADD COLUMN premium TEXT;",
+    // Storing rational numbers as text to maintain precision
+    "ALTER TABLE my_swaps ADD COLUMN dex_fee TEXT;",
+    "ALTER TABLE my_swaps ADD COLUMN secret BLOB;",
+    "ALTER TABLE my_swaps ADD COLUMN secret_hash BLOB;",
+    "ALTER TABLE my_swaps ADD COLUMN secret_hash_algo INTEGER;",
+    "ALTER TABLE my_swaps ADD COLUMN p2p_privkey BLOB;",
+    "ALTER TABLE my_swaps ADD COLUMN lock_duration INTEGER;",
+    "ALTER TABLE my_swaps ADD COLUMN maker_coin_confs INTEGER;",
+    "ALTER TABLE my_swaps ADD COLUMN maker_coin_nota BOOLEAN;",
+    "ALTER TABLE my_swaps ADD COLUMN taker_coin_confs INTEGER;",
+    "ALTER TABLE my_swaps ADD COLUMN taker_coin_nota BOOLEAN;",
+];
+
 const INSERT_MY_SWAP: &str = "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
+
+const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
+    my_coin,
+    other_coin,
+    uuid,
+    started_at,
+    swap_type,
+    maker_volume,
+    taker_volume,
+    premium,
+    dex_fee,
+    secret,
+    secret_hash,
+    secret_hash_algo,
+    p2p_privkey,
+    lock_duration,
+    maker_coin_confs,
+    maker_coin_nota,
+    taker_coin_confs,
+    taker_coin_nota
+) VALUES (
+    ?1,
+    ?2,
+    ?3,
+    ?4,
+    ?5,
+    ?6,
+    ?7,
+    ?8,
+    ?9,
+    ?10,
+    ?11,
+    ?12,
+    ?13,
+    ?14,
+    ?15,
+    ?16,
+    ?17,
+    ?18
+);"#;
 
 pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str, started_at: &str) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
