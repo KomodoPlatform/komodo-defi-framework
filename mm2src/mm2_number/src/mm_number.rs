@@ -3,7 +3,7 @@ use crate::{from_dec_to_ratio, from_ratio_to_dec};
 use bigdecimal::BigDecimal;
 use core::ops::{Add, AddAssign, Div, Mul, Sub};
 use num_bigint::BigInt;
-use num_rational::BigRational;
+use num_rational::{BigRational, ParseRatioError};
 use num_traits::CheckedDiv;
 use num_traits::Zero;
 use serde::Serialize;
@@ -228,11 +228,20 @@ impl MmNumber {
     /// Get BigDecimal representation
     pub fn to_decimal(&self) -> BigDecimal { from_ratio_to_dec(&self.0) }
 
+    /// Returns the numerator of the internal BigRational
     pub fn numer(&self) -> &BigInt { self.0.numer() }
 
+    /// Returns the denominator of the internal BigRational
     pub fn denom(&self) -> &BigInt { self.0.denom() }
 
+    /// Returns whether the number is zero
     pub fn is_zero(&self) -> bool { self.0.is_zero() }
+
+    /// Returns the stringified representation of a number in a format like "1/3".
+    pub fn to_fraction_string(&self) -> String { self.0.to_string() }
+
+    /// Attempts to parse a number from string, expects input to have fraction format like "1/3".
+    pub fn from_fraction_string(input: &str) -> Result<Self, ParseRatioError> { Ok(MmNumber(input.parse()?)) }
 }
 
 impl From<i32> for MmNumber {
@@ -398,5 +407,15 @@ mod tests {
         let expected = MmNumber::from("218998218471824891289891282187398.99999999128948218418948571392148");
 
         assert_eq!(actual.num, expected);
+    }
+
+    #[test]
+    fn test_from_to_fraction_string() {
+        let input = "1000/999";
+        let mm_num = MmNumber::from_fraction_string(input).unwrap();
+        assert_eq!(*mm_num.numer(), BigInt::from(1000));
+        assert_eq!(*mm_num.denom(), BigInt::from(999));
+
+        assert_eq!(input, mm_num.to_fraction_string());
     }
 }

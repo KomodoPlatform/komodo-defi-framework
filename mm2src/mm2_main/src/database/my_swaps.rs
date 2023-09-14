@@ -54,6 +54,13 @@ pub const TRADING_PROTO_UPGRADE_MIGRATION: &[&str] = &[
 
 const INSERT_MY_SWAP: &str = "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
 
+pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str, started_at: &str) -> SqlResult<()> {
+    debug!("Inserting new swap {} to the SQLite database", uuid);
+    let conn = ctx.sqlite_connection();
+    let params = [my_coin, other_coin, uuid, started_at];
+    conn.execute(INSERT_MY_SWAP, params).map(|_| ())
+}
+
 const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     my_coin,
     other_coin,
@@ -94,11 +101,9 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     ?18
 );"#;
 
-pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str, started_at: &str) -> SqlResult<()> {
-    debug!("Inserting new swap {} to the SQLite database", uuid);
+pub fn insert_new_swap_v2(ctx: &MmArc, params: &[&dyn ToSql]) -> SqlResult<()> {
     let conn = ctx.sqlite_connection();
-    let params = [my_coin, other_coin, uuid, started_at];
-    conn.execute(INSERT_MY_SWAP, params).map(|_| ())
+    conn.execute(INSERT_MY_SWAP_V2, params).map(|_| ())
 }
 
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files

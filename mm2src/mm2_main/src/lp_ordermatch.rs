@@ -2955,9 +2955,6 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         );
 
         let now = now_sec();
-        if let Err(e) = insert_new_swap_to_db(ctx.clone(), maker_coin.ticker(), taker_coin.ticker(), uuid, now).await {
-            error!("Error {} on new swap insertion", e);
-        }
 
         let secret = match MakerSwap::generate_secret() {
             Ok(s) => s.into(),
@@ -2997,6 +2994,11 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 _ => todo!("implement fallback to the old protocol here"),
             }
         } else {
+            if let Err(e) =
+                insert_new_swap_to_db(ctx.clone(), maker_coin.ticker(), taker_coin.ticker(), uuid, now).await
+            {
+                error!("Error {} on new swap insertion", e);
+            }
             let maker_swap = MakerSwap::new(
                 ctx.clone(),
                 alice,

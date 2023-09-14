@@ -1415,11 +1415,12 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 }
 
 /// Algorithm used to hash swap secret.
+#[derive(Clone, Copy)]
 pub enum SecretHashAlgo {
     /// ripemd160(sha256(secret))
-    DHASH160,
+    DHASH160 = 1,
     /// sha256(secret)
-    SHA256,
+    SHA256 = 2,
 }
 
 impl Default for SecretHashAlgo {
