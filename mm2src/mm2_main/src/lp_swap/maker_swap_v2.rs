@@ -3,7 +3,7 @@ use crate::mm2::database::my_swaps::insert_new_swap_v2;
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_swap::swap_v2_pb::*;
 use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg, SecretHashAlgo,
-                          SwapConfirmationsSettings, SwapsContext, TransactionIdentifier};
+                          SwapConfirmationsSettings, SwapsContext, TransactionIdentifier, MAKER_SWAP_V2_TYPE};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{ConfirmPaymentInput, FeeApproxStage, GenTakerPaymentSpendArgs, MarketCoinOps, MmCoin, SendPaymentArgs,
@@ -208,7 +208,7 @@ impl<MakerCoin: MmCoin + SwapOpsV2 + Send + Sync + 'static, TakerCoin: MmCoin + 
                 state_machine.taker_coin.ticker(),
                 state_machine.uuid.to_string(),
                 state_machine.started_at,
-                1,
+                MAKER_SWAP_V2_TYPE,
                 state_machine.maker_volume.to_fraction_string(),
                 state_machine.taker_volume.to_fraction_string(),
                 state_machine.taker_premium.to_fraction_string(),

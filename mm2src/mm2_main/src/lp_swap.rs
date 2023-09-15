@@ -111,6 +111,7 @@ mod swap_v2_pb;
 #[path = "lp_swap/swap_wasm_db.rs"]
 mod swap_wasm_db;
 
+use crate::mm2::database::my_swaps::get_swap_type;
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
 use crypto::CryptoCtx;
 use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
@@ -139,6 +140,10 @@ pub const SWAP_PREFIX: TopicPrefix = "swap";
 pub const SWAP_V2_PREFIX: TopicPrefix = "swapv2";
 
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
+
+const LEGACY_SWAP_TYPE: u8 = 0;
+const MAKER_SWAP_V2_TYPE: u8 = 1;
+const TAKER_SWAP_V2_TYPE: u8 = 2;
 
 const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 
@@ -1012,15 +1017,22 @@ impl From<SavedSwap> for MySwapStatusResponse {
 /// Returns the status of swap performed on `my` node
 pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let uuid: Uuid = try_s!(json::from_value(req["params"]["uuid"].clone()));
-    let status = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
-        Ok(Some(status)) => status,
-        Ok(None) => return Err("swap data is not found".to_owned()),
-        Err(e) => return ERR!("{}", e),
-    };
+    let swap_type = try_s!(get_swap_type(&ctx.sqlite_connection(), &uuid.to_string()));
 
-    let res_js = json!({ "result": MySwapStatusResponse::from(status) });
-    let res = try_s!(json::to_vec(&res_js));
-    Ok(try_s!(Response::builder().body(res)))
+    match swap_type {
+        LEGACY_SWAP_TYPE => {
+            let status = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
+                Ok(Some(status)) => status,
+                Ok(None) => return Err("swap data is not found".to_owned()),
+                Err(e) => return ERR!("{}", e),
+            };
+
+            let res_js = json!({ "result": MySwapStatusResponse::from(status) });
+            let res = try_s!(json::to_vec(&res_js));
+            Ok(try_s!(Response::builder().body(res)))
+        },
+        unsupported_type => ERR!("Got unsupported swap type from DB: {}", unsupported_type),
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1437,8 +1449,9 @@ impl SecretHashAlgo {
 }
 
 // Todo: Maybe add a secret_hash_algo method to the SwapOps trait instead
+/// Selects secret hash algorithm depending on types of coins being swapped
 #[cfg(not(target_arch = "wasm32"))]
-fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
+pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {
         (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::LightningCoin(_), _) => {
             SecretHashAlgo::SHA256
@@ -1449,6 +1462,7 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
     }
 }
 
+/// Selects secret hash algorithm depending on types of coins being swapped
 #[cfg(target_arch = "wasm32")]
 fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {

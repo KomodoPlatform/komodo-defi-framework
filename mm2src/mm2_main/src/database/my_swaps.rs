@@ -32,7 +32,7 @@ macro_rules! CREATE_MY_SWAPS_TABLE {
 pub const TRADING_PROTO_UPGRADE_MIGRATION: &[&str] = &[
     "ALTER TABLE my_swaps ADD COLUMN is_finished BOOLEAN NOT NULL DEFAULT 0;",
     "ALTER TABLE my_swaps ADD COLUMN events_json TEXT NOT NULL DEFAULT '[]';",
-    "ALTER TABLE my_swaps ADD COLUMN swap_type INTEGER;",
+    "ALTER TABLE my_swaps ADD COLUMN swap_type INTEGER NOT NULL DEFAULT 0;",
     // Storing rational numbers as text to maintain precision
     "ALTER TABLE my_swaps ADD COLUMN maker_volume TEXT;",
     // Storing rational numbers as text to maintain precision
@@ -223,4 +223,12 @@ pub fn select_uuids_by_my_swaps_filter(
         total_count,
         skipped,
     })
+}
+
+/// Queries swap type by uuid
+pub fn get_swap_type(conn: &Connection, uuid: &str) -> SqlResult<u8> {
+    const SELECT_SWAP_TYPE_BY_UUID: &str = "SELECT swap_type FROM my_swaps WHERE uuid = :uuid;";
+    let mut stmt = conn.prepare(SELECT_SWAP_TYPE_BY_UUID)?;
+    let swap_type = stmt.query_row(&[(":uuid", uuid)], |row| row.get(0))?;
+    Ok(swap_type)
 }

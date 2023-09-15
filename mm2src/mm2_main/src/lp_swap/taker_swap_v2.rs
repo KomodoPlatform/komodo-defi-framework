@@ -1,13 +1,15 @@
 use super::{NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
+use crate::mm2::database::my_swaps::insert_new_swap_v2;
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_swap::swap_v2_pb::*;
-use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_swap, recv_swap_v2_msg,
-                          SwapConfirmationsSettings, SwapsContext, TransactionIdentifier};
+use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_swap, recv_swap_v2_msg, SecretHashAlgo,
+                          SwapConfirmationsSettings, SwapsContext, TransactionIdentifier, TAKER_SWAP_V2_TYPE};
 use async_trait::async_trait;
 use coins::{ConfirmPaymentInput, FeeApproxStage, GenTakerPaymentSpendArgs, MmCoin, SendCombinedTakerPaymentArgs,
             SpendPaymentArgs, SwapOpsV2, WaitForHTLCTxSpendArgs};
 use common::log::{debug, info, warn};
 use common::{bits256, Future01CompatExt, DEX_FEE_ADDR_RAW_PUBKEY};
+use db_common::sqlite::rusqlite::params;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_number::{BigDecimal, MmNumber};
@@ -129,6 +131,8 @@ pub struct TakerSwapStateMachine<MakerCoin, TakerCoin> {
     pub dex_fee: MmNumber,
     /// Premium amount, which might be paid to maker as additional reward.
     pub taker_premium: MmNumber,
+    /// Algorithm used to hash the swap secret.
+    pub secret_hash_algo: SecretHashAlgo,
     /// Swap transactions' confirmations settings.
     pub conf_settings: SwapConfirmationsSettings,
     /// UUID of the swap.
@@ -191,6 +195,30 @@ impl<MakerCoin: MmCoin + SwapOpsV2 + Send + Sync + 'static, TakerCoin: MmCoin + 
     type StateMachine = TakerSwapStateMachine<MakerCoin, TakerCoin>;
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+        {
+            let sql_params = params![
+                state_machine.taker_coin.ticker(),
+                state_machine.maker_coin.ticker(),
+                state_machine.uuid.to_string(),
+                state_machine.started_at,
+                TAKER_SWAP_V2_TYPE,
+                state_machine.maker_volume.to_fraction_string(),
+                state_machine.taker_volume.to_fraction_string(),
+                state_machine.taker_premium.to_fraction_string(),
+                state_machine.dex_fee.to_fraction_string(),
+                [], // secret is unknown at this point
+                [], // secret hash is unknown at this point
+                state_machine.secret_hash_algo as u8,
+                state_machine.p2p_keypair.map(|k| k.private_bytes()).unwrap_or_default(),
+                state_machine.lock_duration,
+                state_machine.conf_settings.maker_coin_confs,
+                state_machine.conf_settings.maker_coin_nota,
+                state_machine.conf_settings.taker_coin_confs,
+                state_machine.conf_settings.taker_coin_nota
+            ];
+            insert_new_swap_v2(&state_machine.ctx, sql_params).unwrap();
+        }
+
         subscribe_to_topic(&state_machine.ctx, state_machine.p2p_topic.clone());
         let swap_ctx = SwapsContext::from_ctx(&state_machine.ctx).expect("SwapsContext::from_ctx should not fail");
         swap_ctx.init_msg_v2_store(state_machine.uuid, bits256::default());

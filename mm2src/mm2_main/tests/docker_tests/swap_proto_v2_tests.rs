@@ -4,8 +4,8 @@ use coins::utxo::UtxoCommonOps;
 use coins::{GenTakerPaymentSpendArgs, RefundPaymentArgs, SendCombinedTakerPaymentArgs, SwapOpsV2, Transaction,
             TransactionEnum, ValidateTakerPaymentArgs};
 use common::{block_on, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
-use mm2_test_helpers::for_tests::{enable_native, mm_dump, mycoin1_conf, mycoin_conf, start_swaps, MarketMakerIt,
-                                  Mm2TestConf};
+use mm2_test_helpers::for_tests::{enable_native, mm_dump, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
+                                  MarketMakerIt, Mm2TestConf};
 use script::{Builder, Opcode};
 
 #[test]
@@ -173,5 +173,8 @@ fn test_v2_swap_utxo_utxo() {
         let expected_msg = format!("Swap {} has been completed", uuid);
         block_on(mm_bob.wait_for_log(60., |log| log.contains(&expected_msg))).unwrap();
         block_on(mm_alice.wait_for_log(60., |log| log.contains(&expected_msg))).unwrap();
+
+        let maker_swap_status = block_on(my_swap_status(&mm_bob, &uuid));
+        println!("{:?}", maker_swap_status);
     }
 }
