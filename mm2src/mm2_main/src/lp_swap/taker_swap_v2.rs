@@ -1,5 +1,5 @@
 use super::{NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
-use crate::mm2::database::my_swaps::insert_new_swap_v2;
+use crate::mm2::database::my_swaps::{get_swap_events, insert_new_swap_v2, set_swap_is_finished, update_swap_events};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_swap::swap_v2_pb::*;
 use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_swap, recv_swap_v2_msg, SecretHashAlgo,
@@ -12,11 +12,11 @@ use common::{bits256, Future01CompatExt, DEX_FEE_ADDR_RAW_PUBKEY};
 use db_common::sqlite::rusqlite::params;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::storable_state_machine::*;
 use rpc::v1::types::Bytes as BytesJson;
-use std::collections::HashMap;
 use std::marker::PhantomData;
 use uuid::Uuid;
 
@@ -24,7 +24,7 @@ use uuid::Uuid;
 #[allow(unused_imports)] use prost::Message;
 
 /// Represents events produced by taker swap states.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub enum TakerSwapEvent {
     /// Swap has been successfully initialized.
     Initialized {
@@ -83,30 +83,47 @@ pub enum TakerSwapEvent {
 
 /// Represents errors that can be produced by [`TakerSwapStateMachine`] run.
 #[derive(Debug, Display)]
-pub enum TakerSwapStateMachineError {}
+pub enum TakerSwapStateMachineError {
+    StorageError(String),
+    SerdeError(String),
+}
 
 /// Dummy storage for taker swap events (used temporary).
-#[derive(Default)]
 pub struct DummyTakerSwapStorage {
-    events: HashMap<Uuid, Vec<TakerSwapEvent>>,
+    ctx: MmArc,
+}
+
+impl DummyTakerSwapStorage {
+    pub fn new(ctx: MmArc) -> Self { DummyTakerSwapStorage { ctx } }
 }
 
 #[async_trait]
 impl StateMachineStorage for DummyTakerSwapStorage {
     type MachineId = Uuid;
     type Event = TakerSwapEvent;
-    type Error = TakerSwapStateMachineError;
+    type Error = MmError<TakerSwapStateMachineError>;
 
     async fn store_event(&mut self, id: Self::MachineId, event: Self::Event) -> Result<(), Self::Error> {
-        self.events.entry(id).or_insert_with(Vec::new).push(event);
+        let id_str = id.to_string();
+        let events_json = get_swap_events(&self.ctx.sqlite_connection(), &id_str)
+            .map_to_mm(|e| TakerSwapStateMachineError::StorageError(e.to_string()))?;
+        let mut events: Vec<TakerSwapEvent> =
+            serde_json::from_str(&events_json).map_to_mm(|e| TakerSwapStateMachineError::SerdeError(e.to_string()))?;
+        events.push(event);
+        drop_mutability!(events);
+        let serialized_events =
+            serde_json::to_string(&events).map_to_mm(|e| TakerSwapStateMachineError::SerdeError(e.to_string()))?;
+        update_swap_events(&self.ctx.sqlite_connection(), &id_str, &serialized_events)
+            .map_to_mm(|e| TakerSwapStateMachineError::StorageError(e.to_string()))?;
         Ok(())
     }
 
-    async fn get_unfinished(&self) -> Result<Vec<Self::MachineId>, Self::Error> {
-        Ok(self.events.keys().copied().collect())
-    }
+    async fn get_unfinished(&self) -> Result<Vec<Self::MachineId>, Self::Error> { todo!() }
 
-    async fn mark_finished(&mut self, _id: Self::MachineId) -> Result<(), Self::Error> { Ok(()) }
+    async fn mark_finished(&mut self, id: Self::MachineId) -> Result<(), Self::Error> {
+        set_swap_is_finished(&self.ctx.sqlite_connection(), &id.to_string())
+            .map_to_mm(|e| TakerSwapStateMachineError::StorageError(e.to_string()))
+    }
 }
 
 /// Represents the state machine for taker's side of the Trading Protocol Upgrade swap (v2).

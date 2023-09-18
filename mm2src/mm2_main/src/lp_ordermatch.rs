@@ -2969,8 +2969,8 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut maker_swap_state_machine = MakerSwapStateMachine {
+                        storage: DummyMakerSwapStorage::new(ctx.clone()),
                         ctx,
-                        storage: DummyMakerSwapStorage::default(),
                         started_at: now_sec(),
                         maker_coin: m.clone(),
                         maker_volume: maker_amount,
@@ -3106,8 +3106,8 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut taker_swap_state_machine = TakerSwapStateMachine {
+                        storage: DummyTakerSwapStorage::new(ctx.clone()),
                         ctx,
-                        storage: DummyTakerSwapStorage::default(),
                         started_at: now,
                         lock_duration: locktime,
                         maker_coin: m.clone(),

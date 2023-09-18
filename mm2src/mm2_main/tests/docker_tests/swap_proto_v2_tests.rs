@@ -176,5 +176,8 @@ fn test_v2_swap_utxo_utxo() {
 
         let maker_swap_status = block_on(my_swap_status(&mm_bob, &uuid));
         println!("{:?}", maker_swap_status);
+
+        let taker_swap_status = block_on(my_swap_status(&mm_alice, &uuid));
+        println!("{:?}", taker_swap_status);
     }
 }

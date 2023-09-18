@@ -111,7 +111,7 @@ mod swap_v2_pb;
 #[path = "lp_swap/swap_wasm_db.rs"]
 mod swap_wasm_db;
 
-use crate::mm2::database::my_swaps::get_swap_type;
+use crate::mm2::database::my_swaps::{get_swap_data_for_rpc, get_swap_type};
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
 use crypto::CryptoCtx;
 use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
@@ -1017,7 +1017,8 @@ impl From<SavedSwap> for MySwapStatusResponse {
 /// Returns the status of swap performed on `my` node
 pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let uuid: Uuid = try_s!(json::from_value(req["params"]["uuid"].clone()));
-    let swap_type = try_s!(get_swap_type(&ctx.sqlite_connection(), &uuid.to_string()));
+    let uuid_str = uuid.to_string();
+    let swap_type = try_s!(get_swap_type(&ctx.sqlite_connection(), &uuid_str));
 
     match swap_type {
         LEGACY_SWAP_TYPE => {
@@ -1028,6 +1029,12 @@ pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, 
             };
 
             let res_js = json!({ "result": MySwapStatusResponse::from(status) });
+            let res = try_s!(json::to_vec(&res_js));
+            Ok(try_s!(Response::builder().body(res)))
+        },
+        MAKER_SWAP_V2_TYPE | TAKER_SWAP_V2_TYPE => {
+            let swap_data = try_s!(get_swap_data_for_rpc(&ctx.sqlite_connection(), &uuid_str));
+            let res_js = json!({ "result": swap_data });
             let res = try_s!(json::to_vec(&res_js));
             Ok(try_s!(Response::builder().body(res)))
         },
