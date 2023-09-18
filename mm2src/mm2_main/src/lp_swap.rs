@@ -669,17 +669,6 @@ pub fn lp_atomic_locktime(maker_coin: &str, taker_coin: &str, version: AtomicLoc
     }
 }
 
-pub fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
-    // Todo: This should be reduced for lightning swaps.
-    // 0.0001
-    let min_fee = MmNumber::from((1, 10000));
-    if min_fee < min_tx_amount {
-        min_tx_amount
-    } else {
-        min_fee
-    }
-}
-
 fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
     let fee_discount_tickers: &[&str] = if var("MYCOIN_FEE_DISCOUNT").is_ok() {
         &["KMD", "MYCOIN"]
@@ -694,11 +683,11 @@ fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
     }
 }
 
-pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, dex_fee_threshold: &MmNumber) -> MmNumber {
+pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amount: &MmNumber) -> MmNumber {
     let rate = dex_fee_rate(base, rel);
     let fee_amount = trade_amount * &rate;
-    if &fee_amount < dex_fee_threshold {
-        dex_fee_threshold.clone()
+    if &fee_amount < min_tx_amount {
+        min_tx_amount.clone()
     } else {
         fee_amount
     }
@@ -706,8 +695,7 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, dex_fee_th
 
 pub fn dex_fee_amount_from_taker_coin(taker_coin: &MmCoinEnum, maker_coin: &str, trade_amount: &MmNumber) -> MmNumber {
     let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
-    let dex_fee_threshold = dex_fee_threshold(min_tx_amount);
-    dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &dex_fee_threshold)
+    dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &min_tx_amount)
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]

@@ -11,9 +11,9 @@ use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoin
 use common::{block_on, now_sec_u32, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
-use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, dex_fee_threshold, get_payment_locktime,
-                             MakerSwap, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
-                             MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
+use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, get_payment_locktime, MakerSwap,
+                             MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG, MAKER_PAYMENT_SPEND_SENT_LOG,
+                             TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_testnet_conf, eth_testnet_conf, mm_dump, my_balance,
@@ -352,15 +352,10 @@ fn test_watcher_spends_maker_payment_eth_utxo() {
 
     let eth_volume = BigDecimal::from_str("0.01").unwrap();
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
-    let dex_fee_threshold = dex_fee_threshold(BigDecimal::from_str("0.00001").unwrap().into());
+    let min_tx_amount = BigDecimal::from_str("0.00001").unwrap().into();
 
-    let dex_fee: BigDecimal = dex_fee_amount(
-        "MYCOIN",
-        "ETH",
-        &MmNumber::from(mycoin_volume.clone()),
-        &dex_fee_threshold,
-    )
-    .into();
+    let dex_fee: BigDecimal =
+        dex_fee_amount("MYCOIN", "ETH", &MmNumber::from(mycoin_volume.clone()), &min_tx_amount).into();
     let alice_mycoin_reward_sent = balances.alice_acoin_balance_before
         - balances.alice_acoin_balance_after.clone()
         - mycoin_volume.clone()
@@ -510,14 +505,9 @@ fn test_watcher_spends_maker_payment_erc20_utxo() {
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
     let jst_volume = BigDecimal::from_str("1").unwrap();
 
-    let dex_fee_threshold = dex_fee_threshold(BigDecimal::from_str("0.00001").unwrap().into());
-    let dex_fee: BigDecimal = dex_fee_amount(
-        "MYCOIN",
-        "JST",
-        &MmNumber::from(mycoin_volume.clone()),
-        &dex_fee_threshold,
-    )
-    .into();
+    let min_tx_amount = BigDecimal::from_str("0.00001").unwrap().into();
+    let dex_fee: BigDecimal =
+        dex_fee_amount("MYCOIN", "JST", &MmNumber::from(mycoin_volume.clone()), &min_tx_amount).into();
     let alice_mycoin_reward_sent = balances.alice_acoin_balance_before
         - balances.alice_acoin_balance_after.clone()
         - mycoin_volume.clone()
