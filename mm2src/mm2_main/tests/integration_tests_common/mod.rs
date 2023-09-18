@@ -93,7 +93,7 @@ pub async fn enable_z_coin_light(
 ) -> ZCoinActivationResult {
     let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, starting_date, account).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = wait_until_ms(60000);
+    let timeout = wait_until_ms(600000);
 
     loop {
         if now_ms() > timeout {

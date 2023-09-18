@@ -82,7 +82,7 @@ fn activate_z_coin_light_with_changing_height() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
-        Some(0),
+        None,
     ));
 
     let old_first_sync_block = activation_result.first_sync_block;
