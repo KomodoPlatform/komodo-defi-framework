@@ -2005,8 +2005,8 @@ fn test_get_max_taker_vol() {
 
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/733
 #[test]
-fn test_get_max_taker_vol_dex_fee_threshold() {
-    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", "0.05328455".parse().unwrap());
+fn test_get_max_taker_vol_dex_fee_min_tx_amount() {
+    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", "0.00532845".parse().unwrap());
     let coins = json!([mycoin_conf(10000), mycoin1_conf(10000)]);
     let mm_alice = MarketMakerIt::start(
         json!({
@@ -2034,8 +2034,8 @@ fn test_get_max_taker_vol_dex_fee_threshold() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: Json = serde_json::from_str(&rc.1).unwrap();
-    // the result of equation x + 0.0001 (dex fee) + 0.0002 (miner fee * 2) = 0.05328455
-    assert_eq!(json["result"]["numer"], Json::from("1059691"));
+    // the result of equation x + 0.00001 (dex fee) + 0.0002 (miner fee * 2) = 0.00532845
+    assert_eq!(json["result"]["numer"], Json::from("102369"));
     assert_eq!(json["result"]["denom"], Json::from("20000000"));
 
     let rc = block_on(mm_alice.rpc(&json!({
