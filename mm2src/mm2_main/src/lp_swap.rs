@@ -144,6 +144,7 @@ pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 const LEGACY_SWAP_TYPE: u8 = 0;
 const MAKER_SWAP_V2_TYPE: u8 = 1;
 const TAKER_SWAP_V2_TYPE: u8 = 2;
+const MAX_STARTED_AT_DIFF: u64 = 60;
 
 const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 

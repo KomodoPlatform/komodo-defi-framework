@@ -1114,10 +1114,16 @@ enum LocktimeSetting {
     UseExact(u32),
 }
 
+enum NTimeSetting {
+    UseNow,
+    UseValue(Option<u32>),
+}
+
 async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
     coin: &T,
     prev_tx: &UtxoTx,
     lock_time: LocktimeSetting,
+    set_n_time: NTimeSetting,
     sequence: u32,
     outputs: Vec<TransactionOutput>,
 ) -> Result<TransactionInputSigner, String> {
@@ -1127,7 +1133,10 @@ async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
         LocktimeSetting::UseExact(lock) => lock,
     };
     let n_time = if coin.as_ref().conf.is_pos {
-        Some(now_sec_u32())
+        match set_n_time {
+            NTimeSetting::UseNow => Some(now_sec_u32()),
+            NTimeSetting::UseValue(value) => value,
+        }
     } else {
         None
     };
@@ -1172,6 +1181,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
             coin,
             &input.prev_transaction,
             LocktimeSetting::CalcByHtlcLocktime(input.lock_time),
+            NTimeSetting::UseNow,
             input.sequence,
             input.outputs
         )
@@ -1215,6 +1225,7 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_>,
     lock_time: LocktimeSetting,
+    n_time: NTimeSetting,
 ) -> GenDexFeeSpendResult {
     let mut prev_tx: UtxoTx = deserialize(args.taker_tx).map_to_mm(|e| TxGenError::TxDeserialization(e.to_string()))?;
     prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
@@ -1236,7 +1247,7 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
         script_pubkey: Builder::build_p2pkh(&dex_fee_address.hash).to_bytes(),
     };
 
-    p2sh_spending_tx_preimage(coin, &prev_tx, lock_time, SEQUENCE_FINAL, vec![dex_fee_output])
+    p2sh_spending_tx_preimage(coin, &prev_tx, lock_time, n_time, SEQUENCE_FINAL, vec![dex_fee_output])
         .await
         .map_to_mm(TxGenError::Legacy)
 }
@@ -1253,7 +1264,13 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
         .try_into()
         .map_to_mm(|e: TryFromIntError| TxGenError::LocktimeOverflow(e.to_string()))?;
 
-    let preimage = gen_taker_payment_spend_preimage(coin, args, LocktimeSetting::CalcByHtlcLocktime(time_lock)).await?;
+    let preimage = gen_taker_payment_spend_preimage(
+        coin,
+        args,
+        LocktimeSetting::CalcByHtlcLocktime(time_lock),
+        NTimeSetting::UseNow,
+    )
+    .await?;
 
     let redeem_script =
         swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, &taker_pub, &maker_pub);
@@ -1280,7 +1297,6 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     gen_args: &GenTakerPaymentSpendArgs<'_>,
     preimage: &TxPreimageWithSig,
 ) -> ValidateTakerPaymentSpendPreimageResult {
-    // TODO validate that preimage has exactly 2 outputs
     let actual_preimage_tx: UtxoTx = deserialize(preimage.preimage.as_slice())
         .map_to_mm(|e| ValidateTakerPaymentSpendPreimageError::TxDeserialization(e.to_string()))?;
 
@@ -1289,14 +1305,17 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     let taker_pub = Public::from_slice(gen_args.taker_pub)
         .map_to_mm(|e| ValidateTakerPaymentSpendPreimageError::InvalidPubkey(e.to_string()))?;
 
-    // TODO validate premium amount. Might be a bit tricky in the case of dynamic miner fee
     // TODO validate that output amounts are larger than dust
 
     // Here, we have to use the exact lock time from the preimage because maker
     // can get different values (e.g. if MTP advances during preimage exchange/fee rate changes)
-    let expected_preimage =
-        gen_taker_payment_spend_preimage(coin, gen_args, LocktimeSetting::UseExact(actual_preimage_tx.lock_time))
-            .await?;
+    let expected_preimage = gen_taker_payment_spend_preimage(
+        coin,
+        gen_args,
+        LocktimeSetting::UseExact(actual_preimage_tx.lock_time),
+        NTimeSetting::UseValue(actual_preimage_tx.n_time),
+    )
+    .await?;
 
     let time_lock = gen_args
         .time_lock
@@ -4591,11 +4610,8 @@ pub async fn validate_combined_taker_payment<T>(
 where
     T: UtxoCommonOps + SwapOps,
 {
-    let dex_fee_tx: UtxoTx =
+    let taker_tx: UtxoTx =
         deserialize(args.taker_tx).map_to_mm(|e| ValidateTakerPaymentError::TxDeserialization(e.to_string()))?;
-    if dex_fee_tx.outputs.len() < 2 {
-        return MmError::err(ValidateTakerPaymentError::TxLacksOfOutputs);
-    }
 
     let taker_pub =
         Public::from_slice(args.other_pub).map_to_mm(|e| ValidateTakerPaymentError::InvalidPubkey(e.to_string()))?;
@@ -4620,18 +4636,18 @@ where
         script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&redeem_script))).into(),
     };
 
-    if dex_fee_tx.outputs.get(0) != Some(&expected_output) {
+    if taker_tx.outputs.get(0) != Some(&expected_output) {
         return MmError::err(ValidateTakerPaymentError::InvalidDestinationOrAmount(format!(
             "Expected {:?}, got {:?}",
             expected_output,
-            dex_fee_tx.outputs.get(0)
+            taker_tx.outputs.get(0)
         )));
     }
 
     let tx_bytes_from_rpc = coin
         .as_ref()
         .rpc_client
-        .get_transaction_bytes(&dex_fee_tx.hash().reversed().into())
+        .get_transaction_bytes(&taker_tx.hash().reversed().into())
         .compat()
         .await?;
     if tx_bytes_from_rpc.0 != args.taker_tx {

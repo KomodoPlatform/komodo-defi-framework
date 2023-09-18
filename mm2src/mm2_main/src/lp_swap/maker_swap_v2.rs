@@ -3,7 +3,8 @@ use crate::mm2::database::my_swaps::{get_swap_events, insert_new_swap_v2, set_sw
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_swap::swap_v2_pb::*;
 use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg, SecretHashAlgo,
-                          SwapConfirmationsSettings, SwapsContext, TransactionIdentifier, MAKER_SWAP_V2_TYPE};
+                          SwapConfirmationsSettings, SwapsContext, TransactionIdentifier, MAKER_SWAP_V2_TYPE,
+                          MAX_STARTED_AT_DIFF};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{ConfirmPaymentInput, FeeApproxStage, GenTakerPaymentSpendArgs, MarketCoinOps, MmCoin, SendPaymentArgs,
@@ -25,7 +26,7 @@ use uuid::Uuid;
 #[allow(unused_imports)] use prost::Message;
 
 /// Represents events produced by maker swap states.
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum MakerSwapEvent {
     /// Swap has been successfully initialized.
     Initialized {
@@ -67,7 +68,7 @@ pub enum MakerSwapEvent {
         taker_payment_spend: TransactionIdentifier,
     },
     /// Swap has been aborted before maker payment was sent.
-    Aborted { reason: String },
+    Aborted { reason: AbortReason },
     /// Swap completed successfully.
     Completed,
 }
@@ -249,12 +250,18 @@ impl<MakerCoin: MmCoin + SwapOpsV2 + Send + Sync + 'static, TakerCoin: MmCoin + 
 
         let maker_coin_start_block = match state_machine.maker_coin.current_block().compat().await {
             Ok(b) => b,
-            Err(e) => return Self::change_state(Aborted::new(e), state_machine).await,
+            Err(e) => {
+                let reason = AbortReason::FailedToGetMakerCoinBlock(e);
+                return Self::change_state(Aborted::new(reason), state_machine).await;
+            },
         };
 
         let taker_coin_start_block = match state_machine.taker_coin.current_block().compat().await {
             Ok(b) => b,
-            Err(e) => return Self::change_state(Aborted::new(e), state_machine).await,
+            Err(e) => {
+                let reason = AbortReason::FailedToGetTakerCoinBlock(e);
+                return Self::change_state(Aborted::new(reason), state_machine).await;
+            },
         };
 
         if let Err(e) = check_balance_for_maker_swap(
@@ -268,7 +275,8 @@ impl<MakerCoin: MmCoin + SwapOpsV2 + Send + Sync + 'static, TakerCoin: MmCoin + 
         )
         .await
         {
-            return Self::change_state(Aborted::new(e.to_string()), state_machine).await;
+            let reason = AbortReason::BalanceCheckFailure(e.to_string());
+            return Self::change_state(Aborted::new(reason), state_machine).await;
         }
 
         info!("Maker swap {} has successfully started", state_machine.uuid);
@@ -339,8 +347,8 @@ impl<MakerCoin: MmCoin, TakerCoin: MmCoin + SwapOpsV2> State for Initialized<Mak
         let taker_negotiation = match recv_fut.await {
             Ok(d) => d,
             Err(e) => {
-                let next_state = Aborted::new(format!("Failed to receive TakerNegotiation: {}", e));
-                return Self::change_state(next_state, state_machine).await;
+                let reason = AbortReason::DidNotReceiveTakerNegotiation(e);
+                return Self::change_state(Aborted::new(reason), state_machine).await;
             },
         };
         drop(abort_handle);
@@ -349,14 +357,20 @@ impl<MakerCoin: MmCoin, TakerCoin: MmCoin + SwapOpsV2> State for Initialized<Mak
         let taker_data = match taker_negotiation.action {
             Some(taker_negotiation::Action::Continue(data)) => data,
             Some(taker_negotiation::Action::Abort(abort)) => {
-                let next_state = Aborted::new(abort.reason);
-                return Self::change_state(next_state, state_machine).await;
+                let reason = AbortReason::TakerAbortedNegotiation(abort.reason);
+                return Self::change_state(Aborted::new(reason), state_machine).await;
             },
             None => {
-                let next_state = Aborted::new("received invalid negotiation message from taker".into());
-                return Self::change_state(next_state, state_machine).await;
+                let reason = AbortReason::ReceivedInvalidTakerNegotiation;
+                return Self::change_state(Aborted::new(reason), state_machine).await;
             },
         };
+
+        let started_at_diff = state_machine.started_at.abs_diff(taker_data.started_at);
+        if started_at_diff > MAX_STARTED_AT_DIFF {
+            let reason = AbortReason::TooLargeStartedAtDiff(started_at_diff);
+            return Self::change_state(Aborted::new(reason), state_machine).await;
+        }
 
         let next_state = WaitingForTakerPayment {
             maker_coin: Default::default(),
@@ -420,8 +434,8 @@ impl<MakerCoin: MmCoin, TakerCoin: MmCoin + SwapOpsV2> State for WaitingForTaker
         let taker_payment = match recv_fut.await {
             Ok(p) => p,
             Err(e) => {
-                let next_state = Aborted::new(format!("Failed to receive TakerPaymentInfo: {}", e));
-                return Self::change_state(next_state, state_machine).await;
+                let reason = AbortReason::DidNotReceiveTakerPaymentInfo(e);
+                return Self::change_state(Aborted::new(reason), state_machine).await;
             },
         };
         drop(abort_handle);
@@ -497,8 +511,8 @@ impl<MakerCoin: MmCoin, TakerCoin: MmCoin + SwapOpsV2> State for TakerPaymentRec
         let maker_payment = match state_machine.maker_coin.send_maker_payment(args).compat().await {
             Ok(tx) => tx,
             Err(e) => {
-                let next_state = Aborted::new(format!("Failed to send maker payment {:?}", e));
-                return Self::change_state(next_state, state_machine).await;
+                let reason = AbortReason::FailedToSendMakerPayment(format!("{:?}", e));
+                return Self::change_state(Aborted::new(reason), state_machine).await;
             },
         };
         info!(
@@ -853,14 +867,28 @@ impl<MakerCoin: Send + 'static, TakerCoin: Send + 'static> StorableState for Tak
     }
 }
 
+/// Represents possible reasons of maker swap being aborted
+#[derive(Clone, Debug, Deserialize, Display, Serialize)]
+pub enum AbortReason {
+    FailedToGetMakerCoinBlock(String),
+    FailedToGetTakerCoinBlock(String),
+    BalanceCheckFailure(String),
+    DidNotReceiveTakerNegotiation(String),
+    TakerAbortedNegotiation(String),
+    ReceivedInvalidTakerNegotiation,
+    DidNotReceiveTakerPaymentInfo(String),
+    FailedToSendMakerPayment(String),
+    TooLargeStartedAtDiff(u64),
+}
+
 struct Aborted<MakerCoin, TakerCoin> {
     maker_coin: PhantomData<MakerCoin>,
     taker_coin: PhantomData<TakerCoin>,
-    reason: String,
+    reason: AbortReason,
 }
 
 impl<MakerCoin, TakerCoin> Aborted<MakerCoin, TakerCoin> {
-    fn new(reason: String) -> Aborted<MakerCoin, TakerCoin> {
+    fn new(reason: AbortReason) -> Aborted<MakerCoin, TakerCoin> {
         Aborted {
             maker_coin: Default::default(),
             taker_coin: Default::default(),

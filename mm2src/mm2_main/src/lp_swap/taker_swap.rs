@@ -13,7 +13,7 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_msg
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::TakerOrderBuilder;
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
-                          wait_for_maker_payment_conf_duration, TakerSwapWatcherData};
+                          wait_for_maker_payment_conf_duration, TakerSwapWatcherData, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
             FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -1101,7 +1101,7 @@ impl TakerSwap {
 
         debug!("Received maker negotiation data {:?}", maker_data);
         let time_dif = self.r().data.started_at.abs_diff(maker_data.started_at());
-        if time_dif > 60 {
+        if time_dif > MAX_STARTED_AT_DIFF {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                 ERRL!("The time difference between you and the maker cannot be longer than 60 seconds. Current difference: {}. Please make sure that your system clock is synced to the correct time before starting another swap!", time_dif).into(),
             )]));
