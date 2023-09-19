@@ -2947,21 +2947,19 @@ mod taker_swap_tests {
 
     #[test]
     fn test_max_taker_vol_from_available() {
-        let dex_fee_threshold = MmNumber::from("0.0001");
         let min_tx_amount = MmNumber::from("0.00001");
 
-        // For these `availables` the dex_fee must be greater than threshold
+        // For these `availables` the dex_fee must be greater than min_tx_amount
         let source = vec![
-            ("0.0779", false),
-            ("0.1", false),
-            ("0.135", false),
-            ("12.000001", false),
-            ("999999999999999999999999999999999999999999999999999999", false),
-            ("0.0778000000000000000000000000000000000000000000000002", false),
-            ("0.0779", false),
-            ("0.0778000000000000000000000000000000000000000000000001", false),
-            ("0.0863333333333333333333333333333333333333333333333334", true),
-            ("0.0863333333333333333333333333333333333333333333333333", true),
+            ("0.00779", false),
+            ("0.01", false),
+            ("0.0135", false),
+            ("1.2000001", false),
+            ("99999999999999999999999999999999999999999999999999999", false),
+            ("0.00778000000000000000000000000000000000000000000000002", false),
+            ("0.00778000000000000000000000000000000000000000000000001", false),
+            ("0.00863333333333333333333333333333333333333333333333334", true),
+            ("0.00863333333333333333333333333333333333333333333333333", true),
         ];
         for (available, is_kmd) in source {
             let available = MmNumber::from(available);
@@ -2970,19 +2968,19 @@ mod taker_swap_tests {
             let max_taker_vol = max_taker_vol_from_available(available.clone(), "RICK", "MORTY", &min_tx_amount)
                 .expect("!max_taker_vol_from_available");
 
-            let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &dex_fee_threshold);
-            assert!(dex_fee_threshold < dex_fee);
+            let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &min_tx_amount);
+            assert!(min_tx_amount < dex_fee);
             assert!(min_tx_amount <= max_taker_vol);
             assert_eq!(max_taker_vol + dex_fee, available);
         }
 
-        // for these `availables` the dex_fee must be the same as `threshold`
+        // for these `availables` the dex_fee must be the same as min_tx_amount
         let source = vec![
-            ("0.0863333333333333333333333333333333333333333333333332", true),
-            ("0.0863333333333333333333333333333333333333333333333331", true),
-            ("0.0777999999999999999999999999999999999999999999999999", false),
-            ("0.0777", false),
-            ("0.0002", false),
+            ("0.00863333333333333333333333333333333333333333333333332", true),
+            ("0.00863333333333333333333333333333333333333333333333331", true),
+            ("0.00777999999999999999999999999999999999999999999999999", false),
+            ("0.00777", false),
+            ("0.00002001", false),
         ];
         for (available, is_kmd) in source {
             let available = MmNumber::from(available);
@@ -2990,32 +2988,32 @@ mod taker_swap_tests {
             let base = if is_kmd { "KMD" } else { "RICK" };
             let max_taker_vol = max_taker_vol_from_available(available.clone(), base, "MORTY", &min_tx_amount)
                 .expect("!max_taker_vol_from_available");
-            let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &dex_fee_threshold);
+            let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &min_tx_amount);
             println!(
                 "available={:?} max_taker_vol={:?} dex_fee={:?}",
                 available.to_decimal(),
                 max_taker_vol.to_decimal(),
                 dex_fee.to_decimal()
             );
-            assert_eq!(dex_fee_threshold, dex_fee);
+            assert_eq!(min_tx_amount, dex_fee);
             assert!(min_tx_amount <= max_taker_vol);
             assert_eq!(max_taker_vol + dex_fee, available);
         }
 
         // these `availables` must return an error
         let availables = vec![
-            "0.0001999",
-            "0.00011",
-            "0.0001000000000000000000000000000000000000000000000001",
-            "0.0001",
-            "0.0000999999999999999999999999999999999999999999999999",
-            "0.0000000000000000000000000000000000000000000000000001",
+            "0.00002",
+            "0.000011",
+            "0.00001000000000000000000000000000000000000000000000001",
+            "0.00001",
+            "0.00000999999999999999999999999999999999999999999999999",
+            "0.00000000000000000000000000000000000000000000000000001",
             "0",
             "-2",
         ];
         for available in availables {
             let available = MmNumber::from(available);
-            max_taker_vol_from_available(available.clone(), "KMD", "MORTY", &dex_fee_threshold)
+            max_taker_vol_from_available(available.clone(), "KMD", "MORTY", &min_tx_amount)
                 .expect_err("!max_taker_vol_from_available success but should be error");
         }
     }
