@@ -1222,9 +1222,22 @@ impl From<TxGenError> for ValidateTakerPaymentSpendPreimageError {
     fn from(err: TxGenError) -> Self { ValidateTakerPaymentSpendPreimageError::TxGenError(format!("{:?}", err)) }
 }
 
+/// Helper trait used for various types serialization to bytes
+pub trait ToBytes {
+    fn to_bytes(&self) -> Vec<u8>;
+}
+
+/// Defines associated types specific to each coin (Pubkey, Address, etc.)
+pub trait CoinAssocTypes {
+    type Pubkey: ToBytes + Send + Sync;
+    type PubkeyParseError: Send + std::fmt::Display;
+
+    fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError>;
+}
+
 /// Operations specific to the [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
 #[async_trait]
-pub trait SwapOpsV2: Send + Sync + 'static {
+pub trait SwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
     /// Generate and broadcast taker payment transaction that includes dex fee, maker premium and actual trading volume.
     async fn send_combined_taker_payment(&self, args: SendCombinedTakerPaymentArgs<'_>) -> TransactionResult;
 
