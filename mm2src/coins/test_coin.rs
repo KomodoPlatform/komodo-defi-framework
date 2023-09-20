@@ -8,8 +8,8 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs, RefundResult,
             SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
             SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOpsV2, TakerSwapMakerCoin, ToBytes,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionResult, TxMarshalingErr,
-            TxPreimageWithSig, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionResult,
+            TxMarshalingErr, TxPreimageWithSig, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
             ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentResult,
             ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
@@ -382,15 +382,30 @@ impl MmCoin for TestCoin {
     fn on_token_deactivated(&self, _ticker: &str) { () }
 }
 
-impl ToBytes for () {
+pub struct TestPubkey {}
+
+impl ToBytes for TestPubkey {
     fn to_bytes(&self) -> Vec<u8> { vec![] }
 }
 
+#[derive(Debug)]
+pub struct TestTx {}
+
+impl Transaction for TestTx {
+    fn tx_hex(&self) -> Vec<u8> { todo!() }
+
+    fn tx_hash(&self) -> BytesJson { todo!() }
+}
+
 impl CoinAssocTypes for TestCoin {
-    type Pubkey = ();
+    type Pubkey = TestPubkey;
     type PubkeyParseError = String;
+    type Tx = TestTx;
+    type TxParseError = String;
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> { unimplemented!() }
+
+    fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> { unimplemented!() }
 }
 
 #[async_trait]

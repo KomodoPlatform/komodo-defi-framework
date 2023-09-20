@@ -1231,8 +1231,12 @@ pub trait ToBytes {
 pub trait CoinAssocTypes {
     type Pubkey: ToBytes + Send + Sync;
     type PubkeyParseError: Send + std::fmt::Display;
+    type Tx: Transaction + Send + Sync;
+    type TxParseError: Send + std::fmt::Display;
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError>;
+
+    fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError>;
 }
 
 /// Operations specific to the [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)

@@ -39,6 +39,7 @@ use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
+use serialization::deserialize;
 use utxo_signer::UtxoSignerOps;
 
 #[derive(Clone)]
@@ -589,10 +590,16 @@ impl ToBytes for Public {
 impl CoinAssocTypes for UtxoStandardCoin {
     type Pubkey = Public;
     type PubkeyParseError = MmError<keys::Error>;
+    type Tx = UtxoTx;
+    type TxParseError = MmError<serialization::Error>;
 
+    #[inline]
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> {
         Ok(Public::from_slice(pubkey)?)
     }
+
+    #[inline]
+    fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> { Ok(deserialize(tx)?) }
 }
 
 #[async_trait]
