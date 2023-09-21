@@ -183,7 +183,7 @@ async fn send_request(
     use http::header::HeaderValue;
     use mm2_net::transport::slurp_req;
 
-    const REQUEST_TIMEOUT_S: f64 = 60.;
+    const REQUEST_TIMEOUT_S: f64 = 20.;
 
     let mut errors = Vec::new();
 
