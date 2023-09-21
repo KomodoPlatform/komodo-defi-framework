@@ -26,7 +26,7 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
-            FeeApproxStage, MmCoinEnum};
+            FeeApproxStage, MarketCoinOps, MmCoinEnum};
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
@@ -48,6 +48,7 @@ use mm2_metrics::mm_gauge;
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use mm2_rpc::data::legacy::{MatchBy, Mm2RpcResult, OrderConfirmationsSettings, OrderType, RpcOrderbookEntry,
                             SellBuyRequest, SellBuyResponse, TakerAction, TakerRequestForRpc};
+use mm2_state_machine::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update,
                         save_my_new_maker_order, save_my_new_taker_order, MyActiveOrders, MyOrdersFilteringHistory,
@@ -61,6 +62,7 @@ use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
 use std::collections::{BTreeSet, HashSet};
 use std::convert::TryInto;
 use std::fmt;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -69,12 +71,15 @@ use uuid::Uuid;
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest,
                              P2PRequestError};
+use crate::mm2::lp_swap::maker_swap_v2::{self, DummyMakerSwapStorage, MakerSwapStateMachine};
+use crate::mm2::lp_swap::taker_swap_v2::{self, DummyTakerSwapStorage, TakerSwapStateMachine};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                          check_other_coin_balance_for_swap, get_max_maker_vol, insert_new_swap_to_db,
-                          is_pubkey_banned, lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
-                          p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, AtomicLocktimeVersion,
-                          CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap, RunMakerSwapInput,
-                          RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
+                          check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, get_max_maker_vol,
+                          insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
+                          p2p_keypair_and_peer_id_to_broadcast, p2p_private_and_peer_id_to_broadcast, run_maker_swap,
+                          run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult,
+                          CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SecretHashAlgo,
+                          SwapConfirmationsSettings, TakerSwap};
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 pub use orderbook_depth::orderbook_depth_rpc;
@@ -2905,8 +2910,8 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
         let alice = bits256::from(maker_match.request.sender_pubkey.0);
-        let maker_amount = maker_match.reserved.get_base_amount().to_decimal();
-        let taker_amount = maker_match.reserved.get_rel_amount().to_decimal();
+        let maker_amount = maker_match.reserved.get_base_amount().clone();
+        let taker_amount = maker_match.reserved.get_rel_amount().clone();
 
         // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
@@ -2962,22 +2967,53 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
-        let maker_swap = MakerSwap::new(
-            ctx.clone(),
-            alice,
-            maker_amount,
-            taker_amount,
-            my_persistent_pub,
-            uuid,
-            Some(maker_order.uuid),
-            my_conf_settings,
-            maker_coin,
-            taker_coin,
-            lock_time,
-            maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-            secret,
-        );
-        run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
+        if ctx.use_trading_proto_v2() {
+            match (maker_coin, taker_coin) {
+                (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                    let mut maker_swap_state_machine = MakerSwapStateMachine {
+                        ctx,
+                        storage: DummyMakerSwapStorage::default(),
+                        started_at: now_sec(),
+                        maker_coin: m.clone(),
+                        maker_volume: maker_amount,
+                        secret,
+                        taker_coin: t.clone(),
+                        dex_fee_amount: dex_fee_amount_from_taker_coin(&t, m.ticker(), &taker_amount),
+                        taker_volume: taker_amount,
+                        taker_premium: Default::default(),
+                        conf_settings: my_conf_settings,
+                        p2p_topic: swap_v2_topic(&uuid),
+                        uuid,
+                        p2p_keypair: maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                        secret_hash_algo: SecretHashAlgo::DHASH160,
+                        lock_duration: lock_time,
+                    };
+                    #[allow(clippy::box_default)]
+                    maker_swap_state_machine
+                        .run(Box::new(maker_swap_v2::Initialize::default()))
+                        .await
+                        .error_log();
+                },
+                _ => todo!("implement fallback to the old protocol here"),
+            }
+        } else {
+            let maker_swap = MakerSwap::new(
+                ctx.clone(),
+                alice,
+                maker_amount.to_decimal(),
+                taker_amount.to_decimal(),
+                my_persistent_pub,
+                uuid,
+                Some(maker_order.uuid),
+                my_conf_settings,
+                maker_coin,
+                taker_coin,
+                lock_time,
+                maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                secret,
+            );
+            run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
+        }
     };
 
     let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
@@ -3065,21 +3101,51 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         if let Err(e) = insert_new_swap_to_db(ctx.clone(), taker_coin.ticker(), maker_coin.ticker(), uuid, now).await {
             error!("Error {} on new swap insertion", e);
         }
-        let taker_swap = TakerSwap::new(
-            ctx.clone(),
-            maker,
-            maker_amount,
-            taker_amount,
-            my_persistent_pub,
-            uuid,
-            Some(uuid),
-            my_conf_settings,
-            maker_coin,
-            taker_coin,
-            locktime,
-            taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-        );
-        run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
+
+        if ctx.use_trading_proto_v2() {
+            match (maker_coin, taker_coin) {
+                (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                    let mut taker_swap_state_machine = TakerSwapStateMachine {
+                        ctx,
+                        storage: DummyTakerSwapStorage::default(),
+                        started_at: now_sec(),
+                        lock_duration: locktime,
+                        maker_coin: m.clone(),
+                        maker_volume: maker_amount,
+                        taker_coin: t.clone(),
+                        dex_fee: dex_fee_amount_from_taker_coin(&t, maker_coin_ticker, &taker_amount),
+                        taker_volume: taker_amount,
+                        taker_premium: Default::default(),
+                        conf_settings: my_conf_settings,
+                        p2p_topic: swap_v2_topic(&uuid),
+                        uuid,
+                        p2p_keypair: taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                    };
+                    #[allow(clippy::box_default)]
+                    taker_swap_state_machine
+                        .run(Box::new(taker_swap_v2::Initialize::default()))
+                        .await
+                        .error_log();
+                },
+                _ => todo!("implement fallback to the old protocol here"),
+            }
+        } else {
+            let taker_swap = TakerSwap::new(
+                ctx.clone(),
+                maker,
+                maker_amount,
+                taker_amount,
+                my_persistent_pub,
+                uuid,
+                Some(uuid),
+                my_conf_settings,
+                maker_coin,
+                taker_coin,
+                locktime,
+                taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+            );
+            run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
+        }
     };
 
     let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
@@ -3688,8 +3754,8 @@ pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     try_s!(
         check_balance_for_taker_swap(
             &ctx,
-            &rel_coin,
-            &base_coin,
+            rel_coin.deref(),
+            base_coin.deref(),
             my_amount,
             None,
             None,
@@ -3719,8 +3785,8 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     try_s!(
         check_balance_for_taker_swap(
             &ctx,
-            &base_coin,
-            &rel_coin,
+            base_coin.deref(),
+            rel_coin.deref(),
             input.volume.clone(),
             None,
             None,
@@ -4471,7 +4537,7 @@ pub async fn check_other_coin_balance_for_order_issue(ctx: &MmArc, other_coin: &
         .compat()
         .await
         .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
-    check_other_coin_balance_for_swap(ctx, other_coin, None, trade_fee).await
+    check_other_coin_balance_for_swap(ctx, other_coin.deref(), None, trade_fee).await
 }
 
 pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String, balance: Option<BigDecimal>) {
@@ -4527,8 +4593,8 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         let balance = try_s!(
             check_balance_for_maker_swap(
                 ctx,
-                &base_coin,
-                &rel_coin,
+                base_coin.deref(),
+                rel_coin.deref(),
                 req.volume.clone(),
                 None,
                 None,
@@ -4706,8 +4772,8 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
         try_s!(
             check_balance_for_maker_swap(
                 ctx,
-                &base_coin,
-                &rel_coin,
+                base_coin.deref(),
+                rel_coin.deref(),
                 volume.clone(),
                 None,
                 None,

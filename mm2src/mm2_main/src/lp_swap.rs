@@ -58,9 +58,9 @@
 //
 
 use super::lp_network::P2PRequestResult;
-use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PRequestError};
+use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
 use bitcrypto::{dhash160, sha256};
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoinEnum, TradeFee, TransactionEnum};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::now_sec;
 use common::time_cache::DuplicateCache;
@@ -76,6 +76,7 @@ use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPre
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use secp256k1::{PublicKey, SecretKey, Signature};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
@@ -91,14 +92,19 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 #[path = "lp_swap/check_balance.rs"] mod check_balance;
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
+#[path = "lp_swap/maker_swap_v2.rs"] pub mod maker_swap_v2;
 #[path = "lp_swap/max_maker_vol_rpc.rs"] mod max_maker_vol_rpc;
 #[path = "lp_swap/my_swaps_storage.rs"] mod my_swaps_storage;
 #[path = "lp_swap/pubkey_banning.rs"] mod pubkey_banning;
 #[path = "lp_swap/recreate_swap_data.rs"] mod recreate_swap_data;
 #[path = "lp_swap/saved_swap.rs"] mod saved_swap;
 #[path = "lp_swap/swap_lock.rs"] mod swap_lock;
+#[path = "lp_swap/komodefi.swap_v2.pb.rs"]
+#[rustfmt::skip]
+mod swap_v2_pb;
 #[path = "lp_swap/swap_watcher.rs"] pub(crate) mod swap_watcher;
 #[path = "lp_swap/taker_swap.rs"] mod taker_swap;
+#[path = "lp_swap/taker_swap_v2.rs"] pub mod taker_swap_v2;
 #[path = "lp_swap/trade_preimage.rs"] mod trade_preimage;
 
 #[cfg(target_arch = "wasm32")]
@@ -107,7 +113,7 @@ mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
 use crypto::CryptoCtx;
-use keys::KeyPair;
+use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, get_max_maker_vol, maker_swap_trade_preimage,
                      run_maker_swap, CoinVolumeInfo, MakerSavedEvent, MakerSavedSwap, MakerSwap,
@@ -118,6 +124,7 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
+use swap_v2_pb::*;
 pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
                        MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT_SEC,
                        WATCHER_PREFIX};
@@ -129,7 +136,14 @@ pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
 
+pub const SWAP_V2_PREFIX: TopicPrefix = "swapv2";
+
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
+
+const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
+
+/// If a certain P2P message is not received, swap will be aborted after this time expires.
+const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
 
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
@@ -162,6 +176,29 @@ pub struct SwapMsgStore {
 impl SwapMsgStore {
     pub fn new(accept_only_from: bits256) -> Self {
         SwapMsgStore {
+            accept_only_from,
+            ..Default::default()
+        }
+    }
+}
+
+/// Storage for P2P messages, which are exchanged during SwapV2 protocol execution.
+#[derive(Debug, Default)]
+pub struct SwapV2MsgStore {
+    maker_negotiation: Option<MakerNegotiation>,
+    taker_negotiation: Option<TakerNegotiation>,
+    maker_negotiated: Option<MakerNegotiated>,
+    taker_payment: Option<TakerPaymentInfo>,
+    maker_payment: Option<MakerPaymentInfo>,
+    taker_payment_spend_preimage: Option<TakerPaymentSpendPreimage>,
+    #[allow(dead_code)]
+    accept_only_from: bits256,
+}
+
+impl SwapV2MsgStore {
+    /// Creates new SwapV2MsgStore
+    pub fn new(accept_only_from: bits256) -> Self {
+        SwapV2MsgStore {
             accept_only_from,
             ..Default::default()
         }
@@ -442,6 +479,7 @@ struct SwapsContext {
     running_swaps: Mutex<Vec<Weak<dyn AtomicSwap>>>,
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
+    swap_v2_msgs: Mutex<HashMap<Uuid, SwapV2MsgStore>>,
     taker_swap_watchers: PaMutex<DuplicateCache<Vec<u8>>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
@@ -455,6 +493,7 @@ impl SwapsContext {
                 running_swaps: Mutex::new(vec![]),
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 swap_msgs: Mutex::new(HashMap::new()),
+                swap_v2_msgs: Mutex::new(HashMap::new()),
                 taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(
                     TAKER_SWAP_ENTRY_TIMEOUT_SEC,
                 ))),
@@ -467,6 +506,12 @@ impl SwapsContext {
     pub fn init_msg_store(&self, uuid: Uuid, accept_only_from: bits256) {
         let store = SwapMsgStore::new(accept_only_from);
         self.swap_msgs.lock().unwrap().insert(uuid, store);
+    }
+
+    /// Initializes storage for the swap with specific uuid.
+    pub fn init_msg_v2_store(&self, uuid: Uuid, accept_only_from: bits256) {
+        let store = SwapV2MsgStore::new(accept_only_from);
+        self.swap_v2_msgs.lock().unwrap().insert(uuid, store);
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -704,7 +749,8 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, dex_fee_th
     }
 }
 
-pub fn dex_fee_amount_from_taker_coin(taker_coin: &MmCoinEnum, maker_coin: &str, trade_amount: &MmNumber) -> MmNumber {
+/// Calculates DEX fee with a threshold based on min tx amount of the taker coin.
+pub fn dex_fee_amount_from_taker_coin(taker_coin: &dyn MmCoin, maker_coin: &str, trade_amount: &MmNumber) -> MmNumber {
     let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
     let dex_fee_threshold = dex_fee_threshold(min_tx_amount);
     dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &dex_fee_threshold)
@@ -1368,7 +1414,8 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     Ok(try_s!(Response::builder().body(res)))
 }
 
-enum SecretHashAlgo {
+/// Algorithm used to hash swap secret.
+pub enum SecretHashAlgo {
     /// ripemd160(sha256(secret))
     DHASH160,
     /// sha256(secret)
@@ -1413,6 +1460,128 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
 pub struct SwapPubkeys {
     pub maker: String,
     pub taker: String,
+}
+
+/// P2P topic used to broadcast messages during execution of the upgraded swap protocol.
+pub fn swap_v2_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_V2_PREFIX, &uuid.to_string()) }
+
+/// Broadcast the swap v2 message once
+pub fn broadcast_swap_v2_message<T: prost::Message>(
+    ctx: &MmArc,
+    topic: String,
+    msg: &T,
+    p2p_privkey: &Option<KeyPair>,
+) {
+    use prost::Message;
+
+    let (p2p_private, from) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey.as_ref());
+    let encoded_msg = msg.encode_to_vec();
+
+    let secp_secret = SecretKey::from_slice(&p2p_private).expect("valid secret key");
+    let secp_message =
+        secp256k1::Message::from_slice(sha256(&encoded_msg).as_slice()).expect("sha256 is 32 bytes hash");
+    let signature = SECP_SIGN.sign(&secp_message, &secp_secret);
+
+    let signed_message = SignedMessage {
+        from: PublicKey::from_secret_key(&*SECP_SIGN, &secp_secret).serialize().into(),
+        signature: signature.serialize_compact().into(),
+        payload: encoded_msg,
+    };
+    broadcast_p2p_msg(ctx, vec![topic], signed_message.encode_to_vec(), from);
+}
+
+/// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
+/// to stop it
+pub fn broadcast_swap_v2_msg_every<T: prost::Message + 'static>(
+    ctx: MmArc,
+    topic: String,
+    msg: T,
+    interval_sec: f64,
+    p2p_privkey: Option<KeyPair>,
+) -> AbortOnDropHandle {
+    let fut = async move {
+        loop {
+            broadcast_swap_v2_message(&ctx, topic.clone(), &msg, &p2p_privkey);
+            Timer::sleep(interval_sec).await;
+        }
+    };
+    spawn_abortable(fut)
+}
+
+/// Processes messages received during execution of the upgraded swap protocol.
+pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessResult<()> {
+    use prost::Message;
+
+    let uuid = Uuid::from_str(topic).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+
+    let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
+    let mut msgs = swap_ctx.swap_v2_msgs.lock().unwrap();
+    if let Some(msg_store) = msgs.get_mut(&uuid) {
+        let signed_message = SignedMessage::decode(msg).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+
+        let pubkey =
+            PublicKey::from_slice(&signed_message.from).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+        let signature = Signature::from_compact(&signed_message.signature)
+            .map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+        let secp_message = secp256k1::Message::from_slice(sha256(&signed_message.payload).as_slice())
+            .expect("sha256 is 32 bytes hash");
+
+        SECP_VERIFY
+            .verify(&secp_message, &signature, &pubkey)
+            .map_to_mm(|e| P2PProcessError::InvalidSignature(e.to_string()))?;
+
+        let swap_message = SwapMessage::decode(signed_message.payload.as_slice())
+            .map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+
+        debug!("Processing swap v2 msg {:?} for uuid {}", swap_message, uuid);
+        match swap_message.inner {
+            Some(swap_v2_pb::swap_message::Inner::MakerNegotiation(maker_negotiation)) => {
+                msg_store.maker_negotiation = Some(maker_negotiation)
+            },
+            Some(swap_v2_pb::swap_message::Inner::TakerNegotiation(taker_negotiation)) => {
+                msg_store.taker_negotiation = Some(taker_negotiation)
+            },
+            Some(swap_v2_pb::swap_message::Inner::MakerNegotiated(maker_negotiated)) => {
+                msg_store.maker_negotiated = Some(maker_negotiated)
+            },
+            Some(swap_v2_pb::swap_message::Inner::TakerPaymentInfo(taker_payment)) => {
+                msg_store.taker_payment = Some(taker_payment)
+            },
+            Some(swap_v2_pb::swap_message::Inner::MakerPaymentInfo(maker_payment)) => {
+                msg_store.maker_payment = Some(maker_payment)
+            },
+            Some(swap_v2_pb::swap_message::Inner::TakerPaymentSpendPreimage(preimage)) => {
+                msg_store.taker_payment_spend_preimage = Some(preimage)
+            },
+            None => return MmError::err(P2PProcessError::DecodeError("swap_message.inner is None".into())),
+        }
+    }
+    Ok(())
+}
+
+async fn recv_swap_v2_msg<T>(
+    ctx: MmArc,
+    mut getter: impl FnMut(&mut SwapV2MsgStore) -> Option<T>,
+    uuid: &Uuid,
+    timeout: u64,
+) -> Result<T, String> {
+    let started = now_sec();
+    let timeout = BASIC_COMM_TIMEOUT + timeout;
+    let wait_until = started + timeout;
+    loop {
+        Timer::sleep(1.).await;
+        let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
+        let mut msgs = swap_ctx.swap_v2_msgs.lock().unwrap();
+        if let Some(msg_store) = msgs.get_mut(uuid) {
+            if let Some(msg) = getter(msg_store) {
+                return Ok(msg);
+            }
+        }
+        let now = now_sec();
+        if now > wait_until {
+            return ERR!("Timeout ({} > {})", now - started, timeout);
+        }
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

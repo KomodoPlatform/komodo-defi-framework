@@ -907,7 +907,7 @@ impl SwapOps for BchCoin {
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(
             self.clone(),
-            if_my_payment_sent_args.time_lock,
+            try_fus!(if_my_payment_sent_args.time_lock.try_into()),
             if_my_payment_sent_args.other_pub,
             if_my_payment_sent_args.secret_hash,
             if_my_payment_sent_args.swap_unique_data,
@@ -1041,7 +1041,7 @@ impl WatcherOps for BchCoin {
     fn create_maker_payment_spend_preimage(
         &self,
         maker_payment_tx: &[u8],
-        time_lock: u32,
+        time_lock: u64,
         maker_pub: &[u8],
         secret_hash: &[u8],
         swap_unique_data: &[u8],
@@ -1049,7 +1049,7 @@ impl WatcherOps for BchCoin {
         utxo_common::create_maker_payment_spend_preimage(
             self,
             maker_payment_tx,
-            time_lock,
+            try_tx_fus!(time_lock.try_into()),
             maker_pub,
             secret_hash,
             swap_unique_data,
@@ -1065,7 +1065,7 @@ impl WatcherOps for BchCoin {
     fn create_taker_payment_refund_preimage(
         &self,
         taker_payment_tx: &[u8],
-        time_lock: u32,
+        time_lock: u64,
         maker_pub: &[u8],
         secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
@@ -1074,7 +1074,7 @@ impl WatcherOps for BchCoin {
         utxo_common::create_taker_payment_refund_preimage(
             self,
             taker_payment_tx,
-            time_lock,
+            try_tx_fus!(time_lock.try_into()),
             maker_pub,
             secret_hash,
             swap_unique_data,

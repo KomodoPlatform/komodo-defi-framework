@@ -3,23 +3,36 @@ use crate::{eth::Web3RpcError, my_tx_history_v2::MyTxHistoryErrorV2, utxo::rpc_c
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
+use std::num::TryFromIntError;
 
+/// Helper type used as result for swap payment validation function(s)
 pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<ValidatePaymentError>> + Send>;
 
+/// Enum covering possible error cases of swap payment validation
 #[derive(Debug, Display)]
 pub enum ValidatePaymentError {
+    /// Should be used to indicate internal MM2 state problems (e.g., DB errors, etc.).
     InternalError(String),
-    // Problem with deserializing the transaction, or one of the transaction parts is invalid.
+    /// Problem with deserializing the transaction, or one of the transaction parts is invalid.
     TxDeserializationError(String),
+    /// One of the input parameters is invalid.
     InvalidParameter(String),
+    /// Coin's RPC returned unexpected/invalid response during payment validation.
     InvalidRpcResponse(String),
+    /// Payment transaction doesn't exist on-chain.
     TxDoesNotExist(String),
+    /// SPV client error.
     SPVError(SPVError),
+    /// Payment transaction is in unexpected state. E.g., `Uninitialized` instead of `Sent` for ETH payment.
     UnexpectedPaymentState(String),
+    /// Transport (RPC) error.
     Transport(String),
-    // Transaction has wrong properties, for example, it has been sent to a wrong address
+    /// Transaction has wrong properties, for example, it has been sent to a wrong address.
     WrongPaymentTx(String),
+    /// Indicates error during watcher reward calculation.
     WatcherRewardError(String),
+    /// Input payment timelock overflows the type used by specific coin.
+    TimelockOverflow(TryFromIntError),
 }
 
 impl From<rlp::DecoderError> for ValidatePaymentError {

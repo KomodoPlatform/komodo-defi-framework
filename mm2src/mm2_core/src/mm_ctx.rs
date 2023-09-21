@@ -296,6 +296,9 @@ impl MmCtx {
 
     pub fn p2p_in_memory_port(&self) -> Option<u64> { self.conf["p2p_in_memory_port"].as_u64() }
 
+    /// Returns whether node is configured to use [Upgraded Trading Protocol](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
+    pub fn use_trading_proto_v2(&self) -> bool { self.conf["use_trading_proto_v2"].as_bool().unwrap_or_default() }
+
     /// Returns the cloneable `MmFutSpawner`.
     pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.abortable_system) }
 

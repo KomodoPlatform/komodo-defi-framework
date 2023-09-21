@@ -496,6 +496,10 @@ impl SlpToken {
         let htlc_keypair = self.derive_htlc_key_pair(&input.unique_swap_data);
         let first_pub = &Public::from_slice(&input.other_pub)
             .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string()))?;
+        let time_lock = input
+            .time_lock
+            .try_into()
+            .map_to_mm(ValidatePaymentError::TimelockOverflow)?;
         let validate_fut = utxo_common::validate_payment(
             self.platform_coin.clone(),
             tx,
@@ -505,7 +509,7 @@ impl SlpToken {
             &input.secret_hash,
             self.platform_dust_dec(),
             None,
-            input.time_lock,
+            time_lock,
             wait_until_sec(60),
             input.confirmations,
         );
@@ -1216,7 +1220,7 @@ impl SwapOps for SlpToken {
         let amount = try_tx_fus!(sat_from_big_decimal(&maker_payment_args.amount, self.decimals()));
         let secret_hash = maker_payment_args.secret_hash.to_owned();
         let maker_htlc_keypair = self.derive_htlc_key_pair(maker_payment_args.swap_unique_data);
-        let time_lock = maker_payment_args.time_lock;
+        let time_lock = try_tx_fus!(maker_payment_args.time_lock.try_into());
 
         let coin = self.clone();
         let fut = async move {
@@ -1235,7 +1239,7 @@ impl SwapOps for SlpToken {
         let secret_hash = taker_payment_args.secret_hash.to_owned();
 
         let taker_htlc_keypair = self.derive_htlc_key_pair(taker_payment_args.swap_unique_data);
-        let time_lock = taker_payment_args.time_lock;
+        let time_lock = try_tx_fus!(taker_payment_args.time_lock.try_into());
 
         let coin = self.clone();
         let fut = async move {
@@ -1255,7 +1259,7 @@ impl SwapOps for SlpToken {
         let secret_hash = maker_spends_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(maker_spends_payment_args.swap_unique_data);
         let coin = self.clone();
-        let time_lock = maker_spends_payment_args.time_lock;
+        let time_lock = try_tx_fus!(maker_spends_payment_args.time_lock.try_into());
 
         let fut = async move {
             let tx = try_tx_s!(
@@ -1274,7 +1278,7 @@ impl SwapOps for SlpToken {
         let secret_hash = taker_spends_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(taker_spends_payment_args.swap_unique_data);
         let coin = self.clone();
-        let time_lock = taker_spends_payment_args.time_lock;
+        let time_lock = try_tx_fus!(taker_spends_payment_args.time_lock.try_into());
 
         let fut = async move {
             let tx = try_tx_s!(
@@ -1291,7 +1295,7 @@ impl SwapOps for SlpToken {
         let maker_pub = try_tx_s!(Public::from_slice(taker_refunds_payment_args.other_pubkey));
         let secret_hash = taker_refunds_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(taker_refunds_payment_args.swap_unique_data);
-        let time_lock = taker_refunds_payment_args.time_lock;
+        let time_lock = try_tx_s!(taker_refunds_payment_args.time_lock.try_into());
 
         let tx = try_tx_s!(
             self.refund_htlc(&tx, &maker_pub, time_lock, &secret_hash, &htlc_keypair)
@@ -1305,7 +1309,7 @@ impl SwapOps for SlpToken {
         let taker_pub = try_tx_s!(Public::from_slice(maker_refunds_payment_args.other_pubkey));
         let secret_hash = maker_refunds_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(maker_refunds_payment_args.swap_unique_data);
-        let time_lock = maker_refunds_payment_args.time_lock;
+        let time_lock = try_tx_s!(maker_refunds_payment_args.time_lock.try_into());
 
         let tx = try_tx_s!(
             self.refund_htlc(&tx, &taker_pub, time_lock, &secret_hash, &htlc_keypair)
@@ -1359,7 +1363,7 @@ impl SwapOps for SlpToken {
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(
             self.platform_coin.clone(),
-            if_my_payment_sent_args.time_lock,
+            try_fus!(if_my_payment_sent_args.time_lock.try_into()),
             if_my_payment_sent_args.other_pub,
             if_my_payment_sent_args.secret_hash,
             if_my_payment_sent_args.swap_unique_data,
@@ -1475,7 +1479,7 @@ impl WatcherOps for SlpToken {
     fn create_maker_payment_spend_preimage(
         &self,
         _maker_payment_tx: &[u8],
-        _time_lock: u32,
+        _time_lock: u64,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
         _swap_unique_data: &[u8],
@@ -1490,7 +1494,7 @@ impl WatcherOps for SlpToken {
     fn create_taker_payment_refund_preimage(
         &self,
         _taker_payment_tx: &[u8],
-        _time_lock: u32,
+        _time_lock: u64,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
@@ -2245,7 +2249,7 @@ mod slp_tests {
             payment_tx,
             other_pub: other_pub_bytes,
             time_lock_duration: 0,
-            time_lock: lock_time,
+            time_lock: lock_time as u64,
             secret_hash,
             amount,
             swap_contract_address: None,

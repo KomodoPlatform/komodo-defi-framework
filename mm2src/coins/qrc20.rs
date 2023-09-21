@@ -53,6 +53,7 @@ use script_pubkey::generate_contract_call_script_pubkey;
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize, CoinVariant};
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 use std::ops::{Deref, Neg};
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::FromStr;
@@ -766,7 +767,7 @@ impl SwapOps for Qrc20Coin {
     }
 
     fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
-        let time_lock = maker_payment_args.time_lock;
+        let time_lock = try_tx_fus!(maker_payment_args.time_lock.try_into());
         let taker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(maker_payment_args.other_pubkey));
         let id = qrc20_swap_id(time_lock, maker_payment_args.secret_hash);
         let value = try_tx_fus!(wei_from_big_decimal(&maker_payment_args.amount, self.utxo.decimals));
@@ -784,7 +785,7 @@ impl SwapOps for Qrc20Coin {
 
     #[inline]
     fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
-        let time_lock = taker_payment_args.time_lock;
+        let time_lock = try_tx_fus!(taker_payment_args.time_lock.try_into());
         let maker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(taker_payment_args.other_pubkey));
         let id = qrc20_swap_id(time_lock, taker_payment_args.secret_hash);
         let value = try_tx_fus!(wei_from_big_decimal(&taker_payment_args.amount, self.utxo.decimals));
@@ -896,12 +897,16 @@ impl SwapOps for Qrc20Coin {
             .try_to_address()
             .map_to_mm(ValidatePaymentError::InvalidParameter));
 
+        let time_lock = try_f!(input
+            .time_lock
+            .try_into()
+            .map_to_mm(ValidatePaymentError::TimelockOverflow));
         let selfi = self.clone();
         let fut = async move {
             selfi
                 .validate_payment(
                     payment_tx,
-                    input.time_lock,
+                    time_lock,
                     sender,
                     input.secret_hash,
                     input.amount,
@@ -922,13 +927,16 @@ impl SwapOps for Qrc20Coin {
         let sender = try_f!(self
             .contract_address_from_raw_pubkey(&input.other_pub)
             .map_to_mm(ValidatePaymentError::InvalidParameter));
-
+        let time_lock = try_f!(input
+            .time_lock
+            .try_into()
+            .map_to_mm(ValidatePaymentError::TimelockOverflow));
         let selfi = self.clone();
         let fut = async move {
             selfi
                 .validate_payment(
                     payment_tx,
-                    input.time_lock,
+                    time_lock,
                     sender,
                     input.secret_hash,
                     input.amount,
@@ -945,7 +953,10 @@ impl SwapOps for Qrc20Coin {
         if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         let search_from_block = if_my_payment_sent_args.search_from_block;
-        let swap_id = qrc20_swap_id(if_my_payment_sent_args.time_lock, if_my_payment_sent_args.secret_hash);
+        let swap_id = qrc20_swap_id(
+            try_fus!(if_my_payment_sent_args.time_lock.try_into()),
+            if_my_payment_sent_args.secret_hash,
+        );
         let swap_contract_address = try_fus!(if_my_payment_sent_args.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
@@ -964,8 +975,13 @@ impl SwapOps for Qrc20Coin {
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let tx: UtxoTx = try_s!(deserialize(input.tx).map_err(|e| ERRL!("{:?}", e)));
 
-        self.search_for_swap_tx_spend(input.time_lock, input.secret_hash, tx, input.search_from_block)
-            .await
+        self.search_for_swap_tx_spend(
+            try_s!(input.time_lock.try_into()),
+            input.secret_hash,
+            tx,
+            input.search_from_block,
+        )
+        .await
     }
 
     async fn search_for_swap_tx_spend_other(
@@ -974,8 +990,13 @@ impl SwapOps for Qrc20Coin {
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let tx: UtxoTx = try_s!(deserialize(input.tx).map_err(|e| ERRL!("{:?}", e)));
 
-        self.search_for_swap_tx_spend(input.time_lock, input.secret_hash, tx, input.search_from_block)
-            .await
+        self.search_for_swap_tx_spend(
+            try_s!(input.time_lock.try_into()),
+            input.secret_hash,
+            tx,
+            input.search_from_block,
+        )
+        .await
     }
 
     #[inline]
@@ -1090,7 +1111,7 @@ impl WatcherOps for Qrc20Coin {
     fn create_maker_payment_spend_preimage(
         &self,
         _maker_payment_tx: &[u8],
-        _time_lock: u32,
+        _time_lock: u64,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
         _swap_unique_data: &[u8],
@@ -1105,7 +1126,7 @@ impl WatcherOps for Qrc20Coin {
     fn create_taker_payment_refund_preimage(
         &self,
         _taker_payment_tx: &[u8],
-        _time_lock: u32,
+        _time_lock: u64,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,

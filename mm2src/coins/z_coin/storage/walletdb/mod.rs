@@ -40,6 +40,7 @@ impl<'a> WalletDbShared {
         zcoin_builder: &ZCoinBuilder<'a>,
         checkpoint_block: Option<CheckPointBlockInfo>,
         z_spending_key: &ExtendedSpendingKey,
+        continue_from_prev_sync: bool,
     ) -> MmResult<Self, WalletDbError> {
         let wallet_db = create_wallet_db(
             zcoin_builder
@@ -48,6 +49,7 @@ impl<'a> WalletDbShared {
             zcoin_builder.protocol_info.consensus_params.clone(),
             checkpoint_block,
             ExtendedFullViewingKey::from(z_spending_key),
+            continue_from_prev_sync,
         )
         .await
         .mm_err(WalletDbError::ZcoinClientInitError)?;
