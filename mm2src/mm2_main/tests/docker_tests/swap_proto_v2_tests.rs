@@ -2,11 +2,12 @@ use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
 use coins::{GenTakerPaymentSpendArgs, RefundPaymentArgs, SendCombinedTakerPaymentArgs, SwapOpsV2, Transaction,
-            TransactionEnum, ValidateTakerPaymentArgs};
+            ValidateTakerPaymentArgs};
 use common::{block_on, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use mm2_test_helpers::for_tests::{enable_native, mm_dump, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
                                   MarketMakerIt, Mm2TestConf};
 use script::{Builder, Opcode};
+use serialization::serialize;
 
 #[test]
 fn send_and_refund_taker_payment() {
@@ -25,12 +26,8 @@ fn send_and_refund_taker_payment() {
         trading_amount: 1.into(),
         swap_unique_data: &[],
     };
-    let taker_payment_tx = block_on(coin.send_combined_taker_payment(send_args)).unwrap();
-    println!("{:02x}", taker_payment_tx.tx_hash());
-    let taker_payment_utxo_tx = match taker_payment_tx {
-        TransactionEnum::UtxoTx(tx) => tx,
-        unexpected => panic!("Unexpected tx {:?}", unexpected),
-    };
+    let taker_payment_utxo_tx = block_on(coin.send_combined_taker_payment(send_args)).unwrap();
+    println!("{:02x}", taker_payment_utxo_tx.tx_hash());
     // tx must have 3 outputs: actual payment, OP_RETURN containing the secret hash and change
     assert_eq!(3, taker_payment_utxo_tx.outputs.len());
 
@@ -44,10 +41,8 @@ fn send_and_refund_taker_payment() {
         .into_bytes();
     assert_eq!(expected_op_return, taker_payment_utxo_tx.outputs[1].script_pubkey);
 
-    let taker_payment_bytes = taker_payment_utxo_tx.tx_hex();
-
     let validate_args = ValidateTakerPaymentArgs {
-        taker_tx: &taker_payment_bytes,
+        taker_tx: &taker_payment_utxo_tx,
         time_lock,
         secret_hash,
         other_pub,
@@ -59,7 +54,7 @@ fn send_and_refund_taker_payment() {
     block_on(coin.validate_combined_taker_payment(validate_args)).unwrap();
 
     let refund_args = RefundPaymentArgs {
-        payment_tx: &taker_payment_bytes,
+        payment_tx: &serialize(&taker_payment_utxo_tx).take(),
         time_lock,
         other_pubkey: coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
@@ -89,16 +84,11 @@ fn send_and_spend_taker_payment() {
         trading_amount: 1.into(),
         swap_unique_data: &[],
     };
-    let taker_payment_tx = block_on(taker_coin.send_combined_taker_payment(send_args)).unwrap();
-    println!("taker_payment_tx hash {:02x}", taker_payment_tx.tx_hash());
-    let taker_payment_utxo_tx = match taker_payment_tx {
-        TransactionEnum::UtxoTx(tx) => tx,
-        unexpected => panic!("Unexpected tx {:?}", unexpected),
-    };
+    let taker_payment_utxo_tx = block_on(taker_coin.send_combined_taker_payment(send_args)).unwrap();
+    println!("taker_payment_tx hash {:02x}", taker_payment_utxo_tx.tx_hash());
 
-    let taker_payment_bytes = taker_payment_utxo_tx.tx_hex();
     let validate_args = ValidateTakerPaymentArgs {
-        taker_tx: &taker_payment_bytes,
+        taker_tx: &taker_payment_utxo_tx,
         time_lock,
         secret_hash: secret_hash.as_slice(),
         other_pub: taker_coin.my_public_key().unwrap(),
@@ -110,7 +100,7 @@ fn send_and_spend_taker_payment() {
     block_on(maker_coin.validate_combined_taker_payment(validate_args)).unwrap();
 
     let gen_preimage_args = GenTakerPaymentSpendArgs {
-        taker_tx: &taker_payment_utxo_tx.tx_hex(),
+        taker_tx: &taker_payment_utxo_tx,
         time_lock,
         secret_hash: secret_hash.as_slice(),
         maker_pub: maker_coin.my_public_key().unwrap(),

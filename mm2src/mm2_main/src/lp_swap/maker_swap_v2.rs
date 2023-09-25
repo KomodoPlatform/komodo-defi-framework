@@ -789,11 +789,11 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
         let unique_data = state_machine.unique_data();
 
         let gen_args = GenTakerPaymentSpendArgs {
-            taker_tx: &self.taker_payment.tx_hex(),
+            taker_tx: &self.taker_payment,
             time_lock: self.negotiation_data.taker_payment_locktime,
             secret_hash: &state_machine.secret_hash(),
-            maker_pub: &state_machine.maker_coin.derive_htlc_pubkey(&unique_data),
-            taker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker.to_bytes(),
+            maker_pub: &state_machine.taker_coin.derive_htlc_pubkey_v2(&unique_data),
+            taker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
             dex_fee_amount: state_machine.dex_fee_amount.to_decimal(),
             premium_amount: Default::default(),
             trading_amount: state_machine.taker_volume.to_decimal(),

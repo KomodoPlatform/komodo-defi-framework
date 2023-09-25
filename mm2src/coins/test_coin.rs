@@ -8,7 +8,7 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs, RefundResult,
             SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
             SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOpsV2, TakerSwapMakerCoin, ToBytes,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionResult,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionErr, TransactionResult,
             TxMarshalingErr, TxPreimageWithSig, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
             ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentResult,
@@ -411,11 +411,17 @@ impl CoinAssocTypes for TestCoin {
 #[async_trait]
 #[mockable]
 impl SwapOpsV2 for TestCoin {
-    async fn send_combined_taker_payment(&self, args: SendCombinedTakerPaymentArgs<'_>) -> TransactionResult {
+    async fn send_combined_taker_payment(
+        &self,
+        args: SendCombinedTakerPaymentArgs<'_>,
+    ) -> Result<Self::Tx, TransactionErr> {
         unimplemented!()
     }
 
-    async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateTakerPaymentResult {
+    async fn validate_combined_taker_payment(
+        &self,
+        args: ValidateTakerPaymentArgs<'_, TestTx, TestPubkey>,
+    ) -> ValidateTakerPaymentResult {
         unimplemented!()
     }
 
@@ -423,7 +429,7 @@ impl SwapOpsV2 for TestCoin {
 
     async fn gen_taker_payment_spend_preimage(
         &self,
-        args: &GenTakerPaymentSpendArgs<'_>,
+        args: &GenTakerPaymentSpendArgs<'_, TestTx, TestPubkey>,
         swap_unique_data: &[u8],
     ) -> GenTakerPaymentSpendResult {
         unimplemented!()
@@ -431,7 +437,7 @@ impl SwapOpsV2 for TestCoin {
 
     async fn validate_taker_payment_spend_preimage(
         &self,
-        gen_args: &GenTakerPaymentSpendArgs<'_>,
+        gen_args: &GenTakerPaymentSpendArgs<'_, TestTx, TestPubkey>,
         preimage: &TxPreimageWithSig,
     ) -> ValidateTakerPaymentSpendPreimageResult {
         unimplemented!()
@@ -440,10 +446,12 @@ impl SwapOpsV2 for TestCoin {
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
         preimage: &TxPreimageWithSig,
-        gen_args: &GenTakerPaymentSpendArgs<'_>,
+        gen_args: &GenTakerPaymentSpendArgs<'_, TestTx, TestPubkey>,
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionResult {
         unimplemented!()
     }
+
+    fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey { todo!() }
 }

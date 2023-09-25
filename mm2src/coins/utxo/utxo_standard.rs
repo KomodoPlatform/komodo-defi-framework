@@ -599,16 +599,26 @@ impl CoinAssocTypes for UtxoStandardCoin {
     }
 
     #[inline]
-    fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> { Ok(deserialize(tx)?) }
+    fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> {
+        let mut tx: UtxoTx = deserialize(tx)?;
+        tx.tx_hash_algo = self.as_ref().tx_hash_algo;
+        Ok(tx)
+    }
 }
 
 #[async_trait]
 impl SwapOpsV2 for UtxoStandardCoin {
-    async fn send_combined_taker_payment(&self, args: SendCombinedTakerPaymentArgs<'_>) -> TransactionResult {
+    async fn send_combined_taker_payment(
+        &self,
+        args: SendCombinedTakerPaymentArgs<'_>,
+    ) -> Result<UtxoTx, TransactionErr> {
         utxo_common::send_combined_taker_payment(self.clone(), args).await
     }
 
-    async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateTakerPaymentResult {
+    async fn validate_combined_taker_payment(
+        &self,
+        args: ValidateTakerPaymentArgs<'_, Self::Tx, Self::Pubkey>,
+    ) -> ValidateTakerPaymentResult {
         utxo_common::validate_combined_taker_payment(self, args).await
     }
 
@@ -618,7 +628,7 @@ impl SwapOpsV2 for UtxoStandardCoin {
 
     async fn gen_taker_payment_spend_preimage(
         &self,
-        args: &GenTakerPaymentSpendArgs<'_>,
+        args: &GenTakerPaymentSpendArgs<'_, UtxoTx, Public>,
         swap_unique_data: &[u8],
     ) -> GenTakerPaymentSpendResult {
         let key_pair = self.derive_htlc_key_pair(swap_unique_data);
@@ -627,7 +637,7 @@ impl SwapOpsV2 for UtxoStandardCoin {
 
     async fn validate_taker_payment_spend_preimage(
         &self,
-        gen_args: &GenTakerPaymentSpendArgs<'_>,
+        gen_args: &GenTakerPaymentSpendArgs<'_, UtxoTx, Public>,
         preimage: &TxPreimageWithSig,
     ) -> ValidateTakerPaymentSpendPreimageResult {
         utxo_common::validate_taker_payment_spend_preimage(self, gen_args, preimage).await
@@ -636,12 +646,16 @@ impl SwapOpsV2 for UtxoStandardCoin {
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
         preimage: &TxPreimageWithSig,
-        gen_args: &GenTakerPaymentSpendArgs<'_>,
+        gen_args: &GenTakerPaymentSpendArgs<'_, UtxoTx, Public>,
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionResult {
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
         utxo_common::sign_and_broadcast_taker_payment_spend(self, preimage, gen_args, secret, &htlc_keypair).await
+    }
+
+    fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey {
+        *self.derive_htlc_key_pair(swap_unique_data).public()
     }
 }
 
