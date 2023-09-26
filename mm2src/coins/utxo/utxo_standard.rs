@@ -25,15 +25,16 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinAssocTypes, CoinBalance, CoinWithDerivationMethod,
             ConfirmPaymentInput, GenTakerPaymentSpendArgs, GenTakerPaymentSpendResult, GetWithdrawSenderAddress,
             IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
-            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundPaymentArgs,
-            RefundResult, SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin, ToBytes,
-            TradePreimageValue, TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateTakerPaymentArgs,
-            ValidateTakerPaymentResult, ValidateTakerPaymentSpendPreimageResult, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundFundingSecretArgs,
+            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs,
+            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignatureResult,
+            SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin, ToBytes, TradePreimageValue, TransactionFut,
+            TransactionResult, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentResult,
+            ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
 use common::executor::{AbortableSystem, AbortedError};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
@@ -608,6 +609,21 @@ impl CoinAssocTypes for UtxoStandardCoin {
 
 #[async_trait]
 impl SwapOpsV2 for UtxoStandardCoin {
+    async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr> {
+        utxo_common::send_taker_funding(self.clone(), args).await
+    }
+
+    async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> TransactionResult {
+        utxo_common::refund_taker_funding_timelock(self.clone(), args).await
+    }
+
+    async fn refund_taker_funding_secret(
+        &self,
+        args: RefundFundingSecretArgs<'_, Self::Tx, Self::Pubkey>,
+    ) -> Result<Self::Tx, TransactionErr> {
+        utxo_common::refund_taker_funding_secret(self.clone(), args).await
+    }
+
     async fn send_combined_taker_payment(
         &self,
         args: SendCombinedTakerPaymentArgs<'_>,

@@ -17,16 +17,17 @@ use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWit
 use crate::watcher_common::validate_watcher_reward;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GenTakerPaymentSpendArgs,
             GenTakerPaymentSpendResult, GetWithdrawSenderAddress, HDAccountAddressId, RawTransactionError,
-            RawTransactionRequest, RawTransactionRes, RefundPaymentArgs, RewardTarget, SearchForSwapTxSpendInput,
-            SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError,
-            SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TransactionResult,
-            TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateTakerPaymentArgs,
-            ValidateTakerPaymentError, ValidateTakerPaymentResult, ValidateTakerPaymentSpendPreimageError,
-            ValidateTakerPaymentSpendPreimageResult, VerificationError, VerificationResult,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
-            WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            RawTransactionRequest, RawTransactionRes, RefundFundingSecretArgs, RefundPaymentArgs, RewardTarget,
+            SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SendTakerFundingArgs, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps,
+            TradePreimageValue, TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr,
+            TxPreimageWithSig, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut,
+            ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentError, ValidateTakerPaymentResult,
+            ValidateTakerPaymentSpendPreimageError, ValidateTakerPaymentSpendPreimageResult, VerificationError,
+            VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
+            EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
+            INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
@@ -62,6 +63,7 @@ use utxo_signer::with_key_pair::{calc_and_sign_sighash, p2sh_spend, signature_ha
                                  SIGHASH_SINGLE};
 use utxo_signer::UtxoSignerOps;
 
+use crate::utxo::swap_proto_v2_scripts::taker_funding_script;
 pub use chain::Transaction as UtxoTx;
 
 pub mod utxo_tx_history_v2_common;
@@ -1409,9 +1411,8 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     drop_mutability!(maker_signature_with_sighash);
 
     let script_sig = Builder::default()
-        .push_opcode(Opcode::OP_0)
-        .push_data(&taker_signature_with_sighash)
         .push_data(&maker_signature_with_sighash)
+        .push_data(&taker_signature_with_sighash)
         .push_data(secret)
         .push_opcode(Opcode::OP_0)
         .push_data(&redeem_script)
@@ -1816,6 +1817,9 @@ async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
     let redeem_script = match payment_type {
         SwapPaymentType::TakerOrMakerPayment => {
             payment_script(time_lock, args.secret_hash, key_pair.public(), &other_public).into()
+        },
+        SwapPaymentType::TakerFunding => {
+            taker_funding_script(time_lock, args.secret_hash, key_pair.public(), &other_public).into()
         },
         SwapPaymentType::TakerPaymentV2 => {
             swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, key_pair.public(), &other_public)
@@ -4185,6 +4189,7 @@ struct SwapPaymentOutputsResult {
 
 enum SwapPaymentType {
     TakerOrMakerPayment,
+    TakerFunding,
     TakerPaymentV2,
 }
 
@@ -4204,6 +4209,7 @@ where
     let other_public = try_s!(Public::from_slice(other_pub));
     let redeem_script = match payment_type {
         SwapPaymentType::TakerOrMakerPayment => payment_script(time_lock, secret_hash, &my_public, &other_public),
+        SwapPaymentType::TakerFunding => taker_funding_script(time_lock, secret_hash, &my_public, &other_public),
         SwapPaymentType::TakerPaymentV2 => {
             swap_proto_v2_scripts::taker_payment_script(time_lock, secret_hash, &my_public, &other_public)
         },
@@ -4561,6 +4567,100 @@ where
         .collect()
 }
 
+/// Common implementation of taker funding generation and broadcast for UTXO coins.
+pub async fn send_taker_funding<T>(coin: T, args: SendTakerFundingArgs<'_>) -> Result<UtxoTx, TransactionErr>
+where
+    T: UtxoCommonOps + GetUtxoListOps + SwapOps,
+{
+    let taker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let total_amount = &args.dex_fee_amount + &args.premium_amount + &args.trading_amount;
+
+    let SwapPaymentOutputsResult {
+        payment_address,
+        outputs,
+    } = try_tx_s!(generate_swap_payment_outputs(
+        &coin,
+        try_tx_s!(args.time_lock.try_into()),
+        taker_htlc_key_pair.public_slice(),
+        args.maker_pub,
+        args.taker_secret_hash,
+        total_amount,
+        SwapPaymentType::TakerFunding,
+    ));
+    if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
+        let addr_string = try_tx_s!(payment_address.display_address());
+        client
+            .import_address(&addr_string, &addr_string, false)
+            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))
+            .compat()
+            .await?;
+    }
+    send_outputs_from_my_address_impl(coin, outputs).await
+}
+
+/// Common implementation of taker funding reclaim for UTXO coins using time-locked path.
+pub async fn refund_taker_funding_timelock<T>(coin: T, args: RefundPaymentArgs<'_>) -> TransactionResult
+where
+    T: UtxoCommonOps + GetUtxoListOps + SwapOps,
+{
+    refund_htlc_payment(coin, args, SwapPaymentType::TakerFunding).await
+}
+
+/// Common implementation of taker funding reclaim for UTXO coins using immediate refund path with secret reveal.
+pub async fn refund_taker_funding_secret<T>(
+    coin: T,
+    args: RefundFundingSecretArgs<'_, UtxoTx, Public>,
+) -> Result<UtxoTx, TransactionErr>
+where
+    T: UtxoCommonOps + GetUtxoListOps + SwapOps,
+{
+    let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
+    let payment_value = try_tx_s!(args.funding_tx.first_output()).value;
+
+    let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let script_data = Builder::default()
+        .push_data(args.taker_secret)
+        .push_opcode(Opcode::OP_0)
+        .push_opcode(Opcode::OP_0)
+        .into_script();
+    let time_lock = try_tx_s!(args.time_lock.try_into());
+
+    let redeem_script =
+        taker_funding_script(time_lock, args.taker_secret_hash, key_pair.public(), args.maker_pubkey).into();
+    let fee = try_tx_s!(
+        coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+            .await
+    );
+    if fee >= payment_value {
+        return TX_PLAIN_ERR!(
+            "HTLC spend fee {} is greater than transaction output {}",
+            fee,
+            payment_value
+        );
+    }
+    let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
+    let output = TransactionOutput {
+        value: payment_value - fee,
+        script_pubkey,
+    };
+
+    let input = P2SHSpendingTxInput {
+        prev_transaction: args.funding_tx.clone(),
+        redeem_script,
+        outputs: vec![output],
+        script_data,
+        sequence: SEQUENCE_FINAL,
+        lock_time: time_lock,
+        keypair: &key_pair,
+    };
+    let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
+
+    let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
+    try_tx_s!(tx_fut.await, transaction);
+
+    Ok(transaction.into())
+}
+
 /// Common implementation of combined taker payment generation and broadcast for UTXO coins.
 pub async fn send_combined_taker_payment<T>(
     coin: T,
@@ -4579,8 +4679,8 @@ where
         &coin,
         try_tx_s!(args.time_lock.try_into()),
         taker_htlc_key_pair.public_slice(),
-        args.other_pub,
-        args.secret_hash,
+        args.maker_pub,
+        args.maker_secret_hash,
         total_amount,
         SwapPaymentType::TakerPaymentV2,
     ));

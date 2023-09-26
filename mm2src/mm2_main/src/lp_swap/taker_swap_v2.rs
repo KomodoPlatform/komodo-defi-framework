@@ -476,8 +476,8 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State fo
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
         let args = SendCombinedTakerPaymentArgs {
             time_lock: state_machine.taker_payment_locktime(),
-            secret_hash: &self.negotiation_data.secret_hash,
-            other_pub: &self.negotiation_data.taker_coin_htlc_pub_from_maker.to_bytes(),
+            maker_secret_hash: &self.negotiation_data.secret_hash,
+            maker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_maker.to_bytes(),
             dex_fee_amount: state_machine.dex_fee.to_decimal(),
             premium_amount: BigDecimal::from(0),
             trading_amount: state_machine.taker_volume.to_decimal(),
