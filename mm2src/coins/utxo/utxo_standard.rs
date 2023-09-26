@@ -23,15 +23,15 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinAssocTypes, CoinBalance, CoinWithDerivationMethod,
-            ConfirmPaymentInput, GenTakerPaymentSpendArgs, GenTakerPaymentSpendResult, GetWithdrawSenderAddress,
-            IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
-            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundFundingSecretArgs,
-            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignatureResult,
-            SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin, ToBytes, TradePreimageValue, TransactionFut,
-            TransactionResult, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentResult,
+            ConfirmPaymentInput, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+            GetWithdrawSenderAddress, IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError,
+            RefundFundingSecretArgs, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
+            SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs,
+            SignatureResult, SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin, ToBytes, TradePreimageValue,
+            TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentResult,
             ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
             WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
@@ -624,6 +624,15 @@ impl SwapOpsV2 for UtxoStandardCoin {
         utxo_common::refund_taker_funding_secret(self.clone(), args).await
     }
 
+    async fn gen_taker_funding_spend_preimage(
+        &self,
+        args: &GenTakerFundingSpendArgs<'_, Self::Tx, Self::Pubkey>,
+        swap_unique_data: &[u8],
+    ) -> GenPreimageResult {
+        let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
+        utxo_common::gen_and_sign_taker_funding_spend_preimage(self, args, &htlc_keypair).await
+    }
+
     async fn send_combined_taker_payment(
         &self,
         args: SendCombinedTakerPaymentArgs<'_>,
@@ -646,7 +655,7 @@ impl SwapOpsV2 for UtxoStandardCoin {
         &self,
         args: &GenTakerPaymentSpendArgs<'_, UtxoTx, Public>,
         swap_unique_data: &[u8],
-    ) -> GenTakerPaymentSpendResult {
+    ) -> GenPreimageResult {
         let key_pair = self.derive_htlc_key_pair(swap_unique_data);
         utxo_common::gen_and_sign_taker_payment_spend_preimage(self, args, &key_pair).await
     }

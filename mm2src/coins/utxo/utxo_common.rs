@@ -15,10 +15,10 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::watcher_common::validate_watcher_reward;
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GenTakerPaymentSpendArgs,
-            GenTakerPaymentSpendResult, GetWithdrawSenderAddress, HDAccountAddressId, RawTransactionError,
-            RawTransactionRequest, RawTransactionRes, RefundFundingSecretArgs, RefundPaymentArgs, RewardTarget,
-            SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GenPreimageResult,
+            GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress, HDAccountAddressId,
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundFundingSecretArgs, RefundPaymentArgs,
+            RewardTarget, SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
             SendPaymentArgs, SendTakerFundingArgs, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps,
             TradePreimageValue, TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr,
             TxPreimageWithSig, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut,
@@ -1221,14 +1221,89 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
     })
 }
 
-pub type GenDexFeeSpendResult = MmResult<TransactionInputSigner, TxGenError>;
+type GenPreimageResInner = MmResult<TransactionInputSigner, TxGenError>;
+
+async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
+    coin: &T,
+    args: &GenTakerFundingSpendArgs<'_, UtxoTx, Public>,
+    lock_time: LocktimeSetting,
+    n_time: NTimeSetting,
+) -> GenPreimageResInner {
+    let payment_time_lock = args
+        .taker_payment_time_lock
+        .try_into()
+        .map_to_mm(|e: TryFromIntError| TxGenError::LocktimeOverflow(e.to_string()))?;
+
+    let payment_redeem_script = swap_proto_v2_scripts::taker_payment_script(
+        payment_time_lock,
+        args.maker_secret_hash,
+        args.taker_pub,
+        args.maker_pub,
+    );
+
+    let funding_amount = args.funding_tx.first_output().unwrap().value;
+    let fee = coin
+        .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+        .await?;
+
+    let payment_output = TransactionOutput {
+        value: funding_amount - fee,
+        script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&payment_redeem_script))).to_bytes(),
+    };
+
+    p2sh_spending_tx_preimage(coin, args.funding_tx, lock_time, n_time, SEQUENCE_FINAL, vec![
+        payment_output,
+    ])
+    .await
+    .map_to_mm(TxGenError::Legacy)
+}
+
+pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
+    coin: &T,
+    args: &GenTakerFundingSpendArgs<'_, UtxoTx, Public>,
+    htlc_keypair: &KeyPair,
+) -> GenPreimageResult {
+    let funding_time_lock = args
+        .funding_time_lock
+        .try_into()
+        .map_to_mm(|e: TryFromIntError| TxGenError::LocktimeOverflow(e.to_string()))?;
+
+    let preimage = gen_taker_funding_spend_preimage(
+        coin,
+        args,
+        LocktimeSetting::CalcByHtlcLocktime(funding_time_lock),
+        NTimeSetting::UseNow,
+    )
+    .await?;
+
+    let redeem_script = swap_proto_v2_scripts::taker_funding_script(
+        funding_time_lock,
+        args.taker_secret_hash,
+        args.taker_pub,
+        args.maker_pub,
+    );
+    let signature = calc_and_sign_sighash(
+        &preimage,
+        DEFAULT_SWAP_VOUT,
+        &redeem_script,
+        htlc_keypair,
+        coin.as_ref().conf.signature_version,
+        SIGHASH_ALL,
+        coin.as_ref().conf.fork_id,
+    )?;
+    let preimage_tx: UtxoTx = preimage.into();
+    Ok(TxPreimageWithSig {
+        preimage: serialize(&preimage_tx).take(),
+        signature: signature.take(),
+    })
+}
 
 async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_, UtxoTx, Public>,
     lock_time: LocktimeSetting,
     n_time: NTimeSetting,
-) -> GenDexFeeSpendResult {
+) -> GenPreimageResInner {
     let dex_fee_sat = sat_from_big_decimal(&args.dex_fee_amount, coin.as_ref().decimals)?;
 
     let dex_fee_address = address_from_raw_pubkey(
@@ -1256,7 +1331,7 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_, UtxoTx, Public>,
     htlc_keypair: &KeyPair,
-) -> GenTakerPaymentSpendResult {
+) -> GenPreimageResult {
     let time_lock = args
         .time_lock
         .try_into()
@@ -4658,7 +4733,7 @@ where
     let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
     try_tx_s!(tx_fut.await, transaction);
 
-    Ok(transaction.into())
+    Ok(transaction)
 }
 
 /// Common implementation of combined taker payment generation and broadcast for UTXO coins.
