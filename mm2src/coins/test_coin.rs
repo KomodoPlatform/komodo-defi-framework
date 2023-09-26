@@ -403,10 +403,18 @@ impl CoinAssocTypes for TestCoin {
     type PubkeyParseError = String;
     type Tx = TestTx;
     type TxParseError = String;
+    type Preimage = ();
+    type PreimageParseError = String;
+    type Sig = ();
+    type SigParseError = String;
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> { unimplemented!() }
 
     fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> { unimplemented!() }
+
+    fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Tx, Self::PreimageParseError> { todo!() }
+
+    fn parse_signature(&self, tx: &[u8]) -> Result<Self::Tx, Self::SigParseError> { todo!() }
 }
 
 #[async_trait]
@@ -418,25 +426,25 @@ impl SwapOpsV2 for TestCoin {
 
     async fn refund_taker_funding_secret(
         &self,
-        args: RefundFundingSecretArgs<'_, Self::Tx, Self::Pubkey>,
+        args: RefundFundingSecretArgs<'_, Self>,
     ) -> Result<Self::Tx, TransactionErr> {
         todo!()
     }
 
     async fn gen_taker_funding_spend_preimage(
         &self,
-        args: &GenTakerFundingSpendArgs<'_, Self::Tx, Self::Pubkey>,
+        args: &GenTakerFundingSpendArgs<'_, Self>,
         swap_unique_data: &[u8],
-    ) -> GenPreimageResult {
+    ) -> GenPreimageResult<Self> {
         todo!()
     }
 
     async fn sign_and_send_taker_funding_spend(
         &self,
-        preimage: &TxPreimageWithSig,
-        args: &GenTakerFundingSpendArgs<'_, Self::Tx, Self::Pubkey>,
+        preimage: &TxPreimageWithSig<Self>,
+        args: &GenTakerFundingSpendArgs<'_, Self>,
         swap_unique_data: &[u8],
-    ) -> GenPreimageResult {
+    ) -> Result<Self::Tx, TransactionErr> {
         todo!()
     }
 
@@ -449,7 +457,7 @@ impl SwapOpsV2 for TestCoin {
 
     async fn validate_combined_taker_payment(
         &self,
-        args: ValidateTakerPaymentArgs<'_, TestTx, TestPubkey>,
+        args: ValidateTakerPaymentArgs<'_, Self>,
     ) -> ValidateTakerPaymentResult {
         unimplemented!()
     }
@@ -458,24 +466,24 @@ impl SwapOpsV2 for TestCoin {
 
     async fn gen_taker_payment_spend_preimage(
         &self,
-        args: &GenTakerPaymentSpendArgs<'_, TestTx, TestPubkey>,
+        args: &GenTakerPaymentSpendArgs<'_, Self>,
         swap_unique_data: &[u8],
-    ) -> GenPreimageResult {
+    ) -> GenPreimageResult<Self> {
         unimplemented!()
     }
 
     async fn validate_taker_payment_spend_preimage(
         &self,
-        gen_args: &GenTakerPaymentSpendArgs<'_, TestTx, TestPubkey>,
-        preimage: &TxPreimageWithSig,
+        gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
+        preimage: &TxPreimageWithSig<Self>,
     ) -> ValidateTakerPaymentSpendPreimageResult {
         unimplemented!()
     }
 
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
-        preimage: &TxPreimageWithSig,
-        gen_args: &GenTakerPaymentSpendArgs<'_, TestTx, TestPubkey>,
+        preimage: &TxPreimageWithSig<Self>,
+        gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionResult {

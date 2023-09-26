@@ -60,6 +60,7 @@ use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures01::Future;
 use keys::bytes::Bytes;
+use keys::Signature;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
 #[cfg(not(target_arch = "wasm32"))]
@@ -75,7 +76,7 @@ use primitives::hash::{H160, H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
-use serialization::{serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{deserialize, serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::BlockHeaderStorageError;
@@ -110,6 +111,7 @@ use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDAddressId, HD
                        InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
+use crate::CoinAssocTypes;
 
 pub mod tx_cache;
 
@@ -1009,6 +1011,34 @@ pub trait UtxoCommonOps:
         let pubkey = Public::Compressed(H264::from(extended_pubkey.public_key().serialize()));
         self.address_from_pubkey(&pubkey)
     }
+}
+
+impl<T: UtxoCommonOps> CoinAssocTypes for T {
+    type Pubkey = Public;
+    type PubkeyParseError = MmError<keys::Error>;
+    type Tx = UtxoTx;
+    type TxParseError = MmError<serialization::Error>;
+    type Preimage = UtxoTx;
+    type PreimageParseError = MmError<serialization::Error>;
+    type Sig = Signature;
+    type SigParseError = String;
+
+    #[inline]
+    fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> {
+        Ok(Public::from_slice(pubkey)?)
+    }
+
+    #[inline]
+    fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> {
+        let mut tx: UtxoTx = deserialize(tx)?;
+        tx.tx_hash_algo = self.as_ref().tx_hash_algo;
+        Ok(tx)
+    }
+
+    #[inline]
+    fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Tx, Self::PreimageParseError> { self.parse_tx(tx) }
+
+    fn parse_signature(&self, sig: &[u8]) -> Result<Self::Tx, Self::SigParseError> { todo!() }
 }
 
 #[async_trait]
