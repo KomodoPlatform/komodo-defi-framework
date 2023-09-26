@@ -431,6 +431,15 @@ impl SwapOpsV2 for TestCoin {
         todo!()
     }
 
+    async fn sign_and_send_taker_funding_spend(
+        &self,
+        preimage: &TxPreimageWithSig,
+        args: &GenTakerFundingSpendArgs<'_, Self::Tx, Self::Pubkey>,
+        swap_unique_data: &[u8],
+    ) -> GenPreimageResult {
+        todo!()
+    }
+
     async fn send_combined_taker_payment(
         &self,
         args: SendCombinedTakerPaymentArgs<'_>,

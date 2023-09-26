@@ -1300,6 +1300,14 @@ pub trait SwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
         swap_unique_data: &[u8],
     ) -> GenPreimageResult;
 
+    /// Generates and signs a preimage spending funding tx to the combined taker payment
+    async fn sign_and_send_taker_funding_spend(
+        &self,
+        preimage: &TxPreimageWithSig,
+        args: &GenTakerFundingSpendArgs<'_, Self::Tx, Self::Pubkey>,
+        swap_unique_data: &[u8],
+    ) -> GenPreimageResult;
+
     /// Generate and broadcast taker payment transaction that includes dex fee, maker premium and actual trading volume.
     async fn send_combined_taker_payment(
         &self,

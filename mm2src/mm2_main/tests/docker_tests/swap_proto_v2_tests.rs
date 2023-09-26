@@ -132,6 +132,55 @@ fn send_and_refund_taker_funding_secret() {
 }
 
 #[test]
+fn send_and_spend_taker_funding() {
+    let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
+
+    let time_lock = now_sec() - 1000;
+    let taker_secret_hash = &[0; 20];
+    let maker_pub = coin.my_public_key().unwrap();
+
+    let send_args = SendTakerFundingArgs {
+        time_lock,
+        taker_secret_hash,
+        maker_pub,
+        dex_fee_amount: "0.01".parse().unwrap(),
+        premium_amount: "0.1".parse().unwrap(),
+        trading_amount: 1.into(),
+        swap_unique_data: &[],
+    };
+    let taker_funding_utxo_tx = block_on(coin.send_taker_funding(send_args)).unwrap();
+    println!("{:02x}", taker_funding_utxo_tx.tx_hash());
+    // tx must have 3 outputs: actual funding, OP_RETURN containing the secret hash and change
+    assert_eq!(3, taker_funding_utxo_tx.outputs.len());
+
+    // dex_fee_amount + premium_amount + trading_amount
+    let expected_amount = 111000000u64;
+    assert_eq!(expected_amount, taker_funding_utxo_tx.outputs[0].value);
+
+    let expected_op_return = Builder::default()
+        .push_opcode(Opcode::OP_RETURN)
+        .push_data(&[0; 20])
+        .into_bytes();
+    assert_eq!(expected_op_return, taker_funding_utxo_tx.outputs[1].script_pubkey);
+
+    /*
+    let validate_args = ValidateTakerPaymentArgs {
+        taker_tx: &taker_payment_utxo_tx,
+        time_lock,
+        secret_hash: maker_secret_hash,
+        other_pub: maker_pub,
+        dex_fee_amount: "0.01".parse().unwrap(),
+        premium_amount: "0.1".parse().unwrap(),
+        trading_amount: 1.into(),
+        swap_unique_data: &[],
+    };
+    block_on(coin.validate_combined_taker_payment(validate_args)).unwrap();
+    */
+
+    // let preimage_args
+}
+
+#[test]
 fn send_and_refund_taker_payment() {
     let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 

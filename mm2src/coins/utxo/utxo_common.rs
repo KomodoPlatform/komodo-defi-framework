@@ -1298,6 +1298,66 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
     })
 }
 
+/// Common implementation of taker payment spend finalization and broadcast for UTXO coins.
+/// Appends maker output to the preimage, signs it with SIGHASH_ALL and submits the resulting tx to coin's RPC.
+pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
+    coin: &T,
+    preimage: &TxPreimageWithSig,
+    gen_args: &GenTakerFundingSpendArgs<'_, UtxoTx, Public>,
+    htlc_keypair: &KeyPair,
+) -> TransactionResult {
+    let mut preimage_tx: UtxoTx = try_tx_s!(deserialize(preimage.preimage.as_slice()));
+    preimage_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    drop_mutability!(preimage_tx);
+
+    let redeem_script = swap_proto_v2_scripts::taker_funding_script(
+        try_tx_s!(gen_args.funding_time_lock.try_into()),
+        gen_args.taker_secret_hash,
+        gen_args.taker_pub,
+        htlc_keypair.public(),
+    );
+
+    let mut signer: TransactionInputSigner = preimage_tx.clone().into();
+    let payment_input = try_tx_s!(signer.inputs.first_mut().ok_or("Preimage doesn't have inputs"));
+    let payment_output = try_tx_s!(gen_args.taker_tx.first_output());
+    payment_input.amount = payment_output.value;
+    signer.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
+
+    let maker_signature = try_tx_s!(calc_and_sign_sighash(
+        &signer,
+        DEFAULT_SWAP_VOUT,
+        &redeem_script,
+        htlc_keypair,
+        coin.as_ref().conf.signature_version,
+        SIGHASH_ALL,
+        coin.as_ref().conf.fork_id
+    ));
+    let sig_hash_all_fork_id = (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8;
+
+    let mut taker_signature_with_sighash = preimage.signature.clone();
+    taker_signature_with_sighash.push(sig_hash_all_fork_id);
+    drop_mutability!(taker_signature_with_sighash);
+
+    let mut maker_signature_with_sighash: Vec<u8> = maker_signature.take();
+    maker_signature_with_sighash.push(sig_hash_all_fork_id);
+    drop_mutability!(maker_signature_with_sighash);
+
+    let script_sig = Builder::default()
+        .push_data(&maker_signature_with_sighash)
+        .push_data(&taker_signature_with_sighash)
+        .push_opcode(Opcode::OP_1)
+        .push_opcode(Opcode::OP_0)
+        .push_data(&redeem_script)
+        .into_bytes();
+    let mut final_tx: UtxoTx = signer.into();
+    let final_tx_input = try_tx_s!(final_tx.inputs.first_mut().ok_or("Final tx doesn't have inputs"));
+    final_tx_input.script_sig = script_sig;
+    drop_mutability!(final_tx);
+
+    try_tx_s!(coin.broadcast_tx(&final_tx).await, final_tx);
+    Ok(final_tx.into())
+}
+
 async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_, UtxoTx, Public>,

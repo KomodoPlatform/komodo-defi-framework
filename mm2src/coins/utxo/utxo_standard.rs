@@ -633,6 +633,16 @@ impl SwapOpsV2 for UtxoStandardCoin {
         utxo_common::gen_and_sign_taker_funding_spend_preimage(self, args, &htlc_keypair).await
     }
 
+    async fn sign_and_send_taker_funding_spend(
+        &self,
+        preimage: &TxPreimageWithSig,
+        args: &GenTakerFundingSpendArgs<'_, Self::Tx, Self::Pubkey>,
+        swap_unique_data: &[u8],
+    ) -> Result<Self::Tx, TransactionErr> {
+        let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
+        utxo_common::sign_and_send_taker_funding_spend(self, preimage, args, &htlc_keypair).await
+    }
+
     async fn send_combined_taker_payment(
         &self,
         args: SendCombinedTakerPaymentArgs<'_>,
