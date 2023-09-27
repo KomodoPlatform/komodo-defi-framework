@@ -86,8 +86,8 @@ pub struct MakerPaymentInfo {
 pub struct TakerPaymentSpendPreimage {
     #[prost(bytes="vec", tag="1")]
     pub signature: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", optional, tag="2")]
-    pub tx_preimage: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    #[prost(bytes="vec", tag="2")]
+    pub tx_preimage: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SwapMessage {

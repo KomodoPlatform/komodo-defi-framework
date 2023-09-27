@@ -692,6 +692,8 @@ enum MakerPaymentRefundReason {
     TakerPaymentNotConfirmedInTime(String),
     DidNotGetTakerPaymentSpendPreimage(String),
     TakerPaymentSpendPreimageIsNotValid(String),
+    FailedToParseTakerPreimage(String),
+    FailedToParseTakerSignature(String),
     TakerPaymentSpendBroadcastFailed(String),
 }
 
@@ -771,7 +773,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
             &state_machine.uuid,
             state_machine.taker_payment_conf_timeout(),
         );
-        let preimage = match recv_fut.await {
+        let preimage_data = match recv_fut.await {
             Ok(preimage) => preimage,
             Err(e) => {
                 let next_state = MakerPaymentRefundRequired {
@@ -784,7 +786,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
                 return Self::change_state(next_state, state_machine).await;
             },
         };
-        debug!("Received taker payment spend preimage message {:?}", preimage);
+        debug!("Received taker payment spend preimage message {:?}", preimage_data);
 
         let unique_data = state_machine.unique_data();
 
@@ -799,10 +801,35 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
             trading_amount: state_machine.taker_volume.to_decimal(),
             dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
         };
-        let tx_preimage = TxPreimageWithSig {
-            preimage: preimage.tx_preimage.unwrap_or_default(),
-            signature: preimage.signature,
+
+        let preimage = match state_machine.taker_coin.parse_preimage(&preimage_data.tx_preimage) {
+            Ok(p) => p,
+            Err(e) => {
+                let next_state = MakerPaymentRefundRequired {
+                    maker_coin_start_block: self.maker_coin_start_block,
+                    taker_coin_start_block: self.taker_coin_start_block,
+                    negotiation_data: self.negotiation_data,
+                    maker_payment: self.maker_payment,
+                    reason: MakerPaymentRefundReason::FailedToParseTakerPreimage(e.to_string()),
+                };
+                return Self::change_state(next_state, state_machine).await;
+            },
         };
+        let signature = match state_machine.taker_coin.parse_signature(&preimage_data.signature) {
+            Ok(s) => s,
+            Err(e) => {
+                let next_state = MakerPaymentRefundRequired {
+                    maker_coin_start_block: self.maker_coin_start_block,
+                    taker_coin_start_block: self.taker_coin_start_block,
+                    negotiation_data: self.negotiation_data,
+                    maker_payment: self.maker_payment,
+                    reason: MakerPaymentRefundReason::FailedToParseTakerSignature(e.to_string()),
+                };
+                return Self::change_state(next_state, state_machine).await;
+            },
+        };
+
+        let tx_preimage = TxPreimageWithSig { preimage, signature };
         if let Err(e) = state_machine
             .taker_coin
             .validate_taker_payment_spend_preimage(&gen_args, &tx_preimage)

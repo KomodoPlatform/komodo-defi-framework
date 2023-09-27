@@ -15,19 +15,19 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::watcher_common::validate_watcher_reward;
-use crate::{CanRefundHtlc, CoinAssocTypes, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
-            GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress,
-            HDAccountAddressId, RawTransactionError, RawTransactionRequest, RawTransactionRes,
-            RefundFundingSecretArgs, RefundPaymentArgs, RewardTarget, SearchForSwapTxSpendInput,
-            SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut,
-            TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateTakerPaymentArgs,
-            ValidateTakerPaymentError, ValidateTakerPaymentResult, ValidateTakerPaymentSpendPreimageError,
-            ValidateTakerPaymentSpendPreimageResult, VerificationError, VerificationResult,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
-            WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GenPreimageResult,
+            GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress, HDAccountAddressId,
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundFundingSecretArgs, RefundPaymentArgs,
+            RewardTarget, SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SendTakerFundingArgs, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps,
+            TradePreimageValue, TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr,
+            TxPreimageWithSig, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut,
+            ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentError, ValidateTakerPaymentResult,
+            ValidateTakerPaymentSpendPreimageError, ValidateTakerPaymentSpendPreimageResult, VerificationError,
+            VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
+            EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
+            INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
@@ -43,7 +43,7 @@ use futures01::future::Either;
 use itertools::Itertools;
 use keys::bytes::Bytes;
 use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, CompactSignature, Public, SegwitAddress,
-           Signature, Type as ScriptType};
+           Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::bigdecimal_custom::CheckedDivision;
@@ -51,7 +51,7 @@ use mm2_number::{BigDecimal, MmNumber};
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
-use secp256k1::PublicKey;
+use secp256k1::{PublicKey, Signature as SecpSignature};
 use serde_json::{self as json};
 use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
                     SERIALIZE_TRANSACTION_WITNESS};
@@ -1223,7 +1223,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
 
 type GenPreimageResInner = MmResult<TransactionInputSigner, TxGenError>;
 
-async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps + CoinAssocTypes<Pubkey = Public, Tx = UtxoTx>>(
+async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerFundingSpendArgs<'_, T>,
     lock_time: LocktimeSetting,
@@ -1293,13 +1293,13 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
     )?;
     Ok(TxPreimageWithSig {
         preimage: preimage.into(),
-        signature,
+        signature: signature.take().into(),
     })
 }
 
 /// Common implementation of taker payment spend finalization and broadcast for UTXO coins.
 /// Appends maker output to the preimage, signs it with SIGHASH_ALL and submits the resulting tx to coin's RPC.
-pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps + CoinAssocTypes>(
+pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
     coin: &T,
     preimage: &TxPreimageWithSig<T>,
     gen_args: &GenTakerFundingSpendArgs<'_, T>,
@@ -1353,7 +1353,7 @@ pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps + CoinAssocTypes
     Ok(final_tx)
 }
 
-async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps + CoinAssocTypes>(
+async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_, T>,
     lock_time: LocktimeSetting,
@@ -1382,7 +1382,7 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps + CoinAssocTypes>(
     .map_to_mm(TxGenError::Legacy)
 }
 
-pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps + CoinAssocTypes>(
+pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_, T>,
     htlc_keypair: &KeyPair,
@@ -1411,10 +1411,9 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps + CoinAs
         SIGHASH_SINGLE,
         coin.as_ref().conf.fork_id,
     )?;
-    let preimage_tx: UtxoTx = preimage.into();
     Ok(TxPreimageWithSig {
-        preimage: serialize(&preimage_tx).take(),
-        signature: signature.take(),
+        preimage: preimage.into(),
+        signature: signature.take().into(),
     })
 }
 
@@ -2023,7 +2022,7 @@ fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     match script.get_instruction(0) {
         Some(Ok(instruction)) => match instruction.opcode {
             Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
-                Some(bytes) => try_s!(Signature::from_der(&bytes[..bytes.len() - 1])),
+                Some(bytes) => try_s!(SecpSignature::from_der(&bytes[..bytes.len() - 1])),
                 None => return ERR!("No data at instruction 0 of script {:?}", script),
             },
             _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
@@ -2060,7 +2059,7 @@ fn pubkey_from_witness_script(witness_script: &[Bytes]) -> Result<H264, String> 
     if signature.is_empty() {
         return ERR!("Empty signature data in witness script");
     }
-    try_s!(Signature::from_der(&signature[..signature.len() - 1]));
+    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
 
     let pubkey = try_s!(PublicKey::from_slice(&witness_script[1]));
 

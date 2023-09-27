@@ -1,9 +1,12 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
-use coins::utxo::UtxoCommonOps;
+use chain::TransactionOutput;
+use coins::utxo::swap_proto_v2_scripts::taker_payment_script;
+use coins::utxo::{UtxoCommonOps, UtxoTxBroadcastOps};
 use coins::{GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, RefundFundingSecretArgs, RefundPaymentArgs,
             SendCombinedTakerPaymentArgs, SendTakerFundingArgs, SwapOpsV2, Transaction, ValidateTakerPaymentArgs};
 use common::{block_on, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use keys::AddressHashEnum;
 use mm2_test_helpers::for_tests::{enable_native, mm_dump, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
                                   MarketMakerIt, Mm2TestConf};
 use script::{Builder, Opcode};
@@ -295,6 +298,70 @@ fn send_and_spend_taker_payment() {
     ))
     .unwrap();
     println!("taker_payment_spend hash {:02x}", taker_payment_spend.tx_hash());
+}
+
+#[test]
+fn test_bob_using_alice_sig_for_payment_refund_path() {
+    let (_, taker_coin, _) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
+    let (_, maker_coin, _) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
+
+    let time_lock = now_sec() - 1000;
+    let secret = [1; 32];
+    let maker_secret_hash = dhash160(&secret);
+    let send_args = SendCombinedTakerPaymentArgs {
+        time_lock,
+        maker_secret_hash: maker_secret_hash.as_slice(),
+        maker_pub: maker_coin.my_public_key().unwrap(),
+        dex_fee_amount: "0.01".parse().unwrap(),
+        premium_amount: "0.1".parse().unwrap(),
+        trading_amount: 1.into(),
+        swap_unique_data: &[],
+    };
+    let taker_payment_utxo_tx = block_on(taker_coin.send_combined_taker_payment(send_args)).unwrap();
+    println!("taker_payment_tx hash {:02x}", taker_payment_utxo_tx.tx_hash());
+
+    let gen_preimage_args = GenTakerPaymentSpendArgs {
+        taker_tx: &taker_payment_utxo_tx,
+        time_lock,
+        secret_hash: maker_secret_hash.as_slice(),
+        maker_pub: maker_coin.my_public_key().unwrap(),
+        taker_pub: taker_coin.my_public_key().unwrap(),
+        dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
+        dex_fee_amount: "0.01".parse().unwrap(),
+        premium_amount: "0.1".parse().unwrap(),
+        trading_amount: 1.into(),
+    };
+    let preimage_with_taker_sig =
+        block_on(taker_coin.gen_taker_payment_spend_preimage(&gen_preimage_args, &[])).unwrap();
+
+    let mut refund_tx = preimage_with_taker_sig.preimage;
+    refund_tx.outputs.push(TransactionOutput {
+        value: 110000000 - 10000,
+        script_pubkey: Builder::build_p2pkh(&AddressHashEnum::AddressHash(dhash160(
+            maker_coin.my_public_key().unwrap(),
+        )))
+        .into(),
+    });
+
+    let sig_hash_single_fork_id = (3 | taker_coin.as_ref().conf.fork_id) as u8;
+    let mut taker_signature_with_sighash = preimage_with_taker_sig.signature.to_vec();
+    taker_signature_with_sighash.push(sig_hash_single_fork_id);
+
+    let redeem_script = taker_payment_script(
+        time_lock as u32,
+        maker_secret_hash.as_slice(),
+        taker_coin.my_public_key().unwrap(),
+        maker_coin.my_public_key().unwrap(),
+    );
+    let script_sig = Builder::default()
+        .push_data(&taker_signature_with_sighash)
+        .push_opcode(Opcode::OP_1)
+        .push_data(&redeem_script)
+        .into_bytes();
+    refund_tx.inputs[0].script_sig = script_sig;
+
+    println!("Tx locktime {}", refund_tx.lock_time);
+    block_on(maker_coin.broadcast_tx(&refund_tx)).unwrap();
 }
 
 #[test]

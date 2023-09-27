@@ -57,7 +57,7 @@ message MakerPaymentInfo {
 
 message TakerPaymentSpendPreimage {
   bytes signature = 1;
-  optional bytes tx_preimage = 2;
+  bytes tx_preimage = 2;
 }
 
 message SwapMessage {

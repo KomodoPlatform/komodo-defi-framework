@@ -398,23 +398,35 @@ impl Transaction for TestTx {
     fn tx_hash(&self) -> BytesJson { todo!() }
 }
 
+pub struct TestPreimage {}
+
+impl ToBytes for TestPreimage {
+    fn to_bytes(&self) -> Vec<u8> { vec![] }
+}
+
+pub struct TestSig {}
+
+impl ToBytes for TestSig {
+    fn to_bytes(&self) -> Vec<u8> { vec![] }
+}
+
 impl CoinAssocTypes for TestCoin {
     type Pubkey = TestPubkey;
     type PubkeyParseError = String;
     type Tx = TestTx;
     type TxParseError = String;
-    type Preimage = ();
+    type Preimage = TestPreimage;
     type PreimageParseError = String;
-    type Sig = ();
+    type Sig = TestSig;
     type SigParseError = String;
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> { unimplemented!() }
 
     fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> { unimplemented!() }
 
-    fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Tx, Self::PreimageParseError> { todo!() }
+    fn parse_preimage(&self, preimage: &[u8]) -> Result<Self::Preimage, Self::PreimageParseError> { todo!() }
 
-    fn parse_signature(&self, tx: &[u8]) -> Result<Self::Tx, Self::SigParseError> { todo!() }
+    fn parse_signature(&self, sig: &[u8]) -> Result<Self::Sig, Self::SigParseError> { todo!() }
 }
 
 #[async_trait]

@@ -75,6 +75,7 @@ use num_traits::ToPrimitive;
 use primitives::hash::{H160, H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
+use secp256k1::Signature as SecpSignature;
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::conf::SPVConf;
@@ -111,7 +112,7 @@ use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDAddressId, HD
                        InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::CoinAssocTypes;
+use crate::{CoinAssocTypes, ToBytes};
 
 pub mod tx_cache;
 
@@ -1013,6 +1014,14 @@ pub trait UtxoCommonOps:
     }
 }
 
+impl ToBytes for UtxoTx {
+    fn to_bytes(&self) -> Vec<u8> { serialize(self).take() }
+}
+
+impl ToBytes for Signature {
+    fn to_bytes(&self) -> Vec<u8> { self.to_vec() }
+}
+
 impl<T: UtxoCommonOps> CoinAssocTypes for T {
     type Pubkey = Public;
     type PubkeyParseError = MmError<keys::Error>;
@@ -1021,7 +1030,7 @@ impl<T: UtxoCommonOps> CoinAssocTypes for T {
     type Preimage = UtxoTx;
     type PreimageParseError = MmError<serialization::Error>;
     type Sig = Signature;
-    type SigParseError = String;
+    type SigParseError = MmError<secp256k1::Error>;
 
     #[inline]
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> {
@@ -1036,9 +1045,12 @@ impl<T: UtxoCommonOps> CoinAssocTypes for T {
     }
 
     #[inline]
-    fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Tx, Self::PreimageParseError> { self.parse_tx(tx) }
+    fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Preimage, Self::PreimageParseError> { self.parse_tx(tx) }
 
-    fn parse_signature(&self, sig: &[u8]) -> Result<Self::Tx, Self::SigParseError> { todo!() }
+    fn parse_signature(&self, sig: &[u8]) -> Result<Self::Sig, Self::SigParseError> {
+        SecpSignature::from_der(sig)?;
+        Ok(sig.into())
+    }
 }
 
 #[async_trait]

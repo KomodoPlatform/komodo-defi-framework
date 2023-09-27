@@ -1269,18 +1269,18 @@ pub trait CoinAssocTypes {
     type PubkeyParseError: Send + std::fmt::Display;
     type Tx: Transaction + Send + Sync;
     type TxParseError: Send + std::fmt::Display;
-    type Preimage: Send + Sync;
+    type Preimage: ToBytes + Send + Sync;
     type PreimageParseError: Send + std::fmt::Display;
-    type Sig: Send + Sync;
+    type Sig: ToBytes + Send + Sync;
     type SigParseError: Send + std::fmt::Display;
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError>;
 
     fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError>;
 
-    fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Tx, Self::PreimageParseError>;
+    fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Preimage, Self::PreimageParseError>;
 
-    fn parse_signature(&self, sig: &[u8]) -> Result<Self::Tx, Self::SigParseError>;
+    fn parse_signature(&self, sig: &[u8]) -> Result<Self::Sig, Self::SigParseError>;
 }
 
 /// Operations specific to the [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)

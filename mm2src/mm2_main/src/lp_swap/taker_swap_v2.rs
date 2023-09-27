@@ -731,12 +731,8 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
         };
 
         let preimage_msg = TakerPaymentSpendPreimage {
-            signature: preimage.signature,
-            tx_preimage: if !preimage.preimage.is_empty() {
-                Some(preimage.preimage)
-            } else {
-                None
-            },
+            signature: preimage.signature.to_bytes(),
+            tx_preimage: preimage.preimage.to_bytes(),
         };
         let swap_msg = SwapMessage {
             inner: Some(swap_message::Inner::TakerPaymentSpendPreimage(preimage_msg)),
