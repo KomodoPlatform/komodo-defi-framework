@@ -52,6 +52,7 @@ use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -76,7 +77,7 @@ use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
 use z_rpc::init_light_client;
-pub use z_rpc::SyncStatus;
+pub use z_rpc::{FirstSyncBlock, SyncStatus};
 
 cfg_native!(
     use crate::{NumConversError, TransactionDetails, TxFeeDetails};
@@ -305,9 +306,15 @@ impl ZCoin {
     #[inline]
     pub fn consensus_params_ref(&self) -> &ZcoinConsensusParams { &self.z_fields.consensus_params }
 
+    /// Asynchronously checks the synchronization status and returns `true` if
+    /// the Sapling state has finished synchronizing, meaning that the block number is available.
+    /// Otherwise, it returns `false`.
     #[inline]
     pub async fn is_sapling_state_synced(&self) -> bool {
-        matches!(self.sync_status().await, Ok(SyncStatus::Finished { block_number: _ }))
+        matches!(
+            self.sync_status().await,
+            Ok(SyncStatus::Finished { block_number: _, .. })
+        )
     }
 
     #[inline]
@@ -755,14 +762,34 @@ impl AsRef<UtxoCoinFields> for ZCoin {
     fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
+/// SyncStartPoint represents the starting point for synchronizing a wallet's blocks and transaction history.
+/// This can be specified as a date, a block height, or starting from the earliest available data.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SyncStartPoint {
+    /// Synchronize from a specific date (in Unix timestamp format).
+    Date(u64),
+    /// Synchronize from a specific block height.
+    Height(u64),
+    /// Synchronize from the earliest available data(`sapling_activation_height` from coin config).
+    Earliest,
+}
+
+// ZcoinRpcMode reprs available RPC modes for interacting with the Zcoin network. It includes
+/// modes for both native and light client, each with their own configuration options.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "rpc", content = "rpc_data")]
 pub enum ZcoinRpcMode {
     #[cfg(not(target_arch = "wasm32"))]
     Native,
+    #[serde(alias = "Electrum")]
     Light {
+        #[serde(alias = "servers")]
         electrum_servers: Vec<ElectrumRpcRequest>,
         light_wallet_d_servers: Vec<String>,
+        /// Specifies the parameters for synchronizing the wallet from a specific block. This overrides the
+        /// `CheckPointBlockInfo` configuration in the coin settings.
+        sync_params: Option<SyncStartPoint>,
     },
 }
 
@@ -894,36 +921,23 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         );
 
         let blocks_db = self.blocks_db().await?;
-        let wallet_db = WalletDbShared::new(&self, &z_spending_key)
-            .await
-            .map_err(|err| ZCoinBuildError::ZcashDBError(err.to_string()))?;
-
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => {
                 let native_client = self.native_client()?;
-                init_native_client(
-                    self.ticker.into(),
-                    native_client,
-                    blocks_db,
-                    wallet_db,
-                    self.protocol_info.consensus_params.clone(),
-                    self.z_coin_params.scan_blocks_per_iteration,
-                    self.z_coin_params.scan_interval_ms,
-                )
-                .await?
+                init_native_client(&self, native_client, blocks_db, &z_spending_key).await?
             },
             ZcoinRpcMode::Light {
-                light_wallet_d_servers, ..
+                light_wallet_d_servers,
+                sync_params,
+                ..
             } => {
                 init_light_client(
-                    self.ticker.into(),
+                    &self,
                     light_wallet_d_servers.clone(),
                     blocks_db,
-                    wallet_db,
-                    self.protocol_info.consensus_params.clone(),
-                    self.z_coin_params.scan_blocks_per_iteration,
-                    self.z_coin_params.scan_interval_ms,
+                    sync_params,
+                    &z_spending_key,
                 )
                 .await?
             },
@@ -1180,7 +1194,7 @@ impl SwapOps for ZCoin {
         let maker_key_pair = self.derive_htlc_key_pair(maker_payment_args.swap_unique_data);
         let taker_pub = try_tx_fus!(Public::from_slice(maker_payment_args.other_pubkey));
         let secret_hash = maker_payment_args.secret_hash.to_vec();
-        let time_lock = maker_payment_args.time_lock;
+        let time_lock = try_tx_fus!(maker_payment_args.time_lock.try_into());
         let amount = maker_payment_args.amount;
         let fut = async move {
             let utxo_tx = try_tx_s!(
@@ -1204,7 +1218,7 @@ impl SwapOps for ZCoin {
         let taker_keypair = self.derive_htlc_key_pair(taker_payment_args.swap_unique_data);
         let maker_pub = try_tx_fus!(Public::from_slice(taker_payment_args.other_pubkey));
         let secret_hash = taker_payment_args.secret_hash.to_vec();
-        let time_lock = taker_payment_args.time_lock;
+        let time_lock = try_tx_fus!(taker_payment_args.time_lock.try_into());
         let amount = taker_payment_args.amount;
         let fut = async move {
             let utxo_tx = try_tx_s!(
@@ -1226,7 +1240,7 @@ impl SwapOps for ZCoin {
     fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
         let tx = try_tx_fus!(ZTransaction::read(maker_spends_payment_args.other_payment_tx));
         let key_pair = self.derive_htlc_key_pair(maker_spends_payment_args.swap_unique_data);
-        let time_lock = maker_spends_payment_args.time_lock;
+        let time_lock = try_tx_fus!(maker_spends_payment_args.time_lock.try_into());
         let redeem_script = payment_script(
             time_lock,
             maker_spends_payment_args.secret_hash,
@@ -1257,7 +1271,7 @@ impl SwapOps for ZCoin {
     fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
         let tx = try_tx_fus!(ZTransaction::read(taker_spends_payment_args.other_payment_tx));
         let key_pair = self.derive_htlc_key_pair(taker_spends_payment_args.swap_unique_data);
-        let time_lock = taker_spends_payment_args.time_lock;
+        let time_lock = try_tx_fus!(taker_spends_payment_args.time_lock.try_into());
         let redeem_script = payment_script(
             time_lock,
             taker_spends_payment_args.secret_hash,
@@ -1288,7 +1302,7 @@ impl SwapOps for ZCoin {
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
         let tx = try_tx_s!(ZTransaction::read(taker_refunds_payment_args.payment_tx));
         let key_pair = self.derive_htlc_key_pair(taker_refunds_payment_args.swap_unique_data);
-        let time_lock = taker_refunds_payment_args.time_lock;
+        let time_lock = try_tx_s!(taker_refunds_payment_args.time_lock.try_into());
         let redeem_script = payment_script(
             time_lock,
             taker_refunds_payment_args.secret_hash,
@@ -1313,7 +1327,7 @@ impl SwapOps for ZCoin {
     async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
         let tx = try_tx_s!(ZTransaction::read(maker_refunds_payment_args.payment_tx));
         let key_pair = self.derive_htlc_key_pair(maker_refunds_payment_args.swap_unique_data);
-        let time_lock = maker_refunds_payment_args.time_lock;
+        let time_lock = try_tx_s!(maker_refunds_payment_args.time_lock.try_into());
         let redeem_script = payment_script(
             time_lock,
             maker_refunds_payment_args.secret_hash,
@@ -1437,7 +1451,7 @@ impl SwapOps for ZCoin {
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(
             self.clone(),
-            if_my_payment_sent_args.time_lock,
+            try_fus!(if_my_payment_sent_args.time_lock.try_into()),
             if_my_payment_sent_args.other_pub,
             if_my_payment_sent_args.secret_hash,
             if_my_payment_sent_args.swap_unique_data,
@@ -1566,7 +1580,7 @@ impl WatcherOps for ZCoin {
     fn create_taker_payment_refund_preimage(
         &self,
         _taker_payment_tx: &[u8],
-        _time_lock: u32,
+        _time_lock: u64,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
@@ -1578,7 +1592,7 @@ impl WatcherOps for ZCoin {
     fn create_maker_payment_spend_preimage(
         &self,
         _maker_payment_tx: &[u8],
-        _time_lock: u32,
+        _time_lock: u64,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
         _swap_unique_data: &[u8],

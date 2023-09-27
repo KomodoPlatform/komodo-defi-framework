@@ -9,11 +9,11 @@
    [Unix/Linux](https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.sh)
 5. Create `.env.client` file with the following content
    ```
-   PASSPHRASE=spice describe gravity federal blast come thank unfair canal monkey style afraid
+   ALICE_PASSPHRASE=spice describe gravity federal blast come thank unfair canal monkey style afraid
    ```
 6. Create `.env.seed` file with the following content
    ```
-   PASSPHRASE=also shoot benefit prefer juice shell elder veteran woman mimic image kidney
+   BOB_PASSPHRASE=also shoot benefit prefer juice shell elder veteran woman mimic image kidney
    ```
 7. MacOS specific: run script (required after each reboot)
    ```shell
@@ -52,7 +52,7 @@
    export BOB_PASSPHRASE="also shoot benefit prefer juice shell elder veteran woman mimic image kidney"
    export ALICE_PASSPHRASE="spice describe gravity federal blast come thank unfair canal monkey style afraid"
    ```
-6. Run WASM tests
+5. Run WASM tests
    - for Linux users:
    ```
    wasm-pack test --firefox --headless mm2src/mm2_main
@@ -66,5 +66,16 @@
    CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless mm2src/mm2_main
    ```
    Please note `CC` and `AR` must be specified in the same line as `wasm-pack test mm2src/mm2_main`.
+#### Running specific WASM tests with Cargo</br>   
+   - Install `wasm-bindgen-cli`: </br>
+      Make sure you have wasm-bindgen-cli installed with a version that matches the one specified in your Cargo.toml file.
+      You can install it using Cargo with the following command:
+      ```
+      cargo install -f wasm-bindgen-cli --version <wasm-bindgen-version>
+      ```
+   - Run
+      ```
+      cargo test --target wasm32-unknown-unknown --package coins --lib utxo::utxo_block_header_storage::wasm::indexeddb_block_header_storage
+      ```
 
 PS If you notice that this guide is outdated, please submit a PR.

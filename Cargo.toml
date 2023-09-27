@@ -34,6 +34,7 @@ members = [
     "mm2src/mm2_number",
     "mm2src/mm2_p2p",
     "mm2src/mm2_rpc",
+    "mm2src/mm2_state_machine",
     "mm2src/mm2_test_helpers",
     "mm2src/rpc_task",
     "mm2src/trezor",
@@ -53,7 +54,7 @@ resolver = "2"
 debug = 0
 debug-assertions = false
 opt-level = 3
-# strip = true
+strip = true
 codegen-units = 1
 # lto = true
 panic = "abort"

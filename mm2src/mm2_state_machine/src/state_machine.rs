@@ -2,60 +2,74 @@
 //!
 //! See the usage examples in the `tests` module.
 
+use crate::prelude::*;
 use crate::NotSame;
 use async_trait::async_trait;
 
-pub mod prelude {
-    pub use super::{LastState, State, StateExt, StateResult, TransitionFrom};
-}
-
-pub trait TransitionFrom<Prev> {}
-
+/// A trait that state machine implementations should implement.
 #[async_trait]
 pub trait StateMachineTrait: Send + Sized + 'static {
+    /// The associated type for the result of the state machine.
     type Result: Send;
 
-    async fn run(&mut self, mut state: Box<dyn State<StateMachine = Self>>) -> Self::Result {
+    /// The associated type for errors that can occur during the state machine's execution.
+    type Error: Send;
+
+    /// Asynchronous method called when the state machine finishes its execution.
+    /// This method can be overridden by implementing types.
+    async fn on_finished(&mut self) -> Result<(), Self::Error> { Ok(()) }
+
+    /// Asynchronous method to run the state machine.
+    /// It transitions between states and handles state-specific logic.
+    async fn run(&mut self, mut state: Box<dyn State<StateMachine = Self>>) -> Result<Self::Result, Self::Error> {
         loop {
             let result = state.on_changed(self).await;
             match result {
                 StateResult::ChangeState(ChangeGuard { next }) => {
                     state = next;
                 },
-                StateResult::Finish(ResultGuard { result }) => return result,
+                StateResult::Finish(ResultGuard { result }) => {
+                    self.on_finished().await?;
+                    return Ok(result);
+                },
+                StateResult::Error(ErrorGuard { error }) => return Err(error),
             };
         }
     }
 }
 
-/// Prevent implementing [`TransitionFrom<T>`] for `Next` If `T` implements `LastState` already.
+// Prevent implementing `TransitionFrom<T>` for `Next` if `T` implements `LastState` already.
 impl<T, Next> !TransitionFrom<T> for Next
 where
     T: LastState,
-    // this bound is required to prevent conflicting implementation with `impl<T> !TransitionFrom<T> for T`.
+    // This bound is required to prevent conflicting implementation with `impl<T> !TransitionFrom<T> for T`.
     (T, Next): NotSame,
 {
 }
 
-/// Prevent implementing [`TransitionFrom<T>`] for itself.
+// Prevent implementing [`TransitionFrom<T>`] for itself.
 impl<T> !TransitionFrom<T> for T {}
 
+/// A trait that individual states in the state machine should implement.
 #[async_trait]
 pub trait State: Send + Sync + 'static {
+    /// The associated type for the state machine that this state belongs to.
     type StateMachine: StateMachineTrait;
+
     /// An action is called on entering this state.
-    /// To change the state to another one in the end of processing, use [`StateExt::change_state`].
+    /// To change the state to another one at the end of processing, use `ChangeStateExt::change_state`.
     /// For example:
+    ///
     /// ```rust
     /// return Self::change_state(next_state);
     /// ```
     async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine>;
 }
 
-pub trait StateExt {
+/// A trait for transitioning between states in the state machine.
+pub trait ChangeStateExt {
     /// Change the state to the `next_state`.
-    /// This function performs the compile-time validation whether this state can transition to the `Next` state,
-    /// i.e checks if `Next` implements [`Transition::from(ThisState)`].
+    /// This function performs compile-time validation to ensure a valid state transition.
     fn change_state<Next>(next_state: Next) -> StateResult<Next::StateMachine>
     where
         Self: Sized,
@@ -65,12 +79,17 @@ pub trait StateExt {
     }
 }
 
-impl<T: State> StateExt for T {}
+// Implement ChangeStateExt for states that belong to StandardStateMachine.
+impl<S: StandardStateMachine, T: State<StateMachine = S>> ChangeStateExt for T {}
 
+/// A trait representing the last state(s) if the state machine.
 #[async_trait]
 pub trait LastState: Send + Sync + 'static {
+    /// The associated type for the state machine that this last state belongs to.
     type StateMachine: StateMachineTrait;
 
+    /// Asynchronous method called when the last state is entered.
+    /// It returns the result of the state machine's calculations.
     async fn on_changed(
         self: Box<Self>,
         ctx: &mut Self::StateMachine,
@@ -88,14 +107,14 @@ impl<T: LastState> State for T {
     }
 }
 
+/// An enum representing the possible outcomes of state transitions.
 pub enum StateResult<Machine: StateMachineTrait> {
     ChangeState(ChangeGuard<Machine>),
     Finish(ResultGuard<Machine::Result>),
+    Error(ErrorGuard<Machine::Error>),
 }
 
-/* vvv The access guards that prevents the user using this pattern from entering an invalid state vvv */
-
-/// An instance of `ChangeGuard` can be initialized within `state_machine` module only.
+/// An instance of `ChangeGuard` can be initialized within the `state_machine` module only.
 pub struct ChangeGuard<Machine: StateMachineTrait> {
     /// The private field.
     next: Box<dyn State<StateMachine = Machine>>,
@@ -103,14 +122,14 @@ pub struct ChangeGuard<Machine: StateMachineTrait> {
 
 impl<Machine: StateMachineTrait + 'static> ChangeGuard<Machine> {
     /// The private constructor.
-    fn next<Next: State<StateMachine = Machine>>(next_state: Next) -> Self {
+    pub(crate) fn next<Next: State<StateMachine = Machine>>(next_state: Next) -> Self {
         ChangeGuard {
             next: Box::new(next_state),
         }
     }
 }
 
-/// An instance of `ResultGuard` can be initialized within `state_machine` module only.
+/// An instance of `ResultGuard` can be initialized within the `state_machine` module only.
 pub struct ResultGuard<T> {
     /// The private field.
     result: T,
@@ -121,14 +140,25 @@ impl<T> ResultGuard<T> {
     fn new(result: T) -> Self { ResultGuard { result } }
 }
 
+/// An instance of `ErrorGuard` can be initialized within the `mm2_state_machine` crate only.
+pub struct ErrorGuard<E> {
+    error: E,
+}
+
+impl<E> ErrorGuard<E> {
+    /// The private constructor.
+    pub(crate) fn new(error: E) -> Self { ErrorGuard { error } }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::block_on;
-    use crate::executor::spawn;
+    use common::block_on;
+    use common::executor::spawn;
     use futures::channel::mpsc;
     use futures::{SinkExt, StreamExt};
     use std::collections::HashMap;
+    use std::convert::Infallible;
 
     type UserId = usize;
     type Login = String;
@@ -148,7 +178,10 @@ mod tests {
 
     impl StateMachineTrait for AuthStateMachine {
         type Result = AuthResult;
+        type Error = Infallible;
     }
+
+    impl StandardStateMachine for AuthStateMachine {}
 
     struct ReadingState {
         rx: mpsc::Receiver<char>,
@@ -256,7 +289,7 @@ mod tests {
         let fut = async move {
             let initial_state: ReadingState = ReadingState { rx };
             let mut state_machine = AuthStateMachine { users };
-            state_machine.run(Box::new(initial_state)).await
+            state_machine.run(Box::new(initial_state)).await.unwrap()
         };
         block_on(fut)
     }

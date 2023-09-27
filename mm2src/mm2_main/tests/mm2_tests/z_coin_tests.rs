@@ -1,12 +1,12 @@
 use crate::integration_tests_common::*;
 use common::executor::Timer;
-use common::{block_on, log, now_ms, wait_until_ms};
+use common::{block_on, log, now_ms, now_sec, wait_until_ms};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::electrums::rick_electrums;
-use mm2_test_helpers::for_tests::{init_withdraw, pirate_conf, rick_conf, send_raw_transaction, withdraw_status,
-                                  z_coin_tx_history, zombie_conf, MarketMakerIt, Mm2TestConf, ARRR, PIRATE_ELECTRUMS,
-                                  PIRATE_LIGHTWALLETD_URLS, RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS,
-                                  ZOMBIE_TICKER};
+use mm2_test_helpers::for_tests::{disable_coin, init_withdraw, pirate_conf, rick_conf, send_raw_transaction,
+                                  withdraw_status, z_coin_tx_history, zombie_conf, MarketMakerIt, Mm2TestConf, ARRR,
+                                  PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK, ZOMBIE_ELECTRUMS,
+                                  ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::structs::{EnableCoinBalance, InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus,
                                 ZcoinHistoryRes};
 use serde_json::{self as json, json, Value as Json};
@@ -46,9 +46,7 @@ async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Tra
     }
 }
 
-// ignored because it requires a long-running Zcoin initialization process
 #[test]
-#[ignore]
 fn activate_z_coin_light() {
     let coins = json!([zombie_conf()]);
 
@@ -61,18 +59,18 @@ fn activate_z_coin_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     let balance = match activation_result.wallet_balance {
         EnableCoinBalance::Iguana(iguana) => iguana,
         _ => panic!("Expected EnableCoinBalance::Iguana"),
     };
-    assert_eq!(balance.balance.spendable, BigDecimal::from_str("3.1").unwrap());
+    assert_eq!(balance.balance.spendable, BigDecimal::default());
 }
 
 #[test]
-#[ignore]
-fn activate_z_coin_with_hd_account() {
+fn activate_z_coin_light_with_changing_height() {
     let coins = json!([zombie_conf()]);
 
     let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, &coins);
@@ -83,7 +81,70 @@ fn activate_z_coin_with_hd_account() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        Some(0),
+        None,
+        None,
+    ));
+
+    let old_first_sync_block = activation_result.first_sync_block;
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalance::Iguana(iguana) => iguana,
+        _ => panic!("Expected EnableCoinBalance::Iguana"),
+    };
+    assert_eq!(balance.balance.spendable, BigDecimal::default());
+
+    // disable coin
+    block_on(disable_coin(&mm, ZOMBIE_TICKER, true));
+
+    // Perform activation with changed height
+    // Calculate timestamp for 2 days ago
+    let two_day_seconds = 2 * 24 * 60 * 60;
+    let two_days_ago = now_sec() - two_day_seconds;
+    log!(
+        "Re-running enable_z_coin_light_with_changing_height with new starting date {}",
+        two_days_ago
+    );
+
+    let activation_result = block_on(enable_z_coin_light(
+        &mm,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        Some(two_days_ago),
+        None,
+    ));
+
+    let new_first_sync_block = activation_result.first_sync_block;
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalance::Iguana(iguana) => iguana,
+        _ => panic!("Expected EnableCoinBalance::Iguana"),
+    };
+    assert_eq!(balance.balance.spendable, BigDecimal::default());
+
+    // let's check to make sure first activation starting height is different from current one
+    assert_ne!(
+        old_first_sync_block.as_ref().unwrap().actual,
+        new_first_sync_block.as_ref().unwrap().actual
+    );
+    // let's check to make sure first activation starting height is greater than current one since we used date later
+    // than current date
+    assert!(old_first_sync_block.as_ref().unwrap().actual > new_first_sync_block.as_ref().unwrap().actual);
+}
+
+#[test]
+fn activate_z_coin_with_hd_account() {
+    let coins = json!([zombie_conf()]);
+
+    let hd_account_id = 0;
+    let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let activation_result = block_on(enable_z_coin_light(
+        &mm,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        None,
+        Some(hd_account_id),
     ));
 
     let actual = match activation_result.wallet_balance {
@@ -110,6 +171,7 @@ fn test_z_coin_tx_history() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
         None,
     ));
 
@@ -355,6 +417,7 @@ fn withdraw_z_coin_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     println!("{:?}", activation_result);
@@ -397,6 +460,7 @@ fn trade_rick_zombie_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     println!("Bob ZOMBIE activation {:?}", zombie_activation);
@@ -429,6 +493,7 @@ fn trade_rick_zombie_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
         None,
     ));
 
@@ -486,6 +551,7 @@ fn activate_pirate_light() {
         ARRR,
         PIRATE_ELECTRUMS,
         PIRATE_LIGHTWALLETD_URLS,
+        None,
         None,
     ));
 

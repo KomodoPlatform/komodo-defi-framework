@@ -1,0 +1,13 @@
+[package]
+name = "mm2_state_machine"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1"
+
+[dev-dependencies]
+common = { path = "../common" }
+futures = { version = "0.3" }

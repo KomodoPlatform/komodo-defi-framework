@@ -8,16 +8,17 @@ use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, Re
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
-use common::state_machine::prelude::*;
-use common::state_machine::StateMachineTrait;
 use common::{now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MapToMmResult;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
+use mm2_state_machine::prelude::*;
+use mm2_state_machine::state_machine::StateMachineTrait;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use std::cmp::min;
+use std::convert::Infallible;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -41,7 +42,10 @@ struct WatcherStateMachine {
 
 impl StateMachineTrait for WatcherStateMachine {
     type Result = ();
+    type Error = Infallible;
 }
+
+impl StandardStateMachine for WatcherStateMachine {}
 
 impl WatcherStateMachine {
     fn taker_locktime(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration }
@@ -244,8 +248,8 @@ impl State for ValidateTakerPayment {
             payment_tx: taker_payment_hex.clone(),
             taker_payment_refund_preimage: watcher_ctx.data.taker_payment_refund_preimage.clone(),
             time_lock: match std::env::var("USE_TEST_LOCKTIME") {
-                Ok(_) => watcher_ctx.data.swap_started_at as u32,
-                Err(_) => watcher_ctx.taker_locktime() as u32,
+                Ok(_) => watcher_ctx.data.swap_started_at,
+                Err(_) => watcher_ctx.taker_locktime(),
             },
             taker_pub: watcher_ctx.verified_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
@@ -455,7 +459,7 @@ impl State for RefundTakerPayment {
                 swap_contract_address: &None,
                 secret_hash: &watcher_ctx.data.secret_hash,
                 other_pubkey: &watcher_ctx.verified_pub,
-                time_lock: watcher_ctx.taker_locktime() as u32,
+                time_lock: watcher_ctx.taker_locktime(),
                 swap_unique_data: &[],
                 watcher_reward: watcher_ctx.watcher_reward,
             });
@@ -633,7 +637,10 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
             conf,
             watcher_reward,
         };
-        state_machine.run(Box::new(ValidateTakerFee {})).await;
+        state_machine
+            .run(Box::new(ValidateTakerFee {}))
+            .await
+            .expect("The error of this machine is Infallible");
 
         // This allows to move the `taker_watcher_lock` value into this async block to keep it alive
         // until the Swap Watcher finishes.

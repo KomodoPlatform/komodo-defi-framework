@@ -436,7 +436,7 @@ impl WatcherOps for SplToken {
     fn create_taker_payment_refund_preimage(
         &self,
         _taker_payment_tx: &[u8],
-        _time_lock: u32,
+        _time_lock: u64,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
@@ -448,7 +448,7 @@ impl WatcherOps for SplToken {
     fn create_maker_payment_spend_preimage(
         &self,
         _maker_payment_tx: &[u8],
-        _time_lock: u32,
+        _time_lock: u64,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
         _swap_unique_data: &[u8],

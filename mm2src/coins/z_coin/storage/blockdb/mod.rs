@@ -142,6 +142,17 @@ impl BlockDbImpl {
 
         Ok(())
     }
+
+    pub(crate) async fn get_earliest_block(&self) -> Result<u32, ZcashClientError> {
+        Ok(query_single_row(
+            &self.db.lock().unwrap(),
+            "SELECT MIN(height) from compactblocks",
+            [],
+            |row| row.get::<_, Option<u32>>(0),
+        )?
+        .flatten()
+        .unwrap_or(0))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

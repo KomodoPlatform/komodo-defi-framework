@@ -117,7 +117,9 @@ jobs:
         uses: ./.github/actions/cargo-cache
 
       - name: Test
-        run: cargo test --test 'mm2_tests_main' --no-fail-fast
+        run: |
+          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
+          cargo test --test 'mm2_tests_main' --no-fail-fast
 
   # https://docs.github.com/en/actions/learn-github-actions/usage-limits-billing-and-administration#usage-limits
   # https://github.com/KomodoPlatform/atomicDEX-API/actions/runs/4419618128/jobs/7748266141#step:4:1790
@@ -161,7 +163,10 @@ jobs:
         uses: ./.github/actions/cargo-cache
 
       - name: Test
-        run: cargo test --test 'mm2_tests_main' --no-fail-fast
+        run: |
+          Invoke-WebRequest -Uri https://github.com/KomodoPlatform/komodo/raw/d456be35acd1f8584e1e4f971aea27bd0644d5c5/zcutil/wget64.exe -OutFile \wget64.exe
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
+          cargo test --test 'mm2_tests_main' --no-fail-fast
 
   docker-tests:
     timeout-minutes: 90
