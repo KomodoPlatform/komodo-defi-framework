@@ -1419,34 +1419,34 @@ mod lp_swap_tests {
 
     #[test]
     fn test_dex_fee_amount() {
-        let dex_fee_threshold = MmNumber::from("0.0001");
+        let min_tx_amount = MmNumber::from("0.0001");
 
         let base = "BTC";
         let rel = "ETH";
         let amount = 1.into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &dex_fee_threshold);
+        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
         let expected_fee = amount / 777u64.into();
         assert_eq!(expected_fee, actual_fee);
 
         let base = "KMD";
         let rel = "ETH";
         let amount = 1.into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &dex_fee_threshold);
+        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
         let expected_fee = amount * (9, 7770).into();
         assert_eq!(expected_fee, actual_fee);
 
         let base = "BTC";
         let rel = "KMD";
         let amount = 1.into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &dex_fee_threshold);
+        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
         let expected_fee = amount * (9, 7770).into();
         assert_eq!(expected_fee, actual_fee);
 
         let base = "BTC";
         let rel = "KMD";
         let amount: MmNumber = "0.001".parse::<BigDecimal>().unwrap().into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &dex_fee_threshold);
-        assert_eq!(dex_fee_threshold, actual_fee);
+        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
+        assert_eq!(min_tx_amount, actual_fee);
     }
 
     #[test]
