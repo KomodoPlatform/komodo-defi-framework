@@ -6,6 +6,7 @@ use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_s
                           SwapConfirmationsSettings, SwapsContext, TransactionIdentifier, MAX_STARTED_AT_DIFF,
                           TAKER_SWAP_V2_TYPE};
 use async_trait::async_trait;
+use bitcrypto::{dhash160, sha256};
 use coins::{CoinAssocTypes, ConfirmPaymentInput, FeeApproxStage, GenTakerPaymentSpendArgs, MmCoin,
             SendCombinedTakerPaymentArgs, SpendPaymentArgs, SwapOpsV2, ToBytes, Transaction, WaitForHTLCTxSpendArgs};
 use common::log::{debug, info, warn};
@@ -17,6 +18,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::storable_state_machine::*;
+use primitives::hash::H256;
 use rpc::v1::types::Bytes as BytesJson;
 use std::marker::PhantomData;
 use uuid::Uuid;
@@ -160,7 +162,7 @@ pub struct TakerSwapStateMachine<MakerCoin, TakerCoin> {
     pub dex_fee: MmNumber,
     /// Premium amount, which might be paid to maker as additional reward.
     pub taker_premium: MmNumber,
-    /// Algorithm used to hash the swap secret.
+    /// Algorithm used to hash swap secrets.
     pub secret_hash_algo: SecretHashAlgo,
     /// Swap transactions' confirmations settings.
     pub conf_settings: SwapConfirmationsSettings,
@@ -170,6 +172,8 @@ pub struct TakerSwapStateMachine<MakerCoin, TakerCoin> {
     pub p2p_topic: String,
     /// If Some, used to sign P2P messages of this swap.
     pub p2p_keypair: Option<KeyPair>,
+    /// The secret used for immediate taker funding tx reclaim if maker back-outs
+    pub taker_secret: H256,
 }
 
 impl<MakerCoin, TakerCoin> TakerSwapStateMachine<MakerCoin, TakerCoin> {
@@ -178,6 +182,14 @@ impl<MakerCoin, TakerCoin> TakerSwapStateMachine<MakerCoin, TakerCoin> {
     fn taker_payment_locktime(&self) -> u64 { self.started_at + self.lock_duration }
 
     fn unique_data(&self) -> Vec<u8> { self.uuid.as_bytes().to_vec() }
+
+    /// Returns secret hash generated using selected [SecretHashAlgo].
+    fn taker_secret_hash(&self) -> Vec<u8> {
+        match self.secret_hash_algo {
+            SecretHashAlgo::DHASH160 => dhash160(self.taker_secret.as_slice()).take().into(),
+            SecretHashAlgo::SHA256 => sha256(self.taker_secret.as_slice()).take().into(),
+        }
+    }
 }
 
 impl<MakerCoin: Send + 'static, TakerCoin: Send + 'static> StorableStateMachine
@@ -380,6 +392,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State fo
             action: Some(taker_negotiation::Action::Continue(TakerNegotiationData {
                 started_at: state_machine.started_at,
                 payment_locktime: state_machine.taker_payment_locktime(),
+                taker_secret_hash: state_machine.taker_secret_hash(),
                 maker_coin_htlc_pub: state_machine.maker_coin.derive_htlc_pubkey(&unique_data),
                 taker_coin_htlc_pub: state_machine.taker_coin.derive_htlc_pubkey(&unique_data),
                 maker_coin_swap_contract: state_machine.maker_coin.swap_contract_address().map(|bytes| bytes.0),

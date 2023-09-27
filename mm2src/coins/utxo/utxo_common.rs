@@ -1268,13 +1268,8 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
         .try_into()
         .map_to_mm(|e: TryFromIntError| TxGenError::LocktimeOverflow(e.to_string()))?;
 
-    let preimage = gen_taker_funding_spend_preimage(
-        coin,
-        args,
-        LocktimeSetting::CalcByHtlcLocktime(funding_time_lock),
-        NTimeSetting::UseNow,
-    )
-    .await?;
+    let preimage =
+        gen_taker_funding_spend_preimage(coin, args, LocktimeSetting::UseExact(0), NTimeSetting::UseNow).await?;
 
     let redeem_script = swap_proto_v2_scripts::taker_funding_script(
         funding_time_lock,
@@ -1392,13 +1387,8 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
         .try_into()
         .map_to_mm(|e: TryFromIntError| TxGenError::LocktimeOverflow(e.to_string()))?;
 
-    let preimage = gen_taker_payment_spend_preimage(
-        coin,
-        args,
-        LocktimeSetting::CalcByHtlcLocktime(time_lock),
-        NTimeSetting::UseNow,
-    )
-    .await?;
+    let preimage =
+        gen_taker_payment_spend_preimage(coin, args, LocktimeSetting::UseExact(0), NTimeSetting::UseNow).await?;
 
     let redeem_script =
         swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, args.taker_pub, args.maker_pub);

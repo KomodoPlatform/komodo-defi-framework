@@ -194,8 +194,10 @@ pub struct SwapV2MsgStore {
     maker_negotiation: Option<MakerNegotiation>,
     taker_negotiation: Option<TakerNegotiation>,
     maker_negotiated: Option<MakerNegotiated>,
-    taker_payment: Option<TakerPaymentInfo>,
+    taker_funding: Option<TakerFundingInfo>,
     maker_payment: Option<MakerPaymentInfo>,
+    taker_funding_spend_preimage: Option<TakerFundingSpendPreimage>,
+    taker_payment: Option<TakerPaymentInfo>,
     taker_payment_spend_preimage: Option<TakerPaymentSpendPreimage>,
     #[allow(dead_code)]
     accept_only_from: bits256,
@@ -1567,11 +1569,17 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
             Some(swap_v2_pb::swap_message::Inner::MakerNegotiated(maker_negotiated)) => {
                 msg_store.maker_negotiated = Some(maker_negotiated)
             },
-            Some(swap_v2_pb::swap_message::Inner::TakerPaymentInfo(taker_payment)) => {
-                msg_store.taker_payment = Some(taker_payment)
+            Some(swap_v2_pb::swap_message::Inner::TakerFundingInfo(taker_funding)) => {
+                msg_store.taker_funding = Some(taker_funding)
             },
             Some(swap_v2_pb::swap_message::Inner::MakerPaymentInfo(maker_payment)) => {
                 msg_store.maker_payment = Some(maker_payment)
+            },
+            Some(swap_v2_pb::swap_message::Inner::TakerFundingSpendPreimage(preimage)) => {
+                msg_store.taker_funding_spend_preimage = Some(preimage)
+            },
+            Some(swap_v2_pb::swap_message::Inner::TakerPaymentInfo(taker_payment)) => {
+                msg_store.taker_payment = Some(taker_payment)
             },
             Some(swap_v2_pb::swap_message::Inner::TakerPaymentSpendPreimage(preimage)) => {
                 msg_store.taker_payment_spend_preimage = Some(preimage)
@@ -1605,6 +1613,12 @@ async fn recv_swap_v2_msg<T>(
             return ERR!("Timeout ({} > {})", now - started, timeout);
         }
     }
+}
+
+pub fn generate_secret() -> Result<[u8; 32], rand::Error> {
+    let mut sec = [0u8; 32];
+    common::os_rng(&mut sec)?;
+    Ok(sec)
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
