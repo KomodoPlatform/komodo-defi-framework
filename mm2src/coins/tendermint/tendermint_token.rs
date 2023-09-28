@@ -594,10 +594,11 @@ impl MarketCoinOps for TendermintToken {
 
     fn display_priv_key(&self) -> Result<String, String> { self.platform_coin.display_priv_key() }
 
+    #[inline]
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.decimals) }
 
-    /// !! This function includes dummy implementation for P.O.C work
-    fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
+    #[inline]
+    fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 }
 
 #[async_trait]
