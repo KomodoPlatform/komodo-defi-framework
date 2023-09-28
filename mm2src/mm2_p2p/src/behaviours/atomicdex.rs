@@ -30,7 +30,7 @@ use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, 
 use super::ping::AdexPing;
 use super::request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
                               RequestResponseSender};
-use crate::network::{get_all_network_seednodes, NETID_7777};
+use crate::network::{get_all_network_seednodes, NETID_8762};
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
 use crate::{NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
@@ -641,7 +641,7 @@ fn start_gossipsub(
         let mut gossipsub = Gossipsub::new(MessageAuthenticity::Author(local_peer_id), gossipsub_config)
             .map_err(|e| AdexBehaviourError::InitializationError(e.to_owned()))?;
 
-        let floodsub = Floodsub::new(local_peer_id, netid != NETID_7777);
+        let floodsub = Floodsub::new(local_peer_id, netid != NETID_8762);
 
         let mut peers_exchange = PeersExchange::new(network_info);
         if !network_info.in_memory() {
@@ -735,7 +735,7 @@ fn start_gossipsub(
                     debug!("Swarm event {:?}", event);
 
                     if let SwarmEvent::Behaviour(event) = event {
-                        if swarm.behaviour_mut().netid != NETID_7777 {
+                        if swarm.behaviour_mut().netid != NETID_8762 {
                             if let AdexBehaviourEvent::Floodsub(FloodsubEvent::Message(message)) = &event {
                                 for topic in &message.topics {
                                     if topic == &FloodsubTopic::new(PEERS_TOPIC) {
