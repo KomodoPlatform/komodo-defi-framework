@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+
+  <h1>Events</h1>
+  <div id="result"></div>
+
+  <script>
+    if (typeof (EventSource) !== "undefined") {
+      var source = new EventSource("http://localhost:7783/event-stream", {
+        withCredentials: false,
+      });
+      source.onmessage = function (event) {
+        var currentDatetime = new Date().toLocaleString();
+        var eventData = currentDatetime + ": " + event.data + "<hr/>";
+        document.getElementById("result").insertAdjacentHTML("afterbegin", eventData);
+      };
+    } else {
+      document.getElementById("result").innerHTML = "Sorry, your browser does not support server-sent events...";
+    }
+  </script>
+
+</body>
+
+</html>

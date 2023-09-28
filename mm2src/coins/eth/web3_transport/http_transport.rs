@@ -3,7 +3,7 @@ use crate::eth::{web3_transport::Web3SendOut, EthCoin, GuiAuthMessages, RpcTrans
 use common::APPLICATION_JSON;
 use futures::lock::Mutex as AsyncMutex;
 use http::header::CONTENT_TYPE;
-use jsonrpc_core::{Call, Response};
+use jsonrpc_core::{Call, Id, Response};
 use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
 use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
@@ -183,7 +183,7 @@ async fn send_request(
     use http::header::HeaderValue;
     use mm2_net::transport::slurp_req;
 
-    const REQUEST_TIMEOUT_S: f64 = 60.;
+    const REQUEST_TIMEOUT_S: f64 = 20.;
 
     let mut errors = Vec::new();
 
@@ -215,9 +215,14 @@ async fn send_request(
         let res = match rc {
             Either::Left((r, _t)) => r,
             Either::Right((_t, _r)) => {
+                let (method, id) = match &request {
+                    Call::MethodCall(m) => (m.method.clone(), m.id.clone()),
+                    Call::Notification(n) => (n.method.clone(), Id::Null),
+                    Call::Invalid { id } => ("Invalid call".to_string(), id.clone()),
+                };
                 let error = format!(
-                    "Error requesting '{}': {}s timeout expired",
-                    node.uri, REQUEST_TIMEOUT_S
+                    "Error requesting '{}': {}s timeout expired, method: '{}', id: {:?}",
+                    node.uri, REQUEST_TIMEOUT_S, method, id
                 );
                 warn!("{}", error);
                 errors.push(Web3RpcError::Transport(error));

@@ -24,6 +24,7 @@ members = [
     "mm2src/mm2_db",
     "mm2src/mm2_err_handle",
     "mm2src/mm2_eth",
+    "mm2src/mm2_event_stream",
     "mm2src/mm2_git",
     "mm2src/mm2_gui_storage",
     "mm2src/mm2_io",

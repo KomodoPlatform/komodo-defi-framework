@@ -1,6 +1,7 @@
 #![feature(ip)]
 
-mod behaviours;
+pub mod behaviours;
+
 mod network;
 mod relay_address;
 mod swarm_runtime;

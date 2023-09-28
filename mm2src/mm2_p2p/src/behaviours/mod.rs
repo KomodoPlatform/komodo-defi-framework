@@ -1,4 +1,5 @@
-pub(crate) mod atomicdex;
+pub mod atomicdex;
+
 mod ping;
 // mod peer_store;
 pub(crate) mod peers_exchange;
