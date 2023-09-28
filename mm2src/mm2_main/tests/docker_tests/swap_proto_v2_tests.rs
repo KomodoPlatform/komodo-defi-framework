@@ -178,9 +178,9 @@ fn send_and_spend_taker_funding() {
         taker_payment_time_lock: 0,
         maker_secret_hash: &[0; 20],
     };
-    let preimage = block_on(taker_coin.gen_taker_funding_spend_preimage(&preimage_args, &[])).unwrap();
+    let preimage = block_on(maker_coin.gen_taker_funding_spend_preimage(&preimage_args, &[])).unwrap();
 
-    let payment_tx = block_on(maker_coin.sign_and_send_taker_funding_spend(&preimage, &preimage_args, &[])).unwrap();
+    let payment_tx = block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &preimage_args, &[])).unwrap();
     println!("Taker payment tx {:02x}", payment_tx.tx_hash());
 }
 

@@ -1292,8 +1292,7 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
     })
 }
 
-/// Common implementation of taker payment spend finalization and broadcast for UTXO coins.
-/// Appends maker output to the preimage, signs it with SIGHASH_ALL and submits the resulting tx to coin's RPC.
+/// Common implementation of taker funding spend finalization and broadcast for UTXO coins.
 pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
     coin: &T,
     preimage: &TxPreimageWithSig<T>,
@@ -1304,7 +1303,7 @@ pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
         try_tx_s!(gen_args.funding_time_lock.try_into()),
         gen_args.taker_secret_hash,
         gen_args.taker_pub,
-        htlc_keypair.public(),
+        gen_args.maker_pub,
     );
 
     let mut signer: TransactionInputSigner = preimage.preimage.clone().into();
@@ -1313,7 +1312,7 @@ pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
     payment_input.amount = funding_output.value;
     signer.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
 
-    let maker_signature = try_tx_s!(calc_and_sign_sighash(
+    let taker_signature = try_tx_s!(calc_and_sign_sighash(
         &signer,
         DEFAULT_SWAP_VOUT,
         &redeem_script,
@@ -1324,13 +1323,13 @@ pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
     ));
     let sig_hash_all_fork_id = (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8;
 
-    let mut taker_signature_with_sighash = preimage.signature.to_vec();
-    taker_signature_with_sighash.push(sig_hash_all_fork_id);
-    drop_mutability!(taker_signature_with_sighash);
-
-    let mut maker_signature_with_sighash: Vec<u8> = maker_signature.take();
+    let mut maker_signature_with_sighash = preimage.signature.to_vec();
     maker_signature_with_sighash.push(sig_hash_all_fork_id);
     drop_mutability!(maker_signature_with_sighash);
+
+    let mut taker_signature_with_sighash: Vec<u8> = taker_signature.take();
+    taker_signature_with_sighash.push(sig_hash_all_fork_id);
+    drop_mutability!(taker_signature_with_sighash);
 
     let script_sig = Builder::default()
         .push_data(&maker_signature_with_sighash)

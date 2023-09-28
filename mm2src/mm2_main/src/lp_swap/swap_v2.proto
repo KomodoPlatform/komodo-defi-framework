@@ -24,12 +24,13 @@ message Abort {
 
 message TakerNegotiationData {
   uint64 started_at = 1;
-  uint64 payment_locktime = 2;
-  bytes taker_secret_hash = 3;
-  bytes maker_coin_htlc_pub = 4;
-  bytes taker_coin_htlc_pub = 5;
-  optional bytes maker_coin_swap_contract = 6;
-  optional bytes taker_coin_swap_contract = 7;
+  uint64 funding_locktime = 2;
+  uint64 payment_locktime = 3;
+  bytes taker_secret_hash = 4;
+  bytes maker_coin_htlc_pub = 5;
+  bytes taker_coin_htlc_pub = 6;
+  optional bytes maker_coin_swap_contract = 7;
+  optional bytes taker_coin_swap_contract = 8;
 }
 
 message TakerNegotiation {
@@ -50,11 +51,6 @@ message TakerFundingInfo {
   optional bytes next_step_instructions = 2;
 }
 
-message TakerFundingSpendPreimage {
-  bytes signature = 1;
-  bytes tx_preimage = 2;
-}
-
 message TakerPaymentInfo {
   bytes tx_bytes = 1;
   optional bytes next_step_instructions = 2;
@@ -63,6 +59,8 @@ message TakerPaymentInfo {
 message MakerPaymentInfo {
   bytes tx_bytes = 1;
   optional bytes next_step_instructions = 2;
+  bytes funding_preimage_sig = 3;
+  bytes funding_preimage_tx = 4;
 }
 
 message TakerPaymentSpendPreimage {
@@ -77,8 +75,7 @@ message SwapMessage {
     MakerNegotiated maker_negotiated = 3;
     TakerFundingInfo taker_funding_info = 4;
     MakerPaymentInfo maker_payment_info = 5;
-    TakerFundingSpendPreimage taker_funding_spend_preimage = 6;
-    TakerPaymentInfo taker_payment_info = 7;
-    TakerPaymentSpendPreimage taker_payment_spend_preimage = 8;
+    TakerPaymentInfo taker_payment_info = 6;
+    TakerPaymentSpendPreimage taker_payment_spend_preimage = 7;
   }
 }
