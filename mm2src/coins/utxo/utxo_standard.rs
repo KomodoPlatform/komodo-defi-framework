@@ -31,10 +31,10 @@ use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDeriva
             TakerSwapMakerCoin, ToBytes, TradePreimageValue, TransactionFut, TransactionResult, TxMarshalingErr,
             TxPreimageWithSig, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateTakerFundingArgs, ValidateTakerFundingResult, ValidateTakerPaymentSpendPreimageResult,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
-            WithdrawSenderAddress};
+            ValidateTakerFundingArgs, ValidateTakerFundingResult, ValidateTakerFundingSpendPreimageResult,
+            ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
 use common::executor::{AbortableSystem, AbortedError};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
@@ -593,6 +593,10 @@ impl SwapOpsV2 for UtxoStandardCoin {
         utxo_common::send_taker_funding(self.clone(), args).await
     }
 
+    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateTakerFundingResult {
+        utxo_common::validate_taker_funding(self, args).await
+    }
+
     async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> TransactionResult {
         utxo_common::refund_taker_funding_timelock(self.clone(), args).await
     }
@@ -613,6 +617,14 @@ impl SwapOpsV2 for UtxoStandardCoin {
         utxo_common::gen_and_sign_taker_funding_spend_preimage(self, args, &htlc_keypair).await
     }
 
+    async fn validate_taker_funding_spend_preimage(
+        &self,
+        gen_args: &GenTakerFundingSpendArgs<'_, Self>,
+        preimage: &TxPreimageWithSig<Self>,
+    ) -> ValidateTakerFundingSpendPreimageResult {
+        todo!()
+    }
+
     async fn sign_and_send_taker_funding_spend(
         &self,
         preimage: &TxPreimageWithSig<Self>,
@@ -621,10 +633,6 @@ impl SwapOpsV2 for UtxoStandardCoin {
     ) -> Result<Self::Tx, TransactionErr> {
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
         utxo_common::sign_and_send_taker_funding_spend(self, preimage, args, &htlc_keypair).await
-    }
-
-    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateTakerFundingResult {
-        utxo_common::validate_taker_funding(self, args).await
     }
 
     async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult {

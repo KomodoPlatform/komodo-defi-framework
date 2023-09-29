@@ -317,6 +317,8 @@ pub type RefundResult<T> = Result<T, MmError<RefundError>>;
 pub type GenPreimageResult<Coin> = MmResult<TxPreimageWithSig<Coin>, TxGenError>;
 /// Helper type used for taker funding's validation result
 pub type ValidateTakerFundingResult = MmResult<(), ValidateTakerFundingError>;
+/// Helper type used for taker funding's spend preimage validation result
+pub type ValidateTakerFundingSpendPreimageResult = MmResult<(), ValidateTakerFundingSpendPreimageError>;
 /// Helper type used for taker payment's spend preimage validation result
 pub type ValidateTakerPaymentSpendPreimageResult = MmResult<(), ValidateTakerPaymentSpendPreimageError>;
 
@@ -1216,6 +1218,31 @@ impl From<UtxoRpcError> for ValidateTakerFundingError {
     fn from(err: UtxoRpcError) -> Self { ValidateTakerFundingError::Rpc(err.to_string()) }
 }
 
+/// Enum covering error cases that can happen during taker funding spend preimage validation.
+#[derive(Debug, Display)]
+pub enum ValidateTakerFundingSpendPreimageError {
+    /// Error during signature deserialization.
+    InvalidMakerSignature,
+    /// Error during preimage comparison to an expected one.
+    InvalidPreimage(String),
+    /// Error during taker's signature check.
+    SignatureVerificationFailure(String),
+    /// Error during generation of an expected preimage.
+    TxGenError(String),
+    /// Input payment timelock overflows the type used by specific coin.
+    LocktimeOverflow(String),
+}
+
+impl From<UtxoSignWithKeyPairError> for ValidateTakerFundingSpendPreimageError {
+    fn from(err: UtxoSignWithKeyPairError) -> Self {
+        ValidateTakerFundingSpendPreimageError::SignatureVerificationFailure(err.to_string())
+    }
+}
+
+impl From<TxGenError> for ValidateTakerFundingSpendPreimageError {
+    fn from(err: TxGenError) -> Self { ValidateTakerFundingSpendPreimageError::TxGenError(format!("{:?}", err)) }
+}
+
 /// Enum covering error cases that can happen during taker payment spend preimage validation.
 #[derive(Debug, Display)]
 pub enum ValidateTakerPaymentSpendPreimageError {
@@ -1273,6 +1300,9 @@ pub trait SwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
     /// Funding tx can be reclaimed immediately if maker back-outs (doesn't send maker payment)
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr>;
 
+    /// Validates taker funding transaction.
+    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateTakerFundingResult;
+
     /// Refunds taker funding transaction using time-locked path without secret reveal.
     async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> TransactionResult;
 
@@ -1289,6 +1319,13 @@ pub trait SwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
         swap_unique_data: &[u8],
     ) -> GenPreimageResult<Self>;
 
+    /// Validates taker funding spend preimage generated and signed by maker
+    async fn validate_taker_funding_spend_preimage(
+        &self,
+        gen_args: &GenTakerFundingSpendArgs<'_, Self>,
+        preimage: &TxPreimageWithSig<Self>,
+    ) -> ValidateTakerFundingSpendPreimageResult;
+
     /// Generates and signs a preimage spending funding tx to the combined taker payment
     async fn sign_and_send_taker_funding_spend(
         &self,
@@ -1296,9 +1333,6 @@ pub trait SwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
         args: &GenTakerFundingSpendArgs<'_, Self>,
         swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr>;
-
-    /// Validates taker payment transaction.
-    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateTakerFundingResult;
 
     /// Refunds taker payment transaction.
     async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult;

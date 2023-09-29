@@ -767,6 +767,22 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
             taker_payment_time_lock: state_machine.taker_payment_locktime(),
             maker_secret_hash: &self.negotiation_data.maker_secret_hash,
         };
+
+        if let Err(e) = state_machine
+            .taker_coin
+            .validate_taker_funding_spend_preimage(&args, &self.funding_spend_preimage)
+            .await
+        {
+            let next_state = TakerFundingRefundRequired {
+                maker_coin_start_block: self.maker_coin_start_block,
+                taker_coin_start_block: self.taker_coin_start_block,
+                taker_funding: self.taker_funding,
+                negotiation_data: self.negotiation_data,
+                reason: TakerFundingRefundReason::FundingSpendPreimageValidationFailed(format!("{:?}", e)),
+            };
+            return Self::change_state(next_state, state_machine).await;
+        }
+
         let taker_payment = match state_machine
             .taker_coin
             .sign_and_send_taker_funding_spend(&self.funding_spend_preimage, &args, &unique_data)
@@ -893,6 +909,7 @@ pub enum TakerFundingRefundReason {
     FailedToParseFundingSpendSig(String),
     FailedToSendTakerPayment(String),
     MakerPaymentValidationFailed(String),
+    FundingSpendPreimageValidationFailed(String),
 }
 
 struct TakerFundingRefundRequired<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
