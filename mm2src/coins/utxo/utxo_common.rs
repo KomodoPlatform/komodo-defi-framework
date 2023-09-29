@@ -18,11 +18,11 @@ use crate::watcher_common::validate_watcher_reward;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GenPreimageResult,
             GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress, HDAccountAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundFundingSecretArgs, RefundPaymentArgs,
-            RewardTarget, SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SendTakerFundingArgs, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps,
-            TradePreimageValue, TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr,
-            TxPreimageWithSig, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentError, ValidateTakerPaymentResult,
+            RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SendTakerFundingArgs, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue,
+            TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig,
+            ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateTakerFundingArgs, ValidateTakerFundingError, ValidateTakerFundingResult,
             ValidateTakerPaymentSpendPreimageError, ValidateTakerPaymentSpendPreimageResult, VerificationError,
             VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
@@ -4803,45 +4803,8 @@ where
     Ok(transaction)
 }
 
-/// Common implementation of combined taker payment generation and broadcast for UTXO coins.
-pub async fn send_combined_taker_payment<T>(
-    coin: T,
-    args: SendCombinedTakerPaymentArgs<'_>,
-) -> Result<UtxoTx, TransactionErr>
-where
-    T: UtxoCommonOps + GetUtxoListOps + SwapOps,
-{
-    let taker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
-    let total_amount = &args.dex_fee_amount + &args.premium_amount + &args.trading_amount;
-
-    let SwapPaymentOutputsResult {
-        payment_address,
-        outputs,
-    } = try_tx_s!(generate_swap_payment_outputs(
-        &coin,
-        try_tx_s!(args.time_lock.try_into()),
-        taker_htlc_key_pair.public_slice(),
-        args.maker_pub,
-        args.maker_secret_hash,
-        total_amount,
-        SwapPaymentType::TakerPaymentV2,
-    ));
-    if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
-        let addr_string = try_tx_s!(payment_address.display_address());
-        client
-            .import_address(&addr_string, &addr_string, false)
-            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))
-            .compat()
-            .await?;
-    }
-    send_outputs_from_my_address_impl(coin, outputs).await
-}
-
-/// Common implementation of combined taker payment validation for UTXO coins.
-pub async fn validate_combined_taker_payment<T>(
-    coin: &T,
-    args: ValidateTakerPaymentArgs<'_, T>,
-) -> ValidateTakerPaymentResult
+/// Common implementation of taker funding validation for UTXO coins.
+pub async fn validate_taker_funding<T>(coin: &T, args: ValidateTakerFundingArgs<'_, T>) -> ValidateTakerFundingResult
 where
     T: UtxoCommonOps + SwapOps,
 {
@@ -4853,11 +4816,11 @@ where
     let time_lock = args
         .time_lock
         .try_into()
-        .map_to_mm(|e: TryFromIntError| ValidateTakerPaymentError::LocktimeOverflow(e.to_string()))?;
+        .map_to_mm(|e: TryFromIntError| ValidateTakerFundingError::LocktimeOverflow(e.to_string()))?;
 
-    let redeem_script = swap_proto_v2_scripts::taker_payment_script(
+    let redeem_script = swap_proto_v2_scripts::taker_funding_script(
         time_lock,
-        args.secret_hash,
+        args.taker_secret_hash,
         args.other_pub,
         maker_htlc_key_pair.public(),
     );
@@ -4866,23 +4829,23 @@ where
         script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&redeem_script))).into(),
     };
 
-    if args.taker_tx.outputs.get(0) != Some(&expected_output) {
-        return MmError::err(ValidateTakerPaymentError::InvalidDestinationOrAmount(format!(
+    if args.funding_tx.outputs.get(0) != Some(&expected_output) {
+        return MmError::err(ValidateTakerFundingError::InvalidDestinationOrAmount(format!(
             "Expected {:?}, got {:?}",
             expected_output,
-            args.taker_tx.outputs.get(0)
+            args.funding_tx.outputs.get(0)
         )));
     }
 
     let tx_bytes_from_rpc = coin
         .as_ref()
         .rpc_client
-        .get_transaction_bytes(&args.taker_tx.hash().reversed().into())
+        .get_transaction_bytes(&args.funding_tx.hash().reversed().into())
         .compat()
         .await?;
-    let actual_tx_bytes = serialize(args.taker_tx).take();
+    let actual_tx_bytes = serialize(args.funding_tx).take();
     if tx_bytes_from_rpc.0 != actual_tx_bytes {
-        return MmError::err(ValidateTakerPaymentError::TxBytesMismatch {
+        return MmError::err(ValidateTakerFundingError::TxBytesMismatch {
             from_rpc: tx_bytes_from_rpc,
             actual: actual_tx_bytes.into(),
         });

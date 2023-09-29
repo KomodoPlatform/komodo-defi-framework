@@ -8,7 +8,8 @@ use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_s
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{CoinAssocTypes, ConfirmPaymentInput, FeeApproxStage, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            MarketCoinOps, MmCoin, SendPaymentArgs, SwapOpsV2, ToBytes, Transaction, TxPreimageWithSig};
+            MarketCoinOps, MmCoin, SendPaymentArgs, SwapOpsV2, ToBytes, Transaction, TxPreimageWithSig,
+            ValidateTakerFundingArgs};
 use common::log::{debug, info, warn};
 use common::{bits256, Future01CompatExt, DEX_FEE_ADDR_RAW_PUBKEY};
 use db_common::sqlite::rusqlite::params;
@@ -572,6 +573,23 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
         let unique_data = state_machine.unique_data();
+
+        let validation_args = ValidateTakerFundingArgs {
+            funding_tx: &self.taker_funding,
+            time_lock: self.negotiation_data.taker_funding_locktime,
+            taker_secret_hash: &self.negotiation_data.taker_secret_hash,
+            other_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
+            dex_fee_amount: state_machine.dex_fee_amount.to_decimal(),
+            premium_amount: state_machine.taker_premium.to_decimal(),
+            trading_amount: state_machine.taker_volume.to_decimal(),
+            swap_unique_data: &unique_data,
+        };
+
+        if let Err(e) = state_machine.taker_coin.validate_taker_funding(validation_args).await {
+            let reason = AbortReason::TakerFundingValidationFailed(e.to_string());
+            return Self::change_state(Aborted::new(reason), state_machine).await;
+        }
+
         let args = GenTakerFundingSpendArgs {
             funding_tx: &self.taker_funding,
             maker_pub: &state_machine.taker_coin.derive_htlc_pubkey_v2(&unique_data),
@@ -1050,6 +1068,7 @@ pub enum AbortReason {
     ReceivedInvalidTakerNegotiation,
     DidNotReceiveTakerFundingInfo(String),
     FailedToParseTakerFunding(String),
+    TakerFundingValidationFailed(String),
     FailedToGenerateFundingSpend(String),
     FailedToSendMakerPayment(String),
     TooLargeStartedAtDiff(u64),

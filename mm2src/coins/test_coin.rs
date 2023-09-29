@@ -7,15 +7,15 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, MakerSwapTakerCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RefundFundingSecretArgs, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
-            SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs,
-            SignatureResult, SpendPaymentArgs, SwapOpsV2, TakerSwapMakerCoin, ToBytes, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, Transaction, TransactionErr, TransactionResult, TxMarshalingErr,
-            TxPreimageWithSig, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateTakerPaymentArgs, ValidateTakerPaymentResult,
-            ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
+            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignatureResult,
+            SpendPaymentArgs, SwapOpsV2, TakerSwapMakerCoin, ToBytes, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionErr, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateTakerFundingArgs, ValidateTakerFundingResult, ValidateTakerPaymentSpendPreimageResult,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
+            WithdrawRequest};
 use async_trait::async_trait;
 use common::executor::AbortedError;
 use futures01::Future;
@@ -460,17 +460,7 @@ impl SwapOpsV2 for TestCoin {
         todo!()
     }
 
-    async fn send_combined_taker_payment(
-        &self,
-        args: SendCombinedTakerPaymentArgs<'_>,
-    ) -> Result<Self::Tx, TransactionErr> {
-        unimplemented!()
-    }
-
-    async fn validate_combined_taker_payment(
-        &self,
-        args: ValidateTakerPaymentArgs<'_, Self>,
-    ) -> ValidateTakerPaymentResult {
+    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateTakerFundingResult {
         unimplemented!()
     }
 

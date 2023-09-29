@@ -273,8 +273,8 @@ impl<MakerCoin: MmCoin + SwapOpsV2 + Send + Sync + 'static, TakerCoin: MmCoin + 
                 state_machine.taker_volume.to_fraction_string(),
                 state_machine.taker_premium.to_fraction_string(),
                 state_machine.dex_fee.to_fraction_string(),
-                [], // secret is unknown at this point
-                [], // secret hash is unknown at this point
+                state_machine.taker_secret.take(),
+                state_machine.taker_secret_hash(),
                 state_machine.secret_hash_algo as u8,
                 state_machine.p2p_keypair.map(|k| k.private_bytes()).unwrap_or_default(),
                 state_machine.lock_duration,
@@ -546,40 +546,6 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State fo
             negotiation_data: self.negotiation_data,
         };
         Self::change_state(next_state, state_machine).await
-        /*
-        let args = SendCombinedTakerPaymentArgs {
-            time_lock: state_machine.taker_payment_locktime(),
-            maker_secret_hash: &self.negotiation_data.maker_secret_hash,
-            maker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_maker.to_bytes(),
-            dex_fee_amount: state_machine.dex_fee.to_decimal(),
-            premium_amount: BigDecimal::from(0),
-            trading_amount: state_machine.taker_volume.to_decimal(),
-            swap_unique_data: &state_machine.unique_data(),
-        };
-
-        let taker_payment = match state_machine.taker_coin.send_combined_taker_payment(args).await {
-            Ok(tx) => tx,
-            Err(e) => {
-                let reason = AbortReason::FailedToSendTakerPayment(format!("{:?}", e));
-                return Self::change_state(Aborted::new(reason), state_machine).await;
-            },
-        };
-        info!(
-            "Sent combined taker payment {} tx {:02x} during swap {}",
-            state_machine.taker_coin.ticker(),
-            taker_payment.tx_hash(),
-            state_machine.uuid
-        );
-
-        let next_state = TakerPaymentSent {
-            maker_coin_start_block: self.maker_coin_start_block,
-            taker_coin_start_block: self.taker_coin_start_block,
-            taker_payment,
-            negotiation_data: self.negotiation_data,
-        };
-        Self::change_state(next_state, state_machine).await
-
-         */
     }
 }
 
@@ -818,6 +784,13 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
                 return Self::change_state(next_state, state_machine).await;
             },
         };
+
+        info!(
+            "Sent taker payment {} tx {:02x} during swap {}",
+            state_machine.taker_coin.ticker(),
+            taker_payment.tx_hash(),
+            state_machine.uuid
+        );
 
         let next_state = TakerPaymentSent {
             maker_coin_start_block: self.maker_coin_start_block,
