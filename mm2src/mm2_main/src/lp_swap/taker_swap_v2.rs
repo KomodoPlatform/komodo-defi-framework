@@ -8,15 +8,15 @@ use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_s
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{CoinAssocTypes, ConfirmPaymentInput, FeeApproxStage, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            MmCoin, SendCombinedTakerPaymentArgs, SendTakerFundingArgs, SpendPaymentArgs, SwapOps, SwapOpsV2, ToBytes,
-            Transaction, TxPreimageWithSig, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
+            MmCoin, SendTakerFundingArgs, SpendPaymentArgs, SwapOps, SwapOpsV2, ToBytes, Transaction,
+            TxPreimageWithSig, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
 use common::log::{debug, info, warn};
 use common::{bits256, Future01CompatExt, DEX_FEE_ADDR_RAW_PUBKEY};
 use db_common::sqlite::rusqlite::params;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_number::{BigDecimal, MmNumber};
+use mm2_number::MmNumber;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::storable_state_machine::*;
 use primitives::hash::H256;
@@ -65,6 +65,7 @@ pub enum TakerSwapEvent {
         taker_coin_start_block: u64,
         negotiation_data: StoredNegotiationData,
         taker_funding: TransactionIdentifier,
+        reason: TakerFundingRefundReason,
     },
     /// Received maker payment
     MakerPaymentReceived {
@@ -86,8 +87,8 @@ pub enum TakerSwapEvent {
         taker_payment: TransactionIdentifier,
         negotiation_data: StoredNegotiationData,
     },
-    /// Both payments are confirmed on-chain
-    BothPaymentsSentAndConfirmed {
+    /// Maker payment is confirmed on-chain
+    MakerPaymentConfirmed {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
         maker_payment: TransactionIdentifier,
@@ -812,7 +813,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
                     taker_coin_start_block: self.taker_coin_start_block,
                     taker_funding: self.taker_funding,
                     negotiation_data: self.negotiation_data,
-                    reason: TakerFundingRefundReason::MakerPaymentValidationFailed(format!("{:?}", e)),
+                    reason: TakerFundingRefundReason::FailedToSendTakerPayment(format!("{:?}", e)),
                 };
                 return Self::change_state(next_state, state_machine).await;
             },
@@ -911,14 +912,14 @@ impl<MakerCoin: CoinAssocTypes + Send + 'static, TakerCoin: SwapOpsV2> StorableS
     }
 }
 
-#[derive(Debug)]
-enum TakerFundingRefundReason {
+/// Represents the reason taker funding refund
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum TakerFundingRefundReason {
     DidNotReceiveMakerPayment(String),
     FailedToParseFundingSpendPreimg(String),
     FailedToParseFundingSpendSig(String),
     FailedToSendTakerPayment(String),
     MakerPaymentValidationFailed(String),
-    MakerDidNotBroadcastInTime(String),
 }
 
 struct TakerFundingRefundRequired<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
@@ -945,7 +946,9 @@ impl<MakerCoin: SwapOps + CoinAssocTypes + Send + 'static, TakerCoin: MmCoin + S
 {
     type StateMachine = TakerSwapStateMachine<MakerCoin, TakerCoin>;
 
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine> { todo!() }
+    async fn on_changed(self: Box<Self>, _state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+        todo!()
+    }
 }
 
 impl<MakerCoin: CoinAssocTypes + Send + 'static, TakerCoin: CoinAssocTypes + Send + 'static> StorableState
@@ -962,13 +965,13 @@ impl<MakerCoin: CoinAssocTypes + Send + 'static, TakerCoin: CoinAssocTypes + Sen
                 tx_hash: self.taker_funding.tx_hash(),
             },
             negotiation_data: self.negotiation_data.to_stored_data(),
+            reason: self.reason.clone(),
         }
     }
 }
 
 #[derive(Debug)]
 enum TakerPaymentRefundReason {
-    DidNotReceiveMakerPayment(String),
     MakerPaymentNotConfirmedInTime(String),
     FailedToGenerateSpendPreimage(String),
     MakerDidNotSpendInTime(String),
@@ -1143,7 +1146,7 @@ impl<MakerCoin: CoinAssocTypes + Send + 'static, TakerCoin: SwapOpsV2> StorableS
     type StateMachine = TakerSwapStateMachine<MakerCoin, TakerCoin>;
 
     fn get_event(&self) -> <<Self::StateMachine as StorableStateMachine>::Storage as StateMachineStorage>::Event {
-        TakerSwapEvent::BothPaymentsSentAndConfirmed {
+        TakerSwapEvent::MakerPaymentConfirmed {
             maker_coin_start_block: self.maker_coin_start_block,
             taker_coin_start_block: self.taker_coin_start_block,
             maker_payment: self.maker_payment.clone(),

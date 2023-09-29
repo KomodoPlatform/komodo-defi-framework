@@ -63,7 +63,6 @@ use utxo_signer::with_key_pair::{calc_and_sign_sighash, p2sh_spend, signature_ha
                                  SIGHASH_SINGLE};
 use utxo_signer::UtxoSignerOps;
 
-use crate::utxo::swap_proto_v2_scripts::taker_funding_script;
 pub use chain::Transaction as UtxoTx;
 
 pub mod utxo_tx_history_v2_common;
@@ -1343,6 +1342,30 @@ pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
     final_tx_input.script_sig = script_sig;
     drop_mutability!(final_tx);
 
+    if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
+        let payment_redeem_script = swap_proto_v2_scripts::taker_payment_script(
+            try_tx_s!(gen_args.taker_payment_time_lock.try_into()),
+            gen_args.maker_secret_hash,
+            gen_args.taker_pub,
+            gen_args.maker_pub,
+        );
+        let payment_address = Address {
+            checksum_type: coin.as_ref().conf.checksum_type,
+            hash: AddressHashEnum::AddressHash(dhash160(&payment_redeem_script)),
+            prefix: coin.as_ref().conf.p2sh_addr_prefix,
+            t_addr_prefix: coin.as_ref().conf.p2sh_t_addr_prefix,
+            hrp: coin.as_ref().conf.bech32_hrp.clone(),
+            addr_format: UtxoAddressFormat::Standard,
+        };
+        let payment_address_str = payment_address.to_string();
+        try_tx_s!(
+            client
+                .import_address(&payment_address_str, &payment_address_str, false)
+                .compat()
+                .await
+        );
+    }
+
     try_tx_s!(coin.broadcast_tx(&final_tx).await, final_tx);
     Ok(final_tx)
 }
@@ -1930,7 +1953,8 @@ async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
             payment_script(time_lock, args.secret_hash, key_pair.public(), &other_public).into()
         },
         SwapPaymentType::TakerFunding => {
-            taker_funding_script(time_lock, args.secret_hash, key_pair.public(), &other_public).into()
+            swap_proto_v2_scripts::taker_funding_script(time_lock, args.secret_hash, key_pair.public(), &other_public)
+                .into()
         },
         SwapPaymentType::TakerPaymentV2 => {
             swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, key_pair.public(), &other_public)
@@ -4320,7 +4344,9 @@ where
     let other_public = try_s!(Public::from_slice(other_pub));
     let redeem_script = match payment_type {
         SwapPaymentType::TakerOrMakerPayment => payment_script(time_lock, secret_hash, &my_public, &other_public),
-        SwapPaymentType::TakerFunding => taker_funding_script(time_lock, secret_hash, &my_public, &other_public),
+        SwapPaymentType::TakerFunding => {
+            swap_proto_v2_scripts::taker_funding_script(time_lock, secret_hash, &my_public, &other_public)
+        },
         SwapPaymentType::TakerPaymentV2 => {
             swap_proto_v2_scripts::taker_payment_script(time_lock, secret_hash, &my_public, &other_public)
         },
@@ -4736,8 +4762,13 @@ where
         .into_script();
     let time_lock = try_tx_s!(args.time_lock.try_into());
 
-    let redeem_script =
-        taker_funding_script(time_lock, args.taker_secret_hash, key_pair.public(), args.maker_pubkey).into();
+    let redeem_script = swap_proto_v2_scripts::taker_funding_script(
+        time_lock,
+        args.taker_secret_hash,
+        key_pair.public(),
+        args.maker_pubkey,
+    )
+    .into();
     let fee = try_tx_s!(
         coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
             .await

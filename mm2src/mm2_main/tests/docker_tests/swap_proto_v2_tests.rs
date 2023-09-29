@@ -401,7 +401,7 @@ fn test_v2_swap_utxo_utxo() {
     for uuid in uuids {
         let expected_msg = format!("Swap {} has been completed", uuid);
         block_on(mm_bob.wait_for_log(60., |log| log.contains(&expected_msg))).unwrap();
-        block_on(mm_alice.wait_for_log(60., |log| log.contains(&expected_msg))).unwrap();
+        block_on(mm_alice.wait_for_log(30., |log| log.contains(&expected_msg))).unwrap();
 
         let maker_swap_status = block_on(my_swap_status(&mm_bob, &uuid));
         println!("{:?}", maker_swap_status);

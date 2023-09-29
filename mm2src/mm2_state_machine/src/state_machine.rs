@@ -63,7 +63,7 @@ pub trait State: Send + Sync + 'static {
     /// ```rust
     /// return Self::change_state(next_state);
     /// ```
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine>;
+    async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine>;
 }
 
 /// A trait for transitioning between states in the state machine.
