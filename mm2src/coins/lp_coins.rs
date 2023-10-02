@@ -1223,6 +1223,10 @@ impl From<UtxoRpcError> for ValidateTakerFundingError {
 /// Enum covering error cases that can happen during taker funding spend preimage validation.
 #[derive(Debug, Display)]
 pub enum ValidateTakerFundingSpendPreimageError {
+    /// Funding tx has no outputs
+    FundingTxNoOutputs,
+    /// Actual preimage fee is either too high or too small
+    UnexpectedPreimageFee(String),
     /// Error during signature deserialization.
     InvalidMakerSignature,
     /// Error during preimage comparison to an expected one.
@@ -1233,6 +1237,8 @@ pub enum ValidateTakerFundingSpendPreimageError {
     TxGenError(String),
     /// Input payment timelock overflows the type used by specific coin.
     LocktimeOverflow(String),
+    /// Coin's RPC error
+    Rpc(String),
 }
 
 impl From<UtxoSignWithKeyPairError> for ValidateTakerFundingSpendPreimageError {
@@ -1243,6 +1249,10 @@ impl From<UtxoSignWithKeyPairError> for ValidateTakerFundingSpendPreimageError {
 
 impl From<TxGenError> for ValidateTakerFundingSpendPreimageError {
     fn from(err: TxGenError) -> Self { ValidateTakerFundingSpendPreimageError::TxGenError(format!("{:?}", err)) }
+}
+
+impl From<UtxoRpcError> for ValidateTakerFundingSpendPreimageError {
+    fn from(err: UtxoRpcError) -> Self { ValidateTakerFundingSpendPreimageError::Rpc(err.to_string()) }
 }
 
 /// Enum covering error cases that can happen during taker payment spend preimage validation.

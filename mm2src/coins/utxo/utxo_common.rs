@@ -1121,6 +1121,11 @@ enum NTimeSetting {
     UseValue(Option<u32>),
 }
 
+enum FundingSpendFeeSetting {
+    GetFromCoin,
+    UseExact(u64),
+}
+
 async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
     coin: &T,
     prev_tx: &UtxoTx,
@@ -1226,8 +1231,8 @@ type GenPreimageResInner = MmResult<TransactionInputSigner, TxGenError>;
 async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerFundingSpendArgs<'_, T>,
-    lock_time: LocktimeSetting,
     n_time: NTimeSetting,
+    fee: FundingSpendFeeSetting,
 ) -> GenPreimageResInner {
     let payment_time_lock = args
         .taker_payment_time_lock
@@ -1242,9 +1247,13 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
     );
 
     let funding_amount = args.funding_tx.first_output().unwrap().value;
-    let fee = coin
-        .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-        .await?;
+    let fee = match fee {
+        FundingSpendFeeSetting::GetFromCoin => {
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await?
+        },
+        FundingSpendFeeSetting::UseExact(f) => f,
+    };
 
     let fee_plus_dust = fee + coin.as_ref().dust_amount;
     if funding_amount < fee_plus_dust {
@@ -1259,9 +1268,14 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
         script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&payment_redeem_script))).to_bytes(),
     };
 
-    p2sh_spending_tx_preimage(coin, args.funding_tx, lock_time, n_time, SEQUENCE_FINAL, vec![
-        payment_output,
-    ])
+    p2sh_spending_tx_preimage(
+        coin,
+        args.funding_tx,
+        LocktimeSetting::UseExact(0),
+        n_time,
+        SEQUENCE_FINAL,
+        vec![payment_output],
+    )
     .await
     .map_to_mm(TxGenError::Legacy)
 }
@@ -1277,7 +1291,7 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
         .map_to_mm(|e: TryFromIntError| TxGenError::LocktimeOverflow(e.to_string()))?;
 
     let preimage =
-        gen_taker_funding_spend_preimage(coin, args, LocktimeSetting::UseExact(0), NTimeSetting::UseNow).await?;
+        gen_taker_funding_spend_preimage(coin, args, NTimeSetting::UseNow, FundingSpendFeeSetting::GetFromCoin).await?;
 
     let redeem_script = swap_proto_v2_scripts::taker_funding_script(
         funding_time_lock,
@@ -1307,11 +1321,45 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
     gen_args: &GenTakerFundingSpendArgs<'_, T>,
     preimage: &TxPreimageWithSig<T>,
 ) -> ValidateTakerFundingSpendPreimageResult {
+    let funding_amount = gen_args
+        .funding_tx
+        .first_output()
+        .map_to_mm(|_| ValidateTakerFundingSpendPreimageError::FundingTxNoOutputs)?
+        .value;
+
+    let payment_amount = preimage
+        .preimage
+        .first_output()
+        .map_to_mm(|_| ValidateTakerFundingSpendPreimageError::InvalidPreimage("Preimage has no outputs".into()))?
+        .value;
+
+    if payment_amount > funding_amount {
+        return MmError::err(ValidateTakerFundingSpendPreimageError::InvalidPreimage(format!(
+            "Preimage output {} larger than funding input {}",
+            payment_amount, funding_amount
+        )));
+    }
+
+    let expected_fee = coin
+        .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+        .await?;
+
+    let actual_fee = funding_amount - payment_amount;
+
+    let fee_div = expected_fee as f64 / actual_fee as f64;
+
+    if !(0.9..=1.1).contains(&fee_div) {
+        return MmError::err(ValidateTakerFundingSpendPreimageError::UnexpectedPreimageFee(format!(
+            "Too large difference between expected {} and actual {} fees",
+            expected_fee, actual_fee
+        )));
+    }
+
     let expected_preimage = gen_taker_funding_spend_preimage(
         coin,
         gen_args,
-        LocktimeSetting::UseExact(0),
         NTimeSetting::UseValue(preimage.preimage.n_time),
+        FundingSpendFeeSetting::UseExact(actual_fee),
     )
     .await?;
 
@@ -1432,7 +1480,6 @@ pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
 async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_, T>,
-    lock_time: LocktimeSetting,
     n_time: NTimeSetting,
 ) -> GenPreimageResInner {
     let dex_fee_sat = sat_from_big_decimal(&args.dex_fee_amount, coin.as_ref().decimals)?;
@@ -1451,9 +1498,14 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
         script_pubkey: Builder::build_p2pkh(&dex_fee_address.hash).to_bytes(),
     };
 
-    p2sh_spending_tx_preimage(coin, args.taker_tx, lock_time, n_time, SEQUENCE_FINAL, vec![
-        dex_fee_output,
-    ])
+    p2sh_spending_tx_preimage(
+        coin,
+        args.taker_tx,
+        LocktimeSetting::UseExact(0),
+        n_time,
+        SEQUENCE_FINAL,
+        vec![dex_fee_output],
+    )
     .await
     .map_to_mm(TxGenError::Legacy)
 }
@@ -1468,8 +1520,7 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
         .try_into()
         .map_to_mm(|e: TryFromIntError| TxGenError::LocktimeOverflow(e.to_string()))?;
 
-    let preimage =
-        gen_taker_payment_spend_preimage(coin, args, LocktimeSetting::UseExact(0), NTimeSetting::UseNow).await?;
+    let preimage = gen_taker_payment_spend_preimage(coin, args, NTimeSetting::UseNow).await?;
 
     let redeem_script =
         swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, args.taker_pub, args.maker_pub);
@@ -1497,13 +1548,8 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 ) -> ValidateTakerPaymentSpendPreimageResult {
     // Here, we have to use the exact lock time from the preimage because maker
     // can get different values (e.g. if MTP advances during preimage exchange/fee rate changes)
-    let expected_preimage = gen_taker_payment_spend_preimage(
-        coin,
-        gen_args,
-        LocktimeSetting::UseExact(0),
-        NTimeSetting::UseValue(preimage.preimage.n_time),
-    )
-    .await?;
+    let expected_preimage =
+        gen_taker_payment_spend_preimage(coin, gen_args, NTimeSetting::UseValue(preimage.preimage.n_time)).await?;
 
     let time_lock = gen_args
         .time_lock
