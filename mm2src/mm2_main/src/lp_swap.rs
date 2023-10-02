@@ -92,7 +92,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 #[path = "lp_swap/check_balance.rs"] mod check_balance;
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
-#[path = "lp_swap/maker_swap_v2.rs"] pub mod maker_swap_v2;
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "lp_swap/maker_swap_v2.rs"]
+pub mod maker_swap_v2;
 #[path = "lp_swap/max_maker_vol_rpc.rs"] mod max_maker_vol_rpc;
 #[path = "lp_swap/my_swaps_storage.rs"] mod my_swaps_storage;
 #[path = "lp_swap/pubkey_banning.rs"] mod pubkey_banning;
@@ -104,13 +106,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 mod swap_v2_pb;
 #[path = "lp_swap/swap_watcher.rs"] pub(crate) mod swap_watcher;
 #[path = "lp_swap/taker_swap.rs"] mod taker_swap;
-#[path = "lp_swap/taker_swap_v2.rs"] pub mod taker_swap_v2;
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "lp_swap/taker_swap_v2.rs"]
+pub mod taker_swap_v2;
 #[path = "lp_swap/trade_preimage.rs"] mod trade_preimage;
 
 #[cfg(target_arch = "wasm32")]
 #[path = "lp_swap/swap_wasm_db.rs"]
 mod swap_wasm_db;
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::my_swaps::{get_swap_data_for_rpc, get_swap_type};
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
 use crypto::CryptoCtx;
@@ -1017,6 +1022,7 @@ impl From<SavedSwap> for MySwapStatusResponse {
 }
 
 /// Returns the status of swap performed on `my` node
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let uuid: Uuid = try_s!(json::from_value(req["params"]["uuid"].clone()));
     let uuid_str = uuid.to_string();
@@ -1042,6 +1048,20 @@ pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, 
         },
         unsupported_type => ERR!("Got unsupported swap type from DB: {}", unsupported_type),
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let uuid: Uuid = try_s!(json::from_value(req["params"]["uuid"].clone()));
+    let status = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
+        Ok(Some(status)) => status,
+        Ok(None) => return Err("swap data is not found".to_owned()),
+        Err(e) => return ERR!("{}", e),
+    };
+
+    let res_js = json!({ "result": MySwapStatusResponse::from(status) });
+    let res = try_s!(json::to_vec(&res_js));
+    Ok(try_s!(Response::builder().body(res)))
 }
 
 #[cfg(target_arch = "wasm32")]

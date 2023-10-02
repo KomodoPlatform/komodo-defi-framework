@@ -3,7 +3,8 @@ use crate::eth::{web3_transport::Web3SendOut, EthCoin, GuiAuthMessages, RpcTrans
 use common::APPLICATION_JSON;
 use futures::lock::Mutex as AsyncMutex;
 use http::header::CONTENT_TYPE;
-use jsonrpc_core::{Call, Id, Response};
+#[cfg(not(target_arch = "wasm32"))] use jsonrpc_core::Id;
+use jsonrpc_core::{Call, Response};
 use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
 use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
