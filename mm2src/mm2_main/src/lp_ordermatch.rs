@@ -1788,9 +1788,9 @@ impl fmt::Display for MakerOrderBuildError {
 
 #[allow(clippy::result_large_err)]
 fn validate_price(price: MmNumber) -> Result<(), MakerOrderBuildError> {
-    let min_price = MmNumber::from(BigRational::new(1.into(), 100_000_000.into()));
+    let min_price = 0.into();
 
-    if price < min_price {
+    if price <= min_price {
         return Err(MakerOrderBuildError::PriceTooLow {
             actual: price,
             threshold: min_price,
