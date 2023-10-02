@@ -2582,7 +2582,7 @@ pub fn max_taker_vol_from_available(
     let max_vol = if available > min_tx_amount * &threshold_coef {
         available / (MmNumber::from(1) + dex_fee_rate)
     } else {
-        available - min_tx_amount.clone()
+        &available - min_tx_amount
     };
 
     if &max_vol <= min_tx_amount {
