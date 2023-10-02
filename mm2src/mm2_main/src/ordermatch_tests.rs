@@ -6,7 +6,7 @@ use crypto::privkey::key_pair_from_seed;
 use db_common::sqlite::rusqlite::Connection;
 use futures::{channel::mpsc, StreamExt};
 use mm2_core::mm_ctx::{MmArc, MmCtx};
-use mm2_libp2p::atomicdex_behaviour::AdexBehaviourCmd;
+use mm2_libp2p::AdexBehaviourCmd;
 use mm2_libp2p::{decode_message, PeerId};
 use mm2_net::p2p::P2PContext;
 use mm2_test_helpers::for_tests::mm_ctx_with_iguana;

@@ -307,10 +307,9 @@ pub fn version(ctx: MmArc) -> HyRes {
 }
 
 pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    use mm2_libp2p::atomicdex_behaviour::get_peers_info;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
-    let result = get_peers_info(cmd_tx).await;
+    let result = mm2_libp2p::get_peers_info(cmd_tx).await;
     let result = json!({
         "result": result,
     });
@@ -319,10 +318,9 @@ pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
 }
 
 pub async fn get_gossip_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    use mm2_libp2p::atomicdex_behaviour::get_gossip_mesh;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
-    let result = get_gossip_mesh(cmd_tx).await;
+    let result = mm2_libp2p::get_gossip_mesh(cmd_tx).await;
     let result = json!({
         "result": result,
     });
@@ -331,10 +329,9 @@ pub async fn get_gossip_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
 }
 
 pub async fn get_gossip_peer_topics(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    use mm2_libp2p::atomicdex_behaviour::get_gossip_peer_topics;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
-    let result = get_gossip_peer_topics(cmd_tx).await;
+    let result = mm2_libp2p::get_gossip_peer_topics(cmd_tx).await;
     let result = json!({
         "result": result,
     });
@@ -343,10 +340,9 @@ pub async fn get_gossip_peer_topics(ctx: MmArc) -> Result<Response<Vec<u8>>, Str
 }
 
 pub async fn get_gossip_topic_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    use mm2_libp2p::atomicdex_behaviour::get_gossip_topic_peers;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
-    let result = get_gossip_topic_peers(cmd_tx).await;
+    let result = mm2_libp2p::get_gossip_topic_peers(cmd_tx).await;
     let result = json!({
         "result": result,
     });
@@ -355,10 +351,9 @@ pub async fn get_gossip_topic_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, Str
 }
 
 pub async fn get_relay_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    use mm2_libp2p::atomicdex_behaviour::get_relay_mesh;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
-    let result = get_relay_mesh(cmd_tx).await;
+    let result = mm2_libp2p::get_relay_mesh(cmd_tx).await;
     let result = json!({
         "result": result,
     });

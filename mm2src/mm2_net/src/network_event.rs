@@ -5,7 +5,7 @@ use common::{executor::{SpawnFuture, Timer},
 use mm2_core::mm_ctx::MmArc;
 pub use mm2_event_stream::behaviour::EventBehaviour;
 use mm2_event_stream::{Event, EventStreamConfiguration};
-use mm2_libp2p::atomicdex_behaviour;
+use mm2_libp2p::behaviours::atomicdex;
 use serde_json::json;
 
 pub struct NetworkEvent {
@@ -26,11 +26,11 @@ impl EventBehaviour for NetworkEvent {
         loop {
             let p2p_cmd_tx = p2p_ctx.cmd_tx.lock().clone();
 
-            let peers_info = atomicdex_behaviour::get_peers_info(p2p_cmd_tx.clone()).await;
-            let gossip_mesh = atomicdex_behaviour::get_gossip_mesh(p2p_cmd_tx.clone()).await;
-            let gossip_peer_topics = atomicdex_behaviour::get_gossip_peer_topics(p2p_cmd_tx.clone()).await;
-            let gossip_topic_peers = atomicdex_behaviour::get_gossip_topic_peers(p2p_cmd_tx.clone()).await;
-            let relay_mesh = atomicdex_behaviour::get_relay_mesh(p2p_cmd_tx).await;
+            let peers_info = atomicdex::get_peers_info(p2p_cmd_tx.clone()).await;
+            let gossip_mesh = atomicdex::get_gossip_mesh(p2p_cmd_tx.clone()).await;
+            let gossip_peer_topics = atomicdex::get_gossip_peer_topics(p2p_cmd_tx.clone()).await;
+            let gossip_topic_peers = atomicdex::get_gossip_topic_peers(p2p_cmd_tx.clone()).await;
+            let relay_mesh = atomicdex::get_relay_mesh(p2p_cmd_tx).await;
 
             let event_data = json!({
                 "peers_info": peers_info,

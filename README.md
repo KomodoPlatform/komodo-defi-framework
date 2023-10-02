@@ -101,13 +101,13 @@ Please refer to the [WASM Build Guide](./docs/WASM_BUILD.md).
 
 Basic config is contained in two files, `MM2.json` and `coins`
 
-The user configuration [MM2.json file](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/configure-mm2-json.html) contains rpc credentials, your mnemonic seed phrase, a `netid` (7777 is the current main network) and some extra [optional parameters](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/get-started-atomicdex.html).
+The user configuration [MM2.json file](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/configure-mm2-json.html) contains rpc credentials, your mnemonic seed phrase, a `netid` (8762 is the current main network) and some extra [optional parameters](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/get-started-atomicdex.html).
 
 For example:
 ```json
 {
   "gui": "core_readme",
-  "netid": 7777,
+  "netid": 8762,
   "rpc_password": "Ent3r_Un1Qu3_Pa$$w0rd",
   "passphrase": "ENTER_UNIQUE_SEED_PHRASE_DONT_USE_THIS_CHANGE_IT_OR_FUNDS_NOT_SAFU"
 }

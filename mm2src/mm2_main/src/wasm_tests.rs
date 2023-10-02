@@ -38,13 +38,14 @@ async fn test_mm2_stops_impl(
         .await
         .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    Timer::sleep(1.).await;
+    Timer::sleep(2.).await;
 
     let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.my_seed_addr()]);
     let mut mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, Some(wasm_start))
         .await
         .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    Timer::sleep(2.).await;
 
     // Enable coins on Bob side. Print the replies in case we need the address.
     let rc = enable_electrum_json(&mm_bob, RICK, true, rick_electrums(), None).await;
@@ -106,6 +107,7 @@ async fn trade_base_rel_electrum(
     let mut mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, Some(wasm_start))
         .await
         .unwrap();
+    Timer::sleep(2.).await;
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
 

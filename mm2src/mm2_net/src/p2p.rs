@@ -1,5 +1,5 @@
 use mm2_core::mm_ctx::MmArc;
-use mm2_libp2p::atomicdex_behaviour::AdexCmdTx;
+use mm2_libp2p::behaviours::atomicdex::AdexCmdTx;
 #[cfg(test)] use mocktopus::macros::*;
 use parking_lot::Mutex;
 use std::sync::Arc;

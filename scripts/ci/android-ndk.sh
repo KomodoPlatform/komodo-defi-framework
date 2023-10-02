@@ -2,7 +2,8 @@
 
 set -ex
 
-NDK_URL=https://dl.google.com/android/repository/android-ndk-r21b-linux-x86_64.zip
+NDK_URL=https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
+NDK_CHECKSUM=6ce94604b77d28113ecd588d425363624a5228d9662450c48d2e4053f8039242
 
 main() {
     local arch=$1 \
@@ -28,7 +29,11 @@ main() {
 
     pushd $td
     curl -O $NDK_URL
-    unzip -q android-ndk-*.zip
+    if ! echo "$NDK_CHECKSUM  android-ndk-r23c-linux.zip" | sha256sum -c -; then
+        echo "Error: SHA256 sum mismatch for android-ndk-r23c-linux.zip"
+        exit 1
+    fi
+    unzip -q android-ndk-r23c-linux.zip
     pushd android-ndk-*/
     sudo ./build/tools/make_standalone_toolchain.py \
         --install-dir /android-ndk \

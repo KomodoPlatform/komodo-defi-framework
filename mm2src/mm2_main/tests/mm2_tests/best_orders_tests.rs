@@ -443,6 +443,7 @@ fn test_best_orders_v2_exclude_mine() {
         None,
     )
     .unwrap();
+    thread::sleep(Duration::from_secs(2));
 
     let _ = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES, None));
     let bob_orders = [
@@ -484,6 +485,7 @@ fn test_best_orders_v2_exclude_mine() {
         None,
     )
     .unwrap();
+    thread::sleep(Duration::from_secs(2));
 
     let _ = block_on(enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES, None));
     let alice_orders = [("RICK", "MORTY", "0.85", "1", None)];
@@ -504,6 +506,8 @@ fn test_best_orders_v2_exclude_mine() {
         alice_order_ids.insert(result.result.uuid);
         assert!(status.is_success(), "!setprice: {}", data);
     }
+    thread::sleep(Duration::from_secs(2));
+
     let response = block_on(best_orders_v2_by_number(&mm_alice, "RICK", "buy", 100, false));
     log!("all orders response: {response:?}");
     assert_eq!(response.result.orders.get("MORTY").unwrap().len(), 3);

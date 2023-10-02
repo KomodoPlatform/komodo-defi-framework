@@ -3,7 +3,6 @@ use crate::eth::{web3_transport::Web3SendOut, EthCoin, GuiAuthMessages, RpcTrans
 use common::APPLICATION_JSON;
 use futures::lock::Mutex as AsyncMutex;
 use http::header::CONTENT_TYPE;
-#[cfg(not(target_arch = "wasm32"))] use jsonrpc_core::Id;
 use jsonrpc_core::{Call, Response};
 use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
 use serde_json::Value as Json;
@@ -218,7 +217,7 @@ async fn send_request(
             Either::Right((_t, _r)) => {
                 let (method, id) = match &request {
                     Call::MethodCall(m) => (m.method.clone(), m.id.clone()),
-                    Call::Notification(n) => (n.method.clone(), Id::Null),
+                    Call::Notification(n) => (n.method.clone(), jsonrpc_core::Id::Null),
                     Call::Invalid { id } => ("Invalid call".to_string(), id.clone()),
                 };
                 let error = format!(

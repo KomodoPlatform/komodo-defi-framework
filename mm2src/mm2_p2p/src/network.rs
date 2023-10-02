@@ -1,4 +1,4 @@
-use crate::RelayAddress;
+use crate::relay_address::RelayAddress;
 use libp2p::PeerId;
 
 pub const NETID_8762: u16 = 8762;
@@ -17,10 +17,7 @@ const ALL_NETID_8762_SEEDNODES: &[(&str, &str)] = &[
         "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
         "168.119.236.239",
     ),
-    (
-        "12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd",
-        "135.181.34.220",
-    ),
+    ("12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd", "135.181.34.220"),
     (
         "12D3KooWEsuiKcQaBaKEzuMtT6uFjs89P1E8MK3wGRZbeuCbCw6P",
         "168.119.236.241",
@@ -41,26 +38,11 @@ const ALL_NETID_8762_SEEDNODES: &[(&str, &str)] = &[
         "12D3KooWL6yrrNACb7t7RPyTEPxKmq8jtrcbkcNd6H5G2hK7bXaL",
         "168.119.236.233",
     ),
-    (
-        "12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb",
-        "168.119.237.8",
-    ),
-    (
-        "12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d",
-        "168.119.237.13",
-    ),
-    (
-        "12D3KooWJDoV9vJdy6PnzwVETZ3fWGMhV41VhSbocR1h2geFqq9Y",
-        "65.108.90.210",
-    ),
-    (
-        "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
-        "46.4.78.11",
-    ),
-    (
-        "12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q",
-        "46.4.87.18",
-    ),
+    ("12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb", "168.119.237.8"),
+    ("12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d", "168.119.237.13"),
+    ("12D3KooWJDoV9vJdy6PnzwVETZ3fWGMhV41VhSbocR1h2geFqq9Y", "65.108.90.210"),
+    ("12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u", "46.4.78.11"),
+    ("12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q", "46.4.87.18"),
 ];
 
 #[cfg(target_arch = "wasm32")]

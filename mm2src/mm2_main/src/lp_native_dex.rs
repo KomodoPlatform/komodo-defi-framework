@@ -64,7 +64,11 @@ cfg_native! {
 #[path = "lp_init/init_metamask.rs"]
 pub mod init_metamask;
 
-const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.komodo.earth", "seed2.komodo.earth", "seed3.komodo.earth"];
+const NETID_8762_SEEDNODES: [&str; 3] = [
+    "streamseed1.komodo.earth",
+    "streamseed2.komodo.earth",
+    "streamseed3.komodo.earth",
+];
 
 pub type P2PResult<T> = Result<T, MmError<P2PInitError>>;
 pub type MmInitResult<T> = Result<T, MmError<MmInitError>>;
@@ -104,6 +108,7 @@ impl From<AdexBehaviourError> for P2PInitError {
     fn from(e: AdexBehaviourError) -> Self {
         match e {
             AdexBehaviourError::ParsingRelayAddress(e) => P2PInitError::InvalidRelayAddress(e),
+            error => P2PInitError::Internal(error.to_string()),
         }
     }
 }
@@ -255,8 +260,8 @@ impl MmInitError {
 
 #[cfg(target_arch = "wasm32")]
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
-    if netid == 7777 {
-        NETID_7777_SEEDNODES
+    if netid == 8762 {
+        NETID_8762_SEEDNODES
             .iter()
             .map(|seed| RelayAddress::Dns(seed.to_string()))
             .collect()
@@ -268,8 +273,8 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
 #[cfg(not(target_arch = "wasm32"))]
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
     use crate::mm2::lp_network::addr_to_ipv4_string;
-    if netid == 7777 {
-        NETID_7777_SEEDNODES
+    if netid == 8762 {
+        NETID_8762_SEEDNODES
             .iter()
             .filter_map(|seed| addr_to_ipv4_string(seed).ok())
             .map(RelayAddress::IPv4)

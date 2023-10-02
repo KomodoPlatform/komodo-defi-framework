@@ -9,8 +9,6 @@ members = [
     "mm2src/derives/enum_from",
     "mm2src/derives/ser_error_derive",
     "mm2src/derives/ser_error",
-    "mm2src/floodsub",
-    "mm2src/gossipsub",
     "mm2src/hw_common",
     "mm2src/mm2_bin_lib",
     "mm2src/mm2_bitcoin/chain",
@@ -30,12 +28,12 @@ members = [
     "mm2src/mm2_git",
     "mm2src/mm2_gui_storage",
     "mm2src/mm2_io",
-    "mm2src/mm2_libp2p",
     "mm2src/mm2_main",
     "mm2src/mm2_metamask",
     "mm2src/mm2_metrics",
     "mm2src/mm2_net",
     "mm2src/mm2_number",
+    "mm2src/mm2_p2p",
     "mm2src/mm2_rpc",
     "mm2src/mm2_state_machine",
     "mm2src/mm2_test_helpers",
@@ -44,7 +42,10 @@ members = [
 ]
 
 exclude = [
-    "mm2src/adex_cli"
+    "mm2src/adex_cli",
+    "mm2src/floodsub",
+    "mm2src/gossipsub",
+    "mm2src/mm2_libp2p",
 ]
 
 # https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2

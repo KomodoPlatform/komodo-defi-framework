@@ -20,7 +20,7 @@ lazy_static = "1.4"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream"}
-mm2-libp2p = { path = "../mm2_libp2p" }
+mm2-libp2p = { path = "../mm2_p2p", package = "mm2_p2p" }
 mm2_state_machine = { path = "../mm2_state_machine" }
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 prost = "0.10"
