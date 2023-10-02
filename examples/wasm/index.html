@@ -1,27 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>MM2 example</title>
 </head>
+
 <body>
 
-<div>
-    <label for="wid_conf_input">Config JSON</label>
-    <br>
-    <textarea id="wid_conf_input" cols="100" rows="7">{"gui":"WASMTEST","mm2":1,"passphrase":"wasmtest","allow_weak_password":true,"rpc_password":"testpsw","netid":7777,"coins":[{"coin":"ETH","protocol":{"type":"ETH"}},{"coin":"RICK","overwintered":1,"txversion":4,"protocol":{"type":"UTXO"}},{"coin":"MORTY","overwintered":1,"txversion":4,"protocol":{"type":"UTXO"}}]}</textarea>
-    <br>
-    <button id="wid_run_mm2_button" disabled="disabled">Start MM2</button>
-    <button id="wid_stop_mm2_button" disabled="disabled">Stop MM2</button>
-    <br>
-    <br>
-    <label for="wid_rpc_input">RPC payload JSON</label>
-    <br>
-    <textarea id="wid_rpc_input" cols="100" rows="9">[{"userpass":"testpsw","method":"electrum","mm2":1,"coin":"RICK","tx_history":true,"servers":[{"url":"electrum1.cipig.net:30017","protocol":"WSS"}]},{"userpass":"testpsw","method":"electrum","mm2":1,"coin":"MORTY","tx_history":true,"servers":[{"url":"electrum1.cipig.net:30018","protocol":"WSS"}]},{"userpass":"testpsw","method":"enable","mm2":1,"coin":"ETH","swap_contract_address":"0x8500AFc0bc5214728082163326C2FF0C73f4a871","urls":["http://eth1.cipig.net:8555"]}]</textarea>
-    <br>
-    <button id="wid_mm2_rpc_button" disabled="disabled">Submit request</button>
-</div>
+    <div>
+        <label for="wid_conf_input">Config JSON</label>
+        <br>
+        <textarea id="wid_conf_input" cols="100"
+            rows="7">{"gui":"WASMTEST","mm2":1,"passphrase":"wasmtest","allow_weak_password":true,"rpc_password":"testpsw","netid":7777,"coins":[{"coin":"ETH","protocol":{"type":"ETH"}},{"coin":"RICK","overwintered":1,"txversion":4,"protocol":{"type":"UTXO"}},{"coin":"MORTY","overwintered":1,"txversion":4,"protocol":{"type":"UTXO"}}]}</textarea>
+        <br>
+        <button id="wid_run_mm2_button" disabled="disabled">Start MM2</button>
+        <button id="wid_stop_mm2_button" disabled="disabled">Stop MM2</button>
+        <br>
+        <br>
+        <label for="wid_rpc_input">RPC payload JSON</label>
+        <br>
+        <textarea id="wid_rpc_input" cols="100"
+            rows="9">[{"userpass":"testpsw","method":"electrum","mm2":1,"coin":"RICK","tx_history":true,"servers":[{"url":"electrum1.cipig.net:30017","protocol":"WSS"}]},{"userpass":"testpsw","method":"electrum","mm2":1,"coin":"MORTY","tx_history":true,"servers":[{"url":"electrum1.cipig.net:30018","protocol":"WSS"}]},{"userpass":"testpsw","method":"enable","mm2":1,"coin":"ETH","swap_contract_address":"0x8500AFc0bc5214728082163326C2FF0C73f4a871","urls":["http://eth1.cipig.net:8555"]}]</textarea>
+        <br>
+        <button id="wid_mm2_rpc_button" disabled="disabled">Submit request</button>
+    </div>
 
 </body>
 <script src="script.js" type="module"></script>
+
 </html>

@@ -1,5 +1,4 @@
 use super::*;
-use crate::mm2::lp_network::P2PContext;
 use crate::mm2::lp_ordermatch::new_protocol::{MakerOrderUpdated, PubkeyKeepAlive};
 use coins::{MmCoin, TestCoin};
 use common::{block_on, executor::spawn};
@@ -9,6 +8,7 @@ use futures::{channel::mpsc, StreamExt};
 use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_libp2p::atomicdex_behaviour::AdexBehaviourCmd;
 use mm2_libp2p::{decode_message, PeerId};
+use mm2_net::p2p::P2PContext;
 use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
 use mocktopus::mocking::*;
 use rand::{seq::SliceRandom, thread_rng, Rng};

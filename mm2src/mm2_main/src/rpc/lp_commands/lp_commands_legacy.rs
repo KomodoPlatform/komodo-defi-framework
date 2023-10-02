@@ -27,6 +27,7 @@ use futures::compat::Future01CompatExt;
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
 use mm2_metrics::MetricsOps;
+use mm2_net::p2p::P2PContext;
 use mm2_number::construct_detailed;
 use mm2_rpc::data::legacy::{BalanceResponse, CoinInitResponse, Mm2RpcResult, MmVersionResponse, Status};
 use serde_json::{self as json, Value as Json};
@@ -306,7 +307,6 @@ pub fn version(ctx: MmArc) -> HyRes {
 }
 
 pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_peers_info;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
@@ -319,7 +319,6 @@ pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
 }
 
 pub async fn get_gossip_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_gossip_mesh;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
@@ -332,7 +331,6 @@ pub async fn get_gossip_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
 }
 
 pub async fn get_gossip_peer_topics(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_gossip_peer_topics;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
@@ -345,7 +343,6 @@ pub async fn get_gossip_peer_topics(ctx: MmArc) -> Result<Response<Vec<u8>>, Str
 }
 
 pub async fn get_gossip_topic_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_gossip_topic_peers;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
@@ -358,7 +355,6 @@ pub async fn get_gossip_topic_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, Str
 }
 
 pub async fn get_relay_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_relay_mesh;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();

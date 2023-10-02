@@ -28,8 +28,6 @@ use futures::future::{join_all, FutureExt};
 use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
 use http::request::Parts;
 use http::{Method, Request, Response, StatusCode};
-#[cfg(not(target_arch = "wasm32"))]
-use hyper::{self, Body, Server};
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -39,6 +37,11 @@ use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::net::SocketAddr;
+
+cfg_native! {
+    use hyper::{self, Body, Server};
+    use mm2_net::sse_handler::{handle_sse, SSE_ENDPOINT};
+}
 
 #[path = "rpc/dispatcher/dispatcher.rs"] mod dispatcher;
 #[path = "rpc/dispatcher/dispatcher_legacy.rs"]
@@ -301,6 +304,8 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
     Response::from_parts(parts, Body::from(body_escaped))
 }
 
+// TODO: This should exclude TCP internals, as including them results in having to
+// handle various protocols within this function.
 #[cfg(not(target_arch = "wasm32"))]
 pub extern "C" fn spawn_rpc(ctx_h: u32) {
     use common::now_sec;
@@ -351,8 +356,17 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     // then we might want to refactor into starting it ideomatically in order to benefit from a more graceful shutdown,
     // cf. https://github.com/hyperium/hyper/pull/1640.
 
+    let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
+
+    let is_event_stream_enabled = ctx.event_stream_configuration.is_some();
+
     let make_svc_fut = move |remote_addr: SocketAddr| async move {
         Ok::<_, Infallible>(service_fn(move |req: Request<Body>| async move {
+            if is_event_stream_enabled && req.uri().path() == SSE_ENDPOINT {
+                let res = handle_sse(req, ctx_h).await?;
+                return Ok::<_, Infallible>(res);
+            }
+
             let res = rpc_service(req, ctx_h, remote_addr).await;
             Ok::<_, Infallible>(res)
         }))
@@ -416,8 +430,6 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
             }
         };
     }
-
-    let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
 
     let rpc_ip_port = ctx
         .rpc_ip_port()

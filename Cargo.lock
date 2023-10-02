@@ -4115,6 +4115,7 @@ dependencies = [
  "gstuff",
  "hex 0.4.3",
  "lazy_static",
+ "mm2_event_stream",
  "mm2_metrics",
  "mm2_rpc",
  "primitives",
@@ -4181,6 +4182,19 @@ dependencies = [
  "serde",
  "serde_json",
  "web3",
+]
+
+[[package]]
+name = "mm2_event_stream"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "cfg-if 1.0.0",
+ "common",
+ "parking_lot 0.12.0",
+ "serde",
+ "tokio",
+ "wasm-bindgen-test",
 ]
 
 [[package]]
@@ -4278,6 +4292,7 @@ dependencies = [
  "mm2_core",
  "mm2_db",
  "mm2_err_handle",
+ "mm2_event_stream",
  "mm2_gui_storage",
  "mm2_io",
  "mm2_metrics",
@@ -4373,6 +4388,7 @@ dependencies = [
 name = "mm2_net"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "async-trait",
  "bytes 1.1.0",
  "cfg-if 1.0.0",
@@ -4386,9 +4402,13 @@ dependencies = [
  "hyper",
  "js-sys",
  "lazy_static",
+ "mm2-libp2p",
  "mm2_core",
  "mm2_err_handle",
+ "mm2_event_stream",
  "mm2_state_machine",
+ "mocktopus",
+ "parking_lot 0.12.0",
  "prost",
  "rand 0.7.3",
  "rustls 0.20.4",

@@ -1,3 +1,5 @@
+// TODO: a lof of these implementations should be handled in `mm2_net`
+
 /******************************************************************************
  * Copyright © 2022 Atomic Private Limited and its contributors               *
  *                                                                            *
@@ -27,17 +29,15 @@ use instant::Instant;
 use keys::KeyPair;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
+use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexEventRx, AdexResponse,
                                       AdexResponseChannel};
 use mm2_libp2p::peers_exchange::PeerAddresses;
 use mm2_libp2p::{decode_message, encode_message, DecodingError, GossipsubMessage, Libp2pPublic, Libp2pSecpPublic,
                  MessageId, NetworkPorts, PeerId, TopicHash, TOPIC_SEPARATOR};
 use mm2_metrics::{mm_label, mm_timing};
-#[cfg(test)] use mocktopus::macros::*;
-use parking_lot::Mutex as PaMutex;
+use mm2_net::p2p::P2PContext;
 use serde::de;
 use std::net::ToSocketAddrs;
-use std::sync::Arc;
 
 use crate::mm2::lp_ordermatch;
 use crate::mm2::{lp_stats, lp_swap};
@@ -87,33 +87,6 @@ impl From<rmp_serde::decode::Error> for P2PRequestError {
 pub enum P2PRequest {
     Ordermatch(lp_ordermatch::OrdermatchRequest),
     NetworkInfo(lp_stats::NetworkInfoRequest),
-}
-
-pub struct P2PContext {
-    /// Using Mutex helps to prevent cloning which can actually result to channel being unbounded in case of using 1 tx clone per 1 message.
-    pub cmd_tx: PaMutex<AdexCmdTx>,
-}
-
-#[cfg_attr(test, mockable)]
-impl P2PContext {
-    pub fn new(cmd_tx: AdexCmdTx) -> Self {
-        P2PContext {
-            cmd_tx: PaMutex::new(cmd_tx),
-        }
-    }
-
-    pub fn store_to_mm_arc(self, ctx: &MmArc) { *ctx.p2p_ctx.lock().unwrap() = Some(Arc::new(self)) }
-
-    pub fn fetch_from_mm_arc(ctx: &MmArc) -> Arc<Self> {
-        ctx.p2p_ctx
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .clone()
-            .downcast()
-            .unwrap()
-    }
 }
 
 pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay: bool) {
