@@ -23,6 +23,7 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPayment
             TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig,
             ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
             ValidateTakerFundingArgs, ValidateTakerFundingError, ValidateTakerFundingResult,
+            ValidateTakerFundingSpendPreimageError, ValidateTakerFundingSpendPreimageResult,
             ValidateTakerPaymentSpendPreimageError, ValidateTakerPaymentSpendPreimageResult, VerificationError,
             VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
@@ -1245,6 +1246,14 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
         .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
         .await?;
 
+    let fee_plus_dust = fee + coin.as_ref().dust_amount;
+    if funding_amount < fee_plus_dust {
+        return MmError::err(TxGenError::Legacy(format!(
+            "Funding amount {} is less than fee + dust {}",
+            funding_amount, fee_plus_dust
+        )));
+    }
+
     let payment_output = TransactionOutput {
         value: funding_amount - fee,
         script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&payment_redeem_script))).to_bytes(),
@@ -1289,6 +1298,56 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
         preimage: preimage.into(),
         signature: signature.take().into(),
     })
+}
+
+/// Common implementation of taker funding spend preimage validation for UTXO coins.
+/// Checks maker's signature and compares received preimage with the expected tx.
+pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
+    coin: &T,
+    gen_args: &GenTakerFundingSpendArgs<'_, T>,
+    preimage: &TxPreimageWithSig<T>,
+) -> ValidateTakerFundingSpendPreimageResult {
+    let expected_preimage = gen_taker_funding_spend_preimage(
+        coin,
+        gen_args,
+        LocktimeSetting::UseExact(0),
+        NTimeSetting::UseValue(preimage.preimage.n_time),
+    )
+    .await?;
+
+    let funding_time_lock = gen_args
+        .funding_time_lock
+        .try_into()
+        .map_to_mm(|e: TryFromIntError| ValidateTakerFundingSpendPreimageError::LocktimeOverflow(e.to_string()))?;
+    let redeem_script = swap_proto_v2_scripts::taker_funding_script(
+        funding_time_lock,
+        gen_args.taker_secret_hash,
+        gen_args.taker_pub,
+        gen_args.maker_pub,
+    );
+    let sig_hash = signature_hash_to_sign(
+        &expected_preimage,
+        DEFAULT_SWAP_VOUT,
+        &redeem_script,
+        coin.as_ref().conf.signature_version,
+        SIGHASH_ALL,
+        coin.as_ref().conf.fork_id,
+    )?;
+
+    if !gen_args
+        .maker_pub
+        .verify(&sig_hash, &preimage.signature)
+        .map_to_mm(|e| ValidateTakerFundingSpendPreimageError::SignatureVerificationFailure(e.to_string()))?
+    {
+        return MmError::err(ValidateTakerFundingSpendPreimageError::InvalidMakerSignature);
+    };
+    let expected_preimage_tx: UtxoTx = expected_preimage.into();
+    if expected_preimage_tx != preimage.preimage {
+        return MmError::err(ValidateTakerFundingSpendPreimageError::InvalidPreimage(
+            "Preimage is not equal to expected".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Common implementation of taker funding spend finalization and broadcast for UTXO coins.
@@ -1436,14 +1495,12 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     gen_args: &GenTakerPaymentSpendArgs<'_, T>,
     preimage: &TxPreimageWithSig<T>,
 ) -> ValidateTakerPaymentSpendPreimageResult {
-    // TODO validate that output amounts are larger than dust
-
     // Here, we have to use the exact lock time from the preimage because maker
     // can get different values (e.g. if MTP advances during preimage exchange/fee rate changes)
     let expected_preimage = gen_taker_payment_spend_preimage(
         coin,
         gen_args,
-        LocktimeSetting::UseExact(preimage.preimage.lock_time),
+        LocktimeSetting::UseExact(0),
         NTimeSetting::UseValue(preimage.preimage.n_time),
     )
     .await?;

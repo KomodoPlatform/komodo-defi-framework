@@ -622,7 +622,7 @@ impl SwapOpsV2 for UtxoStandardCoin {
         gen_args: &GenTakerFundingSpendArgs<'_, Self>,
         preimage: &TxPreimageWithSig<Self>,
     ) -> ValidateTakerFundingSpendPreimageResult {
-        todo!()
+        utxo_common::validate_taker_funding_spend_preimage(self, gen_args, preimage).await
     }
 
     async fn sign_and_send_taker_funding_spend(

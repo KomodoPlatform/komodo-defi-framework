@@ -1178,6 +1178,8 @@ pub enum TxGenError {
     Legacy(String),
     /// Input payment timelock overflows the type used by specific coin.
     LocktimeOverflow(String),
+    /// Transaction fee is too high
+    TxFeeTooHigh(String),
 }
 
 impl From<UtxoRpcError> for TxGenError {
