@@ -43,6 +43,3 @@ gstuff = { version = "0.7", features = ["nightly"] }
 rustls = { version = "0.20", default-features = false }
 tokio = { version = "1.20" }
 tokio-rustls = { version = "0.23", default-features = false }
-
-[dev-dependencies]
-mocktopus = "0.8.0"
