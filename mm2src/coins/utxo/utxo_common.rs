@@ -1246,7 +1246,12 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
         args.maker_pub,
     );
 
-    let funding_amount = args.funding_tx.first_output().unwrap().value;
+    let funding_amount = args
+        .funding_tx
+        .first_output()
+        .map_to_mm(|_| TxGenError::PrevTxIsNotValid("Funding tx has no outputs".into()))?
+        .value;
+
     let fee = match fee {
         FundingSpendFeeSetting::GetFromCoin => {
             coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
@@ -1257,9 +1262,9 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
 
     let fee_plus_dust = fee + coin.as_ref().dust_amount;
     if funding_amount < fee_plus_dust {
-        return MmError::err(TxGenError::Legacy(format!(
-            "Funding amount {} is less than fee + dust {}",
-            funding_amount, fee_plus_dust
+        return MmError::err(TxGenError::TxFeeTooHigh(format!(
+            "Fee + dust {} is larger than funding amount {}",
+            fee_plus_dust, funding_amount
         )));
     }
 

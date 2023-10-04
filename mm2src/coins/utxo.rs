@@ -1015,7 +1015,7 @@ pub trait UtxoCommonOps:
 }
 
 impl ToBytes for UtxoTx {
-    fn to_bytes(&self) -> Vec<u8> { serialize(self).take() }
+    fn to_bytes(&self) -> Vec<u8> { self.tx_hex() }
 }
 
 impl ToBytes for Signature {

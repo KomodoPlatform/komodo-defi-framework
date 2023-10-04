@@ -1163,7 +1163,7 @@ pub struct TxPreimageWithSig<Coin: CoinAssocTypes + ?Sized> {
     pub signature: Coin::Sig,
 }
 
-/// Enum covering error cases that can happen during taker payment spend preimage generation.
+/// Enum covering error cases that can happen during transaction preimage generation.
 #[derive(Debug, Display)]
 pub enum TxGenError {
     /// RPC error
@@ -1180,6 +1180,8 @@ pub enum TxGenError {
     LocktimeOverflow(String),
     /// Transaction fee is too high
     TxFeeTooHigh(String),
+    /// Previous tx is not valid
+    PrevTxIsNotValid(String),
 }
 
 impl From<UtxoRpcError> for TxGenError {
