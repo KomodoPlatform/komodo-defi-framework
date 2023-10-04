@@ -11,7 +11,7 @@ use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoin
 use common::{block_on, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
-use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, get_payment_locktime, MakerSwap,
+use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, generate_secret, get_payment_locktime,
                              MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG, MAKER_PAYMENT_SPEND_SENT_LOG,
                              TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
