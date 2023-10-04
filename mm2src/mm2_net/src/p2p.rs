@@ -1,6 +1,5 @@
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::behaviours::atomicdex::AdexCmdTx;
-#[cfg(test)] use mocktopus::macros::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -9,15 +8,6 @@ pub struct P2PContext {
     pub cmd_tx: Mutex<AdexCmdTx>,
 }
 
-// `mockable` violates these
-#[allow(
-    clippy::forget_ref,
-    clippy::forget_copy,
-    clippy::swap_ptr_to_ref,
-    clippy::forget_non_drop,
-    clippy::let_unit_value
-)]
-#[cfg_attr(test, mockable)]
 impl P2PContext {
     pub fn new(cmd_tx: AdexCmdTx) -> Self {
         P2PContext {

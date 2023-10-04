@@ -2470,7 +2470,7 @@ fn check_too_low_volume_order_creation_fails(mm: &MarketMakerIt, base: &str, rel
         "method": "setprice",
         "base": base,
         "rel": rel,
-        "price": "0.00000099",
+        "price": "0.00000000000000000099",
         "volume": "1",
         "cancel_previous": false,
     })))
