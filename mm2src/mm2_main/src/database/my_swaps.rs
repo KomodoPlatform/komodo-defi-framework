@@ -81,27 +81,27 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     taker_coin_confs,
     taker_coin_nota
 ) VALUES (
-    ?1,
-    ?2,
-    ?3,
-    ?4,
-    ?5,
-    ?6,
-    ?7,
-    ?8,
-    ?9,
-    ?10,
-    ?11,
-    ?12,
-    ?13,
-    ?14,
-    ?15,
-    ?16,
-    ?17,
-    ?18
+    :my_coin,
+    :other_coin,
+    :uuid,
+    :started_at,
+    :swap_type,
+    :maker_volume,
+    :taker_volume,
+    :premium,
+    :dex_fee,
+    :secret,
+    :secret_hash,
+    :secret_hash_algo,
+    :p2p_privkey,
+    :lock_duration,
+    :maker_coin_confs,
+    :maker_coin_nota,
+    :taker_coin_confs,
+    :taker_coin_nota
 );"#;
 
-pub fn insert_new_swap_v2(ctx: &MmArc, params: &[&dyn ToSql]) -> SqlResult<()> {
+pub fn insert_new_swap_v2(ctx: &MmArc, params: &[(&str, &dyn ToSql)]) -> SqlResult<()> {
     let conn = ctx.sqlite_connection();
     conn.execute(INSERT_MY_SWAP_V2, params).map(|_| ())
 }

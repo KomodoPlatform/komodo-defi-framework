@@ -12,7 +12,7 @@ use coins::{CoinAssocTypes, ConfirmPaymentInput, FeeApproxStage, GenTakerFunding
             ValidateTakerFundingArgs};
 use common::log::{debug, info, warn};
 use common::{bits256, Future01CompatExt, DEX_FEE_ADDR_RAW_PUBKEY};
-use db_common::sqlite::rusqlite::params;
+use db_common::sqlite::rusqlite::named_params;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -251,26 +251,26 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State fo
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
         {
-            let sql_params = params![
-                state_machine.maker_coin.ticker(),
-                state_machine.taker_coin.ticker(),
-                state_machine.uuid.to_string(),
-                state_machine.started_at,
-                MAKER_SWAP_V2_TYPE,
-                state_machine.maker_volume.to_fraction_string(),
-                state_machine.taker_volume.to_fraction_string(),
-                state_machine.taker_premium.to_fraction_string(),
-                state_machine.dex_fee_amount.to_fraction_string(),
-                state_machine.secret.take(),
-                state_machine.secret_hash(),
-                state_machine.secret_hash_algo as u8,
-                state_machine.p2p_keypair.map(|k| k.private_bytes()).unwrap_or_default(),
-                state_machine.lock_duration,
-                state_machine.conf_settings.maker_coin_confs,
-                state_machine.conf_settings.maker_coin_nota,
-                state_machine.conf_settings.taker_coin_confs,
-                state_machine.conf_settings.taker_coin_nota
-            ];
+            let sql_params = named_params! {
+                ":my_coin": state_machine.maker_coin.ticker(),
+                ":other_coin": state_machine.taker_coin.ticker(),
+                ":uuid": state_machine.uuid.to_string(),
+                ":started_at": state_machine.started_at,
+                ":swap_type": MAKER_SWAP_V2_TYPE,
+                ":maker_volume": state_machine.maker_volume.to_fraction_string(),
+                ":taker_volume": state_machine.taker_volume.to_fraction_string(),
+                ":premium": state_machine.taker_premium.to_fraction_string(),
+                ":dex_fee": state_machine.dex_fee_amount.to_fraction_string(),
+                ":secret": state_machine.secret.take(),
+                ":secret_hash": state_machine.secret_hash(),
+                ":secret_hash_algo": state_machine.secret_hash_algo as u8,
+                ":p2p_privkey": state_machine.p2p_keypair.map(|k| k.private_bytes()).unwrap_or_default(),
+                ":lock_duration": state_machine.lock_duration,
+                ":maker_coin_confs": state_machine.conf_settings.maker_coin_confs,
+                ":maker_coin_nota": state_machine.conf_settings.maker_coin_nota,
+                ":taker_coin_confs": state_machine.conf_settings.taker_coin_confs,
+                ":taker_coin_nota": state_machine.conf_settings.taker_coin_nota
+            };
             insert_new_swap_v2(&state_machine.ctx, sql_params).unwrap();
         }
 
