@@ -4,6 +4,7 @@ use common::{executor::{AbortSettings, SpawnAbortable},
 use futures_util::{SinkExt, StreamExt};
 use jsonrpc_core::MethodCall;
 use jsonrpc_core::{Id as RpcId, Params as RpcParams, Value as RpcValue, Version as RpcVersion};
+use mm2_core::mm_ctx::MmArc;
 use mm2_event_stream::{behaviour::EventBehaviour, Event, EventStreamConfiguration};
 use mm2_number::BigDecimal;
 use std::collections::{HashMap, HashSet};
@@ -29,6 +30,8 @@ impl EventBehaviour for TendermintCoin {
 
             serde_json::to_string(&q).expect("This should never happen")
         }
+
+        let ctx = MmArc::from_weak(&self.ctx).expect("MM context must have been initialized already.");
 
         let account_id = self.account_id.to_string();
         let mut current_balances: HashMap<String, BigDecimal> = HashMap::new();
@@ -128,8 +131,7 @@ impl EventBehaviour for TendermintCoin {
                                     "balance": { "spendable": balance_decimal, "unspendable": BigDecimal::default() }
                                 });
 
-                                self.ctx
-                                    .stream_channel_controller
+                                ctx.stream_channel_controller
                                     .broadcast(Event::new(Self::EVENT_NAME.to_string(), payload.to_string()))
                                     .await;
                             }

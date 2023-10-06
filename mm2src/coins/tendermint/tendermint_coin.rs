@@ -60,7 +60,7 @@ use futures01::Future;
 use hex::FromHexError;
 use itertools::Itertools;
 use keys::KeyPair;
-use mm2_core::mm_ctx::MmArc;
+use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
 use mm2_number::MmNumber;
@@ -237,7 +237,7 @@ pub struct TendermintCoinImpl {
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
     chain_registry_name: Option<String>,
-    pub(crate) ctx: MmArc,
+    pub(crate) ctx: MmWeak,
 }
 
 #[derive(Clone)]
@@ -545,7 +545,7 @@ impl TendermintCoin {
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
             chain_registry_name: protocol_info.chain_registry_name,
-            ctx: ctx.clone(),
+            ctx: ctx.weak(),
         })))
     }
 
