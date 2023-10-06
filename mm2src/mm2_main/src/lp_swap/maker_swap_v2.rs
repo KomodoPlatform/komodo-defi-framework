@@ -640,7 +640,6 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
             maker_coin_start_block: self.maker_coin_start_block,
             taker_coin_start_block: self.taker_coin_start_block,
             negotiation_data: self.negotiation_data,
-            taker_funding: self.taker_funding,
             funding_spend_preimage,
             maker_payment: TransactionIdentifier {
                 tx_hex: maker_payment.tx_hex().into(),
@@ -674,7 +673,6 @@ struct MakerPaymentSentFundingSpendGenerated<MakerCoin: CoinAssocTypes, TakerCoi
     maker_coin_start_block: u64,
     taker_coin_start_block: u64,
     negotiation_data: NegotiationData<MakerCoin, TakerCoin>,
-    taker_funding: TakerCoin::Tx,
     funding_spend_preimage: TxPreimageWithSig<TakerCoin>,
     maker_payment: TransactionIdentifier,
 }
@@ -746,7 +744,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
         };
 
         let input = ConfirmPaymentInput {
-            payment_tx: self.taker_funding.tx_hex(),
+            payment_tx: taker_payment.tx_hex(),
             confirmations: state_machine.conf_settings.taker_coin_confs,
             requires_nota: state_machine.conf_settings.taker_coin_nota,
             wait_until: state_machine.taker_payment_conf_timeout(),
