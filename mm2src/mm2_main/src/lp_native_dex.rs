@@ -28,9 +28,11 @@ use enum_from::EnumFromTrait;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime,
                  WssCerts};
 use mm2_metrics::mm_gauge;
+use mm2_net::network_event::NetworkEvent;
 use mm2_net::p2p::P2PContext;
 use rpc_task::RpcTaskError;
 use serde_json::{self as json};
@@ -49,9 +51,6 @@ use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_me
                                 OrdermatchInitError};
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
-
-use mm2_event_stream::behaviour::EventBehaviour;
-use mm2_net::network_event::NetworkEvent;
 
 cfg_native! {
     use db_common::sqlite::rusqlite::Error as SqlError;
@@ -166,6 +165,8 @@ pub enum MmInitError {
     EmptyPassphrase,
     #[display(fmt = "Invalid passphrase: {}", _0)]
     InvalidPassphrase(String),
+    #[display(fmt = "NETWORK event initialization failed: {}", _0)]
+    NetworkEventInitFailed(String),
     #[from_trait(WithHwRpcError::hw_rpc_error)]
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
@@ -389,11 +390,15 @@ fn migrate_db(ctx: &MmArc) -> MmInitResult<()> {
 #[cfg(not(target_arch = "wasm32"))]
 fn migration_1(_ctx: &MmArc) {}
 
-fn init_event_streaming(ctx: &MmArc) {
+async fn init_event_streaming(ctx: &MmArc) -> MmInitResult<()> {
     // This condition only executed if events were enabled in mm2 configuration.
     if let Some(config) = &ctx.event_stream_configuration {
-        NetworkEvent::new(ctx.clone()).spawn_if_active(config);
+        if let EventInitStatus::Failed(err) = NetworkEvent::new(ctx.clone()).spawn_if_active(config).await {
+            return MmError::err(MmInitError::NetworkEventInitFailed(err));
+        }
     }
+
+    Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -433,7 +438,7 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     // an order and start new swap that might get started 2 times because of kick-start
     kick_start(ctx.clone()).await?;
 
-    init_event_streaming(&ctx);
+    init_event_streaming(&ctx).await?;
 
     ctx.spawner().spawn(lp_ordermatch_loop(ctx.clone()));
 

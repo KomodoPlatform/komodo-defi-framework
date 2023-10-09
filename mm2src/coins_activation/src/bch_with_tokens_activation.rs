@@ -332,5 +332,10 @@ impl PlatformWithTokensActivationOps for BchCoin {
         self.spawner().spawn_with_settings(fut, settings);
     }
 
-    fn handle_balance_streaming(&self, _config: &EventStreamConfiguration) {}
+    async fn handle_balance_streaming(
+        &self,
+        _config: &EventStreamConfiguration,
+    ) -> Result<(), MmError<Self::ActivationError>> {
+        Ok(())
+    }
 }

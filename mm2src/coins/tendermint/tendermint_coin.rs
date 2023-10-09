@@ -280,6 +280,7 @@ pub enum TendermintInitErrorKind {
     AvgBlockTimeMissing,
     #[display(fmt = "avg_blocktime must be in-between '0' and '255'.")]
     AvgBlockTimeInvalid,
+    BalanceStreamInitError(String),
 }
 
 #[derive(Display, Debug)]

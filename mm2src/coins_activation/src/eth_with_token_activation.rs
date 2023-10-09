@@ -279,7 +279,12 @@ impl PlatformWithTokensActivationOps for EthCoin {
     ) {
     }
 
-    fn handle_balance_streaming(&self, _config: &EventStreamConfiguration) {}
+    async fn handle_balance_streaming(
+        &self,
+        _config: &EventStreamConfiguration,
+    ) -> Result<(), MmError<Self::ActivationError>> {
+        Ok(())
+    }
 }
 
 fn eth_priv_key_build_policy(

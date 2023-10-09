@@ -167,7 +167,10 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         initial_balance: Option<BigDecimal>,
     );
 
-    fn handle_balance_streaming(&self, config: &EventStreamConfiguration);
+    async fn handle_balance_streaming(
+        &self,
+        config: &EventStreamConfiguration,
+    ) -> Result<(), MmError<Self::ActivationError>>;
 }
 
 #[derive(Debug, Deserialize)]
@@ -368,7 +371,7 @@ where
     }
 
     if let Some(config) = &ctx.event_stream_configuration {
-        platform_coin.handle_balance_streaming(config);
+        platform_coin.handle_balance_streaming(config).await?;
     }
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();

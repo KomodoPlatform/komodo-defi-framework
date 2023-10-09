@@ -15,7 +15,7 @@ use common::{true_f, Future01CompatExt};
 use crypto::StandardHDCoinAddress;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::behaviour::EventBehaviour;
+use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 use mm2_event_stream::EventStreamConfiguration;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
@@ -285,7 +285,16 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         self.spawner().spawn_with_settings(fut, settings);
     }
 
-    fn handle_balance_streaming(&self, config: &EventStreamConfiguration) {
-        EventBehaviour::spawn_if_active(self.clone(), config);
+    async fn handle_balance_streaming(
+        &self,
+        config: &EventStreamConfiguration,
+    ) -> Result<(), MmError<Self::ActivationError>> {
+        if let EventInitStatus::Failed(err) = EventBehaviour::spawn_if_active(self.clone(), config).await {
+            return MmError::err(TendermintInitError {
+                ticker: self.ticker().to_owned(),
+                kind: TendermintInitErrorKind::BalanceStreamInitError(err),
+            });
+        }
+        Ok(())
     }
 }
