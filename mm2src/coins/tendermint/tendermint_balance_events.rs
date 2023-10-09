@@ -170,7 +170,9 @@ impl EventBehaviour for TendermintCoin {
                 AbortSettings::info_on_abort(format!("{} event is stopped for {}.", Self::EVENT_NAME, self.ticker()));
             self.spawner().spawn_with_settings(fut, settings);
 
-            rx.await.expect("Event initialization status must be recieved.")
+            rx.await.unwrap_or_else(|e| {
+                EventInitStatus::Failed(format!("Event initialization status must be received: {}", e))
+            })
         } else {
             EventInitStatus::Inactive
         }

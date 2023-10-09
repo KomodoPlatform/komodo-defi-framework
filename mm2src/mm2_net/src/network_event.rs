@@ -67,7 +67,9 @@ impl EventBehaviour for NetworkEvent {
             let (tx, rx): (Sender<EventInitStatus>, Receiver<EventInitStatus>) = oneshot::channel();
             self.ctx.spawner().spawn(self.handle(event.stream_interval_seconds, tx));
 
-            rx.await.expect("Event initialization status must be recieved.")
+            rx.await.unwrap_or_else(|e| {
+                EventInitStatus::Failed(format!("Event initialization status must be received: {}", e))
+            })
         } else {
             EventInitStatus::Inactive
         }
