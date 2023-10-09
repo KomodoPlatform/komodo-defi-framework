@@ -4,7 +4,6 @@ use futures::channel::oneshot;
 
 #[derive(Clone, Debug)]
 pub enum EventInitStatus {
-    NotInitialized,
     Inactive,
     Success,
     Failed(String),
