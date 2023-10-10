@@ -258,6 +258,9 @@ impl<E: NotMmError> MmError<E> {
             .iter()
             .map(|src| src.file)
             .rev()
+            // If we call functions x -> y -> z which are defined in the same module, the module
+            // name would be duplicated three times in the path chain. `dedup` solves this issue,
+            // and there is no need for a `sort` before this deduplication.
             .dedup()
             .collect::<Vec<_>>()
             .join(".")

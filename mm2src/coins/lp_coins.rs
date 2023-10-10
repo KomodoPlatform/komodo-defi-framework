@@ -2904,19 +2904,17 @@ impl CoinsContext {
         }
 
         // Tokens can't be activated without platform coin so we can safely insert them without checking prior existence
-        let mut token_tickers = Vec::with_capacity(tokens.len());
+        let mut token_tickers = HashSet::with_capacity(tokens.len());
         // TODO
         // Handling for these case:
         // USDT was activated via enable RPC
         // We try to activate ETH coin and USDT token via enable_eth_with_tokens
         for token in tokens {
-            token_tickers.push(token.ticker().to_string());
+            token_tickers.insert(token.ticker().to_string());
             coins
                 .entry(token.ticker().into())
                 .or_insert_with(|| MmCoinStruct::new(token));
         }
-
-        token_tickers.dedup();
 
         platform_coin_tokens
             .entry(platform_ticker)
