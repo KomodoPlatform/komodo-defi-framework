@@ -1372,6 +1372,8 @@ fn test_cashaddresses_in_tx_details_by_hash() {
     let req = json!({
          "method": "electrum",
          "servers": [
+             {"url":"bch0.kister.net:51002","protocol":"SSL"},
+             {"url":"tbch.loping.net:60002","protocol":"SSL"},
              {"url":"electroncash.de:50003"},
              {"url":"tbch.loping.net:60001"},
              {"url":"blackie.c3-soft.com:60001"},
@@ -1411,6 +1413,8 @@ fn test_address_from_str_with_cashaddress_activated() {
     let req = json!({
          "method": "electrum",
          "servers": [
+             {"url":"bch0.kister.net:51002","protocol":"SSL"},
+             {"url":"tbch.loping.net:60002","protocol":"SSL"},
              {"url":"electroncash.de:50003"},
              {"url":"tbch.loping.net:60001"},
              {"url":"blackie.c3-soft.com:60001"},
@@ -1449,6 +1453,8 @@ fn test_address_from_str_with_legacy_address_activated() {
     let req = json!({
          "method": "electrum",
          "servers": [
+             {"url":"bch0.kister.net:51002","protocol":"SSL"},
+             {"url":"tbch.loping.net:60002","protocol":"SSL"},
              {"url":"electroncash.de:50003"},
              {"url":"tbch.loping.net:60001"},
              {"url":"blackie.c3-soft.com:60001"},
