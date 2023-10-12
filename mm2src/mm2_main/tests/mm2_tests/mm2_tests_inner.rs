@@ -22,7 +22,7 @@ use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_s
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
                                   ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE,
                                   ETH_MAINNET_SWAP_CONTRACT, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
-                                  TBTC_ELECTRUMS};
+                                  TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 
 use crypto::StandardHDCoinAddress;
 use mm2_test_helpers::get_passphrase;
@@ -3176,19 +3176,7 @@ fn test_convert_utxo_address() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    let _electrum = block_on(enable_electrum(
-        &mm,
-        "BCH",
-        false,
-        &[
-            "electroncash.de:50003",
-            "tbch.loping.net:60001",
-            "blackie.c3-soft.com:60001",
-            "bch0.kister.net:51001",
-            "testnet.imaginary.cash:50001",
-        ],
-        None,
-    ));
+    let _electrum = block_on(enable_electrum(&mm, "BCH", false, T_BCH_ELECTRUMS, None));
 
     // test standard to cashaddress
     let rc = block_on(mm.rpc(&json! ({

@@ -166,6 +166,14 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum2.cipig.net:10071",
     "electrum3.cipig.net:10071",
 ];
+#[cfg(not(target_arch = "wasm32"))]
+pub const T_BCH_ELECTRUMS: &[&str] = &["tbch.loping.net:60001", "bch0.kister.net:51001"];
+#[cfg(target_arch = "wasm32")]
+pub const T_BCH_ELECTRUMS: &[&str] = &[
+    "electroncash.de:60003",
+    "electroncash.de:60004",
+    "blackie.c3-soft.com:60004",
+];
 pub const TBTC_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10068",
     "electrum2.cipig.net:10068",
@@ -1732,7 +1740,7 @@ pub enum UtxoRpcMode {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
+pub fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
     servers
         .iter()
         .map(|url| ElectrumRpcRequest {
@@ -1743,7 +1751,7 @@ fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
+pub fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
     servers
         .iter()
         .map(|url| ElectrumRpcRequest {
