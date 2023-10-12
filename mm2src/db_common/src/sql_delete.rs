@@ -1,8 +1,9 @@
-use crate::sql_condition::SqlCondition;
-use crate::sqlite::{validate_table_name, OwnedSqlParams, SqlParamsBuilder};
 use common::log::debug;
 use rusqlite::{params_from_iter, Connection, Error as SqlError, Result as SqlResult};
 use sql_builder::SqlBuilder;
+
+use crate::sql_condition::SqlCondition;
+use crate::sqlite::{validate_table_name, OwnedSqlParams, SqlParamsBuilder};
 
 /// A `DELETE` SQL request builder.
 pub struct SqlDelete<'a> {

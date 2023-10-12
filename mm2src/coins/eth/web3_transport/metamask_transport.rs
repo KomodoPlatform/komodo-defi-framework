@@ -1,11 +1,13 @@
-use crate::eth::web3_transport::Web3SendOut;
-use crate::RpcTransportEventHandlerShared;
+use std::fmt;
+use std::sync::Arc;
+
 use jsonrpc_core::Call;
 use mm2_metamask::{detect_metamask_provider, Eip1193Provider, MetamaskResult, MetamaskSession};
 use serde_json::Value as Json;
-use std::fmt;
-use std::sync::Arc;
 use web3::{RequestId, Transport};
+
+use crate::eth::web3_transport::Web3SendOut;
+use crate::RpcTransportEventHandlerShared;
 
 pub(crate) struct MetamaskEthConfig {
     /// The `ChainId` that the MetaMask wallet should be targeted on each RPC.

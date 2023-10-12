@@ -1,7 +1,7 @@
-use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType, HwPubkey, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH,
-                     MAX_TICKER_LENGTH};
+use std::collections::{BTreeMap, BTreeSet};
+use std::str::FromStr;
+use std::sync::{Arc, MutexGuard};
+
 use async_trait::async_trait;
 use common::some_or_return_ok_none;
 use db_common::foreign_columns;
@@ -12,9 +12,11 @@ use db_common::sqlite::{is_constraint_error, SqliteConnShared};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
-use std::collections::{BTreeMap, BTreeSet};
-use std::str::FromStr;
-use std::sync::{Arc, MutexGuard};
+
+use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
+use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+                     EnabledAccountType, HwPubkey, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH,
+                     MAX_TICKER_LENGTH};
 
 const DEVICE_PUBKEY_MAX_LENGTH: usize = 20;
 const BALANCE_MAX_LENGTH: usize = 255;

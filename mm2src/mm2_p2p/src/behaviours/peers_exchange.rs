@@ -1,3 +1,8 @@
+use std::{collections::{HashMap, HashSet, VecDeque},
+          iter,
+          task::Poll,
+          time::Duration};
+
 use futures::StreamExt;
 use futures_ticker::Ticker;
 use libp2p::{multiaddr::Protocol,
@@ -8,10 +13,6 @@ use libp2p::{multiaddr::Protocol,
 use log::{info, warn};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{collections::{HashMap, HashSet, VecDeque},
-          iter,
-          task::Poll,
-          time::Duration};
 
 use super::request_response::Codec;
 use crate::NetworkInfo;

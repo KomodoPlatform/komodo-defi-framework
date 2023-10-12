@@ -1,20 +1,22 @@
-use crate::hw_client::{HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
-use crate::hw_error::HwError;
-use crate::trezor::TrezorSession;
-use crate::{mm2_internal_der_path, HwWalletType};
+use std::fmt;
+use std::ops::Deref;
+use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use bitcrypto::dhash160;
 use common::log::warn;
 use hw_common::primitives::{EcdsaCurve, Secp256k1ExtendedPublicKey};
 use keys::Public as PublicKey;
 use mm2_err_handle::prelude::*;
 use primitives::hash::{H160, H264};
-use std::fmt;
-use std::ops::Deref;
-use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use trezor::utxo::IGNORE_XPUB_MAGIC;
 use trezor::{ProcessTrezorResponse, TrezorRequestProcessor};
+
+use crate::hw_client::{HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
+use crate::hw_error::HwError;
+use crate::trezor::TrezorSession;
+use crate::{mm2_internal_der_path, HwWalletType};
 
 const MM2_INTERNAL_ECDSA_CURVE: EcdsaCurve = EcdsaCurve::Secp256k1;
 const MM2_TREZOR_INTERNAL_COIN: &str = "Komodo";

@@ -1,4 +1,3 @@
-use crate::hd_wallet::NewAccountCreatingError;
 use async_trait::async_trait;
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::trezor::trezor_rpc_task::{TrezorRpcTaskProcessor, TryIntoUserAction};
@@ -9,6 +8,8 @@ use crypto::{CryptoCtx, CryptoCtxError, DerivationPath, EcdsaCurve, HardwareWall
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
+
+use crate::hd_wallet::NewAccountCreatingError;
 
 const SHOW_PUBKEY_ON_DISPLAY: bool = false;
 

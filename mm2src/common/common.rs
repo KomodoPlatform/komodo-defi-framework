@@ -125,22 +125,6 @@ pub mod wio;
 
 #[cfg(target_arch = "wasm32")] pub mod wasm;
 
-#[cfg(target_arch = "wasm32")] pub use wasm::*;
-
-use backtrace::SymbolName;
-use chrono::format::ParseError;
-use chrono::{DateTime, Utc};
-use derive_more::Display;
-pub use futures::compat::Future01CompatExt;
-use futures01::{future, Future};
-use http::header::CONTENT_TYPE;
-use http::Response;
-use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
-use rand::RngCore;
-use rand::{rngs::SmallRng, SeedableRng};
-use serde::{de, ser};
-use serde_json::{self as json, Value as Json};
-use sha2::{Digest, Sha256};
 use std::convert::TryInto;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
@@ -156,10 +140,25 @@ use std::path::PathBuf;
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, SystemTimeError};
-use uuid::Uuid;
 
+use backtrace::SymbolName;
+use chrono::format::ParseError;
+use chrono::{DateTime, Utc};
+use derive_more::Display;
+pub use futures::compat::Future01CompatExt;
+use futures01::{future, Future};
+use http::header::CONTENT_TYPE;
+use http::Response;
 pub use http::StatusCode;
+use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
+use rand::RngCore;
+use rand::{rngs::SmallRng, SeedableRng};
 pub use serde;
+use serde::{de, ser};
+use serde_json::{self as json, Value as Json};
+use sha2::{Digest, Sha256};
+use uuid::Uuid;
+#[cfg(target_arch = "wasm32")] pub use wasm::*;
 
 cfg_native! {
     pub use gstuff::{now_float, now_ms};

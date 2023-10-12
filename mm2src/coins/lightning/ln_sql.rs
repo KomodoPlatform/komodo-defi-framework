@@ -1,8 +1,8 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DBChannelDetails,
-                              DBPaymentsFilter, GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, LightningDB,
-                              PaymentInfo, PaymentType};
+use std::convert::TryInto;
+use std::str::FromStr;
+
 use async_trait::async_trait;
 use common::{async_blocking, now_sec_i64, PagingOptionsEnum};
 use db_common::owned_named_params;
@@ -14,9 +14,11 @@ use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_
                         OwnedSqlNamedParams, SqlNamedParams, SqliteConnShared, CHECK_TABLE_EXISTS_SQL};
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use secp256k1v24::PublicKey;
-use std::convert::TryInto;
-use std::str::FromStr;
 use uuid::Uuid;
+
+use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DBChannelDetails,
+                              DBPaymentsFilter, GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, LightningDB,
+                              PaymentInfo, PaymentType};
 
 fn channels_history_table(ticker: &str) -> String { ticker.to_owned() + "_channels_history" }
 
@@ -1044,15 +1046,17 @@ impl LightningDB for SqliteLightningDB {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::lightning::ln_db::DBChannelDetails;
+    use std::num::NonZeroUsize;
+    use std::sync::{Arc, Mutex};
+
     use common::{block_on, new_uuid};
     use db_common::sqlite::rusqlite::Connection;
     use rand::distributions::Alphanumeric;
     use rand::{Rng, RngCore};
     use secp256k1v24::{Secp256k1, SecretKey};
-    use std::num::NonZeroUsize;
-    use std::sync::{Arc, Mutex};
+
+    use super::*;
+    use crate::lightning::ln_db::DBChannelDetails;
 
     fn generate_random_channels(num: u64) -> Vec<DBChannelDetails> {
         let mut rng = rand::thread_rng();

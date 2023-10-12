@@ -1,14 +1,16 @@
 //! Secret with additional network identifier and format type
 
-use crate::SECP_SIGN;
+use std::fmt;
+use std::str::FromStr;
+
 use address::detect_checksum;
 use base58::{FromBase58, ToBase58};
 use crypto::{checksum, ChecksumType};
 use hex::ToHex;
 use secp256k1::{Message as SecpMessage, SecretKey};
-use std::fmt;
-use std::str::FromStr;
 use {DisplayLayout, Error, Message, Secret, Signature};
+
+use crate::SECP_SIGN;
 
 /// Secret with additional network prefix and format type
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -121,8 +123,9 @@ impl From<&'static str> for Private {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChecksumType, Private};
     use hash::H256;
+
+    use super::{ChecksumType, Private};
 
     #[test]
     fn test_private_to_string() {

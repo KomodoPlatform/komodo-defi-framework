@@ -30,8 +30,9 @@ pub struct BlockTemplateRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json;
+
+    use super::*;
 
     #[test]
     fn block_template_request_mode_serialize() {

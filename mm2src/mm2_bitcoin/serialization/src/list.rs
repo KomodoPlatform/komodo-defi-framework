@@ -1,4 +1,5 @@
 use std::io;
+
 use {Deserializable, Error, Reader, Serializable, Stream};
 
 #[derive(Debug, Clone)]

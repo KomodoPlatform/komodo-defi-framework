@@ -1,9 +1,5 @@
-use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandle};
-use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
-use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
-                  UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
-use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionDetails, WithdrawError,
-            WithdrawFee, WithdrawFrom, WithdrawRequest, WithdrawResult};
+use std::iter::once;
+
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
@@ -17,10 +13,16 @@ use rpc::v1::types::ToTxHash;
 use rpc_task::RpcTaskError;
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
-use std::iter::once;
 use utxo_signer::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo, UtxoSignTxParamsBuilder};
 use utxo_signer::{with_key_pair, UtxoSignTxError};
 use utxo_signer::{SignPolicy, UtxoSignerOps};
+
+use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandle};
+use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
+use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
+                  UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
+use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionDetails, WithdrawError,
+            WithdrawFee, WithdrawFrom, WithdrawRequest, WithdrawResult};
 
 impl From<UtxoSignTxError> for WithdrawError {
     fn from(sign_err: UtxoSignTxError) -> Self {

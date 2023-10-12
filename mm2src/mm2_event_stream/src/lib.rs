@@ -1,5 +1,6 @@
-use serde::Deserialize;
 use std::collections::HashMap;
+
+use serde::Deserialize;
 
 /// Multi-purpose/generic event type that can easily be used over the event streaming
 pub struct Event {

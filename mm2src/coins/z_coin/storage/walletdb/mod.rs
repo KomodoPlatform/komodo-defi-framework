@@ -1,6 +1,7 @@
-use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
 use mm2_err_handle::prelude::*;
 use zcash_primitives::zip32::ExtendedSpendingKey;
+
+use crate::z_coin::{ZCoinBuilder, ZcoinClientInitError};
 
 cfg_native!(
     use crate::z_coin::{CheckPointBlockInfo, ZcoinConsensusParams};

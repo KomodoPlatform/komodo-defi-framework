@@ -6,14 +6,14 @@ pub mod my_orders;
 #[path = "database/stats_nodes.rs"] pub mod stats_nodes;
 #[path = "database/stats_swaps.rs"] pub mod stats_swaps;
 
-use crate::CREATE_MY_SWAPS_TABLE;
 use common::log::{debug, error, info};
 use db_common::sqlite::run_optimization_pragmas;
 use db_common::sqlite::rusqlite::{params_from_iter, Result as SqlResult};
 use mm2_core::mm_ctx::MmArc;
-
 use my_swaps::fill_my_swaps_from_json_statements;
 use stats_swaps::create_and_fill_stats_swaps_from_json_statements;
+
+use crate::CREATE_MY_SWAPS_TABLE;
 
 const SELECT_MIGRATION: &str = "SELECT * FROM migration ORDER BY current_migration DESC LIMIT 1;";
 

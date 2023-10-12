@@ -1,3 +1,7 @@
+use std::net::Ipv4Addr;
+use std::ops::Not;
+use std::path::Path;
+
 use anyhow::{anyhow, Result};
 use bip39::{Language, Mnemonic, MnemonicType};
 use common::log::{error, info};
@@ -5,9 +9,6 @@ use common::password_policy;
 use inquire::{validator::Validation, Confirm, CustomType, CustomUserError, Text};
 use passwords::PasswordGenerator;
 use serde::Serialize;
-use std::net::Ipv4Addr;
-use std::ops::Not;
-use std::path::Path;
 
 use super::inquire_extentions::{InquireOption, DEFAULT_DEFAULT_OPTION_BOOL_FORMATTER, DEFAULT_OPTION_BOOL_FORMATTER,
                                 OPTION_BOOL_PARSER};

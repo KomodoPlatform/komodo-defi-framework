@@ -1,11 +1,12 @@
-use chrono::DateTime;
-use gstuff::slurp;
-use regex::Regex;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::from_utf8;
+
+use chrono::DateTime;
+use gstuff::slurp;
+use regex::Regex;
 
 fn path2s(path: PathBuf) -> String {
     path.to_str()

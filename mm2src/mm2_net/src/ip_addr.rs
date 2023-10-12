@@ -1,14 +1,16 @@
-use crate::transport::slurp_url;
+use std::fs;
+use std::io::Read;
+use std::net::{IpAddr, Ipv4Addr};
+use std::path::Path;
+
 use common::log;
 use gstuff::try_s;
 use gstuff::{ERR, ERRL};
 use mm2_core::mm_ctx::MmArc;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
-use std::fs;
-use std::io::Read;
-use std::net::{IpAddr, Ipv4Addr};
-use std::path::Path;
+
+use crate::transport::slurp_url;
 
 const IP_PROVIDERS: [&str; 2] = ["http://checkip.amazonaws.com/", "http://api.ipify.org"];
 

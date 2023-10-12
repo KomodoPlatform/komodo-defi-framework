@@ -1,7 +1,8 @@
+use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, OnUpgradeResult, TableSignature};
+
 use crate::tx_history_storage::wasm::tx_history_db::TxHistoryDb;
 use crate::tx_history_storage::wasm::WasmTxHistoryResult;
 use crate::TransactionDetails;
-use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, OnUpgradeResult, TableSignature};
 
 pub async fn load_tx_history(
     db: &TxHistoryDb,
@@ -86,9 +87,10 @@ impl TableSignature for TxHistoryTableV1 {
 }
 
 mod tests {
-    use super::*;
     use serde_json as json;
     use wasm_bindgen_test::*;
+
+    use super::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

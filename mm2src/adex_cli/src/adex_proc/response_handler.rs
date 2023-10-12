@@ -2,22 +2,22 @@
 #[path = "response_handler/smart_fraction_fmt.rs"]
 mod smart_fraction_fmt;
 
-pub(crate) use smart_fraction_fmt::SmartFractPrecision;
+use std::cell::RefCell;
+use std::fmt::Debug;
+use std::io::Write;
 
 use anyhow::{anyhow, Result};
+use common::{write_safe::io::WriteSafeIO, write_safe_io, writeln_safe_io};
 use itertools::Itertools;
 use log::{error, info};
 use mm2_rpc::data::legacy::{BalanceResponse, CoinInitResponse, GetEnabledResponse, Mm2RpcResult, MmVersionResponse,
                             OrderbookResponse, SellBuyResponse, Status};
 use serde_json::Value as Json;
-use std::cell::RefCell;
-use std::fmt::Debug;
-use std::io::Write;
+pub(crate) use smart_fraction_fmt::SmartFractPrecision;
 
 use super::OrderbookConfig;
 use crate::adex_config::AdexConfig;
 use crate::error_anyhow;
-use common::{write_safe::io::WriteSafeIO, write_safe_io, writeln_safe_io};
 
 pub(crate) trait ResponseHandler {
     fn print_response(&self, response: Json) -> Result<()>;

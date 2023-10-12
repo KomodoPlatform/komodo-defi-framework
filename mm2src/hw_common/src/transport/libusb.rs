@@ -1,7 +1,9 @@
 //! TODO consider refactoring [`UsbDevice::connect`] not to spawn a thread for every device.
 //! We can spawn it once on [`UsbContext::new`], but we have to set the read/write chunk timeout to 0.5s or smaller.
 
-use super::{send_event_recv_response, InternalError};
+use std::thread;
+use std::time::{Duration, Instant};
+
 use common::log::error;
 use common::{block_on, some_or_return_ok_none};
 use derive_more::Display;
@@ -10,8 +12,8 @@ use futures::StreamExt;
 use mm2_err_handle::prelude::*;
 use rusb::Error as RusbError;
 use rusb::UsbContext as RusbContext;
-use std::thread;
-use std::time::{Duration, Instant};
+
+use super::{send_event_recv_response, InternalError};
 
 pub const READ_ENDPOINT_MASK: u8 = 0x80;
 

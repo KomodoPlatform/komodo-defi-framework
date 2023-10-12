@@ -1,12 +1,11 @@
 use proc_macro::{self, TokenStream};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
+use ser_error::CONTENT;
+use ser_error::TAG;
 use syn::Meta::{List, NameValue, Path};
 use syn::NestedMeta;
 use syn::{parse_macro_input, Data, DeriveInput, Error};
-
-use ser_error::CONTENT;
-use ser_error::TAG;
 
 const SERDE_IDENT: &str = "serde";
 const TAG_ATTR: &str = "tag";

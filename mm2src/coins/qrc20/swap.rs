@@ -1,9 +1,10 @@
-use super::history::TransferHistoryBuilder;
-use super::*;
-use crate::eth::{decode_contract_call, PaymentState};
 use bitcrypto::ripemd160;
 use common::now_sec;
 use script_pubkey::{extract_contract_addr_from_script, extract_contract_call_from_script, is_contract_call};
+
+use super::history::TransferHistoryBuilder;
+use super::*;
+use crate::eth::{decode_contract_call, PaymentState};
 
 /// `erc20Payment` call details consist of values obtained from [`TransactionOutput::script_pubkey`] and [`TxReceipt::logs`].
 #[derive(Debug, Eq, PartialEq)]

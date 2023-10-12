@@ -1,9 +1,11 @@
-use crate::executor::spawn;
-use crate::log::LogOnError;
-use futures::channel::oneshot;
-use parking_lot::Mutex as PaMutex;
 use std::fmt;
 use std::sync::{Arc, Weak};
+
+use futures::channel::oneshot;
+use parking_lot::Mutex as PaMutex;
+
+use crate::executor::spawn;
+use crate::log::LogOnError;
 
 pub mod abortable_queue;
 pub mod graceful_shutdown;
@@ -66,10 +68,11 @@ pub trait SystemInner: Default + Send + 'static {
 
 #[cfg(test)]
 mod tests {
+    use abortable_queue::AbortableQueue;
+
     use super::*;
     use crate::block_on;
     use crate::executor::{SpawnFuture, Timer};
-    use abortable_queue::AbortableQueue;
 
     #[test]
     fn test_abort_subsystem() {

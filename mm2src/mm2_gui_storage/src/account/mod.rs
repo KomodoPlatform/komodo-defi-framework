@@ -1,10 +1,12 @@
-use crate::account::storage::AccountStorageError;
+use std::collections::BTreeSet;
+
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use rpc::v1::types::H160 as H160Json;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::collections::BTreeSet;
+
+use crate::account::storage::AccountStorageError;
 
 pub(crate) mod storage;
 

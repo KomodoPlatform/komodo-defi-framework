@@ -1,8 +1,5 @@
-use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                        InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
-                                        TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
-                                        TokenInitializer, TokenOf},
-            prelude::*};
+use std::collections::{HashMap, HashSet};
+
 use async_trait::async_trait;
 use coins::eth::EthPrivKeyBuildPolicy;
 use coins::{eth::v2_activation::EthPrivKeyActivationPolicy, MmCoinEnum};
@@ -20,7 +17,12 @@ use mm2_metamask::MetamaskRpcError;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::{HashMap, HashSet};
+
+use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
+                                        InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
+                                        TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
+                                        TokenInitializer, TokenOf},
+            prelude::*};
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {

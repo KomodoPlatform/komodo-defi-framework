@@ -1,3 +1,6 @@
+use std::sync::{atomic::Ordering, Arc};
+use std::{collections::HashMap, slice::Iter};
+
 use common::executor::Timer;
 #[cfg(not(target_arch = "wasm32"))] use common::log::error;
 use common::log::{LogArc, LogWeak};
@@ -5,8 +8,6 @@ use itertools::Itertools;
 use metrics::{Key, Label};
 use mm2_err_handle::prelude::*;
 use serde_json::Value;
-use std::sync::{atomic::Ordering, Arc};
-use std::{collections::HashMap, slice::Iter};
 
 use crate::{common::log::Tag, MetricsOps, MmMetricsError, MmMetricsResult, MmRecorder, SpawnFuture};
 
@@ -254,16 +255,17 @@ impl MmHistogram {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod prometheus {
-    use crate::{MetricsArc, MetricsWeak};
+    use std::convert::Infallible;
+    use std::net::SocketAddr;
 
-    use super::*;
     use futures::future::{Future, FutureExt};
     use hyper::http::{self, header, Request, Response, StatusCode};
     use hyper::service::{make_service_fn, service_fn};
     use hyper::{Body, Server};
     use mm2_err_handle::prelude::MmError;
-    use std::convert::Infallible;
-    use std::net::SocketAddr;
+
+    use super::*;
+    use crate::{MetricsArc, MetricsWeak};
 
     #[derive(Clone)]
     pub struct PrometheusCredentials {
@@ -380,13 +382,13 @@ pub mod prometheus {
 #[cfg(test)]
 mod test {
     use std::time::Duration;
-
-    use crate::{MetricsArc, MetricsOps};
+    use std::time::Instant;
 
     use common::{block_on,
                  executor::{abortable_queue::AbortableQueue, Timer},
                  log::{LogArc, LogState}};
-    use std::time::Instant;
+
+    use crate::{MetricsArc, MetricsOps};
 
     #[test]
     fn test_collect_json() {

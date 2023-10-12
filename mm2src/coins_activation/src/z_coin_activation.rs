@@ -1,8 +1,6 @@
-use crate::context::CoinsActivationContext;
-use crate::prelude::*;
-use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinError,
-                             InitStandaloneCoinInitialStatus, InitStandaloneCoinTaskHandle,
-                             InitStandaloneCoinTaskManagerShared};
+use std::collections::HashMap;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use coins::coin_balance::{CoinBalanceReport, IguanaWalletBalance};
 use coins::my_tx_history_v2::TxHistoryStorage;
@@ -22,8 +20,12 @@ use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
 use serde_json::Value as Json;
-use std::collections::HashMap;
-use std::time::Duration;
+
+use crate::context::CoinsActivationContext;
+use crate::prelude::*;
+use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinError,
+                             InitStandaloneCoinInitialStatus, InitStandaloneCoinTaskHandle,
+                             InitStandaloneCoinTaskManagerShared};
 
 pub type ZcoinTaskManagerShared = InitStandaloneCoinTaskManagerShared<ZCoin>;
 pub type ZcoinRpcTaskHandle = InitStandaloneCoinTaskHandle<ZCoin>;

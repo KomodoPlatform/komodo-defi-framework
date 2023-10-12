@@ -1,9 +1,10 @@
-use super::{CursorAction, CursorDriverImpl, CursorError, CursorItemAction, CursorResult};
 use common::{serialize_to_js, stringify_js_error};
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
 use web_sys::IdbKeyRange;
+
+use super::{CursorAction, CursorDriverImpl, CursorError, CursorItemAction, CursorResult};
 
 /// The representation of a range that includes records
 /// whose value of the [`IdbSingleKeyCursor::field_name`] field equals to the [`IdbSingleKeyCursor::field_value`] value.

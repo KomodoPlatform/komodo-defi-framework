@@ -1,19 +1,8 @@
-use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, WatcherOps};
-use crate::coin_errors::MyAddressError;
-use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
-use crate::solana::spl::SplTokenInfo;
-use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
-            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
-            RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs, RefundResult,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureResult,
-            SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionFut, TransactionResult, TransactionType, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherReward, WatcherRewardError,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Mutex;
+use std::{convert::TryFrom, fmt::Debug, ops::Deref, sync::Arc};
+
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
@@ -38,10 +27,23 @@ use solana_sdk::pubkey::ParsePubkeyError;
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{pubkey::Pubkey,
                  signature::{Keypair, Signer}};
-use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::Mutex;
-use std::{convert::TryFrom, fmt::Debug, ops::Deref, sync::Arc};
+
+use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, WatcherOps};
+use crate::coin_errors::MyAddressError;
+use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
+use crate::solana::spl::SplTokenInfo;
+use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
+            FoundSwapTxSpend, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
+            RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs, RefundResult,
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureResult,
+            SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionFut, TransactionResult, TransactionType, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 
 pub mod solana_common;
 mod solana_decode_tx_helpers;

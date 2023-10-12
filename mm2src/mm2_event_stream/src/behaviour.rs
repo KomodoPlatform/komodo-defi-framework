@@ -1,5 +1,6 @@
-use crate::EventStreamConfiguration;
 use async_trait::async_trait;
+
+use crate::EventStreamConfiguration;
 
 #[async_trait]
 pub trait EventBehaviour {

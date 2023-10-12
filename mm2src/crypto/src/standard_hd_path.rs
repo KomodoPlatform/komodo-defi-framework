@@ -1,10 +1,12 @@
-use crate::bip32_child::{Bip32Child, Bip32ChildValue, Bip32DerPathError, Bip44Tail, HardenedValue, NonHardenedValue};
+use std::convert::TryFrom;
+
 use bip32::ChildNumber;
 use derive_more::Display;
 use enum_primitive_derive::Primitive;
 use hw_common::primitives::Bip32Error;
 use num_traits::FromPrimitive;
-use std::convert::TryFrom;
+
+use crate::bip32_child::{Bip32Child, Bip32ChildValue, Bip32DerPathError, Bip44Tail, HardenedValue, NonHardenedValue};
 
 /// Standard HD Path for [BIP-44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki),
 /// [BIP-49](https://github.com/bitcoin/bips/blob/master/bip-0049.mediawiki),
@@ -243,10 +245,12 @@ impl Bip32ChildValue for Bip32PurposeValue {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use bip32::DerivationPath;
+
     use super::*;
     use crate::bip32_child::Bip32DerPathOps;
-    use bip32::DerivationPath;
-    use std::str::FromStr;
 
     #[test]
     fn test_from_str() {

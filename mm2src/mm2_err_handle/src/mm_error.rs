@@ -84,17 +84,18 @@
 //!  }
 //! ```
 
+use std::alloc::Allocator;
+use std::cell::UnsafeCell;
+use std::error::Error as StdError;
+use std::fmt;
+use std::panic::Location;
+
 use common::{filename, HttpStatusCode};
 use derive_more::Display;
 use http::StatusCode;
 use itertools::Itertools;
 use ser_error::SerializeErrorType;
 use serde::{Serialize, Serializer};
-use std::alloc::Allocator;
-use std::cell::UnsafeCell;
-use std::error::Error as StdError;
-use std::fmt;
-use std::panic::Location;
 
 pub type MmResult<T, E> = Result<T, MmError<E>>;
 
@@ -326,11 +327,12 @@ impl<T: FormattedTrace> FormattedTrace for Vec<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::prelude::*;
     use futures01::Future;
     use ser_error_derive::SerializeErrorType;
     use serde_json::{self as json, json};
+
+    use super::*;
+    use crate::prelude::*;
 
     enum ErrorKind {
         NotSufficientBalance { actual: u64, required: u64 },

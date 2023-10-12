@@ -1,8 +1,9 @@
 #![allow(dead_code)]
-use instant::Instant;
 use std::{collections::hash_map::{HashMap, RawEntryMut},
           num::NonZeroUsize,
           time::Duration};
+
+use instant::Instant;
 
 const ONE_SECOND: Duration = Duration::from_secs(1);
 
@@ -58,8 +59,9 @@ impl OrderRequestsTracker {
 
 #[cfg(test)]
 mod order_requests_tracker_tests {
-    use super::*;
     use std::{thread::sleep, time::Duration};
+
+    use super::*;
 
     // TODO investigate why this fails on MacOS
     #[test]

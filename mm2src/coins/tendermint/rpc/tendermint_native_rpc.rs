@@ -1,14 +1,15 @@
-use async_trait::async_trait;
 use core::convert::{TryFrom, TryInto};
 use core::str::FromStr;
+use std::fmt;
+use std::time::Duration;
+
+use async_trait::async_trait;
 pub use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::abci::{self, Transaction};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::evidence::Evidence;
 use cosmrs::tendermint::Genesis;
 use serde::{de::DeserializeOwned, Serialize};
-use std::fmt;
-use std::time::Duration;
 use tendermint_config::net;
 use tendermint_rpc::endpoint::validators::DEFAULT_VALIDATORS_PER_PAGE;
 use tendermint_rpc::endpoint::*;
@@ -381,13 +382,14 @@ impl TryFrom<HttpClientUrl> for hyper::Uri {
 }
 
 mod sealed {
+    use std::io::Read;
+
     use common::log::debug;
     use hyper::body::Buf;
     use hyper::client::connect::Connect;
     use hyper::client::HttpConnector;
     use hyper::{header, Uri};
     use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
-    use std::io::Read;
     use tendermint_rpc::{Error, Response, SimpleRequest};
 
     fn https_connector() -> HttpsConnector<HttpConnector> {

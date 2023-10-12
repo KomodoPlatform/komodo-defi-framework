@@ -1,6 +1,5 @@
-use crate::nft::nft_structs::{Chain, Nft, NftList, NftTokenAddrId, NftTransferHistory, NftTransferHistoryFilters,
-                              NftsTransferHistoryList, TransferMeta};
-use crate::WithdrawError;
+use std::num::NonZeroUsize;
+
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -8,7 +7,10 @@ use mm2_err_handle::mm_error::MmResult;
 use mm2_err_handle::mm_error::{NotEqual, NotMmError};
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
-use std::num::NonZeroUsize;
+
+use crate::nft::nft_structs::{Chain, Nft, NftList, NftTokenAddrId, NftTransferHistory, NftTransferHistoryFilters,
+                              NftsTransferHistoryList, TransferMeta};
+use crate::WithdrawError;
 
 #[cfg(any(test, target_arch = "wasm32"))]
 pub(crate) mod db_test_helpers;

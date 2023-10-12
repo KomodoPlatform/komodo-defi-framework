@@ -1,6 +1,7 @@
 //! Variable-length integer commonly used in the Bitcoin [P2P protocol](https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers)
 
 use std::{fmt, io};
+
 use {Deserializable, Error as ReaderError, Reader, Serializable, Stream};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -155,9 +156,10 @@ impl Deserializable for CompactInteger {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_compact_int, CompactInteger, CompactIntegerError};
     use test_helpers::hex::force_deserialize_hex;
     use {Error as ReaderError, Reader, Stream};
+
+    use super::{parse_compact_int, CompactInteger, CompactIntegerError};
 
     #[test]
     fn test_compact_integer_data_length() {

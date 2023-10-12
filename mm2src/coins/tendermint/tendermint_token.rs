@@ -1,5 +1,27 @@
 //! Module containing implementation for Tendermint Tokens. They include native assets + IBC
 
+use std::ops::Deref;
+use std::str::FromStr;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use bitcrypto::sha256;
+use common::executor::abortable_queue::AbortableQueue;
+use common::executor::{AbortableSystem, AbortedError};
+use common::log::warn;
+use common::Future01CompatExt;
+use cosmrs::{bank::MsgSend,
+             tx::{Fee, Msg},
+             AccountId, Coin, Denom};
+use futures::{FutureExt, TryFutureExt};
+use futures01::Future;
+use keys::KeyPair;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
+use mm2_number::MmNumber;
+use rpc::v1::types::Bytes as BytesJson;
+use serde_json::Value as Json;
+
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
@@ -21,26 +43,6 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
             WithdrawError, WithdrawFrom, WithdrawFut, WithdrawRequest};
 use crate::{MmCoinEnum, PaymentInstructionArgs, WatcherReward, WatcherRewardError};
-use async_trait::async_trait;
-use bitcrypto::sha256;
-use common::executor::abortable_queue::AbortableQueue;
-use common::executor::{AbortableSystem, AbortedError};
-use common::log::warn;
-use common::Future01CompatExt;
-use cosmrs::{bank::MsgSend,
-             tx::{Fee, Msg},
-             AccountId, Coin, Denom};
-use futures::{FutureExt, TryFutureExt};
-use futures01::Future;
-use keys::KeyPair;
-use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::*;
-use mm2_number::MmNumber;
-use rpc::v1::types::Bytes as BytesJson;
-use serde_json::Value as Json;
-use std::ops::Deref;
-use std::str::FromStr;
-use std::sync::Arc;
 
 pub struct TendermintTokenImpl {
     pub ticker: String,

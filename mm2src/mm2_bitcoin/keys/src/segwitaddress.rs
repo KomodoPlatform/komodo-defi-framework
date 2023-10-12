@@ -185,10 +185,11 @@ impl FromStr for SegwitAddress {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crypto::sha256;
     use hex::ToHex;
     use Public;
+
+    use super::*;
 
     fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
         if s.len() % 2 == 0 {

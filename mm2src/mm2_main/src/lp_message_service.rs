@@ -1,6 +1,7 @@
 #[path = "notification/telegram/telegram.rs"] pub mod telegram;
 
-use crate::mm2::lp_message_service::telegram::{ChatIdRegistry, TelegramError, TgClient};
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
@@ -8,7 +9,8 @@ use mm2_core::mm_ctx::from_ctx;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde_json::{self as json};
-use std::sync::Arc;
+
+use crate::mm2::lp_message_service::telegram::{ChatIdRegistry, TelegramError, TgClient};
 
 pub type MessageResult<T> = Result<T, MmError<MessageError>>;
 pub const MAKER_BOT_ROOM_ID: &str = "maker_bot";
@@ -121,11 +123,13 @@ pub async fn init_message_service(ctx: &MmArc) -> Result<(), MmError<InitMessage
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod message_service_tests {
-    use crate::mm2::lp_message_service::telegram::{ChatIdRegistry, TgClient};
-    use crate::mm2::lp_message_service::MessageService;
-    use common::block_on;
     use std::collections::HashMap;
     use std::env::var;
+
+    use common::block_on;
+
+    use crate::mm2::lp_message_service::telegram::{ChatIdRegistry, TgClient};
+    use crate::mm2::lp_message_service::MessageService;
 
     #[test]
     fn test_attach_service() {

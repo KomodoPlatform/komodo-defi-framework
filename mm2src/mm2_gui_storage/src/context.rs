@@ -1,6 +1,8 @@
-use crate::account::storage::{AccountStorage, AccountStorageBoxed, AccountStorageBuilder, AccountStorageResult};
-use mm2_core::mm_ctx::{from_ctx, MmArc};
 use std::sync::Arc;
+
+use mm2_core::mm_ctx::{from_ctx, MmArc};
+
+use crate::account::storage::{AccountStorage, AccountStorageBoxed, AccountStorageBuilder, AccountStorageResult};
 
 pub(crate) struct AccountContext {
     storage: AccountStorageBoxed,

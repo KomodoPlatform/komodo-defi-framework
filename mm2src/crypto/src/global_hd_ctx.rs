@@ -1,13 +1,15 @@
-use crate::privkey::{bip39_seed_from_passphrase, key_pair_from_secret, PrivKeyError};
-use crate::standard_hd_path::StandardHDCoinAddress;
-use crate::{mm2_internal_der_path, Bip32DerPathOps, Bip32Error, CryptoInitError, CryptoInitResult,
-            StandardHDPathToCoin};
+use std::ops::Deref;
+use std::sync::Arc;
+
 use bip32::{ChildNumber, ExtendedPrivateKey};
 use common::drop_mutability;
 use keys::{KeyPair, Secret as Secp256k1Secret};
 use mm2_err_handle::prelude::*;
-use std::ops::Deref;
-use std::sync::Arc;
+
+use crate::privkey::{bip39_seed_from_passphrase, key_pair_from_secret, PrivKeyError};
+use crate::standard_hd_path::StandardHDCoinAddress;
+use crate::{mm2_internal_der_path, Bip32DerPathOps, Bip32Error, CryptoInitError, CryptoInitResult,
+            StandardHDPathToCoin};
 
 const HARDENED: bool = true;
 const NON_HARDENED: bool = false;

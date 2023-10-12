@@ -1,17 +1,19 @@
-use crate::eth::{web3_transport::Web3SendOut, EthCoin, GuiAuthMessages, RpcTransportEventHandler,
-                 RpcTransportEventHandlerShared, Web3RpcError};
+#[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use common::APPLICATION_JSON;
 use futures::lock::Mutex as AsyncMutex;
 use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
 use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
 use serde_json::Value as Json;
-#[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use web3::error::{Error, TransportError};
 use web3::helpers::{build_request, to_result_from_output, to_string};
 use web3::{RequestId, Transport};
+
+use crate::eth::{web3_transport::Web3SendOut, EthCoin, GuiAuthMessages, RpcTransportEventHandler,
+                 RpcTransportEventHandlerShared, Web3RpcError};
 
 #[derive(Serialize, Clone)]
 pub struct AuthPayload<'a> {

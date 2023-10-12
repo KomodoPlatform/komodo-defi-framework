@@ -1,6 +1,5 @@
-use super::{z_coin_errors::*, BlockDbImpl, WalletDbShared, ZCoinBuilder, ZcoinConsensusParams};
-use crate::utxo::rpc_clients::NativeClient;
-use crate::z_coin::SyncStartPoint;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use common::executor::{spawn_abortable, AbortOnDropHandle};
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
@@ -9,10 +8,13 @@ use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::StreamExt;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
-use std::sync::Arc;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::ExtendedSpendingKey;
+
+use super::{z_coin_errors::*, BlockDbImpl, WalletDbShared, ZCoinBuilder, ZcoinConsensusParams};
+use crate::utxo::rpc_clients::NativeClient;
+use crate::z_coin::SyncStartPoint;
 
 cfg_native!(
     use crate::{RpcCommonOps, ZTransaction};

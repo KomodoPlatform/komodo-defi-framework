@@ -1,14 +1,13 @@
-use super::*;
-use crate::lightning::ln_db::{DBChannelDetails, HTLCStatus, LightningDB, PaymentType};
-use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
-use crate::lightning::ln_sql::SqliteLightningDB;
+use core::time::Duration;
+use std::convert::{TryFrom, TryInto};
+use std::sync::Arc;
+
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::serialize_hex;
 use common::executor::{AbortSettings, SpawnAbortable, SpawnFuture, Timer};
 use common::log::{error, info};
 use common::{new_uuid, now_sec_i64};
-use core::time::Duration;
 use futures::compat::Future01CompatExt;
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use lightning::chain::keysinterface::SpendableOutputDescriptor;
@@ -16,9 +15,12 @@ use lightning::util::events::{Event, EventHandler, PaymentPurpose};
 use rand::Rng;
 use script::{Builder, SignatureVersion};
 use secp256k1v24::Secp256k1;
-use std::convert::{TryFrom, TryInto};
-use std::sync::Arc;
 use utxo_signer::with_key_pair::sign_tx;
+
+use super::*;
+use crate::lightning::ln_db::{DBChannelDetails, HTLCStatus, LightningDB, PaymentType};
+use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
+use crate::lightning::ln_sql::SqliteLightningDB;
 
 const TRY_LOOP_INTERVAL: f64 = 60.;
 /// 1 second.

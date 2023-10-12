@@ -1,9 +1,10 @@
-use crate::fraction::Fraction;
-use crate::from_ratio_to_dec;
-use crate::mm_number::MmNumber;
 use bigdecimal::BigDecimal;
 use num_rational::BigRational;
 use serde::Serialize;
+
+use crate::fraction::Fraction;
+use crate::from_ratio_to_dec;
+use crate::mm_number::MmNumber;
 
 /// MmNumber representation in all available forms.
 #[derive(Clone, Debug, Serialize)]

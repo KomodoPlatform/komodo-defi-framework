@@ -1,12 +1,3 @@
-use crate::lightning::ln_conf::{ChannelOptions, OurChannelsConfigs};
-use crate::lightning::ln_db::{DBChannelDetails, LightningDB};
-use crate::lightning::ln_p2p::{connect_to_ln_node, ConnectionError};
-use crate::lightning::ln_serialization::NodeAddress;
-use crate::lightning::ln_storage::LightningStorage;
-use crate::utxo::utxo_common::UtxoTxBuilder;
-use crate::utxo::{sat_from_big_decimal, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
-use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, GenerateTxError, MmCoinEnum, NumConversError,
-            UnexpectedDerivationMethod, UtxoRpcError};
 use chain::TransactionOutput;
 use common::log::error;
 use common::{async_blocking, new_uuid, HttpStatusCode};
@@ -19,6 +10,16 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use script::Builder;
 use uuid::Uuid;
+
+use crate::lightning::ln_conf::{ChannelOptions, OurChannelsConfigs};
+use crate::lightning::ln_db::{DBChannelDetails, LightningDB};
+use crate::lightning::ln_p2p::{connect_to_ln_node, ConnectionError};
+use crate::lightning::ln_serialization::NodeAddress;
+use crate::lightning::ln_storage::LightningStorage;
+use crate::utxo::utxo_common::UtxoTxBuilder;
+use crate::utxo::{sat_from_big_decimal, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
+use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, GenerateTxError, MmCoinEnum, NumConversError,
+            UnexpectedDerivationMethod, UtxoRpcError};
 
 type OpenChannelResult<T> = Result<T, MmError<OpenChannelError>>;
 

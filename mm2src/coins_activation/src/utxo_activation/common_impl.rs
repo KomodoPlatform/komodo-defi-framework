@@ -1,8 +1,5 @@
-use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandle};
-use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
-use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
-                                                          UtxoStandardUserAction};
-use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
+use std::collections::HashMap;
+
 use coins::coin_balance::EnableCoinBalanceOps;
 use coins::hd_pubkey::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
@@ -17,7 +14,12 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
-use std::collections::HashMap;
+
+use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandle};
+use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
+use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
+                                                          UtxoStandardUserAction};
+use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
 
 pub(crate) async fn get_activation_result<Coin>(
     ctx: &MmArc,

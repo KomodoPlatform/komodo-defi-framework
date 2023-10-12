@@ -10,23 +10,14 @@ mod ln_sql;
 pub mod ln_storage;
 pub mod ln_utils;
 
-use crate::coin_errors::MyAddressError;
-use crate::lightning::ln_utils::{filter_channels, pay_invoice_with_max_total_cltv_expiry_delta, PaymentError};
-use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
-use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
-use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
-            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            RawTransactionError, RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs,
-            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr,
-            TransactionFut, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
+use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
+use std::fmt;
+use std::io::Cursor;
+use std::net::SocketAddr;
+use std::str::FromStr;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
@@ -71,14 +62,25 @@ use script::TransactionInputSigner;
 use secp256k1v24::PublicKey;
 use serde::Deserialize;
 use serde_json::Value as Json;
-use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
-use std::fmt;
-use std::io::Cursor;
-use std::net::SocketAddr;
-use std::str::FromStr;
-use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::coin_errors::MyAddressError;
+use crate::lightning::ln_utils::{filter_channels, pay_invoice_with_max_total_cltv_expiry_delta, PaymentError};
+use crate::utxo::rpc_clients::UtxoRpcClientEnum;
+use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
+use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
+            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            RawTransactionError, RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs,
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr,
+            TransactionFut, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 
 const WAIT_FOR_REFUND_INTERVAL: f64 = 60.;
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;

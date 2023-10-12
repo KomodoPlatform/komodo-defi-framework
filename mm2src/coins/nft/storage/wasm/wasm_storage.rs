@@ -1,10 +1,7 @@
-use crate::eth::eth_addr_to_hex;
-use crate::nft::nft_structs::{Chain, ContractType, Nft, NftCtx, NftList, NftTransferHistory, NftsTransferHistoryList,
-                              TransferMeta, TransferStatus};
-use crate::nft::storage::wasm::nft_idb::{NftCacheIDB, NftCacheIDBLocked};
-use crate::nft::storage::wasm::{WasmNftCacheError, WasmNftCacheResult};
-use crate::nft::storage::{get_offset_limit, CreateNftStorageError, NftListStorageOps, NftTokenAddrId,
-                          NftTransferHistoryFilters, NftTransferHistoryStorageOps, RemoveNftResult};
+use std::collections::HashSet;
+use std::num::NonZeroUsize;
+use std::str::FromStr;
+
 use async_trait::async_trait;
 use common::is_initial_upgrade;
 use mm2_core::mm_ctx::MmArc;
@@ -15,9 +12,14 @@ use mm2_err_handle::prelude::MmResult;
 use mm2_number::BigDecimal;
 use num_traits::ToPrimitive;
 use serde_json::{self as json, Value as Json};
-use std::collections::HashSet;
-use std::num::NonZeroUsize;
-use std::str::FromStr;
+
+use crate::eth::eth_addr_to_hex;
+use crate::nft::nft_structs::{Chain, ContractType, Nft, NftCtx, NftList, NftTransferHistory, NftsTransferHistoryList,
+                              TransferMeta, TransferStatus};
+use crate::nft::storage::wasm::nft_idb::{NftCacheIDB, NftCacheIDBLocked};
+use crate::nft::storage::wasm::{WasmNftCacheError, WasmNftCacheResult};
+use crate::nft::storage::{get_offset_limit, CreateNftStorageError, NftListStorageOps, NftTokenAddrId,
+                          NftTransferHistoryFilters, NftTransferHistoryStorageOps, RemoveNftResult};
 
 #[derive(Clone)]
 pub struct IndexedDbNftStorage {

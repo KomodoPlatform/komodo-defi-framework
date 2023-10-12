@@ -12,7 +12,6 @@
 //! but it won't be safe when wasm becomes multi-threaded.
 //! [blogpost]: https://rustwasm.github.io/2018/10/24/multithreading-rust-and-wasm.html
 
-use super::*;
 use common::log::{register_callback, LogLevel, WasmCallback};
 use common::{console_err, console_info, deserialize_from_js, executor, serialize_to_js, set_panic_hook};
 use enum_primitive_derive::Primitive;
@@ -21,6 +20,8 @@ use mm2_rpc::data::legacy::MmVersionResponse;
 use mm2_rpc::wasm_rpc::WasmRpcResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+
+use super::*;
 
 /// The errors can be thrown when using the `mm2_main` function incorrectly.
 #[wasm_bindgen]

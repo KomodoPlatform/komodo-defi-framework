@@ -1,7 +1,5 @@
-use crate::account::storage::AccountStorageError;
-use crate::account::{AccountId, AccountInfo, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH, MAX_TICKER_LENGTH};
-use crate::context::AccountContext;
+use std::collections::BTreeSet;
+
 use common::{HttpStatusCode, StatusCode, SuccessResponse};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -9,7 +7,11 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use ser_error_derive::SerializeErrorType;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+
+use crate::account::storage::AccountStorageError;
+use crate::account::{AccountId, AccountInfo, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+                     MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH, MAX_TICKER_LENGTH};
+use crate::context::AccountContext;
 
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

@@ -1,14 +1,6 @@
-use crate::qrc20::rpc_clients::Qrc20ElectrumOps;
-use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
-use crate::qrc20::{contract_addr_into_rpc_format, ContractCallOutput, GenerateQrc20TxResult, Qrc20AbiError,
-                   Qrc20FeeDetails, OUTPUT_QTUM_AMOUNT, QRC20_DUST, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT};
-use crate::utxo::qtum::{QtumBasedCoin, QtumCoin, QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
-use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
-use crate::utxo::{qtum, utxo_common, Address, GetUtxoListOps, UtxoCommonOps};
-use crate::utxo::{PrivKeyPolicyNotAllowed, UTXO_LOCK};
-use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfos, StakingInfosError,
-            StakingInfosFut, StakingInfosResult, TransactionDetails, TransactionType};
+use std::convert::TryInto;
+use std::str::FromStr;
+
 use bitcrypto::dhash256;
 use common::now_sec;
 use derive_more::Display;
@@ -22,9 +14,19 @@ use mm2_number::bigdecimal::{BigDecimal, Zero};
 use rpc::v1::types::ToTxHash;
 use script::Builder as ScriptBuilder;
 use serialization::serialize;
-use std::convert::TryInto;
-use std::str::FromStr;
 use utxo_signer::with_key_pair::sign_tx;
+
+use crate::qrc20::rpc_clients::Qrc20ElectrumOps;
+use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
+use crate::qrc20::{contract_addr_into_rpc_format, ContractCallOutput, GenerateQrc20TxResult, Qrc20AbiError,
+                   Qrc20FeeDetails, OUTPUT_QTUM_AMOUNT, QRC20_DUST, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT};
+use crate::utxo::qtum::{QtumBasedCoin, QtumCoin, QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
+use crate::utxo::rpc_clients::UtxoRpcClientEnum;
+use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
+use crate::utxo::{qtum, utxo_common, Address, GetUtxoListOps, UtxoCommonOps};
+use crate::utxo::{PrivKeyPolicyNotAllowed, UTXO_LOCK};
+use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfos, StakingInfosError,
+            StakingInfosFut, StakingInfosResult, TransactionDetails, TransactionType};
 
 pub const QTUM_DELEGATION_STANDARD_FEE: u64 = 10;
 pub const QTUM_LOWER_BOUND_DELEGATION_AMOUNT: f64 = 100.0;

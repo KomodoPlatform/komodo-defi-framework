@@ -1,14 +1,16 @@
-use super::{construct_event_closure, DbTransactionError, DbTransactionResult, InternalItem, ItemId};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use common::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use futures::channel::mpsc;
 use futures::StreamExt;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{IdbIndex, IdbObjectStore, IdbRequest};
+
+use super::{construct_event_closure, DbTransactionError, DbTransactionResult, InternalItem, ItemId};
 
 pub struct IdbObjectStoreImpl {
     pub(crate) object_store: IdbObjectStore,

@@ -1,9 +1,10 @@
-use crate::privkey::private_from_seed_hash;
 use derive_more::Display;
 use enum_from::EnumFromStringify;
 use keys::{Error as KeysError, KeyPair};
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
+
+use crate::privkey::private_from_seed_hash;
 
 /// This magic string is used to change the input mnemonic passphrase the way
 /// so `sha256(mnemonic + SHARED_DB_MAGIC_SALT)`

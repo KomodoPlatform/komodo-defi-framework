@@ -1,17 +1,19 @@
 //! Inspired by https://github.com/openethereum/parity-ethereum/blob/v2.7.2-stable/util/EIP-712/src/encode.rs
 
-use crate::eip712::{CustomTypes, Eip712, PropertyType, EIP712_DOMAIN};
+use std::collections::HashSet;
+use std::fmt;
+use std::str::FromStr;
+
 use ethabi::{encode, Token};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashSet;
-use std::fmt;
-use std::str::FromStr;
 use web3::signing::keccak256;
 use web3::types::{Address, H256, U256};
 use web3::{Error, Result};
+
+use crate::eip712::{CustomTypes, Eip712, PropertyType, EIP712_DOMAIN};
 
 type H256Bytes = Vec<u8>;
 

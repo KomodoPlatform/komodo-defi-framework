@@ -1,13 +1,14 @@
+use std::cmp::Ordering;
+use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::str::FromStr;
+
 use hex::{FromHex, ToHex};
 use primitives::hash::H160 as GlobalH160;
 use primitives::hash::H256 as GlobalH256;
 use primitives::hash::H264 as GlobalH264;
 use serde;
 use serde::de::Unexpected;
-use std::cmp::Ordering;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::str::FromStr;
 
 macro_rules! impl_hash {
     ($name: ident, $other: ident, $size: expr) => {
@@ -173,9 +174,11 @@ impl H256 {
 
 #[cfg(test)]
 mod tests {
-    use super::H256;
-    use primitives::hash::H256 as GlobalH256;
     use std::str::FromStr;
+
+    use primitives::hash::H256 as GlobalH256;
+
+    use super::H256;
 
     #[test]
     fn hash_debug() {

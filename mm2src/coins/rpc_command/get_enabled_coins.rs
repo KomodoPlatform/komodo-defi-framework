@@ -1,9 +1,10 @@
-use crate::CoinsContext;
 use common::HttpStatusCode;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
 use mm2_err_handle::prelude::*;
+
+use crate::CoinsContext;
 
 #[derive(Serialize, Display, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

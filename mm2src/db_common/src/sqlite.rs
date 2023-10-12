@@ -1,15 +1,15 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-pub use rusqlite;
-pub use sql_builder;
-
-use log::debug;
-use rusqlite::types::{FromSql, Type as SqlType, Value};
-use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
-use sql_builder::SqlBuilder;
 use std::error::Error as StdError;
 use std::fmt;
 use std::sync::{Arc, Mutex, Weak};
+
+use log::debug;
+pub use rusqlite;
+use rusqlite::types::{FromSql, Type as SqlType, Value};
+use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
+pub use sql_builder;
+use sql_builder::SqlBuilder;
 use uuid::Uuid;
 
 pub const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";

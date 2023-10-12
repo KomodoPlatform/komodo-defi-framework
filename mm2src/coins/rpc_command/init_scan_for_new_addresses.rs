@@ -1,6 +1,3 @@
-use crate::coin_balance::HDAddressBalance;
-use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
-use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
 use async_trait::async_trait;
 use common::{SerdeInfallible, SuccessResponse};
 use crypto::RpcDerivationPath;
@@ -9,6 +6,10 @@ use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest};
 use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+
+use crate::coin_balance::HDAddressBalance;
+use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
+use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
 
 pub type ScanAddressesUserAction = SerdeInfallible;
 pub type ScanAddressesAwaitingStatus = SerdeInfallible;
@@ -127,12 +128,13 @@ pub async fn cancel_scan_for_new_addresses(
 }
 
 pub mod common_impl {
+    use std::fmt;
+    use std::ops::DerefMut;
+
     use super::*;
     use crate::coin_balance::HDWalletBalanceOps;
     use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
     use crate::CoinWithDerivationMethod;
-    use std::fmt;
-    use std::ops::DerefMut;
 
     pub async fn scan_for_new_addresses_rpc<Coin>(
         coin: &Coin,

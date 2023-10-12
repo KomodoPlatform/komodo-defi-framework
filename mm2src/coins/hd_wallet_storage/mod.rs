@@ -1,4 +1,7 @@
-use crate::hd_wallet::HDWalletCoinOps;
+use std::fmt;
+use std::fmt::Formatter;
+use std::ops::Deref;
+
 use async_trait::async_trait;
 use crypto::{CryptoCtx, CryptoCtxError, XPub};
 use derive_more::Display;
@@ -7,9 +10,8 @@ use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use primitives::hash::H160;
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::fmt::Formatter;
-use std::ops::Deref;
+
+use crate::hd_wallet::HDWalletCoinOps;
 
 #[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;
 #[cfg(target_arch = "wasm32")] mod wasm_storage;
@@ -285,10 +287,11 @@ fn display_rmd160(rmd160: &H160) -> String { hex::encode(rmd160.deref()) }
 
 #[cfg(any(test, target_arch = "wasm32"))]
 mod tests {
-    use super::*;
     use itertools::Itertools;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
     use primitives::hash::H160;
+
+    use super::*;
 
     cfg_wasm32! {
         use crate::hd_wallet_storage::wasm_storage::get_all_storage_items;

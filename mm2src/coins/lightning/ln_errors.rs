@@ -1,5 +1,5 @@
-use crate::utxo::rpc_clients::UtxoRpcError;
-use crate::PrivKeyPolicyNotAllowed;
+use std::num::TryFromIntError;
+
 use common::executor::AbortedError;
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -7,8 +7,10 @@ use derive_more::Display;
 use http::StatusCode;
 use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
-use std::num::TryFromIntError;
 use uuid::Uuid;
+
+use crate::utxo::rpc_clients::UtxoRpcError;
+use crate::PrivKeyPolicyNotAllowed;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;

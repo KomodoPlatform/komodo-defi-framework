@@ -1,8 +1,10 @@
-use crate::executor::abortable_system::{AbortedError, InnerShared, SystemInner};
-use crate::executor::AbortableSystem;
+use std::future::Future;
+
 use futures::channel::oneshot;
 use futures::FutureExt;
-use std::future::Future;
+
+use crate::executor::abortable_system::{AbortedError, InnerShared, SystemInner};
+use crate::executor::AbortableSystem;
 
 /// This is an `AbortableSystem` that initiates listeners for graceful shutdown
 /// once the `GracefulShutdownRegistry` instance is dropped.

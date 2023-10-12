@@ -1,6 +1,5 @@
-use crate::solana::SolanaCommonOps;
-use crate::{BalanceError, MarketCoinOps, NumConversError, SignatureError, SignatureResult, SolanaCoin,
-            UnexpectedDerivationMethod, VerificationError, VerificationResult, WithdrawError};
+use std::str::FromStr;
+
 use base58::FromBase58;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
@@ -8,7 +7,10 @@ use mm2_err_handle::prelude::*;
 use mm2_number::bigdecimal::{BigDecimal, ToPrimitive};
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::{Signature, Signer};
-use std::str::FromStr;
+
+use crate::solana::SolanaCommonOps;
+use crate::{BalanceError, MarketCoinOps, NumConversError, SignatureError, SignatureResult, SolanaCoin,
+            UnexpectedDerivationMethod, VerificationError, VerificationResult, WithdrawError};
 
 #[derive(Debug, Display)]
 pub enum SufficientBalanceError {

@@ -1,7 +1,8 @@
-use crate::tx_history_storage::wasm::tx_history_storage_v1::TxHistoryTableV1;
-use crate::tx_history_storage::wasm::tx_history_storage_v2::{TxCacheTableV2, TxHistoryTableV2};
 use async_trait::async_trait;
 use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder, InitDbResult};
+
+use crate::tx_history_storage::wasm::tx_history_storage_v1::TxHistoryTableV1;
+use crate::tx_history_storage::wasm::tx_history_storage_v2::{TxCacheTableV2, TxHistoryTableV2};
 
 const DB_NAME: &str = "tx_history";
 const DB_VERSION: u32 = 1;

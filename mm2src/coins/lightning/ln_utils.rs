@@ -1,9 +1,8 @@
-use super::*;
-use crate::lightning::ln_db::LightningDB;
-use crate::lightning::ln_platform::{get_best_header, ln_best_block_update_loop, update_best_block};
-use crate::lightning::ln_sql::SqliteLightningDB;
-use crate::lightning::ln_storage::{LightningStorage, NodesAddressesMap};
-use crate::utxo::rpc_clients::BestBlock as RpcBestBlock;
+use std::collections::hash_map::Entry;
+use std::fs::File;
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use bitcoin::hash_types::BlockHash;
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::SpawnFuture;
@@ -19,10 +18,13 @@ use lightning::util::errors::APIError;
 use lightning::util::ser::ReadableArgs;
 use lightning_invoice::payment::{Payer, PaymentError as InvoicePaymentError};
 use mm2_core::mm_ctx::MmArc;
-use std::collections::hash_map::Entry;
-use std::fs::File;
-use std::path::PathBuf;
-use std::sync::Arc;
+
+use super::*;
+use crate::lightning::ln_db::LightningDB;
+use crate::lightning::ln_platform::{get_best_header, ln_best_block_update_loop, update_best_block};
+use crate::lightning::ln_sql::SqliteLightningDB;
+use crate::lightning::ln_storage::{LightningStorage, NodesAddressesMap};
+use crate::utxo::rpc_clients::BestBlock as RpcBestBlock;
 
 pub const PAYMENT_RETRY_ATTEMPTS: usize = 5;
 

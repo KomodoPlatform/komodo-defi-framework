@@ -1,8 +1,9 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use chain::BlockHeader;
 use derive_more::Display;
 use primitives::hash::H256;
-use std::collections::HashMap;
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum BlockHeaderStorageError {

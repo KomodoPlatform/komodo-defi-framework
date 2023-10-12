@@ -1,5 +1,6 @@
-use parking_lot::Mutex;
 use std::{collections::HashMap, sync::Arc};
+
+use parking_lot::Mutex;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 type ChannelId = u64;

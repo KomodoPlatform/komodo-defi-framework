@@ -1,8 +1,5 @@
-use crate::context::CoinsActivationContext;
-use crate::prelude::*;
-use crate::standalone_coin::init_standalone_coin_error::{CancelInitStandaloneCoinError, InitStandaloneCoinError,
-                                                         InitStandaloneCoinStatusError,
-                                                         InitStandaloneCoinUserActionError};
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
@@ -17,7 +14,12 @@ use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskSta
 use rpc_task::{RpcTask, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
-use std::collections::HashMap;
+
+use crate::context::CoinsActivationContext;
+use crate::prelude::*;
+use crate::standalone_coin::init_standalone_coin_error::{CancelInitStandaloneCoinError, InitStandaloneCoinError,
+                                                         InitStandaloneCoinStatusError,
+                                                         InitStandaloneCoinUserActionError};
 
 pub type InitStandaloneCoinResponse = InitRpcTaskResponse;
 pub type InitStandaloneCoinStatusRequest = RpcTaskStatusRequest;

@@ -1,9 +1,10 @@
-#[cfg(feature = "log")] use log::{log, Level};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::panic::Location;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock, Weak};
+
+#[cfg(feature = "log")] use log::{log, Level};
 
 const LOCKING_ERROR: &str = "Error locking 'SharedRc::existing_pointers'";
 const UPGRADING_ERROR: &str = "Some counter fields are dropped unexpectedly though an inner pointer is still alive";

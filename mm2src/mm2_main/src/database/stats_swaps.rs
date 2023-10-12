@@ -1,12 +1,14 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-use crate::mm2::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
+use std::collections::HashSet;
+
 use common::log::{debug, error};
 use db_common::{owned_named_params,
                 sqlite::{rusqlite::{params_from_iter, Connection, OptionalExtension},
                          AsSqlNamedParams, OwnedSqlNamedParams}};
 use mm2_core::mm_ctx::MmArc;
-use std::collections::HashSet;
+
+use crate::mm2::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
 
 const CREATE_STATS_SWAPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS stats_swaps (
     id INTEGER NOT NULL PRIMARY KEY,

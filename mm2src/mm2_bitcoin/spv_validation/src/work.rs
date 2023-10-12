@@ -1,11 +1,13 @@
-use crate::conf::SPVBlockHeader;
-use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
+use std::cmp;
+
 use chain::BlockHeaderBits;
 use derive_more::Display;
 use primitives::compact::Compact;
 use primitives::U256;
 use serde::{Deserialize, Serialize};
-use std::cmp;
+
+use crate::conf::SPVBlockHeader;
+use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 
 const RETARGETING_FACTOR: u32 = 4;
 const TARGET_SPACING_SECONDS: u32 = 10 * 60;
@@ -163,15 +165,17 @@ async fn btc_testnet_next_block_bits(
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
-    use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
+    use std::collections::HashMap;
+
     use async_trait::async_trait;
     use chain::BlockHeader;
     use common::block_on;
     use lazy_static::lazy_static;
     use primitives::hash::H256;
     use serde::Deserialize;
-    use std::collections::HashMap;
+
+    use super::*;
+    use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 
     const BLOCK_HEADERS_STR: &str = include_str!("./for_tests/workTestVectors.json");
 

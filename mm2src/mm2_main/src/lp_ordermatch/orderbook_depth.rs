@@ -1,11 +1,13 @@
-use super::{orderbook_topic_from_base_rel, OrdermatchContext, OrdermatchRequest};
-use crate::mm2::lp_network::{request_any_relay, P2PRequest};
+use std::collections::HashMap;
+
 use coins::is_wallet_only_ticker;
 use common::log;
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
 use serde_json::{self as json, Value as Json};
-use std::collections::HashMap;
+
+use super::{orderbook_topic_from_base_rel, OrdermatchContext, OrdermatchRequest};
+use crate::mm2::lp_network::{request_any_relay, P2PRequest};
 
 #[derive(Debug, Deserialize)]
 struct OrderbookDepthReq {

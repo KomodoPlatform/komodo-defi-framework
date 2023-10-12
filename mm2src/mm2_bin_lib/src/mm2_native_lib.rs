@@ -1,4 +1,9 @@
-use super::*;
+use std::ffi::{CStr, CString};
+use std::panic::catch_unwind;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::Duration;
+
 use common::crash_reports::init_crash_reports;
 use common::executor::SpawnFuture;
 use common::log::{register_callback, FfiCallback};
@@ -9,11 +14,8 @@ use libc::c_char;
 use mm2_core::mm_ctx::MmArc;
 use num_traits::FromPrimitive;
 use serde_json::{self as json};
-use std::ffi::{CStr, CString};
-use std::panic::catch_unwind;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
-use std::time::Duration;
+
+use super::*;
 
 #[derive(Debug, PartialEq, Primitive)]
 enum MainErr {

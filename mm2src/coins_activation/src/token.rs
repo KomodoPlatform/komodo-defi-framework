@@ -1,7 +1,5 @@
 // Contains token activation traits and their implementations for various coins
 
-use crate::platform_coin_with_tokens::{self, RegisterTokenInfo};
-use crate::prelude::*;
 use async_trait::async_trait;
 use coins::utxo::rpc_clients::UtxoRpcError;
 use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, MmCoinEnum, RegisterCoinError,
@@ -12,6 +10,9 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
+
+use crate::platform_coin_with_tokens::{self, RegisterTokenInfo};
+use crate::prelude::*;
 
 pub trait TokenProtocolParams {
     fn platform_coin_ticker(&self) -> &str;

@@ -1,18 +1,5 @@
 //! Human-readable logging and statuses.
 
-use super::{now_ms, writeln};
-use crate::executor::{spawn_abortable, AbortOnDropHandle, Timer};
-use crate::filename;
-use chrono::format::strftime::StrftimeItems;
-use chrono::format::DelayedFormat;
-use chrono::{Local, TimeZone, Utc};
-use crossbeam::queue::SegQueue;
-use itertools::Itertools;
-#[cfg(not(target_arch = "wasm32"))]
-use lightning::util::logger::{Level as LightningLevel, Logger as LightningLogger, Record as LightningRecord};
-use log::{Level, Record};
-use parking_lot::Mutex as PaMutex;
-use serde_json::Value as Json;
 use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::VecDeque;
@@ -28,7 +15,21 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread;
 
+use chrono::format::strftime::StrftimeItems;
+use chrono::format::DelayedFormat;
+use chrono::{Local, TimeZone, Utc};
+use crossbeam::queue::SegQueue;
+use itertools::Itertools;
+#[cfg(not(target_arch = "wasm32"))]
+use lightning::util::logger::{Level as LightningLevel, Logger as LightningLogger, Record as LightningRecord};
 pub use log::{self as log_crate, debug, error, info, trace, warn, LevelFilter};
+use log::{Level, Record};
+use parking_lot::Mutex as PaMutex;
+use serde_json::Value as Json;
+
+use super::{now_ms, writeln};
+use crate::executor::{spawn_abortable, AbortOnDropHandle, Timer};
+use crate::filename;
 
 #[cfg(target_arch = "wasm32")]
 #[path = "log/wasm_log.rs"]

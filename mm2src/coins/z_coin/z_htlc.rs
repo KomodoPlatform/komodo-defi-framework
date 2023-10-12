@@ -5,14 +5,6 @@
 // taker payment spend - https://zombie.explorer.lordofthechains.com/tx/af6bb0f99f9a5a070a0c1f53d69e4189b0e9b68f9d66e69f201a6b6d9f93897e
 // maker payment spend - https://rick.explorer.dexstats.info/tx/6a2dcc866ad75cebecb780a02320073a88bcf5e57ddccbe2657494e7747d591e
 
-use super::ZCoin;
-use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
-use crate::utxo::utxo_common::payment_script;
-use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
-use crate::z_coin::SendOutputsErr;
-use crate::z_coin::{ZOutput, DEX_FEE_OVK};
-use crate::NumConversError;
-use crate::{PrivKeyPolicyNotAllowed, TransactionEnum};
 use bitcrypto::dhash160;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
@@ -27,6 +19,15 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
+
+use super::ZCoin;
+use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
+use crate::utxo::utxo_common::payment_script;
+use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
+use crate::z_coin::SendOutputsErr;
+use crate::z_coin::{ZOutput, DEX_FEE_OVK};
+use crate::NumConversError;
+use crate::{PrivKeyPolicyNotAllowed, TransactionEnum};
 
 cfg_native!(
     use common::async_blocking;

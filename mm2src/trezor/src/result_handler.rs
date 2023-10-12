@@ -1,9 +1,10 @@
 //! This file is inspired by https://github.com/tezedge/tezedge-client/blob/master/trezor_api/src/client.rs
 
+use mm2_err_handle::prelude::*;
+
 use crate::proto::messages::MessageType;
 use crate::proto::{ProtoMessage, TrezorMessage};
 use crate::{TrezorError, TrezorResult};
-use mm2_err_handle::prelude::*;
 
 /// Function to be passed to the [`TrezorClient::call`] method
 /// to process the Trezor response message into a general-purpose type.

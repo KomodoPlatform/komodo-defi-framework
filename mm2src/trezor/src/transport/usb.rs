@@ -1,13 +1,14 @@
+use std::time::Duration;
+
+use async_trait::async_trait;
+pub use hw_common::transport::libusb::UsbDeviceInfo;
+use hw_common::transport::libusb::{GetDevicesFilters, UsbAvailableDevice as UsbAvailableDeviceImpl, UsbContext,
+                                   UsbDevice};
+
 use crate::proto::ProtoMessage;
 use crate::transport::protocol::{Link, Protocol, ProtocolV1};
 use crate::transport::{Transport, TREZOR_DEVICES};
 use crate::TrezorResult;
-use async_trait::async_trait;
-use hw_common::transport::libusb::{GetDevicesFilters, UsbAvailableDevice as UsbAvailableDeviceImpl, UsbContext,
-                                   UsbDevice};
-use std::time::Duration;
-
-pub use hw_common::transport::libusb::UsbDeviceInfo;
 
 // TODO these timeouts should be optional and depend on the context of use.
 const READ_TIMEOUT: Duration = Duration::from_secs(600);

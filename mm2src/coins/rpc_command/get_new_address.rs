@@ -1,8 +1,5 @@
-use crate::coin_balance::HDAddressBalance;
-use crate::hd_confirm_address::{ConfirmAddressStatus, HDConfirmAddress, HDConfirmAddressError, RpcTaskConfirmAddress};
-use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError, NewAddressDeriveConfirmError,
-                       NewAddressDerivingError};
-use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinsContext, MmCoinEnum, UnexpectedDerivationMethod};
+use std::time::Duration;
+
 use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
@@ -15,7 +12,12 @@ use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError};
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
-use std::time::Duration;
+
+use crate::coin_balance::HDAddressBalance;
+use crate::hd_confirm_address::{ConfirmAddressStatus, HDConfirmAddress, HDConfirmAddressError, RpcTaskConfirmAddress};
+use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError, NewAddressDeriveConfirmError,
+                       NewAddressDerivingError};
+use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinsContext, MmCoinEnum, UnexpectedDerivationMethod};
 
 pub type GetNewAddressUserAction = HwRpcTaskUserAction;
 pub type GetNewAddressAwaitingStatus = HwRpcTaskAwaitingStatus;
@@ -377,13 +379,15 @@ pub async fn cancel_get_new_address(
 }
 
 pub(crate) mod common_impl {
+    use std::fmt;
+    use std::ops::DerefMut;
+
+    use crypto::RpcDerivationPath;
+
     use super::*;
     use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceOps};
     use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
     use crate::{CoinWithDerivationMethod, HDAddress};
-    use crypto::RpcDerivationPath;
-    use std::fmt;
-    use std::ops::DerefMut;
 
     /// TODO remove once GUI integrates `task::get_new_address::init`.
     pub async fn get_new_address_rpc_without_conf<Coin>(

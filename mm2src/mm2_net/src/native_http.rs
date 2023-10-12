@@ -12,16 +12,15 @@
 //!
 
 use async_trait::async_trait;
+use common::wio::{drive03, HYPER};
+use common::APPLICATION_JSON;
 use futures::channel::oneshot::Canceled;
 use http::{header, HeaderValue, Request};
 use hyper::client::connect::Connect;
 use hyper::client::ResponseFuture;
 use hyper::{Body, Client};
-use serde_json::Value as Json;
-
-use common::wio::{drive03, HYPER};
-use common::APPLICATION_JSON;
 use mm2_err_handle::prelude::*;
+use serde_json::Value as Json;
 
 use super::transport::{SlurpError, SlurpResult, SlurpResultJson};
 
@@ -233,8 +232,9 @@ impl From<http::Error> for SlurpError {
 
 #[cfg(test)]
 mod tests {
-    use crate::native_http::slurp_url;
     use common::block_on;
+
+    use crate::native_http::slurp_url;
 
     #[test]
     fn test_slurp_req() {

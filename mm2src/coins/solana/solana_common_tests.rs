@@ -1,12 +1,14 @@
-use super::*;
-use crate::solana::spl::{SplToken, SplTokenFields};
+use std::str::FromStr;
+
 use bip39::Language;
 use crypto::privkey::key_pair_from_seed;
 use ed25519_dalek_bip32::{DerivationPath, ExtendedSecretKey};
 use mm2_core::mm_ctx::MmCtxBuilder;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
-use std::str::FromStr;
+
+use super::*;
+use crate::solana::spl::{SplToken, SplTokenFields};
 
 pub enum SolanaNet {
     //Mainnet,

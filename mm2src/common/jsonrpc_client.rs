@@ -1,9 +1,10 @@
+use std::collections::{BTreeSet, HashMap};
+use std::fmt;
+
 use futures01::Future;
 use itertools::Itertools;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
-use std::collections::{BTreeSet, HashMap};
-use std::fmt;
 
 /// Macro generating functions for RPC requests.
 /// Args must implement/derive Serialize trait.

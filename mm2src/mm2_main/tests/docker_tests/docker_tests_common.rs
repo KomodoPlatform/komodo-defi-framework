@@ -1,15 +1,9 @@
-pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
-pub use mm2_number::MmNumber;
-use mm2_rpc::data::legacy::BalanceResponse;
-pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                      enable_native, enable_native_bch, eth_jst_testnet_conf, eth_sepolia_conf,
-                                      eth_testnet_conf, jst_sepolia_conf, mm_dump, MarketMakerIt, ETH_DEV_NODES,
-                                      ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
-                                      MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
-
-pub use secp256k1::{PublicKey, SecretKey};
 pub use std::env;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::Mutex;
 pub use std::thread;
+use std::time::Duration;
 
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
@@ -25,6 +19,7 @@ use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardC
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps};
 use coins::{CoinProtocol, ConfirmPaymentInput, MarketCoinOps, PrivKeyBuildPolicy, Transaction};
+pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use crypto::Secp256k1Secret;
 use ethereum_types::H160 as H160Eth;
@@ -33,15 +28,19 @@ use http::StatusCode;
 use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
+pub use mm2_number::MmNumber;
+use mm2_rpc::data::legacy::BalanceResponse;
+pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
+                                      enable_native, enable_native_bch, eth_jst_testnet_conf, eth_sepolia_conf,
+                                      eth_testnet_conf, jst_sepolia_conf, mm_dump, MarketMakerIt, ETH_DEV_NODES,
+                                      ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
+                                      MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use mm2_test_helpers::structs::TransactionDetails;
 use primitives::hash::{H160, H256};
 use script::Builder;
 use secp256k1::Secp256k1;
+pub use secp256k1::{PublicKey, SecretKey};
 use serde_json::{self as json, Value as Json};
-use std::path::PathBuf;
-use std::process::Command;
-use std::sync::Mutex;
-use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::images::generic::{GenericImage, WaitFor};
 use testcontainers::{Container, Docker, Image};

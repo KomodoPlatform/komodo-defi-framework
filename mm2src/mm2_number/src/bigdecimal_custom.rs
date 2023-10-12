@@ -1,6 +1,7 @@
+use std::ops::Div;
+
 use bigdecimal::BigDecimal;
 use bigdecimal::Zero;
-use std::ops::Div;
 
 pub trait CheckedDivision {
     fn checked_div(self, other: BigDecimal) -> Option<BigDecimal>;

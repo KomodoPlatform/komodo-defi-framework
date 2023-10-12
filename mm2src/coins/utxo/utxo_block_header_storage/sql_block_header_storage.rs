@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::convert::TryInto;
+use std::num::TryFromIntError;
+use std::sync::{Arc, Mutex};
+
 use async_trait::async_trait;
 use chain::BlockHeader;
 use common::async_blocking;
@@ -9,10 +14,6 @@ use db_common::{sqlite::rusqlite::Error as SqlError,
 use primitives::hash::H256;
 use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::num::TryFromIntError;
-use std::sync::{Arc, Mutex};
 
 pub(crate) fn block_headers_cache_table(ticker: &str) -> String { ticker.to_owned() + "_block_headers_cache" }
 

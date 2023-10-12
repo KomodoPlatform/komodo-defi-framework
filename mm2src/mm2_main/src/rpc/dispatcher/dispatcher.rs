@@ -1,14 +1,5 @@
-use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
-use crate::mm2::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
-#[cfg(target_arch = "wasm32")]
-use crate::mm2::lp_native_dex::init_metamask::{cancel_connect_metamask, connect_metamask, connect_metamask_status};
-use crate::mm2::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot,
-                                stop_simple_market_maker_bot};
-use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
-use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
-                            stop_version_stat_collection, update_version_stat_collection},
-            mm2::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc},
-            mm2::rpc::lp_commands::{get_public_key, get_public_key_hash, get_shared_db_id, trezor_connection_status}};
+use std::net::SocketAddr;
+
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::nft;
@@ -52,7 +43,18 @@ use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcRequest, MmRpcVersion};
 use nft::{get_nft_list, get_nft_metadata, get_nft_transfers, refresh_nft_metadata, update_nft, withdraw_nft};
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
-use std::net::SocketAddr;
+
+use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
+use crate::mm2::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
+#[cfg(target_arch = "wasm32")]
+use crate::mm2::lp_native_dex::init_metamask::{cancel_connect_metamask, connect_metamask, connect_metamask_status};
+use crate::mm2::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot,
+                                stop_simple_market_maker_bot};
+use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
+use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
+                            stop_version_stat_collection, update_version_stat_collection},
+            mm2::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc},
+            mm2::rpc::lp_commands::{get_public_key, get_public_key_hash, get_shared_db_id, trezor_connection_status}};
 
 cfg_native! {
     use coins::lightning::LightningCoin;

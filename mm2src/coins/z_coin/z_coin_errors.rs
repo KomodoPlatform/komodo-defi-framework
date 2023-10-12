@@ -1,11 +1,3 @@
-use crate::my_tx_history_v2::MyTxHistoryErrorV2;
-use crate::utxo::rpc_clients::UtxoRpcError;
-use crate::utxo::utxo_builder::UtxoCoinBuildError;
-use crate::z_coin::storage::WalletDbError;
-use crate::NumConversError;
-use crate::PrivKeyPolicyNotAllowed;
-use crate::WithdrawError;
-
 use common::jsonrpc_client::JsonRpcError;
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqliteError;
@@ -16,6 +8,14 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 #[cfg(not(target_arch = "wasm32"))]
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
+
+use crate::my_tx_history_v2::MyTxHistoryErrorV2;
+use crate::utxo::rpc_clients::UtxoRpcError;
+use crate::utxo::utxo_builder::UtxoCoinBuildError;
+use crate::z_coin::storage::WalletDbError;
+use crate::NumConversError;
+use crate::PrivKeyPolicyNotAllowed;
+use crate::WithdrawError;
 
 /// Represents possible errors that might occur while interacting with Zcoin rpc.
 #[derive(Debug, Display)]

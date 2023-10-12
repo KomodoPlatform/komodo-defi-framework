@@ -1,9 +1,3 @@
-use crate::my_tx_history_v2::{GetHistoryResult, RemoveTxResult, TxHistoryStorage};
-use crate::tx_history_storage::wasm::tx_history_db::{TxHistoryDb, TxHistoryDbLocked};
-use crate::tx_history_storage::wasm::{WasmTxHistoryError, WasmTxHistoryResult};
-use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError,
-                                FilteringAddresses, GetTxHistoryFilters, WalletId};
-use crate::{compare_transaction_details, CoinsContext, TransactionDetails};
 use async_trait::async_trait;
 use common::PagingOptionsEnum;
 use itertools::Itertools;
@@ -12,6 +6,13 @@ use mm2_db::indexed_db::{BeBigUint, DbUpgrader, MultiIndex, OnUpgradeResult, Sha
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
+
+use crate::my_tx_history_v2::{GetHistoryResult, RemoveTxResult, TxHistoryStorage};
+use crate::tx_history_storage::wasm::tx_history_db::{TxHistoryDb, TxHistoryDbLocked};
+use crate::tx_history_storage::wasm::{WasmTxHistoryError, WasmTxHistoryResult};
+use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError,
+                                FilteringAddresses, GetTxHistoryFilters, WalletId};
+use crate::{compare_transaction_details, CoinsContext, TransactionDetails};
 
 impl WalletId {
     /// If [`WalletId::hd_wallet_rmd160`] is not specified,

@@ -1,10 +1,12 @@
-use crate::sql_constraint::SqlConstraint;
-use crate::sql_value::{FromQuoted, SqlValue};
-use crate::sqlite::StringError;
+use std::fmt;
+
 use common::{write_safe,
              write_safe::fmt::{WriteSafe, WriteSafeJoin}};
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult};
-use std::fmt;
+
+use crate::sql_constraint::SqlConstraint;
+use crate::sql_value::{FromQuoted, SqlValue};
+use crate::sqlite::StringError;
 
 pub enum SqlType {
     Varchar(usize),

@@ -1,13 +1,15 @@
-use super::{construct_event_closure, DbUpgrader, IdbDatabaseImpl, OnUpgradeError, OnUpgradeNeededCb, OPEN_DATABASES};
+use std::collections::{HashMap, HashSet};
+
 use common::{log::info, stringify_js_error};
 use derive_more::Display;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use mm2_err_handle::prelude::*;
-use std::collections::{HashMap, HashSet};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{IdbDatabase, IdbOpenDbRequest, IdbTransaction, IdbVersionChangeEvent};
+
+use super::{construct_event_closure, DbUpgrader, IdbDatabaseImpl, OnUpgradeError, OnUpgradeNeededCb, OPEN_DATABASES};
 
 pub type InitDbResult<T> = Result<T, MmError<InitDbError>>;
 

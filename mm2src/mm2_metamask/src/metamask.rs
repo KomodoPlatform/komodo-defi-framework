@@ -1,5 +1,3 @@
-use crate::eip_1193_provider::Eip1193Provider;
-use crate::metamask_error::{MetamaskError, MetamaskResult};
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -10,6 +8,9 @@ use serde_json::{json, Value as Json};
 use web3::helpers::CallFuture;
 use web3::types::H256;
 use web3::Transport;
+
+use crate::eip_1193_provider::Eip1193Provider;
+use crate::metamask_error::{MetamaskError, MetamaskResult};
 
 lazy_static! {
     /// This mutex is used to limit the number of concurrent requests to one.

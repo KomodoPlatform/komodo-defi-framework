@@ -1,15 +1,16 @@
-use crate::client::TrezorSession;
-use crate::proto::messages_common as proto_common;
-use crate::result_handler::ResultHandler;
-use crate::user_interaction::TrezorUserInteraction;
-use crate::{TrezorError, TrezorResult};
-use async_trait::async_trait;
-use mm2_err_handle::prelude::*;
 use std::fmt;
 
+use async_trait::async_trait;
+use mm2_err_handle::prelude::*;
+
+use crate::client::TrezorSession;
+use crate::proto::messages_common as proto_common;
 pub use crate::proto::messages_common::button_request::ButtonRequestType;
 pub use crate::proto::messages_common::pin_matrix_request::PinMatrixRequestType;
 use crate::response_processor::{ProcessTrezorResponse, TrezorProcessingError, TrezorRequestProcessor};
+use crate::result_handler::ResultHandler;
+use crate::user_interaction::TrezorUserInteraction;
+use crate::{TrezorError, TrezorResult};
 
 /// The different types of user interactions the Trezor device can request.
 #[derive(PartialEq, Eq, Clone, Debug)]

@@ -29,9 +29,9 @@ pub(crate) mod test_utils {
     extern crate serde;
     extern crate std;
 
-    use self::serde::Deserialize;
-
     use std::{fs::File, io::Read, panic, string::String, vec, vec::Vec};
+
+    use self::serde::Deserialize;
 
     #[derive(Deserialize)]
     pub(crate) struct TestCase {

@@ -1,4 +1,5 @@
 use std::ops;
+
 use Error;
 
 #[derive(Debug, Default, PartialEq, Clone)]
@@ -145,8 +146,9 @@ impl<T> Stack<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::Stack;
     use Error;
+
+    use super::Stack;
 
     #[test]
     fn test_stack_require() {

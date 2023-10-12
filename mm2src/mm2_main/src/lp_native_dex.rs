@@ -18,6 +18,12 @@
 //  marketmaker
 //
 
+use std::fs;
+use std::io;
+use std::path::PathBuf;
+use std::str;
+use std::time::Duration;
+
 use bitcrypto::sha256;
 use coins::register_balance_update_handler;
 use common::executor::{SpawnFuture, Timer};
@@ -34,11 +40,6 @@ use mm2_metrics::mm_gauge;
 use mm2_net::p2p::P2PContext;
 use rpc_task::RpcTaskError;
 use serde_json::{self as json};
-use std::fs;
-use std::io;
-use std::path::PathBuf;
-use std::str;
-use std::time::Duration;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_db;

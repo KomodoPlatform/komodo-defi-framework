@@ -1,6 +1,5 @@
-use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType, HwPubkey};
+use std::collections::{BTreeMap, BTreeSet};
+
 use async_trait::async_trait;
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbTransaction, DbTransactionError,
@@ -9,7 +8,10 @@ use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, Db
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+
+use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
+use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+                     EnabledAccountType, HwPubkey};
 
 const DB_NAME: &str = "gui_account_storage";
 const DB_VERSION: u32 = 1;

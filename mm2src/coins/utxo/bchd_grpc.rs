@@ -1,7 +1,3 @@
-/// https://bchd.cash/
-/// https://bchd.fountainhead.cash/
-use super::bchd_pb::*;
-use crate::{coin_errors::ValidatePaymentError, utxo::slp::SlpUnspent};
 use chain::OutPoint;
 use derive_more::Display;
 use futures::future::join_all;
@@ -10,6 +6,11 @@ use get_slp_trusted_validation_response::validity_result::ValidityResultType;
 use keys::hash::H256;
 use mm2_err_handle::prelude::*;
 use mm2_net::grpc_web::{post_grpc_web, PostGrpcWebErr};
+
+/// https://bchd.cash/
+/// https://bchd.fountainhead.cash/
+use super::bchd_pb::*;
+use crate::{coin_errors::ValidatePaymentError, utxo::slp::SlpUnspent};
 
 #[derive(Debug, Display)]
 #[display(fmt = "Error {:?} on request to the url {}", err, to_url)]
@@ -241,10 +242,11 @@ pub async fn check_slp_transaction(
 
 #[cfg(test)]
 mod bchd_grpc_tests {
-    use super::*;
-    use crate::utxo::rpc_clients::UnspentInfo;
     use common::block_on;
     use mm2_test_helpers::for_tests::BCHD_TESTNET_URLS;
+
+    use super::*;
+    use crate::utxo::rpc_clients::UnspentInfo;
 
     #[test]
     #[ignore]

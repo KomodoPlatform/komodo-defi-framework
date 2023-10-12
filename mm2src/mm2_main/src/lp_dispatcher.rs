@@ -1,10 +1,12 @@
-use crate::mm2::lp_ordermatch::TradingBotEvent;
-use crate::mm2::lp_swap::MakerSwapStatusChanged;
+use std::any::TypeId;
+use std::sync::Arc;
+
 use async_std::sync::RwLock;
 use mm2_core::{event_dispatcher::{Dispatcher, EventUniqueId},
                mm_ctx::{from_ctx, MmArc}};
-use std::any::TypeId;
-use std::sync::Arc;
+
+use crate::mm2::lp_ordermatch::TradingBotEvent;
+use crate::mm2::lp_swap::MakerSwapStatusChanged;
 
 #[derive(Clone)]
 pub struct StopCtxEvent;

@@ -1,15 +1,16 @@
-use crate::metamask_login::{adex_eip712_request, AtomicDEXDomain, AtomicDEXLoginRequest};
+use std::ops::Deref;
+use std::str::FromStr;
+use std::sync::{Arc, Weak};
+
 use mm2_err_handle::prelude::*;
 use mm2_eth::address::{address_from_pubkey_uncompressed, Address};
 use mm2_eth::recovery::{recover_pubkey, Signature};
 use mm2_metamask::{Eip1193Provider, MetamaskSession};
-use std::ops::Deref;
-use std::str::FromStr;
-use std::sync::{Arc, Weak};
+pub use mm2_metamask::{MetamaskError, MetamaskResult};
 use web3::types::H520;
 use web3::Web3;
 
-pub use mm2_metamask::{MetamaskError, MetamaskResult};
+use crate::metamask_login::{adex_eip712_request, AtomicDEXDomain, AtomicDEXLoginRequest};
 
 #[derive(Clone)]
 pub struct MetamaskArc(Arc<MetamaskCtx>);

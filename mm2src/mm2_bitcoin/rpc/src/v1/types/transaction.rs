@@ -1,11 +1,13 @@
-use super::bytes::Bytes;
-use super::hash::H256;
-use super::script::ScriptType;
+use std::fmt;
+
 use keys::Address;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
 use v1::types;
+
+use super::bytes::Bytes;
+use super::hash::H256;
+use super::script::ScriptType;
 
 /// Hex-encoded transaction
 pub type RawTransaction = Bytes;
@@ -317,13 +319,15 @@ impl<'a> Deserialize<'a> for TransactionOutputs {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use lazy_static::lazy_static;
+    use serde_json;
+
     use super::super::bytes::Bytes;
     use super::super::hash::H256;
     use super::super::script::ScriptType;
     use super::*;
-    use lazy_static::lazy_static;
-    use serde_json;
-    use std::collections::HashMap;
 
     const TRANSACTIONS_STR: &str = include_str!("../../for_tests/txTestVectors.json");
 

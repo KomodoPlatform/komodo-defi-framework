@@ -1,10 +1,18 @@
 #![cfg_attr(target_arch = "wasm32", allow(unused_macros))]
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetConfirmedTxError, GetTxError,
-                  GetTxHeightError};
-use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use std::convert::TryInto;
+use std::fmt;
+use std::io;
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::num::NonZeroU64;
+use std::ops::Deref;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::Arc;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, timeout::FutureTimerExt};
@@ -40,17 +48,11 @@ use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, C
 use sha2::{Digest, Sha256};
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::BlockHeaderStorageOps;
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::fmt;
-use std::io;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::num::NonZeroU64;
-use std::ops::Deref;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use std::sync::Arc;
-use std::time::Duration;
+
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
+use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetConfirmedTxError, GetTxError,
+                  GetTxHeightError};
+use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 
 cfg_native! {
     use futures::future::Either;

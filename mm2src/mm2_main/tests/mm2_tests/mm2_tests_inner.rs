@@ -1,9 +1,13 @@
-#[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
-use super::enable_z_coin;
-use crate::integration_tests_common::*;
+use std::collections::HashMap;
+use std::env::{self, var};
+use std::str::FromStr;
+use std::thread;
+use std::time::Duration;
+
 use common::executor::Timer;
 use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log, new_uuid};
 use crypto::privkey::key_pair_from_seed;
+use crypto::StandardHDCoinAddress;
 use http::{HeaderMap, StatusCode};
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_metrics::{MetricType, MetricsJson};
@@ -23,17 +27,14 @@ use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_s
                                   ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE,
                                   ETH_MAINNET_SWAP_CONTRACT, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
                                   TBTC_ELECTRUMS};
-
-use crypto::StandardHDCoinAddress;
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
-use std::collections::HashMap;
-use std::env::{self, var};
-use std::str::FromStr;
-use std::thread;
-use std::time::Duration;
 use uuid::Uuid;
+
+#[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
+use super::enable_z_coin;
+use crate::integration_tests_common::*;
 
 cfg_native! {
     use common::block_on;

@@ -1,5 +1,6 @@
-use secp256k1::Error as SecpError;
 use std::fmt;
+
+use secp256k1::Error as SecpError;
 
 #[derive(Debug, PartialEq, Serialize)]
 pub enum Error {

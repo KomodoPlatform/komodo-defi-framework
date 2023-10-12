@@ -24,34 +24,32 @@
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #![cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 
-#[cfg(not(target_arch = "wasm32"))] use common::block_on;
-use common::crash_reports::init_crash_reports;
-use common::double_panic_crash;
-use common::log::LogLevel;
-use common::password_policy::password_policy;
-use mm2_core::mm_ctx::MmCtxBuilder;
-
-#[cfg(feature = "custom-swap-locktime")] use common::log::warn;
-#[cfg(feature = "custom-swap-locktime")]
-use lp_swap::PAYMENT_LOCKTIME;
-#[cfg(feature = "custom-swap-locktime")]
-use std::sync::atomic::Ordering;
-
-use gstuff::slurp;
-
-use serde::ser::Serialize;
-use serde_json::{self as json, Value as Json};
-
 use std::env;
 use std::ffi::OsString;
 use std::process::exit;
 use std::ptr::null;
 use std::str;
+#[cfg(feature = "custom-swap-locktime")]
+use std::sync::atomic::Ordering;
+
+#[cfg(not(target_arch = "wasm32"))] use common::block_on;
+use common::crash_reports::init_crash_reports;
+use common::double_panic_crash;
+#[cfg(feature = "custom-swap-locktime")] use common::log::warn;
+use common::log::LogLevel;
+use common::password_policy::password_policy;
+use gstuff::slurp;
+#[cfg(feature = "custom-swap-locktime")]
+use lp_swap::PAYMENT_LOCKTIME;
+use mm2_core::mm_ctx::MmCtxBuilder;
+use serde::ser::Serialize;
+use serde_json::{self as json, Value as Json};
 
 #[path = "lp_native_dex.rs"] mod lp_native_dex;
-pub use self::lp_native_dex::lp_init;
 use coins::update_coins_config;
 use mm2_err_handle::prelude::*;
+
+pub use self::lp_native_dex::lp_init;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "database.rs"]

@@ -1,7 +1,6 @@
-use crate::utxo::rpc_clients::EstimateFeeMode;
-use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT, KMD_MTP_BLOCK_COUNT,
-                  MATURE_CONFIRMATIONS_DEFAULT};
-use crate::UtxoActivationParams;
+use std::num::NonZeroU64;
+use std::sync::atomic::AtomicBool;
+
 use bitcrypto::ChecksumType;
 use crypto::{Bip32Error, StandardHDPathToCoin};
 use derive_more::Display;
@@ -11,8 +10,11 @@ use mm2_err_handle::prelude::*;
 use script::SignatureVersion;
 use serde_json::{self as json, Value as Json};
 use spv_validation::conf::SPVConf;
-use std::num::NonZeroU64;
-use std::sync::atomic::AtomicBool;
+
+use crate::utxo::rpc_clients::EstimateFeeMode;
+use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT, KMD_MTP_BLOCK_COUNT,
+                  MATURE_CONFIRMATIONS_DEFAULT};
+use crate::UtxoActivationParams;
 
 pub type UtxoConfResult<T> = Result<T, MmError<UtxoConfError>>;
 

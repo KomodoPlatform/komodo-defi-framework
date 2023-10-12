@@ -39,6 +39,18 @@ pub mod utxo_standard;
 pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
 
+use std::array::TryFromSliceError;
+use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
+use std::hash::Hash;
+use std::num::{NonZeroU64, TryFromIntError};
+use std::ops::Deref;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::{Arc, Mutex, Weak};
+
 use async_trait::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
 use bitcoin::network::constants::Network as BitcoinNetwork;
@@ -79,17 +91,6 @@ use serialization::{serialize, serialize_with_flags, Error as SerError, SERIALIZ
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::BlockHeaderStorageError;
-use std::array::TryFromSliceError;
-use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
-use std::hash::Hash;
-use std::num::{NonZeroU64, TryFromIntError};
-use std::ops::Deref;
-#[cfg(not(target_arch = "wasm32"))]
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::{Arc, Mutex, Weak};
 use utxo_builder::UtxoConfBuilder;
 use utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
 use utxo_signer::with_key_pair::sign_tx;
@@ -142,10 +143,11 @@ pub type UtxoHDAddress = HDAddress<Address, Public>;
 #[cfg(windows)]
 #[cfg(not(target_arch = "wasm32"))]
 fn get_special_folder_path() -> PathBuf {
-    use libc::c_char;
     use std::ffi::CStr;
     use std::mem::zeroed;
     use std::ptr::null_mut;
+
+    use libc::c_char;
     use winapi::shared::minwindef::MAX_PATH;
     use winapi::um::shlobj::SHGetSpecialFolderPathA;
     use winapi::um::shlobj::CSIDL_APPDATA;

@@ -1,8 +1,9 @@
-use super::{CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction, CursorResult};
 use common::{log::warn, stringify_js_error};
 use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
 use web_sys::IdbKeyRange;
+
+use super::{CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction, CursorResult};
 
 /// The representation of a range that includes records
 /// whose value of the [`IdbSingleBoundCursor::field_name`] field is lower than [`IdbSingleBoundCursor::lower_bound_value`]

@@ -8,11 +8,10 @@ pub mod messages_bitcoin;
 pub mod messages_common;
 pub mod messages_management;
 
-/// This is needed by generated protobuf modules.
-pub(crate) use messages_common as common;
-
 use messages::MessageType;
 use messages_bitcoin::*;
+/// This is needed by generated protobuf modules.
+pub(crate) use messages_common as common;
 use messages_common::*;
 use messages_management::*;
 

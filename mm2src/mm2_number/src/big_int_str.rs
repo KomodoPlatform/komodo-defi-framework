@@ -1,6 +1,7 @@
+use std::fmt;
+
 use num_bigint::BigInt;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
 
 /// BigInt wrapper de/serializable from/to string representation
 #[derive(Clone, Eq, PartialEq)]
@@ -54,8 +55,9 @@ impl<'de> Deserialize<'de> for BigIntStr {
 
 #[cfg(test)]
 mod big_int_str_tests {
-    use super::*;
     use serde_json::{self as json};
+
+    use super::*;
 
     #[test]
     fn test_bigint_str_serialize() {

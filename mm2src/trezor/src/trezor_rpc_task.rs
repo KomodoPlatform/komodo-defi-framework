@@ -1,12 +1,13 @@
-use crate::response_processor::{TrezorProcessingError, TrezorRequestProcessor};
-use crate::user_interaction::TrezorPassphraseResponse;
-use crate::TrezorPinMatrix3x3Response;
-use async_trait::async_trait;
-use mm2_err_handle::prelude::*;
 use std::convert::TryInto;
 use std::time::Duration;
 
+use async_trait::async_trait;
+use mm2_err_handle::prelude::*;
 pub use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
+
+use crate::response_processor::{TrezorProcessingError, TrezorRequestProcessor};
+use crate::user_interaction::TrezorPassphraseResponse;
+use crate::TrezorPinMatrix3x3Response;
 
 const DEFAULT_USER_ACTION_TIMEOUT: Duration = Duration::from_secs(300);
 

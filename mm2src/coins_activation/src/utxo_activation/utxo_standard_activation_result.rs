@@ -1,8 +1,10 @@
-use crate::prelude::{CurrentBlock, GetAddressesBalances};
+use std::collections::HashMap;
+
 use coins::coin_balance::CoinBalanceReport;
 use mm2_number::BigDecimal;
 use serde_derive::Serialize;
-use std::collections::HashMap;
+
+use crate::prelude::{CurrentBlock, GetAddressesBalances};
 
 #[derive(Clone, Serialize)]
 pub struct UtxoStandardActivationResult {

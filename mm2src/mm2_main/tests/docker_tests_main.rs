@@ -24,6 +24,7 @@ extern crate serde_json;
 
 use std::io::{BufRead, BufReader};
 use std::process::Command;
+
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
 mod docker_tests;

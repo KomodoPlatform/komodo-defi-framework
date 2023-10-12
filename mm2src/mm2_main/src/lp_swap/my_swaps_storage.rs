@@ -1,10 +1,11 @@
-use super::{MyRecentSwapsUuids, MySwapsFilter};
 use async_trait::async_trait;
 use common::PagingOptions;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use uuid::Uuid;
+
+use super::{MyRecentSwapsUuids, MySwapsFilter};
 
 pub type MySwapsResult<T> = Result<T, MmError<MySwapsError>>;
 
@@ -50,9 +51,10 @@ impl MySwapsStorage {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
+    use db_common::sqlite::rusqlite::Error as SqlError;
+
     use super::*;
     use crate::mm2::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, SelectRecentSwapsUuidsErr};
-    use db_common::sqlite::rusqlite::Error as SqlError;
 
     impl From<SelectRecentSwapsUuidsErr> for MySwapsError {
         fn from(e: SelectRecentSwapsUuidsErr) -> Self {
@@ -101,12 +103,14 @@ mod native_impl {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
+    use std::collections::BTreeSet;
+
+    use uuid::Uuid;
+
     use super::*;
     use crate::mm2::lp_swap::swap_wasm_db::cursor_prelude::*;
     use crate::mm2::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, MySwapsFiltersTable};
     use crate::mm2::lp_swap::SwapsContext;
-    use std::collections::BTreeSet;
-    use uuid::Uuid;
 
     impl From<DbTransactionError> for MySwapsError {
         fn from(e: DbTransactionError) -> Self {
@@ -309,18 +313,20 @@ mod wasm_impl {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
-    use super::wasm_impl::*;
-    use super::*;
+    use std::collections::BTreeSet;
+    use std::num::NonZeroUsize;
+    use std::ops::Range;
+
     use common::log::wasm_log::register_wasm_log;
     use common::new_uuid;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use rand::seq::SliceRandom;
     use rand::Rng;
-    use std::collections::BTreeSet;
-    use std::num::NonZeroUsize;
-    use std::ops::Range;
     use uuid::Uuid;
     use wasm_bindgen_test::*;
+
+    use super::wasm_impl::*;
+    use super::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

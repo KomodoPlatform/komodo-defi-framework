@@ -1,9 +1,11 @@
-use crate::{eth::Web3RpcError, my_tx_history_v2::MyTxHistoryErrorV2, utxo::rpc_clients::UtxoRpcError, DelegationError,
-            NumConversError, TxHistoryError, UnexpectedDerivationMethod, WithdrawError};
+use std::num::TryFromIntError;
+
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
-use std::num::TryFromIntError;
+
+use crate::{eth::Web3RpcError, my_tx_history_v2::MyTxHistoryErrorV2, utxo::rpc_clients::UtxoRpcError, DelegationError,
+            NumConversError, TxHistoryError, UnexpectedDerivationMethod, WithdrawError};
 
 /// Helper type used as result for swap payment validation function(s)
 pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<ValidatePaymentError>> + Send>;

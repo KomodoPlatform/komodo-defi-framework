@@ -1,7 +1,7 @@
-use crate::fraction::Fraction;
-use crate::{from_dec_to_ratio, from_ratio_to_dec};
-use bigdecimal::BigDecimal;
 use core::ops::{Add, AddAssign, Div, Mul, Sub};
+use std::str::FromStr;
+
+use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::CheckedDiv;
@@ -9,7 +9,9 @@ use num_traits::Zero;
 use serde::Serialize;
 use serde::{de, Deserialize, Deserializer};
 use serde_json::value::RawValue;
-use std::str::FromStr;
+
+use crate::fraction::Fraction;
+use crate::{from_dec_to_ratio, from_ratio_to_dec};
 
 /// Construct a `$name` detailed number that have decimal, fraction and rational representations.
 /// The macro takes the `$name` name of the structure and the `$base_name` that is used to generate three different fields:
@@ -249,9 +251,11 @@ impl From<&'static str> for MmNumber {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::{self as json, json};
     use std::str::FromStr;
+
+    use serde_json::{self as json, json};
+
+    use super::*;
 
     #[test]
     fn test_from_dec_to_ratio() {

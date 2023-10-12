@@ -1,11 +1,13 @@
-use crate::manager::{RpcTaskManager, RpcTaskManagerWeak};
-use crate::{RpcTask, RpcTaskError, RpcTaskResult, TaskId, TaskStatus};
+use std::sync::MutexGuard;
+use std::time::Duration;
+
 use common::custom_futures::timeout::FutureTimerExt;
 use common::log::LogOnError;
 use futures::channel::oneshot;
 use mm2_err_handle::prelude::*;
-use std::sync::MutexGuard;
-use std::time::Duration;
+
+use crate::manager::{RpcTaskManager, RpcTaskManagerWeak};
+use crate::{RpcTask, RpcTaskError, RpcTaskResult, TaskId, TaskStatus};
 
 type TaskManagerLock<'a, Task> = MutexGuard<'a, RpcTaskManager<Task>>;
 

@@ -1,12 +1,13 @@
-use crate::lightning::ln_db::{DBChannelDetails, LightningDB};
-use crate::lightning::ln_serialization::ChannelDetailsForRPC;
-use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use uuid::Uuid;
+
+use crate::lightning::ln_db::{DBChannelDetails, LightningDB};
+use crate::lightning::ln_serialization::ChannelDetailsForRPC;
+use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 
 type GetChannelDetailsResult<T> = Result<T, MmError<GetChannelDetailsError>>;
 

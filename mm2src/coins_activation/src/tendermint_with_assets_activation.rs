@@ -1,8 +1,5 @@
-use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
-                                       TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
-                                       TokenInitializer, TokenOf};
-use crate::prelude::*;
+use std::collections::{HashMap, HashSet};
+
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
@@ -18,7 +15,12 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::{HashMap, HashSet};
+
+use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
+                                       InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
+                                       TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
+                                       TokenInitializer, TokenOf};
+use crate::prelude::*;
 
 impl TokenOf for TendermintToken {
     type PlatformCoin = TendermintCoin;

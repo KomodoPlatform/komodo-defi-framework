@@ -1,10 +1,11 @@
-use crate::big_int_str::BigIntStr;
-use crate::from_dec_to_ratio;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use serde::Serialize;
 use serde::{de, Deserialize, Deserializer};
+
+use crate::big_int_str::BigIntStr;
+use crate::from_dec_to_ratio;
 
 /// Rational number representation de/serializable in human readable form
 /// Should simplify the visual perception and parsing in code

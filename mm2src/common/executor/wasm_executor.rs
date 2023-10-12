@@ -1,14 +1,16 @@
-use crate::executor::AbortOnDropHandle;
-use crate::now_float;
-use crate::number_type_casting::SafeTypeCastingNumbers;
-use futures::future::{abortable, FutureExt};
-use futures::task::{Context, Poll};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::Waker;
 use std::time::Duration;
+
+use futures::future::{abortable, FutureExt};
+use futures::task::{Context, Poll};
 use wasm_bindgen::prelude::*;
+
+use crate::executor::AbortOnDropHandle;
+use crate::now_float;
+use crate::number_type_casting::SafeTypeCastingNumbers;
 
 #[wasm_bindgen]
 extern "C" {

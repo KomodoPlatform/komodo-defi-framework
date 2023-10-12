@@ -1,8 +1,9 @@
+use std::time::Duration;
+
 use derive_more::Display;
 use hw_common::primitives::Bip32Error;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
-use std::time::Duration;
 use trezor::{OperationFailure, TrezorError, TrezorUserInteraction};
 
 pub type HwResult<T> = Result<T, MmError<HwError>>;

@@ -1,6 +1,3 @@
-use crate::coin_balance::HDAccountBalance;
-use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
-use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
 use async_trait::async_trait;
 use common::{SerdeInfallible, SuccessResponse};
 use mm2_core::mm_ctx::MmArc;
@@ -8,6 +5,10 @@ use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest};
 use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+
+use crate::coin_balance::HDAccountBalance;
+use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
+use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
 
 pub type AccountBalanceUserAction = SerdeInfallible;
 pub type AccountBalanceAwaitingStatus = SerdeInfallible;
@@ -115,12 +116,14 @@ pub async fn cancel_account_balance(
 }
 
 pub mod common_impl {
+    use std::fmt;
+
+    use crypto::RpcDerivationPath;
+
     use super::*;
     use crate::coin_balance::HDWalletBalanceOps;
     use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
     use crate::{CoinBalance, CoinWithDerivationMethod};
-    use crypto::RpcDerivationPath;
-    use std::fmt;
 
     pub async fn init_account_balance_rpc<Coin>(
         coin: &Coin,

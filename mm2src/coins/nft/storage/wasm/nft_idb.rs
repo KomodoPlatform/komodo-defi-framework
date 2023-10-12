@@ -1,7 +1,8 @@
-use crate::nft::storage::wasm::wasm_storage::{LastScannedBlockTable, NftListTable, NftTransferHistoryTable};
 use async_trait::async_trait;
 use mm2_db::indexed_db::InitDbResult;
 use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder};
+
+use crate::nft::storage::wasm::wasm_storage::{LastScannedBlockTable, NftListTable, NftTransferHistoryTable};
 
 const DB_NAME: &str = "nft_cache";
 const DB_VERSION: u32 = 1;

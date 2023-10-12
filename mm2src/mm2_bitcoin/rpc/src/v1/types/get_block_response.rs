@@ -1,7 +1,8 @@
+use serde::{Serialize, Serializer};
+
 use super::block::RawBlock;
 use super::hash::H256;
 use super::uint::U256;
-use serde::{Serialize, Serializer};
 
 /// Response to getblock RPC request
 #[derive(Debug)]
@@ -113,11 +114,12 @@ impl Serialize for GetBlockResponse {
 
 #[cfg(test)]
 mod tests {
+    use serde_json;
+
     use super::super::bytes::Bytes;
     use super::super::hash::H256;
     use super::super::uint::U256;
     use super::*;
-    use serde_json;
 
     #[test]
     fn verbose_block_serialize() {

@@ -1,5 +1,6 @@
-use inquire::parser::DEFAULT_BOOL_PARSER;
 use std::str::FromStr;
+
+use inquire::parser::DEFAULT_BOOL_PARSER;
 
 #[derive(Clone)]
 pub(super) enum InquireOption<T> {

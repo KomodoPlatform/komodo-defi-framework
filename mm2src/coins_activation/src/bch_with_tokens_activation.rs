@@ -1,6 +1,6 @@
-use crate::platform_coin_with_tokens::*;
-use crate::prelude::*;
-use crate::slp_token_activation::SlpActivationRequest;
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::utxo::bch::{bch_coin_with_policy, BchActivationRequest, BchCoin, CashAddrPrefix};
@@ -20,8 +20,10 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
+
+use crate::platform_coin_with_tokens::*;
+use crate::prelude::*;
+use crate::slp_token_activation::SlpActivationRequest;
 
 impl From<EnableSlpError> for InitTokensAsMmCoinsError {
     fn from(e: EnableSlpError) -> Self {

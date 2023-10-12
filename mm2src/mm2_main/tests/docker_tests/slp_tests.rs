@@ -1,5 +1,6 @@
-use crate::docker_tests::docker_tests_common::*;
-use crate::integration_tests_common::enable_native;
+use std::collections::HashSet;
+use std::time::Duration;
+
 use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::CoinInitResponse;
@@ -7,8 +8,9 @@ use mm2_test_helpers::for_tests::{assert_coin_not_found_on_balance, disable_coin
                                   my_balance, UtxoRpcMode};
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableSlpResponse, RpcV2Response};
 use serde_json::{self as json, json, Value as Json};
-use std::collections::HashSet;
-use std::time::Duration;
+
+use crate::docker_tests::docker_tests_common::*;
+use crate::integration_tests_common::enable_native;
 
 async fn enable_bch_with_tokens_without_balance(
     mm: &MarketMakerIt,

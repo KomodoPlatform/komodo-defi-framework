@@ -1,4 +1,8 @@
-use crate::integration_tests_common::*;
+use std::collections::BTreeSet;
+use std::env::{self};
+use std::thread;
+use std::time::Duration;
+
 use common::{block_on, log};
 use http::StatusCode;
 use mm2_number::BigDecimal;
@@ -9,11 +13,9 @@ use mm2_test_helpers::for_tests::{best_orders_v2, best_orders_v2_by_number, eth_
                                   Mm2TestConf, RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS};
 use mm2_test_helpers::structs::{BestOrdersResponse, SetPriceResponse};
 use serde_json::{self as json, json};
-use std::collections::BTreeSet;
-use std::env::{self};
-use std::thread;
-use std::time::Duration;
 use uuid::Uuid;
+
+use crate::integration_tests_common::*;
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
@@ -1115,10 +1117,10 @@ fn best_orders_must_return_duplicate_for_orderbook_tickers() {
 #[test]
 #[cfg(feature = "zhtlc-native-tests")]
 fn zhtlc_best_orders() {
-    use super::enable_z_coin;
+    use mm2_test_helpers::electrums::rick_electrums;
     use mm2_test_helpers::for_tests::zombie_conf;
 
-    use mm2_test_helpers::electrums::rick_electrums;
+    use super::enable_z_coin;
 
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();

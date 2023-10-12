@@ -1,3 +1,36 @@
+use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
+use std::ops::{Deref, Neg};
+#[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use bitcrypto::{dhash160, sha256};
+use chain::TransactionOutput;
+use common::executor::{AbortableSystem, AbortedError, Timer};
+use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest, RpcRes};
+use common::log::{error, warn};
+use common::{now_sec, now_sec_u32};
+use derive_more::Display;
+use ethabi::{Function, Token};
+use ethereum_types::{H160, U256};
+use futures::compat::Future01CompatExt;
+use futures::{FutureExt, TryFutureExt};
+use futures01::Future;
+use keys::bytes::Bytes as ScriptBytes;
+use keys::{Address as UtxoAddress, Address, KeyPair, Public};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
+use mm2_number::{BigDecimal, MmNumber};
+#[cfg(test)] use mocktopus::macros::*;
+use rpc::v1::types::{Bytes as BytesJson, ToTxHash, Transaction as RpcTransaction, H160 as H160Json, H256 as H256Json};
+use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
+use script_pubkey::generate_contract_call_script_pubkey;
+use serde_json::{self as json, Value as Json};
+use serialization::{deserialize, serialize, CoinVariant};
+use utxo_signer::with_key_pair::{sign_tx, UtxoSignWithKeyPairError};
+
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::eth::{self, u256_to_big_decimal, wei_from_big_decimal, TryToAddress};
 use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc20RpcOps, TopicFilter, TxReceipt,
@@ -28,37 +61,6 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
             WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
-use async_trait::async_trait;
-use bitcrypto::{dhash160, sha256};
-use chain::TransactionOutput;
-use common::executor::{AbortableSystem, AbortedError, Timer};
-use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest, RpcRes};
-use common::log::{error, warn};
-use common::{now_sec, now_sec_u32};
-use derive_more::Display;
-use ethabi::{Function, Token};
-use ethereum_types::{H160, U256};
-use futures::compat::Future01CompatExt;
-use futures::{FutureExt, TryFutureExt};
-use futures01::Future;
-use keys::bytes::Bytes as ScriptBytes;
-use keys::{Address as UtxoAddress, Address, KeyPair, Public};
-use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::*;
-use mm2_number::{BigDecimal, MmNumber};
-#[cfg(test)] use mocktopus::macros::*;
-use rpc::v1::types::{Bytes as BytesJson, ToTxHash, Transaction as RpcTransaction, H160 as H160Json, H256 as H256Json};
-use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
-use script_pubkey::generate_contract_call_script_pubkey;
-use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, CoinVariant};
-use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
-use std::ops::{Deref, Neg};
-#[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::Arc;
-use utxo_signer::with_key_pair::{sign_tx, UtxoSignWithKeyPairError};
 
 mod history;
 #[cfg(test)] mod qrc20_tests;

@@ -1,11 +1,12 @@
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Result};
 use common::log::{error, info};
 use http::StatusCode;
 use itertools::Itertools;
 use mm2_net::transport::slurp_url;
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::PathBuf;
 
 use crate::adex_config::AdexConfigImpl;
 use crate::error_anyhow;

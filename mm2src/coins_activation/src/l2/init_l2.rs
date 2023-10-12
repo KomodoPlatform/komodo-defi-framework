@@ -1,9 +1,3 @@
-/// Contains L2 activation traits and their implementations for various coins
-///
-use crate::context::CoinsActivationContext;
-use crate::l2::init_l2_error::{CancelInitL2Error, InitL2StatusError, InitL2UserActionError};
-use crate::l2::InitL2Error;
-use crate::prelude::*;
 use async_trait::async_trait;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinsContext, MmCoinEnum, RegisterCoinError};
 use common::SuccessResponse;
@@ -13,6 +7,13 @@ use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskSta
 use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
+
+/// Contains L2 activation traits and their implementations for various coins
+///
+use crate::context::CoinsActivationContext;
+use crate::l2::init_l2_error::{CancelInitL2Error, InitL2StatusError, InitL2UserActionError};
+use crate::l2::InitL2Error;
+use crate::prelude::*;
 
 pub type InitL2Response = InitRpcTaskResponse;
 pub type InitL2StatusRequest = RpcTaskStatusRequest;

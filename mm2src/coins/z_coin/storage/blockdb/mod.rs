@@ -1,7 +1,8 @@
 #[cfg(target_arch = "wasm32")] pub(crate) mod block_idb;
 
-use mm2_core::mm_ctx::MmArc;
 use std::path::Path;
+
+use mm2_core::mm_ctx::MmArc;
 use zcash_client_backend::data_api::BlockSource;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_primitives::consensus::BlockHeight;

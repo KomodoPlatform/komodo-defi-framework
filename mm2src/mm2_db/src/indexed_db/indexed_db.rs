@@ -7,6 +7,10 @@
 //! the implementation below initializes and spawns a `IdbDatabaseImpl` database instance locally
 //! and communicate with it through the `mpsc` channel.
 
+use std::collections::HashMap;
+use std::marker::PhantomData;
+use std::sync::Mutex;
+
 use async_trait::async_trait;
 use common::executor::spawn_local;
 use common::log::debug;
@@ -19,9 +23,6 @@ use primitives::hash::H160;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
-use std::collections::HashMap;
-use std::marker::PhantomData;
-use std::sync::Mutex;
 
 macro_rules! try_serialize_index_value {
     ($exp:expr, $index:expr) => {{
@@ -45,9 +46,8 @@ mod indexed_cursor;
 pub use be_big_uint::BeBigUint;
 pub use db_driver::{DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError, InitDbResult, ItemId,
                     OnUpgradeError, OnUpgradeResult};
-pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
-
 use db_driver::{IdbDatabaseBuilder, IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl, OnUpgradeNeededCb};
+pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
 use indexed_cursor::{cursor_event_loop, CursorBuilder, CursorDriver, CursorError, CursorFilters, CursorResult,
                      DbCursorEventTx};
 
@@ -870,11 +870,12 @@ mod internal {
 }
 
 mod tests {
-    use super::*;
     use common::log::wasm_log::register_wasm_log;
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
     use wasm_bindgen_test::*;
+
+    use super::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

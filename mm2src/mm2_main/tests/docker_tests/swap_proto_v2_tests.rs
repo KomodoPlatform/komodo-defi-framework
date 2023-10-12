@@ -1,4 +1,3 @@
-use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
 use coins::{GenTakerPaymentSpendArgs, RefundPaymentArgs, SendCombinedTakerPaymentArgs, SwapOpsV2, Transaction,
@@ -7,6 +6,8 @@ use common::{block_on, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use mm2_test_helpers::for_tests::{enable_native, mm_dump, mycoin1_conf, mycoin_conf, start_swaps, MarketMakerIt,
                                   Mm2TestConf};
 use script::{Builder, Opcode};
+
+use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 
 #[test]
 fn send_and_refund_taker_payment() {

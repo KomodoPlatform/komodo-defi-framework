@@ -1,7 +1,9 @@
-use crate::native_tls::TlsAcceptor;
+use std::sync::Arc;
+
 use hyper::server::conn::AddrIncoming;
 use rustls::ServerConfig;
-use std::sync::Arc;
+
+use crate::native_tls::TlsAcceptor;
 
 /// Builder for [`TlsAcceptor`]
 pub struct AcceptorBuilder<State>(State);

@@ -16,7 +16,11 @@ mod xpub;
 // Uncomment this to finish MetaMask login.
 #[cfg(target_arch = "wasm32")] mod metamask_login;
 
+use std::str::FromStr;
+
 pub use bip32_child::{Bip32Child, Bip32DerPathError, Bip32DerPathOps, Bip44Tail};
+#[cfg(target_arch = "wasm32")]
+pub use crypto_ctx::MetamaskCtxInitError;
 pub use crypto_ctx::{CryptoCtx, CryptoCtxError, CryptoInitError, CryptoInitResult, HwCtxInitError, KeyPairPolicy};
 pub use global_hd_ctx::{derive_secp256k1_secret, GlobalHDAccountArc};
 pub use hw_client::{HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingError, HwPubkey, HwWalletType,
@@ -26,20 +30,15 @@ pub use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath, EcdsaCu
 pub use hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 pub use hw_error::{from_hw_error, HwError, HwResult, HwRpcError, WithHwRpcError};
 pub use keys::Secret as Secp256k1Secret;
+#[cfg(target_arch = "wasm32")]
+pub use metamask_ctx::{MetamaskArc, MetamaskError, MetamaskResult, MetamaskWeak};
+#[cfg(target_arch = "wasm32")] pub use mm2_metamask as metamask;
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use standard_hd_path::{Bip44Chain, StandardHDCoinAddress, StandardHDPath, StandardHDPathError,
                            StandardHDPathToAccount, StandardHDPathToCoin, UnknownChainError};
 pub use trezor;
 pub use xpub::{XPubConverter, XpubError};
-
-#[cfg(target_arch = "wasm32")]
-pub use crypto_ctx::MetamaskCtxInitError;
-#[cfg(target_arch = "wasm32")]
-pub use metamask_ctx::{MetamaskArc, MetamaskError, MetamaskResult, MetamaskWeak};
-#[cfg(target_arch = "wasm32")] pub use mm2_metamask as metamask;
-
-use serde::de::Error;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::str::FromStr;
 
 /// The derivation path generally consists of:
 /// `m/purpose'/coin_type'/account'/change/address_index`.

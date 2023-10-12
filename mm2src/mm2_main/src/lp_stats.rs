@@ -1,3 +1,7 @@
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+use std::sync::Arc;
+
 /// The module is responsible for mm2 network stats collection
 ///
 use common::executor::{SpawnFuture, Timer};
@@ -9,12 +13,9 @@ use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
 use serde_json::{self as json, Value as Json};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use crate::mm2::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, P2PRequest,
                              ParseAddressError, PeerDecodedResponse};
-use std::str::FromStr;
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
 

@@ -1,6 +1,7 @@
-use super::{RpcTaskError, TaskId};
 use common::{true_f, HttpStatusCode, StatusCode};
 use derive_more::Display;
+
+use super::{RpcTaskError, TaskId};
 
 /// In most cases, the RPC task status request may fail with either [`RpcTaskStatusError::NoSuchTask`] or [`RpcTaskStatusError::Internal`].
 /// Please do not add new error variants unless they are used in most cases.

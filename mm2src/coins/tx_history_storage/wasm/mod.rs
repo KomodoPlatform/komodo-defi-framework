@@ -1,6 +1,7 @@
-use crate::my_tx_history_v2::TxHistoryStorageError;
 use mm2_db::indexed_db::{DbTransactionError, InitDbError};
 use mm2_err_handle::prelude::*;
+
+use crate::my_tx_history_v2::TxHistoryStorageError;
 
 pub mod tx_history_db;
 pub mod tx_history_storage_v1;

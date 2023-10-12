@@ -1,14 +1,16 @@
-use super::IdbObjectStoreImpl;
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use common::wasm::stringify_js_error;
 use derive_more::Display;
 use enum_from::EnumFromTrait;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
-use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use web_sys::IdbTransaction;
+
+use super::IdbObjectStoreImpl;
 
 pub type DbTransactionResult<T> = Result<T, MmError<DbTransactionError>>;
 

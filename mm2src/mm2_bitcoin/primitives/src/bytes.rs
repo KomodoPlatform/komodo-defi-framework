@@ -1,7 +1,8 @@
 //! Wrapper around `Vec<u8>`
 
-use hex::{FromHex, FromHexError, ToHex};
 use std::{fmt, io, marker, ops, str};
+
+use hex::{FromHex, FromHexError, ToHex};
 
 /// Wrapper around `Vec<u8>`
 #[derive(Default, PartialEq, Clone, Eq, Hash)]

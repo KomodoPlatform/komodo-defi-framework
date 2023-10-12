@@ -1,5 +1,6 @@
-use crate::relay_address::RelayAddress;
 use libp2p::PeerId;
+
+use crate::relay_address::RelayAddress;
 
 pub const NETID_8762: u16 = 8762;
 

@@ -1,24 +1,24 @@
-use crate::nft::eth_addr_to_hex;
-use crate::{TransactionType, TxFeeDetails, WithdrawFee};
-use common::ten;
-use ethereum_types::Address;
-use futures::lock::Mutex as AsyncMutex;
-use mm2_core::mm_ctx::{from_ctx, MmArc};
-use mm2_number::BigDecimal;
-use rpc::v1::types::Bytes as BytesJson;
-use serde::Deserialize;
-use serde_json::Value as Json;
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
-use url::Url;
 
+use common::ten;
+use ethereum_types::Address;
+use futures::lock::Mutex as AsyncMutex;
+use mm2_core::mm_ctx::{from_ctx, MmArc};
 #[cfg(target_arch = "wasm32")]
 use mm2_db::indexed_db::{ConstructibleDb, SharedDb};
+use mm2_number::BigDecimal;
+use rpc::v1::types::Bytes as BytesJson;
+use serde::Deserialize;
+use serde_json::Value as Json;
+use url::Url;
 
+use crate::nft::eth_addr_to_hex;
 #[cfg(target_arch = "wasm32")]
 use crate::nft::storage::wasm::nft_idb::NftCacheIDB;
+use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 
 #[derive(Debug, Deserialize)]
 pub struct NftListReq {

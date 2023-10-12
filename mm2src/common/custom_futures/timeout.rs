@@ -1,10 +1,12 @@
-use crate::executor::Timer;
-use futures::task::Poll as Poll03;
-use futures::Future as Future03;
 use std::fmt;
 use std::pin::Pin;
 use std::task::Context;
 use std::time::Duration;
+
+use futures::task::Poll as Poll03;
+use futures::Future as Future03;
+
+use crate::executor::Timer;
 
 #[derive(Debug)]
 pub struct TimeoutError {

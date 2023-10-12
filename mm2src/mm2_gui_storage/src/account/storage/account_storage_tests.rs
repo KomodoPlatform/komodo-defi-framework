@@ -1,8 +1,10 @@
-use crate::account::storage::{AccountStorage, AccountStorageBuilder, AccountStorageError, AccountStorageResult};
-use crate::account::{AccountId, AccountInfo, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId, HwPubkey};
+use std::collections::{BTreeMap, BTreeSet};
+
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
-use std::collections::{BTreeMap, BTreeSet};
+
+use crate::account::storage::{AccountStorage, AccountStorageBuilder, AccountStorageError, AccountStorageResult};
+use crate::account::{AccountId, AccountInfo, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId, HwPubkey};
 
 const HD_0_ACCOUNT: AccountId = AccountId::HD { account_idx: 0 };
 const HD_1_ACCOUNT: AccountId = AccountId::HD { account_idx: 1 };

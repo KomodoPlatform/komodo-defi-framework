@@ -1,6 +1,7 @@
-use super::{CursorAction, CursorDriverImpl, CursorItemAction, CursorResult};
 use wasm_bindgen::prelude::*;
 use web_sys::IdbKeyRange;
+
+use super::{CursorAction, CursorDriverImpl, CursorItemAction, CursorResult};
 
 /// The representation of a range that includes all records.
 pub struct IdbEmptyCursor;

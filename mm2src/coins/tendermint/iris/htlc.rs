@@ -20,12 +20,13 @@
 // If the sender address doesn't have enough nyan tokens to complete unit tests,
 // check this page https://www.irisnet.org/docs/get-started/testnet.html#faucet
 
-use super::htlc_proto::{ClaimHtlcProtoRep, CreateHtlcProtoRep};
+use std::convert::TryFrom;
 
-use crate::tendermint::type_urls::{CLAIM_HTLC_TYPE_URL, CREATE_HTLC_TYPE_URL};
 use cosmrs::{tx::{Msg, MsgProto},
              AccountId, Coin, ErrorReport};
-use std::convert::TryFrom;
+
+use super::htlc_proto::{ClaimHtlcProtoRep, CreateHtlcProtoRep};
+use crate::tendermint::type_urls::{CLAIM_HTLC_TYPE_URL, CREATE_HTLC_TYPE_URL};
 
 // https://github.com/irisnet/irismod/blob/043e058cd6e17f4f96d32f17bfd20b67debfab0b/proto/htlc/htlc.proto#L36
 pub const HTLC_STATE_OPEN: i32 = 0;

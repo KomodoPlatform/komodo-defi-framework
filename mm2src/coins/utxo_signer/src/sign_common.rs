@@ -1,9 +1,10 @@
-use crate::Signature;
 use chain::{Transaction as UtxoTx, TransactionInput};
 use keys::bytes::Bytes;
 use keys::Public as PublicKey;
 use primitives::hash::{H256, H512};
 use script::{Builder, Script, TransactionInputSigner, UnsignedTransactionInput};
+
+use crate::Signature;
 
 pub(crate) fn complete_tx(unsigned: TransactionInputSigner, signed_inputs: Vec<TransactionInput>) -> UtxoTx {
     UtxoTx {

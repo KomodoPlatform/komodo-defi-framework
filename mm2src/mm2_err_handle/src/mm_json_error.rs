@@ -1,9 +1,11 @@
-use crate::mm_error::{MmError, NotMmError};
+use std::fmt;
+
 use common::SerializationError;
 use ser_error::SerializeErrorType;
 use serde::{Deserialize, Serialize};
 use serde_json::{self as json, Error as JsonError, Value as Json};
-use std::fmt;
+
+use crate::mm_error::{MmError, NotMmError};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MmJsonError(Json);

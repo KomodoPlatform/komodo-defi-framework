@@ -1,10 +1,11 @@
+use common::log::{debug, info};
+use mm2_err_handle::prelude::*;
+
 use crate::proto::messages_bitcoin as proto_bitcoin;
 use crate::result_handler::ResultHandler;
 use crate::utxo::unsigned_tx::UnsignedUtxoTx;
 use crate::utxo::Signature;
 use crate::{TrezorError, TrezorResponse, TrezorResult, TrezorSession};
-use common::log::{debug, info};
-use mm2_err_handle::prelude::*;
 
 const NO_DETAILS_ERROR: &str = "'TxRequest::details' is expected to be set";
 const NO_REQUEST_INDEX_ERROR: &str = "'TxRequestDetailsType::request_index' is expected to be set";

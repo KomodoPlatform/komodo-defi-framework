@@ -8,27 +8,28 @@ pub(crate) mod storage;
 
 #[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;
 
-use crate::{coin_conf, get_my_address, MyAddressReq, WithdrawError};
-use nft_errors::{GetInfoFromUriError, GetNftInfoError, UpdateNftError};
-use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftList, NftListReq, NftMetadataReq,
-                  NftTransferHistory, NftTransferHistoryFromMoralis, NftTransfersReq, NftsTransferHistoryList,
-                  TransactionNftDetails, UpdateNftReq, WithdrawNftReq};
+use std::cmp::Ordering;
+use std::str::FromStr;
 
-use crate::eth::{eth_addr_to_hex, get_eth_address, withdraw_erc1155, withdraw_erc721};
-use crate::nft::nft_errors::ProtectFromSpamError;
-use crate::nft::nft_structs::{NftCommon, NftCtx, NftTransferCommon, RefreshMetadataReq, TransferMeta, TransferStatus,
-                              UriMeta};
-use crate::nft::storage::{NftListStorageOps, NftStorageBuilder, NftTransferHistoryStorageOps};
 use common::{parse_rfc3339_to_timestamp, APPLICATION_JSON};
 use crypto::StandardHDCoinAddress;
 use ethereum_types::Address;
 use http::header::ACCEPT;
 use mm2_err_handle::map_to_mm::MapToMmResult;
 use mm2_number::BigDecimal;
+use nft_errors::{GetInfoFromUriError, GetNftInfoError, UpdateNftError};
+use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftList, NftListReq, NftMetadataReq,
+                  NftTransferHistory, NftTransferHistoryFromMoralis, NftTransfersReq, NftsTransferHistoryList,
+                  TransactionNftDetails, UpdateNftReq, WithdrawNftReq};
 use regex::Regex;
 use serde_json::Value as Json;
-use std::cmp::Ordering;
-use std::str::FromStr;
+
+use crate::eth::{eth_addr_to_hex, get_eth_address, withdraw_erc1155, withdraw_erc721};
+use crate::nft::nft_errors::ProtectFromSpamError;
+use crate::nft::nft_structs::{NftCommon, NftCtx, NftTransferCommon, RefreshMetadataReq, TransferMeta, TransferStatus,
+                              UriMeta};
+use crate::nft::storage::{NftListStorageOps, NftStorageBuilder, NftTransferHistoryStorageOps};
+use crate::{coin_conf, get_my_address, MyAddressReq, WithdrawError};
 
 const MORALIS_API_ENDPOINT: &str = "api/v2";
 /// query parameters for moralis request: The format of the token ID

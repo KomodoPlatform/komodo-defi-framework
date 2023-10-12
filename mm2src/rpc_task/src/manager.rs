@@ -1,15 +1,17 @@
-use crate::task::RpcTaskTypes;
-use crate::{AtomicTaskId, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus, RpcTaskStatusAlias,
-            TaskAbortHandle, TaskAbortHandler, TaskId, TaskStatus, TaskStatusError, UserActionSender};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, Weak};
+
 use common::executor::SpawnFuture;
 use common::log::{debug, info};
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use mm2_err_handle::prelude::*;
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, Weak};
+
+use crate::task::RpcTaskTypes;
+use crate::{AtomicTaskId, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus, RpcTaskStatusAlias,
+            TaskAbortHandle, TaskAbortHandler, TaskId, TaskStatus, TaskStatusError, UserActionSender};
 
 macro_rules! unexpected_task_status {
     ($task_id:expr, actual = $actual:ident, expected = $expected:ident) => {

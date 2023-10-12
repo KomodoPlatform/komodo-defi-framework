@@ -622,8 +622,6 @@ fn blake_2b_256_personal(input: &[u8], personal: &[u8]) -> H256 {
 
 #[cfg(test)]
 mod tests {
-    use super::{blake_2b_256_personal, Sighash, SighashBase, SignatureVersion, TransactionInputSigner,
-                UnsignedTransactionInput};
     use bytes::Bytes;
     use chain::{OutPoint, Transaction, TransactionOutput};
     use hash::{H160, H256};
@@ -631,6 +629,9 @@ mod tests {
     use script::Script;
     use ser::deserialize;
     use sign::SignerHashAlgo;
+
+    use super::{blake_2b_256_personal, Sighash, SighashBase, SignatureVersion, TransactionInputSigner,
+                UnsignedTransactionInput};
 
     // http://www.righto.com/2014/02/bitcoins-hard-way-using-raw-bitcoin.html
     // https://blockchain.info/rawtx/81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48

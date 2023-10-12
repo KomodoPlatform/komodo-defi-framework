@@ -1,15 +1,15 @@
-use super::{LogCallback, LOG_CALLBACK};
-use crate::executor::spawn_local;
-use crate::log::format_record;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
+pub use js_sys::Function as JsFunction;
 use log::{set_boxed_logger, set_max_level, LevelFilter, Log, Metadata, Record};
 use serde_repr::*;
 use wasm_bindgen::prelude::*;
-
-pub use js_sys::Function as JsFunction;
 pub use wasm_bindgen::JsValue;
 pub use web_sys::console;
+
+use super::{LogCallback, LOG_CALLBACK};
+use crate::executor::spawn_local;
+use crate::log::format_record;
 
 const DEFAULT_LEVEL_FILTER: LogLevel = LogLevel::Info;
 
@@ -179,9 +179,10 @@ struct CallbackMsg {
 }
 
 pub fn register_wasm_log() {
-    use crate::log::register_callback;
     use std::str::FromStr;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    use crate::log::register_callback;
 
     static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 

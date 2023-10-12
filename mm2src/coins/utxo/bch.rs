@@ -1,3 +1,18 @@
+use std::sync::MutexGuard;
+
+use common::executor::{AbortableSystem, AbortedError};
+use common::log::warn;
+use derive_more::Display;
+use futures::{FutureExt, TryFutureExt};
+use itertools::Either as EitherIter;
+use keys::hash::H256;
+use keys::CashAddress;
+pub use keys::NetworkPrefix as CashAddrPrefix;
+use mm2_metrics::MetricsArc;
+use mm2_number::MmNumber;
+use serde_json::{self as json, Value as Json};
+use serialization::{deserialize, CoinVariant};
+
 use super::*;
 use crate::coin_errors::MyAddressError;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
@@ -20,19 +35,6 @@ use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBal
             ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
             WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
-use common::executor::{AbortableSystem, AbortedError};
-use common::log::warn;
-use derive_more::Display;
-use futures::{FutureExt, TryFutureExt};
-use itertools::Either as EitherIter;
-use keys::hash::H256;
-use keys::CashAddress;
-pub use keys::NetworkPrefix as CashAddrPrefix;
-use mm2_metrics::MetricsArc;
-use mm2_number::MmNumber;
-use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, CoinVariant};
-use std::sync::MutexGuard;
 
 pub type BchUnspentMap = HashMap<Address, BchUnspents>;
 
@@ -1463,10 +1465,11 @@ pub fn bch_coin_for_test() -> BchCoin {
 
 #[cfg(test)]
 mod bch_tests {
+    use common::block_on;
+
     use super::*;
     use crate::my_tx_history_v2::for_tests::init_storage_for;
     use crate::{TransactionType, TxFeeDetails};
-    use common::block_on;
 
     #[test]
     fn test_get_slp_genesis_params() {

@@ -1,4 +1,3 @@
-use crate::RpcTransportEventHandlerShared;
 use ethereum_types::U256;
 use futures::future::BoxFuture;
 use jsonrpc_core::Call;
@@ -10,6 +9,8 @@ use web3::api::Namespace;
 use web3::helpers::{self, CallFuture};
 use web3::types::BlockNumber;
 use web3::{Error, RequestId, Transport};
+
+use crate::RpcTransportEventHandlerShared;
 
 pub(crate) mod http_transport;
 #[cfg(target_arch = "wasm32")] pub(crate) mod metamask_transport;

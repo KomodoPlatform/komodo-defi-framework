@@ -1,15 +1,17 @@
-use crate::hw_client::{HwProcessingError, TrezorConnectProcessor};
-use crate::trezor::TrezorPinMatrix3x3Response;
+use std::convert::TryFrom;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::RpcTaskUserActionRequest;
 use serde::Serialize;
-use std::convert::TryFrom;
-use std::time::Duration;
 use trezor::trezor_rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, TrezorRequestStatuses, TrezorRpcTaskProcessor,
                               TryIntoUserAction};
 use trezor::user_interaction::TrezorPassphraseResponse;
 use trezor::{TrezorProcessingError, TrezorRequestProcessor};
+
+use crate::hw_client::{HwProcessingError, TrezorConnectProcessor};
+use crate::trezor::TrezorPinMatrix3x3Response;
 
 const CONNECT_DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
 

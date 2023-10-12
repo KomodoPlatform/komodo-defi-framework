@@ -1,9 +1,10 @@
-use crate::{get_attr_meta, CompileError, IdentCtx, MacroAttr, UnnamedInnerField};
 use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::quote;
 use syn::Meta::Path;
 use syn::{NestedMeta, Variant};
+
+use crate::{get_attr_meta, CompileError, IdentCtx, MacroAttr, UnnamedInnerField};
 
 impl CompileError {
     /// This error constructor is involved to be used on `EnumFromTrait` macro.

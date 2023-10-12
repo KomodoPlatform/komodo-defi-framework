@@ -1,9 +1,10 @@
-use crate::lightning::ln_serialization::ClaimableBalance;
-use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::{async_blocking, HttpStatusCode};
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+
+use crate::lightning::ln_serialization::ClaimableBalance;
+use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 
 type ClaimableBalancesResult<T> = Result<T, MmError<ClaimableBalancesError>>;
 

@@ -1,8 +1,9 @@
+use hw_common::primitives::{DerivationPath, EcdsaCurve, XPub};
+
 use crate::client::TrezorSession;
 use crate::proto::messages_bitcoin as proto_bitcoin;
 use crate::result_handler::ResultHandler;
 use crate::{ecdsa_curve_to_string, serialize_derivation_path, TrezorResponse, TrezorResult};
-use hw_common::primitives::{DerivationPath, EcdsaCurve, XPub};
 
 pub const IGNORE_XPUB_MAGIC: bool = true;
 

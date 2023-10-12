@@ -1,7 +1,8 @@
-use crate::handle::RpcTaskHandle;
 use async_trait::async_trait;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
+
+use crate::handle::RpcTaskHandle;
 
 pub trait RpcTaskTypes {
     type Item: Serialize + Clone + Send + Sync + 'static;

@@ -1,9 +1,8 @@
+pub use ethkey::{Error, Signature};
 use mm2_err_handle::prelude::*;
 use secp256k1::recovery::{RecoverableSignature, RecoveryId};
 use secp256k1::{Message as SecpMessage, Secp256k1};
 use web3::types::{H256, H520};
-
-pub use ethkey::{Error, Signature};
 
 /// Inspired by `ethkey::recover` with the only one difference:
 /// this methods returns the full `H520` pubkey instead of unprefixed `H512`.
@@ -27,8 +26,9 @@ pub fn recover_pubkey(message_hash: H256, mut signature: Signature) -> MmResult<
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::str::FromStr;
+
+    use super::*;
 
     /// https://testnet.bscscan.com/tx/0xbff2c07134a32da9f96588c03502f1caf2948c529c2ce9ce067f320f7c990b81
     #[test]

@@ -1,14 +1,16 @@
-use crate::lightning::ln_db::{DBPaymentsFilter, HTLCStatus, PaymentInfo, PaymentType};
-use crate::lightning::ln_platform::h256_json_from_txid;
-use crate::H256Json;
+use std::fmt;
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::str::FromStr;
+
 use lightning::chain::channelmonitor::Balance;
 use lightning::ln::channelmanager::ChannelDetails;
 use secp256k1v24::PublicKey;
 use serde::{de, Serialize, Serializer};
-use std::fmt;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::str::FromStr;
 use uuid::Uuid;
+
+use crate::lightning::ln_db::{DBPaymentsFilter, HTLCStatus, PaymentInfo, PaymentType};
+use crate::lightning::ln_platform::h256_json_from_txid;
+use crate::H256Json;
 
 // TODO: support connection to onion addresses
 #[derive(Debug, PartialEq)]
@@ -368,8 +370,9 @@ impl From<Balance> for ClaimableBalance {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json as json;
+
+    use super::*;
 
     #[test]
     fn test_node_address_serialize() {

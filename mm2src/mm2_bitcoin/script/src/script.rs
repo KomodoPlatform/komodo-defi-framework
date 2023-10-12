@@ -1,8 +1,9 @@
 //! Serialized script, used inside transaction inputs and outputs.
 
+use std::{fmt, ops};
+
 use bytes::Bytes;
 use keys::{self, AddressHashEnum, Public};
-use std::{fmt, ops};
 use {Error, Opcode};
 
 /// Maximum number of public keys per multisig
@@ -607,10 +608,11 @@ pub fn is_witness_commitment_script(script: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Script, ScriptAddress, ScriptType};
     use crypto::ChecksumType;
     use keys::{Address, Public};
     use {Builder, Error, Opcode};
+
+    use super::{Script, ScriptAddress, ScriptType};
 
     /// Maximum number of bytes pushable to the stack
     const MAX_SCRIPT_ELEMENT_SIZE: usize = 52;

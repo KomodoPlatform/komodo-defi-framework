@@ -1,12 +1,13 @@
-use crate::lightning::ln_db::LightningDB;
-use crate::lightning::ln_serialization::PaymentInfoForRPC;
-use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
 use http::StatusCode;
 use lightning::ln::PaymentHash;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+
+use crate::lightning::ln_db::LightningDB;
+use crate::lightning::ln_serialization::PaymentInfoForRPC;
+use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 
 type GetPaymentDetailsResult<T> = Result<T, MmError<GetPaymentDetailsError>>;
 

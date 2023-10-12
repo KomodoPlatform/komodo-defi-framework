@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use coins::utxo::UtxoActivationParams;
 #[cfg(not(target_arch = "wasm32"))]
 use coins::z_coin::ZcoinActivationParams;
@@ -7,7 +9,6 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde_derive::Serialize;
 use serde_json::{self as json, Value as Json};
-use std::collections::{HashMap, HashSet};
 
 pub trait CurrentBlock {
     fn current_block(&self) -> u64;

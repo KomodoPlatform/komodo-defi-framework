@@ -1,10 +1,11 @@
-use super::{CursorAction, CursorDriverImpl, CursorError, CursorItemAction, CursorResult};
 use common::{serialize_to_js, stringify_js_error};
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
 use web_sys::IdbKeyRange;
+
+use super::{CursorAction, CursorDriverImpl, CursorError, CursorItemAction, CursorResult};
 
 /// The representation of a range that includes records
 /// whose fields have only the specified [`IdbSingleCursor::only_values`] values.

@@ -13,6 +13,8 @@ pub mod or_mm_error;
 pub mod split_mm;
 
 pub mod prelude {
+    pub use ser_error::SerializeErrorType;
+
     pub use crate::common_errors::{WithInternal, WithTimeout};
     pub use crate::discard_mm_trace::DiscardMmTrace;
     pub use crate::map_mm_error::MapMmError;
@@ -22,5 +24,4 @@ pub mod prelude {
     pub use crate::mm_json_error::MmJsonError;
     pub use crate::or_mm_error::OrMmError;
     pub use crate::split_mm::SplitMmResult;
-    pub use ser_error::SerializeErrorType;
 }

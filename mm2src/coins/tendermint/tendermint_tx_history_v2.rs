@@ -1,10 +1,6 @@
-use super::{rpc::*, AllBalancesResult, TendermintCoin, TendermintCommons, TendermintToken};
+use std::cmp;
+use std::convert::Infallible;
 
-use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
-use crate::tendermint::{CustomTendermintMsgType, TendermintFeeDetails};
-use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
-use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionDetails, TransactionType, TxFeeDetails};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::Timer;
@@ -19,8 +15,13 @@ use mm2_state_machine::prelude::*;
 use mm2_state_machine::state_machine::StateMachineTrait;
 use primitives::hash::H256;
 use rpc::v1::types::Bytes as BytesJson;
-use std::cmp;
-use std::convert::Infallible;
+
+use super::{rpc::*, AllBalancesResult, TendermintCoin, TendermintCommons, TendermintToken};
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
+use crate::tendermint::{CustomTendermintMsgType, TendermintFeeDetails};
+use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
+use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
+use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionDetails, TransactionType, TxFeeDetails};
 
 macro_rules! try_or_return_stopped_as_err {
     ($exp:expr, $reason: expr, $fmt:literal) => {

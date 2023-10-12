@@ -1,6 +1,7 @@
+use async_trait::async_trait;
+
 use crate::prelude::*;
 use crate::state_machine::{ChangeGuard, ErrorGuard};
-use async_trait::async_trait;
 
 /// A trait representing the initial state of a state machine.
 pub trait InitialState {
@@ -257,10 +258,12 @@ impl<M: StorableStateMachine, T: InitialState<StateMachine = M>> ChangeInitialSt
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use common::block_on;
     use std::collections::HashMap;
     use std::convert::Infallible;
+
+    use common::block_on;
+
+    use super::*;
 
     struct StorageTest {
         events_unfinished: HashMap<usize, Vec<TestEvent>>,

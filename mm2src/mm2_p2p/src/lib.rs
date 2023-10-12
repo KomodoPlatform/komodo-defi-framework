@@ -6,34 +6,29 @@ mod network;
 mod relay_address;
 mod swarm_runtime;
 
+// atomicdex related re-exports
+pub use behaviours::atomicdex::{get_gossip_mesh, get_gossip_peer_topics, get_gossip_topic_peers, get_peers_info,
+                                get_relay_mesh, spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourError,
+                                AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse, AdexResponseChannel,
+                                GossipsubEvent, GossipsubMessage, MessageId, NodeType, TopicHash, WssCerts};
+// peers-exchange re-exports
+pub use behaviours::peers_exchange::PeerAddresses;
+// request-response related re-exports
+pub use behaviours::request_response::RequestResponseBehaviourEvent;
 use lazy_static::lazy_static;
+// libp2p related re-exports
+pub use libp2p::identity::DecodingError;
+pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, PublicKey as Libp2pPublic};
+pub use libp2p::{Multiaddr, PeerId};
+// relay-address related re-exports
+pub use relay_address::RelayAddress;
+pub use relay_address::RelayAddressError;
 use secp256k1::{Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1, SecretKey, SignOnly, Signature,
                 VerifyOnly};
 use serde::{de, Deserialize, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
 pub use crate::swarm_runtime::SwarmRuntime;
-
-// atomicdex related re-exports
-pub use behaviours::atomicdex::{get_gossip_mesh, get_gossip_peer_topics, get_gossip_topic_peers, get_peers_info,
-                                get_relay_mesh, spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourError,
-                                AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse, AdexResponseChannel,
-                                GossipsubEvent, GossipsubMessage, MessageId, NodeType, TopicHash, WssCerts};
-
-// peers-exchange re-exports
-pub use behaviours::peers_exchange::PeerAddresses;
-
-// request-response related re-exports
-pub use behaviours::request_response::RequestResponseBehaviourEvent;
-
-// libp2p related re-exports
-pub use libp2p::identity::DecodingError;
-pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, PublicKey as Libp2pPublic};
-pub use libp2p::{Multiaddr, PeerId};
-
-// relay-address related re-exports
-pub use relay_address::RelayAddress;
-pub use relay_address::RelayAddressError;
 
 lazy_static! {
     static ref SECP_VERIFY: Secp256k1<VerifyOnly> = Secp256k1::verification_only();

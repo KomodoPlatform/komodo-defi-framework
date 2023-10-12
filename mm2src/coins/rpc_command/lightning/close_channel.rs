@@ -1,9 +1,10 @@
-use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::{async_blocking, HttpStatusCode};
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use uuid::Uuid;
+
+use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 
 type CloseChannelResult<T> = Result<T, MmError<CloseChannelError>>;
 

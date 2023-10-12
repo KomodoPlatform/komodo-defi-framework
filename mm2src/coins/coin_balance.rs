@@ -1,8 +1,7 @@
-use crate::hd_pubkey::HDXPubExtractor;
-use crate::hd_wallet::{HDAccountOps, HDAddressId, HDWalletCoinOps, HDWalletOps, NewAccountCreatingError,
-                       NewAddressDerivingError};
-use crate::{BalanceError, BalanceResult, CoinBalance, CoinWithDerivationMethod, DerivationMethod, HDAddress,
-            MarketCoinOps};
+use std::collections::HashMap;
+use std::ops::Range;
+use std::{fmt, iter};
+
 use async_trait::async_trait;
 use common::log::{debug, info};
 use crypto::{Bip44Chain, RpcDerivationPath};
@@ -10,9 +9,12 @@ use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 #[cfg(test)] use mocktopus::macros::*;
-use std::collections::HashMap;
-use std::ops::Range;
-use std::{fmt, iter};
+
+use crate::hd_pubkey::HDXPubExtractor;
+use crate::hd_wallet::{HDAccountOps, HDAddressId, HDWalletCoinOps, HDWalletOps, NewAccountCreatingError,
+                       NewAddressDerivingError};
+use crate::{BalanceError, BalanceResult, CoinBalance, CoinWithDerivationMethod, DerivationMethod, HDAddress,
+            MarketCoinOps};
 
 pub type AddressIdRange = Range<u32>;
 

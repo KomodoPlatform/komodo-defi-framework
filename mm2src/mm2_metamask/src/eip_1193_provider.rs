@@ -1,3 +1,6 @@
+use std::fmt;
+use std::sync::Arc;
+
 use common::executor::{spawn_local_abortable, AbortOnDropHandle};
 use common::log::error;
 use futures::channel::{mpsc, oneshot};
@@ -6,8 +9,6 @@ use futures::StreamExt;
 use jsonrpc_core::Call;
 use serde::de::DeserializeOwned;
 use serde_json::Value as Json;
-use std::fmt;
-use std::sync::Arc;
 use web3::helpers::build_request;
 use web3::transports::eip_1193::{Eip1193, Provider as RawProvider};
 use web3::{Error, RequestId, Result, Transport};

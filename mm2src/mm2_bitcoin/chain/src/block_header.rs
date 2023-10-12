@@ -1,3 +1,5 @@
+use std::io;
+
 use compact::Compact;
 use crypto::dhash256;
 #[cfg(not(target_arch = "wasm32"))]
@@ -9,7 +11,6 @@ use hex::FromHex;
 use primitives::bytes::Bytes;
 use primitives::U256;
 use ser::{deserialize, serialize, CoinVariant, Deserializable, Reader, Serializable, Stream};
-use std::io;
 use transaction::{deserialize_tx, TxType};
 use {OutPoint, Transaction};
 
@@ -379,13 +380,14 @@ impl From<BlockHeader> for ExtBlockHeader {
 
 #[cfg(test)]
 mod tests {
-    use super::ExtBlockHeader;
     use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_NMC,
                        AUX_POW_VERSION_SYS, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION,
                        PROG_POW_SWITCH_TIME};
     use hex::FromHex;
     use primitives::bytes::Bytes;
     use ser::{deserialize, serialize, serialize_list, CoinVariant, Error as ReaderError, Reader, Stream};
+
+    use super::ExtBlockHeader;
 
     #[test]
     fn test_block_header_stream() {

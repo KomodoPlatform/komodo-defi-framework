@@ -1,12 +1,13 @@
-use crate::conf::{SPVBlockHeader, SPVConf};
-use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use crate::work::{next_block_bits, NextBlockBitsError};
 use chain::{BlockHeader, RawHeaderError};
 use derive_more::Display;
 use primitives::hash::H256;
 use ripemd160::Digest;
 use serialization::parse_compact_int;
 use sha2::Sha256;
+
+use crate::conf::{SPVBlockHeader, SPVConf};
+use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
+use crate::work::{next_block_bits, NextBlockBitsError};
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum SPVError {
@@ -399,15 +400,17 @@ pub async fn validate_headers(
 mod tests {
     extern crate std;
 
+    use std::{println, vec};
+
+    use chain::BlockHeaderBits;
+    use common::block_on;
+    use test_helpers::hex::force_deserialize_hex;
+
     use super::*;
     use crate::conf::{BlockHeaderValidationParams, SPVBlockHeader};
     use crate::test_utils::{self};
     use crate::work::tests::TestBlockHeadersStorage;
     use crate::work::DifficultyAlgorithm;
-    use chain::BlockHeaderBits;
-    use common::block_on;
-    use std::{println, vec};
-    use test_helpers::hex::force_deserialize_hex;
 
     #[test]
     fn it_does_bitcoin_hash256() {

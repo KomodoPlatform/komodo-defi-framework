@@ -1,6 +1,7 @@
+use std::{io, marker};
+
 use compact_integer::CompactInteger;
 use derive_more::Display;
-use std::{io, marker};
 
 pub fn deserialize<R, T>(buffer: R) -> Result<T, Error>
 where

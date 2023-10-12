@@ -1,7 +1,8 @@
 //! Script numeric
 
-use bytes::Bytes;
 use std::ops;
+
+use bytes::Bytes;
 use Error;
 
 /// Script numeric

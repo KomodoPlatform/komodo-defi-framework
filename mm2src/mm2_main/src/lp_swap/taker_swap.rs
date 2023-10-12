@@ -1,19 +1,8 @@
-use super::check_balance::{check_my_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult,
-                           TakerFeeAdditionalInfo};
-use super::pubkey_banning::ban_pubkey_on_failed_swap;
-use super::swap_lock::{SwapLock, SwapLockOps};
-use super::swap_watcher::{watcher_topic, SwapWatcherMsg};
-use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
-use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_msg_every,
-            check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, get_locked_amount,
-            recv_swap_msg, swap_topic, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo,
-            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
-            SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
-            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL_SEC};
-use crate::mm2::lp_network::subscribe_to_topic;
-use crate::mm2::lp_ordermatch::TakerOrderBuilder;
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
-                          wait_for_maker_payment_conf_duration, TakerSwapWatcherData};
+use std::ops::Deref;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
             FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -34,11 +23,24 @@ use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
-use std::ops::Deref;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
+
+use super::check_balance::{check_my_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult,
+                           TakerFeeAdditionalInfo};
+use super::pubkey_banning::ban_pubkey_on_failed_swap;
+use super::swap_lock::{SwapLock, SwapLockOps};
+use super::swap_watcher::{watcher_topic, SwapWatcherMsg};
+use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
+use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_msg_every,
+            check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, get_locked_amount,
+            recv_swap_msg, swap_topic, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo,
+            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
+            SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
+            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL_SEC};
+use crate::mm2::lp_network::subscribe_to_topic;
+use crate::mm2::lp_ordermatch::TakerOrderBuilder;
+use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
+                          wait_for_maker_payment_conf_duration, TakerSwapWatcherData};
 
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
@@ -2589,14 +2591,15 @@ pub fn max_taker_vol_from_available(
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod taker_swap_tests {
-    use super::*;
-    use crate::mm2::lp_swap::{dex_fee_amount, get_locked_amount_by_other_swaps};
     use coins::eth::{addr_from_str, signed_eth_tx_from_bytes, SignedEthTx};
     use coins::utxo::UtxoTx;
     use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TestCoin};
     use common::{block_on, new_uuid};
     use mm2_test_helpers::for_tests::{mm_ctx_with_iguana, ETH_DEV_SWAP_CONTRACT};
     use mocktopus::mocking::*;
+
+    use super::*;
+    use crate::mm2::lp_swap::{dex_fee_amount, get_locked_amount_by_other_swaps};
 
     const PASSPHRASE: Option<&str> =
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid");

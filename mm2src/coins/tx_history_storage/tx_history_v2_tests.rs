@@ -1,15 +1,17 @@
 //! Consider using very dirty [Rust script](https://pastebin.ubuntu.com/p/9r2mDmGGHT/)
 //! to print all transactions from `../for_tests/tBCH_tx_history_fixtures.json` ordered.
 
-use crate::my_tx_history_v2::{GetHistoryResult, TxHistoryStorage};
-use crate::tx_history_storage::{FilteringAddresses, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
-use crate::{BytesJson, TransactionDetails};
-use common::PagingOptionsEnum;
-use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
-use serde_json as json;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::num::NonZeroUsize;
+
+use common::PagingOptionsEnum;
+use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+use serde_json as json;
+
+use crate::my_tx_history_v2::{GetHistoryResult, TxHistoryStorage};
+use crate::tx_history_storage::{FilteringAddresses, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
+use crate::{BytesJson, TransactionDetails};
 
 const BCH_TX_HISTORY_STR: &str = include_str!("../for_tests/tBCH_tx_history_fixtures.json");
 
@@ -580,11 +582,12 @@ async fn test_get_history_for_addresses_impl() {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod native_tests {
+    use common::block_on;
+    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+
     use super::wallet_id_for_test;
     use crate::my_tx_history_v2::TxHistoryStorage;
     use crate::tx_history_storage::sql_tx_history_storage_v2::SqliteTxHistoryStorage;
-    use common::block_on;
-    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 
     #[test]
     fn test_init_collection() {
@@ -647,11 +650,12 @@ mod native_tests {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
+    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+    use wasm_bindgen_test::*;
+
     use super::wallet_id_for_test;
     use crate::my_tx_history_v2::TxHistoryStorage;
     use crate::tx_history_storage::wasm::tx_history_storage_v2::IndexedDbTxHistoryStorage;
-    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
-    use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

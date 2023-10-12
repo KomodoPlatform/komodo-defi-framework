@@ -1,3 +1,7 @@
+use std::env;
+use std::thread;
+use std::time::Duration;
+
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::{block_on, log, repeatable};
 use crypto::StandardHDCoinAddress;
@@ -9,9 +13,6 @@ use mm2_test_helpers::for_tests::{disable_coin, enable_bch_with_tokens, enable_s
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, RpcV2Response, SignatureResponse, StandardHistoryV2Res,
                                 UtxoFeeDetails, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
-use std::env;
-use std::thread;
-use std::time::Duration;
 
 #[cfg(not(target_arch = "wasm32"))]
 const T_BCH_ELECTRUMS: &[&str] = &[

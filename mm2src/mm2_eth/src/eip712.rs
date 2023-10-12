@@ -1,9 +1,10 @@
 //! Inspired by https://github.com/openethereum/parity-ethereum/blob/v2.7.2-stable/util/EIP-712/src/eip712.rs
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
 
 pub(crate) const EIP712_DOMAIN: &str = "EIP712Domain";
 

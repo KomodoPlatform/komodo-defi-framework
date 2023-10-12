@@ -1,7 +1,8 @@
+use std::fmt;
+
 use keys::Address;
 use serde::de::{Unexpected, Visitor};
 use serde::{Deserializer, Serialize, Serializer};
-use std::fmt;
 
 pub fn serialize<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -36,10 +37,11 @@ impl<'b> Visitor<'b> for AddressVisitor {
 }
 
 pub mod vec {
-    use super::AddressVisitor;
     use keys::Address;
     use serde::de::Visitor;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::AddressVisitor;
 
     pub fn serialize<S>(addresses: &[Address], serializer: S) -> Result<S::Ok, S::Error>
     where

@@ -1,7 +1,8 @@
-use mm2_number::bigdecimal::ToPrimitive;
-use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, OrderConfirmationsSettings};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
+
+use mm2_number::bigdecimal::ToPrimitive;
+use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, OrderConfirmationsSettings};
 
 use super::{smart_fraction_fmt::{SmartFractPrecision, SmartFractionFmt},
             OrderbookConfig};

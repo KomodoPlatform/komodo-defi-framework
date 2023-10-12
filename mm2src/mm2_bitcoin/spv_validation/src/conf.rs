@@ -1,11 +1,13 @@
-use crate::helpers_validation::SPVError;
-use crate::work::{DifficultyAlgorithm, RETARGETING_INTERVAL};
+use std::num::NonZeroU64;
+use std::str::FromStr;
+
 use chain::{BlockHeader, BlockHeaderBits};
 use primitives::hash::H256;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer};
-use std::num::NonZeroU64;
-use std::str::FromStr;
+
+use crate::helpers_validation::SPVError;
+use crate::work::{DifficultyAlgorithm, RETARGETING_INTERVAL};
 
 fn from_hash_str<'de, D>(deserializer: D) -> Result<H256, D::Error>
 where

@@ -1,12 +1,12 @@
-use anyhow::{anyhow, Result};
-use common::log::{error, info};
 use std::env;
 use std::path::PathBuf;
 
-use crate::error_anyhow;
-
+use anyhow::{anyhow, Result};
+use common::log::{error, info};
 #[cfg(not(target_os = "macos"))]
 use sysinfo::{PidExt, ProcessExt, System, SystemExt};
+
+use crate::error_anyhow;
 
 #[cfg(windows)]
 mod reexport {
@@ -15,6 +15,7 @@ mod reexport {
     pub(super) use std::mem::size_of;
     pub(super) use std::ptr::null;
     pub(super) use std::u32;
+
     pub(super) use winapi::um::processthreadsapi::{CreateProcessA, OpenProcess, TerminateProcess, PROCESS_INFORMATION,
                                                    STARTUPINFOA};
     pub(super) use winapi::um::winnt::{PROCESS_TERMINATE, SYNCHRONIZE};
@@ -48,6 +49,7 @@ mod macos_reexport {
     pub(super) use std::process::Command;
     pub(super) use std::thread::sleep;
     pub(super) use std::time::Duration;
+
     pub(super) use sysinfo::{ProcessExt, System, SystemExt};
     pub(super) const LAUNCHCTL_MM2_ID: &str = "com.komodoproject.mm2";
 }

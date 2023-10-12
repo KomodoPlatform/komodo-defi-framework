@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
+use mm2_core::mm_ctx::{from_ctx, MmArc};
+use rpc_task::RpcTaskManager;
+
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lightning_activation::LightningTaskManagerShared;
 use crate::utxo_activation::{QtumTaskManagerShared, UtxoStandardTaskManagerShared};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::z_coin_activation::ZcoinTaskManagerShared;
-use mm2_core::mm_ctx::{from_ctx, MmArc};
-use rpc_task::RpcTaskManager;
-use std::sync::Arc;
 
 pub struct CoinsActivationContext {
     pub(crate) init_utxo_standard_task_manager: UtxoStandardTaskManagerShared,

@@ -1,8 +1,9 @@
-use crate::user_interaction::TrezorPassphraseResponse;
-use crate::{TrezorError, TrezorPinMatrix3x3Response};
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_err_handle::prelude::*;
+
+use crate::user_interaction::TrezorPassphraseResponse;
+use crate::{TrezorError, TrezorPinMatrix3x3Response};
 
 #[derive(Display)]
 pub enum TrezorProcessingError<E> {

@@ -1,8 +1,10 @@
-use super::{DbIdentifier, DbInstance, InitDbResult};
+use std::sync::{Arc, Weak};
+
 use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use mm2_core::{mm_ctx::MmArc, DbNamespaceId};
 use primitives::hash::H160;
-use std::sync::{Arc, Weak};
+
+use super::{DbIdentifier, DbInstance, InitDbResult};
 
 /// The mapped mutex guard.
 /// This implements `Deref<Db>`.

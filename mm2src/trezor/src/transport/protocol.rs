@@ -1,11 +1,12 @@
 //! This file is inspired by https://github.com/tezedge/tezedge-client/blob/master/trezor_api/src/transport/protocol.rs
 
-use crate::proto::messages::MessageType;
-use crate::proto::ProtoMessage;
-use crate::{TrezorError, TrezorResult};
 use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
 use mm2_err_handle::prelude::*;
+
+use crate::proto::messages::MessageType;
+use crate::proto::ProtoMessage;
+use crate::{TrezorError, TrezorResult};
 
 const CHUNK_LEN: u32 = 64;
 const CHUNK_HEADER_LEN: usize = 9;

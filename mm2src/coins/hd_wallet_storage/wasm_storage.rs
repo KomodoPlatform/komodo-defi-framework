@@ -1,6 +1,3 @@
-use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
-                               HDWalletStorageResult};
-use crate::CoinsContext;
 use async_trait::async_trait;
 use crypto::XPub;
 use mm2_core::mm_ctx::MmArc;
@@ -9,6 +6,10 @@ use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, DbTable, DbTransact
                          IndexedDbBuilder, InitDbError, InitDbResult, ItemId, MultiIndex, OnUpgradeResult, SharedDb,
                          TableSignature, WeakDb};
 use mm2_err_handle::prelude::*;
+
+use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
+                               HDWalletStorageResult};
+use crate::CoinsContext;
 
 const DB_NAME: &str = "hd_wallet";
 const DB_VERSION: u32 = 1;

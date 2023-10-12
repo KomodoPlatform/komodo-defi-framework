@@ -41,6 +41,19 @@
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate ser_error_derive;
 
+use std::cmp::Ordering;
+use std::collections::hash_map::{HashMap, RawEntryMut};
+use std::collections::HashSet;
+use std::fmt;
+use std::future::Future as Future03;
+use std::num::NonZeroUsize;
+use std::ops::{Add, Deref};
+use std::str::FromStr;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering as AtomicOrdering;
+use std::sync::Arc;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use bip32::ExtendedPrivateKey;
@@ -70,18 +83,6 @@ use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
-use std::cmp::Ordering;
-use std::collections::hash_map::{HashMap, RawEntryMut};
-use std::collections::HashSet;
-use std::fmt;
-use std::future::Future as Future03;
-use std::num::NonZeroUsize;
-use std::ops::{Add, Deref};
-use std::str::FromStr;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering as AtomicOrdering;
-use std::sync::Arc;
-use std::time::Duration;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 use zcash_primitives::transaction::Transaction as ZTransaction;
 
@@ -4316,10 +4317,10 @@ fn coins_conf_check(ctx: &MmArc, coins_en: &Json, ticker: &str, req: Option<&Jso
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use common::block_on;
     use mm2_test_helpers::for_tests::RICK;
+
+    use super::*;
 
     #[test]
     fn test_lp_coinfind() {

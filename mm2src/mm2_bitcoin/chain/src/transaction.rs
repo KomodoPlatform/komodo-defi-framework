@@ -1,6 +1,9 @@
 //! Bitcoin transaction.
 //! https://en.bitcoin.it/wiki/Protocol_documentation#tx
 
+use std::io;
+use std::io::Read;
+
 use bytes::Bytes;
 use constants::{LOCKTIME_THRESHOLD, SEQUENCE_FINAL};
 use crypto::{dhash256, sha256};
@@ -14,8 +17,6 @@ use hash::{CipherText, EncCipherText, OutCipherText, ZkProof, ZkProofSapling, H2
 use hex::FromHex;
 use ser::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use ser::{CompactInteger, Deserializable, Error, Reader, Serializable, Stream};
-use std::io;
-use std::io::Read;
 
 /// Must be zero.
 const WITNESS_MARKER: u8 = 0;
@@ -583,11 +584,12 @@ impl Deserializable for Transaction {
 
 #[cfg(test)]
 mod tests {
-    use super::{Bytes, ExtTransaction, OutPoint, Transaction, TransactionInput, TransactionOutput};
     use hash::{H256, H512};
     use hex::ToHex;
     use ser::{deserialize, serialize, serialize_with_flags, Serializable, SERIALIZE_TRANSACTION_WITNESS};
     use TxHashAlgo;
+
+    use super::{Bytes, ExtTransaction, OutPoint, Transaction, TransactionInput, TransactionOutput};
 
     // real transaction from block 80000
     // https://blockchain.info/rawtx/5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2

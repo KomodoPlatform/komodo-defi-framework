@@ -1,7 +1,3 @@
-use crate::lightning::ln_p2p::connect_to_ln_node;
-use crate::lightning::ln_serialization::PublicKeyForRPC;
-use crate::lightning::ln_utils::PaymentError;
-use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 use common::log::LogOnError;
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -9,6 +5,11 @@ use http::StatusCode;
 use lightning_invoice::Invoice;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+
+use crate::lightning::ln_p2p::connect_to_ln_node;
+use crate::lightning::ln_serialization::PublicKeyForRPC;
+use crate::lightning::ln_utils::PaymentError;
+use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 
 type SendPaymentResult<T> = Result<T, MmError<SendPaymentError>>;
 

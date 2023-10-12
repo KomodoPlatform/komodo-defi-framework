@@ -1,5 +1,6 @@
-use serde::de::{self, Deserializer};
 use std::fmt;
+
+use serde::de::{self, Deserializer};
 
 /// Deserializes an empty string into `None`.  
 /// Does not try to trim the string, passing `" "` will produce `Some (String::from (" "))`.  

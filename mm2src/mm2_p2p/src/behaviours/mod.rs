@@ -7,17 +7,18 @@ pub(crate) mod request_response;
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{HashMap, HashSet};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::Arc;
+    #[cfg(not(windows))] use std::sync::Mutex;
+    use std::time::Duration;
+
     use async_std::task::spawn;
     use common::executor::abortable_queue::AbortableQueue;
     use futures::channel::{mpsc, oneshot};
     use futures::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
     use libp2p::{Multiaddr, PeerId};
-    use std::collections::{HashMap, HashSet};
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-    use std::sync::Arc;
-    #[cfg(not(windows))] use std::sync::Mutex;
-    use std::time::Duration;
 
     use crate::behaviours::peers_exchange::{PeerIdSerde, PeersExchange};
     use crate::{spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourEvent, AdexResponse, AdexResponseChannel, NetworkInfo,

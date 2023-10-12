@@ -1,7 +1,8 @@
-use crate::nft::storage::NftStorageError;
 use mm2_db::indexed_db::{DbTransactionError, InitDbError};
 use mm2_err_handle::prelude::*;
 use mm2_number::bigdecimal::ParseBigDecimalError;
+
+use crate::nft::storage::NftStorageError;
 
 pub(crate) mod nft_idb;
 pub(crate) mod wasm_storage;

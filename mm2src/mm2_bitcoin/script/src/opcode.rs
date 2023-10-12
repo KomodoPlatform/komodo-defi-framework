@@ -1,6 +1,7 @@
 //! Script opcodes.
-use flags::VerificationFlags;
 use std::fmt;
+
+use flags::VerificationFlags;
 
 /// Script opcodes.
 #[repr(u8)]

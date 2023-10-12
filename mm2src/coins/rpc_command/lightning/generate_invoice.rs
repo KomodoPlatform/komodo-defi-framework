@@ -1,7 +1,3 @@
-use crate::lightning::ln_db::{LightningDB, PaymentInfo, PaymentType};
-use crate::lightning::ln_p2p::connect_to_ln_node;
-use crate::lightning::DEFAULT_INVOICE_EXPIRY;
-use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 use bitcoin_hashes::Hash;
 use common::log::LogOnError;
 use common::{async_blocking, HttpStatusCode};
@@ -12,6 +8,11 @@ use lightning_invoice::utils::create_invoice_from_channelmanager;
 use lightning_invoice::{Invoice, SignOrCreationError};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+
+use crate::lightning::ln_db::{LightningDB, PaymentInfo, PaymentType};
+use crate::lightning::ln_p2p::connect_to_ln_node;
+use crate::lightning::DEFAULT_INVOICE_EXPIRY;
+use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 
 type GenerateInvoiceResult<T> = Result<T, MmError<GenerateInvoiceError>>;
 

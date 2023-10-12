@@ -1,7 +1,9 @@
-use crate::utxo::tx_cache::{TxCacheResult, UtxoVerboseCacheOps};
+use std::collections::{HashMap, HashSet};
+
 use async_trait::async_trait;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
-use std::collections::{HashMap, HashSet};
+
+use crate::utxo::tx_cache::{TxCacheResult, UtxoVerboseCacheOps};
 
 /// The dummy TX cache.
 #[derive(Debug, Default)]

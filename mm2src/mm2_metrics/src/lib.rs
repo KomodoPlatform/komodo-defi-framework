@@ -4,18 +4,18 @@
 #[macro_use]
 pub mod mm_metrics;
 pub mod recorder;
-pub use metrics;
-#[cfg(not(target_arch = "wasm32"))]
-pub use mm_metrics::prometheus;
+use std::collections::HashMap;
+use std::sync::{Arc, Weak};
 
 use common::{executor::SpawnFuture, log::LogWeak};
 use derive_more::Display;
+pub use metrics;
 use mm2_err_handle::prelude::MmError;
+#[cfg(not(target_arch = "wasm32"))]
+pub use mm_metrics::prometheus;
 use mm_metrics::Metrics;
 use recorder::{MmRecorder, TryRecorder};
 use serde_json::Value as Json;
-use std::collections::HashMap;
-use std::sync::{Arc, Weak};
 
 pub type MmMetricsResult<T> = Result<T, MmError<MmMetricsError>>;
 

@@ -1,5 +1,6 @@
-use crate::ValidatePaymentError;
 use mm2_err_handle::prelude::MmError;
+
+use crate::ValidatePaymentError;
 
 pub const REWARD_GAS_AMOUNT: u64 = 70000;
 const REWARD_MARGIN: f64 = 0.05;

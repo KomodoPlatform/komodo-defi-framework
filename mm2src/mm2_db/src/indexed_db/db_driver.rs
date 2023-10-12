@@ -6,6 +6,10 @@
 //! Since the wrappers represented below are not `Send`, it's strongly recommended NOT to use them directly.
 //! Please consider using a higher-level interface from `indexed_db.rs`.
 
+use std::collections::HashSet;
+use std::fmt;
+use std::sync::Mutex;
+
 use common::log::{error, info};
 use common::stringify_js_error;
 use futures::channel::mpsc;
@@ -14,9 +18,6 @@ use lazy_static::lazy_static;
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashSet;
-use std::fmt;
-use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 use web_sys::{IdbDatabase, IdbTransactionMode};
 

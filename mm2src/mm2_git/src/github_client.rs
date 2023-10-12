@@ -75,10 +75,10 @@ impl RepositoryOperations for GithubClient {
 #[cfg(test)]
 #[allow(unused)]
 mod tests {
-    use crate::{GitController, GITHUB_API_URI};
+    use serde::Deserialize;
 
     use super::*;
-    use serde::Deserialize;
+    use crate::{GitController, GITHUB_API_URI};
 
     #[derive(Debug, Deserialize)]
     struct ChainRegistry {

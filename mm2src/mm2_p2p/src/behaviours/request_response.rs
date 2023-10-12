@@ -1,3 +1,6 @@
+use std::collections::{HashMap, VecDeque};
+use std::io;
+
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
 use futures::io::{AsyncRead, AsyncWrite};
@@ -15,8 +18,6 @@ use libp2p::{request_response::{Behaviour as RequestResponse, Config as RequestR
 use log::{error, warn};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
-use std::io;
 
 use super::atomicdex::MAX_BUFFER_SIZE;
 use crate::{decode_message, encode_message};

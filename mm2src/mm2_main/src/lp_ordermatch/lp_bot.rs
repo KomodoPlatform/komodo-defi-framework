@@ -3,6 +3,10 @@
 //  marketmaker
 //
 
+use std::any::TypeId;
+use std::ops::Deref;
+use std::{collections::HashMap, sync::Arc};
+
 use async_trait::async_trait;
 use common::log::info;
 use derive_more::Display;
@@ -11,18 +15,16 @@ use mm2_core::{event_dispatcher::{EventListener, EventUniqueId},
                mm_ctx::{from_ctx, MmArc}};
 use mm2_number::MmNumber;
 #[cfg(test)] use mocktopus::macros::*;
-use std::any::TypeId;
-use std::ops::Deref;
-use std::{collections::HashMap, sync::Arc};
 
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
+pub use simple_market_maker_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot,
+                                  StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
+
 use crate::mm2::lp_dispatcher::{LpEvents, StopCtxEvent};
 use crate::mm2::lp_message_service::{MessageServiceContext, MAKER_BOT_ROOM_ID};
 use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::{tear_down_bot, BOT_DEFAULT_REFRESH_RATE,
                                                                  PRECISION_FOR_NOTIFICATION};
 use crate::mm2::lp_swap::MakerSwapStatusChanged;
-pub use simple_market_maker_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot,
-                                  StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "simple_market_maker_tests.rs"]

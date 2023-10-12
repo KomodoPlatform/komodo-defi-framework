@@ -1,12 +1,13 @@
+use mm2_core::mm_ctx::MmCtxBuilder;
+use serialization::deserialize;
+use wasm_bindgen_test::*;
+
 use super::rpc_clients::{ElectrumClient, UtxoRpcClientOps};
 use super::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
 use super::utxo_standard::UtxoStandardCoin;
 use super::*;
 use crate::utxo::utxo_common_tests;
 use crate::{IguanaPrivKey, PrivKeyBuildPolicy};
-use mm2_core::mm_ctx::MmCtxBuilder;
-use serialization::deserialize;
-use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 

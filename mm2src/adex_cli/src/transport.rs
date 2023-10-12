@@ -1,11 +1,10 @@
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
-use http::{HeaderMap, StatusCode};
-use serde::{Deserialize, Serialize};
-
 use common::log::{error, warn};
+use http::{HeaderMap, StatusCode};
 use hyper_dangerous::get_hyper_client_dangerous;
 use mm2_net::native_http::SlurpHttpClient;
+use serde::{Deserialize, Serialize};
 
 use crate::{error_anyhow, error_bail, warn_bail};
 
@@ -85,12 +84,13 @@ impl Response for (StatusCode, HeaderMap, Vec<u8>) {
 
 mod hyper_dangerous {
 
+    use std::sync::Arc;
+    use std::time::SystemTime;
+
     use hyper::{client::HttpConnector, Body, Client};
     use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
     use rustls::client::{ServerCertVerified, ServerCertVerifier};
     use rustls::{RootCertStore, DEFAULT_CIPHER_SUITES, DEFAULT_VERSIONS};
-    use std::sync::Arc;
-    use std::time::SystemTime;
 
     use super::*;
 

@@ -1,10 +1,11 @@
-use crate::sqlite::StringError;
-use common::write_safe::fmt::WriteJoin;
-use rusqlite::{Error as SqlError, Result as SqlResult};
 use std::collections::BTreeMap;
 use std::fmt;
 
+use common::write_safe::fmt::WriteJoin;
 pub use foreign_key::ForeignKey;
+use rusqlite::{Error as SqlError, Result as SqlResult};
+
+use crate::sqlite::StringError;
 
 macro_rules! named_constraint {
     ($constraint_ident:ident, $constraint_str:literal) => {
@@ -77,8 +78,9 @@ named_constraint!(Unique, "UNIQUE");
 named_constraint!(PrimaryKey, "PRIMARY KEY");
 
 pub mod foreign_key {
-    use super::*;
     use std::fmt;
+
+    use super::*;
 
     #[macro_export]
     macro_rules! foreign_columns {

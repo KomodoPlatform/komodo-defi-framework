@@ -1,3 +1,27 @@
+#[cfg(not(target_arch = "wasm32"))] use std::convert::TryFrom;
+use std::iter;
+use std::mem::discriminant;
+use std::num::NonZeroUsize;
+
+use chain::{BlockHeader, BlockHeaderBits, OutPoint};
+use common::executor::Timer;
+use common::{block_on, wait_until_sec, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
+use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath, Secp256k1Secret};
+#[cfg(not(target_arch = "wasm32"))]
+use db_common::sqlite::rusqlite::Connection;
+use futures::channel::mpsc::channel;
+use futures::future::join_all;
+use futures::TryFutureExt;
+use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_number::bigdecimal::{BigDecimal, Signed};
+use mm2_test_helpers::for_tests::{mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
+use mocktopus::mocking::*;
+use rpc::v1::types::H256 as H256Json;
+use serialization::{deserialize, CoinVariant};
+use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
+use spv_validation::storage::BlockHeaderStorageOps;
+use spv_validation::work::DifficultyAlgorithm;
+
 use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::coin_errors::ValidatePaymentError;
@@ -31,28 +55,6 @@ use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CoinBalance, ConfirmPaymentInput, IguanaPrivKey, PrivKeyBuildPolicy,
             SearchForSwapTxSpendInput, SpendPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue,
             TxFeeDetails, TxMarshalingErr, ValidateFeeArgs, WaitForHTLCTxSpendArgs, INVALID_SENDER_ERR_LOG};
-use chain::{BlockHeader, BlockHeaderBits, OutPoint};
-use common::executor::Timer;
-use common::{block_on, wait_until_sec, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
-use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath, Secp256k1Secret};
-#[cfg(not(target_arch = "wasm32"))]
-use db_common::sqlite::rusqlite::Connection;
-use futures::channel::mpsc::channel;
-use futures::future::join_all;
-use futures::TryFutureExt;
-use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_number::bigdecimal::{BigDecimal, Signed};
-use mm2_test_helpers::for_tests::{mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
-use mocktopus::mocking::*;
-use rpc::v1::types::H256 as H256Json;
-use serialization::{deserialize, CoinVariant};
-use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
-use spv_validation::storage::BlockHeaderStorageOps;
-use spv_validation::work::DifficultyAlgorithm;
-#[cfg(not(target_arch = "wasm32"))] use std::convert::TryFrom;
-use std::iter;
-use std::mem::discriminant;
-use std::num::NonZeroUsize;
 
 #[cfg(not(target_arch = "wasm32"))]
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
@@ -2431,8 +2433,9 @@ fn test_find_output_spend_skips_conflicting_transactions() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_qtum_is_unspent_mature() {
-    use crate::utxo::qtum::QtumBasedCoin;
     use rpc::v1::types::{ScriptType, SignedTransactionOutput, TransactionOutputScript};
+
+    use crate::utxo::qtum::QtumBasedCoin;
 
     let mut coin_fields = utxo_coin_fields_for_test(UtxoRpcClientEnum::Native(native_client_for_test()), None, false);
     // Qtum's mature confirmations is 500 blocks
@@ -4341,9 +4344,10 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
 
 #[test]
 fn test_block_header_utxo_loop() {
-    use crate::utxo::utxo_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};
     use futures::future::{Either, FutureExt};
     use keys::hash::H256 as H256Json;
+
+    use crate::utxo::utxo_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};
 
     static mut CURRENT_BLOCK_COUNT: u64 = 13;
 
@@ -4528,9 +4532,10 @@ fn rick_blocker_5() -> BlockHeader {
 
 #[test]
 fn test_block_header_utxo_loop_with_reorg() {
-    use crate::utxo::utxo_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};
     use futures::future::{Either, FutureExt};
     use keys::hash::H256 as H256Json;
+
+    use crate::utxo::utxo_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};
 
     static mut CURRENT_BLOCK_COUNT: u64 = 3;
     static mut IS_MISMATCH_HEADER: bool = true;

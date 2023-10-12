@@ -1,4 +1,3 @@
-use crate::utxo::rpc_clients::{ConfirmedTransactionInfo, ElectrumClient};
 use async_trait::async_trait;
 use chain::Transaction as UtxoTx;
 use common::log::error;
@@ -6,6 +5,8 @@ use keys::hash::H256;
 use serialization::serialize_list;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
+
+use crate::utxo::rpc_clients::{ConfirmedTransactionInfo, ElectrumClient};
 
 #[async_trait]
 pub trait SimplePaymentVerification {

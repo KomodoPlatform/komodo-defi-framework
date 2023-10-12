@@ -1,5 +1,5 @@
-use crate::prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum};
-use crate::token::{EnableTokenError, TokenActivationOps, TokenProtocolParams};
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use coins::coin_errors::MyAddressError;
 use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
@@ -7,7 +7,9 @@ use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, 
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
+
+use crate::prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum};
+use crate::token::{EnableTokenError, TokenActivationOps, TokenProtocolParams};
 
 impl TryPlatformCoinFromMmCoinEnum for SolanaCoin {
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>

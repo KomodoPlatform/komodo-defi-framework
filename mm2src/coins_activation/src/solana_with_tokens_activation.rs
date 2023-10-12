@@ -1,10 +1,5 @@
-use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
-                                       TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
-                                       TokenInitializer, TokenOf};
-use crate::prelude::*;
-use crate::prelude::{CoinAddressInfo, TokenBalances, TryFromCoinProtocol, TxHistory};
-use crate::spl_token_activation::SplActivationRequest;
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use coins::coin_errors::MyAddressError;
 use coins::my_tx_history_v2::TxHistoryStorage;
@@ -21,7 +16,14 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashMap;
+
+use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
+                                       InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
+                                       TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
+                                       TokenInitializer, TokenOf};
+use crate::prelude::*;
+use crate::prelude::{CoinAddressInfo, TokenBalances, TryFromCoinProtocol, TxHistory};
+use crate::spl_token_activation::SplActivationRequest;
 
 pub struct SplTokenInitializer {
     platform_coin: SolanaCoin,

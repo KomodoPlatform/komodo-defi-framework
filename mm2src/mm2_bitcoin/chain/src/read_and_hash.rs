@@ -1,7 +1,8 @@
+use std::io;
+
 use crypto::dhash256;
 use hash::H256;
 use ser::{Deserializable, Error as ReaderError, Reader};
-use std::io;
 
 pub struct HashedData<T> {
     pub size: usize,

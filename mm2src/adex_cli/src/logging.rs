@@ -1,7 +1,8 @@
 #[cfg(not(any(test, target_arch = "wasm32")))]
-use log::LevelFilter;
-#[cfg(not(any(test, target_arch = "wasm32")))]
 use std::io::Write;
+
+#[cfg(not(any(test, target_arch = "wasm32")))]
+use log::LevelFilter;
 
 #[cfg(not(any(test, target_arch = "wasm32")))]
 pub(super) fn init_logging() {

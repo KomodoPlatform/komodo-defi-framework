@@ -1,7 +1,8 @@
+use std::sync::Arc;
+
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::behaviours::atomicdex::AdexCmdTx;
 use parking_lot::Mutex;
-use std::sync::Arc;
 
 pub struct P2PContext {
     /// Using Mutex helps to prevent cloning which can actually result to channel being unbounded in case of using 1 tx clone per 1 message.

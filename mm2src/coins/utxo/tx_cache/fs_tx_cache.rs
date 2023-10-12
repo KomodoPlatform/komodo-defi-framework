@@ -1,4 +1,8 @@
-use crate::utxo::tx_cache::{TxCacheError, TxCacheResult, UtxoVerboseCacheOps};
+use std::collections::hash_map::RawEntryMut;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use common::log::LogOnError;
 use futures::lock::Mutex as AsyncMutex;
@@ -7,10 +11,8 @@ use mm2_err_handle::prelude::*;
 use mm2_io::fs::{read_json, write_json, FsJsonError};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
-use std::collections::hash_map::RawEntryMut;
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use std::sync::Arc;
+
+use crate::utxo::tx_cache::{TxCacheError, TxCacheResult, UtxoVerboseCacheOps};
 
 lazy_static! {
     static ref TX_CACHE_LOCK: TxCacheLock = TxCacheLock::default();

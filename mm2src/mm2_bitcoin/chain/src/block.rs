@@ -1,9 +1,10 @@
-use super::RepresentH256;
 use hash::H256;
 use hex::FromHex;
 use merkle_root::merkle_root;
 use ser::deserialize;
 use {BlockHeader, Transaction};
+
+use super::RepresentH256;
 
 #[derive(Debug, PartialEq, Clone, Serializable, Deserializable)]
 pub struct Block {
@@ -55,10 +56,11 @@ impl Block {
 
 #[cfg(test)]
 mod tests {
-    use super::Block;
     use hash::H256;
     use hex::FromHex;
     use ser::deserialize;
+
+    use super::Block;
 
     // Block 80000
     // https://blockchain.info/rawblock/000000000043a8c0fd1d6f726790caa2a406010d19efd2780db27bdbbd93baf6

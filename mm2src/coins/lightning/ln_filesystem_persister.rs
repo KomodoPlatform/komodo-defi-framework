@@ -1,5 +1,13 @@
-use crate::lightning::ln_storage::{LightningStorage, NetworkGraph, NodesAddressesMap, NodesAddressesMapShared, Scorer,
-                                   TrustedNodesShared};
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::io::{BufReader, BufWriter, Cursor};
+use std::net::SocketAddr;
+use std::ops::Deref;
+#[cfg(target_family = "unix")] use std::os::unix::io::AsRawFd;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+
 use async_trait::async_trait;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::{BlockHash, Network, Txid};
@@ -13,19 +21,11 @@ use lightning::util::persist::KVStorePersister;
 use lightning::util::ser::{ReadableArgs, Writeable};
 use mm2_io::fs::{check_dir_operations, invalid_data_err, read_json, write_json};
 use secp256k1v24::PublicKey;
-use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::io::{BufReader, BufWriter, Cursor};
-use std::net::SocketAddr;
-use std::ops::Deref;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
-
-#[cfg(target_family = "unix")] use std::os::unix::io::AsRawFd;
-
 #[cfg(target_family = "windows")]
 use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt};
+
+use crate::lightning::ln_storage::{LightningStorage, NetworkGraph, NodesAddressesMap, NodesAddressesMapShared, Scorer,
+                                   TrustedNodesShared};
 
 const USE_TMP_FILE: bool = true;
 

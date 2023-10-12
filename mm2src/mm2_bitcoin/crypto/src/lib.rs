@@ -7,6 +7,8 @@ extern crate sha2;
 extern crate sha3;
 extern crate siphasher;
 
+use std::hash::Hasher;
+
 use groestl::Groestl512;
 use primitives::hash::{H160, H256, H32, H512};
 use ripemd160::{Digest, Ripemd160};
@@ -14,7 +16,6 @@ use sha1::Sha1;
 use sha2::Sha256;
 use sha3::Keccak256;
 use siphasher::sip::SipHasher24;
-use std::hash::Hasher;
 
 /// Enum representing different variants of checksum calculation
 /// Most coins use double sha256
@@ -110,10 +111,11 @@ pub fn checksum(data: &[u8], sum_type: &ChecksumType) -> H32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{checksum, dhash160, dhash256, ripemd160, sha1, sha256, siphash24};
     use primitives::bytes::Bytes;
     use primitives::hash::{H160, H256, H32};
     use ChecksumType;
+
+    use super::{checksum, dhash160, dhash256, ripemd160, sha1, sha256, siphash24};
 
     #[test]
     fn test_ripemd160() {

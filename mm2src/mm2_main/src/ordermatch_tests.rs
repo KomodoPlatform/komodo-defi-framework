@@ -1,5 +1,7 @@
-use super::*;
-use crate::mm2::lp_ordermatch::new_protocol::{MakerOrderUpdated, PubkeyKeepAlive};
+use std::collections::HashSet;
+use std::iter::{self, FromIterator};
+use std::sync::Mutex;
+
 use coins::{MmCoin, TestCoin};
 use common::{block_on, executor::spawn};
 use crypto::privkey::key_pair_from_seed;
@@ -12,9 +14,9 @@ use mm2_net::p2p::P2PContext;
 use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
 use mocktopus::mocking::*;
 use rand::{seq::SliceRandom, thread_rng, Rng};
-use std::collections::HashSet;
-use std::iter::{self, FromIterator};
-use std::sync::Mutex;
+
+use super::*;
+use crate::mm2::lp_ordermatch::new_protocol::{MakerOrderUpdated, PubkeyKeepAlive};
 
 #[test]
 fn test_match_maker_order_and_taker_request() {

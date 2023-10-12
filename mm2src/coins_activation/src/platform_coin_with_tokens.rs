@@ -1,4 +1,3 @@
-use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
@@ -12,6 +11,8 @@ use mm2_number::BigDecimal;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
+
+use crate::prelude::*;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TokenActivationRequest<Req> {

@@ -1,12 +1,14 @@
+use std::num::NonZeroUsize;
+use std::str::FromStr;
+
+use ethereum_types::Address;
+use mm2_number::BigDecimal;
+use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+
 use crate::eth::eth_addr_to_hex;
 use crate::nft::nft_structs::{Chain, ContractType, Nft, NftCommon, NftTransferCommon, NftTransferHistory,
                               NftTransferHistoryFilters, TransferMeta, TransferStatus, UriMeta};
 use crate::nft::storage::{NftListStorageOps, NftStorageBuilder, NftTransferHistoryStorageOps, RemoveNftResult};
-use ethereum_types::Address;
-use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
-use std::num::NonZeroUsize;
-use std::str::FromStr;
 
 cfg_wasm32! {
     use wasm_bindgen_test::*;

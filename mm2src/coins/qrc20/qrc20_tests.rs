@@ -1,6 +1,6 @@
-use super::*;
-use crate::utxo::rpc_clients::UnspentInfo;
-use crate::{TxFeeDetails, WaitForHTLCTxSpendArgs};
+use std::convert::TryFrom;
+use std::mem::discriminant;
+
 use chain::OutPoint;
 use common::{block_on, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
@@ -9,8 +9,10 @@ use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::Zero;
 use mocktopus::mocking::{MockResult, Mockable};
 use rpc::v1::types::ToTxHash;
-use std::convert::TryFrom;
-use std::mem::discriminant;
+
+use super::*;
+use crate::utxo::rpc_clients::UnspentInfo;
+use crate::{TxFeeDetails, WaitForHTLCTxSpendArgs};
 
 const EXPECTED_TX_FEE: i64 = 1000;
 const CONTRACT_CALL_GAS_FEE: i64 = (QRC20_GAS_LIMIT_DEFAULT * QRC20_GAS_PRICE_DEFAULT) as i64;

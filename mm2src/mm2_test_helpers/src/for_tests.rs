@@ -1,7 +1,14 @@
 //! Helpers used in the unit and integration tests.
 
-use crate::electrums::qtum_electrums;
-use crate::structs::*;
+use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::env;
+#[cfg(not(target_arch = "wasm32"))] use std::io::Write;
+use std::net::IpAddr;
+use std::num::NonZeroUsize;
+use std::process::Child;
+use std::sync::Mutex;
+
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
@@ -18,15 +25,10 @@ use mm2_rpc::data::legacy::{BalanceResponse, ElectrumProtocol};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{self as json, json, Value as Json};
-use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::env;
-#[cfg(not(target_arch = "wasm32"))] use std::io::Write;
-use std::net::IpAddr;
-use std::num::NonZeroUsize;
-use std::process::Child;
-use std::sync::Mutex;
 use uuid::Uuid;
+
+use crate::electrums::qtum_electrums;
+use crate::structs::*;
 
 cfg_native! {
     use common::block_on;
@@ -845,8 +847,9 @@ pub fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_names
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn mm_ctx_with_custom_db() -> MmArc {
-    use db_common::sqlite::rusqlite::Connection;
     use std::sync::Arc;
+
+    use db_common::sqlite::rusqlite::Connection;
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
 

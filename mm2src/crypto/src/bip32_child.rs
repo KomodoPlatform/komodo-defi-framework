@@ -1,9 +1,11 @@
-use crate::RpcDerivationPath;
-use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::convert::TryFrom;
 use std::fmt;
 use std::str::FromStr;
+
+use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::RpcDerivationPath;
 
 pub type HardenedValue = AnyValue<true>;
 pub type NonHardenedValue = AnyValue<false>;

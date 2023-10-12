@@ -1,10 +1,12 @@
-use crate::sql_value::{FromQuoted, SqlValueOptional, SqlValueToString};
-use crate::sqlite::{OwnedSqlParam, OwnedSqlParams, SqlParamsBuilder, ToValidSqlIdent};
+use std::fmt;
+
 use common::write_safe;
 use common::write_safe::fmt::{WriteSafe, WriteSafeJoin};
 use log::debug;
 use rusqlite::{params_from_iter, Connection, Result as SqlResult};
-use std::fmt;
+
+use crate::sql_value::{FromQuoted, SqlValueOptional, SqlValueToString};
+use crate::sqlite::{OwnedSqlParam, OwnedSqlParams, SqlParamsBuilder, ToValidSqlIdent};
 
 enum InsertMode {
     OrReplace,

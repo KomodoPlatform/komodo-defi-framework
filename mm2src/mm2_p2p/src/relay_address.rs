@@ -1,9 +1,11 @@
-use crate::{NetworkInfo, NetworkPorts};
+use std::str::FromStr;
+
 use derive_more::Display;
 use lazy_static::lazy_static;
 use libp2p::Multiaddr;
 use serde::{de, Deserialize, Deserializer, Serialize};
-use std::str::FromStr;
+
+use crate::{NetworkInfo, NetworkPorts};
 
 #[derive(Clone, Debug, Display, Serialize)]
 pub enum RelayAddressError {

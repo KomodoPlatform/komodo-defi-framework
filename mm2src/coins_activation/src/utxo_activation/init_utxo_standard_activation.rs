@@ -1,13 +1,5 @@
-use crate::context::CoinsActivationContext;
-use crate::prelude::TryFromCoinProtocol;
-use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandle,
-                             InitStandaloneCoinTaskManagerShared};
-use crate::utxo_activation::common_impl::{get_activation_result, priv_key_build_policy,
-                                          start_history_background_fetching};
-use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
-use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
-                                                          UtxoStandardUserAction};
-use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
@@ -20,7 +12,17 @@ use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde_json::Value as Json;
-use std::collections::HashMap;
+
+use crate::context::CoinsActivationContext;
+use crate::prelude::TryFromCoinProtocol;
+use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandle,
+                             InitStandaloneCoinTaskManagerShared};
+use crate::utxo_activation::common_impl::{get_activation_result, priv_key_build_policy,
+                                          start_history_background_fetching};
+use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
+use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
+                                                          UtxoStandardUserAction};
+use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
 
 pub type UtxoStandardTaskManagerShared = InitStandaloneCoinTaskManagerShared<UtxoStandardCoin>;
 pub type UtxoStandardRpcTaskHandle = InitStandaloneCoinTaskHandle<UtxoStandardCoin>;

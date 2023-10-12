@@ -65,8 +65,9 @@ fn has_xpub_prefix(bytes: &[u8]) -> MmResult<bool, Base58Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::mem;
+
+    use super::*;
 
     #[test]
     fn test_xpub_check() {

@@ -1,5 +1,8 @@
-use crate::integration_tests_common::{enable_coins_eth_electrum, enable_coins_rick_morty_electrum, enable_electrum,
-                                      enable_electrum_json, enable_z_coin_light};
+use std::env;
+use std::str::FromStr;
+use std::thread;
+use std::time::Duration;
+
 use common::{block_on, log};
 use http::StatusCode;
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
@@ -12,10 +15,9 @@ use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, get_pa
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{GetPublicKeyResult, OrderbookV2Response, RpcV2Response, SetPriceResponse};
 use serde_json::{self as json, json, Value as Json};
-use std::env;
-use std::str::FromStr;
-use std::thread;
-use std::time::Duration;
+
+use crate::integration_tests_common::{enable_coins_eth_electrum, enable_coins_rick_morty_electrum, enable_electrum,
+                                      enable_electrum_json, enable_z_coin_light};
 
 /// https://github.com/artemii235/SuperNET/issues/241
 #[test]

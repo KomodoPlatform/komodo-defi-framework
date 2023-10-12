@@ -1,3 +1,10 @@
+use common::executor::{AbortableSystem, AbortedError};
+use crypto::Bip44Chain;
+use futures::{FutureExt, TryFutureExt};
+use mm2_metrics::MetricsArc;
+use mm2_number::MmNumber;
+use utxo_signer::UtxoSignerOps;
+
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
@@ -34,12 +41,6 @@ use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDeriva
             ValidateTakerPaymentResult, ValidateTakerPaymentSpendPreimageResult, VerificationResult,
             WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
-use common::executor::{AbortableSystem, AbortedError};
-use crypto::Bip44Chain;
-use futures::{FutureExt, TryFutureExt};
-use mm2_metrics::MetricsArc;
-use mm2_number::MmNumber;
-use utxo_signer::UtxoSignerOps;
 
 #[derive(Clone)]
 pub struct UtxoStandardCoin {

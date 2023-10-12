@@ -1,15 +1,5 @@
-use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex};
-use crate::hd_wallet_storage::{HDWalletCoinStorage, HDWalletStorageError};
-use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
-                               UtxoRpcClientEnum};
-use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
-use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, ElectrumProtoVerifierEvent,
-                  RecentlySpentOutPoints, TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet,
-                  UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, DEFAULT_GAP_LIMIT, UTXO_DUST_AMOUNT};
-use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
-            PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, UtxoActivationParams};
+use std::sync::{Arc, Mutex, Weak};
+
 use async_trait::async_trait;
 use chain::TxHashAlgo;
 use common::custom_futures::repeatable::{Ready, Retry};
@@ -35,7 +25,19 @@ use serde_json::{self as json, Value as Json};
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use std::sync::{Arc, Mutex, Weak};
+
+use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex};
+use crate::hd_wallet_storage::{HDWalletCoinStorage, HDWalletStorageError};
+use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
+                               UtxoRpcClientEnum};
+use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
+use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
+use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, ElectrumProtoVerifierEvent,
+                  RecentlySpentOutPoints, TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet,
+                  UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, DEFAULT_GAP_LIMIT, UTXO_DUST_AMOUNT};
+use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
+            PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, UtxoActivationParams};
 
 cfg_native! {
     use crate::utxo::coin_daemon_data_dir;

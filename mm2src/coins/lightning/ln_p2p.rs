@@ -1,4 +1,6 @@
-use super::*;
+use std::net::{IpAddr, Ipv4Addr};
+use std::num::TryFromIntError;
+
 use common::executor::{spawn_abortable, SpawnFuture, Timer};
 use common::log::LogState;
 use derive_more::Display;
@@ -11,9 +13,9 @@ use lightning_net_tokio::SocketDescriptor;
 use mm2_net::ip_addr::fetch_external_ip;
 use rand::RngCore;
 use secp256k1v24::PublicKey;
-use std::net::{IpAddr, Ipv4Addr};
-use std::num::TryFromIntError;
 use tokio::net::TcpListener;
+
+use super::*;
 
 const TRY_RECONNECTING_TO_NODE_INTERVAL: f64 = 60.;
 const BROADCAST_NODE_ANNOUNCEMENT_INTERVAL: u64 = 600;

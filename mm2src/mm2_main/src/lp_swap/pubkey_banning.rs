@@ -1,11 +1,13 @@
-use super::{SwapEvent, SwapsContext};
+use std::collections::hash_map::{Entry, HashMap};
+
 use chain::hash::H256;
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
 use rpc::v1::types::H256 as H256Json;
 use serde_json::{self as json, Value as Json};
-use std::collections::hash_map::{Entry, HashMap};
 use uuid::Uuid;
+
+use super::{SwapEvent, SwapsContext};
 
 #[derive(Serialize)]
 #[serde(tag = "type")]

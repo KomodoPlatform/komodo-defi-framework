@@ -52,17 +52,19 @@
 //! because ['RICK', 'MORTY', 13] < ['RICK', 'MORTY', 13, 1000000030],
 //! although it is expected to be within the specified bounds.
 
-use crate::indexed_db::db_driver::cursor::CursorBoundValue;
-pub(crate) use crate::indexed_db::db_driver::cursor::{CursorDriver, CursorFilters};
-pub use crate::indexed_db::db_driver::cursor::{CursorError, CursorResult};
-use crate::indexed_db::{DbTable, ItemId, TableSignature};
+use std::fmt;
+use std::marker::PhantomData;
+
 use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt, StreamExt};
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
-use std::fmt;
-use std::marker::PhantomData;
+
+use crate::indexed_db::db_driver::cursor::CursorBoundValue;
+pub(crate) use crate::indexed_db::db_driver::cursor::{CursorDriver, CursorFilters};
+pub use crate::indexed_db::db_driver::cursor::{CursorError, CursorResult};
+use crate::indexed_db::{DbTable, ItemId, TableSignature};
 
 pub(super) type DbCursorEventTx = mpsc::UnboundedSender<DbCursorEvent>;
 pub(super) type DbCursorEventRx = mpsc::UnboundedReceiver<DbCursorEvent>;
@@ -180,12 +182,13 @@ pub(crate) async fn cursor_event_loop(mut rx: DbCursorEventRx, mut cursor: Curso
 }
 
 mod tests {
-    use super::*;
-    use crate::indexed_db::{BeBigUint, DbIdentifier, DbTable, DbUpgrader, IndexedDbBuilder, OnUpgradeResult};
     use common::log::wasm_log::register_wasm_log;
     use itertools::Itertools;
     use serde::{Deserialize, Serialize};
     use wasm_bindgen_test::*;
+
+    use super::*;
+    use crate::indexed_db::{BeBigUint, DbIdentifier, DbTable, DbUpgrader, IndexedDbBuilder, OnUpgradeResult};
 
     wasm_bindgen_test_configure!(run_in_browser);
 

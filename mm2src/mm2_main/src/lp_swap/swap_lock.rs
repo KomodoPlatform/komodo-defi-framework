@@ -1,12 +1,11 @@
 use async_trait::async_trait;
+#[cfg(target_arch = "wasm32")] use common::now_sec;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use uuid::Uuid;
-
-#[cfg(target_arch = "wasm32")] use common::now_sec;
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_lock::SwapLock;
+use uuid::Uuid;
 #[cfg(target_arch = "wasm32")] pub use wasm_lock::SwapLock;
 
 pub type SwapLockResult<T> = Result<T, MmError<SwapLockError>>;
@@ -31,10 +30,12 @@ pub trait SwapLockOps: Sized {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native_lock {
+    use std::path::PathBuf;
+
+    use mm2_io::file_lock::{FileLock, FileLockError};
+
     use super::*;
     use crate::mm2::lp_swap::my_swaps_dir;
-    use mm2_io::file_lock::{FileLock, FileLockError};
-    use std::path::PathBuf;
 
     impl From<FileLockError> for SwapLockError {
         fn from(e: FileLockError) -> Self {
@@ -69,12 +70,13 @@ mod native_lock {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_lock {
-    use super::*;
-    use crate::mm2::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, ItemId, SwapLockTable};
-    use crate::mm2::lp_swap::SwapsContext;
     use common::executor::SpawnFuture;
     use common::log::{debug, error};
     use common::{now_float, now_ms};
+
+    use super::*;
+    use crate::mm2::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, ItemId, SwapLockTable};
+    use crate::mm2::lp_swap::SwapsContext;
 
     impl From<DbTransactionError> for SwapLockError {
         fn from(e: DbTransactionError) -> Self {
@@ -192,16 +194,17 @@ mod wasm_lock {
 
 #[cfg(target_arch = "wasm32")]
 mod tests {
-    use super::wasm_lock::*;
-    use super::*;
-    use crate::mm2::lp_swap::swap_wasm_db::SwapLockTable;
-    use crate::mm2::lp_swap::SwapsContext;
     use common::executor::Timer;
     use common::new_uuid;
     use common::now_ms;
     use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
     use mm2_db::indexed_db::ItemId;
     use wasm_bindgen_test::*;
+
+    use super::wasm_lock::*;
+    use super::*;
+    use crate::mm2::lp_swap::swap_wasm_db::SwapLockTable;
+    use crate::mm2::lp_swap::SwapsContext;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

@@ -1,10 +1,11 @@
+use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
-use std::collections::{HashMap, HashSet};
-use std::fmt;
-use std::sync::Arc;
 
 pub mod dummy_tx_cache;
 #[cfg(not(target_arch = "wasm32"))] pub mod fs_tx_cache;

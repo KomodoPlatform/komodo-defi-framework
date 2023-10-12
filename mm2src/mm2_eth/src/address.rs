@@ -1,7 +1,6 @@
+pub use ethkey::Address;
 use ethkey::{public_to_address, Public};
 use web3::types::H520;
-
-pub use ethkey::Address;
 
 pub fn address_from_pubkey_uncompressed(bytes: H520) -> Address {
     // Skip the first byte of the uncompressed public key.
@@ -11,8 +10,9 @@ pub fn address_from_pubkey_uncompressed(bytes: H520) -> Address {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::str::FromStr;
+
+    use super::*;
 
     #[test]
     fn test_address_from_pubkey_uncompressed() {

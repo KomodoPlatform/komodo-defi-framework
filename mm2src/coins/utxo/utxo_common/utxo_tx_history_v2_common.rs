@@ -1,3 +1,19 @@
+use std::collections::{HashMap, HashSet};
+use std::convert::{TryFrom, TryInto};
+use std::iter;
+use std::num::TryFromIntError;
+
+use common::jsonrpc_client::JsonRpcErrorType;
+use crypto::Bip44Chain;
+use futures::compat::Future01CompatExt;
+use itertools::Itertools;
+use keys::{Address, Type as ScriptType};
+use mm2_err_handle::prelude::*;
+use mm2_metrics::MetricsArc;
+use mm2_number::BigDecimal;
+use rpc::v1::types::{TransactionInputEnum, H256 as H256Json};
+use serialization::deserialize;
+
 use crate::coin_balance::CoinBalanceReportOps;
 use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, DisplayAddress, MyTxHistoryErrorV2, MyTxHistoryTarget,
@@ -11,20 +27,6 @@ use crate::utxo::{output_script, RequestTxHistoryResult, UtxoCoinFields, UtxoCom
 use crate::{big_decimal_from_sat_unsigned, compare_transactions, BalanceResult, CoinWithDerivationMethod,
             DerivationMethod, HDAccountAddressId, MarketCoinOps, NumConversError, TransactionDetails, TxFeeDetails,
             TxIdHeight, UtxoFeeDetails, UtxoTx};
-use common::jsonrpc_client::JsonRpcErrorType;
-use crypto::Bip44Chain;
-use futures::compat::Future01CompatExt;
-use itertools::Itertools;
-use keys::{Address, Type as ScriptType};
-use mm2_err_handle::prelude::*;
-use mm2_metrics::MetricsArc;
-use mm2_number::BigDecimal;
-use rpc::v1::types::{TransactionInputEnum, H256 as H256Json};
-use serialization::deserialize;
-use std::collections::{HashMap, HashSet};
-use std::convert::{TryFrom, TryInto};
-use std::iter;
-use std::num::TryFromIntError;
 
 /// [`CoinWithTxHistoryV2::history_wallet_id`] implementation.
 pub fn history_wallet_id(coin: &UtxoCoinFields) -> WalletId { WalletId::new(coin.conf.ticker.clone()) }

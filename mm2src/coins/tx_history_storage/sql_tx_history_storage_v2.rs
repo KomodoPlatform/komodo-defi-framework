@@ -1,7 +1,6 @@
-use crate::my_tx_history_v2::{GetHistoryResult, RemoveTxResult, TxHistoryStorage, TxHistoryStorageError};
-use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError,
-                                FilteringAddresses, GetTxHistoryFilters, WalletId};
-use crate::TransactionDetails;
+use std::convert::TryInto;
+use std::sync::{Arc, Mutex};
+
 use async_trait::async_trait;
 use common::{async_blocking, PagingOptionsEnum};
 use db_common::sql_build::*;
@@ -12,8 +11,11 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json};
-use std::convert::TryInto;
-use std::sync::{Arc, Mutex};
+
+use crate::my_tx_history_v2::{GetHistoryResult, RemoveTxResult, TxHistoryStorage, TxHistoryStorageError};
+use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError,
+                                FilteringAddresses, GetTxHistoryFilters, WalletId};
+use crate::TransactionDetails;
 
 fn tx_history_table(wallet_id: &WalletId) -> String { wallet_id.to_sql_table_name() + "_tx_history" }
 

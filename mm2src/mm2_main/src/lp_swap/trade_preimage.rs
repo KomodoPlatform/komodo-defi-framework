@@ -1,6 +1,5 @@
-use super::check_balance::CheckBalanceError;
-use super::{maker_swap_trade_preimage, taker_swap_trade_preimage, MakerTradePreimage, TakerTradePreimage};
-use crate::mm2::lp_ordermatch::{MakerOrderBuildError, TakerOrderBuildError};
+use std::collections::HashMap;
+
 use coins::{is_wallet_only_ticker, lp_coinfind_or_err, BalanceError, CoinFindError, TradeFee, TradePreimageError};
 use common::HttpStatusCode;
 use crypto::CryptoCtxError;
@@ -10,7 +9,10 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{construct_detailed, BigDecimal, MmNumber};
 use mm2_rpc::data::legacy::TakerAction;
-use std::collections::HashMap;
+
+use super::check_balance::CheckBalanceError;
+use super::{maker_swap_trade_preimage, taker_swap_trade_preimage, MakerTradePreimage, TakerTradePreimage};
+use crate::mm2::lp_ordermatch::{MakerOrderBuildError, TakerOrderBuildError};
 
 construct_detailed!(DetailedAmount, amount);
 construct_detailed!(DetailedVolume, volume);

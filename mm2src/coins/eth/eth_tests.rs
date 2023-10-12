@@ -1,5 +1,3 @@
-use super::*;
-use crate::IguanaPrivKey;
 use common::{block_on, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use ethkey::{Generator, Random};
@@ -9,6 +7,9 @@ use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_D
                                    ETH_MAINNET_SWAP_CONTRACT},
                        get_passphrase};
 use mocktopus::mocking::*;
+
+use super::*;
+use crate::IguanaPrivKey;
 
 /// The gas price for the tests
 const GAS_PRICE: u64 = 50_000_000_000;

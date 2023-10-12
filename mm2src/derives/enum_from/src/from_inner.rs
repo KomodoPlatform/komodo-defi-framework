@@ -1,7 +1,8 @@
-use crate::{CompileError, IdentCtx, MacroAttr, UnnamedInnerField};
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::Variant;
+
+use crate::{CompileError, IdentCtx, MacroAttr, UnnamedInnerField};
 
 /// Implement `From<Inner>` trait for the given enumeration `variant`.
 pub(crate) fn impl_from_inner(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<Option<TokenStream2>, CompileError> {

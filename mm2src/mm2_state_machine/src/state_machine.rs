@@ -2,9 +2,10 @@
 //!
 //! See the usage examples in the `tests` module.
 
+use async_trait::async_trait;
+
 use crate::prelude::*;
 use crate::NotSame;
-use async_trait::async_trait;
 
 /// A trait that state machine implementations should implement.
 #[async_trait]
@@ -152,13 +153,15 @@ impl<E> ErrorGuard<E> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::HashMap;
+    use std::convert::Infallible;
+
     use common::block_on;
     use common::executor::spawn;
     use futures::channel::mpsc;
     use futures::{SinkExt, StreamExt};
-    use std::collections::HashMap;
-    use std::convert::Infallible;
+
+    use super::*;
 
     type UserId = usize;
     type Login = String;

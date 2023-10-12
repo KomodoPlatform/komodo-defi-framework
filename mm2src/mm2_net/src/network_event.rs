@@ -1,4 +1,3 @@
-use crate::p2p::P2PContext;
 use async_trait::async_trait;
 use common::{executor::{SpawnFuture, Timer},
              log::info};
@@ -7,6 +6,8 @@ pub use mm2_event_stream::behaviour::EventBehaviour;
 use mm2_event_stream::{Event, EventStreamConfiguration};
 use mm2_libp2p::behaviours::atomicdex;
 use serde_json::json;
+
+use crate::p2p::P2PContext;
 
 pub struct NetworkEvent {
     ctx: MmArc,

@@ -1,8 +1,9 @@
+use std::pin::Pin;
+use std::sync::Arc;
+
 use common::executor::{BoxFutureSpawner, SpawnFuture};
 use futures::Future;
 use libp2p::swarm::Executor;
-use std::pin::Pin;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct SwarmRuntime {

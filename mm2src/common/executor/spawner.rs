@@ -1,5 +1,6 @@
-use crate::executor::AbortSettings;
 use futures::Future as Future03;
+
+use crate::executor::AbortSettings;
 
 pub trait BoxFutureSpawner {
     fn spawn_boxed(&self, f: Box<dyn Future03<Output = ()> + Send + Unpin + 'static>);

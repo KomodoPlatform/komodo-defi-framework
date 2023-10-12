@@ -1,4 +1,10 @@
-use crate::integration_tests_common::*;
+use std::collections::HashSet;
+use std::iter::FromIterator;
+use std::num::NonZeroUsize;
+use std::str::FromStr;
+use std::thread;
+use std::time::Duration;
+
 use common::executor::Timer;
 use common::{block_on, log, now_ms, now_sec, wait_until_ms};
 use mm2_number::BigDecimal;
@@ -10,12 +16,8 @@ use mm2_test_helpers::for_tests::{disable_coin, init_withdraw, pirate_conf, rick
 use mm2_test_helpers::structs::{EnableCoinBalance, InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus,
                                 ZcoinHistoryRes};
 use serde_json::{self as json, json, Value as Json};
-use std::collections::HashSet;
-use std::iter::FromIterator;
-use std::num::NonZeroUsize;
-use std::str::FromStr;
-use std::thread;
-use std::time::Duration;
+
+use crate::integration_tests_common::*;
 
 const ZOMBIE_TEST_BIP39_ACTIVATION_SEED: &str = "course flock lucky cereal hamster novel team never metal bean behind cute cruel matrix symptom fault harsh fashion impact prison glove then tree chef";
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";

@@ -1,34 +1,10 @@
-use super::ibc::transfer_v1::MsgTransfer;
-use super::ibc::IBC_GAS_LIMIT_DEFAULT;
-use super::iris::ethermint_account::EthermintAccount;
-use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
-                        HTLC_STATE_REFUNDED};
-use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
-use super::rpc::*;
-use crate::coin_errors::{MyAddressError, ValidatePaymentError};
-use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
-                                     IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequest,
-                                     IBCTransferChannelsRequestError, IBCTransferChannelsResponse,
-                                     IBCTransferChannelsResult, IBCWithdrawRequest, CHAIN_REGISTRY_BRANCH,
-                                     CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
-use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
-use crate::utxo::sat_from_big_decimal;
-use crate::utxo::utxo_common::big_decimal_from_sat;
-use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps, SearchForSwapTxSpendInput,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs,
-            SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
-            TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom,
-            WithdrawFut, WithdrawRequest};
+use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::ops::Deref;
+use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
@@ -69,13 +45,39 @@ use primitives::hash::H256;
 use prost::{DecodeError, Message};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
-use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::ops::Deref;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use uuid::Uuid;
+
+use super::ibc::transfer_v1::MsgTransfer;
+use super::ibc::IBC_GAS_LIMIT_DEFAULT;
+use super::iris::ethermint_account::EthermintAccount;
+use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
+                        HTLC_STATE_REFUNDED};
+use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
+use super::rpc::*;
+use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
+                                     IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequest,
+                                     IBCTransferChannelsRequestError, IBCTransferChannelsResponse,
+                                     IBCTransferChannelsResult, IBCWithdrawRequest, CHAIN_REGISTRY_BRANCH,
+                                     CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
+use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
+use crate::utxo::sat_from_big_decimal;
+use crate::utxo::utxo_common::big_decimal_from_sat;
+use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
+            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
+            RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps, SearchForSwapTxSpendInput,
+            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs,
+            SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
+            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom,
+            WithdrawFut, WithdrawRequest};
 
 // ABCI Request Paths
 const ABCI_GET_LATEST_BLOCK_PATH: &str = "/cosmos.base.tendermint.v1beta1.Service/GetLatestBlock";
@@ -2809,12 +2811,13 @@ pub fn tendermint_priv_key_policy(
 
 #[cfg(test)]
 pub mod tendermint_coin_tests {
-    use super::*;
+    use std::mem::discriminant;
 
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
-    use std::mem::discriminant;
+
+    use super::*;
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &str = &[

@@ -1,8 +1,9 @@
+use std::path::{Path, PathBuf};
+
 use common::now_sec;
 use derive_more::Display;
 use gstuff::now_float;
 use mm2_err_handle::prelude::*;
-use std::path::{Path, PathBuf};
 
 pub type FileLockResult<T> = std::result::Result<T, MmError<FileLockError>>;
 
@@ -90,8 +91,9 @@ impl<T: AsRef<Path>> Drop for FileLock<T> {
 
 #[cfg(test)]
 mod file_lock_tests {
-    use super::*;
     use std::{thread::sleep, time::Duration};
+
+    use super::*;
 
     #[test]
     fn test_file_lock_should_create_file_and_record_timestamp_and_then_delete_on_drop() {

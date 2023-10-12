@@ -1,12 +1,6 @@
-use super::*;
-use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
-use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ConfirmedTransactionInfo,
-                               ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
-                               UtxoRpcClientEnum, UtxoRpcResult};
-use crate::utxo::spv::SimplePaymentVerification;
-use crate::utxo::utxo_standard::UtxoStandardCoin;
-use crate::utxo::GetConfirmedTxError;
-use crate::{CoinFutSpawner, MarketCoinOps, MmCoin, WaitForHTLCTxSpendArgs};
+use std::convert::TryInto;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
+
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
@@ -23,9 +17,17 @@ use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget
                        Confirm, Filter, WatchedOutput};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
-use std::convert::TryInto;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
 use uuid::Uuid;
+
+use super::*;
+use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
+use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ConfirmedTransactionInfo,
+                               ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
+                               UtxoRpcClientEnum, UtxoRpcResult};
+use crate::utxo::spv::SimplePaymentVerification;
+use crate::utxo::utxo_standard::UtxoStandardCoin;
+use crate::utxo::GetConfirmedTxError;
+use crate::{CoinFutSpawner, MarketCoinOps, MmCoin, WaitForHTLCTxSpendArgs};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const TRY_LOOP_INTERVAL: f64 = 60.;

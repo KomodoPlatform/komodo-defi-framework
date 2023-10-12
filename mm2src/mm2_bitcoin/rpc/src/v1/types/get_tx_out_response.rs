@@ -22,12 +22,13 @@ pub struct GetTxOutResponse {
 
 #[cfg(test)]
 mod tests {
+    use serde_json;
+
     use super::super::bytes::Bytes;
     use super::super::hash::H256;
     use super::super::script::ScriptType;
     use super::super::transaction::TransactionOutputScript;
     use super::*;
-    use serde_json;
 
     #[test]
     fn tx_out_response_serialize() {

@@ -20,9 +20,14 @@
 //
 //  Copyright © 2022 AtomicDEX. All rights reserved.
 //
-use super::eth::Action::{Call, Create};
-use crate::lp_price::get_base_price_in_rel;
-use crate::nft::nft_structs::{ContractType, ConvertChain, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
+use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
+use std::ops::Deref;
+#[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex};
+
 use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
@@ -60,17 +65,14 @@ use secp256k1::PublicKey;
 use serde_json::{self as json, Value as Json};
 use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
-use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
-use std::ops::Deref;
-#[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use std::sync::{Arc, Mutex};
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId, U64};
 use web3::{self, Web3};
 use web3_transport::{http_transport::HttpTransportNode, EthFeeHistoryNamespace, Web3Transport};
+
+use super::eth::Action::{Call, Create};
+use crate::lp_price::get_base_price_in_rel;
+use crate::nft::nft_structs::{ContractType, ConvertChain, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
 
 cfg_wasm32! {
     use crypto::MetamaskArc;
@@ -78,6 +80,8 @@ cfg_wasm32! {
     use mm2_metamask::MetamaskError;
     use web3::types::TransactionRequest;
 }
+
+pub use rlp;
 
 use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
 use super::{coin_conf, lp_coinfind_or_err, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs,
@@ -99,19 +103,20 @@ use super::{coin_conf, lp_coinfind_or_err, AsyncMutex, BalanceError, BalanceFut,
             WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG,
             INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
             INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
-pub use rlp;
 
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
-use crate::nft::{find_wallet_nft_amount, WithdrawNftResult};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
+use crate::nft::{find_wallet_nft_amount, WithdrawNftResult};
+
 mod nonce;
-use crate::{PrivKeyPolicy, TransactionResult, WithdrawFrom};
 use nonce::ParityNonce;
+
+use crate::{PrivKeyPolicy, TransactionResult, WithdrawFrom};
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.137.5:8565) contract address: 0x83965C539899cC0F918552e5A26915de40ee8852

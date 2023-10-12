@@ -1,13 +1,13 @@
-use async_trait::async_trait;
-use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, OnUpgradeResult,
-                         TableSignature};
 use std::ops::Deref;
-use uuid::Uuid;
 
+use async_trait::async_trait;
 pub use mm2_db::indexed_db::{cursor_prelude, DbTransactionError, DbTransactionResult, InitDbError, InitDbResult,
                              ItemId};
+use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, OnUpgradeResult,
+                         TableSignature};
 pub use tables::{MyActiveMakerOrdersTable, MyActiveTakerOrdersTable, MyFilteringHistoryOrdersTable,
                  MyHistoryOrdersTable};
+use uuid::Uuid;
 
 const DB_NAME: &str = "ordermatch";
 const DB_VERSION: u32 = 1;
@@ -40,9 +40,10 @@ impl Deref for OrdermatchDb {
 }
 
 pub mod tables {
+    use serde_json::Value as Json;
+
     use super::*;
     use crate::mm2::lp_ordermatch::{MakerOrder, Order, TakerOrder};
-    use serde_json::Value as Json;
 
     #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
     pub struct MyActiveMakerOrdersTable {

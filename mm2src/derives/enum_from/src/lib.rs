@@ -1,7 +1,8 @@
+use std::fmt;
+
 use proc_macro::{self, TokenStream};
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::quote;
-use std::fmt;
 use syn::Meta::List;
 use syn::{parse_macro_input, Data, DeriveInput, Error, Field, Fields, ImplGenerics, Type, TypeGenerics, WhereClause};
 use syn::{Attribute, NestedMeta, Variant};

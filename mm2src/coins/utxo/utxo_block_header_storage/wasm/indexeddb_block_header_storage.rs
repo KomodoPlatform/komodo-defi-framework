@@ -1,4 +1,4 @@
-use super::BlockHeaderStorageTable;
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use chain::BlockHeader;
@@ -10,7 +10,8 @@ use num_traits::ToPrimitive;
 use primitives::hash::H256;
 use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use std::collections::HashMap;
+
+use super::BlockHeaderStorageTable;
 
 const DB_NAME: &str = "block_headers_cache";
 const DB_VERSION: u32 = 1;

@@ -1,3 +1,39 @@
+use std::cmp::Ordering;
+use std::collections::hash_map::{Entry, HashMap};
+use std::str::FromStr;
+use std::sync::atomic::Ordering as AtomicOrdering;
+
+pub use bitcrypto::{dhash160, sha256, ChecksumType};
+use bitcrypto::{dhash256, ripemd160};
+use chain::constants::SEQUENCE_FINAL;
+pub use chain::Transaction as UtxoTx;
+use chain::{OutPoint, TransactionOutput};
+use common::executor::Timer;
+use common::jsonrpc_client::JsonRpcErrorType;
+use common::log::{error, warn};
+use crypto::{Bip32DerPathOps, Bip44Chain, RpcDerivationPath, StandardHDPath, StandardHDPathError};
+use futures::compat::Future01CompatExt;
+use futures::future::{FutureExt, TryFutureExt};
+use futures01::future::Either;
+use itertools::Itertools;
+use keys::bytes::Bytes;
+use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, CompactSignature, Public, SegwitAddress,
+           Type as ScriptType};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
+use mm2_number::bigdecimal_custom::CheckedDivision;
+use mm2_number::{BigDecimal, MmNumber};
+use primitives::hash::H512;
+use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
+use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
+use secp256k1::{PublicKey, Signature};
+use serde_json::{self as json};
+use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
+                    SERIALIZE_TRANSACTION_WITNESS};
+use utxo_signer::with_key_pair::{calc_and_sign_sighash, p2sh_spend, signature_hash_to_sign, SIGHASH_ALL,
+                                 SIGHASH_SINGLE};
+use utxo_signer::UtxoSignerOps;
+
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
@@ -28,41 +64,6 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPayment
             WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
             INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
-pub use bitcrypto::{dhash160, sha256, ChecksumType};
-use bitcrypto::{dhash256, ripemd160};
-use chain::constants::SEQUENCE_FINAL;
-use chain::{OutPoint, TransactionOutput};
-use common::executor::Timer;
-use common::jsonrpc_client::JsonRpcErrorType;
-use common::log::{error, warn};
-use crypto::{Bip32DerPathOps, Bip44Chain, RpcDerivationPath, StandardHDPath, StandardHDPathError};
-use futures::compat::Future01CompatExt;
-use futures::future::{FutureExt, TryFutureExt};
-use futures01::future::Either;
-use itertools::Itertools;
-use keys::bytes::Bytes;
-use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, CompactSignature, Public, SegwitAddress,
-           Type as ScriptType};
-use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::*;
-use mm2_number::bigdecimal_custom::CheckedDivision;
-use mm2_number::{BigDecimal, MmNumber};
-use primitives::hash::H512;
-use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
-use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
-use secp256k1::{PublicKey, Signature};
-use serde_json::{self as json};
-use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
-                    SERIALIZE_TRANSACTION_WITNESS};
-use std::cmp::Ordering;
-use std::collections::hash_map::{Entry, HashMap};
-use std::str::FromStr;
-use std::sync::atomic::Ordering as AtomicOrdering;
-use utxo_signer::with_key_pair::{calc_and_sign_sighash, p2sh_spend, signature_hash_to_sign, SIGHASH_ALL,
-                                 SIGHASH_SINGLE};
-use utxo_signer::UtxoSignerOps;
-
-pub use chain::Transaction as UtxoTx;
 
 pub mod utxo_tx_history_v2_common;
 

@@ -1,3 +1,50 @@
+use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
+use std::iter;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use bitcrypto::dhash256;
+use chain::constants::SEQUENCE_FINAL;
+use chain::{Transaction as UtxoTx, TransactionOutput};
+use common::executor::{AbortableSystem, AbortedError};
+use common::sha256_digest;
+use common::{log, one_thousand_u32};
+use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
+use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
+use crypto::{StandardHDCoinAddress, StandardHDPathToCoin};
+use futures::compat::Future01CompatExt;
+use futures::lock::Mutex as AsyncMutex;
+use futures::{FutureExt, TryFutureExt};
+use futures01::Future;
+use keys::hash::H256;
+use keys::{KeyPair, Message, Public};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
+use mm2_number::{BigDecimal, MmNumber};
+#[cfg(test)] use mocktopus::macros::*;
+use primitives::bytes::Bytes;
+use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
+use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
+use serde_json::Value as Json;
+use serialization::CoinVariant;
+#[cfg(target_arch = "wasm32")]
+use z_coin_errors::ZCoinBalanceError;
+use z_rpc::{SaplingSyncConnector, SaplingSyncGuard};
+use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
+use zcash_client_backend::wallet::SpendableNote;
+use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters, H0};
+use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::sapling::keys::OutgoingViewingKey;
+use zcash_primitives::sapling::note_encryption::try_sapling_output_recovery;
+use zcash_primitives::transaction::components::{Amount, TxOut};
+use zcash_primitives::transaction::Transaction as ZTransaction;
+use zcash_primitives::zip32::ChildIndex as Zip32Child;
+use zcash_primitives::{constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
+                       zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
+use zcash_proofs::prover::LocalTxProver;
+
 use crate::coin_errors::MyAddressError;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
@@ -26,51 +73,6 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
-use async_trait::async_trait;
-use bitcrypto::dhash256;
-use chain::constants::SEQUENCE_FINAL;
-use chain::{Transaction as UtxoTx, TransactionOutput};
-use common::executor::{AbortableSystem, AbortedError};
-use common::sha256_digest;
-use common::{log, one_thousand_u32};
-use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
-use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
-use crypto::{StandardHDCoinAddress, StandardHDPathToCoin};
-use futures::compat::Future01CompatExt;
-use futures::lock::Mutex as AsyncMutex;
-use futures::{FutureExt, TryFutureExt};
-use futures01::Future;
-use keys::hash::H256;
-use keys::{KeyPair, Message, Public};
-use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::*;
-use mm2_number::{BigDecimal, MmNumber};
-#[cfg(test)] use mocktopus::macros::*;
-use primitives::bytes::Bytes;
-use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
-use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
-use serde_json::Value as Json;
-use serialization::CoinVariant;
-use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
-use std::iter;
-use std::path::PathBuf;
-use std::sync::Arc;
-#[cfg(target_arch = "wasm32")]
-use z_coin_errors::ZCoinBalanceError;
-use z_rpc::{SaplingSyncConnector, SaplingSyncGuard};
-use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
-use zcash_client_backend::wallet::SpendableNote;
-use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters, H0};
-use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::sapling::keys::OutgoingViewingKey;
-use zcash_primitives::sapling::note_encryption::try_sapling_output_recovery;
-use zcash_primitives::transaction::components::{Amount, TxOut};
-use zcash_primitives::transaction::Transaction as ZTransaction;
-use zcash_primitives::zip32::ChildIndex as Zip32Child;
-use zcash_primitives::{constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
-                       zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
-use zcash_proofs::prover::LocalTxProver;
 
 mod z_htlc;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
@@ -100,8 +102,9 @@ cfg_native!(
 );
 
 #[allow(unused)] mod z_coin_errors;
-use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
 pub use z_coin_errors::*;
+
+use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
 
 pub mod storage;
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -2090,6 +2093,7 @@ fn derive_z_key_from_mm_seed() {
 #[test]
 fn test_interpret_memo_string() {
     use std::str::FromStr;
+
     use zcash_primitives::memo::Memo;
 
     let actual = interpret_memo_string("68656c6c6f207a63617368").unwrap();

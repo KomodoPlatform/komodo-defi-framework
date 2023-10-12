@@ -1,6 +1,3 @@
-use crate::eth::GetEthAddressError;
-use crate::nft::storage::{CreateNftStorageError, NftStorageError};
-use crate::{GetMyAddressError, WithdrawError};
 use common::{HttpStatusCode, ParseRfc3339Err};
 use derive_more::Display;
 use enum_from::EnumFromStringify;
@@ -8,6 +5,10 @@ use http::StatusCode;
 use mm2_net::transport::SlurpError;
 use serde::{Deserialize, Serialize};
 use web3::Error;
+
+use crate::eth::GetEthAddressError;
+use crate::nft::storage::{CreateNftStorageError, NftStorageError};
+use crate::{GetMyAddressError, WithdrawError};
 
 #[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

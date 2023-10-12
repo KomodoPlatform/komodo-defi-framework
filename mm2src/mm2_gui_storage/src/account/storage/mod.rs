@@ -1,12 +1,14 @@
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType, HwPubkey};
+use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error as StdError;
+
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
-use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error as StdError;
+
+use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+                     EnabledAccountType, HwPubkey};
 
 #[cfg(any(test, target_arch = "wasm32"))]
 mod account_storage_tests;

@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use common::APPLICATION_JSON;
 pub use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::abci::Transaction;
@@ -8,7 +10,6 @@ use http::uri::InvalidUri;
 use http::{StatusCode, Uri};
 use mm2_net::transport::SlurpError;
 use mm2_net::wasm_http::FetchRequest;
-use std::str::FromStr;
 use tendermint_rpc::endpoint::{abci_info, broadcast};
 pub use tendermint_rpc::endpoint::{abci_query::{AbciQuery, Request as AbciRequest},
                                    health::Request as HealthRequest,
@@ -110,8 +111,9 @@ impl HttpClient {
 }
 
 mod tests {
-    use super::*;
     use wasm_bindgen_test::*;
+
+    use super::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

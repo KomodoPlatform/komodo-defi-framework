@@ -1,10 +1,11 @@
-use crate::lightning::ln_serialization::PublicKeyForRPC;
-use crate::lightning::ln_storage::LightningStorage;
-use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::HttpStatusCode;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+
+use crate::lightning::ln_serialization::PublicKeyForRPC;
+use crate::lightning::ln_storage::LightningStorage;
+use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 
 type TrustedNodeResult<T> = Result<T, MmError<TrustedNodeError>>;
 

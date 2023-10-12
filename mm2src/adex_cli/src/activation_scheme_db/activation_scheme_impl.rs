@@ -1,8 +1,8 @@
-use anyhow::{anyhow, bail, Result};
-use serde_json::Value as Json;
 use std::collections::HashMap;
 
+use anyhow::{anyhow, bail, Result};
 use common::log::{debug, error};
+use serde_json::Value as Json;
 
 use super::init_activation_scheme::get_activation_scheme_path;
 use crate::helpers::read_json_file;

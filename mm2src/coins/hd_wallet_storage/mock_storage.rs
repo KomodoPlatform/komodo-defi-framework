@@ -1,7 +1,8 @@
-use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorageInternalOps, HDWalletStorageResult};
 use async_trait::async_trait;
 use mm2_core::mm_ctx::MmArc;
 #[cfg(test)] use mocktopus::macros::*;
+
+use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorageInternalOps, HDWalletStorageResult};
 
 pub struct HDWalletMockStorage;
 

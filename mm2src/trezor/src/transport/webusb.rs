@@ -1,13 +1,13 @@
+use async_trait::async_trait;
+use common::log::warn;
+pub use hw_common::transport::webusb_driver::WebUsbDeviceInfo;
+use hw_common::transport::webusb_driver::{DeviceFilter, WebUsbDevice, WebUsbWrapper};
+use mm2_err_handle::prelude::*;
+
 use crate::proto::ProtoMessage;
 use crate::transport::protocol::{Link, Protocol, ProtocolV1};
 use crate::transport::{Transport, TrezorDevice, TREZOR_DEVICES};
 use crate::{TrezorError, TrezorResult};
-use async_trait::async_trait;
-use common::log::warn;
-use hw_common::transport::webusb_driver::{DeviceFilter, WebUsbDevice, WebUsbWrapper};
-use mm2_err_handle::prelude::*;
-
-pub use hw_common::transport::webusb_driver::WebUsbDeviceInfo;
 
 const T1HID_VENDOR: u16 = 0x534c;
 const CONFIGURATION_ID: u8 = 1;

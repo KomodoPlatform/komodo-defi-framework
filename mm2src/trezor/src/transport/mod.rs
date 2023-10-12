@@ -1,7 +1,8 @@
-use crate::proto::ProtoMessage;
-use crate::TrezorResult;
 use async_trait::async_trait;
 use rand::RngCore;
+
+use crate::proto::ProtoMessage;
+use crate::TrezorResult;
 
 mod protocol;
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]

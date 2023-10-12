@@ -1,5 +1,5 @@
-use crate::prelude::*;
-use crate::token::{EnableTokenError, TokenActivationOps, TokenProtocolParams};
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use coins::utxo::bch::BchCoin;
 use coins::utxo::slp::{EnableSlpError, SlpProtocolConf, SlpToken};
@@ -7,7 +7,9 @@ use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum};
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
+
+use crate::prelude::*;
+use crate::token::{EnableTokenError, TokenActivationOps, TokenProtocolParams};
 
 impl TryPlatformCoinFromMmCoinEnum for BchCoin {
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>

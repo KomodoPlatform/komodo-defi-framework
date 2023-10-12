@@ -1,10 +1,5 @@
-use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
-use crate::tendermint::{TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL_TYPE};
-use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
-                                TxHistoryStorageBuilder, WalletId};
-use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAccountAddressId, HistorySyncState,
-            MmCoin, MmCoinEnum, Transaction, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
@@ -17,7 +12,14 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use num_traits::ToPrimitive;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash};
-use std::collections::HashSet;
+
+use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
+use crate::tendermint::{TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL_TYPE};
+use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
+                                TxHistoryStorageBuilder, WalletId};
+use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
+use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAccountAddressId, HistorySyncState,
+            MmCoin, MmCoinEnum, Transaction, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
 
 #[derive(Debug)]
 pub enum RemoveTxResult {
@@ -527,11 +529,12 @@ pub async fn z_coin_tx_history_rpc(
 
 #[cfg(test)]
 pub(crate) mod for_tests {
-    use super::{CoinWithTxHistoryV2, TxHistoryStorage};
-    use crate::tx_history_storage::TxHistoryStorageBuilder;
     use common::block_on;
     use mm2_core::mm_ctx::MmArc;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+
+    use super::{CoinWithTxHistoryV2, TxHistoryStorage};
+    use crate::tx_history_storage::TxHistoryStorageBuilder;
 
     pub fn init_storage_for<Coin: CoinWithTxHistoryV2>(coin: &Coin) -> (MmArc, impl TxHistoryStorage) {
         let ctx = mm_ctx_with_custom_db();

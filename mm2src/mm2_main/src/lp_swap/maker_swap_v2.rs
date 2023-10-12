@@ -1,8 +1,6 @@
-use super::{NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
-use crate::mm2::lp_network::subscribe_to_topic;
-use crate::mm2::lp_swap::swap_v2_pb::*;
-use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg, SecretHashAlgo,
-                          SwapConfirmationsSettings, SwapsContext, TransactionIdentifier};
+use std::collections::HashMap;
+use std::marker::PhantomData;
+
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{ConfirmPaymentInput, FeeApproxStage, GenTakerPaymentSpendArgs, MarketCoinOps, MmCoin, SendPaymentArgs,
@@ -15,12 +13,15 @@ use mm2_number::MmNumber;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::storable_state_machine::*;
 use primitives::hash::H256;
-use std::collections::HashMap;
-use std::marker::PhantomData;
-use uuid::Uuid;
-
 // This is needed to have Debug on messages
 #[allow(unused_imports)] use prost::Message;
+use uuid::Uuid;
+
+use super::{NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
+use crate::mm2::lp_network::subscribe_to_topic;
+use crate::mm2::lp_swap::swap_v2_pb::*;
+use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg, SecretHashAlgo,
+                          SwapConfirmationsSettings, SwapsContext, TransactionIdentifier};
 
 /// Represents events produced by maker swap states.
 #[derive(Debug, PartialEq)]

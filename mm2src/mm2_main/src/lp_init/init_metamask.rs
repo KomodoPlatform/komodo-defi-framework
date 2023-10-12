@@ -1,4 +1,5 @@
-use crate::mm2::lp_native_dex::init_context::MmInitContext;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use common::{HttpStatusCode, SerdeInfallible, SuccessResponse};
 use crypto::metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
@@ -12,7 +13,8 @@ use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest};
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
-use std::time::Duration;
+
+use crate::mm2::lp_native_dex::init_context::MmInitContext;
 
 pub type InitMetamaskManagerShared = RpcTaskManagerShared<InitMetamaskTask>;
 pub type InitMetamaskStatus =

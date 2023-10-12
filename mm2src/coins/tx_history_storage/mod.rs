@@ -1,5 +1,6 @@
-use crate::my_tx_history_v2::TxHistoryStorage;
-use crate::TransactionType;
+use std::collections::HashSet;
+use std::iter::FromIterator;
+
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -7,8 +8,9 @@ use num_traits::Zero;
 use primitives::hash::H160;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashSet;
-use std::iter::FromIterator;
+
+use crate::my_tx_history_v2::TxHistoryStorage;
+use crate::TransactionType;
 
 #[cfg(target_arch = "wasm32")] pub mod wasm;
 

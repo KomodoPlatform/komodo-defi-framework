@@ -1,4 +1,5 @@
-use crate::transport::{SlurpError, SlurpResult};
+use std::collections::HashMap;
+
 use common::executor::spawn_local;
 use common::{stringify_js_error, APPLICATION_JSON};
 use futures::channel::oneshot;
@@ -6,11 +7,12 @@ use http::header::CONTENT_TYPE;
 use http::{HeaderMap, StatusCode};
 use js_sys::Uint8Array;
 use mm2_err_handle::prelude::*;
-use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response as JsResponse};
+
+use crate::transport::{SlurpError, SlurpResult};
 
 /// The result containing either a pair of (HTTP status code, body) or a stringified error.
 pub type FetchResult<T> = Result<(StatusCode, T), MmError<SlurpError>>;
@@ -283,8 +285,9 @@ impl RequestBody {
 }
 
 mod tests {
-    use super::*;
     use wasm_bindgen_test::*;
+
+    use super::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

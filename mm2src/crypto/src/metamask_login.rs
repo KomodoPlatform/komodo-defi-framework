@@ -56,11 +56,13 @@ fn adex_login_types() -> [ObjectType; 2] {
 }
 
 mod tests {
-    use super::*;
-    use mm2_metamask::hash_typed_data;
     use std::str::FromStr;
+
+    use mm2_metamask::hash_typed_data;
     use wasm_bindgen_test::*;
     use web3::types::H256;
+
+    use super::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

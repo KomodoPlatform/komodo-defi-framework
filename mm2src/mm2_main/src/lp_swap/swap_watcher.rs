@@ -1,7 +1,7 @@
-use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
-            H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL_SEC};
-use crate::mm2::lp_network::{P2PRequestError, P2PRequestResult};
-use crate::mm2::MmError;
+use std::cmp::min;
+use std::convert::Infallible;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
             SendMakerPaymentSpendPreimageInput, WaitForHTLCTxSpendArgs, WatcherSearchForSwapTxSpendInput,
@@ -17,10 +17,12 @@ use mm2_state_machine::prelude::*;
 use mm2_state_machine::state_machine::StateMachineTrait;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
-use std::cmp::min;
-use std::convert::Infallible;
-use std::sync::Arc;
 use uuid::Uuid;
+
+use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
+            H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL_SEC};
+use crate::mm2::lp_network::{P2PRequestError, P2PRequestResult};
+use crate::mm2::MmError;
 
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;

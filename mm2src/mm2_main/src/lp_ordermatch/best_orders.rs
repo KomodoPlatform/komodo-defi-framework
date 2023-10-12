@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::{log, HttpStatusCode};
 use derive_more::Display;
@@ -8,7 +10,6 @@ use mm2_number::{BigRational, MmNumber};
 use mm2_rpc::data::legacy::OrderConfirmationsSettings;
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
-use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use super::{addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address,
@@ -403,11 +404,13 @@ pub async fn best_orders_rpc_v2(
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod best_orders_test {
+    use std::iter::FromIterator;
+
+    use common::new_uuid;
+
     use super::*;
     use crate::mm2::lp_ordermatch::ordermatch_tests::make_random_orders;
     use crate::mm2::lp_ordermatch::{OrderbookItem, TrieProof};
-    use common::new_uuid;
-    use std::iter::FromIterator;
 
     #[test]
     fn check_best_orders_p2p_res_serde() {

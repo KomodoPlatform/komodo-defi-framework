@@ -20,8 +20,18 @@
 //  marketmaker
 //
 
+use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
+use std::collections::{BTreeSet, HashSet};
+use std::convert::TryInto;
+use std::fmt;
+use std::ops::Deref;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use best_orders::BestOrdersAction;
+pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
@@ -54,18 +64,12 @@ use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker
                         save_my_new_maker_order, save_my_new_taker_order, MyActiveOrders, MyOrdersFilteringHistory,
                         MyOrdersHistory, MyOrdersStorage};
 use num_traits::identities::Zero;
+pub use orderbook_depth::orderbook_depth_rpc;
+pub use orderbook_rpc::{orderbook_rpc, orderbook_rpc_v2};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::H256 as H256Json;
 use serde_json::{self as json, Value as Json};
 use sp_trie::{delta_trie_root, MemoryDB, Trie, TrieConfiguration, TrieDB, TrieDBMut, TrieHash, TrieMut};
-use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
-use std::collections::{BTreeSet, HashSet};
-use std::convert::TryInto;
-use std::fmt;
-use std::ops::Deref;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
@@ -80,10 +84,6 @@ use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, chec
                           run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult,
                           CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SecretHashAlgo,
                           SwapConfirmationsSettings, TakerSwap};
-
-pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
-pub use orderbook_depth::orderbook_depth_rpc;
-pub use orderbook_rpc::{orderbook_rpc, orderbook_rpc_v2};
 
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};

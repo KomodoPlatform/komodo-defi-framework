@@ -1,10 +1,11 @@
+use log::debug;
+use rusqlite::{params_from_iter, Connection, Error as SqlError, Result as SqlResult, Row};
+use sql_builder::SqlBuilder;
+
 use crate::sql_condition::SqlCondition;
 use crate::sql_value::{SqlValue, SqlValueToString};
 use crate::sqlite::{query_single_row, validate_ident, validate_table_name, OwnedSqlParam, OwnedSqlParams,
                     SqlParamsBuilder, StringError, ToValidSqlIdent, ToValidSqlTable};
-use log::debug;
-use rusqlite::{params_from_iter, Connection, Error as SqlError, Result as SqlResult, Row};
-use sql_builder::SqlBuilder;
 
 /// A `SELECT` SQL query builder.
 #[derive(Clone)]

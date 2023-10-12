@@ -1,3 +1,10 @@
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::iter;
+use std::net::IpAddr;
+use std::task::{Context, Poll};
+
 use common::executor::SpawnFuture;
 use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver, Sender};
@@ -10,6 +17,9 @@ use instant::Duration;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::ConnectedPoint;
 use libp2p::floodsub::{Floodsub, FloodsubEvent, Topic as FloodsubTopic};
+pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
+pub use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent,
+                            Message as GossipsubMessage};
 use libp2p::gossipsub::{PublishError, SubscriptionError, ValidationMode};
 use libp2p::multiaddr::Protocol;
 use libp2p::request_response::ResponseChannel;
@@ -19,12 +29,6 @@ use libp2p::{Multiaddr, Transport};
 use log::{debug, error, info};
 use rand::seq::SliceRandom;
 use rand::Rng;
-use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::iter;
-use std::net::IpAddr;
-use std::task::{Context, Poll};
 
 use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, PeersExchangeResponse};
 use super::ping::AdexPing;
@@ -34,10 +38,6 @@ use crate::network::{get_all_network_seednodes, NETID_8762};
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
 use crate::{NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
-
-pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
-pub use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent,
-                            Message as GossipsubMessage};
 
 pub type AdexCmdTx = Sender<AdexBehaviourCmd>;
 pub type AdexEventRx = Receiver<AdexBehaviourEvent>;

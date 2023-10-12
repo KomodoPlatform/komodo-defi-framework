@@ -1,4 +1,6 @@
-use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum};
+use std::env;
+use std::str::FromStr;
+
 use coins::lightning::ln_events::{CHANNEL_READY_LOG, PAYMENT_CLAIMABLE_LOG, SUCCESSFUL_CLAIM_LOG, SUCCESSFUL_SEND_LOG};
 use common::executor::Timer;
 use common::{block_on, log, wait_until_ms};
@@ -10,8 +12,8 @@ use mm2_test_helpers::for_tests::{disable_coin, init_lightning, init_lightning_s
 use mm2_test_helpers::structs::{InitLightningStatus, InitTaskResult, LightningActivationResult, RpcV2Response,
                                 SignatureResponse, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
-use std::env;
-use std::str::FromStr;
+
+use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum};
 
 const BTC_AVG_BLOCKTIME: u64 = 600;
 const T_BTC_ELECTRUMS: &[&str] = &[

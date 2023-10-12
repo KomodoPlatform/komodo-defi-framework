@@ -1,9 +1,10 @@
-use crate::proto::messages::MessageType;
-use crate::proto::messages_common::{failure::FailureType, Failure};
-use crate::user_interaction::TrezorUserInteraction;
 use derive_more::Display;
 use mm2_err_handle::prelude::*;
 use prost::{DecodeError, EncodeError};
+
+use crate::proto::messages::MessageType;
+use crate::proto::messages_common::{failure::FailureType, Failure};
+use crate::user_interaction::TrezorUserInteraction;
 
 pub type TrezorResult<T> = Result<T, MmError<TrezorError>>;
 

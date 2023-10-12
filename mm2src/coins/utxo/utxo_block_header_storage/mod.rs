@@ -3,8 +3,8 @@
 pub use sql_block_header_storage::SqliteBlockHeadersStorage;
 
 #[cfg(target_arch = "wasm32")] mod wasm;
-#[cfg(target_arch = "wasm32")]
-pub use wasm::IDBBlockHeadersStorage;
+use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 
 use async_trait::async_trait;
 use chain::BlockHeader;
@@ -13,8 +13,8 @@ use mm2_core::mm_ctx::MmArc;
 use mocktopus::macros::*;
 use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
+#[cfg(target_arch = "wasm32")]
+pub use wasm::IDBBlockHeadersStorage;
 
 pub struct BlockHeaderStorage {
     pub inner: Box<dyn BlockHeaderStorageOps>,
@@ -47,8 +47,9 @@ impl BlockHeaderStorage {
 
     #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
-        use db_common::sqlite::rusqlite::Connection;
         use std::sync::{Arc, Mutex};
+
+        use db_common::sqlite::rusqlite::Connection;
 
         let conn = Arc::new(Mutex::new(Connection::open_in_memory().unwrap()));
         let conn = ctx.sqlite_connection.clone_or(conn);
@@ -114,9 +115,10 @@ impl BlockHeaderStorageOps for BlockHeaderStorage {
 
 #[cfg(any(test, target_arch = "wasm32"))]
 mod block_headers_storage_tests {
-    use super::*;
     use chain::BlockHeaderBits;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+
+    use super::*;
 
     cfg_wasm32! {
         use wasm_bindgen_test::*;
@@ -279,10 +281,11 @@ mod block_headers_storage_tests {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod native_tests {
-    use super::*;
-    use crate::utxo::utxo_block_header_storage::block_headers_storage_tests::*;
     use common::block_on;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+
+    use super::*;
+    use crate::utxo::utxo_block_header_storage::block_headers_storage_tests::*;
 
     #[test]
     fn test_init_collection() {
@@ -325,11 +328,12 @@ mod native_tests {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_test {
-    use super::*;
-    use crate::utxo::utxo_block_header_storage::block_headers_storage_tests::*;
     use common::log::wasm_log::register_wasm_log;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
     use wasm_bindgen_test::*;
+
+    use super::*;
+    use crate::utxo::utxo_block_header_storage::block_headers_storage_tests::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

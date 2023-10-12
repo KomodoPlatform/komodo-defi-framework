@@ -1,4 +1,3 @@
-use crate::mm2::lp_swap::{get_max_maker_vol, CheckBalanceError, CoinVolumeInfo};
 use coins::{lp_coinfind_or_err, CoinFindError};
 use common::HttpStatusCode;
 use derive_more::Display;
@@ -7,6 +6,8 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumberMultiRepr};
 use ser_error_derive::SerializeErrorType;
+
+use crate::mm2::lp_swap::{get_max_maker_vol, CheckBalanceError, CoinVolumeInfo};
 
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

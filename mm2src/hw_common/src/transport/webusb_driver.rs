@@ -1,4 +1,3 @@
-use crate::transport::{send_event_recv_response, InternalError};
 use common::executor::{spawn_local_abortable, AbortOnDropHandle};
 use common::{deserialize_from_js, log::error, serialize_to_js, stringify_js_error};
 use derive_more::Display;
@@ -11,6 +10,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Usb, UsbDevice, UsbDeviceRequestOptions, UsbInTransferResult};
+
+use crate::transport::{send_event_recv_response, InternalError};
 
 pub type WebUsbResult<T> = Result<T, MmError<WebUsbError>>;
 type EventResultSender<T> = oneshot::Sender<WebUsbResult<T>>;

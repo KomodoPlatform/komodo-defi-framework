@@ -1,3 +1,17 @@
+use std::collections::{HashMap, HashSet};
+
+use coins::lp_price::{fetch_price_tickers, Provider, RateInfos};
+use coins::{lp_coinfind, GetNonZeroBalance};
+use common::{executor::{SpawnFuture, Timer},
+             log::{debug, error, info, warn},
+             Future01CompatExt, HttpStatusCode, StatusCode};
+use derive_more::Display;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
+use mm2_number::MmNumber;
+use serde_json::Value as Json;
+use uuid::Uuid;
+
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, DispatcherContext};
 use crate::mm2::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted,
                                         TradingBotStopped, TradingBotStopping, VolumeSettings};
@@ -9,18 +23,6 @@ use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq,
                                  OrdermatchContext, SetPriceReq},
                  lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
-use coins::lp_price::{fetch_price_tickers, Provider, RateInfos};
-use coins::{lp_coinfind, GetNonZeroBalance};
-use common::{executor::{SpawnFuture, Timer},
-             log::{debug, error, info, warn},
-             Future01CompatExt, HttpStatusCode, StatusCode};
-use derive_more::Display;
-use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::*;
-use mm2_number::MmNumber;
-use serde_json::Value as Json;
-use std::collections::{HashMap, HashSet};
-use uuid::Uuid;
 
 // !< constants
 pub const KMD_PRICE_ENDPOINT: &str = "https://prices.komodo.earth/api/v2/tickers";
@@ -778,10 +780,11 @@ pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleM
 
 #[cfg(test)]
 mod tests {
-    use super::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest};
     use common::block_on;
     use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
     use serde_json::Value as Json;
+
+    use super::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest};
 
     #[test]
     fn test_start_and_stop_simple_market_maker_bot_from_ctx() {

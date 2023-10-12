@@ -1,11 +1,13 @@
 //! Bitcoin key pair.
 
-use crate::SECP_SIGN;
+use std::fmt;
+
 use crypto::ChecksumType;
 use hash::{H264, H520};
 use secp256k1::{PublicKey, SecretKey};
-use std::fmt;
 use {Error, Private, Public, Secret};
+
+use crate::SECP_SIGN;
 
 #[derive(Clone, Copy, Default, PartialEq)]
 pub struct KeyPair {
@@ -95,8 +97,9 @@ impl KeyPair {
 
 #[cfg(test)]
 mod tests {
-    use super::KeyPair;
     use crypto::dhash256;
+
+    use super::KeyPair;
 
     /// Tests from:
     /// https://github.com/bitcoin/bitcoin/blob/a6a860796a44a2805a58391a009ba22752f64e32/src/test/key_tests.cpp

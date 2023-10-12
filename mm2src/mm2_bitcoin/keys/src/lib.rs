@@ -22,23 +22,22 @@ mod public;
 mod segwitaddress;
 mod signature;
 
-pub use primitives::{bytes, hash};
+use std::fmt;
 
 pub use address::{Address, AddressFormat, Type};
 pub use cashaddress::{AddressType as CashAddrType, CashAddress, NetworkPrefix};
 pub use display::DisplayLayout;
 pub use error::Error;
+use hash::{H160, H256};
 pub use keypair::KeyPair;
+use lazy_static::lazy_static;
 pub use network::Network;
+pub use primitives::{bytes, hash};
 pub use private::Private;
 pub use public::Public;
+use secp256k1::{Secp256k1, SignOnly, VerifyOnly};
 pub use segwitaddress::SegwitAddress;
 pub use signature::{CompactSignature, Signature};
-
-use hash::{H160, H256};
-use lazy_static::lazy_static;
-use secp256k1::{Secp256k1, SignOnly, VerifyOnly};
-use std::fmt;
 
 /// 32 bytes long secret key
 pub type Secret = H256;

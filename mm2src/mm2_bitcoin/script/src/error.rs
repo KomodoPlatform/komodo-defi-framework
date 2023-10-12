@@ -1,6 +1,7 @@
 //! Interpreter errors
 
 use std::fmt;
+
 use Opcode;
 
 /// Interpreter errors

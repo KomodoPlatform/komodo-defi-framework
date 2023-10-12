@@ -640,9 +640,9 @@ fn test_passive_coin_and_force_disable() {
 }
 
 mod swap {
-    use super::*;
+    use std::convert::TryFrom;
+    use std::{env, thread};
 
-    use crate::integration_tests_common::enable_electrum;
     use common::executor::Timer;
     use common::log;
     use instant::Duration;
@@ -650,8 +650,9 @@ mod swap {
     use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                                       enable_eth_coin, rick_conf, tbnb_conf, usdc_ibc_iris_testnet_conf,
                                       RICK_ELECTRUM_ADDRS};
-    use std::convert::TryFrom;
-    use std::{env, thread};
+
+    use super::*;
+    use crate::integration_tests_common::enable_electrum;
 
     const BOB_PASSPHRASE: &str = "iris test seed";
     const ALICE_PASSPHRASE: &str = "iris test2 seed";

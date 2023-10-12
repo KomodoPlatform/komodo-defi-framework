@@ -20,7 +20,9 @@
 //  Copyright © 2022 AtomicDEX. All rights reserved.
 //
 
-use crate::mm2::rpc::rate_limiter::RateLimitError;
+use std::borrow::Cow;
+use std::net::SocketAddr;
+
 use common::log::{error, info};
 use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode, APPLICATION_JSON};
 use derive_more::Display;
@@ -35,8 +37,8 @@ use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcResponse, MmRpcVersion};
 use regex::Regex;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
-use std::borrow::Cow;
-use std::net::SocketAddr;
+
+use crate::mm2::rpc::rate_limiter::RateLimitError;
 
 cfg_native! {
     use hyper::{self, Body, Server};
@@ -308,6 +310,11 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
 // handle various protocols within this function.
 #[cfg(not(target_arch = "wasm32"))]
 pub extern "C" fn spawn_rpc(ctx_h: u32) {
+    use std::convert::Infallible;
+    use std::env;
+    use std::fs::File;
+    use std::io::{self, BufReader};
+
     use common::now_sec;
     use common::wio::CORE;
     use hyper::server::conn::{AddrIncoming, AddrStream};
@@ -316,10 +323,6 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     use rcgen::{generate_simple_self_signed, RcgenError};
     use rustls::{Certificate, PrivateKey};
     use rustls_pemfile as pemfile;
-    use std::convert::Infallible;
-    use std::env;
-    use std::fs::File;
-    use std::io::{self, BufReader};
 
     // Reads a certificate and a key from the specified files.
     fn read_certificate_and_key(
@@ -487,10 +490,11 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
 
 #[cfg(target_arch = "wasm32")]
 pub fn spawn_rpc(ctx_h: u32) {
+    use std::sync::Mutex;
+
     use common::executor::SpawnFuture;
     use futures::StreamExt;
     use mm2_rpc::wasm_rpc;
-    use std::sync::Mutex;
 
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
     if ctx.wasm_rpc.is_some() {

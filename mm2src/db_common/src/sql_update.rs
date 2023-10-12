@@ -1,9 +1,10 @@
-use crate::sql_condition::SqlCondition;
-use crate::sql_value::{FromQuoted, SqlValueOptional, SqlValueToString};
-use crate::sqlite::{validate_table_name, OwnedSqlParam, OwnedSqlParams, SqlParamsBuilder, ToValidSqlIdent};
 use common::log::debug;
 use rusqlite::{params_from_iter, Connection, Error as SqlError, Result as SqlResult};
 use sql_builder::SqlBuilder;
+
+use crate::sql_condition::SqlCondition;
+use crate::sql_value::{FromQuoted, SqlValueOptional, SqlValueToString};
+use crate::sqlite::{validate_table_name, OwnedSqlParam, OwnedSqlParams, SqlParamsBuilder, ToValidSqlIdent};
 
 /// An `UPDATE` SQL request builder.
 pub struct SqlUpdate<'a> {

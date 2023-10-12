@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+#[cfg(feature = "run-docker-tests")] use std::str::FromStr;
+use std::str::Utf8Error;
+
 use common::log::{debug, error};
 use common::StatusCode;
 use mm2_err_handle::prelude::{MmError, OrMmError};
@@ -6,9 +10,6 @@ use mm2_net::transport::SlurpError;
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
 use num_traits::CheckedDiv;
-use std::collections::HashMap;
-#[cfg(feature = "run-docker-tests")] use std::str::FromStr;
-use std::str::Utf8Error;
 
 const PRICE_ENDPOINTS: [&str; 2] = [
     "https://prices.komodo.earth/api/v2/tickers",
@@ -294,8 +295,9 @@ mod tests {
 
     #[test]
     fn test_get_cex_rates() {
-        use mm2_number::MmNumber;
         use std::time::SystemTime;
+
+        use mm2_number::MmNumber;
 
         use crate::lp_price::{Provider, TickerInfos, TickerInfosRegistry};
 

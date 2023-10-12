@@ -1,3 +1,9 @@
+use std::convert::Infallible;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
+
 use async_trait::async_trait;
 use common::executor::SpawnFuture;
 use common::log::{debug, error};
@@ -9,11 +15,6 @@ use mm2_err_handle::prelude::*;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::state_machine::{ChangeStateExt, LastState, State, StateMachineTrait, StateResult};
 use serde_json::{self as json, Value as Json};
-use std::convert::Infallible;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CloseEvent, DomException, MessageEvent, WebSocket};
@@ -659,15 +660,17 @@ where
 }
 
 mod tests {
-    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use common::custom_futures::timeout::FutureTimerExt;
     use common::executor::abortable_queue::AbortableQueue;
     use common::log::{debug, wasm_log::register_wasm_log};
     use common::{WasmUnwrapErrExt, WasmUnwrapExt};
     use lazy_static::lazy_static;
     use serde_json::json;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use wasm_bindgen_test::*;
+
+    use super::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

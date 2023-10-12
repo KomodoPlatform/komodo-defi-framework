@@ -1,6 +1,7 @@
-use crate::docker_tests::docker_tests_common::{eth_distributor, generate_jst_with_seed};
-use crate::integration_tests_common::*;
-use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
+use std::str::FromStr;
+use std::thread;
+use std::time::Duration;
+
 use coins::coin_errors::ValidatePaymentError;
 use coins::utxo::{dhash160, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
@@ -23,10 +24,11 @@ use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
 use num_traits::{One, Zero};
 use primitives::hash::H256;
-use std::str::FromStr;
-use std::thread;
-use std::time::Duration;
 use uuid::Uuid;
+
+use crate::docker_tests::docker_tests_common::{eth_distributor, generate_jst_with_seed};
+use crate::integration_tests_common::*;
+use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 
 #[derive(Debug, Clone)]
 struct BalanceResult {

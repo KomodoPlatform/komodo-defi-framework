@@ -1,4 +1,5 @@
-use crate::prelude::CoinConfWithProtocolError;
+use std::time::Duration;
+
 use coins::CoinProtocol;
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
@@ -6,7 +7,8 @@ use rpc_task::rpc_common::{CancelRpcTaskError, RpcTaskStatusError, RpcTaskUserAc
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
-use std::time::Duration;
+
+use crate::prelude::CoinConfWithProtocolError;
 
 pub type InitL2StatusError = RpcTaskStatusError;
 pub type InitL2UserActionError = RpcTaskUserActionError;

@@ -1,5 +1,8 @@
 //! `wio` stands for "web I/O", it contains the parts which aren't directly available with WASM.
 
+use std::fmt;
+use std::sync::Mutex;
+
 use futures::compat::Future01CompatExt;
 use futures::executor::ThreadPool;
 use futures01::sync::oneshot::{self, Receiver};
@@ -7,8 +10,6 @@ use futures01::Future;
 use hyper::client::HttpConnector;
 use hyper::Client;
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
-use std::fmt;
-use std::sync::Mutex;
 use tokio::runtime::Runtime;
 
 fn start_core_thread() -> Mm2Runtime { Mm2Runtime(Runtime::new().unwrap()) }

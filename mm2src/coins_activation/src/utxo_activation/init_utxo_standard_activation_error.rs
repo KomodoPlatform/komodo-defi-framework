@@ -1,4 +1,5 @@
-use crate::standalone_coin::InitStandaloneCoinError;
+use std::time::Duration;
+
 use coins::coin_balance::EnableCoinBalanceError;
 use coins::hd_wallet::{NewAccountCreatingError, NewAddressDerivingError};
 use coins::tx_history_storage::CreateTxHistoryStorageError;
@@ -9,7 +10,8 @@ use derive_more::Display;
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
-use std::time::Duration;
+
+use crate::standalone_coin::InitStandaloneCoinError;
 
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

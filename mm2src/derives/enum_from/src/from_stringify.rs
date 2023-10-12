@@ -1,10 +1,11 @@
-use crate::{get_attr_meta, CompileError, IdentCtx, MacroAttr};
 use proc_macro2::{Ident, TokenStream};
 use quote::__private::ext::RepToTokensExt;
 use quote::quote;
 use syn::NestedMeta::Lit;
 use syn::__private::TokenStream2;
 use syn::{ExprPath, NestedMeta, Variant};
+
+use crate::{get_attr_meta, CompileError, IdentCtx, MacroAttr};
 
 impl CompileError {
     /// This error constructor is involved to be used on `EnumFromStringify` macro.

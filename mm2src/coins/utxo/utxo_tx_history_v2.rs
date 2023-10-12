@@ -1,12 +1,8 @@
-use super::RequestTxHistoryResult;
-use crate::hd_wallet::AddressDerivingError;
-use crate::my_tx_history_v2::{CoinWithTxHistoryV2, DisplayAddress, TxHistoryStorage, TxHistoryStorageError};
-use crate::tx_history_storage::FilteringAddresses;
-use crate::utxo::bch::BchCoin;
-use crate::utxo::slp::ParseSlpScriptError;
-use crate::utxo::{utxo_common, AddrFromStrError, GetBlockHeaderError};
-use crate::{BalanceError, BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, NumConversError,
-            ParseBigDecimalError, TransactionDetails, UnexpectedDerivationMethod, UtxoRpcError, UtxoTx};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::convert::Infallible;
+use std::iter::FromIterator;
+use std::str::FromStr;
+
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
@@ -18,10 +14,16 @@ use mm2_number::BigDecimal;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::state_machine::StateMachineTrait;
 use rpc::v1::types::H256 as H256Json;
-use std::collections::{hash_map::Entry, HashMap, HashSet};
-use std::convert::Infallible;
-use std::iter::FromIterator;
-use std::str::FromStr;
+
+use super::RequestTxHistoryResult;
+use crate::hd_wallet::AddressDerivingError;
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, DisplayAddress, TxHistoryStorage, TxHistoryStorageError};
+use crate::tx_history_storage::FilteringAddresses;
+use crate::utxo::bch::BchCoin;
+use crate::utxo::slp::ParseSlpScriptError;
+use crate::utxo::{utxo_common, AddrFromStrError, GetBlockHeaderError};
+use crate::{BalanceError, BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, NumConversError,
+            ParseBigDecimalError, TransactionDetails, UnexpectedDerivationMethod, UtxoRpcError, UtxoTx};
 
 macro_rules! try_or_stop_unknown {
     ($exp:expr, $fmt:literal) => {

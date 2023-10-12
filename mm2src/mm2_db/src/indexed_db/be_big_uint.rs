@@ -44,6 +44,9 @@
 //! assert([2, 4294967295, 2147483647] < [4, 4294967295, 4294967295, 4294967295, 2147483647]);
 //! ```
 
+use std::fmt;
+use std::ops::Add;
+
 use common::ifrom_inner;
 use derive_more::Display;
 use mm2_number::BigUint;
@@ -51,8 +54,6 @@ use num_traits::ToPrimitive;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
-use std::ops::Add;
 
 #[derive(Debug, Display)]
 pub enum BigUintError {
@@ -176,9 +177,10 @@ impl<'de> Deserialize<'de> for BeBigUint {
 }
 
 mod tests {
-    use super::*;
     use serde_json::{self as json, json, Value as Json};
     use wasm_bindgen_test::*;
+
+    use super::*;
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]

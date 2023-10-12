@@ -1,5 +1,3 @@
-use super::taker_swap::MaxTakerVolumeLessThanDust;
-use super::{get_locked_amount, get_locked_amount_by_other_swaps};
 use coins::{BalanceError, MmCoin, TradeFee, TradePreimageError};
 use common::log::debug;
 use derive_more::Display;
@@ -8,6 +6,9 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use uuid::Uuid;
+
+use super::taker_swap::MaxTakerVolumeLessThanDust;
+use super::{get_locked_amount, get_locked_amount_by_other_swaps};
 
 pub type CheckBalanceResult<T> = Result<T, MmError<CheckBalanceError>>;
 

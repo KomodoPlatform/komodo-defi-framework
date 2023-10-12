@@ -1,10 +1,11 @@
-use crate::lightning::ln_conf::ChannelOptions;
-use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::{async_blocking, HttpStatusCode};
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use uuid::Uuid;
+
+use crate::lightning::ln_conf::ChannelOptions;
+use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 
 type UpdateChannelResult<T> = Result<T, MmError<UpdateChannelError>>;
 

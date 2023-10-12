@@ -1,9 +1,11 @@
-use crate::filename;
+use std::fmt;
+
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_wasm_bindgen::Serializer;
-use std::fmt;
 use wasm_bindgen::prelude::*;
+
+use crate::filename;
 
 /// Get only the first line of the error.
 /// Generally, the `JsValue` error contains the stack trace of an error.

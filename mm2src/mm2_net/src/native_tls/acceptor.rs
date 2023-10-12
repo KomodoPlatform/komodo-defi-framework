@@ -1,15 +1,17 @@
-use crate::native_tls::builder::{AcceptorBuilder, WantsTlsConfig};
 use core::task::{Context, Poll};
-use futures_util::ready;
-use hyper::server::{accept::Accept,
-                    conn::{AddrIncoming, AddrStream}};
-use rustls::ServerConfig;
 use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+
+use futures_util::ready;
+use hyper::server::{accept::Accept,
+                    conn::{AddrIncoming, AddrStream}};
+use rustls::ServerConfig;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+use crate::native_tls::builder::{AcceptorBuilder, WantsTlsConfig};
 
 enum State {
     Handshaking(tokio_rustls::Accept<AddrStream>),

@@ -1,11 +1,7 @@
-use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, UtxoJsonRpcClientInfo, UtxoRpcClientEnum};
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
-                                UtxoFieldsWithIguanaSecretBuilder};
-use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
-                  UtxoWeak};
-use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
+use std::collections::HashMap;
+use std::num::NonZeroU64;
+use std::sync::{Arc, Weak};
+
 use async_trait::async_trait;
 use chain::{BlockHeader, TransactionOutput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
@@ -21,9 +17,15 @@ use serialization::Reader;
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::{validate_headers, SPVError};
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use std::collections::HashMap;
-use std::num::NonZeroU64;
-use std::sync::{Arc, Weak};
+
+use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, UtxoJsonRpcClientInfo, UtxoRpcClientEnum};
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
+use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
+                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
+                                UtxoFieldsWithIguanaSecretBuilder};
+use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
+                  UtxoWeak};
+use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 
 const CHUNK_SIZE_REDUCER_VALUE: u64 = 100;
 const TRY_TO_RETRIEVE_HEADERS_ATTEMPTS: u8 = 10;

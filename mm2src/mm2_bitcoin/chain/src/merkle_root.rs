@@ -48,8 +48,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::merkle_root;
     use hash::H256;
+
+    use super::merkle_root;
 
     // block 80_000
     // https://blockchain.info/block/000000000043a8c0fd1d6f726790caa2a406010d19efd2780db27bdbbd93baf6

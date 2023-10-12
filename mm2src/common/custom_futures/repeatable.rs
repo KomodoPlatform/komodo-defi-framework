@@ -20,11 +20,6 @@
 //! This happens due to the fact that the `counter` variable is not shared between attempts,
 //! and every time the future starts with `counter = 0`.
 
-use crate::executor::Timer;
-use crate::number_type_casting::SafeTypeCastingNumbers;
-use crate::{now_ms, wait_until_ms};
-use futures::FutureExt;
-use log::warn;
 use std::fmt;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -32,7 +27,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use futures::FutureExt;
+use log::warn;
 pub use Action::{Ready, Retry};
+
+use crate::executor::Timer;
+use crate::number_type_casting::SafeTypeCastingNumbers;
+use crate::{now_ms, wait_until_ms};
 
 /// Wraps the given future into `Repeatable` future.
 /// The future should return [`Action<T, E>`] with any `T` and `E` types.
@@ -394,13 +395,15 @@ fn poll_timeout(timeout_fut: &mut Option<Timer>, cx: &mut Context<'_>) -> Poll<(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::block_on;
-    use futures::lock::Mutex as AsyncMutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
     use std::time::Instant;
+
+    use futures::lock::Mutex as AsyncMutex;
+
+    use super::*;
+    use crate::block_on;
 
     async fn an_operation(counter: &AsyncMutex<usize>, finish_if: usize) -> Result<usize, &str> {
         let mut counter = counter.lock().await;

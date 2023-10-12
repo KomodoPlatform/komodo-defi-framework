@@ -1,13 +1,15 @@
-use crate::coin_balance::HDAddressBalance;
-use crate::hd_wallet::HDWalletCoinOps;
-use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
-use crate::{lp_coinfind_or_err, CoinBalance, CoinWithDerivationMethod, MmCoinEnum};
+use std::fmt;
+
 use async_trait::async_trait;
 use common::PagingOptionsEnum;
 use crypto::{Bip44Chain, RpcDerivationPath};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use std::fmt;
+
+use crate::coin_balance::HDAddressBalance;
+use crate::hd_wallet::HDWalletCoinOps;
+use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
+use crate::{lp_coinfind_or_err, CoinBalance, CoinWithDerivationMethod, MmCoinEnum};
 
 #[derive(Deserialize)]
 pub struct HDAccountBalanceRequest {
@@ -59,10 +61,11 @@ pub async fn account_balance(
 }
 
 pub mod common_impl {
+    use common::calc_total_pages;
+
     use super::*;
     use crate::coin_balance::HDWalletBalanceOps;
     use crate::hd_wallet::{HDAccountOps, HDWalletOps};
-    use common::calc_total_pages;
 
     pub async fn account_balance_rpc<Coin>(
         coin: &Coin,

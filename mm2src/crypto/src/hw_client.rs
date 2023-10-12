@@ -1,6 +1,5 @@
-use crate::hw_error::HwError;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::hw_error::HwResult;
+use std::time::Duration;
+
 use async_trait::async_trait;
 #[cfg(not(target_os = "ios"))]
 use common::custom_futures::timeout::FutureTimerExt;
@@ -8,10 +7,13 @@ use derive_more::Display;
 use futures::FutureExt;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H160 as H160Json;
-use std::time::Duration;
 use trezor::client::TrezorClient;
 use trezor::device_info::TrezorDeviceInfo;
 use trezor::{TrezorError, TrezorProcessingError, TrezorRequestProcessor};
+
+use crate::hw_error::HwError;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::hw_error::HwResult;
 
 pub type HwPubkey = H160Json;
 

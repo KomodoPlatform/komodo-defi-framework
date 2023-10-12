@@ -1,5 +1,3 @@
-use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum, WithdrawError};
-use crate::{TransactionDetails, WithdrawRequest};
 use async_trait::async_trait;
 use common::SuccessResponse;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
@@ -8,6 +6,9 @@ use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError};
 use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatusAlias, RpcTaskTypes};
+
+use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum, WithdrawError};
+use crate::{TransactionDetails, WithdrawRequest};
 
 pub type WithdrawAwaitingStatus = HwRpcTaskAwaitingStatus;
 pub type WithdrawUserAction = HwRpcTaskUserAction;

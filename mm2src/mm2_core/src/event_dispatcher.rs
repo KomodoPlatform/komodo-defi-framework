@@ -1,7 +1,9 @@
-use crate::mm_ctx::MmArc;
-use async_trait::async_trait;
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
+
+use async_trait::async_trait;
+
+use crate::mm_ctx::MmArc;
 
 pub type Listeners<EventType> = Vec<Box<dyn EventListener<Event = EventType>>>;
 pub type DispatchTable = HashMap<TypeId, Vec<usize>>;
@@ -68,14 +70,16 @@ where
 
 #[cfg(test)]
 mod event_dispatcher_tests {
-    use crate::event_dispatcher::{Dispatcher, EventListener, EventUniqueId};
-    use crate::mm_ctx::{MmArc, MmCtxBuilder};
-    use async_trait::async_trait;
-    use common::block_on;
     use std::any::TypeId;
     use std::ops::Deref;
     use std::sync::Arc;
+
+    use async_trait::async_trait;
+    use common::block_on;
     use uuid::Uuid;
+
+    use crate::event_dispatcher::{Dispatcher, EventListener, EventUniqueId};
+    use crate::mm_ctx::{MmArc, MmCtxBuilder};
 
     #[derive(Clone, Default)]
     struct EventSwapStatusChanged {

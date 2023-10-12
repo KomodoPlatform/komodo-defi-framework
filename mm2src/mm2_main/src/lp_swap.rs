@@ -57,8 +57,15 @@
 //  marketmaker
 //
 
-use super::lp_network::P2PRequestResult;
-use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
+use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
+use std::str::FromStr;
+#[cfg(feature = "custom-swap-locktime")]
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
+
 use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
@@ -79,16 +86,10 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use secp256k1::{PublicKey, SecretKey, Signature};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
-use std::collections::{HashMap, HashSet};
-use std::num::NonZeroUsize;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex, Weak};
-use std::time::Duration;
 use uuid::Uuid;
 
-#[cfg(feature = "custom-swap-locktime")]
-use std::sync::atomic::{AtomicU64, Ordering};
+use super::lp_network::P2PRequestResult;
+use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
 
 #[path = "lp_swap/check_balance.rs"] mod check_balance;
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
@@ -1574,8 +1575,6 @@ async fn recv_swap_v2_msg<T>(
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod lp_swap_tests {
-    use super::*;
-    use crate::mm2::lp_native_dex::{fix_directories, init_p2p};
     use coins::utxo::rpc_clients::ElectrumRpcRequest;
     use coins::utxo::utxo_standard::utxo_standard_coin_with_priv_key;
     use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
@@ -1585,6 +1584,9 @@ mod lp_swap_tests {
     use crypto::StandardHDCoinAddress;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
+
+    use super::*;
+    use crate::mm2::lp_native_dex::{fix_directories, init_p2p};
 
     #[test]
     fn test_dex_fee_amount() {

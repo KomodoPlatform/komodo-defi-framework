@@ -1,11 +1,6 @@
-use crate::global_hd_ctx::{GlobalHDAccountArc, GlobalHDAccountCtx};
-use crate::hw_client::{HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
-use crate::hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
-use crate::hw_error::HwError;
-#[cfg(target_arch = "wasm32")]
-use crate::metamask_ctx::{MetamaskArc, MetamaskCtx, MetamaskError};
-use crate::privkey::{key_pair_from_seed, PrivKeyError};
-use crate::shared_db_id::{shared_db_id_from_seed, SharedDbIdError};
+use std::ops::Deref;
+use std::sync::Arc;
+
 use arrayref::array_ref;
 use common::bits256;
 use common::log::info;
@@ -16,8 +11,15 @@ use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use parking_lot::RwLock;
 use primitives::hash::H160;
-use std::ops::Deref;
-use std::sync::Arc;
+
+use crate::global_hd_ctx::{GlobalHDAccountArc, GlobalHDAccountCtx};
+use crate::hw_client::{HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
+use crate::hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
+use crate::hw_error::HwError;
+#[cfg(target_arch = "wasm32")]
+use crate::metamask_ctx::{MetamaskArc, MetamaskCtx, MetamaskError};
+use crate::privkey::{key_pair_from_seed, PrivKeyError};
+use crate::shared_db_id::{shared_db_id_from_seed, SharedDbIdError};
 
 pub type CryptoInitResult<T> = Result<T, MmError<CryptoInitError>>;
 

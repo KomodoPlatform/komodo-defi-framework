@@ -20,6 +20,8 @@
 //  lp_network.rs
 //  marketmaker
 //
+use std::net::ToSocketAddrs;
+
 use coins::lp_coinfind;
 use common::executor::SpawnFuture;
 use common::{log, Future01CompatExt};
@@ -36,7 +38,6 @@ use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
 use mm2_metrics::{mm_label, mm_timing};
 use mm2_net::p2p::P2PContext;
 use serde::de;
-use std::net::ToSocketAddrs;
 
 use crate::mm2::lp_ordermatch;
 use crate::mm2::{lp_stats, lp_swap};

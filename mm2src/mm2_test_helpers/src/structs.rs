@@ -4,15 +4,16 @@
 //! backwards compatibility
 //! Use `#[serde(deny_unknown_fields)]` for all structs for tests to fail in case of adding new fields to the response
 
+use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::num::NonZeroUsize;
+
 use http::{HeaderMap, StatusCode};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_rpc::data::legacy::{MatchBy, OrderConfirmationsSettings, OrderType, RpcOrderbookEntry, TakerAction};
 use rpc::v1::types::H256 as H256Json;
 use serde::de::DeserializeOwned;
 use serde_json::Value as Json;
-use std::collections::{HashMap, HashSet};
-use std::fmt;
-use std::num::NonZeroUsize;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -987,8 +988,9 @@ pub struct GetLockedAmountResponse {
 }
 
 pub mod gui_storage {
-    use mm2_number::BigDecimal;
     use std::collections::BTreeSet;
+
+    use mm2_number::BigDecimal;
 
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(tag = "type")]

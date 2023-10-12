@@ -1,11 +1,13 @@
-use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
-use crate::{BalanceError, CoinFindError, UnexpectedDerivationMethod};
+use std::time::Duration;
+
 use common::HttpStatusCode;
 use crypto::Bip44Chain;
 use derive_more::Display;
 use http::StatusCode;
 use rpc_task::RpcTaskError;
-use std::time::Duration;
+
+use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
+use crate::{BalanceError, CoinFindError, UnexpectedDerivationMethod};
 
 #[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

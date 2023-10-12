@@ -1,10 +1,11 @@
+use std::sync::atomic::AtomicU64;
+use std::time::Duration;
+
 use common::custom_futures::timeout::TimeoutError;
 use derive_more::Display;
 use futures::channel::oneshot;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
-use std::sync::atomic::AtomicU64;
-use std::time::Duration;
 
 #[macro_use] extern crate ser_error_derive;
 #[macro_use] extern crate serde_derive;

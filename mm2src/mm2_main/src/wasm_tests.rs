@@ -1,4 +1,3 @@
-use crate::mm2::lp_init;
 use common::executor::{spawn, Timer};
 use common::log::wasm_log::register_wasm_log;
 use crypto::StandardHDCoinAddress;
@@ -11,6 +10,8 @@ use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, mort
 use mm2_test_helpers::get_passphrase;
 use serde_json::json;
 use wasm_bindgen_test::wasm_bindgen_test;
+
+use crate::mm2::lp_init;
 
 /// Starts the WASM version of MM.
 fn wasm_start(ctx: MmArc) {

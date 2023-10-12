@@ -1,9 +1,11 @@
 extern crate serde_derive;
 
-use crate::{NumConversResult, SolanaCoin, SolanaFeeDetails, TransactionDetails, TransactionType};
+use std::convert::TryFrom;
+
 use mm2_number::BigDecimal;
 use solana_sdk::native_token::lamports_to_sol;
-use std::convert::TryFrom;
+
+use crate::{NumConversResult, SolanaCoin, SolanaFeeDetails, TransactionDetails, TransactionType};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SolanaConfirmedTransaction {

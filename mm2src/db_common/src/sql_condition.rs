@@ -1,7 +1,8 @@
-use crate::sql_value::{FromQuoted, SqlValue, SqlValueOptional, SqlValueToString, SqlValuesToStrings};
-use crate::sqlite::{OwnedSqlParam, SqlParamsBuilder, ToValidSqlIdent};
 use rusqlite::Result as SqlResult;
 use sql_builder::SqlBuilder;
+
+use crate::sql_value::{FromQuoted, SqlValue, SqlValueOptional, SqlValueToString, SqlValuesToStrings};
+use crate::sqlite::{OwnedSqlParam, SqlParamsBuilder, ToValidSqlIdent};
 
 /// An SQL condition builder.
 pub trait SqlCondition: Sized {

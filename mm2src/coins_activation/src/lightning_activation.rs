@@ -1,7 +1,5 @@
-use crate::context::CoinsActivationContext;
-use crate::l2::{InitL2ActivationOps, InitL2Error, InitL2InitialStatus, InitL2TaskHandle, InitL2TaskManagerShared,
-                L2ProtocolParams};
-use crate::prelude::*;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use coins::coin_errors::MyAddressError;
 use coins::lightning::ln_conf::{LightningCoinConf, LightningProtocolConf};
@@ -32,7 +30,11 @@ use parking_lot::Mutex as PaMutex;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{self as json, Value as Json};
-use std::sync::Arc;
+
+use crate::context::CoinsActivationContext;
+use crate::l2::{InitL2ActivationOps, InitL2Error, InitL2InitialStatus, InitL2TaskHandle, InitL2TaskManagerShared,
+                L2ProtocolParams};
+use crate::prelude::*;
 
 const DEFAULT_LISTENING_PORT: u16 = 9735;
 

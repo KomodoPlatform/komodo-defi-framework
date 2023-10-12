@@ -1,7 +1,8 @@
+use std::fmt;
+
 use global_script::ScriptType as GlobalScriptType;
 use serde::de::Unexpected;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ScriptType {
@@ -110,8 +111,9 @@ impl<'a> Deserialize<'a> for ScriptType {
 
 #[cfg(test)]
 mod tests {
-    use super::ScriptType;
     use serde_json;
+
+    use super::ScriptType;
 
     #[test]
     fn script_type_serialize() {

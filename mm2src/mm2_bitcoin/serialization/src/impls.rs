@@ -1,10 +1,11 @@
+use std::io;
+
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use bytes::Bytes;
 use compact::Compact;
 use compact_integer::CompactInteger;
 use hash::{CipherText, EncCipherText, EquihashSolution, OutCipherText, ZkProof, ZkProofSapling, H128, H160, H256,
            H264, H32, H48, H512, H520, H64, H96};
-use std::io;
 use {Deserializable, Error, Reader, Serializable, Stream};
 
 impl Serializable for bool {

@@ -1,8 +1,9 @@
 //! Stream used for serialization of Bitcoin structures
-use bytes::Bytes;
-use compact_integer::CompactInteger;
 use std::borrow::Borrow;
 use std::io::{self, Write};
+
+use bytes::Bytes;
+use compact_integer::CompactInteger;
 
 /// Do not serialize transaction witness data.
 pub const SERIALIZE_TRANSACTION_WITNESS: u32 = 0x40000000;

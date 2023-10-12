@@ -1,10 +1,11 @@
-use crate::{UtxoSignTxError, UtxoSignTxResult};
 use chain::TransactionOutput;
 use crypto::trezor::utxo::TrezorOutputScriptType;
 use crypto::DerivationPath;
 use keys::Public as PublicKey;
 use mm2_err_handle::prelude::*;
 use script::{Script, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput};
+
+use crate::{UtxoSignTxError, UtxoSignTxResult};
 
 impl UtxoSignTxError {
     fn no_param(param: &str) -> UtxoSignTxError {

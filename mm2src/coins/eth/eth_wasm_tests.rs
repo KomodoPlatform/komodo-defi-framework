@@ -1,10 +1,11 @@
-use super::*;
-use crate::lp_coininit;
 use crypto::CryptoCtx;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_test_helpers::for_tests::{ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT};
 use wasm_bindgen_test::*;
 use web_sys::console;
+
+use super::*;
+use crate::lp_coininit;
 
 wasm_bindgen_test_configure!(run_in_browser);
 

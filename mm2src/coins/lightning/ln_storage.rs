@@ -1,3 +1,7 @@
+use std::collections::{HashMap, HashSet};
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
+
 use async_trait::async_trait;
 use bitcoin::Network;
 use common::log::LogState;
@@ -5,9 +9,6 @@ use lightning::routing::gossip;
 use lightning::routing::scoring::ProbabilisticScorer;
 use parking_lot::Mutex as PaMutex;
 use secp256k1v24::PublicKey;
-use std::collections::{HashMap, HashSet};
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 
 pub type NodesAddressesMap = HashMap<PublicKey, SocketAddr>;
 pub type NodesAddressesMapShared = Arc<PaMutex<NodesAddressesMap>>;

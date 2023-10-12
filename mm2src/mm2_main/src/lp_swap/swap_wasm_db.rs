@@ -1,12 +1,12 @@
-use async_trait::async_trait;
-use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, OnUpgradeResult,
-                         TableSignature};
 use std::ops::Deref;
-use uuid::Uuid;
 
+use async_trait::async_trait;
 pub use mm2_db::indexed_db::{cursor_prelude, DbTransactionError, DbTransactionResult, InitDbError, InitDbResult,
                              ItemId};
+use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, OnUpgradeResult,
+                         TableSignature};
 pub use tables::{MySwapsFiltersTable, SavedSwapTable, SwapLockTable};
+use uuid::Uuid;
 
 const DB_NAME: &str = "swap";
 const DB_VERSION: u32 = 1;
@@ -38,8 +38,9 @@ impl Deref for SwapDb {
 }
 
 pub mod tables {
-    use super::*;
     use serde_json::Value as Json;
+
+    use super::*;
 
     #[derive(Debug, Deserialize, Clone, Serialize, PartialEq)]
     pub struct SwapLockTable {

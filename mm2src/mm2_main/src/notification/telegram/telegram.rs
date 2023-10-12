@@ -1,8 +1,10 @@
-use crate::mm2::lp_message_service::{MessageResult, MessageServiceTraits};
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_net::transport::{post_json, SlurpError};
-use std::collections::HashMap;
+
+use crate::mm2::lp_message_service::{MessageResult, MessageServiceTraits};
 
 pub const TELEGRAM_BOT_API_ENDPOINT: &str = "https://api.telegram.org/bot";
 
@@ -58,10 +60,12 @@ impl MessageServiceTraits for TgClient {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod telegram_tests {
+    use std::env::var;
+
+    use common::block_on;
+
     use crate::mm2::lp_message_service::telegram::{ChatIdRegistry, TgClient};
     use crate::mm2::lp_message_service::MessageServiceTraits;
-    use common::block_on;
-    use std::env::var;
 
     #[test]
     fn test_send_message() {

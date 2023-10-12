@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::env::var;
+use std::str::FromStr;
+
 use common::executor::Timer;
 use common::log::LogLevel;
 use common::{block_on, log, now_ms, wait_until_ms};
@@ -11,9 +15,6 @@ use mm2_test_helpers::for_tests::{enable_native as enable_native_impl, init_utxo
 use mm2_test_helpers::structs::{InitTaskResult, InitUtxoStatus, InitZcoinStatus, RpcV2Response,
                                 UtxoStandardActivationResult, ZCoinActivationResult};
 use serde_json::{self as json, Value as Json};
-use std::collections::HashMap;
-use std::env::var;
-use std::str::FromStr;
 
 /// This is not a separate test but a helper used by `MarketMakerIt` to run the MarketMaker from the test binary.
 #[test]

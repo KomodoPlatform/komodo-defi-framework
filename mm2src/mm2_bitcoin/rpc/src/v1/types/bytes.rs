@@ -1,9 +1,10 @@
+///! Serializable wrapper around vector of bytes
+use std::{fmt, ops};
+
 use hex::{FromHex, ToHex};
 use primitives::bytes::Bytes as GlobalBytes;
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-///! Serializable wrapper around vector of bytes
-use std::{fmt, ops};
 
 /// Wrapper structure around vector of bytes.
 #[derive(Debug, PartialEq, Eq, Default, Hash, Clone)]
@@ -95,9 +96,10 @@ impl ::core::fmt::LowerHex for Bytes {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use hex::FromHex;
     use serde_json;
+
+    use super::*;
 
     #[test]
     fn test_bytes_serialize() {

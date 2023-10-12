@@ -5,13 +5,14 @@
 //!
 //! https://en.bitcoin.it/wiki/Address
 
+use std::fmt;
+use std::ops::Deref;
+use std::str::FromStr;
+
 use base58::{FromBase58, ToBase58};
 use crypto::{checksum, dgroestl512, dhash256, keccak256, ChecksumType};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::ops::Deref;
-use std::str::FromStr;
 use {AddressHashEnum, CashAddrType, CashAddress, DisplayLayout, Error, SegwitAddress};
 
 /// There are two address formats currently in use.

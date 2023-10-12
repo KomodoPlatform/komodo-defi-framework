@@ -1,6 +1,3 @@
-use crate::mm2::lp_swap::maker_swap::{MakerSavedSwap, MakerSwap, MakerSwapEvent};
-use crate::mm2::lp_swap::taker_swap::{TakerSavedSwap, TakerSwap, TakerSwapEvent};
-use crate::mm2::lp_swap::{MySwapInfo, RecoveredSwap};
 use async_trait::async_trait;
 use coins::lp_coinfind;
 use derive_more::Display;
@@ -8,6 +5,10 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use uuid::Uuid;
+
+use crate::mm2::lp_swap::maker_swap::{MakerSavedSwap, MakerSwap, MakerSwapEvent};
+use crate::mm2::lp_swap::taker_swap::{TakerSavedSwap, TakerSwap, TakerSwapEvent};
+use crate::mm2::lp_swap::{MySwapInfo, RecoveredSwap};
 
 pub type SavedSwapResult<T> = Result<T, MmError<SavedSwapError>>;
 
@@ -173,11 +174,12 @@ pub trait SavedSwapIo {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
+    use mm2_io::fs::{read_dir_json, read_json, write_json, FsJsonError};
+
     use super::*;
     use crate::mm2::lp_swap::maker_swap::{stats_maker_swap_dir, stats_maker_swap_file_path};
     use crate::mm2::lp_swap::taker_swap::{stats_taker_swap_dir, stats_taker_swap_file_path};
     use crate::mm2::lp_swap::{my_swap_file_path, my_swaps_dir};
-    use mm2_io::fs::{read_dir_json, read_json, write_json, FsJsonError};
 
     const USE_TMP_FILE: bool = false;
 
@@ -251,10 +253,11 @@ mod native_impl {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
+    use serde_json as json;
+
     use super::*;
     use crate::mm2::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, SavedSwapTable};
     use crate::mm2::lp_swap::SwapsContext;
-    use serde_json as json;
 
     impl From<DbTransactionError> for SavedSwapError {
         fn from(e: DbTransactionError) -> Self {
@@ -338,12 +341,13 @@ mod wasm_impl {
 
 #[cfg(target_arch = "wasm32")]
 mod tests {
-    use super::*;
-    use crate::mm2::lp_swap::swap_wasm_db::{ItemId, SavedSwapTable};
-    use crate::mm2::lp_swap::SwapsContext;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use serde_json as json;
     use wasm_bindgen_test::*;
+
+    use super::*;
+    use crate::mm2::lp_swap::swap_wasm_db::{ItemId, SavedSwapTable};
+    use crate::mm2::lp_swap::SwapsContext;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

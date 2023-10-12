@@ -1,5 +1,19 @@
 #![allow(clippy::all)]
 
+use std::ops::Deref;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use common::executor::AbortedError;
+use futures01::Future;
+use keys::KeyPair;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
+use mm2_number::{BigDecimal, MmNumber};
+use mocktopus::macros::*;
+use rpc::v1::types::Bytes as BytesJson;
+use serde_json::Value as Json;
+
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
@@ -15,18 +29,6 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
             WithdrawRequest};
-use async_trait::async_trait;
-use common::executor::AbortedError;
-use futures01::Future;
-use keys::KeyPair;
-use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::*;
-use mm2_number::{BigDecimal, MmNumber};
-use mocktopus::macros::*;
-use rpc::v1::types::Bytes as BytesJson;
-use serde_json::Value as Json;
-use std::ops::Deref;
-use std::sync::Arc;
 
 /// Dummy coin struct used in tests which functions are unimplemented but then mocked
 /// in specific test to emulate the required behaviour

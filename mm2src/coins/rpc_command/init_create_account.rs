@@ -1,8 +1,6 @@
-use crate::coin_balance::HDAccountBalance;
-use crate::hd_pubkey::{HDExtractPubkeyError, HDXPubExtractor, RpcTaskXPubExtractor};
-use crate::hd_wallet::NewAccountCreatingError;
-use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinFindError, CoinWithDerivationMethod, CoinsContext,
-            MmCoinEnum, UnexpectedDerivationMethod};
+use std::sync::Arc;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use common::{true_f, HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
@@ -16,8 +14,12 @@ use parking_lot::Mutex as PaMutex;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError};
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
-use std::sync::Arc;
-use std::time::Duration;
+
+use crate::coin_balance::HDAccountBalance;
+use crate::hd_pubkey::{HDExtractPubkeyError, HDXPubExtractor, RpcTaskXPubExtractor};
+use crate::hd_wallet::NewAccountCreatingError;
+use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinFindError, CoinWithDerivationMethod, CoinsContext,
+            MmCoinEnum, UnexpectedDerivationMethod};
 
 pub type CreateAccountUserAction = HwRpcTaskUserAction;
 pub type CreateAccountAwaitingStatus = HwRpcTaskAwaitingStatus;

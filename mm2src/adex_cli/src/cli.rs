@@ -1,12 +1,13 @@
+use std::collections::HashSet;
+use std::mem::take;
+use std::str::FromStr;
+
 use anyhow::Result;
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use common::serde_derive::Serialize;
 use mm2_number::{bigdecimal::ParseBigDecimalError, BigDecimal, MmNumber};
 use mm2_rpc::data::legacy::{MatchBy, OrderType, SellBuyRequest};
 use rpc::v1::types::H256 as H256Json;
-use std::collections::HashSet;
-use std::mem::take;
-use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::adex_config::{get_config, set_config, AdexConfig};

@@ -1,9 +1,10 @@
+use std::pin::Pin;
+use std::time::Duration;
+
 use futures::task::Context;
 use futures::task::Poll as Poll03;
 use futures::Future as Future03;
 use futures_timer::Delay;
-use std::pin::Pin;
-use std::time::Duration;
 
 /// # Important
 ///

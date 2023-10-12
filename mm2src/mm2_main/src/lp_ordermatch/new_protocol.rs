@@ -1,8 +1,9 @@
+use std::collections::{HashMap, HashSet};
+
 use common::now_sec;
 use compact_uuid::CompactUuid;
 use mm2_number::{BigRational, MmNumber};
 use mm2_rpc::data::legacy::{MatchBy as SuperMatchBy, OrderConfirmationsSettings, TakerAction};
-use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::mm2::lp_ordermatch::{AlbOrderedOrderbookPair, H64};
@@ -60,8 +61,9 @@ impl From<MatchBy> for SuperMatchBy {
 }
 
 mod compact_uuid {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::str::FromStr;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use uuid::Uuid;
 
     /// Default MsgPack encoded UUID length is 38 bytes (seems like it is encoded as string)

@@ -1,6 +1,7 @@
-use crate::helpers_validation::{merkle_prove, validate_vin, validate_vout, SPVError};
 use chain::BlockHeader;
 use primitives::hash::H256;
+
+use crate::helpers_validation::{merkle_prove, validate_vin, validate_vout, SPVError};
 
 pub const TRY_SPV_PROOF_INTERVAL: u64 = 10;
 
@@ -49,11 +50,12 @@ impl SPVProof {
 
 #[cfg(test)]
 mod spv_proof_tests {
-    use crate::spv_proof::SPVProof;
     use chain::{BlockHeader, Transaction};
     use hex::FromHex;
     use primitives::hash::H256;
     use serialization::{deserialize, serialize_list};
+
+    use crate::spv_proof::SPVProof;
 
     #[test]
     fn test_validate() {

@@ -1,8 +1,9 @@
-use super::{format_record, LogCallback};
 use std::env;
 use std::io::Write;
 use std::os::raw::c_char;
 use std::str::FromStr;
+
+use super::{format_record, LogCallback};
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum LogLevel {

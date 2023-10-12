@@ -13,8 +13,9 @@ pub mod sign_params;
 pub mod with_key_pair;
 pub mod with_trezor;
 
-use crate::with_key_pair::UtxoSignWithKeyPairError;
 use sign_params::UtxoSignTxParams;
+
+use crate::with_key_pair::UtxoSignWithKeyPairError;
 
 pub type UtxoSignTxResult<T> = Result<T, MmError<UtxoSignTxError>>;
 

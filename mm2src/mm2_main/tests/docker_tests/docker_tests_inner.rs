@@ -1,7 +1,8 @@
-use crate::docker_tests::docker_tests_common::generate_utxo_coin_with_privkey;
-use crate::integration_tests_common::*;
-use crate::{fill_address, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
-            utxo_coin_from_privkey};
+use std::collections::HashMap;
+use std::env;
+use std::thread;
+use std::time::Duration;
+
 use bitcrypto::dhash160;
 use chain::OutPoint;
 use coins::utxo::rpc_clients::UnspentInfo;
@@ -17,10 +18,11 @@ use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf
                                   MarketMakerIt, Mm2TestConf, ETH_DEV_NODES};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
-use std::collections::HashMap;
-use std::env;
-use std::thread;
-use std::time::Duration;
+
+use crate::docker_tests::docker_tests_common::generate_utxo_coin_with_privkey;
+use crate::integration_tests_common::*;
+use crate::{fill_address, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
+            utxo_coin_from_privkey};
 
 #[test]
 fn test_search_for_swap_tx_spend_native_was_refunded_taker() {

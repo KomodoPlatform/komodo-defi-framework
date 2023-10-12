@@ -1,7 +1,8 @@
+use std::convert::Infallible;
+
 use hyper::{body::Bytes, Body, Request, Response};
 use mm2_core::mm_ctx::MmArc;
 use serde_json::json;
-use std::convert::Infallible;
 
 pub const SSE_ENDPOINT: &str = "/event-stream";
 

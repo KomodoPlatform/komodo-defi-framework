@@ -1,9 +1,10 @@
 //! Fixed-size hashes
 
-use bitcoin_hashes::{sha256d, Hash as ExtHash};
-use hex::{FromHex, FromHexError, ToHex};
 use std::hash::{Hash, Hasher};
 use std::{cmp, fmt, ops, str};
+
+use bitcoin_hashes::{sha256d, Hash as ExtHash};
+use hex::{FromHex, FromHexError, ToHex};
 
 macro_rules! impl_hash {
     ($name: ident, $size: expr) => {

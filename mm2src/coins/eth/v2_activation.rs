@@ -1,11 +1,12 @@
-use super::*;
-#[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
 use common::executor::AbortedError;
 use crypto::{CryptoCtxError, StandardHDCoinAddress};
 use enum_from::EnumFromTrait;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
+
+use super::*;
+#[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
 
 #[derive(Clone, Debug, Deserialize, Display, EnumFromTrait, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

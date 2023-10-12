@@ -1,9 +1,11 @@
-use super::{ibc_proto::IBCTransferV1Proto, IBC_OUT_SOURCE_PORT, IBC_OUT_TIMEOUT_IN_NANOS};
-use crate::tendermint::type_urls::IBC_TRANSFER_TYPE_URL;
+use std::convert::TryFrom;
+
 use common::number_type_casting::SafeTypeCastingNumbers;
 use cosmrs::{tx::{Msg, MsgProto},
              AccountId, Coin, ErrorReport};
-use std::convert::TryFrom;
+
+use super::{ibc_proto::IBCTransferV1Proto, IBC_OUT_SOURCE_PORT, IBC_OUT_TIMEOUT_IN_NANOS};
+use crate::tendermint::type_urls::IBC_TRANSFER_TYPE_URL;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MsgTransfer {

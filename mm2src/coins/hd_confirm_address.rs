@@ -163,8 +163,9 @@ where
 
 #[cfg(test)]
 pub(crate) mod for_tests {
-    use super::*;
     use mocktopus::macros::mockable;
+
+    use super::*;
 
     #[derive(Default)]
     pub struct MockableConfirmAddress;

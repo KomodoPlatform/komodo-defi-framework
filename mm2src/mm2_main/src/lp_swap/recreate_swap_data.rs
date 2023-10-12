@@ -1,15 +1,16 @@
-use crate::mm2::lp_swap::maker_swap::{MakerSwapData, MakerSwapEvent, TakerNegotiationData, MAKER_ERROR_EVENTS,
-                                      MAKER_SUCCESS_EVENTS};
-use crate::mm2::lp_swap::taker_swap::{MakerNegotiationData, TakerPaymentSpentData, TakerSavedEvent, TakerSwapData,
-                                      TakerSwapEvent, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
-use crate::mm2::lp_swap::{wait_for_maker_payment_conf_until, MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError,
-                          TakerSavedSwap};
 use coins::{lp_coinfind, MmCoinEnum};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+
+use crate::mm2::lp_swap::maker_swap::{MakerSwapData, MakerSwapEvent, TakerNegotiationData, MAKER_ERROR_EVENTS,
+                                      MAKER_SUCCESS_EVENTS};
+use crate::mm2::lp_swap::taker_swap::{MakerNegotiationData, TakerPaymentSpentData, TakerSavedEvent, TakerSwapData,
+                                      TakerSwapEvent, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+use crate::mm2::lp_swap::{wait_for_maker_payment_conf_until, MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError,
+                          TakerSavedSwap};
 
 pub type RecreateSwapResult<T> = Result<T, MmError<RecreateSwapError>>;
 
@@ -488,12 +489,13 @@ async fn convert_maker_to_taker_events(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use coins::{CoinsContext, MarketCoinOps, SwapOps, TestCoin};
     use common::block_on;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mocktopus::mocking::{MockResult, Mockable};
     use serde_json as json;
+
+    use super::*;
 
     #[test]
     fn test_recreate_maker_swap() {

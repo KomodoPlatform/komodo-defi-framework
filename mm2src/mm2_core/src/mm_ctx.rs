@@ -1,3 +1,11 @@
+use std::any::Any;
+use std::collections::hash_map::{Entry, HashMap};
+use std::collections::HashSet;
+use std::fmt;
+use std::future::Future;
+use std::ops::Deref;
+use std::sync::{Arc, Mutex};
+
 #[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
@@ -12,13 +20,6 @@ use primitives::hash::H160;
 use rand::Rng;
 use serde_json::{self as json, Value as Json};
 use shared_ref_counter::{SharedRc, WeakRc};
-use std::any::Any;
-use std::collections::hash_map::{Entry, HashMap};
-use std::collections::HashSet;
-use std::fmt;
-use std::future::Future;
-use std::ops::Deref;
-use std::sync::{Arc, Mutex};
 
 cfg_wasm32! {
     use mm2_rpc::wasm_rpc::WasmRpcSender;

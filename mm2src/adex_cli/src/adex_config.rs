@@ -1,11 +1,12 @@
+use std::fmt::{Display, Formatter};
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use anyhow::{anyhow, bail, Result};
 use directories::ProjectDirs;
 use inquire::Password;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter};
-use std::fs;
-use std::path::{Path, PathBuf};
 
 use crate::adex_proc::SmartFractPrecision;
 use crate::helpers::rewrite_json_file;

@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::iter::FromIterator;
+
 use common::block_on;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
@@ -5,10 +8,7 @@ use mm2_test_helpers::for_tests::{enable_tendermint, enable_tendermint_without_b
                                   orderbook, orderbook_v2, set_price, usdc_ibc_iris_testnet_conf, MarketMakerIt,
                                   Mm2TestConf};
 use mm2_test_helpers::structs::{OrderbookAddress, OrderbookV2Response, RpcV2Response, TendermintActivationResult};
-
 use serde_json::{self, json};
-use std::collections::HashSet;
-use std::iter::FromIterator;
 
 const IRIS_TESTNET_RPCS: &[&str] = &["http://34.80.202.172:26657"];
 const IRIS_TICKER: &str = "IRIS-TEST";

@@ -1,6 +1,8 @@
-use crate::mm_error::{MmError, NotMmError, TraceLocation};
-use futures01::{Future, Poll};
 use std::panic::Location;
+
+use futures01::{Future, Poll};
+
+use crate::mm_error::{MmError, NotMmError, TraceLocation};
 
 pub trait MapToMmFutureExt<'a, T, E1: NotMmError, E2: NotMmError> {
     fn map_to_mm_fut<F>(self, f: F) -> MapToMmFuture<'a, T, E1, E2>

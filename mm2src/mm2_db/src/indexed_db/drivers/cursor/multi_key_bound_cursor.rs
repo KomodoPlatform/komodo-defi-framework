@@ -1,11 +1,12 @@
-use super::{index_key_as_array, CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction,
-            CursorResult};
 use common::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use serde_json::{json, Value as Json};
 use wasm_bindgen::prelude::*;
 use web_sys::IdbKeyRange;
+
+use super::{index_key_as_array, CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction,
+            CursorResult};
 
 /// The representation of a range that includes records
 /// with the multiple `only` and `bound` restrictions.
@@ -199,9 +200,10 @@ impl CursorDriverImpl for IdbMultiKeyBoundCursor {
 }
 
 mod tests {
-    use super::*;
     use common::log::wasm_log::register_wasm_log;
     use wasm_bindgen_test::*;
+
+    use super::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

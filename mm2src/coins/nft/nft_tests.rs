@@ -5,13 +5,14 @@ const TEST_WALLET_ADDR_EVM: &str = "0x394d86994f954ed931b86791b62fe64f4c5dac37";
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod native_tests {
+    use common::block_on;
+
     use crate::eth::eth_addr_to_hex;
     use crate::nft::nft_structs::{NftFromMoralis, NftTransferHistoryFromMoralis, UriMeta};
     use crate::nft::nft_tests::{NFT_HISTORY_URL_TEST, NFT_LIST_URL_TEST, NFT_METADATA_URL_TEST, TEST_WALLET_ADDR_EVM};
     use crate::nft::storage::db_test_helpers::*;
     use crate::nft::{check_and_redact_if_spam, check_moralis_ipfs_bafy, check_nft_metadata_for_spam,
                      send_request_to_uri};
-    use common::block_on;
 
     #[test]
     fn test_moralis_ipfs_bafy() {
@@ -125,12 +126,13 @@ mod native_tests {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
+    use wasm_bindgen_test::*;
+
     use crate::eth::eth_addr_to_hex;
     use crate::nft::nft_structs::{NftFromMoralis, NftTransferHistoryFromMoralis};
     use crate::nft::nft_tests::{NFT_HISTORY_URL_TEST, NFT_LIST_URL_TEST, NFT_METADATA_URL_TEST, TEST_WALLET_ADDR_EVM};
     use crate::nft::send_request_to_uri;
     use crate::nft::storage::db_test_helpers::*;
-    use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 

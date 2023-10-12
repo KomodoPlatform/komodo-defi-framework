@@ -3,29 +3,10 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
-use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
-use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget};
-use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
-use crate::utxo::bch::BchCoin;
-use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
-use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
-use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_script, UtxoTxBuilder};
-use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
-                  FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
-                  UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
-            NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionArgs, PaymentInstructions,
-            PaymentInstructionsErr, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RefundError,
-            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest};
+use std::convert::TryInto;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -51,10 +32,31 @@ use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::{deserialize, serialize, Deserializable, Error as SerError, Reader};
 use serialization_derive::Deserializable;
-use std::convert::TryInto;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use std::sync::Arc;
 use utxo_signer::with_key_pair::{p2pkh_spend, p2sh_spend, sign_tx, UtxoSignWithKeyPairError};
+
+use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget};
+use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
+use crate::utxo::bch::BchCoin;
+use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
+use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
+use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_script, UtxoTxBuilder};
+use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
+                  FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
+                  UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
+            NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionArgs, PaymentInstructions,
+            PaymentInstructionsErr, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RefundError,
+            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest};
 
 const SLP_SWAP_VOUT: usize = 1;
 const SLP_FEE_VOUT: usize = 1;
@@ -1918,12 +1920,14 @@ pub fn slp_addr_from_pubkey_str(pubkey: &str, prefix: &str) -> Result<String, Mm
 
 #[cfg(test)]
 mod slp_tests {
+    use std::mem::discriminant;
+
+    use common::block_on;
+    use mocktopus::mocking::{MockResult, Mockable};
+
     use super::*;
     use crate::utxo::GetUtxoListOps;
     use crate::{utxo::bch::tbch_coin_for_test, TransactionErr};
-    use common::block_on;
-    use mocktopus::mocking::{MockResult, Mockable};
-    use std::mem::discriminant;
 
     // https://slp.dev/specs/slp-token-type-1/#examples
     #[test]

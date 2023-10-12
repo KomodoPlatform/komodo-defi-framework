@@ -1,3 +1,7 @@
+use std::collections::HashSet;
+use std::iter::FromIterator;
+use std::str::FromStr;
+
 use common::block_on;
 use http::StatusCode;
 use mm2_test_helpers::for_tests::{disable_coin, disable_coin_err, eth_jst_testnet_conf, eth_testnet_conf,
@@ -5,9 +9,6 @@ use mm2_test_helpers::for_tests::{disable_coin, disable_coin_err, eth_jst_testne
                                   ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::structs::{EnableEthWithTokensResponse, RpcV2Response};
 use serde_json::{self as json, json, Value as Json};
-use std::collections::HashSet;
-use std::iter::FromIterator;
-use std::str::FromStr;
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn enable_eth_with_tokens(mm: &MarketMakerIt, platform_coin: &str, tokens: &[&str], nodes: &[&str]) -> Json {

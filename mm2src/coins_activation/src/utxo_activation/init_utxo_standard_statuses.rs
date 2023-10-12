@@ -1,6 +1,7 @@
-use crate::standalone_coin::InitStandaloneCoinInitialStatus;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use serde_derive::Serialize;
+
+use crate::standalone_coin::InitStandaloneCoinInitialStatus;
 
 pub type UtxoStandardAwaitingStatus = HwRpcTaskAwaitingStatus;
 pub type UtxoStandardUserAction = HwRpcTaskUserAction;

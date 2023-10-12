@@ -1,9 +1,11 @@
+use std::ops::Neg;
+use std::str::FromStr;
+
+use common::{block_on, Future01CompatExt};
+
 use super::*;
 use crate::{solana::solana_common_tests::solana_coin_for_test,
             solana::solana_common_tests::{spl_coin_for_test, SolanaNet}};
-use common::{block_on, Future01CompatExt};
-use std::ops::Neg;
-use std::str::FromStr;
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]

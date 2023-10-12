@@ -9,11 +9,12 @@
 
 #![allow(uncommon_codepoints)]
 
-use gstuff::{last_modified_sec, slurp};
 use std::env::var;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+
+use gstuff::{last_modified_sec, slurp};
 
 /// Ongoing (RLS) builds might interfere with a precise time comparison.
 const SLIDE: f64 = 60.;

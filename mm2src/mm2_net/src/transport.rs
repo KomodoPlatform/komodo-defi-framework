@@ -8,7 +8,6 @@ use serde_json::{Error, Value as Json};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::native_http::{slurp_post_json, slurp_req, slurp_req_body, slurp_url, slurp_url_with_headers};
-
 #[cfg(target_arch = "wasm32")]
 pub use crate::wasm_http::{slurp_post_json, slurp_url, slurp_url_with_headers};
 

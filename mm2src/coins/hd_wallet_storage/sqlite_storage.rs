@@ -1,7 +1,8 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
-                               HDWalletStorageResult};
+use std::convert::TryFrom;
+use std::sync::MutexGuard;
+
 use async_trait::async_trait;
 use common::async_blocking;
 use db_common::owned_named_params;
@@ -11,8 +12,9 @@ use db_common::sqlite::{query_single_row_with_named_params, AsSqlNamedParams, Ow
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use std::convert::TryFrom;
-use std::sync::MutexGuard;
+
+use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
+                               HDWalletStorageResult};
 
 const CREATE_HD_ACCOUNT_TABLE: &str = "CREATE TABLE IF NOT EXISTS hd_account (
     coin VARCHAR(255) NOT NULL,

@@ -1,5 +1,5 @@
-use crate::{prelude::TryPlatformCoinFromMmCoinEnum,
-            token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use coins::{tendermint::{TendermintCoin, TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
                          TendermintTokenProtocolInfo},
@@ -7,7 +7,9 @@ use coins::{tendermint::{TendermintCoin, TendermintToken, TendermintTokenActivat
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::{MapMmError, MmError};
 use serde::Serialize;
-use std::collections::HashMap;
+
+use crate::{prelude::TryPlatformCoinFromMmCoinEnum,
+            token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
 
 impl From<TendermintTokenInitError> for EnableTokenError {
     fn from(err: TendermintTokenInitError) -> Self {

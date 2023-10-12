@@ -1,6 +1,3 @@
-use crate::sign_common::{complete_tx, p2pkh_spend_with_signature};
-use crate::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo, UtxoSignTxParams};
-use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::log::debug;
 use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TxOutput, TxSignResult,
@@ -11,6 +8,10 @@ use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use script::{SignatureVersion, UnsignedTransactionInput};
 use serialization::deserialize;
+
+use crate::sign_common::{complete_tx, p2pkh_spend_with_signature};
+use crate::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo, UtxoSignTxParams};
+use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 
 pub struct TrezorTxSigner<'a, TxP> {
     pub trezor: TrezorSession<'a>,

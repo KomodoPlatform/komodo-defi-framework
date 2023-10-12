@@ -1,8 +1,9 @@
+use std::fmt;
+use std::str::FromStr;
+
 use primitives::U256 as GlobalU256;
 use serde;
 use serde::de::Unexpected;
-use std::fmt;
-use std::str::FromStr;
 
 macro_rules! impl_uint {
     ($name: ident, $other: ident, $size: expr) => {
@@ -85,8 +86,9 @@ impl_uint!(U256, GlobalU256, 4);
 
 #[cfg(test)]
 mod tests {
-    use super::U256;
     use serde_json;
+
+    use super::U256;
 
     #[test]
     fn u256_serialize() {

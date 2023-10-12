@@ -1,5 +1,5 @@
-use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
-            token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use coins::{eth::{v2_activation::{Erc20Protocol, Erc20TokenActivationError, Erc20TokenActivationRequest},
                   valid_addr_from_str, EthCoin},
@@ -7,7 +7,9 @@ use coins::{eth::{v2_activation::{Erc20Protocol, Erc20TokenActivationError, Erc2
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::MmError;
 use serde::Serialize;
-use std::collections::HashMap;
+
+use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
+            token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
 
 #[derive(Debug, Serialize)]
 pub struct Erc20InitResult {
