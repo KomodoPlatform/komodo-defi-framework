@@ -6,8 +6,12 @@ edition = "2018"
 [lib]
 doctest = false
 
+[features]
+event-stream = ["mm2_event_stream", "async-stream" , "p2p"]
+p2p = ["mm2-libp2p", "parking_lot"]
+
 [dependencies]
-async-stream = "0.3"
+async-stream = { version = "0.3", optional = true }
 async-trait = "0.1"
 bytes = "1.1"
 cfg-if = "1.0"
@@ -19,10 +23,9 @@ http = "0.2"
 lazy_static = "1.4"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
-mm2_event_stream = { path = "../mm2_event_stream"}
-mm2-libp2p = { path = "../mm2_p2p", package = "mm2_p2p" }
-mm2_state_machine = { path = "../mm2_state_machine" }
-parking_lot = { version = "0.12.0", features = ["nightly"] }
+mm2_event_stream = { path = "../mm2_event_stream", optional = true }
+mm2-libp2p = { path = "../mm2_p2p", package = "mm2_p2p", optional = true }
+parking_lot = { version = "0.12.0", features = ["nightly"], optional = true }
 prost = "0.10"
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"
@@ -30,6 +33,7 @@ serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gstuff = { version = "0.7", features = ["nightly"] }
+mm2_state_machine = { path = "../mm2_state_machine"}
 wasm-bindgen = "0.2.86"
 wasm-bindgen-test = { version = "0.3.2" }
 wasm-bindgen-futures = "0.4.21"
