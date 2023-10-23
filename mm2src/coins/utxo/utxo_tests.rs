@@ -42,7 +42,8 @@ use futures::future::join_all;
 use futures::TryFutureExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
-use mm2_test_helpers::for_tests::{mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
+use mm2_test_helpers::for_tests::{mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS, MARTY_ELECTRUM_ADDRS,
+                                  MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
@@ -186,7 +187,7 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
 
 #[test]
 fn test_generate_transaction() {
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(client.into(), None, false);
     let unspents = vec![UnspentInfo {
         value: 10000000000,
@@ -277,7 +278,7 @@ fn test_generate_transaction() {
 
 #[test]
 fn test_addresses_from_script() {
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(client.into(), None, false);
     // P2PKH
     let script: Script = "76a91405aab5342166f8594baf17a7d9bef5d56744332788ac".into();
@@ -971,20 +972,20 @@ fn test_utxo_lock() {
 
 #[test]
 fn test_spv_proof() {
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
 
-    // https://rick.explorer.dexstats.info/tx/78ea7839f6d1b0dafda2ba7e34c1d8218676a58bd1b33f03a5f76391f61b72b0
-    let tx_str = "0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d870000000000000000166a1400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000";
+    // https://doc.explorer.dexstats.info/tx/a3ebedbe20f82e43708f276152cf7dfb03a6050921c8f266e48c00ab66e891fb
+    let tx_str = "0400008085202f8901e15182af2c252bcfbd58884f3bdbd4d85ed036e53cfe2fd1f904ecfea10cb9f2010000006b483045022100d2435e0c9211114271ac452dc47fd08d3d2dc4bdd484d5750ee6bbda41056d520220408bfb236b7028b6fde0e59a1b6522949131a611584cce36c3df1e934c1748630121022d7424c741213a2b9b49aebdaa10e84419e642a8db0a09e359a3d4c850834846ffffffff02a09ba104000000001976a914054407d1a2224268037cfc7ca3bc438d082bedf488acdd28ce9157ba11001976a914046922483fab8ca76b23e55e9d338605e2dbab6088ac03d63665000000000000000000000000000000";
     let tx: UtxoTx = tx_str.into();
 
     let header: BlockHeader = deserialize(
-        block_on(client.blockchain_block_header(452248).compat())
+        block_on(client.blockchain_block_header(263240).compat())
             .unwrap()
             .as_slice(),
     )
     .unwrap();
     let mut headers = HashMap::new();
-    headers.insert(452248, header);
+    headers.insert(263240, header);
     let storage = client.block_headers_storage();
     block_on(storage.add_block_headers_to_storage(headers)).unwrap();
 
@@ -1003,14 +1004,10 @@ fn list_since_block_btc_serde() {
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/587
 fn get_tx_details_coinbase_transaction() {
     /// Hash of coinbase transaction
-    /// https://morty.explorer.dexstats.info/tx/b59b093ed97c1798f2a88ee3375a0c11d0822b6e4468478777f899891abd34a5
-    const TX_HASH: &str = "b59b093ed97c1798f2a88ee3375a0c11d0822b6e4468478777f899891abd34a5";
+    /// https://marty.explorer.dexstats.info/tx/ae3220b868c677c77f8c9bdbc49b42da512260b45af695e672b1c5090815566c
+    const TX_HASH: &str = "ae3220b868c677c77f8c9bdbc49b42da512260b45af695e672b1c5090815566c";
 
-    let client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10018",
-        "electrum2.cipig.net:10018",
-        "electrum3.cipig.net:10018",
-    ]);
+    let client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -3234,9 +3231,9 @@ fn test_utxo_standard_with_check_utxo_maturity_true() {
     let req = json!({
          "method": "electrum",
          "servers": [
-             {"url":"electrum1.cipig.net:10017"},
-             {"url":"electrum2.cipig.net:10017"},
-             {"url":"electrum3.cipig.net:10017"},
+             {"url":"electrum1.cipig.net:10020"},
+             {"url":"electrum2.cipig.net:10020"},
+             {"url":"electrum3.cipig.net:10020"},
          ],
         "check_utxo_maturity": true,
     });
@@ -3275,9 +3272,9 @@ fn test_utxo_standard_without_check_utxo_maturity() {
     let req = json!({
          "method": "electrum",
          "servers": [
-             {"url":"electrum1.cipig.net:10017"},
-             {"url":"electrum2.cipig.net:10017"},
-             {"url":"electrum3.cipig.net:10017"},
+             {"url":"electrum1.cipig.net:10020"},
+             {"url":"electrum2.cipig.net:10020"},
+             {"url":"electrum3.cipig.net:10020"},
          ]
     });
 
@@ -4131,7 +4128,7 @@ fn test_electrum_balance_deserializing() {
 
 #[test]
 fn test_electrum_display_balances() {
-    let rpc_client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let rpc_client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     block_on(utxo_common_tests::test_electrum_display_balances(&rpc_client));
 }
 
@@ -4139,7 +4136,7 @@ fn test_electrum_display_balances() {
 fn test_for_non_existent_tx_hex_utxo_electrum() {
     // This test shouldn't wait till timeout!
     let timeout = wait_until_sec(120);
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -4222,7 +4219,7 @@ fn test_native_display_balances() {
 
 #[test]
 fn test_message_hash() {
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -4236,7 +4233,7 @@ fn test_message_hash() {
 
 #[test]
 fn test_sign_verify_message() {
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -4257,7 +4254,7 @@ fn test_sign_verify_message() {
 
 #[test]
 fn test_sign_verify_message_segwit() {
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -4284,7 +4281,7 @@ fn test_sign_verify_message_segwit() {
 
 #[test]
 fn test_tx_enum_from_bytes() {
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(client.into(), None, false);
 
     let tx_hex = hex::decode("01000000017b1eabe0209b1fe794124575ef807057c77ada2138ae4fa8d6c4de0398a14f3f00000000494830450221008949f0cb400094ad2b5eb399d59d01c14d73d8fe6e96df1a7150deb388ab8935022079656090d7f6bac4c9a94e0aad311a4268e082a725f8aeae0573fb12ff866a5f01ffffffff01f0ca052a010000001976a914cbc20a7664f2f69e5355aa427045bc15e7c6c77288ac00000000").unwrap();
@@ -4315,9 +4312,9 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
     let req = json!({
          "method": "electrum",
          "servers": [
-             {"url":"electrum1.cipig.net:10017"},
-             {"url":"electrum2.cipig.net:10017"},
-             {"url":"electrum3.cipig.net:10017"},
+             {"url":"electrum1.cipig.net:10020"},
+             {"url":"electrum2.cipig.net:10020"},
+             {"url":"electrum3.cipig.net:10020"},
          ],
         "check_utxo_maturity": true,
     });
@@ -4348,7 +4345,7 @@ fn test_block_header_utxo_loop() {
     static mut CURRENT_BLOCK_COUNT: u64 = 13;
 
     ElectrumClient::get_servers_with_latest_block_count.mock_safe(move |_| {
-        let servers = RICK_ELECTRUM_ADDRS.iter().map(|url| url.to_string()).collect();
+        let servers = DOC_ELECTRUM_ADDRS.iter().map(|url| url.to_string()).collect();
         MockResult::Return(Box::new(futures01::future::ok((servers, unsafe {
             CURRENT_BLOCK_COUNT
         }))))
@@ -4375,7 +4372,7 @@ fn test_block_header_utxo_loop() {
 
     let ctx = mm_ctx_with_custom_db();
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(H256Json::from([1u8; 32]));
-    let servers: Vec<_> = RICK_ELECTRUM_ADDRS
+    let servers: Vec<_> = DOC_ELECTRUM_ADDRS
         .iter()
         .map(|server| json!({ "url": server }))
         .collect();
@@ -4395,8 +4392,8 @@ fn test_block_header_utxo_loop() {
     let spv_conf = json::from_value(json!({
         "starting_block_header": {
             "height": 1,
-            "hash": "0c714ba4f8d5f2d5c014a08c4e21a5387156e23bcc819c0f9bc536437586cdf5",
-            "time": 1564482125,
+            "hash": "0918169860eda78df99319a4d073d325017fbda08dd10375a6de8b6214cef3f5",
+            "time": 1681404988,
             "bits": 537857807
         },
         "max_stored_block_headers": 15
