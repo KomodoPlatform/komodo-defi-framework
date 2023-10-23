@@ -1519,7 +1519,7 @@ fn test_unavailable_electrum_proto_version() {
     let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923});
     let req = json!({
          "method": "electrum",
-         "servers": [{"url":"electrum1.cipig.net:10017"}],
+         "servers": [{"url":"electrum1.cipig.net:10020"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1857,9 +1857,9 @@ fn test_get_mature_unspent_ordered_map_from_cache_impl(
     expected_height: Option<u64>,
     expected_confs: u32,
 ) {
-    const TX_HASH: &str = "0a0fda88364b960000f445351fe7678317a1e0c80584de0413377ede00ba696f";
+    const TX_HASH: &str = "b43f9ed47f7b97d4766b6f1614136fa0c55b9a52c97342428333521fa13ad714";
     let tx_hash: H256Json = hex::decode(TX_HASH).unwrap().as_slice().into();
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     let mut verbose = client.get_verbose_transaction(&tx_hash).wait().unwrap();
     verbose.confirmations = cached_confs;
     verbose.height = cached_height;
