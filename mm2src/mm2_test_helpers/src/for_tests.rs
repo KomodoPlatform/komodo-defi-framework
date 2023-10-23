@@ -144,6 +144,12 @@ pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum2.cipig.net:10020",
     "electrum3.cipig.net:10020",
 ];
+pub const MARTY: &str = "MARTY";
+pub const MARTY_ELECTRUM_ADDRS: &[&str] = &[
+    "electrum1.cipig.net:10021",
+    "electrum2.cipig.net:10021",
+    "electrum3.cipig.net:10021",
+];
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
 pub const ARRR: &str = "ARRR";
 pub const ZOMBIE_ELECTRUMS: &[&str] = &[
