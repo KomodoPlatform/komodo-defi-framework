@@ -43,8 +43,8 @@ use futures::TryFutureExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS, MARTY_ELECTRUM_ADDRS,
-                                  MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
+use mm2_test_helpers::for_tests::{electrum_servers_rpc, mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS,
+                                  MARTY_ELECTRUM_ADDRS, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS, T_BCH_ELECTRUMS};
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
@@ -1369,15 +1369,7 @@ fn test_cashaddresses_in_tx_details_by_hash() {
     });
     let req = json!({
          "method": "electrum",
-         "servers": [
-             {"url":"bch0.kister.net:51002","protocol":"SSL"},
-             {"url":"tbch.loping.net:60002","protocol":"SSL"},
-             {"url":"electroncash.de:50003"},
-             {"url":"tbch.loping.net:60001"},
-             {"url":"blackie.c3-soft.com:60001"},
-             {"url":"bch0.kister.net:51001"},
-             {"url":"testnet.imaginary.cash:50001"}
-         ],
+         "servers": electrum_servers_rpc(T_BCH_ELECTRUMS),
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1410,15 +1402,7 @@ fn test_address_from_str_with_cashaddress_activated() {
     });
     let req = json!({
          "method": "electrum",
-         "servers": [
-             {"url":"bch0.kister.net:51002","protocol":"SSL"},
-             {"url":"tbch.loping.net:60002","protocol":"SSL"},
-             {"url":"electroncash.de:50003"},
-             {"url":"tbch.loping.net:60001"},
-             {"url":"blackie.c3-soft.com:60001"},
-             {"url":"bch0.kister.net:51001"},
-             {"url":"testnet.imaginary.cash:50001"}
-         ],
+         "servers": electrum_servers_rpc(T_BCH_ELECTRUMS),
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1450,15 +1434,7 @@ fn test_address_from_str_with_legacy_address_activated() {
     });
     let req = json!({
          "method": "electrum",
-         "servers": [
-             {"url":"bch0.kister.net:51002","protocol":"SSL"},
-             {"url":"tbch.loping.net:60002","protocol":"SSL"},
-             {"url":"electroncash.de:50003"},
-             {"url":"tbch.loping.net:60001"},
-             {"url":"blackie.c3-soft.com:60001"},
-             {"url":"bch0.kister.net:51001"},
-             {"url":"testnet.imaginary.cash:50001"}
-         ],
+         "servers": electrum_servers_rpc(T_BCH_ELECTRUMS),
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -2961,13 +2937,7 @@ fn test_tx_details_kmd_rewards_claimed_by_other() {
 fn test_tx_details_bch_no_rewards() {
     const TX_HASH: &str = "eb13d926f15cbb896e0bcc7a1a77a4ec63504e57a1524c13a7a9b80f43ecb05c";
 
-    let electrum = electrum_client_for_test(&[
-        "electroncash.de:50003",
-        "tbch.loping.net:60001",
-        "blackie.c3-soft.com:60001",
-        "bch0.kister.net:51001",
-        "testnet.imaginary.cash:50001",
-    ]);
+    let electrum = electrum_client_for_test(T_BCH_ELECTRUMS);
     let coin = utxo_coin_for_test(electrum.into(), None, false);
 
     let tx_details = get_tx_details_eq_for_both_versions(&coin, TX_HASH);
