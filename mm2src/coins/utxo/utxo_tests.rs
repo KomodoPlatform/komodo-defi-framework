@@ -145,11 +145,11 @@ where
 
 #[test]
 fn test_extract_secret() {
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(client.into(), None, false);
 
-    let tx_hex = hex::decode("0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c").unwrap();
-    let expected_secret = hex::decode("9da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365").unwrap();
+    let tx_hex = hex::decode("0400008085202f890125236f423b7f585e6a86d8a6c45c6805bbd5823851a57a00f6dcd3a41dc7487500000000d8483045022100ce7246314170b7c84df41a9d987dad5b572cfca5c27ee738d2682ce147c460a402206fa477fc27bec62600b13ea8a3f81fbad1fa9adad28bc1fa5c212a12ecdccd7f01205c62072b57b6473aeee6d35270c8b56d86975e6d6d4245b25425d771239fae32004c6b630476ac3765b1752103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cac6782012088a914f95ae6f5fb6a4c4e69b00b4c1dbc0698746c0f0288210210e0f210673a2024d4021270bb711664a637bb542317ed9be5ad592475320c0cac68ffffffff0128230000000000001976a9142c445a7af3da3feb2ba7d5f2a32002c772acc1e188ac76ac3765000000000000000000000000000000").unwrap();
+    let expected_secret = hex::decode("5c62072b57b6473aeee6d35270c8b56d86975e6d6d4245b25425d771239fae32").unwrap();
     let secret_hash = &*dhash160(&expected_secret);
     let secret = block_on(coin.extract_secret(secret_hash, &tx_hex, false)).unwrap();
     assert_eq!(secret, expected_secret);
@@ -2534,15 +2534,15 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
 #[test]
 fn test_validate_fee_wrong_sender() {
     let rpc_client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10018",
-        "electrum2.cipig.net:10018",
-        "electrum3.cipig.net:10018",
+        "electrum1.cipig.net:10021",
+        "electrum2.cipig.net:10021",
+        "electrum3.cipig.net:10021",
     ]);
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
-    // https://morty.explorer.dexstats.info/tx/fe4b0e1c4537e22f2956b5b74513fc936ebd87ada21513e850899cb07a45d475
-    let tx_bytes = hex::decode("0400008085202f890199cc492c24cc617731d13cff0ef22e7b0c277a64e7368a615b46214424a1c894020000006a473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36faffffffff0202290200000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac8a96e70b000000001976a914d55f0df6cb82630ad21a4e6049522a6f2b6c9d4588ac8afb2c60000000000000000000000000000000").unwrap();
+    // https://marty.explorer.dexstats.info/tx/99349d1c72ef396ecb39ab2989b888b02e22382249271c79cda8139825adc468
+    let tx_bytes = hex::decode("0400008085202f8901033aedb3c3c02fc76c15b393c7b1f638cfa6b4a1d502e00d57ad5b5305f12221000000006a473044022074879aabf38ef943eba7e4ce54c444d2d6aa93ac3e60ea1d7d288d7f17231c5002205e1671a62d8c031ac15e0e8456357e54865b7acbf49c7ebcba78058fd886b4bd012103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac4802d913000000001976a914902053231ef0541a7628c11acac40d30f2a127bd88ac008e3765000000000000000000000000000000").unwrap();
     let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
-    let amount: BigDecimal = "0.0014157".parse().unwrap();
+    let amount: BigDecimal = "0.0001".parse().unwrap();
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &taker_fee_tx,
         expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
@@ -2562,22 +2562,22 @@ fn test_validate_fee_wrong_sender() {
 #[test]
 fn test_validate_fee_min_block() {
     let rpc_client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10018",
-        "electrum2.cipig.net:10018",
-        "electrum3.cipig.net:10018",
+        "electrum1.cipig.net:10021",
+        "electrum2.cipig.net:10021",
+        "electrum3.cipig.net:10021",
     ]);
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
-    // https://morty.explorer.dexstats.info/tx/fe4b0e1c4537e22f2956b5b74513fc936ebd87ada21513e850899cb07a45d475
-    let tx_bytes = hex::decode("0400008085202f890199cc492c24cc617731d13cff0ef22e7b0c277a64e7368a615b46214424a1c894020000006a473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36faffffffff0202290200000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac8a96e70b000000001976a914d55f0df6cb82630ad21a4e6049522a6f2b6c9d4588ac8afb2c60000000000000000000000000000000").unwrap();
+    // https://marty.explorer.dexstats.info/tx/99349d1c72ef396ecb39ab2989b888b02e22382249271c79cda8139825adc468
+    let tx_bytes = hex::decode("0400008085202f8901033aedb3c3c02fc76c15b393c7b1f638cfa6b4a1d502e00d57ad5b5305f12221000000006a473044022074879aabf38ef943eba7e4ce54c444d2d6aa93ac3e60ea1d7d288d7f17231c5002205e1671a62d8c031ac15e0e8456357e54865b7acbf49c7ebcba78058fd886b4bd012103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac4802d913000000001976a914902053231ef0541a7628c11acac40d30f2a127bd88ac008e3765000000000000000000000000000000").unwrap();
     let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
-    let amount: BigDecimal = "0.0014157".parse().unwrap();
-    let sender_pub = hex::decode("03ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa").unwrap();
+    let amount: BigDecimal = "0.0001".parse().unwrap();
+    let sender_pub = hex::decode("03242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953c").unwrap();
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &taker_fee_tx,
         expected_sender: &sender_pub,
         fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         amount: &amount,
-        min_block_number: 810329,
+        min_block_number: 278455,
         uuid: &[],
     };
     let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
