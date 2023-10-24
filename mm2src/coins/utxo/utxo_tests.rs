@@ -4542,7 +4542,7 @@ fn test_block_header_utxo_loop_with_reorg() {
     }
 
     ElectrumClient::get_servers_with_latest_block_count.mock_safe(move |_| {
-        let servers = RICK_ELECTRUM_ADDRS.iter().map(|url| url.to_string()).collect();
+        let servers = DOC_ELECTRUM_ADDRS.iter().map(|url| url.to_string()).collect();
         MockResult::Return(Box::new(futures01::future::ok((servers, unsafe {
             CURRENT_BLOCK_COUNT
         }))))
@@ -4591,7 +4591,7 @@ fn test_block_header_utxo_loop_with_reorg() {
 
     let ctx = mm_ctx_with_custom_db();
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(H256Json::from([1u8; 32]));
-    let servers: Vec<_> = RICK_ELECTRUM_ADDRS
+    let servers: Vec<_> = DOC_ELECTRUM_ADDRS
         .iter()
         .map(|server| json!({ "url": server }))
         .collect();
@@ -4611,8 +4611,8 @@ fn test_block_header_utxo_loop_with_reorg() {
     let spv_conf = json::from_value(json!({
         "starting_block_header": {
             "height": 1,
-            "hash": "0c714ba4f8d5f2d5c014a08c4e21a5387156e23bcc819c0f9bc536437586cdf5",
-            "time": 1564482125,
+            "hash": "0918169860eda78df99319a4d073d325017fbda08dd10375a6de8b6214cef3f5",
+            "time": 1681404988,
             "bits": 537857807
         },
         "max_stored_block_headers": 100
