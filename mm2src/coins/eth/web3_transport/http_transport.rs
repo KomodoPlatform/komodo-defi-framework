@@ -335,9 +335,7 @@ async fn send_request_once(
     let response: Response = serde_json::from_str(&response_str).map_err(|e| {
         Error::InvalidResponse(format!(
             "url: {}, Error deserializing response: {}, raw response: {:?}",
-            uri.to_string(),
-            e.to_string(),
-            response_str
+            uri, e, response_str
         ))
     })?;
     match response {
