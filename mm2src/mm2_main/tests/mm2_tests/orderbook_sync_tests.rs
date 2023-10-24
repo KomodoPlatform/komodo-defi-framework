@@ -5,7 +5,7 @@ use http::StatusCode;
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, CoinInitResponse, OrderbookResponse};
-use mm2_test_helpers::electrums::rick_electrums;
+use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, get_passphrase, morty_conf, orderbook_v2,
                                   rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS,
                                   ETH_DEV_NODES, MARTY_ELECTRUM_ADDRS, RICK, ZOMBIE_ELECTRUMS,
@@ -1330,7 +1330,7 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums(), None));
+    block_on(enable_electrum_json(&mm_bob, RICK, false, doc_electrums(), None));
     block_on(enable_z_coin_light(
         &mm_bob,
         ZOMBIE_TICKER,
@@ -1394,7 +1394,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    block_on(enable_electrum_json(&mm_bob, "RICK", false, rick_electrums(), None));
+    block_on(enable_electrum_json(&mm_bob, "RICK", false, doc_electrums(), None));
     block_on(enable_z_coin_light(
         &mm_bob,
         ZOMBIE_TICKER,
@@ -1424,7 +1424,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums(), None));
+    block_on(enable_electrum_json(&mm_alice, RICK, false, doc_electrums(), None));
     block_on(enable_z_coin_light(
         &mm_alice,
         ZOMBIE_TICKER,

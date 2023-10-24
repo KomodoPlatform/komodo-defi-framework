@@ -42,6 +42,7 @@ use futures::future::join_all;
 use futures::TryFutureExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
+use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS, MARTY_ELECTRUM_ADDRS,
                                   MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 use mocktopus::mocking::*;
@@ -2533,11 +2534,7 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
 
 #[test]
 fn test_validate_fee_wrong_sender() {
-    let rpc_client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10021",
-        "electrum2.cipig.net:10021",
-        "electrum3.cipig.net:10021",
-    ]);
+    let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
     // https://marty.explorer.dexstats.info/tx/99349d1c72ef396ecb39ab2989b888b02e22382249271c79cda8139825adc468
     let tx_bytes = hex::decode("0400008085202f8901033aedb3c3c02fc76c15b393c7b1f638cfa6b4a1d502e00d57ad5b5305f12221000000006a473044022074879aabf38ef943eba7e4ce54c444d2d6aa93ac3e60ea1d7d288d7f17231c5002205e1671a62d8c031ac15e0e8456357e54865b7acbf49c7ebcba78058fd886b4bd012103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac4802d913000000001976a914902053231ef0541a7628c11acac40d30f2a127bd88ac008e3765000000000000000000000000000000").unwrap();
@@ -2561,11 +2558,7 @@ fn test_validate_fee_wrong_sender() {
 
 #[test]
 fn test_validate_fee_min_block() {
-    let rpc_client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10021",
-        "electrum2.cipig.net:10021",
-        "electrum3.cipig.net:10021",
-    ]);
+    let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
     // https://marty.explorer.dexstats.info/tx/99349d1c72ef396ecb39ab2989b888b02e22382249271c79cda8139825adc468
     let tx_bytes = hex::decode("0400008085202f8901033aedb3c3c02fc76c15b393c7b1f638cfa6b4a1d502e00d57ad5b5305f12221000000006a473044022074879aabf38ef943eba7e4ce54c444d2d6aa93ac3e60ea1d7d288d7f17231c5002205e1671a62d8c031ac15e0e8456357e54865b7acbf49c7ebcba78058fd886b4bd012103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac4802d913000000001976a914902053231ef0541a7628c11acac40d30f2a127bd88ac008e3765000000000000000000000000000000").unwrap();
@@ -3230,12 +3223,8 @@ fn test_utxo_standard_with_check_utxo_maturity_true() {
     let conf = json!({"coin":"RICK","asset":"RICK","rpcport":25435,"txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"UTXO"}});
     let req = json!({
          "method": "electrum",
-         "servers": [
-             {"url":"electrum1.cipig.net:10020"},
-             {"url":"electrum2.cipig.net:10020"},
-             {"url":"electrum3.cipig.net:10020"},
-         ],
-        "check_utxo_maturity": true,
+         "servers": doc_electrums(),
+         "check_utxo_maturity": true,
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -3271,11 +3260,7 @@ fn test_utxo_standard_without_check_utxo_maturity() {
     let conf = json!({"coin":"RICK","asset":"RICK","rpcport":25435,"txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"UTXO"}});
     let req = json!({
          "method": "electrum",
-         "servers": [
-             {"url":"electrum1.cipig.net:10020"},
-             {"url":"electrum2.cipig.net:10020"},
-             {"url":"electrum3.cipig.net:10020"},
-         ]
+         "servers": doc_electrums()
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -4311,11 +4296,7 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
     let conf = json!({"coin":"RICK","asset":"RICK","rpcport":25435,"txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"UTXO"}});
     let req = json!({
          "method": "electrum",
-         "servers": [
-             {"url":"electrum1.cipig.net:10020"},
-             {"url":"electrum2.cipig.net:10020"},
-             {"url":"electrum3.cipig.net:10020"},
-         ],
+         "servers": doc_electrums(),
         "check_utxo_maturity": true,
     });
 

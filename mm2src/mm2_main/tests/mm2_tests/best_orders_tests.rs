@@ -1101,9 +1101,8 @@ fn best_orders_must_return_duplicate_for_orderbook_tickers() {
 #[cfg(feature = "zhtlc-native-tests")]
 fn zhtlc_best_orders() {
     use super::enable_z_coin;
+    use mm2_test_helpers::electrums::doc_electrums;
     use mm2_test_helpers::for_tests::zombie_conf;
-
-    use mm2_test_helpers::electrums::rick_electrums;
 
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
@@ -1135,7 +1134,7 @@ fn zhtlc_best_orders() {
     log!("bob_zombie_cache_path {}", bob_zombie_cache_path.display());
     std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
 
-    block_on(enable_electrum_json(&mm_bob, "RICK", false, rick_electrums(), None));
+    block_on(enable_electrum_json(&mm_bob, "RICK", false, doc_electrums(), None));
     block_on(enable_z_coin(&mm_bob, "ZOMBIE"));
 
     let set_price_json = json!({

@@ -5,6 +5,7 @@ use super::*;
 use crate::utxo::utxo_common_tests;
 use crate::{IguanaPrivKey, PrivKeyBuildPolicy};
 use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_test_helpers::for_tests::DOC_ELECTRUM_ADDRS;
 use serialization::deserialize;
 use wasm_bindgen_test::*;
 
@@ -45,7 +46,7 @@ pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
 
 #[wasm_bindgen_test]
 async fn test_electrum_rpc_client() {
-    let client = electrum_client_for_test(&["electrum1.cipig.net:30020", "electrum2.cipig.net:30020"]).await;
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS).await;
 
     let tx_hash: H256Json = hex::decode("a3ebedbe20f82e43708f276152cf7dfb03a6050921c8f266e48c00ab66e891fb")
         .unwrap()
@@ -63,7 +64,7 @@ async fn test_electrum_rpc_client() {
 
 #[wasm_bindgen_test]
 async fn test_electrum_display_balances() {
-    let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:30020", "electrum2.cipig.net:30020"]).await;
+    let rpc_client = electrum_client_for_test(DOC_ELECTRUM_ADDRS).await;
     utxo_common_tests::test_electrum_display_balances(&rpc_client).await;
 }
 

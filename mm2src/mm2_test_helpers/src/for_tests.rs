@@ -139,10 +139,17 @@ pub const MORTY_ELECTRUM_ADDRS: &[&str] = &[
     "electrum3.cipig.net:10018",
 ];
 pub const DOC: &str = "DOC";
+#[cfg(not(target_arch = "wasm32"))]
 pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum1.cipig.net:10020",
     "electrum2.cipig.net:10020",
     "electrum3.cipig.net:10020",
+];
+#[cfg(target_arch = "wasm32")]
+pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
+    "electrum1.cipig.net:30020",
+    "electrum2.cipig.net:30020",
+    "electrum3.cipig.net:30020",
 ];
 pub const MARTY: &str = "MARTY";
 pub const MARTY_ELECTRUM_ADDRS: &[&str] = &[

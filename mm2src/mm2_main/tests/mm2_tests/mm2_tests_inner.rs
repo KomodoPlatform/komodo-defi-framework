@@ -4,6 +4,7 @@ use crate::integration_tests_common::*;
 use common::executor::Timer;
 use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log, new_uuid};
 use crypto::privkey::key_pair_from_seed;
+use crypto::StandardHDCoinAddress;
 use http::{HeaderMap, StatusCode};
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_metrics::{MetricType, MetricsJson};
@@ -23,8 +24,6 @@ use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_s
                                   DOC_ELECTRUM_ADDRS, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT,
                                   ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY,
                                   QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS};
-
-use crypto::StandardHDCoinAddress;
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -509,9 +508,10 @@ fn test_rpc_password_from_json() {
         "userpass": "password1",
         "method": "electrum",
         "coin": "RICK",
-        "servers": [{"url":"electrum1.cipig.net:10020"},{"url":"electrum2.cipig.net:10020"},{"url":"electrum3.cipig.net:10020"}],
+        "servers": doc_electrums(),
         "mm2": 1,
-    }))).unwrap();
+    })))
+    .unwrap();
 
     // electrum call must fail if invalid password is provided
     assert!(
@@ -525,9 +525,10 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "RICK",
-        "servers": [{"url":"electrum1.cipig.net:10020"},{"url":"electrum2.cipig.net:10020"},{"url":"electrum3.cipig.net:10020"}],
+        "servers": doc_electrums(),
         "mm2": 1,
-    }))).unwrap();
+    })))
+    .unwrap();
 
     // electrum call must be successful with RPC password from config
     assert_eq!(
@@ -542,9 +543,10 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "MORTY",
-        "servers": [{"url":"electrum1.cipig.net:10021"},{"url":"electrum2.cipig.net:10021"},{"url":"electrum3.cipig.net:10021"}],
+        "servers": marty_electrums(),
         "mm2": 1,
-    }))).unwrap();
+    })))
+    .unwrap();
 
     // electrum call must be successful with RPC password from config
     assert_eq!(
@@ -2286,11 +2288,12 @@ fn test_electrum_and_enable_response() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "RICK",
-        "servers": [{"url":"electrum1.cipig.net:10020"},{"url":"electrum2.cipig.net:10020"},{"url":"electrum3.cipig.net:10020"}],
+        "servers": doc_electrums(),
         "mm2": 1,
         "required_confirmations": 10,
         "requires_notarization": true
-    }))).unwrap();
+    })))
+    .unwrap();
     assert_eq!(
         electrum_rick.0,
         StatusCode::OK,
@@ -2845,21 +2848,21 @@ fn test_batch_requests() {
             "userpass": mm_bob.userpass,
             "method": "electrum",
             "coin": "RICK",
-            "servers": [{"url":"electrum1.cipig.net:10020"},{"url":"electrum2.cipig.net:10020"},{"url":"electrum3.cipig.net:10020"}],
+            "servers": doc_electrums(),
             "mm2": 1,
         },
         {
             "userpass": mm_bob.userpass,
             "method": "electrum",
             "coin": "MORTY",
-            "servers": [{"url":"electrum1.cipig.net:10020"},{"url":"electrum2.cipig.net:10020"},{"url":"electrum3.cipig.net:10020"}],
+            "servers": doc_electrums(),
             "mm2": 1,
         },
         {
             "userpass": "error",
             "method": "electrum",
             "coin": "MORTY",
-            "servers": [{"url":"electrum1.cipig.net:10021"},{"url":"electrum2.cipig.net:10021"},{"url":"electrum3.cipig.net:10021"}],
+            "servers": marty_electrums(),
             "mm2": 1,
         },
     ]);
@@ -6972,8 +6975,8 @@ fn test_no_login() {
     let (_dump_log, _dump_dashboard) = no_login_node.mm_dump();
     log!("log path: {}", no_login_node.log_path.display());
 
-    block_on(enable_electrum_json(&seednode, RICK, false, rick_electrums(), None));
-    block_on(enable_electrum_json(&seednode, MORTY, false, morty_electrums(), None));
+    block_on(enable_electrum_json(&seednode, RICK, false, doc_electrums(), None));
+    block_on(enable_electrum_json(&seednode, MORTY, false, marty_electrums(), None));
 
     let orders = [
         // (base, rel, price, volume, min_volume)

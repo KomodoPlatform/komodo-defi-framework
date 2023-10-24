@@ -2,7 +2,7 @@ use crate::integration_tests_common::*;
 use common::executor::Timer;
 use common::{block_on, log, now_ms, now_sec, wait_until_ms};
 use mm2_number::BigDecimal;
-use mm2_test_helpers::electrums::rick_electrums;
+use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{disable_coin, init_withdraw, pirate_conf, rick_conf, send_raw_transaction,
                                   withdraw_status, z_coin_tx_history, zombie_conf, MarketMakerIt, Mm2TestConf, ARRR,
                                   PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK, ZOMBIE_ELECTRUMS,
@@ -465,7 +465,7 @@ fn trade_rick_zombie_light() {
 
     println!("Bob ZOMBIE activation {:?}", zombie_activation);
 
-    let rick_activation = block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums(), None));
+    let rick_activation = block_on(enable_electrum_json(&mm_bob, RICK, false, doc_electrums(), None));
 
     println!("Bob RICK activation {:?}", rick_activation);
 
@@ -499,7 +499,7 @@ fn trade_rick_zombie_light() {
 
     println!("Alice ZOMBIE activation {:?}", zombie_activation);
 
-    let rick_activation = block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums(), None));
+    let rick_activation = block_on(enable_electrum_json(&mm_alice, RICK, false, doc_electrums(), None));
 
     println!("Alice RICK activation {:?}", rick_activation);
 
