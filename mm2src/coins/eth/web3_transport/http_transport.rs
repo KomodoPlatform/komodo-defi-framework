@@ -29,8 +29,10 @@ where
 {
     let response = serde_json::from_slice(&response).map_err(|e| {
         Error::InvalidResponse(format!(
-            "url: {}, Error deserializing response: {}, raw response: {:?}",
-            rpc_url, e, response
+            "url: {}, Error deserializing response: {}, raw response: {}",
+            rpc_url,
+            e,
+            String::from_utf8_lossy(&response)
         ))
     })?;
 
