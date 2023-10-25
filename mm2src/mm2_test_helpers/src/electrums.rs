@@ -18,7 +18,6 @@ pub fn doc_electrums() -> Vec<Json> {
     ]
 }
 
-#[allow(dead_code)]
 #[cfg(target_arch = "wasm32")]
 pub fn marty_electrums() -> Vec<Json> {
     vec![
@@ -28,7 +27,6 @@ pub fn marty_electrums() -> Vec<Json> {
     ]
 }
 
-#[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]
 pub fn marty_electrums() -> Vec<Json> {
     vec![
@@ -38,7 +36,6 @@ pub fn marty_electrums() -> Vec<Json> {
     ]
 }
 
-#[allow(dead_code)]
 #[cfg(target_arch = "wasm32")]
 pub fn btc_electrums() -> Vec<Json> {
     vec![
@@ -57,7 +54,6 @@ pub fn btc_electrums() -> Vec<Json> {
     ]
 }
 
-#[allow(dead_code)]
 #[cfg(target_arch = "wasm32")]
 pub fn tbtc_electrums() -> Vec<Json> {
     vec![
@@ -67,7 +63,6 @@ pub fn tbtc_electrums() -> Vec<Json> {
     ]
 }
 
-#[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]
 pub fn tbtc_electrums() -> Vec<Json> {
     vec![
