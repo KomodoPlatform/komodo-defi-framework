@@ -69,8 +69,10 @@ pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
+/// Ticker of MYCOIN dockerized blockchain.
 pub const MYCOIN: &str = "MYCOIN";
-pub const _MYCOIN1: &str = "MYCOIN1";
+/// Ticker of MYCOIN1 dockerized blockchain.
+pub const MYCOIN1: &str = "MYCOIN1";
 
 pub trait CoinDockerOps {
     fn rpc_client(&self) -> &UtxoRpcClientEnum;

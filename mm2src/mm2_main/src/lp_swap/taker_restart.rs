@@ -92,7 +92,7 @@ pub async fn check_maker_payment_spend_and_add_event(
 
     let maker_payment_spend_tx = match swap.maker_coin
         .search_for_swap_tx_spend_other(SearchForSwapTxSpendInput {
-            time_lock: swap.maker_payment_lock.load(Ordering::Relaxed) as u32,
+            time_lock: swap.maker_payment_lock.load(Ordering::Relaxed),
             other_pub: other_maker_coin_htlc_pub.as_slice(),
             secret_hash: &secret_hash,
             tx: &maker_payment,
@@ -112,7 +112,7 @@ pub async fn check_maker_payment_spend_and_add_event(
         payment_tx: maker_payment_spend_tx.tx_hex(),
         maker_pub: other_maker_coin_htlc_pub.to_vec(),
         swap_contract_address: maker_coin_swap_contract_address,
-        time_lock: swap.maker_payment_lock.load(Ordering::Relaxed) as u32,
+        time_lock: swap.maker_payment_lock.load(Ordering::Relaxed),
         secret_hash: secret_hash.clone(),
         amount: swap.maker_amount.to_decimal(),
         watcher_reward: None,
@@ -154,8 +154,8 @@ pub async fn check_taker_payment_spend(swap: &TakerSwap) -> Result<Option<FoundS
     let taker_coin_swap_contract_address = swap.r().data.taker_coin_swap_contract_address.clone();
 
     let taker_payment_lock = match std::env::var("USE_TEST_LOCKTIME") {
-        Ok(_) => swap.r().data.started_at as u32,
-        Err(_) => swap.r().data.taker_payment_lock as u32,
+        Ok(_) => swap.r().data.started_at,
+        Err(_) => swap.r().data.taker_payment_lock,
     };
     let secret_hash = swap.r().secret_hash.0.clone();
     let unique_data = swap.unique_swap_data();
@@ -221,8 +221,8 @@ pub async fn add_taker_payment_refunded_by_watcher_event(
     let other_maker_coin_htlc_pub = swap.r().other_maker_coin_htlc_pub;
     let taker_coin_swap_contract_address = swap.r().data.taker_coin_swap_contract_address.clone();
     let taker_payment_lock = match std::env::var("USE_TEST_LOCKTIME") {
-        Ok(_) => swap.r().data.started_at as u32,
-        Err(_) => swap.r().data.taker_payment_lock as u32,
+        Ok(_) => swap.r().data.started_at,
+        Err(_) => swap.r().data.taker_payment_lock,
     };
     let secret_hash = swap.r().secret_hash.0.clone();
 

@@ -15,7 +15,6 @@ use common::PagingOptionsEnum;
 use crypto::privkey::key_pair_from_seed;
 use itertools::Itertools;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
-use std::convert::TryFrom;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
@@ -205,16 +204,19 @@ pub(super) async fn test_electrum_display_balances(rpc_client: &ElectrumClient) 
     let expected: Vec<(Address, BigDecimal)> = vec![
         (
             "RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(),
-            BigDecimal::try_from(5.77699).unwrap(),
+            BigDecimal::from_str("5.77699").unwrap(),
         ),
-        ("RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN".into(), BigDecimal::from(0)),
+        (
+            "RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN".into(),
+            BigDecimal::from_str("3.33").unwrap(),
+        ),
         (
             "RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(),
-            BigDecimal::try_from(0.77699).unwrap(),
+            BigDecimal::from_str("0.77699").unwrap(),
         ),
         (
             "RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(),
-            BigDecimal::try_from(16.55398).unwrap(),
+            BigDecimal::from_str("16.55398").unwrap(),
         ),
     ];
     assert_eq!(actual, expected);

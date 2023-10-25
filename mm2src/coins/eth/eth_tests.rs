@@ -1,6 +1,6 @@
 use super::*;
 use crate::IguanaPrivKey;
-use common::{block_on, now_sec_u32, wait_until_sec};
+use common::{block_on, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
@@ -343,7 +343,7 @@ fn send_and_refund_erc20_payment() {
         abortable_system: AbortableQueue::default(),
     }));
 
-    let time_lock = now_sec_u32() - 200;
+    let time_lock = now_sec() - 200;
     let secret_hash = &[1; 20];
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
@@ -360,7 +360,7 @@ fn send_and_refund_erc20_payment() {
     let payment = coin.send_maker_payment(maker_payment_args).wait().unwrap();
     log!("{:?}", payment);
 
-    let swap_id = coin.etomic_swap_id(time_lock, secret_hash);
+    let swap_id = coin.etomic_swap_id(time_lock.try_into().unwrap(), secret_hash);
     let status = block_on(
         coin.payment_status(
             Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
@@ -429,7 +429,7 @@ fn send_and_refund_eth_payment() {
         abortable_system: AbortableQueue::default(),
     }));
 
-    let time_lock = now_sec_u32() - 200;
+    let time_lock = now_sec() - 200;
     let secret_hash = &[1; 20];
     let send_maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
@@ -447,7 +447,7 @@ fn send_and_refund_eth_payment() {
 
     log!("{:?}", payment);
 
-    let swap_id = coin.etomic_swap_id(time_lock, secret_hash);
+    let swap_id = coin.etomic_swap_id(time_lock.try_into().unwrap(), secret_hash);
     let status = block_on(
         coin.payment_status(
             Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),

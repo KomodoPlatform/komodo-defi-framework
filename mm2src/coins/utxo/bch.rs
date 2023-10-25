@@ -907,7 +907,7 @@ impl SwapOps for BchCoin {
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(
             self.clone(),
-            if_my_payment_sent_args.time_lock,
+            try_fus!(if_my_payment_sent_args.time_lock.try_into()),
             if_my_payment_sent_args.other_pub,
             if_my_payment_sent_args.secret_hash,
             if_my_payment_sent_args.swap_unique_data,
@@ -1041,7 +1041,7 @@ impl WatcherOps for BchCoin {
     fn create_maker_payment_spend_preimage(
         &self,
         maker_payment_tx: &[u8],
-        time_lock: u32,
+        time_lock: u64,
         maker_pub: &[u8],
         secret_hash: &[u8],
         swap_unique_data: &[u8],
@@ -1049,7 +1049,7 @@ impl WatcherOps for BchCoin {
         utxo_common::create_maker_payment_spend_preimage(
             self,
             maker_payment_tx,
-            time_lock,
+            try_tx_fus!(time_lock.try_into()),
             maker_pub,
             secret_hash,
             swap_unique_data,
@@ -1065,7 +1065,7 @@ impl WatcherOps for BchCoin {
     fn create_taker_payment_refund_preimage(
         &self,
         taker_payment_tx: &[u8],
-        time_lock: u32,
+        time_lock: u64,
         maker_pub: &[u8],
         secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
@@ -1074,7 +1074,7 @@ impl WatcherOps for BchCoin {
         utxo_common::create_taker_payment_refund_preimage(
             self,
             taker_payment_tx,
-            time_lock,
+            try_tx_fus!(time_lock.try_into()),
             maker_pub,
             secret_hash,
             swap_unique_data,
@@ -1406,7 +1406,7 @@ pub fn tbch_coin_for_test() -> (MmArc, BchCoin) {
     use common::block_on;
     use crypto::privkey::key_pair_from_seed;
     use mm2_core::mm_ctx::MmCtxBuilder;
-    use mm2_test_helpers::for_tests::BCHD_TESTNET_URLS;
+    use mm2_test_helpers::for_tests::{electrum_servers_rpc, BCHD_TESTNET_URLS, T_BCH_ELECTRUMS};
 
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let keypair = key_pair_from_seed("BCH SLP test").unwrap();
@@ -1416,7 +1416,7 @@ pub fn tbch_coin_for_test() -> (MmArc, BchCoin) {
     let req = json!({
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"},{"url":"testnet.imaginary.cash:50001"},{"url":"tbch.loping.net:60001"},{"url":"electroncash.de:50003"}],
+        "servers": electrum_servers_rpc(T_BCH_ELECTRUMS),
         "bchd_urls": BCHD_TESTNET_URLS,
         "allow_slp_unsafe_conf": false,
     });

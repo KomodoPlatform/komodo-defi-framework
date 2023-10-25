@@ -1,6 +1,6 @@
 use super::taker_swap::MaxTakerVolumeLessThanDust;
 use super::{get_locked_amount, get_locked_amount_by_other_swaps};
-use coins::{BalanceError, MmCoinEnum, TradeFee, TradePreimageError};
+use coins::{BalanceError, MmCoin, TradeFee, TradePreimageError};
 use common::log::debug;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
@@ -16,7 +16,7 @@ pub type CheckBalanceResult<T> = Result<T, MmError<CheckBalanceError>>;
 /// `swap_uuid` is used if our swap is running already and we should except this swap locked amount from the following calculations.
 pub async fn check_my_coin_balance_for_swap(
     ctx: &MmArc,
-    coin: &MmCoinEnum,
+    coin: &dyn MmCoin,
     swap_uuid: Option<&Uuid>,
     volume: MmNumber,
     mut trade_fee: TradeFee,
@@ -85,7 +85,7 @@ pub async fn check_my_coin_balance_for_swap(
 
 pub async fn check_other_coin_balance_for_swap(
     ctx: &MmArc,
-    coin: &MmCoinEnum,
+    coin: &dyn MmCoin,
     swap_uuid: Option<&Uuid>,
     trade_fee: TradeFee,
 ) -> CheckBalanceResult<()> {

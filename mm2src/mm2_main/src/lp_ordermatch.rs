@@ -26,7 +26,7 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
-            FeeApproxStage, MmCoinEnum};
+            FeeApproxStage, MarketCoinOps, MmCoinEnum};
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
@@ -48,6 +48,7 @@ use mm2_metrics::mm_gauge;
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use mm2_rpc::data::legacy::{MatchBy, Mm2RpcResult, OrderConfirmationsSettings, OrderType, RpcOrderbookEntry,
                             SellBuyRequest, SellBuyResponse, TakerAction, TakerRequestForRpc};
+use mm2_state_machine::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update,
                         save_my_new_maker_order, save_my_new_taker_order, MyActiveOrders, MyOrdersFilteringHistory,
@@ -61,6 +62,7 @@ use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
 use std::collections::{BTreeSet, HashSet};
 use std::convert::TryInto;
 use std::fmt;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -69,12 +71,15 @@ use uuid::Uuid;
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest,
                              P2PRequestError};
+use crate::mm2::lp_swap::maker_swap_v2::{self, DummyMakerSwapStorage, MakerSwapStateMachine};
+use crate::mm2::lp_swap::taker_swap_v2::{self, DummyTakerSwapStorage, TakerSwapStateMachine};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                          check_other_coin_balance_for_swap, get_max_maker_vol, insert_new_swap_to_db,
-                          is_pubkey_banned, lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
-                          p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, AtomicLocktimeVersion,
-                          CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap, RunMakerSwapInput,
-                          RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
+                          check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, get_max_maker_vol,
+                          insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
+                          p2p_keypair_and_peer_id_to_broadcast, p2p_private_and_peer_id_to_broadcast, run_maker_swap,
+                          run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult,
+                          CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SecretHashAlgo,
+                          SwapConfirmationsSettings, TakerSwap};
 
 #[cfg(any(test, feature = "run-docker-tests"))]
 use crate::mm2::lp_swap::taker_swap::FailAt;
@@ -522,36 +527,19 @@ fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: 
 
 pub async fn handle_orderbook_msg(
     ctx: MmArc,
-    topics: &[TopicHash],
+    topic: &TopicHash,
     from_peer: String,
     msg: &[u8],
     i_am_relay: bool,
 ) -> OrderbookP2PHandlerResult {
-    if let Err(e) = decode_signed::<new_protocol::OrdermatchMessage>(msg) {
-        return MmError::err(OrderbookP2PHandlerError::DecodeError(e.to_string()));
-    };
-
-    let mut orderbook_pairs = vec![];
-
-    for topic in topics {
-        let mut split = topic.as_str().split(TOPIC_SEPARATOR);
-        match (split.next(), split.next()) {
-            (Some(ORDERBOOK_PREFIX), Some(pair)) => {
-                orderbook_pairs.push(pair.to_string());
-            },
-            _ => {
-                return MmError::err(OrderbookP2PHandlerError::InvalidTopic(topic.as_str().to_owned()));
-            },
-        };
-    }
-
-    drop_mutability!(orderbook_pairs);
-
-    if !orderbook_pairs.is_empty() {
+    let topic_str = topic.as_str();
+    let mut split = topic_str.split(TOPIC_SEPARATOR);
+    if let (Some(ORDERBOOK_PREFIX), Some(_pair)) = (split.next(), split.next()) {
         process_msg(ctx, from_peer, msg, i_am_relay).await?;
+        Ok(())
+    } else {
+        MmError::err(OrderbookP2PHandlerError::InvalidTopic(topic_str.to_owned()))
     }
-
-    Ok(())
 }
 
 /// Attempts to decode a message and process it returning whether the message is valid and worth rebroadcasting
@@ -561,6 +549,7 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
             if is_pubkey_banned(&ctx, &pubkey.unprefixed().into()) {
                 return MmError::err(OrderbookP2PHandlerError::PubkeyNotAllowed(pubkey.to_hex()));
             }
+            log::debug!("received ordermatch message {:?}", message);
             match message {
                 new_protocol::OrdermatchMessage::MakerOrderCreated(created_msg) => {
                     let order: OrderbookItem = (created_msg, hex::encode(pubkey.to_bytes().as_slice())).into();
@@ -1059,7 +1048,7 @@ fn maker_order_created_p2p_notify(
     let encoded_msg = encode_and_sign(&to_broadcast, key_pair.private_ref()).unwrap();
     let item: OrderbookItem = (message, hex::encode(key_pair.public_slice())).into();
     insert_or_update_my_order(&ctx, item, order);
-    broadcast_p2p_msg(&ctx, vec![topic], encoded_msg, peer_id);
+    broadcast_p2p_msg(&ctx, topic, encoded_msg, peer_id);
 }
 
 fn process_my_maker_order_updated(ctx: &MmArc, message: &new_protocol::MakerOrderUpdated) {
@@ -1083,7 +1072,7 @@ fn maker_order_updated_p2p_notify(
     let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(&ctx, p2p_privkey);
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
     process_my_maker_order_updated(&ctx, &message);
-    broadcast_p2p_msg(&ctx, vec![topic], encoded_msg, peer_id);
+    broadcast_p2p_msg(&ctx, topic, encoded_msg, peer_id);
 }
 
 fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
@@ -1094,7 +1083,7 @@ fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
     });
     delete_my_order(&ctx, order.uuid, order.p2p_privkey);
     log::debug!("maker_order_cancelled_p2p_notify called, message {:?}", message);
-    broadcast_ordermatch_message(&ctx, vec![order.orderbook_topic()], message, order.p2p_keypair());
+    broadcast_ordermatch_message(&ctx, order.orderbook_topic(), message, order.p2p_keypair());
 }
 
 pub struct BalanceUpdateOrdermatchHandler {
@@ -1791,9 +1780,9 @@ impl fmt::Display for MakerOrderBuildError {
 
 #[allow(clippy::result_large_err)]
 fn validate_price(price: MmNumber) -> Result<(), MakerOrderBuildError> {
-    let min_price = MmNumber::from(BigRational::new(1.into(), 100_000_000.into()));
+    let min_price = 0.into();
 
-    if price < min_price {
+    if price <= min_price {
         return Err(MakerOrderBuildError::PriceTooLow {
             actual: price,
             threshold: min_price,
@@ -2273,22 +2262,27 @@ fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook
         None => return,
     };
 
-    let mut trie_roots = HashMap::new();
-    let mut topics = HashSet::new();
     for (alb_pair, root) in state.trie_roots.iter() {
+        let mut trie_roots = HashMap::new();
+
         if *root == H64::default() && *root == hashed_null_node::<Layout>() {
             continue;
         }
-        topics.insert(orderbook_topic_from_ordered_pair(alb_pair));
+
         trie_roots.insert(alb_pair.clone(), *root);
+
+        let message = new_protocol::PubkeyKeepAlive {
+            trie_roots,
+            timestamp: now_sec(),
+        };
+
+        broadcast_ordermatch_message(
+            ctx,
+            orderbook_topic_from_ordered_pair(alb_pair),
+            message.clone().into(),
+            p2p_privkey,
+        );
     }
-
-    let message = new_protocol::PubkeyKeepAlive {
-        trie_roots,
-        timestamp: now_sec(),
-    };
-
-    broadcast_ordermatch_message(ctx, topics, message.into(), p2p_privkey);
 }
 
 pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
@@ -2322,13 +2316,13 @@ pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
 
 fn broadcast_ordermatch_message(
     ctx: &MmArc,
-    topics: impl IntoIterator<Item = String>,
+    topic: String,
     msg: new_protocol::OrdermatchMessage,
     p2p_privkey: Option<&KeyPair>,
 ) {
     let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey);
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
-    broadcast_p2p_msg(ctx, topics.into_iter().collect(), encoded_msg, peer_id);
+    broadcast_p2p_msg(ctx, topic, encoded_msg, peer_id);
 }
 
 /// The order is ordered by [`OrderbookItem::price`] and [`OrderbookItem::uuid`].
@@ -2908,8 +2902,8 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
         let alice = bits256::from(maker_match.request.sender_pubkey.0);
-        let maker_amount = maker_match.reserved.get_base_amount().to_decimal();
-        let taker_amount = maker_match.reserved.get_rel_amount().to_decimal();
+        let maker_amount = maker_match.reserved.get_base_amount().clone();
+        let taker_amount = maker_match.reserved.get_rel_amount().clone();
 
         // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
@@ -2965,22 +2959,53 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
-        let maker_swap = MakerSwap::new(
-            ctx.clone(),
-            alice,
-            maker_amount,
-            taker_amount,
-            my_persistent_pub,
-            uuid,
-            Some(maker_order.uuid),
-            my_conf_settings,
-            maker_coin,
-            taker_coin,
-            lock_time,
-            maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-            secret,
-        );
-        run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
+        if ctx.use_trading_proto_v2() {
+            match (maker_coin, taker_coin) {
+                (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                    let mut maker_swap_state_machine = MakerSwapStateMachine {
+                        ctx,
+                        storage: DummyMakerSwapStorage::default(),
+                        started_at: now_sec(),
+                        maker_coin: m.clone(),
+                        maker_volume: maker_amount,
+                        secret,
+                        taker_coin: t.clone(),
+                        dex_fee_amount: dex_fee_amount_from_taker_coin(&t, m.ticker(), &taker_amount),
+                        taker_volume: taker_amount,
+                        taker_premium: Default::default(),
+                        conf_settings: my_conf_settings,
+                        p2p_topic: swap_v2_topic(&uuid),
+                        uuid,
+                        p2p_keypair: maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                        secret_hash_algo: SecretHashAlgo::DHASH160,
+                        lock_duration: lock_time,
+                    };
+                    #[allow(clippy::box_default)]
+                    maker_swap_state_machine
+                        .run(Box::new(maker_swap_v2::Initialize::default()))
+                        .await
+                        .error_log();
+                },
+                _ => todo!("implement fallback to the old protocol here"),
+            }
+        } else {
+            let maker_swap = MakerSwap::new(
+                ctx.clone(),
+                alice,
+                maker_amount.to_decimal(),
+                taker_amount.to_decimal(),
+                my_persistent_pub,
+                uuid,
+                Some(maker_order.uuid),
+                my_conf_settings,
+                maker_coin,
+                taker_coin,
+                lock_time,
+                maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                secret,
+            );
+            run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
+        }
     };
 
     let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
@@ -3069,26 +3094,55 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             error!("Error {} on new swap insertion", e);
         }
 
-        #[cfg(any(test, feature = "run-docker-tests"))]
-        let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
-
-        let taker_swap = TakerSwap::new(
-            ctx.clone(),
-            maker,
-            maker_amount,
-            taker_amount,
-            my_persistent_pub,
-            uuid,
-            Some(uuid),
-            my_conf_settings,
-            maker_coin,
-            taker_coin,
-            locktime,
-            taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+        if ctx.use_trading_proto_v2() {
+            match (maker_coin, taker_coin) {
+                (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                    let mut taker_swap_state_machine = TakerSwapStateMachine {
+                        ctx,
+                        storage: DummyTakerSwapStorage::default(),
+                        started_at: now_sec(),
+                        lock_duration: locktime,
+                        maker_coin: m.clone(),
+                        maker_volume: maker_amount,
+                        taker_coin: t.clone(),
+                        dex_fee: dex_fee_amount_from_taker_coin(&t, maker_coin_ticker, &taker_amount),
+                        taker_volume: taker_amount,
+                        taker_premium: Default::default(),
+                        conf_settings: my_conf_settings,
+                        p2p_topic: swap_v2_topic(&uuid),
+                        uuid,
+                        p2p_keypair: taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                    };
+                    #[allow(clippy::box_default)]
+                    taker_swap_state_machine
+                        .run(Box::new(taker_swap_v2::Initialize::default()))
+                        .await
+                        .error_log();
+                },
+                _ => todo!("implement fallback to the old protocol here"),
+            }
+        } else {
             #[cfg(any(test, feature = "run-docker-tests"))]
-            fail_at,
-        );
-        run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
+            let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
+
+            let taker_swap = TakerSwap::new(
+                ctx.clone(),
+                maker,
+                maker_amount,
+                taker_amount,
+                my_persistent_pub,
+                uuid,
+                Some(uuid),
+                my_conf_settings,
+                maker_coin,
+                taker_coin,
+                locktime,
+                taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                #[cfg(any(test, feature = "run-docker-tests"))]
+                fail_at,
+            );
+            run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
+        }
     };
 
     let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
@@ -3442,7 +3496,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
                     maker_order_uuid: reserved_msg.maker_order_uuid,
                 };
                 let topic = my_order.orderbook_topic();
-                broadcast_ordermatch_message(&ctx, vec![topic], connect.clone().into(), my_order.p2p_keypair());
+                broadcast_ordermatch_message(&ctx, topic, connect.clone().into(), my_order.p2p_keypair());
                 let taker_match = TakerMatch {
                     reserved: reserved_msg,
                     connect,
@@ -3589,7 +3643,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
-                broadcast_ordermatch_message(&ctx, vec![topic], reserved.clone().into(), order.p2p_keypair());
+                broadcast_ordermatch_message(&ctx, topic, reserved.clone().into(), order.p2p_keypair());
                 let maker_match = MakerMatch {
                     request: taker_request,
                     reserved,
@@ -3663,7 +3717,7 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
         my_order.started_swaps.push(order_match.request.uuid);
         lp_connect_start_bob(ctx.clone(), order_match, my_order.clone());
         let topic = my_order.orderbook_topic();
-        broadcast_ordermatch_message(&ctx, vec![topic.clone()], connected.into(), my_order.p2p_keypair());
+        broadcast_ordermatch_message(&ctx, topic.clone(), connected.into(), my_order.p2p_keypair());
 
         // If volume is less order will be cancelled a bit later
         if my_order.available_amount() >= my_order.min_base_vol {
@@ -3697,8 +3751,8 @@ pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     try_s!(
         check_balance_for_taker_swap(
             &ctx,
-            &rel_coin,
-            &base_coin,
+            rel_coin.deref(),
+            base_coin.deref(),
             my_amount,
             None,
             None,
@@ -3728,8 +3782,8 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     try_s!(
         check_balance_for_taker_swap(
             &ctx,
-            &base_coin,
-            &rel_coin,
+            base_coin.deref(),
+            rel_coin.deref(),
             input.volume.clone(),
             None,
             None,
@@ -3833,12 +3887,7 @@ pub async fn lp_auto_buy(
         )
         .await
     );
-    broadcast_ordermatch_message(
-        ctx,
-        vec![order.orderbook_topic()],
-        order.clone().into(),
-        order.p2p_keypair(),
-    );
+    broadcast_ordermatch_message(ctx, order.orderbook_topic(), order.clone().into(), order.p2p_keypair());
 
     let res = try_s!(json::to_vec(&Mm2RpcResult::new(SellBuyResponse {
         request: (&order.request).into(),
@@ -4480,7 +4529,7 @@ pub async fn check_other_coin_balance_for_order_issue(ctx: &MmArc, other_coin: &
         .compat()
         .await
         .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
-    check_other_coin_balance_for_swap(ctx, other_coin, None, trade_fee).await
+    check_other_coin_balance_for_swap(ctx, other_coin.deref(), None, trade_fee).await
 }
 
 pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String, balance: Option<BigDecimal>) {
@@ -4536,8 +4585,8 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         let balance = try_s!(
             check_balance_for_maker_swap(
                 ctx,
-                &base_coin,
-                &rel_coin,
+                base_coin.deref(),
+                rel_coin.deref(),
                 req.volume.clone(),
                 None,
                 None,
@@ -4715,8 +4764,8 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
         try_s!(
             check_balance_for_maker_swap(
                 ctx,
-                &base_coin,
-                &rel_coin,
+                base_coin.deref(),
+                rel_coin.deref(),
                 volume.clone(),
                 None,
                 None,

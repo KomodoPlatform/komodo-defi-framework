@@ -57,17 +57,20 @@ lazy_static = "1.4"
 libc = "0.2"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_gui_storage = { path = "../mm2_gui_storage" }
 mm2_io = { path = "../mm2_io" }
-mm2-libp2p = { path = "../mm2_libp2p" }
+mm2-libp2p = { path = "../mm2_p2p", package = "mm2_p2p" }
 mm2_metrics = { path = "../mm2_metrics" }
-mm2_net = { path = "../mm2_net" }
+mm2_net = { path = "../mm2_net", features = ["event-stream", "p2p"] }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"]}
+mm2_state_machine = { path = "../mm2_state_machine" }
 num-traits = "0.2"
 parity-util-mem = "0.11"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
+prost = "0.10"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rand6 = { version = "0.6", package = "rand" }
 # TODO: Reduce the size of regex by disabling the features we don't use.
@@ -122,4 +125,5 @@ testcontainers = { git = "https://github.com/KomodoPlatform/mm2-testcontainers-r
 [build-dependencies]
 chrono = "0.4"
 gstuff = { version = "0.7", features = ["nightly"] }
+prost-build = { version = "0.10.4", default-features = false }
 regex = "1"

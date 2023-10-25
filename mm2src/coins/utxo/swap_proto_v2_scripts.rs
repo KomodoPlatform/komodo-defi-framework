@@ -5,7 +5,7 @@ use keys::Public;
 use script::{Builder, Opcode, Script};
 
 /// Builds a script for refundable dex_fee + premium taker transaction
-pub fn dex_fee_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1: &Public) -> Script {
+pub fn taker_payment_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1: &Public) -> Script {
     let mut builder = Builder::default()
         // Dex fee refund path, same lock time as for taker payment
         .push_opcode(Opcode::OP_IF)
@@ -37,14 +37,4 @@ pub fn dex_fee_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1:
         .push_opcode(Opcode::OP_CHECKMULTISIG)
         .push_opcode(Opcode::OP_ENDIF)
         .into_script()
-}
-
-#[cfg(test)]
-mod swap_proto_v2_scripts_tests {
-    use super::*;
-
-    #[test]
-    fn it_builds_the_dex_fee_script() {
-        let _script = dex_fee_script(1689069073, &[0; 20], &Public::default(), &Public::default());
-    }
 }

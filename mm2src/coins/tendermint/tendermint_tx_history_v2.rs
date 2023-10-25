@@ -9,17 +9,18 @@ use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::Timer;
 use common::log;
-use common::state_machine::prelude::*;
-use common::state_machine::StateMachineTrait;
 use cosmrs::tendermint::abci::Code as TxCode;
 use cosmrs::tendermint::abci::Event;
 use cosmrs::tx::Fee;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
 use mm2_number::BigDecimal;
+use mm2_state_machine::prelude::*;
+use mm2_state_machine::state_machine::StateMachineTrait;
 use primitives::hash::H256;
 use rpc::v1::types::Bytes as BytesJson;
 use std::cmp;
+use std::convert::Infallible;
 
 macro_rules! try_or_return_stopped_as_err {
     ($exp:expr, $reason: expr, $fmt:literal) => {
@@ -111,6 +112,12 @@ impl<Coin: CoinCapabilities, Storage: TxHistoryStorage> StateMachineTrait
     for TendermintTxHistoryStateMachine<Coin, Storage>
 {
     type Result = ();
+    type Error = Infallible;
+}
+
+impl<Coin: CoinCapabilities, Storage: TxHistoryStorage> StandardStateMachine
+    for TendermintTxHistoryStateMachine<Coin, Storage>
+{
 }
 
 struct TendermintInit<Coin, Storage> {
@@ -909,5 +916,8 @@ pub async fn tendermint_history_loop(
         last_spent_page: 1,
     };
 
-    state_machine.run(Box::new(TendermintInit::new())).await;
+    state_machine
+        .run(Box::new(TendermintInit::new()))
+        .await
+        .expect("The error of this machine is Infallible");
 }

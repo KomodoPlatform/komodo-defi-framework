@@ -1,8 +1,10 @@
 use super::*;
 use crate::lp_coininit;
+use crypto::privkey::key_pair_from_seed;
 use crypto::CryptoCtx;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_test_helpers::for_tests::{ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT};
+use mm2_test_helpers::get_passphrase;
 use wasm_bindgen_test::*;
 use web_sys::console;
 
@@ -16,10 +18,9 @@ fn pass() {
 
 #[wasm_bindgen_test]
 async fn test_send() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
-    )
-    .unwrap();
+    let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+    let keypair = key_pair_from_seed(&seed).unwrap();
+    let key_pair = KeyPair::from_secret_slice(keypair.private_ref()).unwrap();
     let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();

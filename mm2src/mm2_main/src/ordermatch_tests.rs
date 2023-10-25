@@ -1,5 +1,4 @@
 use super::*;
-use crate::mm2::lp_network::P2PContext;
 use crate::mm2::lp_ordermatch::new_protocol::{MakerOrderUpdated, PubkeyKeepAlive};
 use coins::{MmCoin, TestCoin};
 use common::{block_on, executor::spawn};
@@ -7,8 +6,9 @@ use crypto::privkey::key_pair_from_seed;
 use db_common::sqlite::rusqlite::Connection;
 use futures::{channel::mpsc, StreamExt};
 use mm2_core::mm_ctx::{MmArc, MmCtx};
-use mm2_libp2p::atomicdex_behaviour::AdexBehaviourCmd;
+use mm2_libp2p::AdexBehaviourCmd;
 use mm2_libp2p::{decode_message, PeerId};
+use mm2_net::p2p::P2PContext;
 use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
 use mocktopus::mocking::*;
 use rand::{seq::SliceRandom, thread_rng, Rng};
@@ -1662,14 +1662,10 @@ fn pubkey_and_secret_for_test(passphrase: &str) -> (String, [u8; 32]) {
     (pubkey, secret)
 }
 
-fn p2p_context_mock() -> (mpsc::Sender<AdexBehaviourCmd>, mpsc::Receiver<AdexBehaviourCmd>) {
+fn init_p2p_context(ctx: &MmArc) -> (mpsc::Sender<AdexBehaviourCmd>, mpsc::Receiver<AdexBehaviourCmd>) {
     let (cmd_tx, cmd_rx) = mpsc::channel(10);
-    let cmd_sender = cmd_tx.clone();
-    P2PContext::fetch_from_mm_arc.mock_safe(move |_| {
-        MockResult::Return(Arc::new(P2PContext {
-            cmd_tx: PaMutex::new(cmd_sender.clone()),
-        }))
-    });
+    let p2p_context = P2PContext::new(cmd_tx.clone());
+    p2p_context.store_to_mm_arc(ctx);
     (cmd_tx, cmd_rx)
 }
 
@@ -1775,7 +1771,7 @@ fn test_request_and_fill_orderbook() {
     const ORDERS_NUMBER: usize = 10;
 
     let (ctx, _pubkey, _secret) = make_ctx_for_tests();
-    let (_, mut cmd_rx) = p2p_context_mock();
+    let (_, mut cmd_rx) = init_p2p_context(&ctx);
 
     let other_pubkeys: Vec<(String, [u8; 32])> = (0..PUBKEYS_NUMBER)
         .map(|idx| {
@@ -1927,9 +1923,10 @@ fn test_process_order_keep_alive_requested_from_peer() {
     let ordermatch_ctx = Arc::new(OrdermatchContext::default());
     let ordermatch_ctx_clone = ordermatch_ctx.clone();
     OrdermatchContext::from_ctx.mock_safe(move |_| MockResult::Return(Ok(ordermatch_ctx_clone.clone())));
-    let (_, mut cmd_rx) = p2p_context_mock();
 
     let (ctx, pubkey, secret) = make_ctx_for_tests();
+    let (_, mut cmd_rx) = init_p2p_context(&ctx);
+
     let uuid = new_uuid();
     let peer = PeerId::random().to_string();
 
@@ -2048,7 +2045,7 @@ fn test_process_get_order_request() {
 #[test]
 fn test_subscribe_to_ordermatch_topic_not_subscribed() {
     let (ctx, _pubkey, _secret) = make_ctx_for_tests();
-    let (_, mut cmd_rx) = p2p_context_mock();
+    let (_, mut cmd_rx) = init_p2p_context(&ctx);
 
     spawn(async move {
         match cmd_rx.next().await.unwrap() {
@@ -2092,7 +2089,7 @@ fn test_subscribe_to_ordermatch_topic_not_subscribed() {
 #[test]
 fn test_subscribe_to_ordermatch_topic_subscribed_not_filled() {
     let (ctx, _pubkey, _secret) = make_ctx_for_tests();
-    let (_, mut cmd_rx) = p2p_context_mock();
+    let (_, mut cmd_rx) = init_p2p_context(&ctx);
 
     {
         let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
@@ -2144,7 +2141,7 @@ fn test_subscribe_to_ordermatch_topic_subscribed_not_filled() {
 #[test]
 fn test_subscribe_to_ordermatch_topic_subscribed_filled() {
     let (ctx, _pubkey, _secret) = make_ctx_for_tests();
-    let (_, mut cmd_rx) = p2p_context_mock();
+    let (_, mut cmd_rx) = init_p2p_context(&ctx);
 
     // enough time has passed for the orderbook to be filled
     let subscribed_at = now_ms() / 1000 - ORDERBOOK_REQUESTING_TIMEOUT - 1;
@@ -2174,6 +2171,7 @@ fn test_subscribe_to_ordermatch_topic_subscribed_filled() {
     assert_eq!(actual, expected);
 }
 */
+
 #[test]
 fn test_taker_request_can_match_with_maker_pubkey() {
     let coin = TestCoin::default().into();

@@ -8,7 +8,7 @@ use coins::utxo::rpc_clients::UnspentInfo;
 use coins::utxo::{GetUtxoListOps, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, TransactionEnum, WithdrawRequest};
-use common::{block_on, now_sec_u32, wait_until_sec};
+use common::{block_on, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use futures01::Future;
 use mm2_number::{BigDecimal, MmNumber};
@@ -28,7 +28,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let my_public_key = coin.my_public_key().unwrap();
 
-    let time_lock = now_sec_u32() - 3600;
+    let time_lock = now_sec() - 3600;
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
@@ -113,7 +113,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
     let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let my_public_key = coin.my_public_key().unwrap();
 
-    let time_lock = now_sec_u32() - 3600;
+    let time_lock = now_sec() - 3600;
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
@@ -180,7 +180,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
     let my_pubkey = coin.my_public_key().unwrap();
 
     let secret_hash = dhash160(&secret);
-    let time_lock = now_sec_u32() - 3600;
+    let time_lock = now_sec() - 3600;
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
@@ -250,7 +250,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
     let secret = [0; 32];
     let my_pubkey = coin.my_public_key().unwrap();
 
-    let time_lock = now_sec_u32() - 3600;
+    let time_lock = now_sec() - 3600;
     let secret_hash = dhash160(&secret);
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
@@ -322,7 +322,7 @@ fn test_one_hundred_maker_payments_in_a_row_native() {
     let secret = [0; 32];
     let my_pubkey = coin.my_public_key().unwrap();
 
-    let time_lock = now_sec_u32() - 3600;
+    let time_lock = now_sec() - 3600;
     let mut unspents = vec![];
     let mut sent_tx = vec![];
     for i in 0..100 {
@@ -1782,11 +1782,10 @@ fn test_trade_preimage_additional_validation() {
     assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
     let actual: RpcErrorResponse<trade_preimage_error::PriceTooLow> = serde_json::from_str(&rc.1).unwrap();
     assert_eq!(actual.error_type, "PriceTooLow");
-    // currently the minimum price is 0.00000001
-    let price_threshold = BigDecimal::from(1) / BigDecimal::from(100_000_000);
+    // currently the minimum price is any value above 0
     let expected = trade_preimage_error::PriceTooLow {
         price: BigDecimal::from(0),
-        threshold: price_threshold,
+        threshold: BigDecimal::from(0),
     };
     assert_eq!(actual.error_data, Some(expected));
 
@@ -2005,8 +2004,8 @@ fn test_get_max_taker_vol() {
 
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/733
 #[test]
-fn test_get_max_taker_vol_dex_fee_threshold() {
-    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", "0.05328455".parse().unwrap());
+fn test_get_max_taker_vol_dex_fee_min_tx_amount() {
+    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", "0.00532845".parse().unwrap());
     let coins = json!([mycoin_conf(10000), mycoin1_conf(10000)]);
     let mm_alice = MarketMakerIt::start(
         json!({
@@ -2034,8 +2033,8 @@ fn test_get_max_taker_vol_dex_fee_threshold() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: Json = serde_json::from_str(&rc.1).unwrap();
-    // the result of equation x + 0.0001 (dex fee) + 0.0002 (miner fee * 2) = 0.05328455
-    assert_eq!(json["result"]["numer"], Json::from("1059691"));
+    // the result of equation x + 0.00001 (dex fee) + 0.0002 (miner fee * 2) = 0.00532845
+    assert_eq!(json["result"]["numer"], Json::from("102369"));
     assert_eq!(json["result"]["denom"], Json::from("20000000"));
 
     let rc = block_on(mm_alice.rpc(&json!({

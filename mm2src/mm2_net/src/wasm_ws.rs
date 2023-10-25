@@ -1,13 +1,15 @@
 use async_trait::async_trait;
 use common::executor::SpawnFuture;
 use common::log::{debug, error};
-use common::state_machine::{LastState, State, StateExt, StateMachineTrait, StateResult, TransitionFrom};
 use common::stringify_js_error;
 use futures::channel::mpsc::{self, SendError, TrySendError};
 use futures::channel::oneshot;
 use futures::{FutureExt, SinkExt, Stream, StreamExt};
 use mm2_err_handle::prelude::*;
+use mm2_state_machine::prelude::*;
+use mm2_state_machine::state_machine::{ChangeStateExt, LastState, State, StateMachineTrait, StateResult};
 use serde_json::{self as json, Value as Json};
+use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -214,7 +216,10 @@ fn spawn_ws_transport<Spawner: SpawnFuture>(
     };
 
     let fut = async move {
-        state_machine.run(Box::new(ConnectingState)).await;
+        state_machine
+            .run(Box::new(ConnectingState))
+            .await
+            .expect("The error of this machine is Infallible");
     };
     spawner.spawn(fut);
 
@@ -377,7 +382,10 @@ struct WsStateMachine {
 
 impl StateMachineTrait for WsStateMachine {
     type Result = ();
+    type Error = Infallible;
 }
+
+impl StandardStateMachine for WsStateMachine {}
 
 impl WsStateMachine {
     /// Send the `event` to the corresponding `WebSocketReceiver` instance.
@@ -676,7 +684,7 @@ mod tests {
 
         let (mut outgoing_tx, mut incoming_rx) = spawn_ws_transport(
             conn_idx,
-            "wss://electrum1.cipig.net:30017",
+            "wss://electrum1.cipig.net:30020",
             &abortable_system.weak_spawner(),
         )
         .expect("!spawn_ws_transport");

@@ -1,0 +1,41 @@
+[package]
+name = "mm2_p2p"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+doctest = false
+
+[dependencies]
+async-trait = "0.1"
+common = { path = "../common" }
+derive_more = "0.99"
+futures = { version = "0.3.1", default-features = false }
+futures-rustls = "0.21.1"
+futures-ticker = "0.0.3"
+hex = "0.4.2"
+lazy_static = "1.4"
+log = "0.4"
+rand = { version = "0.7", default-features = false, features = ["wasm-bindgen"] }
+regex = "1"
+rmp-serde = "0.14.3"
+secp256k1 = { version = "0.20", features = ["rand"] }
+serde = { version = "1.0", default-features = false }
+serde_bytes = "0.11.5"
+sha2 = "0.9"
+smallvec = "1.6.1"
+syn = "2.0.18"
+void = "1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+instant = "0.1.12"
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.1", default-features = false, features = ["dns", "identify", "floodsub", "gossipsub", "noise", "ping", "request-response", "secp256k1", "tcp", "tokio", "websocket", "macros", "yamux"] }
+tokio = { version = "1.20",  default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+instant = { version = "0.1.12", features = ["wasm-bindgen"] }
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.1", default-features = false, features = ["identify", "floodsub", "noise", "gossipsub", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket", "macros", "yamux"] }
+
+[dev-dependencies]
+async-std = "1.6.2"
+env_logger = "0.9.3"

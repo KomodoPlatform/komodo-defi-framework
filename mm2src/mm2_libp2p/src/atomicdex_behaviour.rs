@@ -1,5 +1,5 @@
 use crate::{adex_ping::AdexPing,
-            network::{get_all_network_seednodes, NETID_7777},
+            network::{get_all_network_seednodes, NETID_8762},
             peers_exchange::{PeerAddresses, PeersExchange},
             request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
                                RequestResponseBehaviourEvent, RequestResponseSender},
@@ -419,8 +419,8 @@ impl NetworkBehaviourEventProcess<GossipsubEvent> for AtomicDexBehaviour {
 
 impl NetworkBehaviourEventProcess<FloodsubEvent> for AtomicDexBehaviour {
     fn inject_event(&mut self, event: FloodsubEvent) {
-        // do not process peer announce on 7777 temporary
-        if self.netid != NETID_7777 {
+        // do not process peer announce on 8762 temporary
+        if self.netid != NETID_8762 {
             if let FloodsubEvent::Message(message) = &event {
                 for topic in &message.topics {
                     if topic == &FloodsubTopic::new(PEERS_TOPIC) {
@@ -698,7 +698,7 @@ fn start_gossipsub(
         // build a gossipsub network behaviour
         let mut gossipsub = Gossipsub::new(local_peer_id, gossipsub_config);
 
-        let floodsub = Floodsub::new(local_peer_id, netid != NETID_7777);
+        let floodsub = Floodsub::new(local_peer_id, netid != NETID_8762);
 
         let mut peers_exchange = PeersExchange::new(network_info);
         if !network_info.in_memory() {

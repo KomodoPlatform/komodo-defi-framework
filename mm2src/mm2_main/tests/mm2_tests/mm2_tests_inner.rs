@@ -4,6 +4,7 @@ use crate::integration_tests_common::*;
 use common::executor::Timer;
 use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log, new_uuid};
 use crypto::privkey::key_pair_from_seed;
+use crypto::StandardHDCoinAddress;
 use http::{HeaderMap, StatusCode};
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_metrics::{MetricType, MetricsJson};
@@ -20,11 +21,9 @@ use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_s
                                   wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
                                   wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
-                                  ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE,
-                                  ETH_MAINNET_SWAP_CONTRACT, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
-                                  TBTC_ELECTRUMS};
-
-use crypto::StandardHDCoinAddress;
+                                  DOC_ELECTRUM_ADDRS, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT,
+                                  ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY,
+                                  QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -232,17 +231,7 @@ fn test_my_balance() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
     // Enable RICK.
-    let json = block_on(enable_electrum(
-        &mm,
-        "RICK",
-        false,
-        &[
-            "electrum1.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum3.cipig.net:10017",
-        ],
-        None,
-    ));
+    let json = block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
     assert_eq!(json.balance, "7.777".parse().unwrap());
 
     let my_balance = block_on(mm.rpc(&json! ({
@@ -519,9 +508,10 @@ fn test_rpc_password_from_json() {
         "userpass": "password1",
         "method": "electrum",
         "coin": "RICK",
-        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
+        "servers": doc_electrums(),
         "mm2": 1,
-    }))).unwrap();
+    })))
+    .unwrap();
 
     // electrum call must fail if invalid password is provided
     assert!(
@@ -535,9 +525,10 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "RICK",
-        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
+        "servers": doc_electrums(),
         "mm2": 1,
-    }))).unwrap();
+    })))
+    .unwrap();
 
     // electrum call must be successful with RPC password from config
     assert_eq!(
@@ -552,9 +543,10 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "MORTY",
-        "servers": [{"url":"electrum1.cipig.net:10018"},{"url":"electrum2.cipig.net:10018"},{"url":"electrum3.cipig.net:10018"}],
+        "servers": marty_electrums(),
         "mm2": 1,
-    }))).unwrap();
+    })))
+    .unwrap();
 
     // electrum call must be successful with RPC password from config
     assert_eq!(
@@ -607,17 +599,7 @@ fn test_mmrpc_v2() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
 
-    let _electrum = block_on(enable_electrum(
-        &mm,
-        "RICK",
-        false,
-        &[
-            "electrum3.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum1.cipig.net:10017",
-        ],
-        None,
-    ));
+    let _electrum = block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
 
     // no `userpass`
     let withdraw = block_on(mm.rpc(&json! ({
@@ -771,7 +753,7 @@ async fn trade_base_rel_electrum(
         log!("Bob log path: {}", mm_bob.log_path.display())
     }
 
-    Timer::sleep(1.).await;
+    Timer::sleep(2.).await;
 
     let alice_conf = Mm2TestConfForSwap::alice_conf_with_policy(&alice_priv_key_policy, &coins, &mm_bob.my_seed_addr());
     let mut mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, None)
@@ -783,6 +765,8 @@ async fn trade_base_rel_electrum(
     {
         log!("Alice log path: {}", mm_alice.log_path.display())
     }
+
+    Timer::sleep(2.).await;
 
     #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
     {
@@ -1035,11 +1019,7 @@ fn test_withdraw_and_send() {
             &mm_alice,
             "MORTY_SEGWIT",
             false,
-            &[
-                "electrum1.cipig.net:10018",
-                "electrum2.cipig.net:10018",
-                "electrum3.cipig.net:10018",
-            ],
+            MARTY_ELECTRUM_ADDRS,
             None,
         )),
     );
@@ -1365,11 +1345,7 @@ fn test_withdraw_legacy() {
             &mm_alice,
             "MORTY_SEGWIT",
             false,
-            &[
-                "electrum1.cipig.net:10018",
-                "electrum2.cipig.net:10018",
-                "electrum3.cipig.net:10018",
-            ],
+            MARTY_ELECTRUM_ADDRS,
             None,
         )),
     );
@@ -1601,17 +1577,7 @@ fn test_order_errors_when_base_equal_rel() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    block_on(enable_electrum(
-        &mm,
-        "RICK",
-        false,
-        &[
-            "electrum3.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum1.cipig.net:10017",
-        ],
-        None,
-    ));
+    block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
 
     let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
@@ -1735,6 +1701,7 @@ fn test_cancel_order() {
         None,
     )
     .unwrap();
+    thread::sleep(Duration::from_secs(2));
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
     // Enable coins on Bob side. Print the replies in case we need the "address".
@@ -1773,6 +1740,7 @@ fn test_cancel_order() {
         None,
     )
     .unwrap();
+    thread::sleep(Duration::from_secs(2));
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -2034,11 +2002,11 @@ fn test_electrum_enable_conn_errors() {
         "RICK",
         false,
         &[
-            "electrum3.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum1.cipig.net:10017",
-            "electrum1.cipig.net:60017",
-            "electrum1.cipig.net:60018",
+            "electrum3.cipig.net:10020",
+            "electrum2.cipig.net:10020",
+            "electrum1.cipig.net:10020",
+            "electrum1.cipig.net:60020",
+            "electrum1.cipig.net:60021",
         ],
         None,
     ));
@@ -2048,11 +2016,11 @@ fn test_electrum_enable_conn_errors() {
         "MORTY",
         false,
         &[
-            "electrum3.cipig.net:10018",
-            "electrum2.cipig.net:10018",
-            "electrum1.cipig.net:10018",
-            "random-electrum-domain-name1.net:60017",
-            "random-electrum-domain-name2.net:60017",
+            "electrum3.cipig.net:10021",
+            "electrum2.cipig.net:10021",
+            "electrum1.cipig.net:10021",
+            "random-electrum-domain-name1.net:60020",
+            "random-electrum-domain-name2.net:60020",
         ],
         None,
     ));
@@ -2087,30 +2055,10 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let electrum_rick = block_on(enable_electrum(
-        &mm_bob,
-        "RICK",
-        false,
-        &[
-            "electrum3.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum1.cipig.net:10017",
-        ],
-        None,
-    ));
+    let electrum_rick = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
     log!("Bob enable RICK {:?}", electrum_rick);
 
-    let electrum_morty = block_on(enable_electrum(
-        &mm_bob,
-        "MORTY",
-        false,
-        &[
-            "electrum3.cipig.net:10018",
-            "electrum2.cipig.net:10018",
-            "electrum1.cipig.net:10018",
-        ],
-        None,
-    ));
+    let electrum_morty = block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
     log!("Bob enable MORTY {:?}", electrum_morty);
 
     let mm_alice = MarketMakerIt::start(
@@ -2133,30 +2081,10 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let electrum_rick = block_on(enable_electrum(
-        &mm_alice,
-        "RICK",
-        false,
-        &[
-            "electrum3.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum1.cipig.net:10017",
-        ],
-        None,
-    ));
+    let electrum_rick = block_on(enable_electrum(&mm_alice, "RICK", false, DOC_ELECTRUM_ADDRS, None));
     log!("Alice enable RICK {:?}", electrum_rick);
 
-    let electrum_morty = block_on(enable_electrum(
-        &mm_alice,
-        "MORTY",
-        false,
-        &[
-            "electrum3.cipig.net:10018",
-            "electrum2.cipig.net:10018",
-            "electrum1.cipig.net:10018",
-        ],
-        None,
-    ));
+    let electrum_morty = block_on(enable_electrum(&mm_alice, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
     log!("Alice enable MORTY {:?}", electrum_morty);
 
     // issue sell request on Bob side by setting base/rel price
@@ -2239,30 +2167,10 @@ fn test_own_orders_should_not_be_removed_from_orderbook() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let electrum_rick = block_on(enable_electrum(
-        &mm_bob,
-        "RICK",
-        false,
-        &[
-            "electrum3.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum1.cipig.net:10017",
-        ],
-        None,
-    ));
+    let electrum_rick = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
     log!("Bob enable RICK {:?}", electrum_rick);
 
-    let electrum_morty = block_on(enable_electrum(
-        &mm_bob,
-        "MORTY",
-        false,
-        &[
-            "electrum3.cipig.net:10018",
-            "electrum2.cipig.net:10018",
-            "electrum1.cipig.net:10018",
-        ],
-        None,
-    ));
+    let electrum_morty = block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
     log!("Bob enable MORTY {:?}", electrum_morty);
 
     // issue sell request on Bob side by setting base/rel price
@@ -2380,11 +2288,12 @@ fn test_electrum_and_enable_response() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "RICK",
-        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
+        "servers": doc_electrums(),
         "mm2": 1,
         "required_confirmations": 10,
         "requires_notarization": true
-    }))).unwrap();
+    })))
+    .unwrap();
     assert_eq!(
         electrum_rick.0,
         StatusCode::OK,
@@ -2466,7 +2375,7 @@ fn check_too_low_volume_order_creation_fails(mm: &MarketMakerIt, base: &str, rel
         "method": "setprice",
         "base": base,
         "rel": rel,
-        "price": "0.00000099",
+        "price": "0.00000000000000000099",
         "volume": "1",
         "cancel_previous": false,
     })))
@@ -2939,21 +2848,21 @@ fn test_batch_requests() {
             "userpass": mm_bob.userpass,
             "method": "electrum",
             "coin": "RICK",
-            "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
+            "servers": doc_electrums(),
             "mm2": 1,
         },
         {
             "userpass": mm_bob.userpass,
             "method": "electrum",
             "coin": "MORTY",
-            "servers": [{"url":"electrum1.cipig.net:10018"},{"url":"electrum2.cipig.net:10018"},{"url":"electrum3.cipig.net:10018"}],
+            "servers": doc_electrums(),
             "mm2": 1,
         },
         {
             "userpass": "error",
             "method": "electrum",
             "coin": "MORTY",
-            "servers": [{"url":"electrum1.cipig.net:10018"},{"url":"electrum2.cipig.net:10018"},{"url":"electrum3.cipig.net:10018"}],
+            "servers": marty_electrums(),
             "mm2": 1,
         },
     ]);
@@ -3009,17 +2918,7 @@ fn test_metrics_method() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    let _electrum = block_on(enable_electrum(
-        &mm,
-        "RICK",
-        false,
-        &[
-            "electrum1.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum3.cipig.net:10017",
-        ],
-        None,
-    ));
+    let _electrum = block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
 
     let metrics = request_metrics(&mm);
     assert!(!metrics.metrics.is_empty());
@@ -3172,19 +3071,7 @@ fn test_convert_utxo_address() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    let _electrum = block_on(enable_electrum(
-        &mm,
-        "BCH",
-        false,
-        &[
-            "electroncash.de:50003",
-            "tbch.loping.net:60001",
-            "blackie.c3-soft.com:60001",
-            "bch0.kister.net:51001",
-            "testnet.imaginary.cash:50001",
-        ],
-        None,
-    ));
+    let _electrum = block_on(enable_electrum(&mm, "BCH", false, T_BCH_ELECTRUMS, None));
 
     // test standard to cashaddress
     let rc = block_on(mm.rpc(&json! ({
@@ -4386,24 +4273,14 @@ fn test_get_raw_transaction() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
     // RICK
-    let _electrum = block_on(enable_electrum(
-        &mm,
-        "RICK",
-        false,
-        &[
-            "electrum3.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum1.cipig.net:10017",
-        ],
-        None,
-    ));
+    let _electrum = block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
     let raw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
         "params": {
             "coin": "RICK",
-            "tx_hash": "989360b0225b4e05fa13643e2e306c8eb5c52fa611615dfd30195089010b1c7b",
+            "tx_hash": "a3ebedbe20f82e43708f276152cf7dfb03a6050921c8f266e48c00ab66e891fb",
         },
         "id": 0,
     })))
@@ -4411,7 +4288,7 @@ fn test_get_raw_transaction() {
     assert!(raw.0.is_success(), "get_raw_transaction for coin RICK: {}", raw.1);
     let res: RpcSuccessResponse<RawTransactionResult> =
         json::from_str(&raw.1).expect("Expected 'RpcSuccessResponse<RawTransactionResult>'");
-    let expected_hex = "0400008085202f89025655b6fec358091a4a6b34107e69b10bd7660056d8f2a1e5f8eef0db6aec960100000000494830450221008c89db5e2d93d7674fe152e37344dfd24a0b1d4d382a7e0bcfc5d8190a141d72022050ce4ef929429e7e1a6c4ebd3f72a1a2aa25da1e0df65553a2c657658077ed1d01feffffff79cc137b70c39c9c7c2b9230c818ec684ffe731bf1ae821f91ba9d3e526f55f00000000049483045022100868c71f4a8e1452a3bc8b1d053a846959ab7df63fb0d147e9173f69818bbb1f3022060c7e045a34cf6af61bc3a74dc2db7b8bfa4949bc5919acceed40fc07d8706d201feffffff0240043a0000000000232102afdbba3e3c90db5f0f4064118f79cf308f926c68afd64ea7afc930975663e4c4ac201efc01000000001976a914347f2aedf63bac168c2cc4f075a2850435e20ac188ac96d3c96036dd0e000000000000000000000000";
+    let expected_hex = "0400008085202f8901e15182af2c252bcfbd58884f3bdbd4d85ed036e53cfe2fd1f904ecfea10cb9f2010000006b483045022100d2435e0c9211114271ac452dc47fd08d3d2dc4bdd484d5750ee6bbda41056d520220408bfb236b7028b6fde0e59a1b6522949131a611584cce36c3df1e934c1748630121022d7424c741213a2b9b49aebdaa10e84419e642a8db0a09e359a3d4c850834846ffffffff02a09ba104000000001976a914054407d1a2224268037cfc7ca3bc438d082bedf488acdd28ce9157ba11001976a914046922483fab8ca76b23e55e9d338605e2dbab6088ac03d63665000000000000000000000000000000";
     assert_eq!(res.result.tx_hex, expected_hex);
 
     // ETH
@@ -6180,6 +6057,7 @@ fn test_buy_min_volume() {
         None,
     )
     .unwrap();
+    thread::sleep(Duration::from_secs(2));
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
@@ -7085,8 +6963,8 @@ fn test_no_login() {
     let (_dump_log, _dump_dashboard) = no_login_node.mm_dump();
     log!("log path: {}", no_login_node.log_path.display());
 
-    block_on(enable_electrum_json(&seednode, RICK, false, rick_electrums(), None));
-    block_on(enable_electrum_json(&seednode, MORTY, false, morty_electrums(), None));
+    block_on(enable_electrum_json(&seednode, RICK, false, doc_electrums(), None));
+    block_on(enable_electrum_json(&seednode, MORTY, false, marty_electrums(), None));
 
     let orders = [
         // (base, rel, price, volume, min_volume)
@@ -7602,7 +7480,7 @@ fn test_enable_coins_with_enable_hd() {
         &mm_hd_0,
         "RICK",
         TX_HISTORY,
-        RICK_ELECTRUM_ADDRS,
+        DOC_ELECTRUM_ADDRS,
         Some(path_to_address.clone()),
     ));
     assert_eq!(rick.address, "RXNtAyDSsY3DS3VxTpJegzoHU9bUX54j56");
@@ -7618,7 +7496,7 @@ fn test_enable_coins_with_enable_hd() {
         &mm_hd_0,
         "BTC-segwit",
         TX_HISTORY,
-        RICK_ELECTRUM_ADDRS,
+        TBTC_ELECTRUMS,
         Some(path_to_address),
     ));
     assert_eq!(btc_segwit.address, "bc1q6vyur5hjul2m0979aadd6u7ptuj9ac4gt0ha0c");
@@ -7651,7 +7529,7 @@ fn test_enable_coins_with_enable_hd() {
         &mm_hd_1,
         "RICK",
         TX_HISTORY,
-        RICK_ELECTRUM_ADDRS,
+        DOC_ELECTRUM_ADDRS,
         Some(path_to_address.clone()),
     ));
     assert_eq!(rick.address, "RVyndZp3ZrhGKSwHryyM3Kcz9aq2EJrW1z");
@@ -7667,7 +7545,7 @@ fn test_enable_coins_with_enable_hd() {
         &mm_hd_1,
         "BTC-segwit",
         TX_HISTORY,
-        RICK_ELECTRUM_ADDRS,
+        TBTC_ELECTRUMS,
         Some(path_to_address),
     ));
     assert_eq!(btc_segwit.address, "bc1q6kxcwcrsm5z8pe940xxu294q7588mqvarttxcx");
@@ -7700,7 +7578,7 @@ fn test_enable_coins_with_enable_hd() {
         &mm_hd_1,
         "RICK",
         TX_HISTORY,
-        RICK_ELECTRUM_ADDRS,
+        DOC_ELECTRUM_ADDRS,
         Some(path_to_address.clone()),
     ));
     assert_eq!(rick.address, "RLNu8gszQ8ENUrY3VSyBS2714CNVwn1f7P");
@@ -7716,7 +7594,7 @@ fn test_enable_coins_with_enable_hd() {
         &mm_hd_1,
         "BTC-segwit",
         TX_HISTORY,
-        RICK_ELECTRUM_ADDRS,
+        TBTC_ELECTRUMS,
         Some(path_to_address),
     ));
     assert_eq!(btc_segwit.address, "bc1q0dxnd7afj997a40j86a8a6dq3xs3dwm7rkzams");

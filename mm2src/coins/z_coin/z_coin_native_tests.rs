@@ -1,5 +1,5 @@
 use bitcrypto::dhash160;
-use common::{block_on, now_sec_u32};
+use common::{block_on, now_sec};
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_test_helpers::for_tests::zombie_conf;
 use std::path::PathBuf;
@@ -37,7 +37,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
     ))
     .unwrap();
 
-    let time_lock = now_sec_u32() - 3600;
+    let time_lock = now_sec() - 3600;
     let taker_pub = coin.utxo_arc.priv_key_policy.activated_key_or_err().unwrap().public();
     let secret_hash = [0; 20];
 
@@ -94,7 +94,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
     ))
     .unwrap();
 
-    let lock_time = now_sec_u32() - 1000;
+    let lock_time = now_sec() - 1000;
     let taker_pub = coin.utxo_arc.priv_key_policy.activated_key_or_err().unwrap().public();
     let secret = [0; 32];
     let secret_hash = dhash160(&secret);

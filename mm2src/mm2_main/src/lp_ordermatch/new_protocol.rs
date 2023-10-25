@@ -129,7 +129,7 @@ pub struct MakerOrderCreated {
     pub rel_protocol_info: Vec<u8>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct PubkeyKeepAlive {
     pub trie_roots: HashMap<AlbOrderedOrderbookPair, H64>,
     pub timestamp: u64,

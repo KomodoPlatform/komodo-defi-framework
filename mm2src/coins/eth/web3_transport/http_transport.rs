@@ -23,9 +23,16 @@ pub struct AuthPayload<'a> {
 /// Parse bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport
 #[cfg(not(target_arch = "wasm32"))]
-fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Result<Json, Error> {
-    let response =
-        serde_json::from_slice(&response).map_err(|e| Error::InvalidResponse(format!("{}: {}", rpc_url, e)))?;
+fn single_response<T>(response: T, rpc_url: &str) -> Result<Json, Error>
+where
+    T: Deref<Target = [u8]> + std::fmt::Debug,
+{
+    let response = serde_json::from_slice(&response).map_err(|e| {
+        Error::InvalidResponse(format!(
+            "url: {}, Error deserializing response: {}, raw response: {:?}",
+            rpc_url, e, response
+        ))
+    })?;
 
     match response {
         Response::Single(output) => to_result_from_output(output),
@@ -183,7 +190,7 @@ async fn send_request(
     use http::header::HeaderValue;
     use mm2_net::transport::slurp_req;
 
-    const REQUEST_TIMEOUT_S: f64 = 60.;
+    const REQUEST_TIMEOUT_S: f64 = 20.;
 
     let mut errors = Vec::new();
 
@@ -215,9 +222,14 @@ async fn send_request(
         let res = match rc {
             Either::Left((r, _t)) => r,
             Either::Right((_t, _r)) => {
+                let (method, id) = match &request {
+                    Call::MethodCall(m) => (m.method.clone(), m.id.clone()),
+                    Call::Notification(n) => (n.method.clone(), jsonrpc_core::Id::Null),
+                    Call::Invalid { id } => ("Invalid call".to_string(), id.clone()),
+                };
                 let error = format!(
-                    "Error requesting '{}': {}s timeout expired",
-                    node.uri, REQUEST_TIMEOUT_S
+                    "Error requesting '{}': {}s timeout expired, method: '{}', id: {:?}",
+                    node.uri, REQUEST_TIMEOUT_S, method, id
                 );
                 warn!("{}", error);
                 errors.push(Web3RpcError::Transport(error));
@@ -320,7 +332,12 @@ async fn send_request_once(
     // account for incoming traffic
     event_handlers.on_incoming_response(response_str.as_bytes());
 
-    let response: Response = serde_json::from_str(&response_str).map_err(|e| Error::InvalidResponse(e.to_string()))?;
+    let response: Response = serde_json::from_str(&response_str).map_err(|e| {
+        Error::InvalidResponse(format!(
+            "url: {}, Error deserializing response: {}, raw response: {:?}",
+            uri, e, response_str
+        ))
+    })?;
     match response {
         Response::Single(output) => to_result_from_output(output),
         Response::Batch(_) => Err(Error::InvalidResponse("Expected single, got batch.".to_owned())),

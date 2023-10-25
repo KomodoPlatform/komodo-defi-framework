@@ -31,6 +31,7 @@ use mm2_err_handle::prelude::*;
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime,
                  WssCerts};
 use mm2_metrics::mm_gauge;
+use mm2_net::p2p::P2PContext;
 use rpc_task::RpcTaskError;
 use serde_json::{self as json};
 use std::fs;
@@ -42,7 +43,7 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_db;
 use crate::mm2::lp_message_service::{init_message_service, InitMessageServiceError};
-use crate::mm2::lp_network::{lp_network_ports, p2p_event_process_loop, NetIdError, P2PContext};
+use crate::mm2::lp_network::{lp_network_ports, p2p_event_process_loop, NetIdError};
 use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
                                 lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler,
                                 OrdermatchInitError};
@@ -50,9 +51,11 @@ use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
 
 cfg_native! {
+    use db_common::sqlite::rusqlite::Error as SqlError;
+    use mm2_event_stream::behaviour::EventBehaviour;
     use mm2_io::fs::{ensure_dir_is_writable, ensure_file_is_writable};
     use mm2_net::ip_addr::myipaddr;
-    use db_common::sqlite::rusqlite::Error as SqlError;
+    use mm2_net::network_event::NetworkEvent;
 }
 
 #[path = "lp_init/init_context.rs"] mod init_context;
@@ -61,7 +64,11 @@ cfg_native! {
 #[path = "lp_init/init_metamask.rs"]
 pub mod init_metamask;
 
-const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.komodo.earth", "seed2.komodo.earth", "seed3.komodo.earth"];
+const NETID_8762_SEEDNODES: [&str; 3] = [
+    "streamseed1.komodo.earth",
+    "streamseed2.komodo.earth",
+    "streamseed3.komodo.earth",
+];
 
 pub type P2PResult<T> = Result<T, MmError<P2PInitError>>;
 pub type MmInitResult<T> = Result<T, MmError<MmInitError>>;
@@ -101,6 +108,7 @@ impl From<AdexBehaviourError> for P2PInitError {
     fn from(e: AdexBehaviourError) -> Self {
         match e {
             AdexBehaviourError::ParsingRelayAddress(e) => P2PInitError::InvalidRelayAddress(e),
+            error => P2PInitError::Internal(error.to_string()),
         }
     }
 }
@@ -252,8 +260,8 @@ impl MmInitError {
 
 #[cfg(target_arch = "wasm32")]
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
-    if netid == 7777 {
-        NETID_7777_SEEDNODES
+    if netid == 8762 {
+        NETID_8762_SEEDNODES
             .iter()
             .map(|seed| RelayAddress::Dns(seed.to_string()))
             .collect()
@@ -265,8 +273,8 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
 #[cfg(not(target_arch = "wasm32"))]
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
     use crate::mm2::lp_network::addr_to_ipv4_string;
-    if netid == 7777 {
-        NETID_7777_SEEDNODES
+    if netid == 8762 {
+        NETID_8762_SEEDNODES
             .iter()
             .filter_map(|seed| addr_to_ipv4_string(seed).ok())
             .map(RelayAddress::IPv4)
@@ -376,6 +384,15 @@ fn migrate_db(ctx: &MmArc) -> MmInitResult<()> {
 #[cfg(not(target_arch = "wasm32"))]
 fn migration_1(_ctx: &MmArc) {}
 
+#[cfg(not(target_arch = "wasm32"))]
+fn init_event_streaming(ctx: &MmArc) {
+    // This condition only executed if events were enabled in mm2 configuration.
+    if let Some(config) = &ctx.event_stream_configuration {
+        // Network event handling
+        NetworkEvent::new(ctx.clone()).spawn_if_active(config);
+    }
+}
+
 pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     init_ordermatch_context(&ctx)?;
     init_p2p(ctx.clone()).await?;
@@ -406,11 +423,15 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     // an order and start new swap that might get started 2 times because of kick-start
     kick_start(ctx.clone()).await?;
 
+    #[cfg(not(target_arch = "wasm32"))]
+    init_event_streaming(&ctx);
+
     ctx.spawner().spawn(lp_ordermatch_loop(ctx.clone()));
 
     ctx.spawner().spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
 
     ctx.spawner().spawn(clean_memory_loop(ctx.weak()));
+
     Ok(())
 }
 
@@ -439,11 +460,13 @@ pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitRes
 
     spawn_rpc(ctx_id);
     let ctx_c = ctx.clone();
+
     ctx.spawner().spawn(async move {
         if let Err(err) = ctx_c.init_metrics() {
             warn!("Couldn't initialize metrics system: {}", err);
         }
     });
+
     // In the mobile version we might depend on `lp_init` staying around until the context stops.
     loop {
         if ctx.is_stopping() {

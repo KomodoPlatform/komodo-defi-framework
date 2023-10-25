@@ -1,7 +1,7 @@
 use serde_json::{json, Value as Json};
 
 #[cfg(target_arch = "wasm32")]
-pub fn rick_electrums() -> Vec<Json> {
+pub fn doc_electrums() -> Vec<Json> {
     vec![
         json!({ "url": "electrum1.cipig.net:30020", "protocol": "WSS" }),
         json!({ "url": "electrum2.cipig.net:30020", "protocol": "WSS" }),
@@ -10,7 +10,7 @@ pub fn rick_electrums() -> Vec<Json> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn rick_electrums() -> Vec<Json> {
+pub fn doc_electrums() -> Vec<Json> {
     vec![
         json!({ "url": "electrum1.cipig.net:10020" }),
         json!({ "url": "electrum2.cipig.net:10020" }),
@@ -18,9 +18,8 @@ pub fn rick_electrums() -> Vec<Json> {
     ]
 }
 
-#[allow(dead_code)]
 #[cfg(target_arch = "wasm32")]
-pub fn morty_electrums() -> Vec<Json> {
+pub fn marty_electrums() -> Vec<Json> {
     vec![
         json!({ "url": "electrum1.cipig.net:30021", "protocol": "WSS" }),
         json!({ "url": "electrum2.cipig.net:30021", "protocol": "WSS" }),
@@ -28,9 +27,8 @@ pub fn morty_electrums() -> Vec<Json> {
     ]
 }
 
-#[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]
-pub fn morty_electrums() -> Vec<Json> {
+pub fn marty_electrums() -> Vec<Json> {
     vec![
         json!({ "url": "electrum1.cipig.net:10021" }),
         json!({ "url": "electrum2.cipig.net:10021" }),
@@ -38,7 +36,6 @@ pub fn morty_electrums() -> Vec<Json> {
     ]
 }
 
-#[allow(dead_code)]
 #[cfg(target_arch = "wasm32")]
 pub fn btc_electrums() -> Vec<Json> {
     vec![
@@ -57,7 +54,6 @@ pub fn btc_electrums() -> Vec<Json> {
     ]
 }
 
-#[allow(dead_code)]
 #[cfg(target_arch = "wasm32")]
 pub fn tbtc_electrums() -> Vec<Json> {
     vec![
@@ -67,7 +63,6 @@ pub fn tbtc_electrums() -> Vec<Json> {
     ]
 }
 
-#[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]
 pub fn tbtc_electrums() -> Vec<Json> {
     vec![
