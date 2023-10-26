@@ -14,8 +14,8 @@ use hash::{CipherText, EncCipherText, OutCipherText, ZkProof, ZkProofSapling, H2
 use hex::FromHex;
 use ser::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use ser::{CompactInteger, Deserializable, Error, Reader, Serializable, Stream};
-use std::io;
-use std::io::Read;
+use std::io::BufRead;
+use std::io::{self, BufReader};
 
 /// Must be zero.
 const WITNESS_MARKER: u8 = 0;
@@ -562,21 +562,32 @@ impl Deserializable for Transaction {
         Self: Sized,
         T: io::Read,
     {
-        // read the entire buffer to get it's copy for different cases
-        // it works properly only when buffer contains only 1 transaction bytes
-        // it breaks block serialization, but block serialization is not required for AtomicDEX
-        // specific use case
+        // Read the entire buffer in 4KB chunks.
+        //
+        // Assumes a single transaction per buffer; not designed for block serialization,
+        // which is unnecessary in komodo-defi-framework use case.
         let mut buffer = vec![];
-        reader.read_to_end(&mut buffer)?;
-        if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosvWithNTime) {
-            return Ok(t);
+
+        const BUFFER_SIZE: usize = 4096;
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, reader);
+
+        loop {
+            let read = reader.fill_buf().map_err(|e| Error::Custom(e.to_string()))?;
+            let l = read.len();
+            // break if EOF
+            if l == 0 {
+                break;
+            }
+            buffer.extend_from_slice(read);
+            reader.consume(l);
         }
-        if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::StandardWithWitness) {
-            return Ok(t);
+
+        for tx_type in [TxType::PosvWithNTime, TxType::StandardWithWitness, TxType::PosWithNTime] {
+            if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), tx_type) {
+                return Ok(t);
+            }
         }
-        if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosWithNTime) {
-            return Ok(t);
-        }
+
         deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::Zcash)
     }
 }
