@@ -257,9 +257,20 @@ async fn send_request(
             continue;
         }
 
+        let res = match single_response(body, &node.uri.to_string()) {
+            Ok(r) => r,
+            Err(err) => {
+                errors.push(Web3RpcError::InvalidResponse(format!(
+                    "Server '{:?}', error: {}",
+                    node, err
+                )));
+                continue;
+            },
+        };
+
         client_impl.nodes.rotate_left(i);
 
-        return single_response(body, &node.uri.to_string());
+        return Ok(res);
     }
 
     Err(request_failed_error(&request, &errors))
@@ -274,7 +285,7 @@ async fn send_request(
 ) -> Result<Json, Error> {
     let serialized_request = to_string(&request);
 
-    let mut transport_errors = Vec::new();
+    let mut errors = Vec::new();
     let mut client_impl = client.0.lock().await;
 
     for (i, node) in client_impl.nodes.clone().iter().enumerate() {
@@ -283,7 +294,7 @@ async fn send_request(
                 Ok(Some(r)) => r,
                 Ok(None) => serialized_request.clone(),
                 Err(e) => {
-                    transport_errors.push(e);
+                    errors.push(e);
                     continue;
                 },
             };
@@ -294,13 +305,16 @@ async fn send_request(
                 return Ok(response_json);
             },
             Err(Error::Transport(e)) => {
-                transport_errors.push(Web3RpcError::Transport(e.to_string()));
+                errors.push(Web3RpcError::Transport(format!("Server '{:?}', error: {}", node, e)))
             },
-            Err(e) => return Err(e),
+            Err(e) => errors.push(Web3RpcError::InvalidResponse(format!(
+                "Server '{:?}', error: {}",
+                node, e
+            ))),
         }
     }
 
-    Err(request_failed_error(&request, &transport_errors))
+    Err(request_failed_error(&request, &errors))
 }
 
 #[cfg(target_arch = "wasm32")]
