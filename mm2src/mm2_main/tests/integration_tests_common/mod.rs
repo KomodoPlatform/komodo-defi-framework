@@ -5,7 +5,7 @@ use crypto::privkey::key_pair_from_seed;
 use crypto::StandardHDCoinAddress;
 use mm2_main::mm2::{lp_main, LpMainParams};
 use mm2_rpc::data::legacy::CoinInitResponse;
-use mm2_test_helpers::electrums::{morty_electrums, rick_electrums};
+use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
 use mm2_test_helpers::for_tests::{enable_native as enable_native_impl, init_utxo_electrum, init_utxo_status,
                                   init_z_coin_light, init_z_coin_status, MarketMakerIt};
 use mm2_test_helpers::structs::{InitTaskResult, InitUtxoStatus, InitZcoinStatus, RpcV2Response,
@@ -74,11 +74,11 @@ pub async fn enable_coins_rick_morty_electrum(mm: &MarketMakerIt) -> HashMap<&'s
     let mut replies = HashMap::new();
     replies.insert(
         "RICK",
-        enable_electrum_json(mm, "RICK", false, rick_electrums(), None).await,
+        enable_electrum_json(mm, "RICK", false, doc_electrums(), None).await,
     );
     replies.insert(
         "MORTY",
-        enable_electrum_json(mm, "MORTY", false, morty_electrums(), None).await,
+        enable_electrum_json(mm, "MORTY", false, marty_electrums(), None).await,
     );
     replies
 }
@@ -145,11 +145,11 @@ pub async fn enable_coins_eth_electrum(
     let mut replies = HashMap::new();
     replies.insert(
         "RICK",
-        enable_electrum_json(mm, "RICK", false, rick_electrums(), path_to_address.clone()).await,
+        enable_electrum_json(mm, "RICK", false, doc_electrums(), path_to_address.clone()).await,
     );
     replies.insert(
         "MORTY",
-        enable_electrum_json(mm, "MORTY", false, morty_electrums(), path_to_address.clone()).await,
+        enable_electrum_json(mm, "MORTY", false, marty_electrums(), path_to_address.clone()).await,
     );
     replies.insert("ETH", enable_native(mm, "ETH", eth_urls, path_to_address.clone()).await);
     replies.insert("JST", enable_native(mm, "JST", eth_urls, path_to_address).await);

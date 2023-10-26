@@ -4,7 +4,7 @@ use common::log::wasm_log::register_wasm_log;
 use crypto::StandardHDCoinAddress;
 use mm2_core::mm_ctx::MmArc;
 use mm2_rpc::data::legacy::OrderbookResponse;
-use mm2_test_helpers::electrums::{morty_electrums, rick_electrums};
+use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
 use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, morty_conf, rick_conf, start_swaps,
                                   test_qrc20_history_impl, wait_for_swaps_finish_and_check_status, MarketMakerIt,
                                   Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, MORTY, RICK};
@@ -48,17 +48,17 @@ async fn test_mm2_stops_impl(
     Timer::sleep(2.).await;
 
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_bob, RICK, true, rick_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_bob, RICK, true, doc_electrums(), None).await;
     log!("enable RICK (bob): {:?}", rc);
 
-    let rc = enable_electrum_json(&mm_bob, MORTY, true, morty_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_bob, MORTY, true, marty_electrums(), None).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_alice, RICK, true, rick_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_alice, RICK, true, doc_electrums(), None).await;
     log!("enable RICK (bob): {:?}", rc);
 
-    let rc = enable_electrum_json(&mm_alice, MORTY, true, morty_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_alice, MORTY, true, marty_electrums(), None).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
@@ -112,17 +112,17 @@ async fn trade_base_rel_electrum(
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
 
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_bob, RICK, true, rick_electrums(), bob_path_to_address.clone()).await;
+    let rc = enable_electrum_json(&mm_bob, RICK, true, doc_electrums(), bob_path_to_address.clone()).await;
     log!("enable RICK (bob): {:?}", rc);
 
-    let rc = enable_electrum_json(&mm_bob, MORTY, true, morty_electrums(), bob_path_to_address).await;
+    let rc = enable_electrum_json(&mm_bob, MORTY, true, marty_electrums(), bob_path_to_address).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_alice, RICK, true, rick_electrums(), alice_path_to_address.clone()).await;
+    let rc = enable_electrum_json(&mm_alice, RICK, true, doc_electrums(), alice_path_to_address.clone()).await;
     log!("enable RICK (bob): {:?}", rc);
 
-    let rc = enable_electrum_json(&mm_alice, MORTY, true, morty_electrums(), alice_path_to_address).await;
+    let rc = enable_electrum_json(&mm_alice, MORTY, true, marty_electrums(), alice_path_to_address).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;

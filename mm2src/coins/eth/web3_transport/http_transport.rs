@@ -23,9 +23,16 @@ pub struct AuthPayload<'a> {
 /// Parse bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport
 #[cfg(not(target_arch = "wasm32"))]
-fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Result<Json, Error> {
-    let response =
-        serde_json::from_slice(&response).map_err(|e| Error::InvalidResponse(format!("{}: {}", rpc_url, e)))?;
+fn single_response<T>(response: T, rpc_url: &str) -> Result<Json, Error>
+where
+    T: Deref<Target = [u8]> + std::fmt::Debug,
+{
+    let response = serde_json::from_slice(&response).map_err(|e| {
+        Error::InvalidResponse(format!(
+            "url: {}, Error deserializing response: {}, raw response: {:?}",
+            rpc_url, e, response
+        ))
+    })?;
 
     match response {
         Response::Single(output) => to_result_from_output(output),
@@ -325,7 +332,12 @@ async fn send_request_once(
     // account for incoming traffic
     event_handlers.on_incoming_response(response_str.as_bytes());
 
-    let response: Response = serde_json::from_str(&response_str).map_err(|e| Error::InvalidResponse(e.to_string()))?;
+    let response: Response = serde_json::from_str(&response_str).map_err(|e| {
+        Error::InvalidResponse(format!(
+            "url: {}, Error deserializing response: {}, raw response: {:?}",
+            uri, e, response_str
+        ))
+    })?;
     match response {
         Response::Single(output) => to_result_from_output(output),
         Response::Batch(_) => Err(Error::InvalidResponse("Expected single, got batch.".to_owned())),

@@ -139,10 +139,23 @@ pub const MORTY_ELECTRUM_ADDRS: &[&str] = &[
     "electrum3.cipig.net:10018",
 ];
 pub const DOC: &str = "DOC";
+#[cfg(not(target_arch = "wasm32"))]
 pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum1.cipig.net:10020",
     "electrum2.cipig.net:10020",
     "electrum3.cipig.net:10020",
+];
+#[cfg(target_arch = "wasm32")]
+pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
+    "electrum1.cipig.net:30020",
+    "electrum2.cipig.net:30020",
+    "electrum3.cipig.net:30020",
+];
+pub const MARTY: &str = "MARTY";
+pub const MARTY_ELECTRUM_ADDRS: &[&str] = &[
+    "electrum1.cipig.net:10021",
+    "electrum2.cipig.net:10021",
+    "electrum3.cipig.net:10021",
 ];
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
 pub const ARRR: &str = "ARRR";
@@ -166,6 +179,7 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum2.cipig.net:10071",
     "electrum3.cipig.net:10071",
 ];
+pub const T_BCH_ELECTRUMS: &[&str] = &["tbch.loping.net:60001", "bch0.kister.net:51001"];
 pub const TBTC_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10068",
     "electrum2.cipig.net:10068",
@@ -1732,7 +1746,7 @@ pub enum UtxoRpcMode {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
+pub fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
     servers
         .iter()
         .map(|url| ElectrumRpcRequest {
@@ -1743,7 +1757,7 @@ fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
+pub fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
     servers
         .iter()
         .map(|url| ElectrumRpcRequest {
