@@ -211,7 +211,7 @@ async fn send_request(
 
         event_handlers.on_outgoing_request(serialized_request.as_bytes());
 
-        let mut req = http::Request::new(serialized_request.clone().into_bytes());
+        let mut req = http::Request::new(serialized_request.into_bytes());
         *req.method_mut() = http::Method::POST;
         *req.uri_mut() = node.uri.clone();
         req.headers_mut()
@@ -249,8 +249,8 @@ async fn send_request(
 
         if !status.is_success() {
             errors.push(Web3RpcError::Transport(format!(
-                "Server '{:?}' response !200: {}, {}",
-                node,
+                "Server: '{}', response !200: {}, {}",
+                node.uri,
                 status,
                 binprint(&body, b'.')
             )));
@@ -261,8 +261,8 @@ async fn send_request(
             Ok(r) => r,
             Err(err) => {
                 errors.push(Web3RpcError::InvalidResponse(format!(
-                    "Server '{:?}', error: {}",
-                    node, err
+                    "Server: '{}', error: {}",
+                    node.uri, err
                 )));
                 continue;
             },
@@ -299,17 +299,17 @@ async fn send_request(
                 },
             };
 
-        match send_request_once(serialized_request.clone(), &node.uri, &event_handlers).await {
+        match send_request_once(serialized_request, &node.uri, &event_handlers).await {
             Ok(response_json) => {
                 client_impl.nodes.rotate_left(i);
                 return Ok(response_json);
             },
             Err(Error::Transport(e)) => {
-                errors.push(Web3RpcError::Transport(format!("Server '{:?}', error: {}", node, e)))
+                errors.push(Web3RpcError::Transport(format!("Server: '{}', error: {}", node.uri, e)))
             },
             Err(e) => errors.push(Web3RpcError::InvalidResponse(format!(
-                "Server '{:?}', error: {}",
-                node, e
+                "Server: '{}', error: {}",
+                node.uri, e
             ))),
         }
     }
@@ -348,8 +348,8 @@ async fn send_request_once(
 
     let response: Response = serde_json::from_str(&response_str).map_err(|e| {
         Error::InvalidResponse(format!(
-            "url: {}, Error deserializing response: {}, raw response: {:?}",
-            uri, e, response_str
+            "Error deserializing response: {}, raw response: {:?}",
+            e, response_str
         ))
     })?;
     match response {
