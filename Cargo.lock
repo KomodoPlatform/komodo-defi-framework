@@ -4554,7 +4554,6 @@ dependencies = [
  "mm2_event_stream",
  "mm2_p2p",
  "mm2_state_machine",
- "mocktopus",
  "parking_lot 0.12.0",
  "prost",
  "rand 0.7.3",

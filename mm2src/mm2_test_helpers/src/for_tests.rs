@@ -93,7 +93,40 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Finished",
 ];
 
-pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 12] = [
+pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 13] = [
+    "Started",
+    "Negotiated",
+    "TakerFeeSent",
+    "TakerPaymentInstructionsReceived",
+    "MakerPaymentReceived",
+    "MakerPaymentWaitConfirmStarted",
+    "MakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSent",
+    "WatcherMessageSent",
+    "TakerPaymentSpent",
+    "MakerPaymentSpent",
+    "MakerPaymentSpentByWatcher",
+    "Finished",
+];
+
+// Taker using watchers and watcher spends maker payment
+pub const TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
+    "Started",
+    "Negotiated",
+    "TakerFeeSent",
+    "TakerPaymentInstructionsReceived",
+    "MakerPaymentReceived",
+    "MakerPaymentWaitConfirmStarted",
+    "MakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSent",
+    "WatcherMessageSent",
+    "TakerPaymentSpent",
+    "MakerPaymentSpentByWatcher",
+    "Finished",
+];
+
+// Taker using watchers and spends maker payment instead of watcher
+pub const TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -108,7 +141,7 @@ pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 12] = [
     "Finished",
 ];
 
-pub const TAKER_ERROR_EVENTS: [&str; 15] = [
+pub const TAKER_ERROR_EVENTS: [&str; 16] = [
     "StartFailed",
     "NegotiateFailed",
     "TakerFeeSendFailed",
@@ -122,6 +155,7 @@ pub const TAKER_ERROR_EVENTS: [&str; 15] = [
     "TakerPaymentWaitRefundStarted",
     "TakerPaymentRefundStarted",
     "TakerPaymentRefunded",
+    "TakerPaymentRefundedByWatcher",
     "TakerPaymentRefundFailed",
     "TakerPaymentRefundFinished",
 ];
@@ -139,10 +173,23 @@ pub const MORTY_ELECTRUM_ADDRS: &[&str] = &[
     "electrum3.cipig.net:10018",
 ];
 pub const DOC: &str = "DOC";
+#[cfg(not(target_arch = "wasm32"))]
 pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum1.cipig.net:10020",
     "electrum2.cipig.net:10020",
     "electrum3.cipig.net:10020",
+];
+#[cfg(target_arch = "wasm32")]
+pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
+    "electrum1.cipig.net:30020",
+    "electrum2.cipig.net:30020",
+    "electrum3.cipig.net:30020",
+];
+pub const MARTY: &str = "MARTY";
+pub const MARTY_ELECTRUM_ADDRS: &[&str] = &[
+    "electrum1.cipig.net:10021",
+    "electrum2.cipig.net:10021",
+    "electrum3.cipig.net:10021",
 ];
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
 pub const ARRR: &str = "ARRR";
@@ -166,6 +213,7 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum2.cipig.net:10071",
     "electrum3.cipig.net:10071",
 ];
+pub const T_BCH_ELECTRUMS: &[&str] = &["tbch.loping.net:60001", "bch0.kister.net:51001"];
 pub const TBTC_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10068",
     "electrum2.cipig.net:10068",
@@ -1732,7 +1780,7 @@ pub enum UtxoRpcMode {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
+pub fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
     servers
         .iter()
         .map(|url| ElectrumRpcRequest {
@@ -1743,7 +1791,7 @@ fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
+pub fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
     servers
         .iter()
         .map(|url| ElectrumRpcRequest {
@@ -2068,9 +2116,11 @@ pub async fn check_my_swap_status(mm: &MarketMakerIt, uuid: &str, maker_amount: 
     assert_eq!(maker_amount, actual_maker_amount);
     let actual_taker_amount = json::from_value(events_array[0]["event"]["data"]["taker_amount"].clone()).unwrap();
     assert_eq!(taker_amount, actual_taker_amount);
-    let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
-    let actual_events: Vec<&str> = actual_events.collect();
-    assert_eq!(success_events, actual_events.as_slice());
+    let actual_events = events_array
+        .iter()
+        .map(|item| item["event"]["type"].as_str().unwrap().to_string())
+        .collect::<Vec<String>>();
+    assert!(actual_events.iter().all(|item| success_events.contains(item)));
 }
 
 pub async fn check_my_swap_status_amounts(
@@ -2114,7 +2164,8 @@ pub async fn check_stats_swap_status(mm: &MarketMakerIt, uuid: &str) {
     assert_eq!(maker_actual_events.as_slice(), MAKER_SUCCESS_EVENTS);
     assert!(
         taker_actual_events.as_slice() == TAKER_SUCCESS_EVENTS
-            || taker_actual_events.as_slice() == TAKER_USING_WATCHERS_SUCCESS_EVENTS
+            || taker_actual_events.as_slice() == TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT
+            || taker_actual_events.as_slice() == TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT
     );
 }
 

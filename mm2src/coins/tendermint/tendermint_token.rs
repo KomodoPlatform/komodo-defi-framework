@@ -20,7 +20,7 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
             WithdrawError, WithdrawFrom, WithdrawFut, WithdrawRequest};
-use crate::{MmCoinEnum, PaymentInstructionArgs, WatcherReward, WatcherRewardError};
+use crate::{MmCoinEnum, PaymentInstructionArgs, ValidateWatcherSpendInput, WatcherReward, WatcherRewardError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -498,6 +498,10 @@ impl WatcherOps for TendermintToken {
         unimplemented!();
     }
 
+    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
     async fn watcher_search_for_swap_tx_spend(
         &self,
         _input: WatcherSearchForSwapTxSpendInput<'_>,
@@ -594,10 +598,11 @@ impl MarketCoinOps for TendermintToken {
 
     fn display_priv_key(&self) -> Result<String, String> { self.platform_coin.display_priv_key() }
 
+    #[inline]
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.decimals) }
 
-    /// !! This function includes dummy implementation for P.O.C work
-    fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
+    #[inline]
+    fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 }
 
 #[async_trait]

@@ -23,9 +23,18 @@ pub struct AuthPayload<'a> {
 /// Parse bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport
 #[cfg(not(target_arch = "wasm32"))]
-fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Result<Json, Error> {
-    let response =
-        serde_json::from_slice(&response).map_err(|e| Error::InvalidResponse(format!("{}: {}", rpc_url, e)))?;
+fn single_response<T>(response: T, rpc_url: &str) -> Result<Json, Error>
+where
+    T: Deref<Target = [u8]> + std::fmt::Debug,
+{
+    let response = serde_json::from_slice(&response).map_err(|e| {
+        Error::InvalidResponse(format!(
+            "url: {}, Error deserializing response: {}, raw response: {}",
+            rpc_url,
+            e,
+            String::from_utf8_lossy(&response)
+        ))
+    })?;
 
     match response {
         Response::Single(output) => to_result_from_output(output),
@@ -204,7 +213,7 @@ async fn send_request(
 
         event_handlers.on_outgoing_request(serialized_request.as_bytes());
 
-        let mut req = http::Request::new(serialized_request.clone().into_bytes());
+        let mut req = http::Request::new(serialized_request.into_bytes());
         *req.method_mut() = http::Method::POST;
         *req.uri_mut() = node.uri.clone();
         req.headers_mut()
@@ -242,17 +251,28 @@ async fn send_request(
 
         if !status.is_success() {
             errors.push(Web3RpcError::Transport(format!(
-                "Server '{:?}' response !200: {}, {}",
-                node,
+                "Server: '{}', response !200: {}, {}",
+                node.uri,
                 status,
                 binprint(&body, b'.')
             )));
             continue;
         }
 
+        let res = match single_response(body, &node.uri.to_string()) {
+            Ok(r) => r,
+            Err(err) => {
+                errors.push(Web3RpcError::InvalidResponse(format!(
+                    "Server: '{}', error: {}",
+                    node.uri, err
+                )));
+                continue;
+            },
+        };
+
         client_impl.nodes.rotate_left(i);
 
-        return single_response(body, &node.uri.to_string());
+        return Ok(res);
     }
 
     Err(request_failed_error(&request, &errors))
@@ -267,7 +287,7 @@ async fn send_request(
 ) -> Result<Json, Error> {
     let serialized_request = to_string(&request);
 
-    let mut transport_errors = Vec::new();
+    let mut errors = Vec::new();
     let mut client_impl = client.0.lock().await;
 
     for (i, node) in client_impl.nodes.clone().iter().enumerate() {
@@ -276,24 +296,27 @@ async fn send_request(
                 Ok(Some(r)) => r,
                 Ok(None) => serialized_request.clone(),
                 Err(e) => {
-                    transport_errors.push(e);
+                    errors.push(e);
                     continue;
                 },
             };
 
-        match send_request_once(serialized_request.clone(), &node.uri, &event_handlers).await {
+        match send_request_once(serialized_request, &node.uri, &event_handlers).await {
             Ok(response_json) => {
                 client_impl.nodes.rotate_left(i);
                 return Ok(response_json);
             },
             Err(Error::Transport(e)) => {
-                transport_errors.push(Web3RpcError::Transport(e.to_string()));
+                errors.push(Web3RpcError::Transport(format!("Server: '{}', error: {}", node.uri, e)))
             },
-            Err(e) => return Err(e),
+            Err(e) => errors.push(Web3RpcError::InvalidResponse(format!(
+                "Server: '{}', error: {}",
+                node.uri, e
+            ))),
         }
     }
 
-    Err(request_failed_error(&request, &transport_errors))
+    Err(request_failed_error(&request, &errors))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -325,7 +348,12 @@ async fn send_request_once(
     // account for incoming traffic
     event_handlers.on_incoming_response(response_str.as_bytes());
 
-    let response: Response = serde_json::from_str(&response_str).map_err(|e| Error::InvalidResponse(e.to_string()))?;
+    let response: Response = serde_json::from_str(&response_str).map_err(|e| {
+        Error::InvalidResponse(format!(
+            "Error deserializing response: {}, raw response: {:?}",
+            e, response_str
+        ))
+    })?;
     match response {
         Response::Single(output) => to_result_from_output(output),
         Response::Batch(_) => Err(Error::InvalidResponse("Expected single, got batch.".to_owned())),

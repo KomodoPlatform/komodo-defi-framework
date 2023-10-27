@@ -23,7 +23,7 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPayment
             TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
             ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateTakerPaymentArgs,
             ValidateTakerPaymentError, ValidateTakerPaymentResult, ValidateTakerPaymentSpendPreimageError,
-            ValidateTakerPaymentSpendPreimageResult, VerificationError, VerificationResult,
+            ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput, VerificationError, VerificationResult,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
             WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
             INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
@@ -2297,6 +2297,33 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         input.try_spv_proof_until,
         input.confirmations,
     )
+}
+
+pub fn validate_payment_spend_or_refund<T: UtxoCommonOps + SwapOps>(
+    coin: &T,
+    input: ValidateWatcherSpendInput,
+) -> ValidatePaymentFut<()> {
+    let mut payment_spend_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+    payment_spend_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
+
+    let my_address = try_f!(coin.as_ref().derivation_method.single_addr_or_err());
+    let expected_script_pubkey = &output_script(my_address, ScriptType::P2PKH).to_bytes();
+    let output = try_f!(payment_spend_tx
+        .outputs
+        .get(DEFAULT_SWAP_VOUT)
+        .ok_or_else(|| ValidatePaymentError::WrongPaymentTx("Payment tx has no outputs".to_string(),)));
+
+    if expected_script_pubkey != &output.script_pubkey {
+        return Box::new(futures01::future::err(
+            ValidatePaymentError::WrongPaymentTx(format!(
+                "Provided payment tx script pubkey doesn't match expected {:?} {:?}",
+                output.script_pubkey, expected_script_pubkey
+            ))
+            .into(),
+        ));
+    }
+
+    Box::new(futures01::future::ok(()))
 }
 
 pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(

@@ -5,6 +5,7 @@ use super::*;
 use crate::utxo::utxo_common_tests;
 use crate::{IguanaPrivKey, PrivKeyBuildPolicy};
 use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_test_helpers::for_tests::DOC_ELECTRUM_ADDRS;
 use serialization::deserialize;
 use wasm_bindgen_test::*;
 
@@ -45,9 +46,9 @@ pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
 
 #[wasm_bindgen_test]
 async fn test_electrum_rpc_client() {
-    let client = electrum_client_for_test(&["electrum1.cipig.net:30017", "electrum2.cipig.net:30017"]).await;
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS).await;
 
-    let tx_hash: H256Json = hex::decode("0a0fda88364b960000f445351fe7678317a1e0c80584de0413377ede00ba696f")
+    let tx_hash: H256Json = hex::decode("a3ebedbe20f82e43708f276152cf7dfb03a6050921c8f266e48c00ab66e891fb")
         .unwrap()
         .as_slice()
         .into();
@@ -57,13 +58,13 @@ async fn test_electrum_rpc_client() {
         .await
         .expect("!get_verbose_transaction");
     let actual: UtxoTx = deserialize(verbose_tx.hex.as_slice()).unwrap();
-    let expected = UtxoTx::from("0400008085202f8902358549fe3cf9a66bf61fb57bca1b3b49434a148a4dc29450b5eefe583f2f9ecf000000006a4730440220112aa3737672f8aa16a58426f5e7656ad13d21a219390c7a0b2e266ee6b216a8022008e9f9e94db91f069f831b0d40b7f75938122cddceaa25197146dfb00fe82599012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff358549fe3cf9a66bf61fb57bca1b3b49434a148a4dc29450b5eefe583f2f9ecf010000006b483045022100d054464799246254b09f96333bf52537938abe31c24bacf41c9ef600b28155950220527ec33c4a5bef79dcabf97e38aa240fecdd14c96f698560b2f10ec2abc2e992012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0240420f00000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac66418f00000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac0e2aa85f000000000000000000000000000000");
+    let expected = UtxoTx::from("0400008085202f8901e15182af2c252bcfbd58884f3bdbd4d85ed036e53cfe2fd1f904ecfea10cb9f2010000006b483045022100d2435e0c9211114271ac452dc47fd08d3d2dc4bdd484d5750ee6bbda41056d520220408bfb236b7028b6fde0e59a1b6522949131a611584cce36c3df1e934c1748630121022d7424c741213a2b9b49aebdaa10e84419e642a8db0a09e359a3d4c850834846ffffffff02a09ba104000000001976a914054407d1a2224268037cfc7ca3bc438d082bedf488acdd28ce9157ba11001976a914046922483fab8ca76b23e55e9d338605e2dbab6088ac03d63665000000000000000000000000000000");
     assert_eq!(actual, expected);
 }
 
 #[wasm_bindgen_test]
 async fn test_electrum_display_balances() {
-    let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:30017", "electrum2.cipig.net:30017"]).await;
+    let rpc_client = electrum_client_for_test(DOC_ELECTRUM_ADDRS).await;
     utxo_common_tests::test_electrum_display_balances(&rpc_client).await;
 }
 

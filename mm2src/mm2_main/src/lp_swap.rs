@@ -103,7 +103,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[rustfmt::skip]
 mod swap_v2_pb;
 #[path = "lp_swap/swap_watcher.rs"] pub(crate) mod swap_watcher;
-#[path = "lp_swap/taker_swap.rs"] mod taker_swap;
+#[path = "lp_swap/taker_restart.rs"]
+pub(crate) mod taker_restart;
+#[path = "lp_swap/taker_swap.rs"] pub(crate) mod taker_swap;
 #[path = "lp_swap/taker_swap_v2.rs"] pub mod taker_swap_v2;
 #[path = "lp_swap/trade_preimage.rs"] mod trade_preimage;
 
@@ -131,13 +133,13 @@ pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData,
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
-                     TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage, WATCHER_MESSAGE_SENT_LOG};
+                     TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG,
+                     REFUND_TEST_FAILURE_LOG, WATCHER_MESSAGE_SENT_LOG};
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
-
 pub const SWAP_V2_PREFIX: TopicPrefix = "swapv2";
-
+pub const SWAP_FINISHED_LOG: &str = "Swap finished: ";
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 
 const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
@@ -714,17 +716,6 @@ pub fn lp_atomic_locktime(maker_coin: &str, taker_coin: &str, version: AtomicLoc
     }
 }
 
-pub fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
-    // Todo: This should be reduced for lightning swaps.
-    // 0.0001
-    let min_fee = MmNumber::from((1, 10000));
-    if min_fee < min_tx_amount {
-        min_tx_amount
-    } else {
-        min_fee
-    }
-}
-
 fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
     let fee_discount_tickers: &[&str] = if var("MYCOIN_FEE_DISCOUNT").is_ok() {
         &["KMD", "MYCOIN"]
@@ -739,11 +730,11 @@ fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
     }
 }
 
-pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, dex_fee_threshold: &MmNumber) -> MmNumber {
+pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amount: &MmNumber) -> MmNumber {
     let rate = dex_fee_rate(base, rel);
     let fee_amount = trade_amount * &rate;
-    if &fee_amount < dex_fee_threshold {
-        dex_fee_threshold.clone()
+    if &fee_amount < min_tx_amount {
+        min_tx_amount.clone()
     } else {
         fee_amount
     }
@@ -752,8 +743,7 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, dex_fee_th
 /// Calculates DEX fee with a threshold based on min tx amount of the taker coin.
 pub fn dex_fee_amount_from_taker_coin(taker_coin: &dyn MmCoin, maker_coin: &str, trade_amount: &MmNumber) -> MmNumber {
     let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
-    let dex_fee_threshold = dex_fee_threshold(min_tx_amount);
-    dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &dex_fee_threshold)
+    dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &min_tx_amount)
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
@@ -1225,6 +1215,7 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
     let swaps = try_s!(SavedSwap::load_all_my_swaps_from_db(&ctx).await);
     for swap in swaps {
         if swap.is_finished() {
+            info!("{} {}", SWAP_FINISHED_LOG, swap.uuid());
             continue;
         }
 
@@ -1600,34 +1591,34 @@ mod lp_swap_tests {
 
     #[test]
     fn test_dex_fee_amount() {
-        let dex_fee_threshold = MmNumber::from("0.0001");
+        let min_tx_amount = MmNumber::from("0.0001");
 
         let base = "BTC";
         let rel = "ETH";
         let amount = 1.into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &dex_fee_threshold);
+        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
         let expected_fee = amount / 777u64.into();
         assert_eq!(expected_fee, actual_fee);
 
         let base = "KMD";
         let rel = "ETH";
         let amount = 1.into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &dex_fee_threshold);
+        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
         let expected_fee = amount * (9, 7770).into();
         assert_eq!(expected_fee, actual_fee);
 
         let base = "BTC";
         let rel = "KMD";
         let amount = 1.into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &dex_fee_threshold);
+        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
         let expected_fee = amount * (9, 7770).into();
         assert_eq!(expected_fee, actual_fee);
 
         let base = "BTC";
         let rel = "KMD";
         let amount: MmNumber = "0.001".parse::<BigDecimal>().unwrap().into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &dex_fee_threshold);
-        assert_eq!(dex_fee_threshold, actual_fee);
+        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
+        assert_eq!(min_tx_amount, actual_fee);
     }
 
     #[test]
@@ -2094,7 +2085,10 @@ mod lp_swap_tests {
 
         maker_swap.fail_at = maker_fail_at;
 
-        let mut taker_swap = TakerSwap::new(
+        #[cfg(any(test, feature = "run-docker-tests"))]
+        let fail_at = std::env::var("TAKER_FAIL_AT").map(taker_swap::FailAt::from).ok();
+
+        let taker_swap = TakerSwap::new(
             taker_ctx.clone(),
             maker_key_pair.public().compressed_unprefixed().unwrap().into(),
             maker_amount.into(),
@@ -2107,9 +2101,9 @@ mod lp_swap_tests {
             morty_taker.into(),
             lock_duration,
             None,
+            #[cfg(any(test, feature = "run-docker-tests"))]
+            fail_at,
         );
-
-        taker_swap.fail_at = taker_fail_at;
 
         block_on(futures::future::join(
             run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), maker_ctx.clone()),

@@ -7,10 +7,6 @@ pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, 
                                       ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 
-pub use secp256k1::{PublicKey, SecretKey};
-pub use std::env;
-pub use std::thread;
-
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
 use coins::eth::{eth_coin_from_conf_and_request, EthCoin};
@@ -33,14 +29,18 @@ use http::StatusCode;
 use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
+use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::TransactionDetails;
 use primitives::hash::{H160, H256};
 use script::Builder;
 use secp256k1::Secp256k1;
+pub use secp256k1::{PublicKey, SecretKey};
 use serde_json::{self as json, Value as Json};
+pub use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
+pub use std::thread;
 use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::images::generic::{GenericImage, WaitFor};
@@ -148,8 +148,8 @@ pub fn eth_distributor() -> EthCoin {
         "urls": ETH_DEV_NODES,
         "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
     });
-    let keypair =
-        key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
+    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+    let keypair = key_pair_from_seed(&alice_passphrase).unwrap();
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
@@ -171,7 +171,7 @@ pub fn _fill_eth(to_addr: &str) {
 }
 
 // Generates an ethereum coin in the sepolia network with the given seed
-pub fn _generate_eth_coin_with_seed(seed: &str) -> EthCoin {
+pub fn generate_eth_coin_with_seed(seed: &str) -> EthCoin {
     let req = json!({
         "method": "enable",
         "coin": "ETH",

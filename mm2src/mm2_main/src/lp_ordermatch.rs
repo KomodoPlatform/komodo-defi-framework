@@ -81,6 +81,9 @@ use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, chec
                           CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SecretHashAlgo,
                           SwapConfirmationsSettings, TakerSwap};
 
+#[cfg(any(test, feature = "run-docker-tests"))]
+use crate::mm2::lp_swap::taker_swap::FailAt;
+
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 pub use orderbook_depth::orderbook_depth_rpc;
 pub use orderbook_rpc::{orderbook_rpc, orderbook_rpc_v2};
@@ -1777,9 +1780,9 @@ impl fmt::Display for MakerOrderBuildError {
 
 #[allow(clippy::result_large_err)]
 fn validate_price(price: MmNumber) -> Result<(), MakerOrderBuildError> {
-    let min_price = MmNumber::from(BigRational::new(1.into(), 100_000_000.into()));
+    let min_price = 0.into();
 
-    if price < min_price {
+    if price <= min_price {
         return Err(MakerOrderBuildError::PriceTooLow {
             actual: price,
             threshold: min_price,
@@ -3119,6 +3122,9 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                 _ => todo!("implement fallback to the old protocol here"),
             }
         } else {
+            #[cfg(any(test, feature = "run-docker-tests"))]
+            let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
+
             let taker_swap = TakerSwap::new(
                 ctx.clone(),
                 maker,
@@ -3132,6 +3138,8 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                 taker_coin,
                 locktime,
                 taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                #[cfg(any(test, feature = "run-docker-tests"))]
+                fail_at,
             );
             run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
         }

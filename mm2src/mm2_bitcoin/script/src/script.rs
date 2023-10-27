@@ -25,6 +25,8 @@ pub enum ScriptType {
     Call,
     Create,
     ColdStaking,
+    // Komodo smart chains specific
+    CryptoCondition,
 }
 
 /// Address from Script
@@ -465,6 +467,9 @@ impl Script {
                 Ok(vec![]) // TODO
             },
             ScriptType::ColdStaking => {
+                Ok(vec![]) // TODO
+            },
+            ScriptType::CryptoCondition => {
                 Ok(vec![]) // TODO
             },
         }

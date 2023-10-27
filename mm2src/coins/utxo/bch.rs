@@ -17,9 +17,9 @@ use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBal
             SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradePreimageValue, TransactionFut,
             TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
 use derive_more::Display;
@@ -1014,7 +1014,7 @@ impl SwapOps for BchCoin {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
 
-    fn is_supported_by_watchers(&self) -> bool { std::env::var("USE_WATCHERS").is_ok() }
+    fn is_supported_by_watchers(&self) -> bool { true }
 }
 
 #[async_trait]
@@ -1094,6 +1094,11 @@ impl WatcherOps for BchCoin {
     #[inline]
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::watcher_validate_taker_payment(self, input)
+    }
+
+    #[inline]
+    fn taker_validates_payment_spend_or_refund(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        utxo_common::validate_payment_spend_or_refund(self, input)
     }
 
     async fn watcher_search_for_swap_tx_spend(
@@ -1401,7 +1406,7 @@ pub fn tbch_coin_for_test() -> (MmArc, BchCoin) {
     use common::block_on;
     use crypto::privkey::key_pair_from_seed;
     use mm2_core::mm_ctx::MmCtxBuilder;
-    use mm2_test_helpers::for_tests::BCHD_TESTNET_URLS;
+    use mm2_test_helpers::for_tests::{electrum_servers_rpc, BCHD_TESTNET_URLS, T_BCH_ELECTRUMS};
 
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let keypair = key_pair_from_seed("BCH SLP test").unwrap();
@@ -1411,7 +1416,7 @@ pub fn tbch_coin_for_test() -> (MmArc, BchCoin) {
     let req = json!({
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"},{"url":"testnet.imaginary.cash:50001"},{"url":"tbch.loping.net:60001"},{"url":"electroncash.de:50003"}],
+        "servers": electrum_servers_rpc(T_BCH_ELECTRUMS),
         "bchd_urls": BCHD_TESTNET_URLS,
         "allow_slp_unsafe_conf": false,
     });
