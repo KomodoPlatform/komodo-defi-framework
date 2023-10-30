@@ -1,4 +1,5 @@
 pub mod grpc_web;
+#[cfg(feature = "event-stream")] pub mod network_event;
 #[cfg(feature = "p2p")] pub mod p2p;
 pub mod transport;
 
@@ -6,8 +7,8 @@ pub mod transport;
 #[cfg(not(target_arch = "wasm32"))] pub mod native_http;
 #[cfg(not(target_arch = "wasm32"))] pub mod native_tls;
 #[cfg(all(feature = "event-stream", not(target_arch = "wasm32")))]
-pub mod network_event;
-#[cfg(all(feature = "event-stream", not(target_arch = "wasm32")))]
 pub mod sse_handler;
+#[cfg(all(feature = "event-stream", target_arch = "wasm32"))]
+pub mod wasm_event_stream;
 #[cfg(target_arch = "wasm32")] pub mod wasm_http;
 #[cfg(target_arch = "wasm32")] pub mod wasm_ws;

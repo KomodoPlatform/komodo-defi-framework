@@ -25,10 +25,10 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
             TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom,
-            WithdrawFut, WithdrawRequest};
+            ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFrom, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
@@ -60,7 +60,7 @@ use futures01::Future;
 use hex::FromHexError;
 use itertools::Itertools;
 use keys::KeyPair;
-use mm2_core::mm_ctx::MmArc;
+use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
 use mm2_number::MmNumber;
@@ -142,7 +142,7 @@ pub struct TendermintProtocolInfo {
 #[derive(Clone)]
 pub struct ActivatedTokenInfo {
     pub(crate) decimals: u8,
-    pub(crate) denom: Denom,
+    pub ticker: String,
 }
 
 pub struct TendermintConf {
@@ -237,6 +237,7 @@ pub struct TendermintCoinImpl {
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
     chain_registry_name: Option<String>,
+    pub(crate) ctx: MmWeak,
 }
 
 #[derive(Clone)]
@@ -279,6 +280,7 @@ pub enum TendermintInitErrorKind {
     AvgBlockTimeMissing,
     #[display(fmt = "avg_blocktime must be in-between '0' and '255'.")]
     AvgBlockTimeInvalid,
+    BalanceStreamInitError(String),
 }
 
 #[derive(Display, Debug)]
@@ -441,14 +443,14 @@ impl TendermintCommons for TendermintCoin {
         let ibc_assets_info = self.tokens_info.lock().clone();
 
         let mut requests = Vec::new();
-        for (ticker, info) in ibc_assets_info {
+        for (denom, info) in ibc_assets_info {
             let fut = async move {
                 let balance_denom = self
-                    .account_balance_for_denom(&self.account_id, info.denom.to_string())
+                    .account_balance_for_denom(&self.account_id, denom)
                     .await
                     .map_err(|e| e.into_inner())?;
                 let balance_decimal = big_decimal_from_sat_unsigned(balance_denom, info.decimals);
-                Ok::<_, TendermintCoinRpcError>((ticker.clone(), balance_decimal))
+                Ok::<_, TendermintCoinRpcError>((info.ticker, balance_decimal))
             };
             requests.push(fut);
         }
@@ -544,6 +546,7 @@ impl TendermintCoin {
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
             chain_registry_name: protocol_info.chain_registry_name,
+            ctx: ctx.weak(),
         })))
     }
 
@@ -1178,7 +1181,7 @@ impl TendermintCoin {
     pub fn add_activated_token_info(&self, ticker: String, decimals: u8, denom: Denom) {
         self.tokens_info
             .lock()
-            .insert(ticker, ActivatedTokenInfo { decimals, denom });
+            .insert(denom.to_string(), ActivatedTokenInfo { decimals, ticker });
     }
 
     fn estimate_blocks_from_duration(&self, duration: u64) -> i64 {
@@ -1820,6 +1823,20 @@ impl TendermintCoin {
             Some(WithdrawFee::CosmosGas { gas_price, gas_limit }) => (*gas_price, *gas_limit),
             _ => (self.gas_price(), fallback_gas_limit),
         }
+    }
+
+    pub(crate) fn active_ticker_and_decimals_from_denom(&self, denom: &str) -> Option<(String, u8)> {
+        if self.denom.as_ref() == denom {
+            return Some((self.ticker.clone(), self.decimals));
+        }
+
+        let tokens = self.tokens_info.lock();
+
+        if let Some(token_info) = tokens.get(denom) {
+            return Some((token_info.ticker.to_owned(), token_info.decimals));
+        }
+
+        None
     }
 }
 
@@ -2736,6 +2753,10 @@ impl WatcherOps for TendermintCoin {
     }
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 

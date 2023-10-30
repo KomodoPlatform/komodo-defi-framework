@@ -468,7 +468,7 @@ impl SwapOps for UtxoStandardCoin {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
 
-    fn is_supported_by_watchers(&self) -> bool { std::env::var("USE_WATCHERS").is_ok() }
+    fn is_supported_by_watchers(&self) -> bool { true }
 }
 
 #[async_trait]
@@ -544,6 +544,11 @@ impl WatcherOps for UtxoStandardCoin {
     #[inline]
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::watcher_validate_taker_payment(self, input)
+    }
+
+    #[inline]
+    fn taker_validates_payment_spend_or_refund(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        utxo_common::validate_payment_spend_or_refund(self, input)
     }
 
     #[inline]

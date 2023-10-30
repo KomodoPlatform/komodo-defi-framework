@@ -1035,3 +1035,40 @@ pub fn parse_rfc3339_to_timestamp(date_str: &str) -> Result<u64, ParseRfc3339Err
 /// This function returns a boolean indicating whether the database is being upgraded from version 0 to 1.
 #[cfg(target_arch = "wasm32")]
 pub fn is_initial_upgrade(old_version: u32, new_version: u32) -> bool { old_version == 0 && new_version == 1 }
+
+/// Takes `http:Uri` and converts it into `String` of websocket address
+///
+/// Panics if the given URI doesn't contain a host value.
+pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
+    let address_prefix = match uri.scheme_str() {
+        Some("https") => "wss://",
+        _ => "ws://",
+    };
+
+    let host_address = uri.host().expect("Host can't be empty.");
+    let port = uri.port_u16().map(|p| format!(":{}", p)).unwrap_or_default();
+
+    format!("{}{}{}", address_prefix, host_address, port)
+}
+
+#[test]
+fn test_http_uri_to_ws_address() {
+    let uri = "https://cosmos-rpc.polkachu.com".parse::<http::Uri>().unwrap();
+    let ws_connection = http_uri_to_ws_address(uri);
+    assert_eq!(ws_connection, "wss://cosmos-rpc.polkachu.com");
+
+    let uri = "http://cosmos-rpc.polkachu.com".parse::<http::Uri>().unwrap();
+    let ws_connection = http_uri_to_ws_address(uri);
+    assert_eq!(ws_connection, "ws://cosmos-rpc.polkachu.com");
+
+    let uri = "http://34.82.96.8:26657".parse::<http::Uri>().unwrap();
+    let ws_connection = http_uri_to_ws_address(uri);
+    assert_eq!(ws_connection, "ws://34.82.96.8:26657");
+}
+
+#[test]
+#[should_panic(expected = "Host can't be empty.")]
+fn test_http_uri_to_ws_address_panic() {
+    let uri = "/demo/value".parse::<http::Uri>().unwrap();
+    http_uri_to_ws_address(uri);
+}

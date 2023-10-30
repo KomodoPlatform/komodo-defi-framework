@@ -23,8 +23,9 @@
 use super::eth::Action::{Call, Create};
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_structs::{ContractType, ConvertChain, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
+use crate::{ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
-use bitcrypto::{keccak256, ripemd160, sha256};
+use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
@@ -1470,6 +1471,246 @@ impl WatcherOps for EthCoin {
 
         // TODO: Add validations specific for watchers
         // 1.Validate if taker fee is old
+    }
+
+    fn taker_validates_payment_spend_or_refund(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        let watcher_reward = try_f!(input
+            .watcher_reward
+            .clone()
+            .ok_or_else(|| ValidatePaymentError::WatcherRewardError("Watcher reward not found".to_string())));
+        let expected_reward_amount = try_f!(wei_from_big_decimal(&watcher_reward.amount, self.decimals));
+
+        let expected_swap_contract_address = try_f!(input
+            .swap_contract_address
+            .try_to_address()
+            .map_to_mm(ValidatePaymentError::InvalidParameter));
+
+        let unsigned: UnverifiedTransaction = try_f!(rlp::decode(&input.payment_tx));
+        let tx =
+            try_f!(SignedEthTx::new(unsigned)
+                .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string())));
+
+        let selfi = self.clone();
+        let time_lock = try_f!(input
+            .time_lock
+            .try_into()
+            .map_to_mm(ValidatePaymentError::TimelockOverflow));
+        let swap_id = selfi.etomic_swap_id(time_lock, &input.secret_hash);
+        let decimals = self.decimals;
+        let secret_hash = if input.secret_hash.len() == 32 {
+            ripemd160(&input.secret_hash).to_vec()
+        } else {
+            input.secret_hash.to_vec()
+        };
+        let maker_addr =
+            try_f!(addr_from_raw_pubkey(&input.maker_pub).map_to_mm(ValidatePaymentError::InvalidParameter));
+
+        let trade_amount = try_f!(wei_from_big_decimal(&(input.amount), decimals));
+        let fut = async move {
+            match tx.action {
+                Call(contract_address) => {
+                    if contract_address != expected_swap_contract_address {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Transaction {:?} was sent to wrong address, expected {:?}",
+                            contract_address, expected_swap_contract_address,
+                        )));
+                    }
+                },
+                Create => {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                        "Tx action must be Call, found Create instead".to_string(),
+                    ));
+                },
+            };
+
+            let actual_status = selfi
+                .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
+                .compat()
+                .await
+                .map_to_mm(ValidatePaymentError::Transport)?;
+            let expected_status = match input.spend_type {
+                WatcherSpendType::MakerPaymentSpend => U256::from(PaymentState::Spent as u8),
+                WatcherSpendType::TakerPaymentRefund => U256::from(PaymentState::Refunded as u8),
+            };
+            if actual_status != expected_status {
+                return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                    "Payment state is not {}, got {}",
+                    expected_status, actual_status
+                )));
+            }
+
+            let function_name = match input.spend_type {
+                WatcherSpendType::MakerPaymentSpend => get_function_name("receiverSpend", true),
+                WatcherSpendType::TakerPaymentRefund => get_function_name("senderRefund", true),
+            };
+            let function = SWAP_CONTRACT
+                .function(&function_name)
+                .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
+
+            let decoded = decode_contract_call(function, &tx.data)
+                .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
+
+            let swap_id_input = get_function_input_data(&decoded, function, 0)
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            if swap_id_input != Token::FixedBytes(swap_id.clone()) {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Transaction invalid swap_id arg {:?}, expected {:?}",
+                    swap_id_input,
+                    Token::FixedBytes(swap_id.clone())
+                )));
+            }
+
+            let hash_input = match input.spend_type {
+                WatcherSpendType::MakerPaymentSpend => {
+                    let secret_input = get_function_input_data(&decoded, function, 2)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?
+                        .into_fixed_bytes()
+                        .ok_or_else(|| {
+                            ValidatePaymentError::WrongPaymentTx("Invalid type for secret hash argument".to_string())
+                        })?;
+                    dhash160(&secret_input).to_vec()
+                },
+                WatcherSpendType::TakerPaymentRefund => get_function_input_data(&decoded, function, 2)
+                    .map_to_mm(ValidatePaymentError::TxDeserializationError)?
+                    .into_fixed_bytes()
+                    .ok_or_else(|| {
+                        ValidatePaymentError::WrongPaymentTx("Invalid type for secret argument".to_string())
+                    })?,
+            };
+            if hash_input != secret_hash {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Transaction secret or secret_hash arg {:?} is invalid, expected {:?}",
+                    hash_input,
+                    Token::FixedBytes(secret_hash),
+                )));
+            }
+
+            let sender_input = get_function_input_data(&decoded, function, 4)
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            let expected_sender = match input.spend_type {
+                WatcherSpendType::MakerPaymentSpend => maker_addr,
+                WatcherSpendType::TakerPaymentRefund => selfi.my_address,
+            };
+            if sender_input != Token::Address(expected_sender) {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Transaction sender arg {:?} is invalid, expected {:?}",
+                    sender_input,
+                    Token::Address(expected_sender)
+                )));
+            }
+
+            let receiver_input = get_function_input_data(&decoded, function, 5)
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            let expected_receiver = match input.spend_type {
+                WatcherSpendType::MakerPaymentSpend => selfi.my_address,
+                WatcherSpendType::TakerPaymentRefund => maker_addr,
+            };
+            if receiver_input != Token::Address(expected_receiver) {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Transaction receiver arg {:?} is invalid, expected {:?}",
+                    receiver_input,
+                    Token::Address(expected_receiver)
+                )));
+            }
+
+            let reward_target_input = get_function_input_data(&decoded, function, 6)
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            if reward_target_input != Token::Uint(U256::from(watcher_reward.reward_target as u8)) {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Transaction reward target arg {:?} is invalid, expected {:?}",
+                    reward_target_input,
+                    Token::Uint(U256::from(watcher_reward.reward_target as u8))
+                )));
+            }
+
+            let contract_reward_input = get_function_input_data(&decoded, function, 7)
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            if contract_reward_input != Token::Bool(watcher_reward.send_contract_reward_on_spend) {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Transaction sends contract reward on spend arg {:?} is invalid, expected {:?}",
+                    contract_reward_input,
+                    Token::Bool(watcher_reward.send_contract_reward_on_spend)
+                )));
+            }
+
+            let reward_amount_input = get_function_input_data(&decoded, function, 8)
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            if reward_amount_input != Token::Uint(expected_reward_amount) {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Transaction watcher reward amount arg {:?} is invalid, expected {:?}",
+                    reward_amount_input,
+                    Token::Uint(expected_reward_amount)
+                )));
+            }
+
+            if tx.value != U256::zero() {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Transaction value arg {:?} is invalid, expected 0",
+                    tx.value
+                )));
+            }
+
+            match &selfi.coin_type {
+                EthCoinType::Eth => {
+                    let amount_input = get_function_input_data(&decoded, function, 1)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+                    let total_amount = match input.spend_type {
+                        WatcherSpendType::MakerPaymentSpend => {
+                            if let RewardTarget::None = watcher_reward.reward_target {
+                                trade_amount
+                            } else {
+                                trade_amount + expected_reward_amount
+                            }
+                        },
+                        WatcherSpendType::TakerPaymentRefund => trade_amount + expected_reward_amount,
+                    };
+                    if amount_input != Token::Uint(total_amount) {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Transaction amount arg {:?} is invalid, expected {:?}",
+                            amount_input,
+                            Token::Uint(total_amount),
+                        )));
+                    }
+
+                    let token_address_input = get_function_input_data(&decoded, function, 3)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+                    if token_address_input != Token::Address(Address::default()) {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Transaction token address arg {:?} is invalid, expected {:?}",
+                            token_address_input,
+                            Token::Address(Address::default()),
+                        )));
+                    }
+                },
+                EthCoinType::Erc20 {
+                    platform: _,
+                    token_addr,
+                } => {
+                    let amount_input = get_function_input_data(&decoded, function, 1)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+                    if amount_input != Token::Uint(trade_amount) {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Transaction amount arg {:?} is invalid, expected {:?}",
+                            amount_input,
+                            Token::Uint(trade_amount),
+                        )));
+                    }
+
+                    let token_address_input = get_function_input_data(&decoded, function, 3)
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+                    if token_address_input != Token::Address(*token_addr) {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Transaction token address arg {:?} is invalid, expected {:?}",
+                            token_address_input,
+                            Token::Address(*token_addr),
+                        )));
+                    }
+                },
+            }
+
+            Ok(())
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {

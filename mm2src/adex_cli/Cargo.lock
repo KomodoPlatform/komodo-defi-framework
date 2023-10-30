@@ -1781,6 +1781,7 @@ dependencies = [
  "async-trait",
  "cfg-if 1.0.0",
  "common",
+ "futures 0.3.28",
  "parking_lot",
  "serde",
  "tokio",

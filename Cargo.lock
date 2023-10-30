@@ -1020,6 +1020,7 @@ dependencies = [
  "ethkey",
  "futures 0.1.29",
  "futures 0.3.28",
+ "futures-util",
  "group 0.8.0",
  "gstuff",
  "hex 0.4.3",
@@ -1039,6 +1040,7 @@ dependencies = [
  "mm2_core",
  "mm2_db",
  "mm2_err_handle",
+ "mm2_event_stream",
  "mm2_git",
  "mm2_io",
  "mm2_metamask",
@@ -1086,6 +1088,7 @@ dependencies = [
  "tiny-bip39",
  "tokio",
  "tokio-rustls",
+ "tokio-tungstenite-wasm",
  "tonic",
  "tonic-build",
  "url",
@@ -1122,6 +1125,7 @@ dependencies = [
  "lightning-invoice",
  "mm2_core",
  "mm2_err_handle",
+ "mm2_event_stream",
  "mm2_metamask",
  "mm2_metrics",
  "mm2_number",
@@ -4333,6 +4337,7 @@ dependencies = [
  "async-trait",
  "cfg-if 1.0.0",
  "common",
+ "futures 0.3.28",
  "parking_lot 0.12.0",
  "serde",
  "tokio",
@@ -4988,6 +4993,12 @@ name = "opaque-debug"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
+
+[[package]]
+name = "openssl-probe"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 
 [[package]]
 name = "ordered-float"
@@ -6317,6 +6328,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-native-certs"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9aace74cb666635c918e9c12bc0d348266037aa8eb599b5cba565709a8dff00"
+dependencies = [
+ "openssl-probe",
+ "rustls-pemfile 1.0.2",
+ "schannel",
+ "security-framework",
+]
+
+[[package]]
 name = "rustls-pemfile"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6397,6 +6420,15 @@ dependencies = [
  "proc-macro2 1.0.63",
  "quote 1.0.28",
  "syn 1.0.95",
+]
+
+[[package]]
+name = "schannel"
+version = "0.1.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c3733bf4cf7ea0880754e19cb5a462007c4a8c1914bff372ccc95b464f1df88"
+dependencies = [
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -6509,6 +6541,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9bd1c54ea06cfd2f6b63219704de0b9b4f72dcc2b8fdef820be6cd799780e91e"
 dependencies = [
  "zeroize",
+]
+
+[[package]]
+name = "security-framework"
+version = "2.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05b64fb303737d99b81884b2c63433e9ae28abebe5eb5045dcdd175dc2ecf4de"
+dependencies = [
+ "bitflags",
+ "core-foundation",
+ "core-foundation-sys",
+ "libc",
+ "security-framework-sys",
+]
+
+[[package]]
+name = "security-framework-sys"
+version = "2.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e932934257d3b408ed8f30db49d85ea163bfe74961f017f405b025af298f0c7a"
+dependencies = [
+ "core-foundation-sys",
+ "libc",
 ]
 
 [[package]]
@@ -8283,6 +8338,39 @@ dependencies = [
  "futures-core",
  "pin-project-lite 0.2.9",
  "tokio",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e80b39df6afcc12cdf752398ade96a6b9e99c903dfdc36e53ad10b9c366bca72"
+dependencies = [
+ "futures-util",
+ "log",
+ "rustls 0.20.4",
+ "rustls-native-certs",
+ "tokio",
+ "tokio-rustls",
+ "tungstenite",
+ "webpki 0.22.0",
+]
+
+[[package]]
+name = "tokio-tungstenite-wasm"
+version = "0.1.1-alpha.0"
+source = "git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm?rev=d20abdb#d20abdbbb2f03e302e3a8d11a1736ec8b50d0f58"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "http 0.2.7",
+ "httparse",
+ "js-sys",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

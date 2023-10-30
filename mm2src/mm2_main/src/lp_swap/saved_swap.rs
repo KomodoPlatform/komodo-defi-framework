@@ -56,6 +56,13 @@ impl SavedSwap {
         }
     }
 
+    pub fn watcher_message_sent(&self) -> bool {
+        match &self {
+            SavedSwap::Taker(taker_swap) => taker_swap.watcher_message_sent(),
+            _ => false,
+        }
+    }
+
     pub fn uuid(&self) -> &Uuid {
         match self {
             SavedSwap::Maker(swap) => &swap.uuid,
@@ -104,7 +111,7 @@ impl SavedSwap {
                 Ok(try_s!(maker_swap.recover_funds().await))
             },
             SavedSwap::Taker(saved) => {
-                let (taker_swap, _) = try_s!(TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, saved));
+                let (taker_swap, _) = try_s!(TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, saved).await);
                 Ok(try_s!(taker_swap.recover_funds().await))
             },
         }

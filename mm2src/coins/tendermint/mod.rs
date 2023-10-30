@@ -5,6 +5,7 @@
 mod ibc;
 mod iris;
 mod rpc;
+mod tendermint_balance_events;
 mod tendermint_coin;
 mod tendermint_token;
 pub mod tendermint_tx_history_v2;
