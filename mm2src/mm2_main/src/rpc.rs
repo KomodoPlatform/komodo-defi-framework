@@ -70,6 +70,7 @@ const PUBLIC_METHODS: &[Option<&str>] = &[
     Some("stats_swap_status"),
     Some("tradesarray"),
     Some("ticker"),
+    Some("version"),
     None,
 ];
 
