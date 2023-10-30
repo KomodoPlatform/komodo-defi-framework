@@ -107,7 +107,7 @@ mod swap_v2_pb;
 #[path = "lp_swap/swap_watcher.rs"] pub(crate) mod swap_watcher;
 #[path = "lp_swap/taker_restart.rs"]
 pub(crate) mod taker_restart;
-#[path = "lp_swap/taker_swap.rs"] mod taker_swap;
+#[path = "lp_swap/taker_swap.rs"] pub(crate) mod taker_swap;
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "lp_swap/taker_swap_v2.rs"]
 pub mod taker_swap_v2;
