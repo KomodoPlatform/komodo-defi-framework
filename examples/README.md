@@ -1,3 +1,3 @@
-# AtomicDEX-API Examples
+# Komodo DeFi Framework Examples
 
-This directory contains example implementation/use cases of AtomicDEX-API
+This directory contains example implementation/use cases of the Komodo DeFi Framework
