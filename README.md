@@ -73,6 +73,8 @@ For a curated list of Komodo DeFi Framework based projects and resources, check 
 
 ## Building from source
 
+### On Host System:
+
 [Pre-built release binaries](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/get-started-atomicdex.html) are available for OSX, Linux or Windows.
 
 If you want to build from source, the following prerequisites are required:
@@ -86,6 +88,24 @@ If you want to build from source, the following prerequisites are required:
 To build, run `cargo build` (or `cargo build -vv` to get verbose build output).
 
 For more detailed instructions, please refer to the [Installation Guide](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/get-started-atomicdex.html).
+
+### From Container:
+
+If you want to build from source without installing prerequisites to your host system, you can do so by binding the source code inside a container and compiling it there.
+
+Build the image:
+
+```sh
+docker build -t mm2-build-container -f .docker/Dockerfile .
+```
+
+Bind source code into container and compile it:
+
+```sh
+docker run -v "$(pwd)":/app -w /app mm2-build-container cargo build
+```
+
+Just like building it on your host system, you will now have the target directory containing the build files.
 
 ## Building WASM binary
 
