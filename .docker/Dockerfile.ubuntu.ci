@@ -14,11 +14,6 @@ RUN \
     wget -O- https://sh.rustup.rs > /tmp/rustup-init.sh &&\
     sh /tmp/rustup-init.sh -y --default-toolchain none &&\
     . /root/.cargo/env &&\
-    rustup set profile minimal &&\
-    rustup install nightly-2021-07-18 &&\
-    rustup default nightly-2021-07-18 &&\
-    # It seems that bindgen won't prettify without it:
-    rustup component add rustfmt-preview &&\
     rm -f /tmp/rustup-init.sh &&\
     chmod -R 777 /root
 
