@@ -78,7 +78,7 @@ impl Builder {
     pub fn push_bytes(mut self, bytes: &[u8]) -> Self {
         let len = bytes.len();
         if !(1..=75).contains(&len) {
-            panic!("Canot push {} bytes", len);
+            panic!("Can not push {} bytes", len);
         }
 
         let opcode: Opcode = Opcode::from_u8(((Opcode::OP_PUSHBYTES_1 as usize) + len - 1) as u8)

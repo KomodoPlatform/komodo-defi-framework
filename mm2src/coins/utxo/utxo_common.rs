@@ -1680,12 +1680,36 @@ where
         coin.as_ref().conf.bech32_hrp.clone(),
         coin.addr_format().clone(),
     ));
-    let amount = try_tx_fus!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
-    let output = TransactionOutput {
-        value: amount,
-        script_pubkey: Builder::build_p2pkh(&address.hash).to_bytes(),
+
+    let fee_amount = try_tx_fus!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
+
+    let outputs = if coin.as_ref().conf.ticker != "KMD" {
+        vec![TransactionOutput {
+            value: fee_amount,
+            script_pubkey: Builder::build_p2pkh(&address.hash).to_bytes(),
+        }]
+    } else {
+        // For KMD, the dex fee is calculated with a -25% adjustment because this percentage
+        // will be burned; and that is what we are doing here.
+        let burn_amount_dec = (&amount / BigDecimal::from(MmNumber::from("0.75"))) - &amount;
+        let burn_amount = try_tx_fus!(sat_from_big_decimal(&burn_amount_dec, coin.as_ref().decimals));
+
+        vec![
+            TransactionOutput {
+                value: fee_amount,
+                script_pubkey: Builder::build_p2pkh(&address.hash).to_bytes(),
+            },
+            TransactionOutput {
+                value: burn_amount,
+                script_pubkey: Builder::default()
+                    .push_opcode(Opcode::OP_RETURN)
+                    .into_script()
+                    .to_bytes(),
+            },
+        ]
     };
-    send_outputs_from_my_address(coin, vec![output])
+
+    send_outputs_from_my_address(coin, outputs)
 }
 
 pub fn send_maker_payment<T>(coin: T, args: SendPaymentArgs) -> TransactionFut

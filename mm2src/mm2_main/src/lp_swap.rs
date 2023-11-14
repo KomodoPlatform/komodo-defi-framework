@@ -755,7 +755,14 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amo
 /// Calculates DEX fee with a threshold based on min tx amount of the taker coin.
 pub fn dex_fee_amount_from_taker_coin(taker_coin: &dyn MmCoin, maker_coin: &str, trade_amount: &MmNumber) -> MmNumber {
     let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
-    dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &min_tx_amount)
+    let fee = dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &min_tx_amount);
+
+    // Drop the fee by 25%, which will be burned during the taker fee payment.
+    if taker_coin.ticker() == "KMD" {
+        fee * MmNumber::from("0.75")
+    } else {
+        fee
+    }
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
