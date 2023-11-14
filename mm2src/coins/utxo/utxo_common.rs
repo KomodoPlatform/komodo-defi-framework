@@ -1681,23 +1681,39 @@ where
         coin.addr_format().clone(),
     ));
 
-    let fee_amount = try_tx_fus!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
+    let outputs = try_tx_fus!(generate_taker_fee_tx_outputs(
+        &coin.as_ref().conf.ticker,
+        coin.as_ref().decimals,
+        &address.hash,
+        amount
+    ));
 
-    let outputs = if coin.as_ref().conf.ticker != "KMD" {
+    send_outputs_from_my_address(coin, outputs)
+}
+
+fn generate_taker_fee_tx_outputs(
+    ticker: &str,
+    decimals: u8,
+    address_hash: &AddressHashEnum,
+    amount: BigDecimal,
+) -> Result<Vec<TransactionOutput>, MmError<NumConversError>> {
+    let fee_amount = sat_from_big_decimal(&amount, decimals)?;
+
+    let outputs = if ticker != "KMD" {
         vec![TransactionOutput {
             value: fee_amount,
-            script_pubkey: Builder::build_p2pkh(&address.hash).to_bytes(),
+            script_pubkey: Builder::build_p2pkh(address_hash).to_bytes(),
         }]
     } else {
         // For KMD, the dex fee is calculated with a -25% adjustment because this percentage
         // will be burned; and that is what we are doing here.
         let burn_amount_dec = (&amount / BigDecimal::from(MmNumber::from("0.75"))) - &amount;
-        let burn_amount = try_tx_fus!(sat_from_big_decimal(&burn_amount_dec, coin.as_ref().decimals));
+        let burn_amount = sat_from_big_decimal(&burn_amount_dec, decimals)?;
 
         vec![
             TransactionOutput {
                 value: fee_amount,
-                script_pubkey: Builder::build_p2pkh(&address.hash).to_bytes(),
+                script_pubkey: Builder::build_p2pkh(address_hash).to_bytes(),
             },
             TransactionOutput {
                 value: burn_amount,
@@ -1709,7 +1725,7 @@ where
         ]
     };
 
-    send_outputs_from_my_address(coin, outputs)
+    Ok(outputs)
 }
 
 pub fn send_maker_payment<T>(coin: T, args: SendPaymentArgs) -> TransactionFut
@@ -5080,4 +5096,33 @@ fn test_tx_v_size() {
     let tx: UtxoTx = "010000000001023b7308e5ca5d02000b743441f7653c1110e07275b7ab0e983f489e92bfdd2b360100000000ffffffffd6c4f22e9b1090b2584a82cf4cb6f85595dd13c16ad065711a7585cc373ae2e50000000000ffffffff02947b2a00000000001600148474e72f396d44504cd30b1e7b992b65344240c609050700000000001600141b891309c8fe1338786fa3476d5d1a9718d43a0202483045022100bfae465fcd8d2636b2513f68618eb4996334c94d47e285cb538e3416eaf4521b02201b953f46ff21c8715a0997888445ca814dfdb834ef373a29e304bee8b32454d901210226bde3bca3fe7c91e4afb22c4bc58951c60b9bd73514081b6bd35f5c09b8c9a602483045022100ba48839f7becbf8f91266140f9727edd08974fcc18017661477af1d19603ed31022042fd35af1b393eeb818b420e3a5922079776cc73f006d26dd67be932e1b4f9000121034b6a54040ad2175e4c198370ac36b70d0b0ab515b59becf100c4cd310afbfd0c00000000".into();
     let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
     assert_eq!(v_size, 209)
+}
+
+#[test]
+fn test_generate_taker_fee_tx_outputs() {
+    let amount = BigDecimal::from(6150);
+    let fee_amount = sat_from_big_decimal(&amount, 8).unwrap();
+
+    let outputs = generate_taker_fee_tx_outputs("TEST", 8, &AddressHashEnum::default_address_hash(), amount).unwrap();
+
+    assert_eq!(outputs.len(), 1);
+
+    assert_eq!(outputs[0].value, fee_amount);
+}
+
+#[test]
+fn test_generate_taker_fee_tx_outputs_for_kmd() {
+    let amount = BigDecimal::from(6150);
+    let fee_amount = sat_from_big_decimal(&amount, 8).unwrap();
+
+    let outputs =
+        generate_taker_fee_tx_outputs("KMD", 8, &AddressHashEnum::default_address_hash(), amount.clone()).unwrap();
+
+    assert_eq!(outputs.len(), 2);
+
+    assert_eq!(outputs[0].value, fee_amount);
+
+    let burn_amount =
+        sat_from_big_decimal(&((&amount / &BigDecimal::from(MmNumber::from("0.75"))) - &amount), 8).unwrap();
+    assert_eq!(outputs[1].value, burn_amount);
 }

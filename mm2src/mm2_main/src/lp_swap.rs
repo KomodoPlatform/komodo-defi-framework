@@ -2189,4 +2189,30 @@ mod lp_swap_tests {
         let _: SavedSwap = json::from_str(include_str!("for_tests/iris_nimda_rick_taker_swap.json")).unwrap();
         let _: SavedSwap = json::from_str(include_str!("for_tests/iris_nimda_rick_maker_swap.json")).unwrap();
     }
+
+    #[test]
+    fn test_kmd_taker_dex_fee_calculation() {
+        std::env::set_var("MYCOIN_FEE_DISCOUNT", "");
+
+        let kmd = coins::TestCoin::new("KMD");
+        let kmd_taker_fee = dex_fee_amount_from_taker_coin(&kmd, "", &MmNumber::from(6150));
+
+        let mycoin = coins::TestCoin::new("MYCOIN");
+        let mycoin_taker_fee = dex_fee_amount_from_taker_coin(&mycoin, "", &MmNumber::from(6150));
+
+        assert_eq!(kmd_taker_fee / MmNumber::from("0.75"), mycoin_taker_fee);
+    }
+
+    #[test]
+    fn test_dex_fee_amount_from_taker_coin_discount() {
+        std::env::set_var("MYCOIN_FEE_DISCOUNT", "");
+
+        let mycoin = coins::TestCoin::new("MYCOIN");
+        let mycoin_taker_fee = dex_fee_amount_from_taker_coin(&mycoin, "", &MmNumber::from(6150));
+
+        let testcoin = coins::TestCoin::default();
+        let testcoin_taker_fee = dex_fee_amount_from_taker_coin(&testcoin, "", &MmNumber::from(6150));
+
+        assert_eq!(testcoin_taker_fee * MmNumber::from("0.90"), mycoin_taker_fee);
+    }
 }

@@ -97,7 +97,7 @@ impl MarketCoinOps for TestCoin {
 
     fn display_priv_key(&self) -> Result<String, String> { unimplemented!() }
 
-    fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
+    fn min_tx_amount(&self) -> BigDecimal { Default::default() }
 
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 }
