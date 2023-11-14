@@ -62,7 +62,7 @@ For a curated list of Komodo DeFi Framework based projects and resources, check 
 - Perform blockchain transactions without a local native chain (e.g. via Electrum servers)
 - Query orderbooks for all pairs within the [supported coins](https://github.com/KomodoPlatform/coins/blob/master/coins)
 - Buy/sell from the orderbook, or create maker orders
-- Configure automated ["makerbot" trading](https://developers.komodoplatform.com/basic-docs/atomicdex-api-20-dev/start_simple_market_maker_bot.html) with periodic price updates and optional [telegram](https://telegram.org/) alerts
+- Configure automated ["makerbot" trading](https://developers.komodoplatform.com/basic-docs/atomicdex-api-20/start_simple_market_maker_bot.html) with periodic price updates and optional [telegram](https://telegram.org/) alerts
 
 
 ## System Requirements
