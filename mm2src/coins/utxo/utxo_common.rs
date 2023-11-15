@@ -1668,6 +1668,13 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     Ok(final_tx.into())
 }
 
+fn should_taker_burn_kmd(ticker: &str, fee_amount: &BigDecimal, min_tx_amount: &BigDecimal) -> bool {
+    ticker == "DOC" &&
+        // Burn percentage is only calculated for the dex fee if it's still
+        // higher than minimum transaction amount after the cut.
+        fee_amount > &(min_tx_amount / &BigDecimal::from_str("0.75").unwrap())
+}
+
 pub fn send_taker_fee<T>(coin: T, fee_pub_key: &[u8], amount: BigDecimal) -> TransactionFut
 where
     T: UtxoCommonOps + GetUtxoListOps,
@@ -1685,7 +1692,8 @@ where
         &coin.as_ref().conf.ticker,
         coin.as_ref().decimals,
         &address.hash,
-        amount
+        amount,
+        min_tx_amount(coin.as_ref())
     ));
 
     send_outputs_from_my_address(coin, outputs)
@@ -1696,34 +1704,24 @@ fn generate_taker_fee_tx_outputs(
     decimals: u8,
     address_hash: &AddressHashEnum,
     amount: BigDecimal,
+    min_tx_amount: BigDecimal,
 ) -> Result<Vec<TransactionOutput>, MmError<NumConversError>> {
     let fee_amount = sat_from_big_decimal(&amount, decimals)?;
 
-    let outputs = if ticker != "KMD" {
-        vec![TransactionOutput {
-            value: fee_amount,
-            script_pubkey: Builder::build_p2pkh(address_hash).to_bytes(),
-        }]
-    } else {
-        // For KMD, the dex fee is calculated with a -25% adjustment because this percentage
-        // will be burned; and that is what we are doing here.
-        let burn_amount_dec = (&amount / BigDecimal::from(MmNumber::from("0.75"))) - &amount;
+    let mut outputs = vec![TransactionOutput {
+        value: fee_amount,
+        script_pubkey: Builder::build_p2pkh(address_hash).to_bytes(),
+    }];
+
+    if should_taker_burn_kmd(ticker, &amount, &min_tx_amount) {
+        let burn_amount_dec = (&amount / BigDecimal::from_str("0.75").unwrap()) - &amount;
         let burn_amount = sat_from_big_decimal(&burn_amount_dec, decimals)?;
 
-        vec![
-            TransactionOutput {
-                value: fee_amount,
-                script_pubkey: Builder::build_p2pkh(address_hash).to_bytes(),
-            },
-            TransactionOutput {
-                value: burn_amount,
-                script_pubkey: Builder::default()
-                    .push_opcode(Opcode::OP_RETURN)
-                    .into_script()
-                    .to_bytes(),
-            },
-        ]
-    };
+        outputs.push(TransactionOutput {
+            value: burn_amount,
+            script_pubkey: Builder::default().push_opcode(Opcode::OP_RETURN).into_bytes(),
+        });
+    }
 
     Ok(outputs)
 }
@@ -2395,7 +2393,7 @@ pub fn validate_fee<T: UtxoCommonOps>(
     }
 
     let fut = async move {
-        let amount = sat_from_big_decimal(&amount, coin.as_ref().decimals)?;
+        let fee_amount = sat_from_big_decimal(&amount, coin.as_ref().decimals)?;
         let tx_from_rpc = coin
             .as_ref()
             .rpc_client
@@ -2431,7 +2429,7 @@ pub fn validate_fee<T: UtxoCommonOps>(
                         INVALID_RECEIVER_ERR_LOG, out.script_pubkey, expected_script_pubkey
                     )));
                 }
-                if out.value < amount {
+                if out.value < fee_amount {
                     return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                         "Provided dex fee tx output value is less than expected {:?} {:?}",
                         out.value, amount
@@ -2445,6 +2443,38 @@ pub fn validate_fee<T: UtxoCommonOps>(
                 )))
             },
         }
+
+        if should_taker_burn_kmd(&coin.as_ref().conf.ticker, &amount, &min_tx_amount(coin.as_ref())) {
+            match tx.outputs.get(output_index + 1) {
+                Some(out) => {
+                    let expected_script_pubkey = Builder::default().push_opcode(Opcode::OP_RETURN).into_bytes();
+
+                    if out.script_pubkey != expected_script_pubkey {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "{}: Provided burn tx output script_pubkey doesn't match expected {:?} {:?}",
+                            INVALID_RECEIVER_ERR_LOG, out.script_pubkey, expected_script_pubkey
+                        )));
+                    }
+
+                    let burn_amount_dec = (&amount / BigDecimal::from_str("0.75").unwrap()) - &amount;
+                    let burn_amount = sat_from_big_decimal(&burn_amount_dec, coin.as_ref().decimals)?;
+
+                    if out.value < burn_amount {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Provided burn tx output value is less than expected {:?} {:?}",
+                            out.value, amount
+                        )));
+                    }
+                },
+                None => {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Provided burn tx output {:?} does not have output {}",
+                        tx, output_index
+                    )))
+                },
+            }
+        }
+
         Ok(())
     };
     Box::new(fut.boxed().compat())
@@ -5103,7 +5133,14 @@ fn test_generate_taker_fee_tx_outputs() {
     let amount = BigDecimal::from(6150);
     let fee_amount = sat_from_big_decimal(&amount, 8).unwrap();
 
-    let outputs = generate_taker_fee_tx_outputs("TEST", 8, &AddressHashEnum::default_address_hash(), amount).unwrap();
+    let outputs = generate_taker_fee_tx_outputs(
+        "TEST",
+        8,
+        &AddressHashEnum::default_address_hash(),
+        amount,
+        Default::default(),
+    )
+    .unwrap();
 
     assert_eq!(outputs.len(), 1);
 
@@ -5115,14 +5152,19 @@ fn test_generate_taker_fee_tx_outputs_for_kmd() {
     let amount = BigDecimal::from(6150);
     let fee_amount = sat_from_big_decimal(&amount, 8).unwrap();
 
-    let outputs =
-        generate_taker_fee_tx_outputs("KMD", 8, &AddressHashEnum::default_address_hash(), amount.clone()).unwrap();
+    let outputs = generate_taker_fee_tx_outputs(
+        "KMD",
+        8,
+        &AddressHashEnum::default_address_hash(),
+        amount.clone(),
+        Default::default(),
+    )
+    .unwrap();
 
     assert_eq!(outputs.len(), 2);
 
     assert_eq!(outputs[0].value, fee_amount);
 
-    let burn_amount =
-        sat_from_big_decimal(&((&amount / &BigDecimal::from(MmNumber::from("0.75"))) - &amount), 8).unwrap();
+    let burn_amount = sat_from_big_decimal(&((&amount / &BigDecimal::from_str("0.75").unwrap()) - &amount), 8).unwrap();
     assert_eq!(outputs[1].value, burn_amount);
 }
