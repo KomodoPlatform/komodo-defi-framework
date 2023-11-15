@@ -745,7 +745,7 @@ fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
 pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amount: &MmNumber) -> MmNumber {
     let rate = dex_fee_rate(base, rel);
 
-    let fee_amount = if base == "DOC" {
+    let fee_amount = if base == "KMD" {
         // Drop the fee by 25%, which will be burned during the taker fee payment.
         //
         // This cut will be dropped before return if the final amount is less than
