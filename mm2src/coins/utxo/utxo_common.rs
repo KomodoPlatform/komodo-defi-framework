@@ -1668,6 +1668,7 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     Ok(final_tx.into())
 }
 
+// TODO: add unit tests
 fn should_taker_burn_kmd(ticker: &str, fee_amount: &BigDecimal, min_tx_amount: &BigDecimal) -> bool {
     ticker == "DOC" &&
         // Burn percentage is only calculated for the dex fee if it's still
