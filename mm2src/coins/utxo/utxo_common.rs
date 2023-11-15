@@ -1668,7 +1668,6 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     Ok(final_tx.into())
 }
 
-// TODO: add unit tests
 fn should_taker_burn_kmd(taker_ticker: &str, fee_amount: &BigDecimal, min_tx_amount: &BigDecimal) -> bool {
     taker_ticker == "KMD" &&
         // Burn percentage is only calculated for the dex fee if it's still
@@ -5168,4 +5167,28 @@ fn test_generate_taker_fee_tx_outputs_for_kmd() {
 
     let burn_amount = sat_from_big_decimal(&((&amount / &BigDecimal::from_str("0.75").unwrap()) - &amount), 8).unwrap();
     assert_eq!(outputs[1].value, burn_amount);
+}
+
+#[test]
+fn test_should_taker_burn_kmd() {
+    // When taker_ticker is "KMD" and fee_amount is enough to allow burning.
+    assert!(should_taker_burn_kmd(
+        "KMD",
+        &BigDecimal::from_str("0.02").unwrap(),
+        &BigDecimal::from_str("0.00777").unwrap()
+    ));
+
+    // When taker_ticker is not "KMD".
+    assert!(!should_taker_burn_kmd(
+        "BTC",
+        &BigDecimal::from_str("0.02").unwrap(),
+        &BigDecimal::from_str("0.00777").unwrap()
+    ));
+
+    // When taker_ticker is "KMD" but fee_amount is not enough to allow burning.
+    assert!(!should_taker_burn_kmd(
+        "KMD",
+        &BigDecimal::from_str("0.01").unwrap(),
+        &BigDecimal::from_str("0.00777").unwrap()
+    ));
 }
