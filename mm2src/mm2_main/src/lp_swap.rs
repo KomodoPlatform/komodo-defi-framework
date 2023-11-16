@@ -750,7 +750,13 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amo
         //
         // This cut will be dropped before return if the final amount is less than
         // the minimum transaction amount.
-        (trade_amount * &rate) * MmNumber::from("0.75")
+        let new_dex_fee = (trade_amount * &rate) * MmNumber::from("0.75");
+
+        if &new_dex_fee >= min_tx_amount {
+            new_dex_fee
+        } else {
+            min_tx_amount.clone()
+        }
     } else {
         trade_amount * &rate
     };
@@ -1667,7 +1673,7 @@ mod lp_swap_tests {
         let rel = "ETH";
         let amount = 1.into();
         let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
-        let expected_fee = amount * (9, 7770).into();
+        let expected_fee = amount * (9, 7770).into() * MmNumber::from("0.75");
         assert_eq!(expected_fee, actual_fee);
 
         let base = "BTC";
