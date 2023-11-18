@@ -15,8 +15,8 @@ use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
             PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
             RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps, SearchForSwapTxSpendInput,
@@ -2421,8 +2421,14 @@ impl MarketCoinOps for TendermintCoin {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut {
-        self.send_taker_fee_for_denom(fee_addr, amount, self.denom.clone(), self.decimals, uuid)
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8]) -> TransactionFut {
+        self.send_taker_fee_for_denom(
+            fee_addr,
+            dex_fee.fee_amount().into(),
+            self.denom.clone(),
+            self.decimals,
+            uuid,
+        )
     }
 
     fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
@@ -2570,7 +2576,7 @@ impl SwapOps for TendermintCoin {
             validate_fee_args.fee_tx,
             validate_fee_args.expected_sender,
             validate_fee_args.fee_addr,
-            validate_fee_args.amount,
+            &validate_fee_args.dex_fee.fee_amount().into(),
             self.decimals,
             validate_fee_args.uuid,
             self.denom.to_string(),
@@ -3185,13 +3191,13 @@ pub mod tendermint_coin_tests {
             data: TxRaw::decode(create_htlc_tx_bytes.as_slice()).unwrap(),
         });
 
-        let invalid_amount = 1.into();
+        let invalid_amount: MmNumber = 1.into();
         let error = coin
             .validate_fee(ValidateFeeArgs {
                 fee_tx: &create_htlc_tx,
                 expected_sender: &[],
                 fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                amount: &invalid_amount,
+                dex_fee: &DexFee::Standard(invalid_amount.clone()),
                 min_block_number: 0,
                 uuid: &[1; 16],
             })
@@ -3225,7 +3231,7 @@ pub mod tendermint_coin_tests {
                 fee_tx: &random_transfer_tx,
                 expected_sender: &[],
                 fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                amount: &invalid_amount,
+                dex_fee: &DexFee::Standard(invalid_amount.clone()),
                 min_block_number: 0,
                 uuid: &[1; 16],
             })
@@ -3258,7 +3264,7 @@ pub mod tendermint_coin_tests {
                 fee_tx: &dex_fee_tx,
                 expected_sender: &[],
                 fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                amount: &invalid_amount,
+                dex_fee: &DexFee::Standard(invalid_amount),
                 min_block_number: 0,
                 uuid: &[1; 16],
             })
@@ -3278,7 +3284,7 @@ pub mod tendermint_coin_tests {
                 fee_tx: &dex_fee_tx,
                 expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
                 fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                amount: &valid_amount,
+                dex_fee: &DexFee::Standard(valid_amount.clone().into()),
                 min_block_number: 0,
                 uuid: &[1; 16],
             })
@@ -3297,7 +3303,7 @@ pub mod tendermint_coin_tests {
                 fee_tx: &dex_fee_tx,
                 expected_sender: &pubkey,
                 fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                amount: &valid_amount,
+                dex_fee: &DexFee::Standard(valid_amount.into()),
                 min_block_number: 0,
                 uuid: &[1; 16],
             })

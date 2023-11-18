@@ -820,7 +820,7 @@ pub struct ValidateFeeArgs<'a> {
     pub fee_tx: &'a TransactionEnum,
     pub expected_sender: &'a [u8],
     pub fee_addr: &'a [u8],
-    pub amount: &'a BigDecimal,
+    pub dex_fee: &'a DexFee,
     pub min_block_number: u64,
     pub uuid: &'a [u8],
 }
@@ -903,7 +903,7 @@ pub enum WatcherRewardError {
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut;
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8]) -> TransactionFut;
 
     fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionFut;
 
@@ -2948,6 +2948,72 @@ impl MmCoinStruct {
         }
 
         self.is_available.store(to, AtomicOrdering::SeqCst);
+    }
+}
+
+/// Represents the different types of DEX fees.
+#[derive(Debug, PartialEq)]
+pub enum DexFee {
+    /// Standard dex fee which will be sent to the dex fee address
+    Standard(MmNumber),
+    /// Dex fee with the burn amount.
+    ///   - `fee_amount` goes to the dex fee address.
+    ///   - `burn_amount` will be added as `OP_RETURN` output in the dex fee transaction.
+    WithBurn {
+        fee_amount: MmNumber,
+        burn_amount: MmNumber,
+    },
+}
+
+impl DexFee {
+    /// Creates a new `DexFee` with burn amounts.
+    pub fn with_burn(fee_amount: MmNumber, burn_amount: MmNumber) -> DexFee {
+        DexFee::WithBurn {
+            fee_amount,
+            burn_amount,
+        }
+    }
+
+    /// Gets the fee amount associated with the dex fee.
+    pub fn fee_amount(&self) -> MmNumber {
+        match self {
+            DexFee::Standard(t) => t.clone(),
+            DexFee::WithBurn { fee_amount, .. } => fee_amount.clone(),
+        }
+    }
+
+    /// Gets the burn amount associated with the dex fee, if applicable.
+    pub fn burn_amount(&self) -> Option<MmNumber> {
+        match self {
+            DexFee::Standard(_) => None,
+            DexFee::WithBurn { burn_amount, .. } => Some(burn_amount.clone()),
+        }
+    }
+
+    /// Calculates the total spend amount, considering both the fee and burn amounts.
+    pub fn total_spend_amount(&self) -> MmNumber {
+        match self {
+            DexFee::Standard(t) => t.clone(),
+            DexFee::WithBurn {
+                fee_amount,
+                burn_amount,
+            } => fee_amount + burn_amount,
+        }
+    }
+
+    /// Converts the fee amount to micro-units based on the specified decimal places.
+    pub fn fee_uamount(&self, decimals: u8) -> NumConversResult<u64> {
+        let fee_amount = self.fee_amount();
+        utxo::sat_from_big_decimal(&fee_amount.into(), decimals)
+    }
+
+    /// Converts the burn amount to micro-units, if applicable, based on the specified decimal places.
+    pub fn burn_uamount(&self, decimals: u8) -> NumConversResult<Option<u64>> {
+        if let Some(burn_amount) = self.burn_amount() {
+            Ok(Some(utxo::sat_from_big_decimal(&burn_amount.into(), decimals)?))
+        } else {
+            Ok(None)
+        }
     }
 }
 

@@ -13,8 +13,8 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_scri
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
                   FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee,
+            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionArgs, PaymentInstructions,
             PaymentInstructionsErr, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RefundError,
             RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
@@ -750,7 +750,7 @@ impl SlpToken {
             tx,
             SLP_FEE_VOUT,
             expected_sender,
-            &self.platform_dust_dec(),
+            &DexFee::Standard(self.platform_dust_dec().into()),
             min_block_number,
             fee_addr,
         );
@@ -1193,11 +1193,11 @@ impl MarketCoinOps for SlpToken {
 
 #[async_trait]
 impl SwapOps for SlpToken {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8]) -> TransactionFut {
         let coin = self.clone();
         let fee_pubkey = try_tx_fus!(Public::from_slice(fee_addr));
         let script_pubkey = ScriptBuilder::build_p2pkh(&fee_pubkey.address_hash().into()).into();
-        let amount = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals()));
+        let amount = try_tx_fus!(dex_fee.fee_uamount(self.decimals()));
 
         let fut = async move {
             let slp_out = SlpOutput { amount, script_pubkey };
@@ -1326,11 +1326,11 @@ impl SwapOps for SlpToken {
         let coin = self.clone();
         let expected_sender = validate_fee_args.expected_sender.to_owned();
         let fee_addr = validate_fee_args.fee_addr.to_owned();
-        let amount = validate_fee_args.amount.to_owned();
+        let amount = validate_fee_args.dex_fee.fee_amount();
         let min_block_number = validate_fee_args.min_block_number;
 
         let fut = async move {
-            coin.validate_dex_fee(tx, &expected_sender, &fee_addr, amount, min_block_number)
+            coin.validate_dex_fee(tx, &expected_sender, &fee_addr, amount.into(), min_block_number)
                 .await
                 .map_err(|e| MmError::new(ValidatePaymentError::WrongPaymentTx(e.into_inner().to_string())))?;
             Ok(())

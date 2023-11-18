@@ -15,7 +15,7 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::watcher_common::validate_watcher_reward;
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, GenPreimageResult,
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, DexFee, GenPreimageResult,
             GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress, HDAccountAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, RefundFundingSecretArgs, RefundPaymentArgs,
             RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
@@ -1668,14 +1668,7 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     Ok(final_tx.into())
 }
 
-fn should_taker_burn_kmd(taker_ticker: &str, fee_amount: &BigDecimal, min_tx_amount: &BigDecimal) -> bool {
-    taker_ticker == "KMD" &&
-        // Burn percentage is only calculated for the dex fee if it's still
-        // higher than minimum transaction amount after the cut.
-        fee_amount > &(min_tx_amount / &BigDecimal::from_str("0.75").unwrap())
-}
-
-pub fn send_taker_fee<T>(coin: T, fee_pub_key: &[u8], amount: BigDecimal) -> TransactionFut
+pub fn send_taker_fee<T>(coin: T, fee_pub_key: &[u8], dex_fee: DexFee) -> TransactionFut
 where
     T: UtxoCommonOps + GetUtxoListOps,
 {
@@ -1689,34 +1682,27 @@ where
     ));
 
     let outputs = try_tx_fus!(generate_taker_fee_tx_outputs(
-        &coin.as_ref().conf.ticker,
         coin.as_ref().decimals,
         &address.hash,
-        amount,
-        min_tx_amount(coin.as_ref())
+        dex_fee,
     ));
 
     send_outputs_from_my_address(coin, outputs)
 }
 
 fn generate_taker_fee_tx_outputs(
-    ticker: &str,
     decimals: u8,
     address_hash: &AddressHashEnum,
-    amount: BigDecimal,
-    min_tx_amount: BigDecimal,
+    dex_fee: DexFee,
 ) -> Result<Vec<TransactionOutput>, MmError<NumConversError>> {
-    let fee_amount = sat_from_big_decimal(&amount, decimals)?;
+    let fee_amount = dex_fee.fee_uamount(decimals)?;
 
     let mut outputs = vec![TransactionOutput {
         value: fee_amount,
         script_pubkey: Builder::build_p2pkh(address_hash).to_bytes(),
     }];
 
-    if should_taker_burn_kmd(ticker, &amount, &min_tx_amount) {
-        let burn_amount_dec = (&amount / BigDecimal::from_str("0.75").unwrap()) - &amount;
-        let burn_amount = sat_from_big_decimal(&burn_amount_dec, decimals)?;
-
+    if let Some(burn_amount) = dex_fee.burn_uamount(decimals)? {
         outputs.push(TransactionOutput {
             value: burn_amount,
             script_pubkey: Builder::default().push_opcode(Opcode::OP_RETURN).into_bytes(),
@@ -2367,11 +2353,10 @@ pub fn validate_fee<T: UtxoCommonOps>(
     tx: UtxoTx,
     output_index: usize,
     sender_pubkey: &[u8],
-    amount: &BigDecimal,
+    dex_amount: &DexFee,
     min_block_number: u64,
     fee_addr: &[u8],
 ) -> ValidatePaymentFut<()> {
-    let amount = amount.clone();
     let address = try_f!(address_from_raw_pubkey(
         fee_addr,
         coin.as_ref().conf.pub_addr_prefix,
@@ -2392,8 +2377,10 @@ pub fn validate_fee<T: UtxoCommonOps>(
         ));
     }
 
+    let fee_amount = try_f!(dex_amount.fee_uamount(coin.as_ref().decimals));
+    let burn_amount = try_f!(dex_amount.burn_uamount(coin.as_ref().decimals));
+
     let fut = async move {
-        let fee_amount = sat_from_big_decimal(&amount, coin.as_ref().decimals)?;
         let tx_from_rpc = coin
             .as_ref()
             .rpc_client
@@ -2432,7 +2419,7 @@ pub fn validate_fee<T: UtxoCommonOps>(
                 if out.value < fee_amount {
                     return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                         "Provided dex fee tx output value is less than expected {:?} {:?}",
-                        out.value, amount
+                        out.value, fee_amount
                     )));
                 }
             },
@@ -2444,7 +2431,7 @@ pub fn validate_fee<T: UtxoCommonOps>(
             },
         }
 
-        if should_taker_burn_kmd(&coin.as_ref().conf.ticker, &amount, &min_tx_amount(coin.as_ref())) {
+        if let Some(burn_amount) = burn_amount {
             match tx.outputs.get(output_index + 1) {
                 Some(out) => {
                     let expected_script_pubkey = Builder::default().push_opcode(Opcode::OP_RETURN).into_bytes();
@@ -2456,13 +2443,10 @@ pub fn validate_fee<T: UtxoCommonOps>(
                         )));
                     }
 
-                    let burn_amount_dec = (&amount / BigDecimal::from_str("0.75").unwrap()) - &amount;
-                    let burn_amount = sat_from_big_decimal(&burn_amount_dec, coin.as_ref().decimals)?;
-
                     if out.value < burn_amount {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Provided burn tx output value is less than expected {:?} {:?}",
-                            out.value, amount
+                            out.value, burn_amount
                         )));
                     }
                 },
@@ -5134,11 +5118,9 @@ fn test_generate_taker_fee_tx_outputs() {
     let fee_amount = sat_from_big_decimal(&amount, 8).unwrap();
 
     let outputs = generate_taker_fee_tx_outputs(
-        "TEST",
         8,
         &AddressHashEnum::default_address_hash(),
-        amount,
-        Default::default(),
+        DexFee::Standard(amount.into()),
     )
     .unwrap();
 
@@ -5148,47 +5130,23 @@ fn test_generate_taker_fee_tx_outputs() {
 }
 
 #[test]
-fn test_generate_taker_fee_tx_outputs_for_kmd() {
-    let amount = BigDecimal::from(6150);
-    let fee_amount = sat_from_big_decimal(&amount, 8).unwrap();
+fn test_generate_taker_fee_tx_outputs_with_burn() {
+    let fee_amount = BigDecimal::from(6150);
+    let burn_amount = &(&fee_amount / &BigDecimal::from_str("0.75").unwrap()) - &fee_amount;
+
+    let fee_uamount = sat_from_big_decimal(&fee_amount, 8).unwrap();
+    let burn_uamount = sat_from_big_decimal(&burn_amount, 8).unwrap();
 
     let outputs = generate_taker_fee_tx_outputs(
-        "KMD",
         8,
         &AddressHashEnum::default_address_hash(),
-        amount.clone(),
-        Default::default(),
+        DexFee::with_burn(fee_amount.into(), burn_amount.into()),
     )
     .unwrap();
 
     assert_eq!(outputs.len(), 2);
 
-    assert_eq!(outputs[0].value, fee_amount);
+    assert_eq!(outputs[0].value, fee_uamount);
 
-    let burn_amount = sat_from_big_decimal(&((&amount / &BigDecimal::from_str("0.75").unwrap()) - &amount), 8).unwrap();
-    assert_eq!(outputs[1].value, burn_amount);
-}
-
-#[test]
-fn test_should_taker_burn_kmd() {
-    // When taker_ticker is "KMD" and fee_amount is enough to allow burning.
-    assert!(should_taker_burn_kmd(
-        "KMD",
-        &BigDecimal::from_str("0.02").unwrap(),
-        &BigDecimal::from_str("0.00777").unwrap()
-    ));
-
-    // When taker_ticker is not "KMD".
-    assert!(!should_taker_burn_kmd(
-        "BTC",
-        &BigDecimal::from_str("0.02").unwrap(),
-        &BigDecimal::from_str("0.00777").unwrap()
-    ));
-
-    // When taker_ticker is "KMD" but fee_amount is not enough to allow burning.
-    assert!(!should_taker_burn_kmd(
-        "KMD",
-        &BigDecimal::from_str("0.01").unwrap(),
-        &BigDecimal::from_str("0.00777").unwrap()
-    ));
+    assert_eq!(outputs[1].value, burn_uamount);
 }

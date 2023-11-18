@@ -23,7 +23,7 @@
 use super::eth::Action::{Call, Create};
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_structs::{ContractType, ConvertChain, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
-use crate::{ValidateWatcherSpendInput, WatcherSpendType};
+use crate::{DexFee, ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
@@ -1058,12 +1058,15 @@ impl Deref for EthCoin {
 
 #[async_trait]
 impl SwapOps for EthCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8]) -> TransactionFut {
         let address = try_tx_fus!(addr_from_raw_pubkey(fee_addr));
 
         Box::new(
-            self.send_to_address(address, try_tx_fus!(wei_from_big_decimal(&amount, self.decimals)))
-                .map(TransactionEnum::from),
+            self.send_to_address(
+                address,
+                try_tx_fus!(wei_from_big_decimal(&dex_fee.fee_amount().into(), self.decimals)),
+            )
+            .map(TransactionEnum::from),
         )
     }
 
@@ -1118,7 +1121,7 @@ impl SwapOps for EthCoin {
             fee_tx_hash: &tx.hash,
             expected_sender: validate_fee_args.expected_sender,
             fee_addr: validate_fee_args.fee_addr,
-            amount: validate_fee_args.amount,
+            amount: &validate_fee_args.dex_fee.fee_amount().into(),
             min_block_number: validate_fee_args.min_block_number,
             uuid: validate_fee_args.uuid,
         })

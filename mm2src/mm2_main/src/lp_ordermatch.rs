@@ -2974,7 +2974,10 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                             maker_volume: maker_amount,
                             secret,
                             taker_coin: t.clone(),
-                            dex_fee_amount: dex_fee_amount_from_taker_coin(&t, m.ticker(), &taker_amount),
+                            // TODO:
+                            // Support KMD burning for v2
+                            dex_fee_amount: dex_fee_amount_from_taker_coin(&t, m.ticker(), &taker_amount)
+                                .total_spend_amount(),
                             taker_volume: taker_amount,
                             taker_premium: Default::default(),
                             conf_settings: my_conf_settings,
@@ -3121,7 +3124,10 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                             maker_coin: m.clone(),
                             maker_volume: maker_amount,
                             taker_coin: t.clone(),
-                            dex_fee: dex_fee_amount_from_taker_coin(&t, maker_coin_ticker, &taker_amount),
+                            // TODO:
+                            // Support KMD burning for v2
+                            dex_fee: dex_fee_amount_from_taker_coin(&t, maker_coin_ticker, &taker_amount)
+                                .total_spend_amount(),
                             taker_volume: taker_amount,
                             taker_premium: Default::default(),
                             secret_hash_algo,

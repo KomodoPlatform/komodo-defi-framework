@@ -60,7 +60,7 @@
 use super::lp_network::P2PRequestResult;
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
 use bitcrypto::{dhash160, sha256};
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::now_sec;
 use common::time_cache::DuplicateCache;
@@ -742,34 +742,34 @@ fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
     }
 }
 
-pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amount: &MmNumber) -> MmNumber {
+pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amount: &MmNumber) -> DexFee {
     let rate = dex_fee_rate(base, rel);
+    let fee = trade_amount * &rate;
 
-    let fee_amount = if base == "KMD" {
+    if &fee < min_tx_amount {
+        return DexFee::Standard(min_tx_amount.clone());
+    }
+
+    if base == "KMD" {
         // Drop the fee by 25%, which will be burned during the taker fee payment.
         //
         // This cut will be dropped before return if the final amount is less than
         // the minimum transaction amount.
-        let new_dex_fee = (trade_amount * &rate) * MmNumber::from("0.75");
+        let new_fee = &fee * &MmNumber::from("0.75");
+        let burn_amount = &fee - &new_fee;
 
-        if &new_dex_fee >= min_tx_amount {
-            new_dex_fee
+        if &new_fee >= min_tx_amount {
+            return DexFee::with_burn(new_fee, burn_amount);
         } else {
-            min_tx_amount.clone()
+            return DexFee::Standard(min_tx_amount.clone());
         }
-    } else {
-        trade_amount * &rate
-    };
-
-    if &fee_amount < min_tx_amount {
-        min_tx_amount.clone()
-    } else {
-        fee_amount
     }
+
+    DexFee::Standard(fee)
 }
 
 /// Calculates DEX fee with a threshold based on min tx amount of the taker coin.
-pub fn dex_fee_amount_from_taker_coin(taker_coin: &dyn MmCoin, maker_coin: &str, trade_amount: &MmNumber) -> MmNumber {
+pub fn dex_fee_amount_from_taker_coin(taker_coin: &dyn MmCoin, maker_coin: &str, trade_amount: &MmNumber) -> DexFee {
     let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
     dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &min_tx_amount)
 }
@@ -1666,7 +1666,7 @@ mod lp_swap_tests {
         let rel = "ETH";
         let amount = 1.into();
         let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
-        let expected_fee = amount / 777u64.into();
+        let expected_fee = DexFee::Standard(amount / 777u64.into());
         assert_eq!(expected_fee, actual_fee);
 
         let base = "KMD";
@@ -1674,20 +1674,21 @@ mod lp_swap_tests {
         let amount = 1.into();
         let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
         let expected_fee = amount * (9, 7770).into() * MmNumber::from("0.75");
-        assert_eq!(expected_fee, actual_fee);
+        let expected_burn_amount = &(&expected_fee / &MmNumber::from("0.75")) - &expected_fee;
+        assert_eq!(DexFee::with_burn(expected_fee, expected_burn_amount), actual_fee);
 
         let base = "BTC";
         let rel = "KMD";
         let amount = 1.into();
         let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
-        let expected_fee = amount * (9, 7770).into();
+        let expected_fee = DexFee::Standard(amount * (9, 7770).into());
         assert_eq!(expected_fee, actual_fee);
 
         let base = "BTC";
         let rel = "KMD";
         let amount: MmNumber = "0.001".parse::<BigDecimal>().unwrap().into();
         let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
-        assert_eq!(min_tx_amount, actual_fee);
+        assert_eq!(DexFee::Standard(min_tx_amount), actual_fee);
     }
 
     #[test]
@@ -2204,12 +2205,27 @@ mod lp_swap_tests {
         std::env::set_var("MYCOIN_FEE_DISCOUNT", "");
 
         let kmd = coins::TestCoin::new("KMD");
-        let kmd_taker_fee = dex_fee_amount_from_taker_coin(&kmd, "", &MmNumber::from(6150));
+        let (kmd_taker_fee, kmd_burn_amount) = match dex_fee_amount_from_taker_coin(&kmd, "", &MmNumber::from(6150)) {
+            DexFee::Standard(_) => panic!("Wrong variant returned for KMD from `dex_fee_amount_from_taker_coin`."),
+            DexFee::WithBurn {
+                fee_amount,
+                burn_amount,
+            } => (fee_amount, burn_amount),
+        };
 
         let mycoin = coins::TestCoin::new("MYCOIN");
-        let mycoin_taker_fee = dex_fee_amount_from_taker_coin(&mycoin, "", &MmNumber::from(6150));
+        let mycoin_taker_fee = match dex_fee_amount_from_taker_coin(&mycoin, "", &MmNumber::from(6150)) {
+            DexFee::Standard(t) => t,
+            DexFee::WithBurn { .. } => {
+                panic!("Wrong variant returned for MYCOIN from `dex_fee_amount_from_taker_coin`.")
+            },
+        };
 
-        assert_eq!(kmd_taker_fee / MmNumber::from("0.75"), mycoin_taker_fee);
+        let expected_mycoin_taker_fee = &kmd_taker_fee / &MmNumber::from("0.75");
+        let expected_kmd_burn_amount = &mycoin_taker_fee - &kmd_taker_fee;
+
+        assert_eq!(expected_mycoin_taker_fee, mycoin_taker_fee);
+        assert_eq!(expected_kmd_burn_amount, kmd_burn_amount);
     }
 
     #[test]
@@ -2217,10 +2233,20 @@ mod lp_swap_tests {
         std::env::set_var("MYCOIN_FEE_DISCOUNT", "");
 
         let mycoin = coins::TestCoin::new("MYCOIN");
-        let mycoin_taker_fee = dex_fee_amount_from_taker_coin(&mycoin, "", &MmNumber::from(6150));
+        let mycoin_taker_fee = match dex_fee_amount_from_taker_coin(&mycoin, "", &MmNumber::from(6150)) {
+            DexFee::Standard(t) => t,
+            DexFee::WithBurn { .. } => {
+                panic!("Wrong variant returned for MYCOIN from `dex_fee_amount_from_taker_coin`.")
+            },
+        };
 
         let testcoin = coins::TestCoin::default();
-        let testcoin_taker_fee = dex_fee_amount_from_taker_coin(&testcoin, "", &MmNumber::from(6150));
+        let testcoin_taker_fee = match dex_fee_amount_from_taker_coin(&testcoin, "", &MmNumber::from(6150)) {
+            DexFee::Standard(t) => t,
+            DexFee::WithBurn { .. } => {
+                panic!("Wrong variant returned for TEST coin from `dex_fee_amount_from_taker_coin`.")
+            },
+        };
 
         assert_eq!(testcoin_taker_fee * MmNumber::from("0.90"), mycoin_taker_fee);
     }
