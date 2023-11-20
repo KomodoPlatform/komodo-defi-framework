@@ -746,7 +746,7 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amo
     let rate = dex_fee_rate(base, rel);
     let fee = trade_amount * &rate;
 
-    if &fee < min_tx_amount {
+    if &fee <= min_tx_amount {
         return DexFee::Standard(min_tx_amount.clone());
     }
 
@@ -761,7 +761,7 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amo
         if &new_fee >= min_tx_amount {
             return DexFee::with_burn(new_fee, burn_amount);
         } else {
-            return DexFee::Standard(min_tx_amount.clone());
+            return DexFee::Standard(fee);
         }
     }
 
