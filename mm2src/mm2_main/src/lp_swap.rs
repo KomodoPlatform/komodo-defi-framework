@@ -1673,8 +1673,8 @@ mod lp_swap_tests {
         let rel = "ETH";
         let amount = 1.into();
         let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
-        let expected_fee = amount * (9, 7770).into() * MmNumber::from("0.75");
-        let expected_burn_amount = &(&expected_fee / &MmNumber::from("0.75")) - &expected_fee;
+        let expected_fee = amount.clone() * (9, 7770).into() * MmNumber::from("0.75");
+        let expected_burn_amount = amount * (9, 7770).into() * MmNumber::from("0.25");
         assert_eq!(DexFee::with_burn(expected_fee, expected_burn_amount), actual_fee);
 
         let base = "BTC";
