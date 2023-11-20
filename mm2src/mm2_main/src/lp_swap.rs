@@ -755,14 +755,25 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amo
         //
         // This cut will be dropped before return if the final amount is less than
         // the minimum transaction amount.
-        let new_fee = &fee * &MmNumber::from("0.75");
-        let burn_amount = &fee - &new_fee;
 
-        if &new_fee >= min_tx_amount {
-            return DexFee::with_burn(new_fee, burn_amount);
+        // Fee with 25% cut
+        let new_fee = &fee * &MmNumber::from("0.75");
+
+        let (fee, burn) = if &new_fee >= min_tx_amount {
+            // Use the max burn value, which is 25%.
+            let burn_amount = &fee - &new_fee;
+
+            (new_fee, burn_amount)
         } else {
-            return DexFee::Standard(fee);
-        }
+            // Burn only the exceed amount because fee after 25% cut is less
+            // than `min_tx_amount`.
+            let burn_amount = &fee - min_tx_amount;
+            let new_fee = &fee - &burn_amount;
+
+            (new_fee, burn_amount)
+        };
+
+        return DexFee::with_burn(fee, burn);
     }
 
     DexFee::Standard(fee)
@@ -1676,6 +1687,20 @@ mod lp_swap_tests {
         let expected_fee = amount.clone() * (9, 7770).into() * MmNumber::from("0.75");
         let expected_burn_amount = amount * (9, 7770).into() * MmNumber::from("0.25");
         assert_eq!(DexFee::with_burn(expected_fee, expected_burn_amount), actual_fee);
+
+        // check the case when KMD taker fee is close to dust
+        let base = "KMD";
+        let rel = "BTC";
+        let amount = (1001 * 777, 90000000).into();
+        let min_tx_amount = "0.00001".into();
+        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
+        assert_eq!(
+            DexFee::WithBurn {
+                fee_amount: "0.00001".into(),
+                burn_amount: "0.00000001".into()
+            },
+            actual_fee
+        );
 
         let base = "BTC";
         let rel = "KMD";
