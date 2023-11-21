@@ -1717,7 +1717,7 @@ impl MmCoin for ZCoin {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        _dex_fee_amount: BigDecimal,
+        _dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         Ok(TradeFee {

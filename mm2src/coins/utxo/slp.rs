@@ -1818,10 +1818,10 @@ impl MmCoin for SlpToken {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        let slp_amount = sat_from_big_decimal(&dex_fee_amount, self.decimals())?;
+        let slp_amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.decimals())?;
         // can use dummy P2PKH script_pubkey here
         let script_pubkey = ScriptBuilder::build_p2pkh(&H160::default().into()).into();
         let slp_out = SlpOutput {

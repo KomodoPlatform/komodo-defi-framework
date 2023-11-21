@@ -949,8 +949,11 @@ fn test_taker_fee_tx_fee() {
     assert_eq!(coin.my_balance().wait().expect("!my_balance"), expected_balance);
 
     let dex_fee_amount = BigDecimal::from(5u32);
-    let actual = block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount, FeeApproxStage::WithoutApprox))
-        .expect("!get_fee_to_send_taker_fee");
+    let actual = block_on(coin.get_fee_to_send_taker_fee(
+        DexFee::Standard(MmNumber::from(dex_fee_amount)),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .expect("!get_fee_to_send_taker_fee");
     // only one contract call should be included into the expected trade fee
     let expected_receiver_fee = big_decimal_from_sat(CONTRACT_CALL_GAS_FEE + EXPECTED_TX_FEE, coin.utxo.decimals);
     let expected = TradeFee {

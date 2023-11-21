@@ -1612,11 +1612,11 @@ impl TendermintCoin {
         ticker: String,
         denom: Denom,
         decimals: u8,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
     ) -> TradePreimageResult<TradeFee> {
         let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.into_inner().to_string())))?;
-        let amount = sat_from_big_decimal(&dex_fee_amount, decimals)?;
+        let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals)?;
 
         let current_block = self.current_block().compat().await.map_err(|e| {
             MmError::new(TradePreimageError::InternalError(format!(
@@ -2174,7 +2174,7 @@ impl MmCoin for TendermintCoin {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         self.get_fee_to_send_taker_fee_for_denom(self.ticker.clone(), self.denom.clone(), self.decimals, dex_fee_amount)

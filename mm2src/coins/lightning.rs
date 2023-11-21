@@ -1342,7 +1342,7 @@ impl MmCoin for LightningCoin {
     // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
     async fn get_fee_to_send_taker_fee(
         &self,
-        _dex_fee_amount: BigDecimal,
+        _dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         Ok(TradeFee {

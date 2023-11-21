@@ -768,9 +768,8 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amo
             // Burn only the exceed amount because fee after 25% cut is less
             // than `min_tx_amount`.
             let burn_amount = &fee - min_tx_amount;
-            let new_fee = &fee - &burn_amount;
 
-            (new_fee, burn_amount)
+            (min_tx_amount.clone(), burn_amount)
         };
 
         return DexFee::with_burn(fee, burn);

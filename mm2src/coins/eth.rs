@@ -4904,10 +4904,10 @@ impl MmCoin for EthCoin {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        let dex_fee_amount = wei_from_big_decimal(&dex_fee_amount, self.decimals)?;
+        let dex_fee_amount = wei_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.decimals)?;
 
         // pass the dummy params
         let to_addr = addr_from_raw_pubkey(&DEX_FEE_ADDR_RAW_PUBKEY)

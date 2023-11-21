@@ -2673,7 +2673,7 @@ pub trait MmCoin:
     /// Get transaction fee the Taker has to pay to send a `TakerFee` transaction and check if the wallet has sufficient balance to pay the fee.
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee>;
 
@@ -2952,7 +2952,7 @@ impl MmCoinStruct {
 }
 
 /// Represents the different types of DEX fees.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DexFee {
     /// Standard dex fee which will be sent to the dex fee address
     Standard(MmNumber),

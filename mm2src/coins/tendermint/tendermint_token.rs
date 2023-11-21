@@ -840,7 +840,7 @@ impl MmCoin for TendermintToken {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         self.platform_coin

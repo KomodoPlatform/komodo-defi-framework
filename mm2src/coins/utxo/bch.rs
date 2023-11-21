@@ -1268,7 +1268,7 @@ impl MmCoin for BchCoin {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         utxo_common::get_fee_to_send_taker_fee(self, dex_fee_amount, stage).await

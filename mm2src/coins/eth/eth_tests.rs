@@ -1104,8 +1104,11 @@ fn test_get_fee_to_send_taker_fee() {
     let dex_fee_amount = u256_to_big_decimal(DEX_FEE_AMOUNT.into(), 18).expect("!u256_to_big_decimal");
 
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None);
-    let actual = block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount.clone(), FeeApproxStage::WithoutApprox))
-        .expect("!get_fee_to_send_taker_fee");
+    let actual = block_on(coin.get_fee_to_send_taker_fee(
+        DexFee::Standard(MmNumber::from(dex_fee_amount.clone())),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .expect("!get_fee_to_send_taker_fee");
     assert_eq!(actual, expected_fee);
 
     let (_ctx, coin) = eth_coin_for_test(
@@ -1116,8 +1119,11 @@ fn test_get_fee_to_send_taker_fee() {
         &["http://dummy.dummy"],
         None,
     );
-    let actual = block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount, FeeApproxStage::WithoutApprox))
-        .expect("!get_fee_to_send_taker_fee");
+    let actual = block_on(coin.get_fee_to_send_taker_fee(
+        DexFee::Standard(MmNumber::from(dex_fee_amount)),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .expect("!get_fee_to_send_taker_fee");
     assert_eq!(actual, expected_fee);
 }
 
@@ -1143,7 +1149,11 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
     );
     let dex_fee_amount = u256_to_big_decimal(DEX_FEE_AMOUNT.into(), 18).expect("!u256_to_big_decimal");
 
-    let error = block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount, FeeApproxStage::WithoutApprox)).unwrap_err();
+    let error = block_on(coin.get_fee_to_send_taker_fee(
+        DexFee::Standard(MmNumber::from(dex_fee_amount)),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .unwrap_err();
     log!("{}", error);
     assert!(
         matches!(error.get_inner(), TradePreimageError::NotSufficientBalance { .. }),

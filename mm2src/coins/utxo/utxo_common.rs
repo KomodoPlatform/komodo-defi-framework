@@ -4053,21 +4053,19 @@ pub fn get_receiver_trade_fee<T: UtxoCommonOps>(coin: T) -> TradePreimageFut<Tra
 
 pub async fn get_fee_to_send_taker_fee<T>(
     coin: &T,
-    dex_fee_amount: BigDecimal,
+    dex_fee: DexFee,
     stage: FeeApproxStage,
 ) -> TradePreimageResult<TradeFee>
 where
     T: MarketCoinOps + UtxoCommonOps,
 {
     let decimals = coin.as_ref().decimals;
-    let value = sat_from_big_decimal(&dex_fee_amount, decimals)?;
-    let output = TransactionOutput {
-        value,
-        script_pubkey: Builder::build_p2pkh(&AddressHashEnum::default_address_hash()).to_bytes(),
-    };
+
+    let outputs = generate_taker_fee_tx_outputs(decimals, &AddressHashEnum::default_address_hash(), dex_fee)?;
+
     let gas_fee = None;
     let fee_amount = coin
-        .preimage_trade_fee_required_to_send_outputs(vec![output], FeePolicy::SendExact, gas_fee, &stage)
+        .preimage_trade_fee_required_to_send_outputs(outputs, FeePolicy::SendExact, gas_fee, &stage)
         .await?;
     Ok(TradeFee {
         coin: coin.ticker().to_owned(),
