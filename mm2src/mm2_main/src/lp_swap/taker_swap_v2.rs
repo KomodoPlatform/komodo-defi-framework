@@ -689,7 +689,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
         spawn_reentrancy_lock_renew_impl(&self.abortable_system, self.uuid, guard)
     }
 
-    fn init_additional_context(&mut self) {
+    fn init_additional_context(&mut self, starting_state: &dyn State<StateMachine = Self>) {
         init_additional_context_impl(&self.ctx, ActiveSwapV2Info {
             uuid: self.uuid,
             maker_coin: self.maker_coin.ticker().into(),

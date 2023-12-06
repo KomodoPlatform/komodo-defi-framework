@@ -583,7 +583,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
         Ok(RestoredMachine { machine, current_state })
     }
 
-    fn init_additional_context(&mut self) {
+    fn init_additional_context(&mut self, starting_state: &dyn State<StateMachine = Self>) {
         let payment_locked_amount = LockedAmount {
             coin: self.maker_coin.ticker().into(),
             amount: self.maker_volume.clone(),

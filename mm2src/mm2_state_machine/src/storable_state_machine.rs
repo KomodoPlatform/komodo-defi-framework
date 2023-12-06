@@ -197,7 +197,7 @@ pub trait StorableStateMachine: Send + Sync + Sized + 'static {
     fn spawn_reentrancy_lock_renew(&mut self, guard: Self::ReentrancyLock);
 
     /// Initializes additional context actions (spawn futures, etc.)
-    fn init_additional_context(&mut self);
+    fn init_additional_context(&mut self, starting_state: &dyn State<StateMachine = Self>);
 
     /// Cleans additional context up
     fn clean_up_context(&mut self);
@@ -215,7 +215,7 @@ impl<T: StorableStateMachine> StateMachineTrait for T {
     type Result = T::Result;
     type Error = T::Error;
 
-    async fn on_start(&mut self) -> Result<(), Self::Error> {
+    async fn on_start(&mut self, starting_state: &dyn State<StateMachine = Self>) -> Result<(), Self::Error> {
         let reentrancy_lock = self.acquire_reentrancy_lock().await?;
         let id = self.id();
         if !self.storage().has_record_for(&id).await? {
@@ -223,7 +223,7 @@ impl<T: StorableStateMachine> StateMachineTrait for T {
             self.storage().store_repr(id, repr).await?;
         }
         self.spawn_reentrancy_lock_renew(reentrancy_lock);
-        self.init_additional_context();
+        self.init_additional_context(starting_state);
         Ok(())
     }
 
@@ -453,7 +453,7 @@ mod tests {
 
         fn spawn_reentrancy_lock_renew(&mut self, _guard: Self::ReentrancyLock) {}
 
-        fn init_additional_context(&mut self) {}
+        fn init_additional_context(&mut self, _starting_state: &dyn State<StateMachine = Self>) {}
 
         fn clean_up_context(&mut self) {}
     }

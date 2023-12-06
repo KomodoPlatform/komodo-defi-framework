@@ -626,7 +626,7 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     let active_swaps_v2 = swap_ctx.active_swaps_v2_infos.lock().unwrap();
     active_swaps_v2
         .iter()
-        .fold(locked_v1, |mut total_amount, (uuid, info)| {
+        .fold(locked_v1, |mut total_amount, (_uuid, info)| {
             for locked in info.locked_amounts.iter() {
                 if locked.coin == coin {
                     total_amount += &locked.amount;

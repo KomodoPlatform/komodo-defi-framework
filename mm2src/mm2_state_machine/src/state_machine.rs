@@ -17,7 +17,7 @@ pub trait StateMachineTrait: Send + Sized + 'static {
 
     /// Asynchronous method called when the state machine starts its execution.
     /// This method can be overridden by implementing types.
-    async fn on_start(&mut self) -> Result<(), Self::Error> { Ok(()) }
+    async fn on_start(&mut self, _starting_state: &dyn State<StateMachine = Self>) -> Result<(), Self::Error> { Ok(()) }
 
     /// Asynchronous method called when the state machine finishes its execution.
     /// This method can be overridden by implementing types.
@@ -26,7 +26,7 @@ pub trait StateMachineTrait: Send + Sized + 'static {
     /// Asynchronous method to run the state machine.
     /// It transitions between states and handles state-specific logic.
     async fn run(&mut self, mut state: Box<dyn State<StateMachine = Self>>) -> Result<Self::Result, Self::Error> {
-        self.on_start().await?;
+        self.on_start(state.as_ref()).await?;
 
         loop {
             let result = state.on_changed(self).await;
