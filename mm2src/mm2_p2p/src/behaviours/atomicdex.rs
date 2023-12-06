@@ -30,7 +30,7 @@ use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, 
 use super::ping::AdexPing;
 use super::request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
                               RequestResponseSender};
-use crate::network::{get_all_network_seednodes, NETID_8762};
+use crate::network::{get_all_network_seednodes, DEFAULT_NETID};
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
 use crate::{NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
@@ -50,6 +50,10 @@ const CONNECTED_RELAYS_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
 const CHANNEL_BUF_SIZE: usize = 1024 * 8;
+
+pub const DEPRECATED_NETID_LIST: &[u16] = &[
+    7777, // TODO: keep it inaccessible until Q2 of 2024.
+];
 
 /// The structure is the same as `PeerResponse`,
 /// but is used to prevent `PeerResponse` from being used outside the network implementation.
@@ -641,7 +645,7 @@ fn start_gossipsub(
         let mut gossipsub = Gossipsub::new(MessageAuthenticity::Author(local_peer_id), gossipsub_config)
             .map_err(|e| AdexBehaviourError::InitializationError(e.to_owned()))?;
 
-        let floodsub = Floodsub::new(local_peer_id, netid != NETID_8762);
+        let floodsub = Floodsub::new(local_peer_id, netid != DEFAULT_NETID);
 
         let mut peers_exchange = PeersExchange::new(network_info);
         if !network_info.in_memory() {
@@ -735,7 +739,7 @@ fn start_gossipsub(
                     debug!("Swarm event {:?}", event);
 
                     if let SwarmEvent::Behaviour(event) = event {
-                        if swarm.behaviour_mut().netid != NETID_8762 {
+                        if swarm.behaviour_mut().netid != DEFAULT_NETID {
                             if let AdexBehaviourEvent::Floodsub(FloodsubEvent::Message(message)) = &event {
                                 for topic in &message.topics {
                                     if topic == &FloodsubTopic::new(PEERS_TOPIC) {

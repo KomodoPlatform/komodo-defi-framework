@@ -29,6 +29,7 @@ use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
+use mm2_libp2p::behaviours::atomicdex::DEPRECATED_NETID_LIST;
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime,
                  WssCerts};
 use mm2_metrics::mm_gauge;
@@ -68,7 +69,7 @@ cfg_wasm32! {
     pub mod init_metamask;
 }
 
-const NETID_8762_SEEDNODES: [&str; 3] = [
+const DEFAULT_NETID_SEEDNODES: [&str; 3] = [
     "streamseed1.komodo.earth",
     "streamseed2.komodo.earth",
     "streamseed3.komodo.earth",
@@ -267,7 +268,7 @@ impl MmInitError {
 #[cfg(target_arch = "wasm32")]
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
     if netid == 8762 {
-        NETID_8762_SEEDNODES
+        DEFAULT_NETID_SEEDNODES
             .iter()
             .map(|seed| RelayAddress::Dns(seed.to_string()))
             .collect()
@@ -280,7 +281,7 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
     use crate::mm2::lp_network::addr_to_ipv4_string;
     if netid == 8762 {
-        NETID_8762_SEEDNODES
+        DEFAULT_NETID_SEEDNODES
             .iter()
             .filter_map(|seed| addr_to_ipv4_string(seed).ok())
             .map(RelayAddress::IPv4)
@@ -522,6 +523,10 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
 pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
     let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
     let netid = ctx.netid();
+
+    if DEPRECATED_NETID_LIST.contains(&netid) {
+        return MmError::err(P2PInitError::InvalidNetId(NetIdError::Deprecated { netid }));
+    }
 
     let seednodes = seednodes(&ctx)?;
 

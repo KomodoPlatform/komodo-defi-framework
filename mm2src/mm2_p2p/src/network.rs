@@ -1,10 +1,10 @@
 use crate::relay_address::RelayAddress;
 use libp2p::PeerId;
 
-pub const NETID_8762: u16 = 8762;
+pub const DEFAULT_NETID: u16 = 8762;
 
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-const ALL_NETID_8762_SEEDNODES: &[(&str, &str)] = &[
+const ALL_DEFAULT_NETID_SEEDNODES: &[(&str, &str)] = &[
     (
         "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
         "168.119.236.251",
@@ -52,10 +52,10 @@ pub fn get_all_network_seednodes(_netid: u16) -> Vec<(PeerId, RelayAddress)> { V
 pub fn get_all_network_seednodes(netid: u16) -> Vec<(PeerId, RelayAddress)> {
     use std::str::FromStr;
 
-    if netid != NETID_8762 {
+    if netid != DEFAULT_NETID {
         return Vec::new();
     }
-    ALL_NETID_8762_SEEDNODES
+    ALL_DEFAULT_NETID_SEEDNODES
         .iter()
         .map(|(peer_id, ipv4)| {
             let peer_id = PeerId::from_str(peer_id).expect("valid peer id");
