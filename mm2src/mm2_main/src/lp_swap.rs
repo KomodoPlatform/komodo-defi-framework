@@ -605,7 +605,7 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
     let swap_lock = swap_ctx.running_swaps.lock().unwrap();
 
-    swap_lock
+    let locked_v1 = swap_lock
         .iter()
         .filter_map(|swap| swap.upgrade())
         .flat_map(|swap| swap.locked_amount())
@@ -616,6 +616,25 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
             if let Some(trade_fee) = locked.trade_fee {
                 if trade_fee.coin == coin && !trade_fee.paid_from_trading_vol {
                     total_amount += trade_fee.amount;
+                }
+            }
+            total_amount
+        });
+
+    drop(swap_lock);
+
+    let active_swaps_v2 = swap_ctx.active_swaps_v2_infos.lock().unwrap();
+    active_swaps_v2
+        .iter()
+        .fold(locked_v1, |mut total_amount, (uuid, info)| {
+            for locked in info.locked_amounts.iter() {
+                if locked.coin == coin {
+                    total_amount += &locked.amount;
+                }
+                if let Some(trade_fee) = &locked.trade_fee {
+                    if trade_fee.coin == coin && !trade_fee.paid_from_trading_vol {
+                        total_amount += &trade_fee.amount;
+                    }
                 }
             }
             total_amount

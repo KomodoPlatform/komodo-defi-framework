@@ -694,6 +694,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             uuid: self.uuid,
             maker_coin: self.maker_coin.ticker().into(),
             taker_coin: self.taker_coin.ticker().into(),
+            locked_amounts: Vec::new(),
         })
     }
 

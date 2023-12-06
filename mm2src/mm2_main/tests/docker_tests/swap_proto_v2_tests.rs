@@ -4,9 +4,12 @@ use coins::utxo::UtxoCommonOps;
 use coins::{GenTakerFundingSpendArgs, RefundFundingSecretArgs, RefundPaymentArgs, SendTakerFundingArgs, SwapOpsV2,
             Transaction, ValidateTakerFundingArgs};
 use common::{block_on, now_sec};
+use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{check_recent_swaps, coins_needed_for_kickstart, disable_coin, disable_coin_err,
-                                  enable_native, mm_dump, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
-                                  wait_for_swap_finished, wait_for_swap_status, MarketMakerIt, Mm2TestConf};
+                                  enable_native, get_locked_amount, mm_dump, my_swap_status, mycoin1_conf,
+                                  mycoin_conf, start_swaps, wait_for_swap_finished, wait_for_swap_status,
+                                  MarketMakerIt, Mm2TestConf};
+use mm2_test_helpers::structs::MmNumberMultiRepr;
 use script::{Builder, Opcode};
 use serialization::serialize;
 use uuid::Uuid;
@@ -239,10 +242,13 @@ fn test_v2_swap_utxo_utxo() {
     let err = block_on(disable_coin_err(&mm_alice, MYCOIN1, false));
     assert_eq!(err.active_swaps, parsed_uuids);
 
-    for uuid in uuids {
-        block_on(wait_for_swap_status(&mm_bob, &uuid, 10));
-        block_on(wait_for_swap_status(&mm_alice, &uuid, 10));
+    // coins must be virtually locked until swap transactions are sent
+    let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
+    assert_eq!(locked_bob.coin, MYCOIN);
+    let expected: MmNumberMultiRepr = MmNumber::from("100.00001").into();
+    assert_eq!(locked_bob.locked_amount, expected);
 
+    for uuid in uuids {
         block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));
         block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
 

@@ -1,5 +1,5 @@
 use super::swap_v2_common::*;
-use super::{swap_v2_topic, NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
+use super::{swap_v2_topic, LockedAmount, NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
 use crate::mm2::lp_swap::swap_lock::SwapLock;
 use crate::mm2::lp_swap::swap_v2_pb::*;
 use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg, SecretHashAlgo,
@@ -584,10 +584,17 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
     }
 
     fn init_additional_context(&mut self) {
+        let payment_locked_amount = LockedAmount {
+            coin: self.maker_coin.ticker().into(),
+            amount: self.maker_volume.clone(),
+            trade_fee: None,
+        };
+
         init_additional_context_impl(&self.ctx, ActiveSwapV2Info {
             uuid: self.uuid,
             maker_coin: self.maker_coin.ticker().into(),
             taker_coin: self.taker_coin.ticker().into(),
+            locked_amounts: vec![payment_locked_amount],
         })
     }
 
