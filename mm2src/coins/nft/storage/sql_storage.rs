@@ -522,7 +522,8 @@ fn get_transfers_with_empty_meta_builder<'a>(conn: &'a Connection, chain: &'a Ch
         .and_where_is_null("token_uri")
         .and_where_is_null("collection_name")
         .and_where_is_null("image_url")
-        .and_where_is_null("token_name");
+        .and_where_is_null("token_name")
+        .and_where("possible_spam == 0");
     drop_mutability!(sql_builder);
     Ok(sql_builder)
 }

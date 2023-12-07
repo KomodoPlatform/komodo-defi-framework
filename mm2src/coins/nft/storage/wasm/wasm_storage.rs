@@ -609,6 +609,7 @@ impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
                 && item.collection_name.is_none()
                 && item.image_url.is_none()
                 && item.token_name.is_none()
+                && !item.possible_spam
             {
                 res.insert(NftTokenAddrId {
                     token_address: item.token_address,
