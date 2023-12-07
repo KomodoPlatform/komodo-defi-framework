@@ -1,6 +1,6 @@
 use crate::mm2::lp_network::{subscribe_to_topic, unsubscribe_from_topic};
 use crate::mm2::lp_swap::swap_lock::{SwapLock, SwapLockError, SwapLockOps};
-use crate::mm2::lp_swap::{swap_v2_topic, LockedAmount, SwapsContext};
+use crate::mm2::lp_swap::{swap_v2_topic, SwapsContext};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::{lp_coinfind, MmCoinEnum};
 use common::bits256;
@@ -35,7 +35,6 @@ pub struct ActiveSwapV2Info {
     pub uuid: Uuid,
     pub maker_coin: String,
     pub taker_coin: String,
-    pub locked_amounts: Vec<LockedAmount>,
 }
 
 /// DB representation of tx preimage with signature

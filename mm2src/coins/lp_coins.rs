@@ -1938,7 +1938,7 @@ impl Add for CoinBalance {
 }
 
 /// The approximation is needed to cover the dynamic miner fee changing during a swap.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum FeeApproxStage {
     /// Do not increase the trade fee.
     WithoutApprox,

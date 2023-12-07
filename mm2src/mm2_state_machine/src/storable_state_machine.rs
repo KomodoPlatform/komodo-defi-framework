@@ -197,10 +197,13 @@ pub trait StorableStateMachine: Send + Sync + Sized + 'static {
     fn spawn_reentrancy_lock_renew(&mut self, guard: Self::ReentrancyLock);
 
     /// Initializes additional context actions (spawn futures, etc.)
-    fn init_additional_context(&mut self, starting_state: &dyn State<StateMachine = Self>);
+    fn init_additional_context(&mut self);
 
     /// Cleans additional context up
     fn clean_up_context(&mut self);
+
+    /// Perform additional actions when specific state's event is triggered (notify context, etc.)
+    fn on_event(&mut self, event: &<<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event);
 }
 
 // Ensure that StandardStateMachine won't be occasionally implemented for StorableStateMachine.
@@ -215,7 +218,7 @@ impl<T: StorableStateMachine> StateMachineTrait for T {
     type Result = T::Result;
     type Error = T::Error;
 
-    async fn on_start(&mut self, starting_state: &dyn State<StateMachine = Self>) -> Result<(), Self::Error> {
+    async fn on_start(&mut self) -> Result<(), Self::Error> {
         let reentrancy_lock = self.acquire_reentrancy_lock().await?;
         let id = self.id();
         if !self.storage().has_record_for(&id).await? {
@@ -223,7 +226,7 @@ impl<T: StorableStateMachine> StateMachineTrait for T {
             self.storage().store_repr(id, repr).await?;
         }
         self.spawn_reentrancy_lock_renew(reentrancy_lock);
-        self.init_additional_context(starting_state);
+        self.init_additional_context();
         Ok(())
     }
 
@@ -257,6 +260,7 @@ impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> 
     /// A `Result` indicating success (`Ok(())`) or an error (`Err(Self::Error)`).
     async fn on_new_state(&mut self, state: &S) -> Result<(), T::Error> {
         let event = state.get_event();
+        self.on_event(&event);
         Ok(self.store_event(event).await?)
     }
 }
@@ -453,9 +457,12 @@ mod tests {
 
         fn spawn_reentrancy_lock_renew(&mut self, _guard: Self::ReentrancyLock) {}
 
-        fn init_additional_context(&mut self, _starting_state: &dyn State<StateMachine = Self>) {}
+        fn init_additional_context(&mut self) {}
 
         fn clean_up_context(&mut self) {}
+
+        fn on_event(&mut self, _event: &<<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event) {
+        }
     }
 
     struct State1 {}

@@ -689,16 +689,19 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
         spawn_reentrancy_lock_renew_impl(&self.abortable_system, self.uuid, guard)
     }
 
-    fn init_additional_context(&mut self, starting_state: &dyn State<StateMachine = Self>) {
+    fn init_additional_context(&mut self) {
         init_additional_context_impl(&self.ctx, ActiveSwapV2Info {
             uuid: self.uuid,
             maker_coin: self.maker_coin.ticker().into(),
             taker_coin: self.taker_coin.ticker().into(),
-            locked_amounts: Vec::new(),
         })
     }
 
     fn clean_up_context(&mut self) { clean_up_context_impl(&self.ctx, &self.uuid) }
+
+    fn on_event(&mut self, event: &<<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event) {
+        todo!()
+    }
 }
 
 /// Represents a state used to start a new taker swap.

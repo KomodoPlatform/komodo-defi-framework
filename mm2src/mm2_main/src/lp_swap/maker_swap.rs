@@ -474,7 +474,7 @@ impl MakerSwap {
         // do not use self.r().data here as it is not initialized at this step yet
         let preimage_value = TradePreimageValue::Exact(self.maker_amount.clone());
         let stage = FeeApproxStage::StartSwap;
-        let get_sender_trade_fee_fut = self.maker_coin.get_sender_trade_fee(preimage_value, stage.clone());
+        let get_sender_trade_fee_fut = self.maker_coin.get_sender_trade_fee(preimage_value, stage);
         let maker_payment_trade_fee = match get_sender_trade_fee_fut.await {
             Ok(fee) => fee,
             Err(e) => {
@@ -483,7 +483,7 @@ impl MakerSwap {
                 )]))
             },
         };
-        let taker_payment_spend_trade_fee_fut = self.taker_coin.get_receiver_trade_fee(stage.clone());
+        let taker_payment_spend_trade_fee_fut = self.taker_coin.get_receiver_trade_fee(stage);
         let taker_payment_spend_trade_fee = match taker_payment_spend_trade_fee_fut.compat().await {
             Ok(fee) => fee,
             Err(e) => {
@@ -2154,8 +2154,8 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
 }
 
 pub struct MakerSwapPreparedParams {
-    maker_payment_trade_fee: TradeFee,
-    taker_payment_spend_trade_fee: TradeFee,
+    pub(super) maker_payment_trade_fee: TradeFee,
+    pub(super) taker_payment_spend_trade_fee: TradeFee,
 }
 
 pub async fn check_balance_for_maker_swap(
@@ -2175,7 +2175,7 @@ pub async fn check_balance_for_maker_swap(
         None => {
             let preimage_value = TradePreimageValue::Exact(volume.to_decimal());
             let maker_payment_trade_fee = my_coin
-                .get_sender_trade_fee(preimage_value, stage.clone())
+                .get_sender_trade_fee(preimage_value, stage)
                 .await
                 .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
             let taker_payment_spend_trade_fee = other_coin
