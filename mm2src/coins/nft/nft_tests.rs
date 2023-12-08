@@ -14,7 +14,7 @@ use mm2_number::BigDecimal;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
-const MORALIS_API_ENDPOINT_TEST: &str = "https://moralis-proxy.komodo.earth/api/v2";
+const MORALIS_API_ENDPOINT_TEST: &str = "https://moralis-proxy.komodian.info/api/v2";
 const TEST_WALLET_ADDR_EVM: &str = "0x394d86994f954ed931b86791b62fe64f4c5dac37";
 const BLOCKLIST_API_ENDPOINT: &str = "https://nft.antispam.dragonhound.info";
 const TOKEN_ADD: &str = "0xfd913a305d70a60aac4faac70c739563738e1f81";

@@ -69,10 +69,15 @@ cfg_wasm32! {
     pub mod init_metamask;
 }
 
-const DEFAULT_NETID_SEEDNODES: [&str; 3] = [
-    "streamseed1.komodo.earth",
-    "streamseed2.komodo.earth",
-    "streamseed3.komodo.earth",
+const DEFAULT_NETID_SEEDNODES: [&str; 8] = [
+    "viserion.dragon-seed.com", // 168.119.236.251
+    "rhaegal.dragon-seed.com",  // 168.119.236.240
+    "drogon.dragon-seed.com",   // 168.119.236.239
+    "falkor.dragon-seed.com",   // 168.119.237.8
+    "smaug.dragon-seed.com",    // 65.21.51.47
+    "balerion.dragon-seed.com", // 135.181.34.220
+    "kalessin.dragon-seed.com", // 168.119.237.13
+    "icefyre.dragon-seed.com"   // 65.108.90.210
 ];
 
 pub type P2PResult<T> = Result<T, MmError<P2PInitError>>;

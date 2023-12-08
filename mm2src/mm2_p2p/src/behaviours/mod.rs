@@ -420,18 +420,18 @@ mod tests {
         assert!(!behaviour.validate_get_known_peers_response(&response));
 
         let address: Multiaddr =
-            "/ip4/168.119.236.241/tcp/3000/p2p/12D3KooWEsuiKcQaBaKEzuMtT6uFjs89P1E8MK3wGRZbeuCbCw6P"
+            "/ip4/168.119.236.251/tcp/3000/p2p/12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm"
                 .parse()
                 .unwrap();
         let response = HashMap::from_iter(vec![(PeerIdSerde(PeerId::random()), HashSet::from_iter(vec![address]))]);
         assert!(behaviour.validate_get_known_peers_response(&response));
 
         let address1: Multiaddr =
-            "/ip4/168.119.236.241/tcp/3000/p2p/12D3KooWEsuiKcQaBaKEzuMtT6uFjs89P1E8MK3wGRZbeuCbCw6P"
+            "/ip4/168.119.236.251/tcp/3000/p2p/12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm"
                 .parse()
                 .unwrap();
 
-        let address2: Multiaddr = "/ip4/168.119.236.241/tcp/3000".parse().unwrap();
+        let address2: Multiaddr = "/ip4/168.119.236.251/tcp/3000".parse().unwrap();
         let response = HashMap::from_iter(vec![(
             PeerIdSerde(PeerId::random()),
             HashSet::from_iter(vec![address1, address2]),
@@ -448,7 +448,7 @@ mod tests {
         let result = behaviour.get_random_known_peers(1);
         assert!(result.is_empty());
 
-        let address: Multiaddr = "/ip4/168.119.236.241/tcp/3000".parse().unwrap();
+        let address: Multiaddr = "/ip4/168.119.236.251/tcp/3000".parse().unwrap();
         behaviour.request_response.add_address(&peer_id, address.clone());
 
         let result = behaviour.get_random_known_peers(1);
