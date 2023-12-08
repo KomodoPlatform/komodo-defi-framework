@@ -364,6 +364,17 @@ fn test_v2_swap_utxo_utxo_kickstart() {
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN, &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN1, &[], None)));
 
+    // coins must be virtually locked after kickstart until swap transactions are sent
+    let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
+    assert_eq!(locked_bob.coin, MYCOIN);
+    let expected: MmNumberMultiRepr = MmNumber::from("777.00001").into();
+    assert_eq!(locked_bob.locked_amount, expected);
+
+    let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
+    assert_eq!(locked_alice.coin, MYCOIN1);
+    let expected: MmNumberMultiRepr = MmNumber::from("778.00001").into();
+    assert_eq!(locked_alice.locked_amount, expected);
+
     for uuid in uuids {
         block_on(wait_for_swap_status(&mm_bob, &uuid, 10));
         block_on(wait_for_swap_status(&mm_alice, &uuid, 10));
