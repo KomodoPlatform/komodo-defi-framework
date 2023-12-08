@@ -224,7 +224,7 @@ fn test_v2_swap_utxo_utxo() {
         &[(MYCOIN, MYCOIN1)],
         1.0,
         1.0,
-        100.,
+        777.,
     ));
     println!("{:?}", uuids);
 
@@ -245,8 +245,13 @@ fn test_v2_swap_utxo_utxo() {
     // coins must be virtually locked until swap transactions are sent
     let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
     assert_eq!(locked_bob.coin, MYCOIN);
-    let expected: MmNumberMultiRepr = MmNumber::from("100.00001").into();
+    let expected: MmNumberMultiRepr = MmNumber::from("777.00001").into();
     assert_eq!(locked_bob.locked_amount, expected);
+
+    let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
+    assert_eq!(locked_alice.coin, MYCOIN1);
+    let expected: MmNumberMultiRepr = MmNumber::from("778.00001").into();
+    assert_eq!(locked_alice.locked_amount, expected);
 
     for uuid in uuids {
         block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));

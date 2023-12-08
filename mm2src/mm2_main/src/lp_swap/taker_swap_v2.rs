@@ -1,5 +1,6 @@
 use super::swap_v2_common::*;
-use super::{NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
+use super::{LockedAmount, LockedAmountInfo, SavedTradeFee, SwapsContext, TakerSwapPreparedParams,
+            NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
 use crate::mm2::lp_swap::swap_lock::SwapLock;
 use crate::mm2::lp_swap::swap_v2_pb::*;
 use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_swap, recv_swap_v2_msg, swap_v2_topic,
@@ -9,8 +10,8 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{CanRefundHtlc, CoinAssocTypes, ConfirmPaymentInput, FeeApproxStage, GenTakerFundingSpendArgs,
             GenTakerPaymentSpendArgs, MmCoin, RefundFundingSecretArgs, RefundPaymentArgs, SendTakerFundingArgs,
-            SpendPaymentArgs, SwapOpsV2, ToBytes, Transaction, TxPreimageWithSig, ValidatePaymentInput,
-            WaitForHTLCTxSpendArgs};
+            SpendPaymentArgs, SwapOpsV2, ToBytes, TradeFee, TradePreimageValue, Transaction, TxPreimageWithSig,
+            ValidatePaymentInput, WaitForHTLCTxSpendArgs};
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
 use common::log::{debug, error, info, warn};
@@ -62,6 +63,8 @@ pub enum TakerSwapEvent {
     Initialized {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
+        taker_payment_fee: SavedTradeFee,
+        maker_payment_spend_fee: SavedTradeFee,
     },
     /// Negotiated swap data with maker.
     Negotiated {
@@ -460,11 +463,15 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             TakerSwapEvent::Initialized {
                 maker_coin_start_block,
                 taker_coin_start_block,
+                taker_payment_fee,
+                maker_payment_spend_fee,
             } => Box::new(Initialized {
                 maker_coin: Default::default(),
                 taker_coin: Default::default(),
                 maker_coin_start_block,
                 taker_coin_start_block,
+                taker_payment_fee,
+                maker_payment_spend_fee,
             }),
             TakerSwapEvent::Negotiated {
                 maker_coin_start_block,
@@ -697,10 +704,42 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
         })
     }
 
-    fn clean_up_context(&mut self) { clean_up_context_impl(&self.ctx, &self.uuid) }
+    fn clean_up_context(&mut self) {
+        clean_up_context_impl(
+            &self.ctx,
+            &self.uuid,
+            self.maker_coin.ticker(),
+            self.taker_coin.ticker(),
+        )
+    }
 
-    fn on_event(&mut self, event: &<<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event) {
-        todo!()
+    fn on_event(&mut self, event: &TakerSwapEvent) {
+        match event {
+            TakerSwapEvent::Initialized {
+                taker_payment_fee,
+                maker_payment_spend_fee,
+                ..
+            } => {
+                let swaps_ctx = SwapsContext::from_ctx(&self.ctx).expect("from_ctx should not fail at this point");
+                let taker_coin_ticker: String = self.taker_coin.ticker().into();
+                let new_locked = LockedAmountInfo {
+                    swap_uuid: self.uuid,
+                    locked_amount: LockedAmount {
+                        coin: taker_coin_ticker.clone(),
+                        amount: &(&self.taker_volume + &self.dex_fee) + &self.taker_premium,
+                        trade_fee: Some(taker_payment_fee.clone().into()),
+                    },
+                };
+                swaps_ctx
+                    .locked_amounts
+                    .lock()
+                    .unwrap()
+                    .entry(taker_coin_ticker)
+                    .or_insert_with(Vec::new)
+                    .push(new_locked);
+            },
+            _ => (),
+        }
     }
 }
 
@@ -746,13 +785,49 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State fo
             },
         };
 
+        let total_payment_value =
+            &(&state_machine.taker_volume + &state_machine.dex_fee) + &state_machine.taker_premium;
+        let preimage_value = TradePreimageValue::Exact(total_payment_value.to_decimal());
+        let stage = FeeApproxStage::StartSwap;
+
+        let taker_payment_fee = match state_machine
+            .taker_coin
+            .get_sender_trade_fee(preimage_value, stage)
+            .await
+        {
+            Ok(fee) => fee,
+            Err(e) => {
+                let reason = AbortReason::FailedToGetTakerPaymentFee(e.to_string());
+                return Self::change_state(Aborted::new(reason), state_machine).await;
+            },
+        };
+
+        let maker_payment_spend_fee = match state_machine.maker_coin.get_receiver_trade_fee(stage).compat().await {
+            Ok(fee) => fee,
+            Err(e) => {
+                let reason = AbortReason::FailedToGetMakerPaymentSpendFee(e.to_string());
+                return Self::change_state(Aborted::new(reason), state_machine).await;
+            },
+        };
+
+        let prepared_params = TakerSwapPreparedParams {
+            dex_fee: Default::default(),
+            fee_to_send_dex_fee: TradeFee {
+                coin: state_machine.taker_coin.ticker().into(),
+                amount: Default::default(),
+                paid_from_trading_vol: false,
+            },
+            taker_payment_trade_fee: taker_payment_fee.clone(),
+            maker_payment_spend_trade_fee: maker_payment_spend_fee.clone(),
+        };
+
         if let Err(e) = check_balance_for_taker_swap(
             &state_machine.ctx,
             &state_machine.taker_coin,
             &state_machine.maker_coin,
-            state_machine.taker_volume.clone(),
+            total_payment_value,
             Some(&state_machine.uuid),
-            None,
+            Some(prepared_params),
             FeeApproxStage::StartSwap,
         )
         .await
@@ -767,6 +842,8 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State fo
             taker_coin: Default::default(),
             maker_coin_start_block,
             taker_coin_start_block,
+            taker_payment_fee: taker_payment_fee.into(),
+            maker_payment_spend_fee: maker_payment_spend_fee.into(),
         };
         Self::change_state(next_state, state_machine).await
     }
@@ -777,6 +854,8 @@ struct Initialized<MakerCoin, TakerCoin> {
     taker_coin: PhantomData<TakerCoin>,
     maker_coin_start_block: u64,
     taker_coin_start_block: u64,
+    taker_payment_fee: SavedTradeFee,
+    maker_payment_spend_fee: SavedTradeFee,
 }
 
 impl<MakerCoin, TakerCoin> TransitionFrom<Initialize<MakerCoin, TakerCoin>> for Initialized<MakerCoin, TakerCoin> {}
@@ -790,6 +869,8 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
         TakerSwapEvent::Initialized {
             maker_coin_start_block: self.maker_coin_start_block,
             taker_coin_start_block: self.taker_coin_start_block,
+            taker_payment_fee: self.taker_payment_fee.clone(),
+            maker_payment_spend_fee: self.maker_payment_spend_fee.clone(),
         }
     }
 }
@@ -1866,6 +1947,8 @@ pub enum AbortReason {
     FailedToSpendMakerPayment(String),
     TakerFundingRefundFailed(String),
     TakerPaymentRefundFailed(String),
+    FailedToGetTakerPaymentFee(String),
+    FailedToGetMakerPaymentSpendFee(String),
 }
 
 struct Aborted<MakerCoin, TakerCoin> {

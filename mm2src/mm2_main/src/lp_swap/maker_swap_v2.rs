@@ -607,9 +607,16 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
         })
     }
 
-    fn clean_up_context(&mut self) { clean_up_context_impl(&self.ctx, &self.uuid) }
+    fn clean_up_context(&mut self) {
+        clean_up_context_impl(
+            &self.ctx,
+            &self.uuid,
+            self.maker_coin.ticker(),
+            self.taker_coin.ticker(),
+        )
+    }
 
-    fn on_event(&mut self, event: &<<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event) {
+    fn on_event(&mut self, event: &MakerSwapEvent) {
         match event {
             MakerSwapEvent::Initialized {
                 maker_payment_trade_fee,

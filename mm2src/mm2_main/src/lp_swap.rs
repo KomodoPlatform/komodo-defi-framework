@@ -612,7 +612,7 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
     let swap_lock = swap_ctx.running_swaps.lock().unwrap();
 
-    swap_lock
+    let mut locked = swap_lock
         .iter()
         .filter_map(|swap| swap.upgrade())
         .flat_map(|swap| swap.locked_amount())
@@ -626,7 +626,25 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
                 }
             }
             total_amount
-        })
+        });
+    drop(swap_lock);
+
+    let locked_amounts = swap_ctx.locked_amounts.lock().unwrap();
+    if let Some(locked_for_coin) = locked_amounts.get(coin) {
+        locked += locked_for_coin
+            .iter()
+            .fold(MmNumber::from(0), |mut total_amount, locked| {
+                total_amount += &locked.locked_amount.amount;
+                if let Some(trade_fee) = &locked.locked_amount.trade_fee {
+                    if trade_fee.coin == coin && !trade_fee.paid_from_trading_vol {
+                        total_amount += &trade_fee.amount;
+                    }
+                }
+                total_amount
+            });
+    }
+
+    locked
 }
 
 /// Get number of currently running swaps
