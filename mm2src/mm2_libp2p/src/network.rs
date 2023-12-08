@@ -5,9 +5,6 @@ pub const NETID_8762: u16 = 8762;
 
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 const ALL_NETID_8762_SEEDNODES: &[(&str, &str, &str)] = &[
-    // Operated by Cipi
-    ("12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u", "46.4.78.11", "fr1.cipig.net"),
-    ("12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q", "46.4.87.18", "fr2.cipig.net"),
     // Operated by Dragonhound, on NetID 8762
     ("12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm", "168.119.236.251", "viserion.dragon-seed.com"),
     ("12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF", "168.119.236.240", "rhaegal.dragon-seed.com"),
@@ -17,6 +14,8 @@ const ALL_NETID_8762_SEEDNODES: &[(&str, &str, &str)] = &[
     ("12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd", "135.181.34.220", "balerion.dragon-seed.com"),
     ("12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d", "168.119.237.13", "kalessin.dragon-seed.com"),
     ("12D3KooWJDoV9vJdy6PnzwVETZ3fWGMhV41VhSbocR1h2geFqq9Y", "65.108.90.210", "icefyre.dragon-seed.com"),
+    // Operated by Cipi, on NetID 8762
+    ("12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u", "46.4.78.11", "fr1.cipig.net")
     // TODO: Uncomment these once re-enabled on the main network.
     // Operated by Dragonhound, still on NetID 7777. Domains will update after netid migration.
     // ("12D3KooWEsuiKcQaBaKEzuMtT6uFjs89P1E8MK3wGRZbeuCbCw6P", "168.119.236.241", "seed1.komodo.earth"), // tintaglia.dragon-seed.com
@@ -26,8 +25,7 @@ const ALL_NETID_8762_SEEDNODES: &[(&str, &str, &str)] = &[
     // ("12D3KooWKu8pMTgteWacwFjN7zRWWHb3bctyTvHU3xx5x4x6qDYY", "65.21.56.210", "seed6.komodo.earth"), // heeby.dragon-seed.com
     // ("12D3KooW9soGyPfX6kcyh3uVXNHq1y2dPmQNt2veKgdLXkBiCVKq", "168.119.236.246", "seed7.komodo.earth"), // kalo.dragon-seed.com
     // ("12D3KooWL6yrrNACb7t7RPyTEPxKmq8jtrcbkcNd6H5G2hK7bXaL", "168.119.236.233", "seed8.komodo.earth"),  // relpda.dragon-seed.com
-    // Operated by Cipi, still on NetID 7777.
-    // ("12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u", "46.4.78.11", "fr1.cipig.net"),
+    // Operated by Cipi, still on NetID 7777
     // ("12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q", "46.4.87.18", "fr2.cipig.net"),
 ];
 
