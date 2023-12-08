@@ -253,6 +253,20 @@ fn test_v2_swap_utxo_utxo() {
     let expected: MmNumberMultiRepr = MmNumber::from("778.00001").into();
     assert_eq!(locked_alice.locked_amount, expected);
 
+    // amount must unlocked after funding tx is sent
+    block_on(mm_alice.wait_for_log(20., |log| log.contains("Sent taker funding"))).unwrap();
+    let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
+    assert_eq!(locked_alice.coin, MYCOIN1);
+    let expected: MmNumberMultiRepr = MmNumber::from("0").into();
+    assert_eq!(locked_alice.locked_amount, expected);
+
+    // amount must unlocked after maker payment is sent
+    block_on(mm_bob.wait_for_log(20., |log| log.contains("Sent maker payment"))).unwrap();
+    let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
+    assert_eq!(locked_bob.coin, MYCOIN);
+    let expected: MmNumberMultiRepr = MmNumber::from("0").into();
+    assert_eq!(locked_bob.locked_amount, expected);
+
     for uuid in uuids {
         block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));
         block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));

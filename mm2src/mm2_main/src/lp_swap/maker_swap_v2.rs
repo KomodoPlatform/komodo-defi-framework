@@ -641,6 +641,13 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
                     .or_insert_with(Vec::new)
                     .push(new_locked);
             },
+            MakerSwapEvent::MakerPaymentSentFundingSpendGenerated { .. } => {
+                let swaps_ctx = SwapsContext::from_ctx(&self.ctx).expect("from_ctx should not fail at this point");
+                let ticker = self.maker_coin.ticker();
+                if let Some(maker_coin_locked) = swaps_ctx.locked_amounts.lock().unwrap().get_mut(ticker) {
+                    maker_coin_locked.retain(|locked| locked.swap_uuid != self.uuid);
+                };
+            },
             _ => (),
         }
     }
