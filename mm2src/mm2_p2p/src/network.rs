@@ -5,15 +5,51 @@ pub const DEFAULT_NETID: u16 = 8762;
 
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 const ALL_DEFAULT_NETID_SEEDNODES: &[(&str, &str, &str)] = &[
-    ("12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm", "168.119.236.251", "viserion.dragon-seed.com"),
-    ("12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF", "168.119.236.240", "rhaegal.dragon-seed.com"),
-    ("12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R", "168.119.236.239", "drogon.dragon-seed.com"),
-    ("12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb", "168.119.237.8", "falkor.dragon-seed.com"),
-    ("12D3KooWEWzbYcosK2JK9XpFXzumfgsWJW1F7BZS15yLTrhfjX2Z", "65.21.51.47", "smaug.dragon-seed.com"),
-    ("12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd", "135.181.34.220", "balerion.dragon-seed.com"),
-    ("12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d", "168.119.237.13", "kalessin.dragon-seed.com"),
-    ("12D3KooWJDoV9vJdy6PnzwVETZ3fWGMhV41VhSbocR1h2geFqq9Y", "65.108.90.210", "icefyre.dragon-seed.com"),
-    ("12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u", "46.4.78.11", "fr1.cipig.net")
+    (
+        "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
+        "168.119.236.251",
+        "viserion.dragon-seed.com",
+    ),
+    (
+        "12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF",
+        "168.119.236.240",
+        "rhaegal.dragon-seed.com",
+    ),
+    (
+        "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
+        "168.119.236.239",
+        "drogon.dragon-seed.com",
+    ),
+    (
+        "12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb",
+        "168.119.237.8",
+        "falkor.dragon-seed.com",
+    ),
+    (
+        "12D3KooWEWzbYcosK2JK9XpFXzumfgsWJW1F7BZS15yLTrhfjX2Z",
+        "65.21.51.47",
+        "smaug.dragon-seed.com",
+    ),
+    (
+        "12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd",
+        "135.181.34.220",
+        "balerion.dragon-seed.com",
+    ),
+    (
+        "12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d",
+        "168.119.237.13",
+        "kalessin.dragon-seed.com",
+    ),
+    (
+        "12D3KooWJDoV9vJdy6PnzwVETZ3fWGMhV41VhSbocR1h2geFqq9Y",
+        "65.108.90.210",
+        "icefyre.dragon-seed.com",
+    ),
+    (
+        "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
+        "46.4.78.11",
+        "fr1.cipig.net",
+    ),
 ];
 
 // TODO: Uncomment these once re-enabled on the main network.
