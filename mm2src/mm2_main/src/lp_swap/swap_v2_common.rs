@@ -367,7 +367,7 @@ pub(super) async fn swap_kickstart_handler<
         },
     };
 
-    if let Err(e) = state_machine.run(state).await {
+    if let Err(e) = state_machine.run(state.into_state()).await {
         error!("Error {} on trying to run the swap {}", e, uuid);
     }
 }

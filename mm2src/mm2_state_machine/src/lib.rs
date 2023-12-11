@@ -1,4 +1,4 @@
-#![feature(allocator_api, auto_traits, negative_impls)]
+#![feature(allocator_api, auto_traits, coerce_unsized, negative_impls)]
 
 pub mod prelude;
 pub mod state_machine;

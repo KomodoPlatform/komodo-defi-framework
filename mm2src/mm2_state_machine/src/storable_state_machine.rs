@@ -108,27 +108,30 @@ pub trait StateMachineStorage: Send + Sync {
     async fn mark_finished(&mut self, id: Self::MachineId) -> Result<(), Self::Error>;
 }
 
-pub trait RestoredState<M: StorableStateMachine>: State<StateMachine = M> + StorableState<StateMachine = M> {}
-
-impl<M: StorableStateMachine, T: State<StateMachine = M> + StorableState<StateMachine = M>> RestoredState<M> for T {}
-
-pub trait RestoredStateExt<M> {
+pub trait RestoredState<M: StorableStateMachine>: State<StateMachine = M> + StorableState<StateMachine = M> {
     fn into_state(self: Box<Self>) -> Box<dyn State<StateMachine = M>>;
 }
 
-impl<M: StorableStateMachine, T: RestoredState<M>> RestoredStateExt<M> for T {
-    fn into_state(self: Box<Self>) -> Box<dyn State<StateMachine = M>> { self }
+trait Trait1 {
+    fn method1(&self);
 }
 
-trait CanUnsize<Target: ?Sized> {
-    fn unsize_box(self: Box<Self>) -> Box<Target>;
+trait Trait2: Trait1 {
+    fn method2(&self);
 }
 
-impl<T, M: StorableStateMachine> CanUnsize<dyn State<StateMachine = M>> for T
-where
-    T: RestoredState<M>,
-{
-    fn unsize_box(self: Box<T>) -> Box<dyn State<StateMachine = M>> { self }
+struct MyStruct;
+
+impl Trait1 for MyStruct {
+    fn method1(&self) {
+        println!("Calling method1");
+    }
+}
+
+impl Trait2 for MyStruct {
+    fn method2(&self) {
+        println!("Calling method2");
+    }
 }
 
 /// A struct representing a restored state machine.
@@ -227,6 +230,10 @@ pub trait StorableStateMachine: Send + Sync + Sized + 'static {
 
     /// Perform additional actions when specific state's event is triggered (notify context, etc.)
     fn on_event(&mut self, event: &<<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event);
+
+    fn cast_state(&self, storable: Box<dyn RestoredState<Self>>) -> Box<dyn State<StateMachine = Self>> {
+        Box::new(*storable)
+    }
 }
 
 // Ensure that StandardStateMachine won't be occasionally implemented for StorableStateMachine.
@@ -495,6 +502,10 @@ mod tests {
 
     struct State2 {}
 
+    impl RestoredState<StorableStateMachineTest> for State2 {
+        fn into_state(self: Box<Self>) -> Box<dyn State<StateMachine = StorableStateMachineTest>> { Box::new(*self) }
+    }
+
     impl StorableState for State2 {
         type StateMachine = StorableStateMachineTest;
 
@@ -589,7 +600,7 @@ mod tests {
         ))
         .unwrap();
 
-        block_on(machine.run(current_state.unsize_box())).unwrap();
+        block_on(machine.run(current_state.into_state())).unwrap();
 
         let expected_events = HashMap::from_iter([(1, vec![
             TestEvent::ForState2,

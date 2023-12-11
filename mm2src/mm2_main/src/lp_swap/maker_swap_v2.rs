@@ -434,7 +434,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             return MmError::err(SwapRecreateError::ReprEventsEmpty);
         }
 
-        let current_state: Box<dyn State<StateMachine = Self>> = match repr.events.remove(repr.events.len() - 1) {
+        let current_state: Box<dyn RestoredState<Self>> = match repr.events.remove(repr.events.len() - 1) {
             MakerSwapEvent::Initialized {
                 maker_coin_start_block,
                 taker_coin_start_block,
