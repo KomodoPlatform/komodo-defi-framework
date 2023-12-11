@@ -3,14 +3,14 @@ use libp2p::PeerId;
 
 pub const DEFAULT_NETID: u16 = 8762;
 
-struct SeedNodeInfo {
-    id: &'static str,
-    ip: &'static str,
-    domain: &'static str,
+pub struct SeedNodeInfo {
+    pub id: &'static str,
+    pub ip: &'static str,
+    pub domain: &'static str,
 }
 
 impl SeedNodeInfo {
-    const fn new(id: &'static str, ip: &'static str, domain: &'static str) -> Self { Self { id, ip, domain } }
+    pub const fn new(id: &'static str, ip: &'static str, domain: &'static str) -> Self { Self { id, ip, domain } }
 }
 
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]

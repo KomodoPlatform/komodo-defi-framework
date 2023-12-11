@@ -32,6 +32,7 @@ pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, PublicKey a
 pub use libp2p::{Multiaddr, PeerId};
 
 // relay-address related re-exports
+pub use network::SeedNodeInfo;
 pub use relay_address::RelayAddress;
 pub use relay_address::RelayAddressError;
 
