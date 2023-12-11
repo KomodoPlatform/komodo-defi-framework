@@ -704,7 +704,7 @@ fn start_gossipsub(
         if !network_info.in_memory() {
             // Please note WASM nodes don't support `PeersExchange` currently,
             // so `get_all_network_seednodes` returns an empty list.
-            for (peer_id, addr, _domain) in get_all_network_seednodes(netid) {
+            for (peer_id, addr) in get_all_network_seednodes(netid) {
                 let multiaddr = addr.try_to_multiaddr(network_info)?;
                 peers_exchange.add_peer_addresses_to_known_peers(&peer_id, iter::once(multiaddr).collect());
                 gossipsub.add_explicit_relay(peer_id);
