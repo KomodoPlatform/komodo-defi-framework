@@ -1,6 +1,7 @@
 use super::swap_v2_common::*;
 use super::{swap_v2_topic, LockedAmount, LockedAmountInfo, SavedTradeFee, SwapsContext, NEGOTIATE_SEND_INTERVAL,
             NEGOTIATION_TIMEOUT_SEC};
+use crate::mm2::lp_swap::maker_swap::MakerSwapPreparedParams;
 use crate::mm2::lp_swap::swap_lock::SwapLock;
 use crate::mm2::lp_swap::swap_v2_pb::*;
 use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg, SecretHashAlgo,
@@ -40,7 +41,6 @@ cfg_wasm32!(
 );
 
 // This is needed to have Debug on messages
-use crate::mm2::lp_swap::maker_swap::MakerSwapPreparedParams;
 #[allow(unused_imports)] use prost::Message;
 
 /// Negotiation data representation to be stored in DB.
@@ -71,6 +71,7 @@ pub enum MakerSwapEvent {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
         negotiation_data: StoredNegotiationData,
+        maker_payment_trade_fee: SavedTradeFee,
     },
     /// Received taker funding info.
     TakerFundingReceived {
@@ -78,6 +79,7 @@ pub enum MakerSwapEvent {
         taker_coin_start_block: u64,
         negotiation_data: StoredNegotiationData,
         taker_funding: TransactionIdentifier,
+        maker_payment_trade_fee: SavedTradeFee,
     },
     /// Sent maker payment and generated funding spend preimage.
     MakerPaymentSentFundingSpendGenerated {
@@ -450,6 +452,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
                 maker_coin_start_block,
                 taker_coin_start_block,
                 negotiation_data,
+                maker_payment_trade_fee,
             } => Box::new(WaitingForTakerFunding {
                 maker_coin_start_block,
                 taker_coin_start_block,
@@ -458,12 +461,14 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
                     &recreate_ctx.maker_coin,
                     &recreate_ctx.taker_coin,
                 )?,
+                maker_payment_trade_fee,
             }),
             MakerSwapEvent::TakerFundingReceived {
                 maker_coin_start_block,
                 taker_coin_start_block,
                 negotiation_data,
                 taker_funding,
+                maker_payment_trade_fee,
             } => Box::new(TakerFundingReceived {
                 maker_coin_start_block,
                 taker_coin_start_block,
@@ -476,6 +481,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
                     .taker_coin
                     .parse_tx(&taker_funding.tx_hex.0)
                     .map_err(|e| SwapRecreateError::FailedToParseData(e.to_string()))?,
+                maker_payment_trade_fee,
             }),
             MakerSwapEvent::MakerPaymentSentFundingSpendGenerated {
                 maker_coin_start_block,
@@ -881,6 +887,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State fo
                 taker_coin_swap_contract: taker_data.taker_coin_swap_contract,
                 taker_secret_hash: taker_data.taker_secret_hash,
             },
+            maker_payment_trade_fee: self.maker_payment_trade_fee,
         };
         Self::change_state(next_state, state_machine).await
     }
@@ -934,6 +941,7 @@ struct WaitingForTakerFunding<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTyp
     maker_coin_start_block: u64,
     taker_coin_start_block: u64,
     negotiation_data: NegotiationData<MakerCoin, TakerCoin>,
+    maker_payment_trade_fee: SavedTradeFee,
 }
 
 impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> TransitionFrom<Initialized<MakerCoin, TakerCoin>>
@@ -992,6 +1000,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
             taker_coin_start_block: self.taker_coin_start_block,
             negotiation_data: self.negotiation_data,
             taker_funding,
+            maker_payment_trade_fee: self.maker_payment_trade_fee,
         };
         Self::change_state(next_state, state_machine).await
     }
@@ -1007,6 +1016,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             maker_coin_start_block: self.maker_coin_start_block,
             taker_coin_start_block: self.taker_coin_start_block,
             negotiation_data: self.negotiation_data.to_stored_data(),
+            maker_payment_trade_fee: self.maker_payment_trade_fee.clone(),
         }
     }
 }
@@ -1016,6 +1026,7 @@ struct TakerFundingReceived<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes
     taker_coin_start_block: u64,
     negotiation_data: NegotiationData<MakerCoin, TakerCoin>,
     taker_funding: TakerCoin::Tx,
+    maker_payment_trade_fee: SavedTradeFee,
 }
 
 impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> TransitionFrom<WaitingForTakerFunding<MakerCoin, TakerCoin>>
@@ -1123,6 +1134,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
                 tx_hex: self.taker_funding.tx_hex().into(),
                 tx_hash: self.taker_funding.tx_hash(),
             },
+            maker_payment_trade_fee: self.maker_payment_trade_fee.clone(),
         }
     }
 }

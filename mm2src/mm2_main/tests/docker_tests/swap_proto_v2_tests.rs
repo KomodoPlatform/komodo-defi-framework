@@ -323,9 +323,6 @@ fn test_v2_swap_utxo_utxo_kickstart() {
     println!("{:?}", uuids);
 
     for uuid in uuids.iter() {
-        block_on(wait_for_swap_status(&mm_bob, uuid, 10));
-        block_on(wait_for_swap_status(&mm_alice, uuid, 10));
-
         let maker_swap_status = block_on(my_swap_status(&mm_bob, uuid));
         println!("Maker swap {} status before stop {:?}", uuid, maker_swap_status);
 

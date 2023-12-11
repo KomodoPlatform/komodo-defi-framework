@@ -108,10 +108,33 @@ pub trait StateMachineStorage: Send + Sync {
     async fn mark_finished(&mut self, id: Self::MachineId) -> Result<(), Self::Error>;
 }
 
+pub trait RestoredState<M: StorableStateMachine>: State<StateMachine = M> + StorableState<StateMachine = M> {}
+
+impl<M: StorableStateMachine, T: State<StateMachine = M> + StorableState<StateMachine = M>> RestoredState<M> for T {}
+
+pub trait RestoredStateExt<M> {
+    fn into_state(self: Box<Self>) -> Box<dyn State<StateMachine = M>>;
+}
+
+impl<M: StorableStateMachine, T: RestoredState<M>> RestoredStateExt<M> for T {
+    fn into_state(self: Box<Self>) -> Box<dyn State<StateMachine = M>> { self }
+}
+
+trait CanUnsize<Target: ?Sized> {
+    fn unsize_box(self: Box<Self>) -> Box<Target>;
+}
+
+impl<T, M: StorableStateMachine> CanUnsize<dyn State<StateMachine = M>> for T
+where
+    T: RestoredState<M>,
+{
+    fn unsize_box(self: Box<T>) -> Box<dyn State<StateMachine = M>> { self }
+}
+
 /// A struct representing a restored state machine.
 pub struct RestoredMachine<M> {
     pub machine: M,
-    pub current_state: Box<dyn State<StateMachine = M>>,
+    pub current_state: Box<dyn RestoredState<M>>,
 }
 
 /// A trait for storable state machines.
@@ -444,8 +467,7 @@ mod tests {
             _recreate_ctx: Self::RecreateCtx,
         ) -> Result<RestoredMachine<Self>, Infallible> {
             let events = storage.events_unfinished.get(&id).unwrap();
-            let current_state: Box<dyn State<StateMachine = Self>> = match events.last() {
-                None => Box::new(State1 {}),
+            let current_state: Box<dyn RestoredState<Self>> = match events.last() {
                 Some(TestEvent::ForState2) => Box::new(State2 {}),
                 _ => unimplemented!(),
             };
@@ -567,7 +589,7 @@ mod tests {
         ))
         .unwrap();
 
-        block_on(machine.run(current_state)).unwrap();
+        block_on(machine.run(current_state.unsize_box())).unwrap();
 
         let expected_events = HashMap::from_iter([(1, vec![
             TestEvent::ForState2,
