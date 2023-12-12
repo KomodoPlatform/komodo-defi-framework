@@ -9,9 +9,7 @@ use common::executor::{SpawnFuture, Timer};
 use common::log::{error, info, warn};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_state_machine::prelude::*;
-use mm2_state_machine::storable_state_machine::{RestoredMachine, StateMachineDbRepr, StateMachineStorage,
-                                                StorableStateMachine};
+use mm2_state_machine::storable_state_machine::{StateMachineDbRepr, StateMachineStorage, StorableStateMachine};
 use rpc::v1::types::Bytes as BytesJson;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -318,7 +316,7 @@ pub(super) async fn swap_kickstart_handler<
                     "Can't kickstart the swap {} until the coin {} is activated",
                     uuid, taker_coin_ticker,
                 );
-                Timer::sleep(5.).await;
+                Timer::sleep(1.).await;
             },
             Err(e) => {
                 error!("Error {} on {} find attempt", e, taker_coin_ticker);
@@ -337,7 +335,7 @@ pub(super) async fn swap_kickstart_handler<
                     "Can't kickstart the swap {} until the coin {} is activated",
                     uuid, maker_coin_ticker,
                 );
-                Timer::sleep(5.).await;
+                Timer::sleep(1.).await;
             },
             Err(e) => {
                 error!("Error {} on {} find attempt", e, maker_coin_ticker);
@@ -360,14 +358,14 @@ pub(super) async fn swap_kickstart_handler<
     let recreate_context = SwapRecreateCtx { maker_coin, taker_coin };
 
     let (mut state_machine, state) = match T::recreate_machine(uuid, storage, swap_repr, recreate_context).await {
-        Ok(RestoredMachine { machine, current_state }) => (machine, current_state),
+        Ok((machine, from_state)) => (machine, from_state),
         Err(e) => {
             error!("Error {} on trying to recreate the swap {}", e, uuid);
             return;
         },
     };
 
-    if let Err(e) = state_machine.run(state.into_state()).await {
+    if let Err(e) = state_machine.kickstart(state).await {
         error!("Error {} on trying to run the swap {}", e, uuid);
     }
 }

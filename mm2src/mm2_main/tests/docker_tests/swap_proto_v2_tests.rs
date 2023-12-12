@@ -12,6 +12,7 @@ use mm2_test_helpers::for_tests::{check_recent_swaps, coins_needed_for_kickstart
 use mm2_test_helpers::structs::MmNumberMultiRepr;
 use script::{Builder, Opcode};
 use serialization::serialize;
+use std::time::Duration;
 use uuid::Uuid;
 
 #[test]
@@ -361,6 +362,9 @@ fn test_v2_swap_utxo_utxo_kickstart() {
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN, &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN1, &[], None)));
 
+    // give swaps 1 second to restart
+    std::thread::sleep(Duration::from_secs(1));
+
     // coins must be virtually locked after kickstart until swap transactions are sent
     let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
     assert_eq!(locked_bob.coin, MYCOIN);
@@ -373,9 +377,6 @@ fn test_v2_swap_utxo_utxo_kickstart() {
     assert_eq!(locked_alice.locked_amount, expected);
 
     for uuid in uuids {
-        block_on(wait_for_swap_status(&mm_bob, &uuid, 10));
-        block_on(wait_for_swap_status(&mm_alice, &uuid, 10));
-
         block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));
         block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
     }

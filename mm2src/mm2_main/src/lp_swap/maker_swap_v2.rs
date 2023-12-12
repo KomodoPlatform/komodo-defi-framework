@@ -429,12 +429,13 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
         storage: MakerSwapStorage,
         mut repr: MakerSwapDbRepr,
         recreate_ctx: Self::RecreateCtx,
-    ) -> Result<RestoredMachine<Self>, Self::RecreateError> {
+    ) -> Result<(RestoredMachine<Self>, Box<dyn RestoredState<StateMachine = Self>>), Self::RecreateError> {
         if repr.events.is_empty() {
             return MmError::err(SwapRecreateError::ReprEventsEmpty);
         }
 
-        let current_state: Box<dyn RestoredState<Self>> = match repr.events.remove(repr.events.len() - 1) {
+        let current_state: Box<dyn RestoredState<StateMachine = Self>> = match repr.events.remove(repr.events.len() - 1)
+        {
             MakerSwapEvent::Initialized {
                 maker_coin_start_block,
                 taker_coin_start_block,
@@ -594,7 +595,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             p2p_keypair: repr.p2p_keypair.map(|k| k.into_inner()),
         };
 
-        Ok(RestoredMachine { machine, current_state })
+        Ok((RestoredMachine::new(machine), current_state))
     }
 
     async fn acquire_reentrancy_lock(&self) -> Result<Self::ReentrancyLock, Self::Error> {
@@ -656,6 +657,13 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             },
             _ => (),
         }
+    }
+
+    fn on_kickstart_event(
+        &mut self,
+        event: <<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event,
+    ) {
+        todo!()
     }
 }
 

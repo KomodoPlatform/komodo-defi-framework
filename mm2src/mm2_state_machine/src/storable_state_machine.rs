@@ -108,8 +108,12 @@ pub trait StateMachineStorage: Send + Sync {
     async fn mark_finished(&mut self, id: Self::MachineId) -> Result<(), Self::Error>;
 }
 
-pub trait RestoredState<M: StorableStateMachine>: State<StateMachine = M> + StorableState<StateMachine = M> {
-    fn into_state(self: Box<Self>) -> Box<dyn State<StateMachine = M>>;
+pub trait RestoredState: StorableState + Send {
+    fn into_state(self: Box<Self>) -> Box<dyn State<StateMachine = Self::StateMachine>>;
+}
+
+impl<T: StorableState + State<StateMachine = Self::StateMachine> + Send> RestoredState for T {
+    fn into_state(self: Box<Self>) -> Box<dyn State<StateMachine = Self::StateMachine>> { self }
 }
 
 trait Trait1 {
@@ -135,9 +139,21 @@ impl Trait2 for MyStruct {
 }
 
 /// A struct representing a restored state machine.
-pub struct RestoredMachine<M> {
-    pub machine: M,
-    pub current_state: Box<dyn RestoredState<M>>,
+pub struct RestoredMachine<M: StorableStateMachine> {
+    machine: M,
+}
+
+impl<M: StorableStateMachine> RestoredMachine<M> {
+    pub fn new(machine: M) -> Self { RestoredMachine { machine } }
+
+    pub async fn kickstart(
+        &mut self,
+        from_state: Box<dyn RestoredState<StateMachine = M>>,
+    ) -> Result<M::Result, M::Error> {
+        let event = from_state.get_event();
+        self.machine.on_kickstart_event(event);
+        self.machine.run(from_state.into_state()).await
+    }
 }
 
 /// A trait for storable state machines.
@@ -182,7 +198,7 @@ pub trait StorableStateMachine: Send + Sync + Sized + 'static {
         storage: Self::Storage,
         repr: <Self::Storage as StateMachineStorage>::DbRepr,
         from_repr_ctx: Self::RecreateCtx,
-    ) -> Result<RestoredMachine<Self>, Self::RecreateError>;
+    ) -> Result<(RestoredMachine<Self>, Box<dyn RestoredState<StateMachine = Self>>), Self::RecreateError>;
 
     /// Stores an event for the state machine.
     ///
@@ -231,9 +247,11 @@ pub trait StorableStateMachine: Send + Sync + Sized + 'static {
     /// Perform additional actions when specific state's event is triggered (notify context, etc.)
     fn on_event(&mut self, event: &<<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event);
 
-    fn cast_state(&self, storable: Box<dyn RestoredState<Self>>) -> Box<dyn State<StateMachine = Self>> {
-        Box::new(*storable)
-    }
+    /// Perform additional actions using event received on kick-started state
+    fn on_kickstart_event(
+        &mut self,
+        event: <<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event,
+    );
 }
 
 // Ensure that StandardStateMachine won't be occasionally implemented for StorableStateMachine.
@@ -472,14 +490,14 @@ mod tests {
             storage: Self::Storage,
             _repr: <Self::Storage as StateMachineStorage>::DbRepr,
             _recreate_ctx: Self::RecreateCtx,
-        ) -> Result<RestoredMachine<Self>, Infallible> {
+        ) -> Result<(RestoredMachine<Self>, Box<dyn RestoredState<StateMachine = Self>>), Self::RecreateError> {
             let events = storage.events_unfinished.get(&id).unwrap();
-            let current_state: Box<dyn RestoredState<Self>> = match events.last() {
+            let current_state: Box<dyn RestoredState<StateMachine = Self>> = match events.last() {
                 Some(TestEvent::ForState2) => Box::new(State2 {}),
                 _ => unimplemented!(),
             };
             let machine = StorableStateMachineTest { id, storage };
-            Ok(RestoredMachine { machine, current_state })
+            Ok((RestoredMachine { machine }, current_state))
         }
 
         async fn acquire_reentrancy_lock(&self) -> Result<Self::ReentrancyLock, Self::Error> { Ok(()) }
@@ -492,6 +510,12 @@ mod tests {
 
         fn on_event(&mut self, _event: &<<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event) {
         }
+
+        fn on_kickstart_event(
+            &mut self,
+            _event: <<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event,
+        ) {
+        }
     }
 
     struct State1 {}
@@ -501,10 +525,6 @@ mod tests {
     }
 
     struct State2 {}
-
-    impl RestoredState<StorableStateMachineTest> for State2 {
-        fn into_state(self: Box<Self>) -> Box<dyn State<StateMachine = StorableStateMachineTest>> { Box::new(*self) }
-    }
 
     impl StorableState for State2 {
         type StateMachine = StorableStateMachineTest;
@@ -589,10 +609,7 @@ mod tests {
         let mut storage = StorageTest::empty();
         let id = 1;
         storage.events_unfinished.insert(1, vec![TestEvent::ForState2]);
-        let RestoredMachine {
-            mut machine,
-            current_state,
-        } = block_on(StorableStateMachineTest::recreate_machine(
+        let (mut restored_machine, from_state) = block_on(StorableStateMachineTest::recreate_machine(
             id,
             storage,
             TestStateMachineRepr {},
@@ -600,13 +617,13 @@ mod tests {
         ))
         .unwrap();
 
-        block_on(machine.run(current_state.into_state())).unwrap();
+        block_on(restored_machine.kickstart(from_state)).unwrap();
 
         let expected_events = HashMap::from_iter([(1, vec![
             TestEvent::ForState2,
             TestEvent::ForState3,
             TestEvent::ForState4,
         ])]);
-        assert_eq!(expected_events, machine.storage.events_finished);
+        assert_eq!(expected_events, restored_machine.machine.storage.events_finished);
     }
 }
