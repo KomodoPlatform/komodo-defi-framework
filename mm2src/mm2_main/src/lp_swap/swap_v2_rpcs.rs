@@ -13,6 +13,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{MmNumber, MmNumberMultiRepr};
 use serde::de::DeserializeOwned;
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use uuid::Uuid;
 
@@ -437,4 +438,37 @@ pub(crate) async fn my_recent_swaps_rpc(
         total_pages: calc_total_pages(db_result.total_count, req.paging_options.limit),
         found_records: db_result.uuids_and_types.len(),
     })
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ActiveSwapsRequest {
+    #[serde(default)]
+    include_status: bool,
+}
+
+#[derive(Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub(crate) enum ActiveSwapsErr {
+    Internal(String),
+}
+
+impl HttpStatusCode for ActiveSwapsErr {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            ActiveSwapsErr::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct ActiveSwapsResponse {
+    uuids: Vec<Uuid>,
+    statuses: HashMap<Uuid, SwapRpcData>,
+}
+
+pub(crate) async fn active_swaps_rpc(
+    _ctx: MmArc,
+    _req: ActiveSwapsRequest,
+) -> MmResult<ActiveSwapsResponse, ActiveSwapsErr> {
+    unimplemented!()
 }

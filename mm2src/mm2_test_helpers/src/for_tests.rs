@@ -3317,3 +3317,14 @@ pub async fn init_trezor_user_action_rpc(mm: &MarketMakerIt, task_id: u64, user_
     );
     json::from_str(&request.1).unwrap()
 }
+
+pub async fn active_swaps(mm: &MarketMakerIt) -> ActiveSwapsResponse {
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "active_swaps",
+        "params": []
+    });
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "'active_swaps' failed: {}", response.1);
+    json::from_str(&response.1).unwrap()
+}

@@ -711,6 +711,11 @@ pub fn active_swaps(ctx: &MmArc) -> Result<Vec<Uuid>, String> {
             uuids.push(*swap.uuid())
         }
     }
+
+    drop(swaps);
+
+    let swaps_v2 = swap_ctx.active_swaps_v2_infos.lock().unwrap();
+    uuids.extend(swaps_v2.keys());
     Ok(uuids)
 }
 
@@ -1561,6 +1566,8 @@ struct ActiveSwapsRes {
     statuses: Option<HashMap<Uuid, SavedSwap>>,
 }
 
+/// This RPC does not support including statuses of v2 (Trading Protocol Upgrade) swaps.
+/// It returns only uuids for these.
 pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: ActiveSwapsReq = try_s!(json::from_value(req));
     let uuids = try_s!(active_swaps(&ctx));

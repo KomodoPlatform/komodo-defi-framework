@@ -116,28 +116,6 @@ impl<T: StorableState + State<StateMachine = Self::StateMachine> + Send> Restore
     fn into_state(self: Box<Self>) -> Box<dyn State<StateMachine = Self::StateMachine>> { self }
 }
 
-trait Trait1 {
-    fn method1(&self);
-}
-
-trait Trait2: Trait1 {
-    fn method2(&self);
-}
-
-struct MyStruct;
-
-impl Trait1 for MyStruct {
-    fn method1(&self) {
-        println!("Calling method1");
-    }
-}
-
-impl Trait2 for MyStruct {
-    fn method2(&self) {
-        println!("Calling method2");
-    }
-}
-
 /// A struct representing a restored state machine.
 pub struct RestoredMachine<M: StorableStateMachine> {
     machine: M,

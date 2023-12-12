@@ -655,7 +655,14 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
                     maker_coin_locked.retain(|locked| locked.swap_uuid != self.uuid);
                 };
             },
-            _ => (),
+            MakerSwapEvent::WaitingForTakerFunding { .. }
+            | MakerSwapEvent::TakerFundingReceived { .. }
+            | MakerSwapEvent::MakerPaymentRefundRequired { .. }
+            | MakerSwapEvent::MakerPaymentRefunded { .. }
+            | MakerSwapEvent::TakerPaymentConfirmed { .. }
+            | MakerSwapEvent::TakerPaymentSpent { .. }
+            | MakerSwapEvent::Aborted { .. }
+            | MakerSwapEvent::Completed => (),
         }
     }
 
@@ -663,7 +670,45 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
         &mut self,
         event: <<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event,
     ) {
-        todo!()
+        match event {
+            MakerSwapEvent::Initialized {
+                maker_payment_trade_fee,
+                ..
+            }
+            | MakerSwapEvent::WaitingForTakerFunding {
+                maker_payment_trade_fee,
+                ..
+            }
+            | MakerSwapEvent::TakerFundingReceived {
+                maker_payment_trade_fee,
+                ..
+            } => {
+                let swaps_ctx = SwapsContext::from_ctx(&self.ctx).expect("from_ctx should not fail at this point");
+                let maker_coin_ticker: String = self.maker_coin.ticker().into();
+                let new_locked = LockedAmountInfo {
+                    swap_uuid: self.uuid,
+                    locked_amount: LockedAmount {
+                        coin: maker_coin_ticker.clone(),
+                        amount: self.maker_volume.clone(),
+                        trade_fee: Some(maker_payment_trade_fee.clone().into()),
+                    },
+                };
+                swaps_ctx
+                    .locked_amounts
+                    .lock()
+                    .unwrap()
+                    .entry(maker_coin_ticker)
+                    .or_insert_with(Vec::new)
+                    .push(new_locked);
+            },
+            MakerSwapEvent::MakerPaymentSentFundingSpendGenerated { .. }
+            | MakerSwapEvent::MakerPaymentRefundRequired { .. }
+            | MakerSwapEvent::MakerPaymentRefunded { .. }
+            | MakerSwapEvent::TakerPaymentConfirmed { .. }
+            | MakerSwapEvent::TakerPaymentSpent { .. }
+            | MakerSwapEvent::Aborted { .. }
+            | MakerSwapEvent::Completed => (),
+        }
     }
 }
 
