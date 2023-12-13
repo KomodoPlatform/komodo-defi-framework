@@ -72,6 +72,9 @@ pub enum P2PProcessError {
     DecodeError(String),
     /// Message signature is invalid.
     InvalidSignature(String),
+    /// Unexpected message sender.
+    #[display(fmt = "Unexpected message sender {}", _0)]
+    UnexpectedSender(String),
 }
 
 impl From<rmp_serde::encode::Error> for P2PRequestError {

@@ -200,7 +200,7 @@ impl SwapMsgStore {
 }
 
 /// Storage for P2P messages, which are exchanged during SwapV2 protocol execution.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SwapV2MsgStore {
     maker_negotiation: Option<MakerNegotiation>,
     taker_negotiation: Option<TakerNegotiation>,
@@ -209,16 +209,21 @@ pub struct SwapV2MsgStore {
     maker_payment: Option<MakerPaymentInfo>,
     taker_payment: Option<TakerPaymentInfo>,
     taker_payment_spend_preimage: Option<TakerPaymentSpendPreimage>,
-    #[allow(dead_code)]
-    accept_only_from: bits256,
+    accept_only_from: PublicKey,
 }
 
 impl SwapV2MsgStore {
     /// Creates new SwapV2MsgStore
-    pub fn new(accept_only_from: bits256) -> Self {
+    pub fn new(accept_only_from: PublicKey) -> Self {
         SwapV2MsgStore {
+            maker_negotiation: None,
+            taker_negotiation: None,
+            maker_negotiated: None,
+            taker_funding: None,
+            maker_payment: None,
+            taker_payment: None,
+            taker_payment_spend_preimage: None,
             accept_only_from,
-            ..Default::default()
         }
     }
 }
@@ -548,7 +553,7 @@ impl SwapsContext {
     }
 
     /// Initializes storage for the swap with specific uuid.
-    pub fn init_msg_v2_store(&self, uuid: Uuid, accept_only_from: bits256) {
+    pub fn init_msg_v2_store(&self, uuid: Uuid, accept_only_from: PublicKey) {
         let store = SwapV2MsgStore::new(accept_only_from);
         self.swap_v2_msgs.lock().unwrap().insert(uuid, store);
     }
@@ -1734,6 +1739,10 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
 
         let pubkey =
             PublicKey::from_slice(&signed_message.from).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+        if pubkey != msg_store.accept_only_from {
+            return MmError::err(P2PProcessError::UnexpectedSender(pubkey.to_string()));
+        }
+
         let signature = Signature::from_compact(&signed_message.signature)
             .map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
         let secp_message = secp256k1::Message::from_slice(sha256(&signed_message.payload).as_slice())
