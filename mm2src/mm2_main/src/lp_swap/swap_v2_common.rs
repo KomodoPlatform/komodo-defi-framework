@@ -33,6 +33,7 @@ pub struct ActiveSwapV2Info {
     pub uuid: Uuid,
     pub maker_coin: String,
     pub taker_coin: String,
+    pub swap_type: u8,
 }
 
 /// DB representation of tx preimage with signature

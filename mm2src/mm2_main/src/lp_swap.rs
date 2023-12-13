@@ -702,20 +702,20 @@ pub fn active_swaps_using_coins(ctx: &MmArc, coins: &HashSet<String>) -> Result<
     Ok(uuids)
 }
 
-pub fn active_swaps(ctx: &MmArc) -> Result<Vec<Uuid>, String> {
+pub fn active_swaps(ctx: &MmArc) -> Result<Vec<(Uuid, u8)>, String> {
     let swap_ctx = try_s!(SwapsContext::from_ctx(ctx));
     let swaps = try_s!(swap_ctx.running_swaps.lock());
     let mut uuids = vec![];
     for swap in swaps.iter() {
         if let Some(swap) = swap.upgrade() {
-            uuids.push(*swap.uuid())
+            uuids.push((*swap.uuid(), LEGACY_SWAP_TYPE))
         }
     }
 
     drop(swaps);
 
     let swaps_v2 = swap_ctx.active_swaps_v2_infos.lock().unwrap();
-    uuids.extend(swaps_v2.keys());
+    uuids.extend(swaps_v2.iter().map(|(uuid, info)| (*uuid, info.swap_type)));
     Ok(uuids)
 }
 
@@ -1570,25 +1570,39 @@ struct ActiveSwapsRes {
 /// It returns only uuids for these.
 pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: ActiveSwapsReq = try_s!(json::from_value(req));
-    let uuids = try_s!(active_swaps(&ctx));
+    let uuids_with_types = try_s!(active_swaps(&ctx));
     let statuses = if req.include_status {
         let mut map = HashMap::new();
-        for uuid in uuids.iter() {
-            let status = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
-                Ok(Some(status)) => status,
-                Ok(None) => continue,
-                Err(e) => {
-                    error!("Error on loading_from_db: {}", e);
+        for (uuid, swap_type) in uuids_with_types.iter() {
+            match *swap_type {
+                LEGACY_SWAP_TYPE => {
+                    let status = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
+                        Ok(Some(status)) => status,
+                        Ok(None) => continue,
+                        Err(e) => {
+                            error!("Error on loading_from_db: {}", e);
+                            continue;
+                        },
+                    };
+                    map.insert(*uuid, status);
+                },
+                unsupported_type => {
+                    error!("active_swaps_rpc doesn't support swap type {}", unsupported_type);
                     continue;
                 },
-            };
-            map.insert(*uuid, status);
+            }
         }
         Some(map)
     } else {
         None
     };
-    let result = ActiveSwapsRes { uuids, statuses };
+    let result = ActiveSwapsRes {
+        uuids: uuids_with_types
+            .into_iter()
+            .map(|uuid_with_type| uuid_with_type.0)
+            .collect(),
+        statuses,
+    };
     let res = try_s!(json::to_vec(&result));
     Ok(try_s!(Response::builder().body(res)))
 }

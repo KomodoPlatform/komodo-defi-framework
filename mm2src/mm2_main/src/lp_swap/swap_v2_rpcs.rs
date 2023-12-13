@@ -3,7 +3,7 @@ use super::maker_swap_v2::MakerSwapEvent;
 use super::my_swaps_storage::{MySwapsError, MySwapsOps, MySwapsStorage};
 use super::taker_swap::TakerSavedSwap;
 use super::taker_swap_v2::TakerSwapEvent;
-use super::{MySwapsFilter, SavedSwap, SavedSwapError, SavedSwapIo, LEGACY_SWAP_TYPE, MAKER_SWAP_V2_TYPE,
+use super::{active_swaps, MySwapsFilter, SavedSwap, SavedSwapError, SavedSwapIo, LEGACY_SWAP_TYPE, MAKER_SWAP_V2_TYPE,
             TAKER_SWAP_V2_TYPE};
 use common::log::{error, warn};
 use common::{calc_total_pages, HttpStatusCode, PagingOptions};
@@ -270,6 +270,46 @@ pub(crate) enum SwapRpcData {
     TakerV2(MySwapForRpc<TakerSwapEvent>),
 }
 
+#[derive(Display)]
+enum GetSwapDataErr {
+    UnsupportedSwapType(u8),
+    DbError(String),
+}
+
+impl From<SavedSwapError> for GetSwapDataErr {
+    fn from(e: SavedSwapError) -> Self { GetSwapDataErr::DbError(e.to_string()) }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<SqlError> for GetSwapDataErr {
+    fn from(e: SqlError) -> Self { GetSwapDataErr::DbError(e.to_string()) }
+}
+
+async fn get_swap_data_by_uuid_and_type(
+    ctx: &MmArc,
+    uuid: Uuid,
+    swap_type: u8,
+) -> MmResult<Option<SwapRpcData>, GetSwapDataErr> {
+    match swap_type {
+        LEGACY_SWAP_TYPE => {
+            let saved_swap = SavedSwap::load_my_swap_from_db(ctx, uuid).await?;
+            Ok(saved_swap.map(|swap| match swap {
+                SavedSwap::Maker(m) => SwapRpcData::MakerV1(m),
+                SavedSwap::Taker(t) => SwapRpcData::TakerV1(t),
+            }))
+        },
+        MAKER_SWAP_V2_TYPE => {
+            let data = get_maker_swap_data_for_rpc(ctx, &uuid).await?;
+            Ok(data.map(SwapRpcData::MakerV2))
+        },
+        TAKER_SWAP_V2_TYPE => {
+            let data = get_taker_swap_data_for_rpc(ctx, &uuid).await?;
+            Ok(data.map(SwapRpcData::TakerV2))
+        },
+        unsupported => MmError::err(GetSwapDataErr::UnsupportedSwapType(unsupported)),
+    }
+}
+
 #[derive(Deserialize)]
 pub(crate) struct MySwapStatusRequest {
     uuid: Uuid,
@@ -293,8 +333,13 @@ impl From<SwapV2DbError> for MySwapStatusError {
     fn from(e: SwapV2DbError) -> Self { MySwapStatusError::DbError(e.to_string()) }
 }
 
-impl From<SavedSwapError> for MySwapStatusError {
-    fn from(e: SavedSwapError) -> Self { MySwapStatusError::DbError(e.to_string()) }
+impl From<GetSwapDataErr> for MySwapStatusError {
+    fn from(e: GetSwapDataErr) -> Self {
+        match e {
+            GetSwapDataErr::UnsupportedSwapType(swap_type) => MySwapStatusError::UnsupportedSwapType(swap_type),
+            GetSwapDataErr::DbError(err) => MySwapStatusError::DbError(err),
+        }
+    }
 }
 
 impl HttpStatusCode for MySwapStatusError {
@@ -315,30 +360,9 @@ pub(crate) async fn my_swap_status_rpc(
     let swap_type = get_swap_type(&ctx, &req.uuid)
         .await?
         .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))?;
-    match swap_type {
-        LEGACY_SWAP_TYPE => {
-            let saved_swap = SavedSwap::load_my_swap_from_db(&ctx, req.uuid)
-                .await?
-                .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))?;
-            match saved_swap {
-                SavedSwap::Maker(m) => Ok(SwapRpcData::MakerV1(m)),
-                SavedSwap::Taker(t) => Ok(SwapRpcData::TakerV1(t)),
-            }
-        },
-        MAKER_SWAP_V2_TYPE => {
-            let data = get_maker_swap_data_for_rpc(&ctx, &req.uuid)
-                .await?
-                .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))?;
-            Ok(SwapRpcData::MakerV2(data))
-        },
-        TAKER_SWAP_V2_TYPE => {
-            let data = get_taker_swap_data_for_rpc(&ctx, &req.uuid)
-                .await?
-                .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))?;
-            Ok(SwapRpcData::TakerV2(data))
-        },
-        unsupported => MmError::err(MySwapStatusError::UnsupportedSwapType(unsupported)),
-    }
+    get_swap_data_by_uuid_and_type(&ctx, req.uuid, swap_type)
+        .await?
+        .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))
 }
 
 #[derive(Deserialize)]
@@ -399,33 +423,11 @@ pub(crate) async fn my_recent_swaps_rpc(
         .await?;
     let mut swaps = Vec::with_capacity(db_result.uuids_and_types.len());
     for (uuid, swap_type) in db_result.uuids_and_types.iter() {
-        match *swap_type {
-            LEGACY_SWAP_TYPE => match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
-                Ok(Some(SavedSwap::Maker(m))) => {
-                    swaps.push(SwapRpcData::MakerV1(m));
-                },
-                Ok(Some(SavedSwap::Taker(t))) => {
-                    swaps.push(SwapRpcData::TakerV1(t));
-                },
-                Ok(None) => warn!("No such swap with the uuid '{}'", uuid),
-                Err(e) => error!("Error loading a swap with the uuid '{}': {}", uuid, e),
-            },
-            MAKER_SWAP_V2_TYPE => match get_maker_swap_data_for_rpc(&ctx, uuid).await {
-                Ok(Some(m)) => {
-                    swaps.push(SwapRpcData::MakerV2(m));
-                },
-                Ok(None) => warn!("No such swap with the uuid '{}'", uuid),
-                Err(e) => error!("Error loading a swap with the uuid '{}': {}", uuid, e),
-            },
-            TAKER_SWAP_V2_TYPE => match get_taker_swap_data_for_rpc(&ctx, uuid).await {
-                Ok(Some(t)) => {
-                    swaps.push(SwapRpcData::TakerV2(t));
-                },
-                Ok(None) => warn!("No such swap with the uuid '{}'", uuid),
-                Err(e) => error!("Error loading a swap with the uuid '{}': {}", uuid, e),
-            },
-            unknown_type => error!("Swap with the uuid '{}' has unknown type {}", uuid, unknown_type),
-        }
+        match get_swap_data_by_uuid_and_type(&ctx, *uuid, *swap_type).await {
+            Ok(Some(data)) => swaps.push(data),
+            Ok(None) => warn!("Swap {} data doesn't exist in DB", uuid),
+            Err(e) => error!("Error {} while trying to get swap {} data", e, uuid),
+        };
     }
 
     Ok(MyRecentSwapsResponse {
@@ -467,8 +469,30 @@ pub(crate) struct ActiveSwapsResponse {
 }
 
 pub(crate) async fn active_swaps_rpc(
-    _ctx: MmArc,
-    _req: ActiveSwapsRequest,
+    ctx: MmArc,
+    req: ActiveSwapsRequest,
 ) -> MmResult<ActiveSwapsResponse, ActiveSwapsErr> {
-    unimplemented!()
+    let uuids_with_types = active_swaps(&ctx).map_to_mm(ActiveSwapsErr::Internal)?;
+    let statuses = if req.include_status {
+        let mut statuses = HashMap::with_capacity(uuids_with_types.len());
+        for (uuid, swap_type) in uuids_with_types.iter() {
+            match get_swap_data_by_uuid_and_type(&ctx, *uuid, *swap_type).await {
+                Ok(Some(data)) => {
+                    statuses.insert(*uuid, data);
+                },
+                Ok(None) => warn!("Swap {} data doesn't exist in DB", uuid),
+                Err(e) => error!("Error {} while trying to get swap {} data", e, uuid),
+            }
+        }
+        statuses
+    } else {
+        HashMap::new()
+    };
+    Ok(ActiveSwapsResponse {
+        uuids: uuids_with_types
+            .into_iter()
+            .map(|uuid_with_type| uuid_with_type.0)
+            .collect(),
+        statuses,
+    })
 }

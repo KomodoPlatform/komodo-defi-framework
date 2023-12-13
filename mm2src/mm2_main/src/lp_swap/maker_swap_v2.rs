@@ -611,6 +611,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             uuid: self.uuid,
             maker_coin: self.maker_coin.ticker().into(),
             taker_coin: self.taker_coin.ticker().into(),
+            swap_type: MAKER_SWAP_V2_TYPE,
         })
     }
 
@@ -690,7 +691,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
                     locked_amount: LockedAmount {
                         coin: maker_coin_ticker.clone(),
                         amount: self.maker_volume.clone(),
-                        trade_fee: Some(maker_payment_trade_fee.clone().into()),
+                        trade_fee: Some(maker_payment_trade_fee.into()),
                     },
                 };
                 swaps_ctx
