@@ -228,18 +228,10 @@ pub(super) async fn mark_swap_as_finished(ctx: MmArc, id: Uuid) -> MmResult<(), 
     Ok(())
 }
 
-pub(super) fn init_additional_context_impl(ctx: &MmArc, swap_info: ActiveSwapV2Info) {
+pub(super) fn init_additional_context_impl(ctx: &MmArc, swap_info: ActiveSwapV2Info, other_p2p_pubkey: PublicKey) {
     subscribe_to_topic(ctx, swap_v2_topic(&swap_info.uuid));
     let swap_ctx = SwapsContext::from_ctx(ctx).expect("SwapsContext::from_ctx should not fail");
-    swap_ctx.init_msg_v2_store(
-        swap_info.uuid,
-        // just a "random" pubkey for now
-        PublicKey::from_slice(&[
-            3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110, 143,
-            114, 134, 88, 73, 198, 174, 52, 184, 78,
-        ])
-        .unwrap(),
-    );
+    swap_ctx.init_msg_v2_store(swap_info.uuid, other_p2p_pubkey);
     swap_ctx
         .active_swaps_v2_infos
         .lock()

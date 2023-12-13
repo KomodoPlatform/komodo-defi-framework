@@ -25,6 +25,7 @@ use mm2_state_machine::prelude::*;
 use mm2_state_machine::storable_state_machine::*;
 use primitives::hash::H256;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use secp256k1::PublicKey;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 use uuid::Uuid;
@@ -396,6 +397,8 @@ pub struct TakerSwapStateMachine<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: 
     pub taker_secret: H256,
     /// Abortable queue used to spawn related activities
     pub abortable_system: AbortableQueue,
+    /// Maker's P2P pubkey
+    pub maker_p2p_pubkey: PublicKey,
 }
 
 impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> TakerSwapStateMachine<MakerCoin, TakerCoin> {
@@ -691,6 +694,11 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             uuid,
             p2p_keypair: repr.p2p_keypair.map(|k| k.into_inner()),
             taker_secret: repr.taker_secret.into(),
+            maker_p2p_pubkey: PublicKey::from_slice(&[
+                3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110,
+                143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
+            ])
+            .unwrap(),
         };
         Ok((RestoredMachine::new(machine), current_state))
     }
@@ -704,12 +712,13 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
     }
 
     fn init_additional_context(&mut self) {
-        init_additional_context_impl(&self.ctx, ActiveSwapV2Info {
+        let swap_info = ActiveSwapV2Info {
             uuid: self.uuid,
             maker_coin: self.maker_coin.ticker().into(),
             taker_coin: self.taker_coin.ticker().into(),
             swap_type: TAKER_SWAP_V2_TYPE,
-        })
+        };
+        init_additional_context_impl(&self.ctx, swap_info, self.maker_p2p_pubkey);
     }
 
     fn clean_up_context(&mut self) {
