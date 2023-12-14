@@ -41,7 +41,7 @@ lazy_static! {
     static ref SECP_SIGN: Secp256k1<SignOnly> = Secp256k1::signing_only();
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum NetworkInfo {
     /// The in-memory network.
     InMemory,
@@ -53,7 +53,7 @@ impl NetworkInfo {
     pub fn in_memory(&self) -> bool { matches!(self, NetworkInfo::InMemory) }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct NetworkPorts {
     pub tcp: u16,
     pub wss: u16,
