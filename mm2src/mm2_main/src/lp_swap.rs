@@ -1397,7 +1397,13 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
     let unfinished_maker_uuids = try_s!(maker_swap_storage.get_unfinished().await);
     for maker_uuid in unfinished_maker_uuids {
         info!("Trying to kickstart maker swap {}", maker_uuid);
-        let maker_swap_repr = try_s!(maker_swap_storage.get_repr(maker_uuid).await);
+        let maker_swap_repr = match maker_swap_storage.get_repr(maker_uuid).await {
+            Ok(repr) => repr,
+            Err(e) => {
+                error!("Error {} getting DB repr of maker swap {}", e, maker_uuid);
+                continue;
+            },
+        };
         debug!("Got maker swap repr {:?}", maker_swap_repr);
 
         coins.insert(maker_swap_repr.maker_coin.clone());
@@ -1416,7 +1422,13 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
     let unfinished_taker_uuids = try_s!(taker_swap_storage.get_unfinished().await);
     for taker_uuid in unfinished_taker_uuids {
         info!("Trying to kickstart taker swap {}", taker_uuid);
-        let taker_swap_repr = try_s!(taker_swap_storage.get_repr(taker_uuid).await);
+        let taker_swap_repr = match taker_swap_storage.get_repr(taker_uuid).await {
+            Ok(repr) => repr,
+            Err(e) => {
+                error!("Error {} getting DB repr of taker swap {}", e, taker_uuid);
+                continue;
+            },
+        };
         debug!("Got taker swap repr {:?}", taker_swap_repr);
 
         coins.insert(taker_swap_repr.maker_coin.clone());
@@ -1755,27 +1767,31 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
         let swap_message = SwapMessage::decode(signed_message.payload.as_slice())
             .map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
 
+        let uuid_from_message =
+            Uuid::from_slice(&swap_message.swap_uuid).map_to_mm(|e| P2PProcessError::DecodeError(e.to_string()))?;
+
+        if uuid_from_message != uuid {
+            return MmError::err(P2PProcessError::ValidationFailed(format!(
+                "uuid from message {} doesn't match uuid from topic {}",
+                uuid_from_message, uuid,
+            )));
+        }
+
         debug!("Processing swap v2 msg {:?} for uuid {}", swap_message, uuid);
         match swap_message.inner {
-            Some(swap_v2_pb::swap_message::Inner::MakerNegotiation(maker_negotiation)) => {
+            Some(swap_message::Inner::MakerNegotiation(maker_negotiation)) => {
                 msg_store.maker_negotiation = Some(maker_negotiation)
             },
-            Some(swap_v2_pb::swap_message::Inner::TakerNegotiation(taker_negotiation)) => {
+            Some(swap_message::Inner::TakerNegotiation(taker_negotiation)) => {
                 msg_store.taker_negotiation = Some(taker_negotiation)
             },
-            Some(swap_v2_pb::swap_message::Inner::MakerNegotiated(maker_negotiated)) => {
+            Some(swap_message::Inner::MakerNegotiated(maker_negotiated)) => {
                 msg_store.maker_negotiated = Some(maker_negotiated)
             },
-            Some(swap_v2_pb::swap_message::Inner::TakerFundingInfo(taker_funding)) => {
-                msg_store.taker_funding = Some(taker_funding)
-            },
-            Some(swap_v2_pb::swap_message::Inner::MakerPaymentInfo(maker_payment)) => {
-                msg_store.maker_payment = Some(maker_payment)
-            },
-            Some(swap_v2_pb::swap_message::Inner::TakerPaymentInfo(taker_payment)) => {
-                msg_store.taker_payment = Some(taker_payment)
-            },
-            Some(swap_v2_pb::swap_message::Inner::TakerPaymentSpendPreimage(preimage)) => {
+            Some(swap_message::Inner::TakerFundingInfo(taker_funding)) => msg_store.taker_funding = Some(taker_funding),
+            Some(swap_message::Inner::MakerPaymentInfo(maker_payment)) => msg_store.maker_payment = Some(maker_payment),
+            Some(swap_message::Inner::TakerPaymentInfo(taker_payment)) => msg_store.taker_payment = Some(taker_payment),
+            Some(swap_message::Inner::TakerPaymentSpendPreimage(preimage)) => {
                 msg_store.taker_payment_spend_preimage = Some(preimage)
             },
             None => return MmError::err(P2PProcessError::DecodeError("swap_message.inner is None".into())),

@@ -78,4 +78,5 @@ message SwapMessage {
     TakerPaymentInfo taker_payment_info = 6;
     TakerPaymentSpendPreimage taker_payment_spend_preimage = 7;
   }
+  bytes swap_uuid = 10;
 }

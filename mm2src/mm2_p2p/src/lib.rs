@@ -122,6 +122,10 @@ impl Secp256k1PubkeySerialize {
     pub fn into_inner(self) -> Secp256k1Pubkey { self.0 }
 }
 
+impl From<Secp256k1Pubkey> for Secp256k1PubkeySerialize {
+    fn from(pubkey: Secp256k1Pubkey) -> Self { Secp256k1PubkeySerialize(pubkey) }
+}
+
 impl Serialize for Secp256k1PubkeySerialize {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_bytes(&self.0.serialize())

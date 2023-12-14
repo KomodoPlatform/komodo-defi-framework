@@ -19,6 +19,7 @@ use crypto::privkey::SerializableSecp256k1Keypair;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::Secp256k1PubkeySerialize;
 use mm2_number::MmNumber;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::storable_state_machine::*;
@@ -165,7 +166,8 @@ impl StateMachineStorage for MakerSwapStorage {
                 ":maker_coin_confs": repr.conf_settings.maker_coin_confs,
                 ":maker_coin_nota": repr.conf_settings.maker_coin_nota,
                 ":taker_coin_confs": repr.conf_settings.taker_coin_confs,
-                ":taker_coin_nota": repr.conf_settings.taker_coin_nota
+                ":taker_coin_nota": repr.conf_settings.taker_coin_nota,
+                ":other_p2p_pub": repr.taker_p2p_pub.into_inner().serialize(),
             };
             insert_new_swap_v2(&ctx, sql_params)?;
             Ok(())
@@ -269,6 +271,8 @@ pub struct MakerSwapDbRepr {
     pub p2p_keypair: Option<SerializableSecp256k1Keypair>,
     /// Swap events
     pub events: Vec<MakerSwapEvent>,
+    /// Taker's P2P pubkey
+    pub taker_p2p_pub: Secp256k1PubkeySerialize,
 }
 
 impl StateMachineDbRepr for MakerSwapDbRepr {
@@ -326,6 +330,13 @@ impl MakerSwapDbRepr {
                     })?))
                 }
             })?,
+            taker_p2p_pub: row
+                .get::<_, Vec<u8>>(18)
+                .and_then(|maybe_public| {
+                    PublicKey::from_slice(&maybe_public)
+                        .map_err(|e| SqlError::FromSqlConversionFailure(18, SqlType::Blob, Box::new(e)))
+                })?
+                .into(),
         })
     }
 }
@@ -420,6 +431,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             uuid: self.uuid,
             p2p_keypair: self.p2p_keypair.map(Into::into),
             events: Vec::new(),
+            taker_p2p_pub: self.taker_p2p_pubkey.into(),
         }
     }
 
@@ -596,11 +608,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             p2p_topic: swap_v2_topic(&uuid),
             uuid,
             p2p_keypair: repr.p2p_keypair.map(|k| k.into_inner()),
-            taker_p2p_pubkey: PublicKey::from_slice(&[
-                3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110,
-                143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
-            ])
-            .unwrap(),
+            taker_p2p_pubkey: repr.taker_p2p_pub.into_inner(),
         };
 
         Ok((RestoredMachine::new(machine), current_state))
@@ -865,6 +873,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State fo
         debug!("Sending maker negotiation message {:?}", maker_negotiation_msg);
         let swap_msg = SwapMessage {
             inner: Some(swap_message::Inner::MakerNegotiation(maker_negotiation_msg)),
+            swap_uuid: state_machine.uuid.as_bytes().to_vec(),
         };
         let abort_handle = broadcast_swap_v2_msg_every(
             state_machine.ctx.clone(),
@@ -1026,6 +1035,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
         debug!("Sending maker negotiated message {:?}", maker_negotiated_msg);
         let swap_msg = SwapMessage {
             inner: Some(swap_message::Inner::MakerNegotiated(maker_negotiated_msg)),
+            swap_uuid: state_machine.uuid.as_bytes().to_vec(),
         };
         let abort_handle = broadcast_swap_v2_msg_every(
             state_machine.ctx.clone(),
@@ -1230,6 +1240,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
         };
         let swap_msg = SwapMessage {
             inner: Some(swap_message::Inner::MakerPaymentInfo(maker_payment_info)),
+            swap_uuid: state_machine.uuid.as_bytes().to_vec(),
         };
 
         debug!("Sending maker payment info message {:?}", swap_msg);

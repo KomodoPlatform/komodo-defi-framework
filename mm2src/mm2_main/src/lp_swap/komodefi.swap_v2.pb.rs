@@ -105,6 +105,8 @@ pub struct TakerPaymentSpendPreimage {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SwapMessage {
+    #[prost(bytes="vec", tag="10")]
+    pub swap_uuid: ::prost::alloc::vec::Vec<u8>,
     #[prost(oneof="swap_message::Inner", tags="1, 2, 3, 4, 5, 6, 7")]
     pub inner: ::core::option::Option<swap_message::Inner>,
 }

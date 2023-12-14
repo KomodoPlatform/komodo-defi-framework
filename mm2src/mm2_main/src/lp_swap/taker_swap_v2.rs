@@ -20,6 +20,7 @@ use crypto::privkey::SerializableSecp256k1Keypair;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::Secp256k1PubkeySerialize;
 use mm2_number::MmNumber;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::storable_state_machine::*;
@@ -196,7 +197,8 @@ impl StateMachineStorage for TakerSwapStorage {
                 ":maker_coin_confs": repr.conf_settings.maker_coin_confs,
                 ":maker_coin_nota": repr.conf_settings.maker_coin_nota,
                 ":taker_coin_confs": repr.conf_settings.taker_coin_confs,
-                ":taker_coin_nota": repr.conf_settings.taker_coin_nota
+                ":taker_coin_nota": repr.conf_settings.taker_coin_nota,
+                ":other_p2p_pub": repr.maker_p2p_pub.into_inner().serialize(),
             };
             insert_new_swap_v2(&ctx, sql_params)?;
             Ok(())
@@ -300,6 +302,8 @@ pub struct TakerSwapDbRepr {
     pub p2p_keypair: Option<SerializableSecp256k1Keypair>,
     /// Swap events
     pub events: Vec<TakerSwapEvent>,
+    /// Maker's P2P pubkey
+    pub maker_p2p_pub: Secp256k1PubkeySerialize,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -345,6 +349,13 @@ impl TakerSwapDbRepr {
                     })?))
                 }
             })?,
+            maker_p2p_pub: row
+                .get::<_, Vec<u8>>(18)
+                .and_then(|maybe_public| {
+                    PublicKey::from_slice(&maybe_public)
+                        .map_err(|e| SqlError::FromSqlConversionFailure(18, SqlType::Blob, Box::new(e)))
+                })?
+                .into(),
         })
     }
 }
@@ -447,6 +458,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             uuid: self.uuid,
             p2p_keypair: self.p2p_keypair.map(Into::into),
             events: Vec::new(),
+            maker_p2p_pub: self.maker_p2p_pubkey.into(),
         }
     }
 
@@ -694,11 +706,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> Storable
             uuid,
             p2p_keypair: repr.p2p_keypair.map(|k| k.into_inner()),
             taker_secret: repr.taker_secret.into(),
-            maker_p2p_pubkey: PublicKey::from_slice(&[
-                3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110,
-                143, 114, 134, 88, 73, 198, 174, 52, 184, 78,
-            ])
-            .unwrap(),
+            maker_p2p_pubkey: repr.maker_p2p_pub.into_inner(),
         };
         Ok((RestoredMachine::new(machine), current_state))
     }
@@ -1027,6 +1035,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State fo
 
         let swap_msg = SwapMessage {
             inner: Some(swap_message::Inner::TakerNegotiation(taker_negotiation)),
+            swap_uuid: state_machine.uuid.as_bytes().to_vec(),
         };
         let abort_handle = broadcast_swap_v2_msg_every(
             state_machine.ctx.clone(),
@@ -1207,6 +1216,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
 
         let swap_msg = SwapMessage {
             inner: Some(swap_message::Inner::TakerFundingInfo(taker_funding_info)),
+            swap_uuid: state_machine.uuid.as_bytes().to_vec(),
         };
         let abort_handle = broadcast_swap_v2_msg_every(
             state_machine.ctx.clone(),
@@ -1473,6 +1483,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
         };
         let swap_msg = SwapMessage {
             inner: Some(swap_message::Inner::TakerPaymentInfo(taker_payment_info)),
+            swap_uuid: state_machine.uuid.as_bytes().to_vec(),
         };
         let _abort_handle = broadcast_swap_v2_msg_every(
             state_machine.ctx.clone(),
@@ -1779,6 +1790,7 @@ impl<MakerCoin: MmCoin + CoinAssocTypes, TakerCoin: MmCoin + SwapOpsV2> State
         };
         let swap_msg = SwapMessage {
             inner: Some(swap_message::Inner::TakerPaymentSpendPreimage(preimage_msg)),
+            swap_uuid: state_machine.uuid.as_bytes().to_vec(),
         };
 
         let _abort_handle = broadcast_swap_v2_msg_every(
