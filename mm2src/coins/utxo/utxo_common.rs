@@ -1675,7 +1675,7 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     gen_args: &GenTakerPaymentSpendArgs<'_, T>,
     secret: &[u8],
     htlc_keypair: &KeyPair,
-) -> TransactionResult {
+) -> Result<UtxoTx, TransactionErr> {
     let secret_hash = dhash160(secret);
     let redeem_script = swap_proto_v2_scripts::taker_payment_script(
         try_tx_s!(gen_args.time_lock.try_into()),
@@ -1741,7 +1741,7 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     drop_mutability!(final_tx);
 
     try_tx_s!(coin.broadcast_tx(&final_tx).await, final_tx);
-    Ok(final_tx.into())
+    Ok(final_tx)
 }
 
 pub fn send_taker_fee<T>(coin: T, fee_pub_key: &[u8], dex_fee: DexFee) -> TransactionFut
@@ -5250,7 +5250,7 @@ where
 }
 
 /// Common implementation of taker funding validation for UTXO coins.
-pub async fn validate_taker_funding<T>(coin: &T, args: ValidateTakerFundingArgs<'_, T>) -> ValidateTakerFundingResult
+pub async fn validate_taker_funding<T>(coin: &T, args: ValidateTakerFundingArgs<'_, T>) -> ValidateSwapV2TxResult
 where
     T: UtxoCommonOps + SwapOps,
 {
@@ -5262,7 +5262,7 @@ where
     let time_lock = args
         .time_lock
         .try_into()
-        .map_to_mm(|e: TryFromIntError| ValidateTakerFundingError::LocktimeOverflow(e.to_string()))?;
+        .map_to_mm(|e: TryFromIntError| ValidateSwapV2TxError::LocktimeOverflow(e.to_string()))?;
 
     let redeem_script = swap_proto_v2_scripts::taker_funding_script(
         time_lock,
@@ -5276,7 +5276,7 @@ where
     };
 
     if args.funding_tx.outputs.get(0) != Some(&expected_output) {
-        return MmError::err(ValidateTakerFundingError::InvalidDestinationOrAmount(format!(
+        return MmError::err(ValidateSwapV2TxError::InvalidDestinationOrAmount(format!(
             "Expected {:?}, got {:?}",
             expected_output,
             args.funding_tx.outputs.get(0)
@@ -5291,7 +5291,7 @@ where
         .await?;
     let actual_tx_bytes = serialize(args.funding_tx).take();
     if tx_bytes_from_rpc.0 != actual_tx_bytes {
-        return MmError::err(ValidateTakerFundingError::TxBytesMismatch {
+        return MmError::err(ValidateSwapV2TxError::TxBytesMismatch {
             from_rpc: tx_bytes_from_rpc,
             actual: actual_tx_bytes.into(),
         });
