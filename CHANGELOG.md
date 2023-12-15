@@ -47,8 +47,8 @@
 - An additional `PRICE_ENDPOINTS` url which is a cached copy of `https://prices.komodian.info/api/v2/tickers` and is updated every minute was added in [#2032](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2032).
 
 **NB - Backwards compatibility breaking changes:**
-- `7777` Network deprecation and the upgrade to a new p2p layer breaks compatibility with previous versions of Komodo DeFi Framework. Connections between nodes/clients running an older version of Komodo DeFi Framework and nodes running this latest version will not be possible. To avoid this, all nodes/clients must be upgraded to the latest version of Komodo DeFi Framework.
-- Because of KMD burn of a part of the taker fee, the taker fee outputs for any `coin/KMD` swap are changed and makers running older versions will not be able to validate the taker fee, this will cause the swap to fail. This case will never happen anyway because older versions will not be able to connect to new version due to the network upgrade.
+- `7777` Network deprecation and the upgrade to a new p2p layer breaks compatibility with previous versions of Komodo DeFi Framework. Connections between nodes/clients running an older version of Komodo DeFi Framework and nodes/clients running this latest version will not be possible. To avoid this, all nodes/clients must be upgraded to the latest version of Komodo DeFi Framework.
+- Because of KMD burn of a part of the taker fee, the taker fee outputs for any `coin/KMD` swap are changed and makers running older versions will not be able to validate the taker fee, this will cause the swap to fail. This case will never happen anyway because older versions will not be able to connect to this latest version due to the network upgrade.
 - Because of the removal of the fixed 0.0001 min threshold for TakerFee, taker fee validation will also fail for these cases. Again, this case will never happen as the previous case.
 
 
