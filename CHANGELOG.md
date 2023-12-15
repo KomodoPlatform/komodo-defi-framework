@@ -43,7 +43,7 @@
 - On response error the next web3 node is tried in [#1998](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1998).
 - Watchtower taker-side restart bug was fixed in [#1908](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1908).
 - 'version' method was added to `PUBLIC_METHODS` that require no login in [#2001](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2001).
-- `rpcport` value can now accept a string after [#2026]https://github.com/KomodoPlatform/komodo-defi-framework/pull/2026).
+- `rpcport` value can now accept a string after [#2026](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2026).
 - An additional `PRICE_ENDPOINTS` url which is a cached copy of `https://prices.komodian.info/api/v2/tickers` and is updated every minute was added in [#2032](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2032).
 
 **NB - Backwards compatibility breaking changes:**
