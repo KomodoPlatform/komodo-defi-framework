@@ -7,7 +7,7 @@
   - Add Swaps V2 message exchange using Protobuf in [#1958](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1958).
   - Storing upgraded swaps data to SQLite DB was partially implemented in [#1980](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1980).
   - Protocol enhancement for UTXO coins by adding one more funding tx for taker, which can be reclaimed immediately if maker back-outs was implemented in [#1980](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1980).
-- Event Streaming [#1958](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1958)
+- Event Streaming [#1901](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1901)
   - Streaming channels using mpsc and SSE to send data to clients continuously was implemented in [#1945](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1945).
   - NETWORK event was implemented to show this new functionality in [#1945](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1945).
   - Wasm event streaming using workers was added in [#1978](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1978).
