@@ -290,7 +290,13 @@ pub fn broadcast_swap_msg_every_delayed<T: 'static + Serialize + Clone + Send>(
 /// Broadcast the swap message once
 pub fn broadcast_swap_message<T: Serialize>(ctx: &MmArc, topic: String, msg: T, p2p_privkey: &Option<KeyPair>) {
     let (p2p_private, from) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey.as_ref());
-    let encoded_msg = encode_and_sign(&msg, &p2p_private).unwrap();
+    let encoded_msg = match encode_and_sign(&msg, &p2p_private) {
+        Ok(m) => m,
+        Err(e) => {
+            error!("Error encoding and signing swap message: {}", e);
+            return;
+        },
+    };
     broadcast_p2p_msg(ctx, topic, encoded_msg, from);
 }
 
@@ -301,7 +307,13 @@ pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p
     }
 
     let (p2p_private, from) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey.as_ref());
-    let encoded_msg = encode_and_sign(&msg.tx_hex(), &p2p_private).unwrap();
+    let encoded_msg = match encode_and_sign(&msg.tx_hex(), &p2p_private) {
+        Ok(m) => m,
+        Err(e) => {
+            error!("Error encoding and signing tx message: {}", e);
+            return;
+        },
+    };
     broadcast_p2p_msg(ctx, topic, encoded_msg, from);
 }
 

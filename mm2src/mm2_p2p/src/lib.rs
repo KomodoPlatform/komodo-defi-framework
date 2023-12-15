@@ -78,9 +78,11 @@ struct SignedMessageSerdeHelper<'a> {
 }
 
 pub fn encode_and_sign<T: Serialize>(message: &T, secret: &[u8; 32]) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-    let secret = SecretKey::from_slice(secret).unwrap();
+    let secret = SecretKey::from_slice(secret)
+        .map_err(|e| rmp_serde::encode::Error::Syntax(format!("Error {} parsing secret", e)))?;
     let encoded = encode_message(message)?;
-    let sig_hash = SecpMessage::from_slice(&sha256(&encoded)).expect("Message::from_slice should never fail");
+    let sig_hash = SecpMessage::from_slice(&sha256(&encoded))
+        .map_err(|e| rmp_serde::encode::Error::Syntax(format!("Error {} parsing message", e)))?;
     let sig = SECP_SIGN.sign(&sig_hash, &secret);
     let serialized_sig = sig.serialize_compact();
     let pubkey = PublicKey::from(Secp256k1Pubkey::from_secret_key(&*SECP_SIGN, &secret));
