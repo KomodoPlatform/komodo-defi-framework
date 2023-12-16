@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{CanRefundHtlc, CoinAssocTypes, ConfirmPaymentInput, FeeApproxStage, GenTakerFundingSpendArgs,
             GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, RefundFundingSecretArgs, RefundPaymentArgs,
-            SendTakerFundingArgs, SpendMakerPaymentArgs, TakerCoinSwapOpsV2, ToBytes, TradeFee, TradePreimageValue,
-            Transaction, TxPreimageWithSig, ValidateMakerPaymentArgs, WaitForHTLCTxSpendArgs};
+            SendTakerFundingArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes,
+            TradeFee, TradePreimageValue, Transaction, TxPreimageWithSig, ValidateMakerPaymentArgs};
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
 use common::log::{debug, error, info, warn};
@@ -1736,7 +1736,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             payment_tx: &payment_tx_bytes,
             time_lock: state_machine.taker_payment_locktime(),
             other_pubkey: &other_pub,
-            secret_hash: &self.negotiation_data.maker_secret_hash,
+            tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerPaymentV2 {
+                maker_secret_hash: &self.negotiation_data.maker_secret_hash,
+            },
             swap_contract_address: &None,
             swap_unique_data: &unique_data,
             watcher_reward: false,
@@ -1847,23 +1849,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             state_machine.p2p_keypair,
         );
 
-        let wait_args = WaitForHTLCTxSpendArgs {
-            tx_bytes: &self.taker_payment.tx_hex(),
-            secret_hash: &self.negotiation_data.maker_secret_hash,
-            wait_until: state_machine.taker_payment_locktime(),
-            from_block: self.taker_coin_start_block,
-            swap_contract_address: &self
-                .negotiation_data
-                .taker_coin_swap_contract
-                .clone()
-                .map(|bytes| bytes.into()),
-            check_every: 10.0,
-            watcher_reward: false,
-        };
         let taker_payment_spend = match state_machine
             .taker_coin
-            .wait_for_htlc_tx_spend(wait_args)
-            .compat()
+            .wait_for_taker_payment_spend(&self.taker_payment)
             .await
         {
             Ok(tx) => tx,
@@ -1871,7 +1859,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 let next_state = TakerPaymentRefundRequired {
                     taker_payment: self.taker_payment,
                     negotiation_data: self.negotiation_data,
-                    reason: TakerPaymentRefundReason::MakerDidNotSpendInTime(format!("{:?}", e)),
+                    reason: TakerPaymentRefundReason::MakerDidNotSpendInTime(format!("{}", e)),
                 };
                 return Self::change_state(next_state, state_machine).await;
             },

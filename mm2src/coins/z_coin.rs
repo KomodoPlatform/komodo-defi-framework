@@ -1312,9 +1312,8 @@ impl SwapOps for ZCoin {
         let tx = try_tx_s!(ZTransaction::read(taker_refunds_payment_args.payment_tx));
         let key_pair = self.derive_htlc_key_pair(taker_refunds_payment_args.swap_unique_data);
         let time_lock = try_tx_s!(taker_refunds_payment_args.time_lock.try_into());
-        let redeem_script = payment_script(
+        let redeem_script = taker_refunds_payment_args.tx_type_with_secret_hash.redeem_script(
             time_lock,
-            taker_refunds_payment_args.secret_hash,
             key_pair.public(),
             &try_tx_s!(Public::from_slice(taker_refunds_payment_args.other_pubkey)),
         );
@@ -1337,9 +1336,8 @@ impl SwapOps for ZCoin {
         let tx = try_tx_s!(ZTransaction::read(maker_refunds_payment_args.payment_tx));
         let key_pair = self.derive_htlc_key_pair(maker_refunds_payment_args.swap_unique_data);
         let time_lock = try_tx_s!(maker_refunds_payment_args.time_lock.try_into());
-        let redeem_script = payment_script(
+        let redeem_script = maker_refunds_payment_args.tx_type_with_secret_hash.redeem_script(
             time_lock,
-            maker_refunds_payment_args.secret_hash,
             key_pair.public(),
             &try_tx_s!(Public::from_slice(maker_refunds_payment_args.other_pubkey)),
         );

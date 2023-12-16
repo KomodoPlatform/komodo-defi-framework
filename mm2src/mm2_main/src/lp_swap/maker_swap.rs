@@ -18,8 +18,8 @@ use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, 
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MmCoin,
             MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee, TradePreimageValue,
-            TransactionEnum, ValidateFeeArgs, ValidatePaymentInput};
+            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash, TradeFee,
+            TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
 use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use common::{now_sec, wait_until_sec};
@@ -1221,7 +1221,9 @@ impl MakerSwap {
                 payment_tx: &maker_payment,
                 time_lock: locktime,
                 other_pubkey: other_maker_coin_htlc_pub.as_slice(),
-                secret_hash: self.secret_hash().as_slice(),
+                tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                    maker_secret_hash: self.secret_hash().as_slice(),
+                },
                 swap_contract_address: &maker_coin_swap_contract_address,
                 swap_unique_data: &self.unique_swap_data(),
                 watcher_reward,
@@ -1522,7 +1524,9 @@ impl MakerSwap {
                     payment_tx: &maker_payment,
                     time_lock: maker_payment_lock,
                     other_pubkey: other_maker_coin_htlc_pub.as_slice(),
-                    secret_hash: secret_hash.as_slice(),
+                    tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                        maker_secret_hash: secret_hash.as_slice(),
+                    },
                     swap_contract_address: &maker_coin_swap_contract_address,
                     swap_unique_data: &unique_data,
                     watcher_reward,

@@ -602,7 +602,7 @@ impl ToBytes for Public {
 #[async_trait]
 impl MakerCoinSwapOpsV2 for UtxoStandardCoin {
     async fn send_maker_payment_v2(&self, args: SendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
-        todo!()
+        utxo_common::send_maker_payment_v2(self.clone(), args).await
     }
 
     async fn validate_maker_payment_v2(&self, args: ValidateMakerPaymentArgs<'_, Self>) -> ValidateSwapV2TxResult {
@@ -699,6 +699,13 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
     ) -> Result<Self::Tx, TransactionErr> {
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
         utxo_common::sign_and_broadcast_taker_payment_spend(self, preimage, gen_args, secret, &htlc_keypair).await
+    }
+
+    async fn wait_for_taker_payment_spend(
+        &self,
+        taker_payment: &Self::Tx,
+    ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError> {
+        todo!()
     }
 
     fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey {

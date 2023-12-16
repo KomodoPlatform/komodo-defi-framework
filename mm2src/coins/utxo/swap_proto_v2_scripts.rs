@@ -86,8 +86,8 @@ pub fn maker_payment_script(
     time_lock: u32,
     maker_secret_hash: &[u8],
     taker_secret_hash: &[u8],
-    taker_pub: &Public,
     maker_pub: &Public,
+    taker_pub: &Public,
 ) -> Script {
     let mut builder = Builder::default()
         .push_opcode(Opcode::OP_IF)

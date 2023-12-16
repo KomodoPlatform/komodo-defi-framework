@@ -1300,7 +1300,10 @@ impl SwapOps for SlpToken {
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
         let tx = taker_refunds_payment_args.payment_tx.to_owned();
         let maker_pub = try_tx_s!(Public::from_slice(taker_refunds_payment_args.other_pubkey));
-        let secret_hash = taker_refunds_payment_args.secret_hash.to_owned();
+        let secret_hash = match taker_refunds_payment_args.tx_type_with_secret_hash {
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => maker_secret_hash.to_owned(),
+            unsupported => return Err(TransactionErr::Plain(ERRL!("SLP doesn't support {:?}", unsupported))),
+        };
         let htlc_keypair = self.derive_htlc_key_pair(taker_refunds_payment_args.swap_unique_data);
         let time_lock = try_tx_s!(taker_refunds_payment_args.time_lock.try_into());
 
@@ -1314,7 +1317,10 @@ impl SwapOps for SlpToken {
     async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
         let tx = maker_refunds_payment_args.payment_tx.to_owned();
         let taker_pub = try_tx_s!(Public::from_slice(maker_refunds_payment_args.other_pubkey));
-        let secret_hash = maker_refunds_payment_args.secret_hash.to_owned();
+        let secret_hash = match maker_refunds_payment_args.tx_type_with_secret_hash {
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => maker_secret_hash.to_owned(),
+            unsupported => return Err(TransactionErr::Plain(ERRL!("SLP doesn't support {:?}", unsupported))),
+        };
         let htlc_keypair = self.derive_htlc_key_pair(maker_refunds_payment_args.swap_unique_data);
         let time_lock = try_tx_s!(maker_refunds_payment_args.time_lock.try_into());
 

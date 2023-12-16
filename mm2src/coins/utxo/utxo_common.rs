@@ -1801,9 +1801,10 @@ where
         try_tx_fus!(args.time_lock.try_into()),
         maker_htlc_key_pair.public_slice(),
         args.other_pubkey,
-        args.secret_hash,
         args.amount,
-        SwapPaymentType::TakerOrMakerPayment,
+        SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: args.secret_hash
+        },
     ));
     let send_fut = match &coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Electrum(_) => Either::A(send_outputs_from_my_address(coin, outputs)),
@@ -1838,9 +1839,10 @@ where
         try_tx_fus!(args.time_lock.try_into()),
         taker_htlc_key_pair.public_slice(),
         args.other_pubkey,
-        args.secret_hash,
         total_amount,
-        SwapPaymentType::TakerOrMakerPayment,
+        SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: args.secret_hash
+        },
     ));
 
     let send_fut = match &coin.as_ref().rpc_client {
@@ -2139,11 +2141,7 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(coin: T, args
     Box::new(fut.boxed().compat())
 }
 
-async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
-    coin: T,
-    args: RefundPaymentArgs<'_>,
-    payment_type: SwapPaymentType,
-) -> TransactionResult {
+async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(coin: T, args: RefundPaymentArgs<'_>) -> TransactionResult {
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
     let mut prev_transaction: UtxoTx =
         try_tx_s!(deserialize(args.payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
@@ -2156,19 +2154,10 @@ async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
     let time_lock = try_tx_s!(args.time_lock.try_into());
 
-    let redeem_script = match payment_type {
-        SwapPaymentType::TakerOrMakerPayment => {
-            payment_script(time_lock, args.secret_hash, key_pair.public(), &other_public).into()
-        },
-        SwapPaymentType::TakerFunding => {
-            swap_proto_v2_scripts::taker_funding_script(time_lock, args.secret_hash, key_pair.public(), &other_public)
-                .into()
-        },
-        SwapPaymentType::TakerPaymentV2 => {
-            swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, key_pair.public(), &other_public)
-                .into()
-        },
-    };
+    let redeem_script = args
+        .tx_type_with_secret_hash
+        .redeem_script(time_lock, key_pair.public(), &other_public)
+        .into();
     let fee = try_tx_s!(
         coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
             .await
@@ -2208,7 +2197,7 @@ pub async fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: RefundPaymentArgs<'_>,
 ) -> TransactionResult {
-    refund_htlc_payment(coin, args, SwapPaymentType::TakerOrMakerPayment).await
+    refund_htlc_payment(coin, args).await
 }
 
 pub fn send_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
@@ -2235,7 +2224,7 @@ pub async fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: RefundPaymentArgs<'_>,
 ) -> TransactionResult {
-    refund_htlc_payment(coin, args, SwapPaymentType::TakerOrMakerPayment).await
+    refund_htlc_payment(coin, args).await
 }
 
 /// Extracts pubkey from script sig
@@ -4280,9 +4269,10 @@ where
         time_lock,
         my_pub,
         other_pub,
-        secret_hash,
         amount,
-        SwapPaymentType::TakerOrMakerPayment,
+        SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: secret_hash,
+        },
     )
     .map_to_mm(TradePreimageError::InternalError)?;
     let gas_fee = None;
@@ -4768,35 +4758,20 @@ struct SwapPaymentOutputsResult {
     outputs: Vec<TransactionOutput>,
 }
 
-enum SwapPaymentType {
-    TakerOrMakerPayment,
-    TakerFunding,
-    TakerPaymentV2,
-}
-
 fn generate_swap_payment_outputs<T>(
     coin: T,
     time_lock: u32,
     my_pub: &[u8],
     other_pub: &[u8],
-    secret_hash: &[u8],
     amount: BigDecimal,
-    payment_type: SwapPaymentType,
+    tx_type: SwapTxTypeWithSecretHash<'_>,
 ) -> Result<SwapPaymentOutputsResult, String>
 where
     T: AsRef<UtxoCoinFields>,
 {
     let my_public = try_s!(Public::from_slice(my_pub));
     let other_public = try_s!(Public::from_slice(other_pub));
-    let redeem_script = match payment_type {
-        SwapPaymentType::TakerOrMakerPayment => payment_script(time_lock, secret_hash, &my_public, &other_public),
-        SwapPaymentType::TakerFunding => {
-            swap_proto_v2_scripts::taker_funding_script(time_lock, secret_hash, &my_public, &other_public)
-        },
-        SwapPaymentType::TakerPaymentV2 => {
-            swap_proto_v2_scripts::taker_payment_script(time_lock, secret_hash, &my_public, &other_public)
-        },
-    };
+    let redeem_script = tx_type.redeem_script(time_lock, &my_public, &other_public);
     let redeem_script_hash = dhash160(&redeem_script);
     let amount = try_s!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
     let htlc_out = TransactionOutput {
@@ -4811,7 +4786,7 @@ where
     op_return_builder = if coin.as_ref().conf.ticker == "ARRR" {
         op_return_builder.push_data(&redeem_script)
     } else {
-        op_return_builder.push_bytes(secret_hash)
+        tx_type.add_op_return_data(op_return_builder)
     };
 
     let op_return_script = op_return_builder.into_bytes();
@@ -5166,9 +5141,10 @@ where
         try_tx_s!(args.time_lock.try_into()),
         taker_htlc_key_pair.public_slice(),
         args.maker_pub,
-        args.taker_secret_hash,
         total_amount,
-        SwapPaymentType::TakerFunding,
+        SwapTxTypeWithSecretHash::TakerFunding {
+            taker_secret_hash: args.taker_secret_hash
+        },
     ));
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
         let addr_string = try_tx_s!(payment_address.display_address());
@@ -5186,7 +5162,7 @@ pub async fn refund_taker_funding_timelock<T>(coin: T, args: RefundPaymentArgs<'
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
-    refund_htlc_payment(coin, args, SwapPaymentType::TakerFunding).await
+    refund_htlc_payment(coin, args).await
 }
 
 /// Common implementation of taker funding reclaim for UTXO coins using immediate refund path with secret reveal.
@@ -5304,7 +5280,39 @@ pub async fn refund_combined_taker_payment<T>(coin: T, args: RefundPaymentArgs<'
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
-    refund_htlc_payment(coin, args, SwapPaymentType::TakerPaymentV2).await
+    refund_htlc_payment(coin, args).await
+}
+
+/// Common implementation of maker payment v2 generation and broadcast for UTXO coins.
+pub async fn send_maker_payment_v2<T>(coin: T, args: SendMakerPaymentArgs<'_, T>) -> Result<UtxoTx, TransactionErr>
+where
+    T: UtxoCommonOps + GetUtxoListOps + SwapOps,
+{
+    let maker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+
+    let SwapPaymentOutputsResult {
+        payment_address,
+        outputs,
+    } = try_tx_s!(generate_swap_payment_outputs(
+        &coin,
+        try_tx_s!(args.time_lock.try_into()),
+        maker_htlc_key_pair.public_slice(),
+        args.taker_pub,
+        args.amount,
+        SwapTxTypeWithSecretHash::MakerPaymentV2 {
+            maker_secret_hash: args.maker_secret_hash,
+            taker_secret_hash: args.taker_secret_hash,
+        },
+    ));
+    if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
+        let addr_string = try_tx_s!(payment_address.display_address());
+        client
+            .import_address(&addr_string, &addr_string, false)
+            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))
+            .compat()
+            .await?;
+    }
+    send_outputs_from_my_address_impl(coin, outputs).await
 }
 
 pub fn address_to_scripthash(address: &Address) -> String {

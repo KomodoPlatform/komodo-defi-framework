@@ -5,8 +5,8 @@ use crate::mm2::lp_network::{P2PRequestError, P2PRequestResult};
 use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
-            SendMakerPaymentSpendPreimageInput, WaitForHTLCTxSpendArgs, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
+            SendMakerPaymentSpendPreimageInput, SwapTxTypeWithSecretHash, WaitForHTLCTxSpendArgs,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::{now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -467,7 +467,9 @@ impl State for RefundTakerPayment {
             .send_taker_payment_refund_preimage(RefundPaymentArgs {
                 payment_tx: &watcher_ctx.data.taker_payment_refund_preimage,
                 swap_contract_address: &None,
-                secret_hash: &watcher_ctx.data.secret_hash,
+                tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                    maker_secret_hash: &watcher_ctx.data.secret_hash,
+                },
                 other_pubkey: &watcher_ctx.verified_pub,
                 time_lock: watcher_ctx.taker_locktime(),
                 swap_unique_data: &[],

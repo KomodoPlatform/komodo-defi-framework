@@ -19,8 +19,8 @@ use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
             FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee,
-            TradePreimageValue, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
+            RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash,
+            TradeFee, TradePreimageValue, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -1886,7 +1886,9 @@ impl TakerSwap {
                 payment_tx: &taker_payment,
                 time_lock: locktime,
                 other_pubkey: other_taker_coin_htlc_pub.as_slice(),
-                secret_hash: &secret_hash,
+                tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                    maker_secret_hash: &secret_hash,
+                },
                 swap_contract_address: &swap_contract_address,
                 swap_unique_data: &self.unique_swap_data(),
                 watcher_reward,
@@ -2251,7 +2253,9 @@ impl TakerSwap {
                     payment_tx: &taker_payment,
                     time_lock: taker_payment_lock,
                     other_pubkey: other_taker_coin_htlc_pub.as_slice(),
-                    secret_hash: &secret_hash,
+                    tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                        maker_secret_hash: secret_hash.as_slice(),
+                    },
                     swap_contract_address: &taker_coin_swap_contract_address,
                     swap_unique_data: &unique_data,
                     watcher_reward,
