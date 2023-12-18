@@ -22,19 +22,19 @@ use byteorder::{BigEndian, ByteOrder};
 use bytes::{BufMut, Bytes, BytesMut};
 use common::{APPLICATION_GRPC_WEB, APPLICATION_GRPC_WEB_PROTO, APPLICATION_GRPC_WEB_TEXT,
              APPLICATION_GRPC_WEB_TEXT_PROTO};
-use futures_util::ready;
-use futures_util::{stream::empty, Stream, TryStreamExt};
+use futures_util::{ready, stream};
+use futures_util::{stream::empty, Stream};
 use http::{header::HeaderName, HeaderMap, HeaderValue};
 use http_body::Body;
 use httparse::{Status, EMPTY_HEADER};
-use js_sys::Uint8Array;
+use js_sys::{Object, Uint8Array};
 use pin_project::pin_project;
 use std::ops::{Deref, DerefMut};
 use std::{pin::Pin,
           task::{Context, Poll}};
-use wasm_bindgen::JsCast;
-use wasm_streams::readable::IntoStream;
-use web_sys::ReadableStream;
+use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{ReadableStream, ReadableStreamDefaultReader};
 
 /// If the 8th most significant bit of a frame is `0`, it indicates data; if `1`, it indicates a trailer.
 const TRAILER_BIT: u8 = 0b10000000;
@@ -144,11 +144,11 @@ pub struct ResponseBody {
 
 impl ResponseBody {
     /// Creates a new `ResponseBody` based on a ReadableStream and content type.
-    pub(crate) fn new(body_stream: ReadableStream, content_type: &str) -> Result<Self, PostGrpcWebErr> {
-        let body_stream = wasm_streams::ReadableStream::from_raw(body_stream.unchecked_into()).into_stream();
+    pub(crate) async fn new(body_stream: ReadableStream, content_type: &str) -> Result<Self, PostGrpcWebErr> {
+        let body_stream: ReadableStreamDefaultReader = body_stream.get_reader().dyn_into().unwrap();
 
         Ok(Self {
-            body_stream: BodyStream::new(body_stream),
+            body_stream: BodyStream::new(body_stream).await?,
             buf: EncodedBytes::new(content_type)?,
             incomplete_data: BytesMut::new(),
             data: None,
@@ -348,15 +348,22 @@ pub struct BodyStream {
 }
 
 impl BodyStream {
-    /// Creates a new `BodyStream` based on an IntoStream.
-    pub fn new(body_stream: IntoStream<'static>) -> Self {
-        Self {
-            body_stream: Box::pin(
-                body_stream
-                    .map_ok(|js_value| Uint8Array::new(&js_value).to_vec().into())
-                    .map_err(|err| PostGrpcWebErr::InvalidRequest(format!("{err:?}"))),
-            ),
-        }
+    /// Creates a new `BodyStream` based on an `ReadableStreamDefaultReader`.
+    pub async fn new(body_stream: ReadableStreamDefaultReader) -> Result<Self, PostGrpcWebErr> {
+        let value = JsFuture::from(body_stream.read())
+            .await
+            .map_err(|err| PostGrpcWebErr::InvalidRequest(format!("{err:?}")))?;
+        let object: Object = value
+            .dyn_into()
+            .map_err(|err| PostGrpcWebErr::InvalidRequest(format!("{err:?}")))?;
+        let object_value = js_sys::Reflect::get(&object, &JsValue::from_str("value"))
+            .map_err(|err| PostGrpcWebErr::InvalidRequest(format!("{err:?}")))?;
+        let chunk = Uint8Array::new(&object_value).to_vec();
+        let bytes_stream = Box::pin(stream::once(async { Ok(Bytes::from(chunk)) }));
+
+        Ok(Self {
+            body_stream: bytes_stream,
+        })
     }
 
     /// Creates an empty `BodyStream`.

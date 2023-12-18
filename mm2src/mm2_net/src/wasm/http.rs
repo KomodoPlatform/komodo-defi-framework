@@ -331,6 +331,7 @@ impl FetchRequest {
         let builder = Response::builder().status(status_code);
         let (builder, content_type) = set_response_headers_and_content_type(builder, &js_response)?;
         let body = ResponseBody::new(resp_stream, &content_type)
+            .await
             .map_to_mm(|err| SlurpError::InvalidRequest(format!("{err:?}")))?;
 
         Ok((
