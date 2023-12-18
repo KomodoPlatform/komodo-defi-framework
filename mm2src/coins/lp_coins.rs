@@ -293,8 +293,9 @@ use nft::nft_errors::GetNftInfoError;
 use script::{Builder, Script};
 
 pub mod z_coin;
+use crate::coin_errors::ValidatePaymentResult;
 use crate::utxo::swap_proto_v2_scripts;
-use crate::utxo::utxo_common::payment_script;
+use crate::utxo::utxo_common::{payment_script, WaitForOutputSpendErr};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -1067,9 +1068,9 @@ pub trait SwapOps {
 
     fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()>;
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()>;
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()>;
 
     fn check_if_my_payment_sent(
         &self,
@@ -1546,7 +1547,7 @@ pub trait MakerCoinSwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
     async fn send_maker_payment_v2(&self, args: SendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr>;
 
     /// Validate maker payment transaction
-    async fn validate_maker_payment_v2(&self, args: ValidateMakerPaymentArgs<'_, Self>) -> ValidateSwapV2TxResult;
+    async fn validate_maker_payment_v2(&self, args: ValidateMakerPaymentArgs<'_, Self>) -> ValidatePaymentResult<()>;
 
     /// Refund maker payment transaction
     async fn refund_maker_payment_v2(&self, args: RefundMakerPaymentArgs<'_, Self>)
@@ -1557,7 +1558,31 @@ pub trait MakerCoinSwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
 }
 
 #[derive(Display)]
-pub enum WaitForTakerPaymentSpendError {}
+pub enum WaitForTakerPaymentSpendError {
+    #[display(
+        fmt = "Timed out waiting for taker payment spend, wait_until {}, now {}",
+        wait_until,
+        now
+    )]
+    Timeout {
+        wait_until: u64,
+        now: u64,
+    },
+    Internal(String),
+}
+
+impl From<WaitForOutputSpendErr> for WaitForTakerPaymentSpendError {
+    fn from(err: WaitForOutputSpendErr) -> Self {
+        match err {
+            WaitForOutputSpendErr::Timeout { wait_until, now } => {
+                WaitForTakerPaymentSpendError::Timeout { wait_until, now }
+            },
+            WaitForOutputSpendErr::NoOutputWithIndex(index) => {
+                WaitForTakerPaymentSpendError::Internal(format!("Tx doesn't have output with index {}", index))
+            },
+        }
+    }
+}
 
 /// Operations specific to taker coin in [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
 #[async_trait]
@@ -1631,6 +1656,8 @@ pub trait TakerCoinSwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
     async fn wait_for_taker_payment_spend(
         &self,
         taker_payment: &Self::Tx,
+        from_block: u64,
+        wait_until: u64,
     ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError>;
 
     /// Derives an HTLC key-pair and returns a public key corresponding to that key.

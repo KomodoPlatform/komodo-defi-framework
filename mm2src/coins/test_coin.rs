@@ -2,6 +2,7 @@
 
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut, WaitForTakerPaymentSpendError};
+use crate::coin_errors::ValidatePaymentResult;
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinAssocTypes,
             CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, GenPreimageResult,
             GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, MakerSwapTakerCoin, MmCoinEnum,
@@ -139,9 +140,13 @@ impl SwapOps for TestCoin {
 
     fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
+    async fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        unimplemented!()
+    }
 
-    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
+    async fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        unimplemented!()
+    }
 
     fn check_if_my_payment_sent(
         &self,
@@ -512,6 +517,8 @@ impl TakerCoinSwapOpsV2 for TestCoin {
     async fn wait_for_taker_payment_spend(
         &self,
         taker_payment: &Self::Tx,
+        from_block: u64,
+        wait_until: u64,
     ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError> {
         unimplemented!()
     }

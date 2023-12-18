@@ -2,7 +2,7 @@ use super::utxo_common::utxo_prepare_addresses_for_balance_stream_if_enabled;
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
-use crate::coin_errors::MyAddressError;
+use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
 use crate::hd_confirm_address::HDConfirmAddress;
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, NewAccountCreatingError,
@@ -21,6 +21,7 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShared};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
+use crate::utxo::utxo_common::DEFAULT_SWAP_VOUT;
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
@@ -352,13 +353,13 @@ impl SwapOps for UtxoStandardCoin {
     }
 
     #[inline]
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        utxo_common::validate_maker_payment(self, input)
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        utxo_common::validate_maker_payment(self, input).await
     }
 
     #[inline]
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        utxo_common::validate_taker_payment(self, input)
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        utxo_common::validate_taker_payment(self, input).await
     }
 
     #[inline]
@@ -605,8 +606,29 @@ impl MakerCoinSwapOpsV2 for UtxoStandardCoin {
         utxo_common::send_maker_payment_v2(self.clone(), args).await
     }
 
-    async fn validate_maker_payment_v2(&self, args: ValidateMakerPaymentArgs<'_, Self>) -> ValidateSwapV2TxResult {
-        todo!()
+    async fn validate_maker_payment_v2(&self, args: ValidateMakerPaymentArgs<'_, Self>) -> ValidatePaymentResult<()> {
+        let taker_pub = self.derive_htlc_pubkey_v2(args.swap_unique_data);
+        let time_lock = args
+            .time_lock
+            .try_into()
+            .map_to_mm(ValidatePaymentError::TimelockOverflow)?;
+        utxo_common::validate_payment(
+            self.clone(),
+            args.maker_payment_tx,
+            DEFAULT_SWAP_VOUT,
+            args.maker_pub,
+            &taker_pub,
+            SwapTxTypeWithSecretHash::MakerPaymentV2 {
+                maker_secret_hash: args.maker_secret_hash,
+                taker_secret_hash: args.taker_secret_hash,
+            },
+            args.amount,
+            None,
+            time_lock,
+            0,
+            0,
+        )
+        .await
     }
 
     async fn refund_maker_payment_v2(
@@ -704,8 +726,19 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
     async fn wait_for_taker_payment_spend(
         &self,
         taker_payment: &Self::Tx,
+        from_block: u64,
+        wait_until: u64,
     ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError> {
-        todo!()
+        let res = utxo_common::wait_for_output_spend_impl(
+            self.as_ref(),
+            taker_payment,
+            utxo_common::DEFAULT_SWAP_VOUT,
+            from_block,
+            wait_until,
+            10.,
+        )
+        .await?;
+        Ok(res)
     }
 
     fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey {
@@ -763,7 +796,7 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
         utxo_common::wait_for_output_spend(
-            &self.utxo_arc,
+            self.clone(),
             args.tx_bytes,
             utxo_common::DEFAULT_SWAP_VOUT,
             args.from_block,

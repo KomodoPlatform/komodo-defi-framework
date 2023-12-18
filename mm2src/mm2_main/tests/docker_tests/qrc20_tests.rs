@@ -8,7 +8,8 @@ use coins::utxo::utxo_common::big_decimal_from_sat;
 use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
 use coins::{CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MarketCoinOps, MmCoin,
             RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps,
-            TradePreimageValue, TransactionEnum, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
+            SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidatePaymentInput,
+            WaitForHTLCTxSpendArgs};
 use common::log::debug;
 use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
@@ -224,7 +225,7 @@ fn test_taker_spends_maker_payment() {
         unique_swap_data: Vec::new(),
         watcher_reward: None,
     };
-    taker_coin.validate_maker_payment(input).wait().unwrap();
+    block_on(taker_coin.validate_maker_payment(input)).unwrap();
     let taker_spends_payment_args = SpendPaymentArgs {
         other_payment_tx: &payment_tx_hex,
         time_lock: timelock,
@@ -329,7 +330,7 @@ fn test_maker_spends_taker_payment() {
         unique_swap_data: Vec::new(),
         watcher_reward: None,
     };
-    maker_coin.validate_taker_payment(input).wait().unwrap();
+    block_on(maker_coin.validate_taker_payment(input)).unwrap();
     let maker_spends_payment_args = SpendPaymentArgs {
         other_payment_tx: &payment_tx_hex,
         time_lock: timelock,
@@ -416,7 +417,9 @@ fn test_maker_refunds_payment() {
         payment_tx: &payment_tx_hex,
         time_lock: timelock,
         other_pubkey: &taker_pub,
-        secret_hash,
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: secret_hash,
+        },
         swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
         watcher_reward: false,
@@ -486,7 +489,9 @@ fn test_taker_refunds_payment() {
         payment_tx: &payment_tx_hex,
         time_lock: timelock,
         other_pubkey: &maker_pub,
-        secret_hash,
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: secret_hash,
+        },
         swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
         watcher_reward: false,
@@ -689,7 +694,9 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         payment_tx: &payment_tx_hex,
         time_lock: timelock,
         other_pubkey: &taker_pub,
-        secret_hash,
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: secret_hash,
+        },
         swap_contract_address: &maker_coin.swap_contract_address(),
         swap_unique_data: &[],
         watcher_reward: false,
@@ -1536,7 +1543,9 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
         payment_tx: &tx.tx_hex(),
         time_lock,
         other_pubkey: my_public_key,
-        secret_hash: &[0; 20],
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: &[0; 20],
+        },
         swap_contract_address: &None,
         swap_unique_data: &[],
         watcher_reward: false,
@@ -1602,7 +1611,9 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         payment_tx: &tx.tx_hex(),
         time_lock,
         other_pubkey: my_public_key,
-        secret_hash: &[0; 20],
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: &[0; 20],
+        },
         swap_contract_address: &None,
         swap_unique_data: &[],
         watcher_reward: false,

@@ -1,4 +1,4 @@
-use crate::coin_errors::MyAddressError;
+use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 #[cfg(not(target_arch = "wasm32"))]
@@ -1153,7 +1153,7 @@ impl MarketCoinOps for ZCoin {
 
     fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
         utxo_common::wait_for_output_spend(
-            self.as_ref(),
+            self.clone(),
             args.tx_bytes,
             utxo_common::DEFAULT_SWAP_VOUT,
             args.from_block,
@@ -1442,13 +1442,13 @@ impl SwapOps for ZCoin {
     }
 
     #[inline]
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        utxo_common::validate_maker_payment(self, input)
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        utxo_common::validate_maker_payment(self, input).await
     }
 
     #[inline]
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        utxo_common::validate_taker_payment(self, input)
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        utxo_common::validate_taker_payment(self, input).await
     }
 
     #[inline]

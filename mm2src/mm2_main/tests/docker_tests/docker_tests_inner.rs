@@ -7,7 +7,8 @@ use chain::OutPoint;
 use coins::utxo::rpc_clients::UnspentInfo;
 use coins::utxo::{GetUtxoListOps, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, TransactionEnum, WithdrawRequest};
+            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash,
+            TransactionEnum, WithdrawRequest};
 use common::{block_on, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use futures01::Future;
@@ -55,7 +56,9 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         payment_tx: &tx.tx_hex(),
         time_lock,
         other_pubkey: my_public_key,
-        secret_hash: &[0; 20],
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: &[0; 20],
+        },
         swap_contract_address: &None,
         swap_unique_data: &[],
         watcher_reward: false,
@@ -140,7 +143,9 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
         payment_tx: &tx.tx_hex(),
         time_lock,
         other_pubkey: my_public_key,
-        secret_hash: &[0; 20],
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: &[0; 20],
+        },
         swap_contract_address: &None,
         swap_unique_data: &[],
         watcher_reward: false,

@@ -111,6 +111,7 @@ use crate::nft::{find_wallet_nft_amount, WithdrawNftResult};
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod nonce;
+use crate::coin_errors::ValidatePaymentResult;
 use crate::{PrivKeyPolicy, TransactionResult, WithdrawFrom};
 use nonce::ParityNonce;
 
@@ -1128,13 +1129,13 @@ impl SwapOps for EthCoin {
     }
 
     #[inline]
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        self.validate_payment(input)
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        self.validate_payment(input).compat().await
     }
 
     #[inline]
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        self.validate_payment(input)
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        self.validate_payment(input).compat().await
     }
 
     fn check_if_my_payment_sent(

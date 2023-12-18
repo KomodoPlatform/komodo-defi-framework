@@ -5,10 +5,11 @@ use coins::coin_errors::ValidatePaymentError;
 use coins::utxo::{dhash160, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
             SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps,
-            ValidateWatcherSpendInput, WatcherOps, WatcherSpendType, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
-            INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
-            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            SwapTxTypeWithSecretHash, ValidateWatcherSpendInput, WatcherOps, WatcherSpendType,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG,
+            INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
+            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
+            OLD_TRANSACTION_ERR_LOG};
 use common::{block_on, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
@@ -2201,7 +2202,9 @@ fn test_taker_validates_taker_payment_refund_utxo() {
         .send_taker_payment_refund_preimage(RefundPaymentArgs {
             payment_tx: &taker_payment_refund_preimage.tx_hex(),
             other_pubkey: maker_pubkey,
-            secret_hash: secret_hash.as_slice(),
+            tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                maker_secret_hash: secret_hash.as_slice(),
+            },
             time_lock,
             swap_contract_address: &None,
             swap_unique_data: &[],
@@ -2324,7 +2327,9 @@ fn test_taker_validates_taker_payment_refund_eth() {
         .send_taker_payment_refund_preimage(RefundPaymentArgs {
             payment_tx: &taker_payment_refund_preimage.tx_hex(),
             other_pubkey: taker_pub,
-            secret_hash: secret_hash.as_slice(),
+            tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                maker_secret_hash: secret_hash.as_slice(),
+            },
             time_lock,
             swap_contract_address: &taker_coin.swap_contract_address(),
             swap_unique_data: &[],
@@ -2621,7 +2626,9 @@ fn test_taker_validates_taker_payment_refund_erc20() {
         .send_taker_payment_refund_preimage(RefundPaymentArgs {
             payment_tx: &taker_payment_refund_preimage.tx_hex(),
             other_pubkey: taker_pub,
-            secret_hash: secret_hash.as_slice(),
+            tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                maker_secret_hash: secret_hash.as_slice(),
+            },
             time_lock,
             swap_contract_address: &taker_coin.swap_contract_address(),
             swap_unique_data: &[],
@@ -3236,7 +3243,9 @@ fn test_send_taker_payment_refund_preimage_utxo() {
         .send_taker_payment_refund_preimage(RefundPaymentArgs {
             payment_tx: &refund_tx.tx_hex(),
             swap_contract_address: &None,
-            secret_hash: &[0; 20],
+            tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                maker_secret_hash: &[0; 20],
+            },
             other_pubkey: my_public_key,
             time_lock,
             swap_unique_data: &[],

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{DexFee, IguanaPrivKey};
+use crate::{DexFee, IguanaPrivKey, SwapTxTypeWithSecretHash};
 use common::{block_on, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use ethkey::{Generator, Random};
@@ -375,10 +375,12 @@ fn send_and_refund_erc20_payment() {
         payment_tx: &payment.tx_hex(),
         time_lock,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
-        secret_hash,
         swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
         watcher_reward: false,
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: secret_hash,
+        },
     };
     let refund = block_on(coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
     log!("{:?}", refund);
@@ -462,7 +464,9 @@ fn send_and_refund_eth_payment() {
         payment_tx: &payment.tx_hex(),
         time_lock,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
-        secret_hash,
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: secret_hash,
+        },
         swap_contract_address: &coin.swap_contract_address(),
         swap_unique_data: &[],
         watcher_reward: false,

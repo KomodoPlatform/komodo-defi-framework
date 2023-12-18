@@ -1851,7 +1851,11 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
         let taker_payment_spend = match state_machine
             .taker_coin
-            .wait_for_taker_payment_spend(&self.taker_payment)
+            .wait_for_taker_payment_spend(
+                &self.taker_payment,
+                self.taker_coin_start_block,
+                state_machine.taker_payment_locktime(),
+            )
             .await
         {
             Ok(tx) => tx,

@@ -105,8 +105,8 @@ pub enum MakerSwapEvent {
         maker_payment_refund: TransactionIdentifier,
         reason: MakerPaymentRefundReason,
     },
-    /// Taker payment has been confirmed on-chain.
-    TakerPaymentConfirmed {
+    /// Taker payment has been received.
+    TakerPaymentReceived {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
         negotiation_data: StoredNegotiationData,
@@ -550,7 +550,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     .map_err(|e| SwapRecreateError::FailedToParseData(e.to_string()))?,
                 reason,
             }),
-            MakerSwapEvent::TakerPaymentConfirmed {
+            MakerSwapEvent::TakerPaymentReceived {
                 maker_coin_start_block,
                 taker_coin_start_block,
                 negotiation_data,
@@ -693,7 +693,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             | MakerSwapEvent::TakerFundingReceived { .. }
             | MakerSwapEvent::MakerPaymentRefundRequired { .. }
             | MakerSwapEvent::MakerPaymentRefunded { .. }
-            | MakerSwapEvent::TakerPaymentConfirmed { .. }
+            | MakerSwapEvent::TakerPaymentReceived { .. }
             | MakerSwapEvent::TakerPaymentSpent { .. }
             | MakerSwapEvent::Aborted { .. }
             | MakerSwapEvent::Completed => (),
@@ -738,7 +738,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             MakerSwapEvent::MakerPaymentSentFundingSpendGenerated { .. }
             | MakerSwapEvent::MakerPaymentRefundRequired { .. }
             | MakerSwapEvent::MakerPaymentRefunded { .. }
-            | MakerSwapEvent::TakerPaymentConfirmed { .. }
+            | MakerSwapEvent::TakerPaymentReceived { .. }
             | MakerSwapEvent::TakerPaymentSpent { .. }
             | MakerSwapEvent::Aborted { .. }
             | MakerSwapEvent::Completed => (),
@@ -1605,7 +1605,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
     fn get_event(&self) -> MakerSwapEvent {
-        MakerSwapEvent::TakerPaymentConfirmed {
+        MakerSwapEvent::TakerPaymentReceived {
             maker_coin_start_block: self.maker_coin_start_block,
             taker_coin_start_block: self.taker_coin_start_block,
             negotiation_data: self.negotiation_data.to_stored_data(),

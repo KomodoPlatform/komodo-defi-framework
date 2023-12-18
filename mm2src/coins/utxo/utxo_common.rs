@@ -1,6 +1,6 @@
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
-use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::EthCoinType;
 use crate::hd_confirm_address::HDConfirmAddress;
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
@@ -2529,34 +2529,36 @@ pub fn validate_fee<T: UtxoCommonOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
+pub async fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
-) -> ValidatePaymentFut<()> {
-    let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+) -> ValidatePaymentResult<()> {
+    let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
-    let other_pub =
-        &try_f!(Public::from_slice(&input.other_pub)
-            .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string())));
-    let time_lock = try_f!(input
+    let other_pub = Public::from_slice(&input.other_pub)
+        .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string()))?;
+    let time_lock = input
         .time_lock
         .try_into()
-        .map_to_mm(ValidatePaymentError::TimelockOverflow));
+        .map_to_mm(ValidatePaymentError::TimelockOverflow)?;
     validate_payment(
         coin.clone(),
-        tx,
+        &tx,
         DEFAULT_SWAP_VOUT,
-        other_pub,
+        &other_pub,
         htlc_keypair.public(),
-        &input.secret_hash,
+        SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: &input.secret_hash,
+        },
         input.amount,
         input.watcher_reward,
         time_lock,
         input.try_spv_proof_until,
         input.confirmations,
     )
+    .await
 }
 
 pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
@@ -2636,34 +2638,36 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
+pub async fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
-) -> ValidatePaymentFut<()> {
-    let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+) -> ValidatePaymentResult<()> {
+    let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
-    let other_pub =
-        &try_f!(Public::from_slice(&input.other_pub)
-            .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string())));
-    let time_lock = try_f!(input
+    let other_pub = Public::from_slice(&input.other_pub)
+        .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string()))?;
+    let time_lock = input
         .time_lock
         .try_into()
-        .map_to_mm(ValidatePaymentError::TimelockOverflow));
+        .map_to_mm(ValidatePaymentError::TimelockOverflow)?;
     validate_payment(
         coin.clone(),
-        tx,
+        &tx,
         DEFAULT_SWAP_VOUT,
-        other_pub,
+        &other_pub,
         htlc_keypair.public(),
-        &input.secret_hash,
+        SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: &input.secret_hash,
+        },
         input.amount,
         input.watcher_reward,
         time_lock,
         input.try_spv_proof_until,
         input.confirmations,
     )
+    .await
 }
 
 pub fn validate_payment_spend_or_refund<T: UtxoCommonOps + SwapOps>(
@@ -3166,8 +3170,57 @@ pub fn wait_for_confirmations(
     )
 }
 
-pub fn wait_for_output_spend(
+#[derive(Debug)]
+pub enum WaitForOutputSpendErr {
+    NoOutputWithIndex(usize),
+    Timeout { wait_until: u64, now: u64 },
+}
+
+pub async fn wait_for_output_spend_impl(
     coin: &UtxoCoinFields,
+    tx: &UtxoTx,
+    output_index: usize,
+    from_block: u64,
+    wait_until: u64,
+    check_every: f64,
+) -> MmResult<UtxoTx, WaitForOutputSpendErr> {
+    loop {
+        let script_pubkey = &tx
+            .outputs
+            .get(output_index)
+            .or_mm_err(|| WaitForOutputSpendErr::NoOutputWithIndex(output_index))?
+            .script_pubkey;
+
+        match coin
+            .rpc_client
+            .find_output_spend(
+                tx.hash(),
+                script_pubkey,
+                output_index,
+                BlockHashOrHeight::Height(from_block as i64),
+            )
+            .compat()
+            .await
+        {
+            Ok(Some(spent_output_info)) => {
+                let mut tx = spent_output_info.spending_tx;
+                tx.tx_hash_algo = coin.tx_hash_algo;
+                return Ok(tx);
+            },
+            Ok(None) => (),
+            Err(e) => error!("Error on find_output_spend_of_tx: {}", e),
+        };
+
+        let now = now_sec();
+        if now > wait_until {
+            return MmError::err(WaitForOutputSpendErr::Timeout { wait_until, now });
+        }
+        Timer::sleep(check_every).await;
+    }
+}
+
+pub fn wait_for_output_spend<T: AsRef<UtxoCoinFields> + Send + Sync + 'static>(
+    coin: T,
     tx_bytes: &[u8],
     output_index: usize,
     from_block: u64,
@@ -3175,46 +3228,13 @@ pub fn wait_for_output_spend(
     check_every: f64,
 ) -> TransactionFut {
     let mut tx: UtxoTx = try_tx_fus!(deserialize(tx_bytes).map_err(|e| ERRL!("{:?}", e)));
-    tx.tx_hash_algo = coin.tx_hash_algo;
-    let client = coin.rpc_client.clone();
-    let tx_hash_algo = coin.tx_hash_algo;
+    tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
+
     let fut = async move {
-        loop {
-            let script_pubkey = &try_tx_s!(tx
-                .outputs
-                .get(output_index)
-                .ok_or(ERRL!("No output with index {}", output_index)))
-            .script_pubkey;
-
-            match client
-                .find_output_spend(
-                    tx.hash(),
-                    script_pubkey,
-                    output_index,
-                    BlockHashOrHeight::Height(from_block as i64),
-                )
-                .compat()
-                .await
-            {
-                Ok(Some(spent_output_info)) => {
-                    let mut tx = spent_output_info.spending_tx;
-                    tx.tx_hash_algo = tx_hash_algo;
-                    return Ok(tx.into());
-                },
-                Ok(None) => (),
-                Err(e) => error!("Error on find_output_spend_of_tx: {}", e),
-            };
-
-            if now_sec() > wait_until {
-                return TX_PLAIN_ERR!(
-                    "Waited too long until {} for transaction {:?} {} to be spent ",
-                    wait_until,
-                    tx,
-                    output_index,
-                );
-            }
-            Timer::sleep(check_every).await;
-        }
+        wait_for_output_spend_impl(coin.as_ref(), &tx, output_index, from_block, wait_until, check_every)
+            .await
+            .map(|tx| tx.into())
+            .map_err(|e| TransactionErr::Plain(format!("{:?}", e)))
     };
     Box::new(fut.boxed().compat())
 }
@@ -4603,83 +4623,82 @@ pub fn address_from_pubkey(
 
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(test, mockable)]
-pub fn validate_payment<T: UtxoCommonOps>(
+pub async fn validate_payment<T: UtxoCommonOps>(
     coin: T,
-    tx: UtxoTx,
+    tx: &UtxoTx,
     output_index: usize,
     first_pub0: &Public,
     second_pub0: &Public,
-    priv_bn_hash: &[u8],
+    tx_type_with_secret_hash: SwapTxTypeWithSecretHash<'_>,
     amount: BigDecimal,
     watcher_reward: Option<WatcherReward>,
     time_lock: u32,
     try_spv_proof_until: u64,
     confirmations: u64,
-) -> ValidatePaymentFut<()> {
-    let amount = try_f!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
+) -> ValidatePaymentResult<()> {
+    let amount = sat_from_big_decimal(&amount, coin.as_ref().decimals)?;
 
-    let expected_redeem = payment_script(time_lock, priv_bn_hash, first_pub0, second_pub0);
-    let fut = async move {
-        let tx_hash = tx.tx_hash();
+    let expected_redeem = tx_type_with_secret_hash.redeem_script(time_lock, first_pub0, second_pub0);
+    let tx_hash = tx.tx_hash();
 
-        let tx_from_rpc = retry_on_err!(coin
-            .as_ref()
+    let tx_from_rpc = retry_on_err!(async {
+        coin.as_ref()
             .rpc_client
             .get_transaction_bytes(&tx.hash().reversed().into())
-            .compat())
-        .repeat_every_secs(10.)
-        .attempts(4)
-        .inspect_err(move |e| error!("Error getting tx {tx_hash:?} from rpc: {e:?}"))
-        .await
-        .map_err(|repeat_err| repeat_err.into_error().map(ValidatePaymentError::from))?;
+            .compat()
+            .await
+    })
+    .repeat_every_secs(10.)
+    .attempts(4)
+    .inspect_err(move |e| error!("Error getting tx {tx_hash:?} from rpc: {e:?}"))
+    .await
+    .map_err(|repeat_err| repeat_err.into_error().map(ValidatePaymentError::from))?;
 
-        if serialize(&tx).take() != tx_from_rpc.0
-            && serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS).take() != tx_from_rpc.0
-        {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Provided payment tx {:?} doesn't match tx data from rpc {:?}",
-                tx, tx_from_rpc
-            )));
-        }
+    if serialize(tx).take() != tx_from_rpc.0
+        && serialize_with_flags(tx, SERIALIZE_TRANSACTION_WITNESS).take() != tx_from_rpc.0
+    {
+        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+            "Provided payment tx {:?} doesn't match tx data from rpc {:?}",
+            tx, tx_from_rpc
+        )));
+    }
 
-        let expected_script_pubkey: Bytes = Builder::build_p2sh(&dhash160(&expected_redeem).into()).into();
+    let expected_script_pubkey: Bytes = Builder::build_p2sh(&dhash160(&expected_redeem).into()).into();
 
-        let actual_output = match tx.outputs.get(output_index) {
-            Some(output) => output,
-            None => {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                    "Payment tx has no outputs".to_string(),
-                ))
-            },
-        };
-
-        if expected_script_pubkey != actual_output.script_pubkey {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Provided payment tx script pubkey doesn't match expected {:?} {:?}",
-                actual_output.script_pubkey, expected_script_pubkey
-            )));
-        }
-
-        if let Some(watcher_reward) = watcher_reward {
-            let expected_reward = sat_from_big_decimal(&watcher_reward.amount, coin.as_ref().decimals)?;
-            let actual_reward = actual_output.value - amount;
-            validate_watcher_reward(expected_reward, actual_reward, false)?;
-        } else if actual_output.value != amount {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Provided payment tx output value doesn't match expected {:?} {:?}",
-                actual_output.value, amount
-            )));
-        }
-
-        if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
-            if coin.as_ref().conf.spv_conf.is_some() && confirmations != 0 {
-                client.validate_spv_proof(&tx, try_spv_proof_until).await?;
-            }
-        }
-
-        Ok(())
+    let actual_output = match tx.outputs.get(output_index) {
+        Some(output) => output,
+        None => {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Payment tx has no outputs".to_string(),
+            ))
+        },
     };
-    Box::new(fut.boxed().compat())
+
+    if expected_script_pubkey != actual_output.script_pubkey {
+        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+            "Provided payment tx script pubkey doesn't match expected {:?} {:?}",
+            actual_output.script_pubkey, expected_script_pubkey
+        )));
+    }
+
+    if let Some(watcher_reward) = watcher_reward {
+        let expected_reward = sat_from_big_decimal(&watcher_reward.amount, coin.as_ref().decimals)?;
+        let actual_reward = actual_output.value - amount;
+        validate_watcher_reward(expected_reward, actual_reward, false)?;
+    } else if actual_output.value != amount {
+        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+            "Provided payment tx output value doesn't match expected {:?} {:?}",
+            actual_output.value, amount
+        )));
+    }
+
+    if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
+        if coin.as_ref().conf.spv_conf.is_some() && confirmations != 0 {
+            client.validate_spv_proof(&tx, try_spv_proof_until).await?;
+        }
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

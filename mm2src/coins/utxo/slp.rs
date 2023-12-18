@@ -3,7 +3,7 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
-use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
+use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentResult};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
@@ -501,20 +501,22 @@ impl SlpToken {
             .time_lock
             .try_into()
             .map_to_mm(ValidatePaymentError::TimelockOverflow)?;
-        let validate_fut = utxo_common::validate_payment(
+        utxo_common::validate_payment(
             self.platform_coin.clone(),
-            tx,
+            &tx,
             SLP_SWAP_VOUT,
             first_pub,
             htlc_keypair.public(),
-            &input.secret_hash,
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                maker_secret_hash: &input.secret_hash,
+            },
             self.platform_dust_dec(),
             None,
             time_lock,
             wait_until_sec(60),
             input.confirmations,
-        );
-        validate_fut.compat().await
+        )
+        .await
     }
 
     pub async fn refund_htlc(
@@ -1176,7 +1178,7 @@ impl MarketCoinOps for SlpToken {
 
     fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
         utxo_common::wait_for_output_spend(
-            self.platform_coin.as_ref(),
+            self.clone(),
             args.tx_bytes,
             SLP_SWAP_VOUT,
             args.from_block,
@@ -1351,22 +1353,12 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let coin = self.clone();
-        let fut = async move {
-            coin.validate_htlc(input).await?;
-            Ok(())
-        };
-        Box::new(fut.boxed().compat())
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        self.validate_htlc(input).await
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let coin = self.clone();
-        let fut = async move {
-            coin.validate_htlc(input).await?;
-            Ok(())
-        };
-        Box::new(fut.boxed().compat())
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        self.validate_htlc(input).await
     }
 
     #[inline]

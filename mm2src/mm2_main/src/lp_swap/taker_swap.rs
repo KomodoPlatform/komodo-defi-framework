@@ -1437,7 +1437,7 @@ impl TakerSwap {
             unique_swap_data: self.unique_swap_data(),
             watcher_reward,
         };
-        let validated = self.maker_coin.validate_maker_payment(validate_input).compat().await;
+        let validated = self.maker_coin.validate_maker_payment(validate_input).await;
 
         if let Err(e) = validated {
             return Ok((Some(TakerSwapCommand::Finish), vec![

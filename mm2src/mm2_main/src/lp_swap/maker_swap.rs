@@ -1041,9 +1041,7 @@ impl MakerSwap {
             watcher_reward,
         };
 
-        let validated_f = self.taker_coin.validate_taker_payment(validate_input).compat();
-
-        if let Err(e) = validated_f.await {
+        if let Err(e) = self.taker_coin.validate_taker_payment(validate_input).await {
             return Ok((Some(MakerSwapCommand::PrepareForMakerPaymentRefund), vec![
                 MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.validate_taker_payment: {}", e).into()),
                 MakerSwapEvent::MakerPaymentWaitRefundStarted {
