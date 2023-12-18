@@ -1,14 +1,14 @@
 use crate::integration_tests_common::{enable_coins_eth_electrum, enable_coins_rick_morty_electrum, enable_electrum,
-                                      enable_electrum_json, enable_z_coin_light};
+                                      enable_electrum_json};
 use common::{block_on, log};
 use http::StatusCode;
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, get_passphrase, morty_conf, orderbook_v2,
-                                  rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS,
-                                  ETH_DEV_NODES, MARTY_ELECTRUM_ADDRS, RICK, ZOMBIE_ELECTRUMS,
+use mm2_test_helpers::for_tests::{enable_z_coin_light, eth_jst_testnet_conf, eth_testnet_conf, get_passphrase,
+                                  morty_conf, orderbook_v2, rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf,
+                                  DOC_ELECTRUM_ADDRS, ETH_DEV_NODES, MARTY_ELECTRUM_ADDRS, RICK, ZOMBIE_ELECTRUMS,
                                   ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{GetPublicKeyResult, OrderbookV2Response, RpcV2Response, SetPriceResponse};
@@ -1337,7 +1337,6 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
-        None,
     ));
 
     let set_price_json = json!({
@@ -1401,7 +1400,6 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
-        None,
     ));
 
     let set_price_json = json!({
@@ -1430,7 +1428,6 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        None,
         None,
     ));
 

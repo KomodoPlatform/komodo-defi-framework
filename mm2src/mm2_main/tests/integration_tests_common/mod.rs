@@ -7,9 +7,9 @@ use mm2_main::mm2::{lp_main, LpMainParams};
 use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
 use mm2_test_helpers::for_tests::{enable_native as enable_native_impl, init_utxo_electrum, init_utxo_status,
-                                  init_z_coin_light, init_z_coin_status, MarketMakerIt};
-use mm2_test_helpers::structs::{InitTaskResult, InitUtxoStatus, InitZcoinStatus, RpcV2Response,
-                                UtxoStandardActivationResult, ZCoinActivationResult};
+                                  MarketMakerIt};
+
+use mm2_test_helpers::structs::{InitTaskResult, InitUtxoStatus, RpcV2Response, UtxoStandardActivationResult};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::env::var;
@@ -81,34 +81,6 @@ pub async fn enable_coins_rick_morty_electrum(mm: &MarketMakerIt) -> HashMap<&'s
         enable_electrum_json(mm, "MORTY", false, marty_electrums(), None).await,
     );
     replies
-}
-
-pub async fn enable_z_coin_light(
-    mm: &MarketMakerIt,
-    coin: &str,
-    electrums: &[&str],
-    lightwalletd_urls: &[&str],
-    starting_date: Option<u64>,
-    account: Option<u32>,
-) -> ZCoinActivationResult {
-    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, starting_date, account).await;
-    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = wait_until_ms(600000);
-
-    loop {
-        if now_ms() > timeout {
-            panic!("{} initialization timed out", coin);
-        }
-
-        let status = init_z_coin_status(mm, init.result.task_id).await;
-        println!("Status {}", json::to_string(&status).unwrap());
-        let status: RpcV2Response<InitZcoinStatus> = json::from_value(status).unwrap();
-        match status.result {
-            InitZcoinStatus::Ok(result) => break result,
-            InitZcoinStatus::Error(e) => panic!("{} initialization error {:?}", coin, e),
-            _ => Timer::sleep(1.).await,
-        }
-    }
 }
 
 pub async fn enable_utxo_v2_electrum(

@@ -8,11 +8,11 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
-use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, init_z_coin_light, init_z_coin_status,
-                                  morty_conf, pirate_conf, rick_conf, start_swaps, test_qrc20_history_impl,
-                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2InitPrivKeyPolicy,
-                                  Mm2TestConf, Mm2TestConfForSwap, ARRR, MORTY, PIRATE_ELECTRUMS,
-                                  PIRATE_LIGHTWALLETD_URLS, RICK};
+use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, enable_z_coin_light, init_z_coin_light,
+                                  init_z_coin_status, morty_conf, pirate_conf, rick_conf, start_swaps,
+                                  test_qrc20_history_impl, wait_for_swaps_finish_and_check_status, MarketMakerIt,
+                                  Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, ARRR, MORTY,
+                                  PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{EnableCoinBalance, InitTaskResult, InitZcoinStatus, RpcV2Response,
                                 ZCoinActivationResult};
@@ -193,32 +193,6 @@ async fn trade_test_rick_and_morty() {
         0.0001,
     )
     .await;
-}
-
-async fn enable_z_coin_light(
-    mm: &MarketMakerIt,
-    coin: &str,
-    electrums: &[&str],
-    lightwalletd_urls: &[&str],
-    account: Option<u32>,
-) -> ZCoinActivationResult {
-    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, None, account).await;
-    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = wait_until_sec(300);
-
-    loop {
-        if now_sec() > timeout {
-            panic!("{} initialization timed out", coin);
-        }
-        let status = init_z_coin_status(mm, init.result.task_id).await;
-        info!("Status {}", json::to_string(&status).unwrap());
-        let status: RpcV2Response<InitZcoinStatus> = json::from_value(status).unwrap();
-        match status.result {
-            InitZcoinStatus::Ok(result) => break result,
-            InitZcoinStatus::Error(e) => panic!("{} initialization error {:?}", coin, e),
-            _ => Timer::sleep(1.).await,
-        }
-    }
 }
 
 #[wasm_bindgen_test]

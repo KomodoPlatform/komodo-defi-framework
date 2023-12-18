@@ -3,10 +3,10 @@ use common::executor::Timer;
 use common::{block_on, log, now_ms, now_sec, wait_until_ms};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{disable_coin, init_withdraw, pirate_conf, rick_conf, send_raw_transaction,
-                                  withdraw_status, z_coin_tx_history, zombie_conf, MarketMakerIt, Mm2TestConf, ARRR,
-                                  PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK, ZOMBIE_ELECTRUMS,
-                                  ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
+use mm2_test_helpers::for_tests::{disable_coin, enable_z_coin_light, init_withdraw, pirate_conf, rick_conf,
+                                  send_raw_transaction, withdraw_status, z_coin_tx_history, zombie_conf,
+                                  MarketMakerIt, Mm2TestConf, ARRR, PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK,
+                                  ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::structs::{EnableCoinBalance, InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus,
                                 ZcoinHistoryRes};
 use serde_json::{self as json, json, Value as Json};
@@ -47,7 +47,7 @@ async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Tra
 }
 
 #[test]
-fn activate_z_coin_light() {
+pub fn activate_z_coin_light() {
     let coins = json!([zombie_conf()]);
 
     let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);
@@ -58,7 +58,6 @@ fn activate_z_coin_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        None,
         None,
     ));
 
@@ -81,7 +80,6 @@ fn activate_z_coin_light_with_changing_height() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        None,
         None,
     ));
 
@@ -109,7 +107,6 @@ fn activate_z_coin_light_with_changing_height() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        Some(two_days_ago),
         None,
     ));
 
@@ -143,7 +140,6 @@ fn activate_z_coin_with_hd_account() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        None,
         Some(hd_account_id),
     ));
 
@@ -171,7 +167,6 @@ fn test_z_coin_tx_history() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        None,
         None,
     ));
 
@@ -417,7 +412,6 @@ fn withdraw_z_coin_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
-        None,
     ));
 
     println!("{:?}", activation_result);
@@ -460,7 +454,6 @@ fn trade_rick_zombie_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
-        None,
     ));
 
     println!("Bob ZOMBIE activation {:?}", zombie_activation);
@@ -493,7 +486,6 @@ fn trade_rick_zombie_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        None,
         None,
     ));
 
@@ -551,7 +543,6 @@ fn activate_pirate_light() {
         ARRR,
         PIRATE_ELECTRUMS,
         PIRATE_LIGHTWALLETD_URLS,
-        None,
         None,
     ));
 
