@@ -244,7 +244,7 @@ impl ZRpcOps for LightRpcClient {
             .into_inner();
         // without Pin method get_mut is not found in current scope
         while let Some(block) = Pin::new(&mut response).get_mut().message().await? {
-            debug!("Got block {:?}", block);
+            debug!("Got block {}", block.height);
             let height = u32::try_from(block.height)
                 .map_err(|_| UpdateBlocksCacheErr::DecodeError("Block height too large".to_string()))?;
             db.insert_block(height, block.encode_to_vec())

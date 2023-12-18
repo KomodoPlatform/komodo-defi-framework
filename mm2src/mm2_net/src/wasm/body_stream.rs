@@ -145,7 +145,10 @@ pub struct ResponseBody {
 impl ResponseBody {
     /// Creates a new `ResponseBody` based on a ReadableStream and content type.
     pub(crate) async fn new(body_stream: ReadableStream, content_type: &str) -> Result<Self, PostGrpcWebErr> {
-        let body_stream: ReadableStreamDefaultReader = body_stream.get_reader().dyn_into().unwrap();
+        let body_stream: ReadableStreamDefaultReader = body_stream
+            .get_reader()
+            .dyn_into()
+            .map_err(|err| PostGrpcWebErr::BadResponse(format!("{err:?}")))?;
 
         Ok(Self {
             body_stream: BodyStream::new(body_stream).await?,
@@ -350,19 +353,30 @@ pub struct BodyStream {
 impl BodyStream {
     /// Creates a new `BodyStream` based on an `ReadableStreamDefaultReader`.
     pub async fn new(body_stream: ReadableStreamDefaultReader) -> Result<Self, PostGrpcWebErr> {
-        let value = JsFuture::from(body_stream.read())
-            .await
-            .map_err(|err| PostGrpcWebErr::InvalidRequest(format!("{err:?}")))?;
-        let object: Object = value
-            .dyn_into()
-            .map_err(|err| PostGrpcWebErr::InvalidRequest(format!("{err:?}")))?;
-        let object_value = js_sys::Reflect::get(&object, &JsValue::from_str("value"))
-            .map_err(|err| PostGrpcWebErr::InvalidRequest(format!("{err:?}")))?;
-        let chunk = Uint8Array::new(&object_value).to_vec();
-        let bytes_stream = Box::pin(stream::once(async { Ok(Bytes::from(chunk)) }));
+        let mut chunks = vec![];
+        loop {
+            let value = JsFuture::from(body_stream.read())
+                .await
+                .map_err(|err| PostGrpcWebErr::InvalidRequest(format!("{err:?}")))?;
+            let object: Object = value
+                .dyn_into()
+                .map_err(|err| PostGrpcWebErr::BadResponse(format!("{err:?}")))?;
+            let object_value = js_sys::Reflect::get(&object, &JsValue::from_str("value"))
+                .map_err(|err| PostGrpcWebErr::BadResponse(format!("{err:?}")))?;
+            let object_progress = js_sys::Reflect::get(&object, &JsValue::from_str("done"))
+                .map_err(|err| PostGrpcWebErr::BadResponse(format!("{err:?}")))?;
+            let chunk = Uint8Array::new(&object_value).to_vec();
+            chunks.extend_from_slice(&chunk);
+
+            if object_progress.as_bool().ok_or_else(|| {
+                PostGrpcWebErr::BadResponse("Expected done(bool) field in json object response".to_string())
+            })? {
+                break;
+            }
+        }
 
         Ok(Self {
-            body_stream: bytes_stream,
+            body_stream: Box::pin(stream::once(async { Ok(Bytes::from(chunks)) })),
         })
     }
 

@@ -98,6 +98,7 @@ pub enum PostGrpcWebErr {
     DecodeBody(String),
     EncodeBody(String),
     InvalidRequest(String),
+    BadResponse(String),
     Internal(String),
     PayloadTooShort(String),
     Status(String),
