@@ -5358,6 +5358,64 @@ where
     Ok(())
 }
 
+pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
+    coin: &T,
+    args: SpendMakerPaymentArgs<'_, T>,
+) -> Result<UtxoTx, TransactionErr> {
+    let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
+    let payment_value = try_tx_s!(args.maker_payment_tx.first_output()).value;
+
+    let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let script_data = Builder::default()
+        .push_data(args.maker_secret)
+        .push_opcode(Opcode::OP_0)
+        .push_opcode(Opcode::OP_1)
+        .into_script();
+    let time_lock = try_tx_s!(args.time_lock.try_into());
+
+    let redeem_script = swap_proto_v2_scripts::maker_payment_script(
+        time_lock,
+        args.maker_secret_hash,
+        args.taker_secret_hash,
+        key_pair.public(),
+        args.maker_pub,
+    )
+    .into();
+
+    let fee = try_tx_s!(
+        coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+            .await
+    );
+    if fee >= payment_value {
+        return TX_PLAIN_ERR!(
+            "HTLC spend fee {} is greater than transaction output {}",
+            fee,
+            payment_value
+        );
+    }
+    let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
+    let output = TransactionOutput {
+        value: payment_value - fee,
+        script_pubkey,
+    };
+
+    let input = P2SHSpendingTxInput {
+        prev_transaction: args.maker_payment_tx.clone(),
+        redeem_script,
+        outputs: vec![output],
+        script_data,
+        sequence: SEQUENCE_FINAL,
+        lock_time: time_lock,
+        keypair: &key_pair,
+    };
+    let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
+
+    let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
+    try_tx_s!(tx_fut.await, transaction);
+
+    Ok(transaction)
+}
+
 #[test]
 fn test_increase_by_percent() {
     assert_eq!(increase_by_percent(4300, 1.), 4343);
@@ -5408,7 +5466,7 @@ fn test_tx_v_size() {
     let tx: UtxoTx = "010000000001017996e77b2b1f4e66da606cfc2f16e3f52e1eac4a294168985bd4dbd54442e61f0100000000ffffffff01ab36010000000000220020693090c0e291752d448826a9dc72c9045b34ed4f7bd77e6e8e62645c23d69ac502483045022100d0800719239d646e69171ede7f02af916ac778ffe384fa0a5928645b23826c9f022044072622de2b47cfc81ac5172b646160b0c48d69d881a0ce77be06dbd6f6e5ac0121031ac6d25833a5961e2a8822b2e8b0ac1fd55d90cbbbb18a780552cbd66fc02bb3735a9e61".into();
     let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
     assert_eq!(v_size, 122);
-    // Multipl segwit inputs with P2PKH output
+    // Multiple segwit inputs with P2PKH output
     // https://live.blockcypher.com/btc-testnet/tx/649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f/
     let tx: UtxoTx = "0100000000010250c434acbad252481564d56b41990577c55d247aedf4bb853dca3567c4404c8f0000000000ffffffff55baf016f0628ecf0f0ec228e24d8029879b0491ab18bac61865afaa9d16e8bb0000000000ffffffff01e8030000000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac0247304402202611c05dd0e748f7c9955ed94a172af7ed56a0cdf773e8c919bef6e70b13ec1c02202fd7407891c857d95cdad1038dcc333186815f50da2fc9a334f814dd8d0a2d63012103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed02483045022100bb9d483f6b2b46f8e70d62d65b33b6de056e1878c9c2a1beed69005daef2f89502201690cd44cf6b114fa0d494258f427e1ed11a21d897e407d8a1ff3b7e09b9a426012103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed9cf7bd60".into();
     let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);

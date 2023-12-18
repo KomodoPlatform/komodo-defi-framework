@@ -639,7 +639,7 @@ impl MakerCoinSwapOpsV2 for UtxoStandardCoin {
     }
 
     async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
-        todo!()
+        utxo_common::spend_maker_payment_v2(self, args).await
     }
 }
 
