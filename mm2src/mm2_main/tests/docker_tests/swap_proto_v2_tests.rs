@@ -1,11 +1,12 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
-use coins::{FundingTxSpend, GenTakerFundingSpendArgs, MakerCoinSwapOpsV2, RefundFundingSecretArgs,
-            RefundMakerPaymentArgs, RefundPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
-            SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction, ValidateMakerPaymentArgs,
+use coins::{ConfirmPaymentInput, FundingTxSpend, GenTakerFundingSpendArgs, MakerCoinSwapOpsV2, MarketCoinOps,
+            RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs, SendMakerPaymentArgs,
+            SendTakerFundingArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction, ValidateMakerPaymentArgs,
             ValidateTakerFundingArgs};
 use common::{block_on, now_sec};
+use futures01::Future;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin,
                                   disable_coin_err, enable_native, get_locked_amount, mm_dump, my_swap_status,
@@ -75,6 +76,16 @@ fn send_and_refund_taker_funding_timelock() {
 
     let refund_tx = block_on(coin.refund_taker_funding_timelock(refund_args)).unwrap();
     println!("{:02x}", refund_tx.tx_hash());
+
+    // refund tx has to be confirmed before it can be found as payment spend in native mode
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: refund_tx.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 20,
+        check_every: 1,
+    };
+    coin.wait_for_confirmations(confirm_input).wait().unwrap();
 
     let found_refund_tx = block_on(coin.search_for_taker_funding_spend(&taker_funding_utxo_tx, 1)).unwrap();
     match found_refund_tx {

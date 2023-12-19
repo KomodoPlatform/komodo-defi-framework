@@ -20,6 +20,7 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShared};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
+use crate::utxo::rpc_clients::BlockHashOrHeight;
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::DEFAULT_SWAP_VOUT;
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
@@ -673,7 +674,33 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         tx: &Self::Tx,
         from_block: u64,
     ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr> {
-        todo!()
+        let script_pubkey = &tx
+            .first_output()
+            .map_err(|e| SearchForFundingSpendErr::InvalidInputTx(e.to_string()))?
+            .script_pubkey;
+
+        let from_block = from_block
+            .try_into()
+            .map_err(SearchForFundingSpendErr::FromBlockConversionErr)?;
+
+        let output_spend = self
+            .as_ref()
+            .rpc_client
+            .find_output_spend(
+                tx.hash(),
+                script_pubkey,
+                DEFAULT_SWAP_VOUT,
+                BlockHashOrHeight::Height(from_block),
+            )
+            .compat()
+            .await
+            .map_err(SearchForFundingSpendErr::Rpc)?;
+        match output_spend {
+            Some(found) => {
+                unimplemented!()
+            },
+            None => Ok(None),
+        }
     }
 
     async fn gen_taker_funding_spend_preimage(

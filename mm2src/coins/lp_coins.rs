@@ -76,7 +76,7 @@ use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::collections::HashSet;
 use std::fmt;
 use std::future::Future as Future03;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, Deref};
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
@@ -1614,7 +1614,11 @@ impl<T: CoinAssocTypes + ?Sized> fmt::Debug for FundingTxSpend<T> {
 }
 
 #[derive(Debug)]
-pub enum SearchForFundingSpendErr {}
+pub enum SearchForFundingSpendErr {
+    InvalidInputTx(String),
+    Rpc(String),
+    FromBlockConversionErr(TryFromIntError),
+}
 
 /// Operations specific to taker coin in [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
 #[async_trait]
