@@ -2141,7 +2141,10 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(coin: T, args
     Box::new(fut.boxed().compat())
 }
 
-async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(coin: T, args: RefundPaymentArgs<'_>) -> TransactionResult {
+pub async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
+    coin: T,
+    args: RefundPaymentArgs<'_>,
+) -> Result<UtxoTx, TransactionErr> {
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
     let mut prev_transaction: UtxoTx =
         try_tx_s!(deserialize(args.payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
@@ -2197,7 +2200,7 @@ pub async fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: RefundPaymentArgs<'_>,
 ) -> TransactionResult {
-    refund_htlc_payment(coin, args).await
+    refund_htlc_payment(coin, args).await.map(|tx| tx.into())
 }
 
 pub fn send_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
@@ -2224,7 +2227,7 @@ pub async fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: RefundPaymentArgs<'_>,
 ) -> TransactionResult {
-    refund_htlc_payment(coin, args).await
+    refund_htlc_payment(coin, args).await.map(|tx| tx.into())
 }
 
 /// Extracts pubkey from script sig
@@ -5176,14 +5179,6 @@ where
     send_outputs_from_my_address_impl(coin, outputs).await
 }
 
-/// Common implementation of taker funding reclaim for UTXO coins using time-locked path.
-pub async fn refund_taker_funding_timelock<T>(coin: T, args: RefundPaymentArgs<'_>) -> TransactionResult
-where
-    T: UtxoCommonOps + GetUtxoListOps + SwapOps,
-{
-    refund_htlc_payment(coin, args).await
-}
-
 /// Common implementation of taker funding reclaim for UTXO coins using immediate refund path with secret reveal.
 pub async fn refund_taker_funding_secret<T>(
     coin: T,
@@ -5294,14 +5289,6 @@ where
     Ok(())
 }
 
-/// Common implementation of combined taker payment refund for UTXO coins.
-pub async fn refund_combined_taker_payment<T>(coin: T, args: RefundPaymentArgs<'_>) -> TransactionResult
-where
-    T: UtxoCommonOps + GetUtxoListOps + SwapOps,
-{
-    refund_htlc_payment(coin, args).await
-}
-
 /// Common implementation of maker payment v2 generation and broadcast for UTXO coins.
 pub async fn send_maker_payment_v2<T>(coin: T, args: SendMakerPaymentArgs<'_, T>) -> Result<UtxoTx, TransactionErr>
 where
@@ -5382,6 +5369,67 @@ pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
     )
     .into();
 
+    let fee = try_tx_s!(
+        coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+            .await
+    );
+    if fee >= payment_value {
+        return TX_PLAIN_ERR!(
+            "HTLC spend fee {} is greater than transaction output {}",
+            fee,
+            payment_value
+        );
+    }
+    let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
+    let output = TransactionOutput {
+        value: payment_value - fee,
+        script_pubkey,
+    };
+
+    let input = P2SHSpendingTxInput {
+        prev_transaction: args.maker_payment_tx.clone(),
+        redeem_script,
+        outputs: vec![output],
+        script_data,
+        sequence: SEQUENCE_FINAL,
+        lock_time: time_lock,
+        keypair: &key_pair,
+    };
+    let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
+
+    let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
+    try_tx_s!(tx_fut.await, transaction);
+
+    Ok(transaction)
+}
+
+/// Common implementation of maker payment v2 reclaim for UTXO coins using immediate refund path with secret reveal.
+pub async fn refund_maker_payment_v2_secret<T>(
+    coin: T,
+    args: RefundMakerPaymentArgs<'_, T>,
+) -> Result<UtxoTx, TransactionErr>
+where
+    T: UtxoCommonOps + SwapOps,
+{
+    let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err()).clone();
+    let payment_value = try_tx_s!(args.maker_payment_tx.first_output()).value;
+
+    let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let script_data = Builder::default()
+        .push_data(args.taker_secret)
+        .push_opcode(Opcode::OP_0)
+        .push_opcode(Opcode::OP_0)
+        .into_script();
+    let time_lock = try_tx_s!(args.time_lock.try_into());
+
+    let redeem_script = swap_proto_v2_scripts::maker_payment_script(
+        time_lock,
+        args.maker_secret_hash,
+        args.taker_secret_hash,
+        key_pair.public(),
+        args.taker_pub,
+    )
+    .into();
     let fee = try_tx_s!(
         coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
             .await

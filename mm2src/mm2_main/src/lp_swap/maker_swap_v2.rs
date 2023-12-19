@@ -9,8 +9,9 @@ use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_s
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{CanRefundHtlc, CoinAssocTypes, ConfirmPaymentInput, FeeApproxStage, GenTakerFundingSpendArgs,
-            GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, RefundMakerPaymentArgs, SendMakerPaymentArgs,
-            TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, Transaction, TxPreimageWithSig, ValidateTakerFundingArgs};
+            GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, RefundPaymentArgs, SendMakerPaymentArgs,
+            SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, Transaction, TxPreimageWithSig,
+            ValidateTakerFundingArgs};
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
 use common::log::{debug, error, info, warn};
@@ -1395,16 +1396,24 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let unique_data = state_machine.unique_data();
         let secret_hash = state_machine.secret_hash();
 
-        let refund_args = RefundMakerPaymentArgs {
-            maker_payment_tx: &self.maker_payment,
+        let refund_args = RefundPaymentArgs {
+            payment_tx: &self.maker_payment.tx_hex(),
             time_lock: state_machine.maker_payment_locktime(),
-            taker_secret_hash: &self.negotiation_data.taker_secret_hash,
-            maker_secret_hash: &secret_hash,
+            other_pubkey: &other_pub,
+            tx_type_with_secret_hash: SwapTxTypeWithSecretHash::MakerPaymentV2 {
+                maker_secret_hash: &secret_hash,
+                taker_secret_hash: &self.negotiation_data.taker_secret_hash,
+            },
             swap_unique_data: &unique_data,
-            taker_pub: &self.negotiation_data.maker_coin_htlc_pub_from_taker,
+            swap_contract_address: &None,
+            watcher_reward: false,
         };
 
-        let maker_payment_refund = match state_machine.maker_coin.refund_maker_payment_v2(refund_args).await {
+        let maker_payment_refund = match state_machine
+            .maker_coin
+            .refund_maker_payment_v2_timelock(refund_args)
+            .await
+        {
             Ok(tx) => tx,
             Err(e) => {
                 let reason = AbortReason::MakerPaymentRefundFailed(e.get_plain_text_format());

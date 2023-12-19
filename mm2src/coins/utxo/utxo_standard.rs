@@ -631,11 +631,15 @@ impl MakerCoinSwapOpsV2 for UtxoStandardCoin {
         .await
     }
 
-    async fn refund_maker_payment_v2(
+    async fn refund_maker_payment_v2_timelock(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr> {
+        utxo_common::refund_htlc_payment(self.clone(), args).await
+    }
+
+    async fn refund_maker_payment_v2_secret(
         &self,
         args: RefundMakerPaymentArgs<'_, Self>,
     ) -> Result<Self::Tx, TransactionErr> {
-        todo!()
+        utxo_common::refund_maker_payment_v2_secret(self.clone(), args).await
     }
 
     async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
@@ -653,8 +657,8 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         utxo_common::validate_taker_funding(self, args).await
     }
 
-    async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> TransactionResult {
-        utxo_common::refund_taker_funding_timelock(self.clone(), args).await
+    async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr> {
+        utxo_common::refund_htlc_payment(self.clone(), args).await
     }
 
     async fn refund_taker_funding_secret(
@@ -662,6 +666,14 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         args: RefundFundingSecretArgs<'_, Self>,
     ) -> Result<Self::Tx, TransactionErr> {
         utxo_common::refund_taker_funding_secret(self.clone(), args).await
+    }
+
+    async fn search_for_taker_funding_spend(
+        &self,
+        tx: &Self::Tx,
+        from_block: u64,
+    ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr> {
+        todo!()
     }
 
     async fn gen_taker_funding_spend_preimage(
@@ -691,8 +703,8 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         utxo_common::sign_and_send_taker_funding_spend(self, preimage, args, &htlc_keypair).await
     }
 
-    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult {
-        utxo_common::refund_combined_taker_payment(self.clone(), args).await
+    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr> {
+        utxo_common::refund_htlc_payment(self.clone(), args).await
     }
 
     async fn gen_taker_payment_spend_preimage(

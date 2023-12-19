@@ -1,8 +1,10 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
-use coins::{GenTakerFundingSpendArgs, RefundFundingSecretArgs, RefundPaymentArgs, SendTakerFundingArgs,
-            SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction, ValidateTakerFundingArgs};
+use coins::{FundingTxSpend, GenTakerFundingSpendArgs, MakerCoinSwapOpsV2, RefundFundingSecretArgs,
+            RefundMakerPaymentArgs, RefundPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
+            SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction, ValidateMakerPaymentArgs,
+            ValidateTakerFundingArgs};
 use common::{block_on, now_sec};
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin,
@@ -73,6 +75,12 @@ fn send_and_refund_taker_funding_timelock() {
 
     let refund_tx = block_on(coin.refund_taker_funding_timelock(refund_args)).unwrap();
     println!("{:02x}", refund_tx.tx_hash());
+
+    let found_refund_tx = block_on(coin.search_for_taker_funding_spend(&taker_funding_utxo_tx, 1)).unwrap();
+    match found_refund_tx {
+        Some(FundingTxSpend::RefundedTimelock(found_tx)) => assert_eq!(found_tx, refund_tx),
+        unexpected => panic!("Got unexpected FundingTxSpend variant {:?}", unexpected),
+    }
 }
 
 #[test]
@@ -195,6 +203,129 @@ fn send_and_spend_taker_funding() {
 
     let payment_tx = block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &preimage_args, &[])).unwrap();
     println!("Taker payment tx {:02x}", payment_tx.tx_hash());
+}
+
+#[test]
+fn send_and_refund_maker_payment_timelock() {
+    let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
+
+    let time_lock = now_sec() - 1000;
+    let taker_secret_hash = &[0; 20];
+    let maker_secret_hash = &[1; 20];
+    let taker_pub = coin.my_public_key().unwrap();
+    let maker_pub = coin.my_public_key().unwrap();
+
+    let send_args = SendMakerPaymentArgs {
+        time_lock,
+        taker_secret_hash,
+        maker_secret_hash,
+        amount: 1.into(),
+        taker_pub,
+        swap_unique_data: &[],
+    };
+    let maker_payment = block_on(coin.send_maker_payment_v2(send_args)).unwrap();
+    println!("{:02x}", maker_payment.tx_hash());
+    // tx must have 3 outputs: actual payment, OP_RETURN containing the secret hash and change
+    assert_eq!(3, maker_payment.outputs.len());
+
+    // trading_amount
+    let expected_amount = 100000000u64;
+    assert_eq!(expected_amount, maker_payment.outputs[0].value);
+
+    let expected_op_return = Builder::default()
+        .push_opcode(Opcode::OP_RETURN)
+        .push_bytes(&[1; 20])
+        .push_bytes(&[0; 20])
+        .into_bytes();
+    assert_eq!(expected_op_return, maker_payment.outputs[1].script_pubkey);
+
+    let validate_args = ValidateMakerPaymentArgs {
+        maker_payment_tx: &maker_payment,
+        time_lock,
+        taker_secret_hash,
+        maker_secret_hash,
+        amount: 1.into(),
+        swap_unique_data: &[],
+        maker_pub,
+    };
+    block_on(coin.validate_maker_payment_v2(validate_args)).unwrap();
+
+    let refund_args = RefundPaymentArgs {
+        payment_tx: &serialize(&maker_payment).take(),
+        time_lock,
+        other_pubkey: coin.my_public_key().unwrap(),
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::MakerPaymentV2 {
+            taker_secret_hash,
+            maker_secret_hash,
+        },
+        swap_unique_data: &[],
+        swap_contract_address: &None,
+        watcher_reward: false,
+    };
+
+    let refund_tx = block_on(coin.refund_maker_payment_v2_timelock(refund_args)).unwrap();
+    println!("{:02x}", refund_tx.tx_hash());
+}
+
+#[test]
+fn send_and_refund_maker_payment_taker_secret() {
+    let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
+    let taker_secret = &[1; 32];
+
+    let time_lock = now_sec() + 1000;
+    let taker_secret_hash_owned = dhash160(taker_secret);
+    let taker_secret_hash = taker_secret_hash_owned.as_slice();
+    let maker_secret_hash = &[1; 20];
+    let taker_pub = coin.my_public_key().unwrap();
+    let maker_pub = coin.my_public_key().unwrap();
+
+    let send_args = SendMakerPaymentArgs {
+        time_lock,
+        taker_secret_hash,
+        maker_secret_hash,
+        amount: 1.into(),
+        taker_pub,
+        swap_unique_data: &[],
+    };
+    let maker_payment = block_on(coin.send_maker_payment_v2(send_args)).unwrap();
+    println!("{:02x}", maker_payment.tx_hash());
+    // tx must have 3 outputs: actual payment, OP_RETURN containing the secret hash and change
+    assert_eq!(3, maker_payment.outputs.len());
+
+    // trading_amount
+    let expected_amount = 100000000u64;
+    assert_eq!(expected_amount, maker_payment.outputs[0].value);
+
+    let expected_op_return = Builder::default()
+        .push_opcode(Opcode::OP_RETURN)
+        .push_bytes(&[1; 20])
+        .push_bytes(taker_secret_hash)
+        .into_bytes();
+    assert_eq!(expected_op_return, maker_payment.outputs[1].script_pubkey);
+
+    let validate_args = ValidateMakerPaymentArgs {
+        maker_payment_tx: &maker_payment,
+        time_lock,
+        taker_secret_hash,
+        maker_secret_hash,
+        amount: 1.into(),
+        swap_unique_data: &[],
+        maker_pub,
+    };
+    block_on(coin.validate_maker_payment_v2(validate_args)).unwrap();
+
+    let refund_args = RefundMakerPaymentArgs {
+        maker_payment_tx: &maker_payment,
+        time_lock,
+        taker_secret_hash,
+        maker_secret_hash,
+        swap_unique_data: &[],
+        taker_secret,
+        taker_pub,
+    };
+
+    let refund_tx = block_on(coin.refund_maker_payment_v2_secret(refund_args)).unwrap();
+    println!("{:02x}", refund_tx.tx_hash());
 }
 
 #[test]

@@ -1,7 +1,8 @@
 #![allow(clippy::all)]
 
-use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
-            TradeFee, TransactionEnum, TransactionFut, WaitForTakerPaymentSpendError};
+use super::{CoinBalance, FundingTxSpend, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
+            RawTransactionRequest, SearchForFundingSpendErr, SwapOps, TradeFee, TransactionEnum, TransactionFut,
+            WaitForTakerPaymentSpendError};
 use crate::coin_errors::ValidatePaymentResult;
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinAssocTypes,
             CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, GenPreimageResult,
@@ -452,12 +453,22 @@ impl TakerCoinSwapOpsV2 for TestCoin {
         unimplemented!()
     }
 
-    async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> TransactionResult { todo!() }
+    async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr> {
+        todo!()
+    }
 
     async fn refund_taker_funding_secret(
         &self,
         args: RefundFundingSecretArgs<'_, Self>,
     ) -> Result<Self::Tx, TransactionErr> {
+        todo!()
+    }
+
+    async fn search_for_taker_funding_spend(
+        &self,
+        tx: &Self::Tx,
+        from_block: u64,
+    ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr> {
         todo!()
     }
 
@@ -486,7 +497,9 @@ impl TakerCoinSwapOpsV2 for TestCoin {
         todo!()
     }
 
-    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult { unimplemented!() }
+    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr> {
+        unimplemented!()
+    }
 
     async fn gen_taker_payment_spend_preimage(
         &self,
