@@ -110,7 +110,7 @@ async fn wasm_test_sign_eth_tx() {
         "type": "ETH",
         "tx": {
             "to": "0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94".to_string(),
-            "value": "0x1000",
+            "value": "1.234",
             "gas_limit": "21000"
         }
     }))
