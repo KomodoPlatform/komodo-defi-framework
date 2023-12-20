@@ -704,10 +704,13 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
                 let maybe_first_op_if = script_sig
                     .get_instruction(1)
                     .ok_or_else(|| {
-                        SearchForFundingSpendErr::FailedToProcessSpendTx(format!("No instruction at {}", 1))
+                        SearchForFundingSpendErr::FailedToProcessSpendTx("No instruction at index 1".into())
                     })?
                     .map_err(|e| {
-                        SearchForFundingSpendErr::FailedToProcessSpendTx(format!("Couldn't get instruction at {}", 1))
+                        SearchForFundingSpendErr::FailedToProcessSpendTx(format!(
+                            "Couldn't get instruction at index 1: {}",
+                            e
+                        ))
                     })?;
                 match maybe_first_op_if.opcode {
                     Opcode::OP_1 => Ok(Some(FundingTxSpend::RefundedTimelock(found.spending_tx))),
@@ -715,6 +718,9 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
                         tx: found.spending_tx,
                         secret: maybe_first_op_if.data.unwrap().try_into().unwrap(),
                     })),
+                    Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => {
+                        Ok(Some(FundingTxSpend::TransferredToTakerPayment(found.spending_tx)))
+                    },
                     unimplemented => unimplemented!("{:?}", unimplemented),
                 }
             },

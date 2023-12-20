@@ -236,6 +236,25 @@ fn send_and_spend_taker_funding() {
 
     let payment_tx = block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &preimage_args, &[])).unwrap();
     println!("Taker payment tx {:02x}", payment_tx.tx_hash());
+
+    // payment tx has to be confirmed before it can be found as payment spend in native mode
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: payment_tx.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 20,
+        check_every: 1,
+    };
+    taker_coin.wait_for_confirmations(confirm_input).wait().unwrap();
+
+    let found_spend_tx =
+        block_on(taker_coin.search_for_taker_funding_spend(&taker_funding_utxo_tx, 1, taker_secret_hash)).unwrap();
+    match found_spend_tx {
+        Some(FundingTxSpend::TransferredToTakerPayment(tx)) => {
+            assert_eq!(payment_tx, tx);
+        },
+        unexpected => panic!("Got unexpected FundingTxSpend variant {:?}", unexpected),
+    }
 }
 
 #[test]
