@@ -44,6 +44,7 @@ use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
+use script::Opcode;
 use utxo_signer::UtxoSignerOps;
 
 #[derive(Clone)]
@@ -673,6 +674,7 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         &self,
         tx: &Self::Tx,
         from_block: u64,
+        secret_hash: &[u8],
     ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr> {
         let script_pubkey = &tx
             .first_output()
@@ -691,13 +693,30 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
                 script_pubkey,
                 DEFAULT_SWAP_VOUT,
                 BlockHashOrHeight::Height(from_block),
+                self.as_ref().tx_hash_algo,
             )
             .compat()
             .await
             .map_err(SearchForFundingSpendErr::Rpc)?;
         match output_spend {
             Some(found) => {
-                unimplemented!()
+                let script_sig: Script = found.input.script_sig.into();
+                let maybe_first_op_if = script_sig
+                    .get_instruction(1)
+                    .ok_or_else(|| {
+                        SearchForFundingSpendErr::FailedToProcessSpendTx(format!("No instruction at {}", 1))
+                    })?
+                    .map_err(|e| {
+                        SearchForFundingSpendErr::FailedToProcessSpendTx(format!("Couldn't get instruction at {}", 1))
+                    })?;
+                match maybe_first_op_if.opcode {
+                    Opcode::OP_1 => Ok(Some(FundingTxSpend::RefundedTimelock(found.spending_tx))),
+                    Opcode::OP_PUSHBYTES_32 => Ok(Some(FundingTxSpend::RefundedSecret {
+                        tx: found.spending_tx,
+                        secret: maybe_first_op_if.data.unwrap().try_into().unwrap(),
+                    })),
+                    unimplemented => unimplemented!("{:?}", unimplemented),
+                }
             },
             None => Ok(None),
         }

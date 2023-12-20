@@ -3201,14 +3201,13 @@ pub async fn wait_for_output_spend_impl(
                 script_pubkey,
                 output_index,
                 BlockHashOrHeight::Height(from_block as i64),
+                coin.tx_hash_algo,
             )
             .compat()
             .await
         {
             Ok(Some(spent_output_info)) => {
-                let mut tx = spent_output_info.spending_tx;
-                tx.tx_hash_algo = coin.tx_hash_algo;
-                return Ok(tx);
+                return Ok(spent_output_info.spending_tx);
             },
             Ok(None) => (),
             Err(e) => error!("Error on find_output_spend_of_tx: {}", e),
@@ -4744,16 +4743,16 @@ async fn search_for_swap_output_spend(
                 tx.hash(),
                 script_pubkey,
                 output_index,
-                BlockHashOrHeight::Height(search_from_block as i64)
+                BlockHashOrHeight::Height(search_from_block as i64),
+                coin.tx_hash_algo,
             )
             .compat()
             .await
     );
     match spend {
         Some(spent_output_info) => {
-            let mut tx = spent_output_info.spending_tx;
-            tx.tx_hash_algo = coin.tx_hash_algo;
-            let script: Script = tx.inputs[DEFAULT_SWAP_VIN].script_sig.clone().into();
+            let tx = spent_output_info.spending_tx;
+            let script: Script = spent_output_info.input.script_sig.clone().into();
             if let Some(Ok(ref i)) = script.iter().nth(2) {
                 if i.opcode == Opcode::OP_0 {
                     return Ok(Some(FoundSwapTxSpend::Spent(tx.into())));

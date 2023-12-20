@@ -468,6 +468,7 @@ impl TakerCoinSwapOpsV2 for TestCoin {
         &self,
         tx: &Self::Tx,
         from_block: u64,
+        secret_hash: &[u8],
     ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr> {
         todo!()
     }

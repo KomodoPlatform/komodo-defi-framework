@@ -87,7 +87,8 @@ fn send_and_refund_taker_funding_timelock() {
     };
     coin.wait_for_confirmations(confirm_input).wait().unwrap();
 
-    let found_refund_tx = block_on(coin.search_for_taker_funding_spend(&taker_funding_utxo_tx, 1)).unwrap();
+    let found_refund_tx =
+        block_on(coin.search_for_taker_funding_spend(&taker_funding_utxo_tx, 1, taker_secret_hash)).unwrap();
     match found_refund_tx {
         Some(FundingTxSpend::RefundedTimelock(found_tx)) => assert_eq!(found_tx, refund_tx),
         unexpected => panic!("Got unexpected FundingTxSpend variant {:?}", unexpected),
@@ -100,12 +101,13 @@ fn send_and_refund_taker_funding_secret() {
 
     let time_lock = now_sec() - 1000;
     let taker_secret = [0; 32];
-    let taker_secret_hash = dhash160(&taker_secret);
+    let taker_secret_hash_owned = dhash160(&taker_secret);
+    let taker_secret_hash = taker_secret_hash_owned.as_slice();
     let maker_pub = coin.my_public_key().unwrap();
 
     let send_args = SendTakerFundingArgs {
         time_lock,
-        taker_secret_hash: taker_secret_hash.as_slice(),
+        taker_secret_hash,
         maker_pub,
         dex_fee_amount: "0.01".parse().unwrap(),
         premium_amount: "0.1".parse().unwrap(),
@@ -123,14 +125,14 @@ fn send_and_refund_taker_funding_secret() {
 
     let expected_op_return = Builder::default()
         .push_opcode(Opcode::OP_RETURN)
-        .push_data(taker_secret_hash.as_slice())
+        .push_data(taker_secret_hash)
         .into_bytes();
     assert_eq!(expected_op_return, taker_funding_utxo_tx.outputs[1].script_pubkey);
 
     let validate_args = ValidateTakerFundingArgs {
         funding_tx: &taker_funding_utxo_tx,
         time_lock,
-        taker_secret_hash: taker_secret_hash.as_slice(),
+        taker_secret_hash,
         other_pub: maker_pub,
         dex_fee_amount: "0.01".parse().unwrap(),
         premium_amount: "0.1".parse().unwrap(),
@@ -144,7 +146,7 @@ fn send_and_refund_taker_funding_secret() {
         time_lock,
         maker_pubkey: maker_pub,
         taker_secret: &taker_secret,
-        taker_secret_hash: taker_secret_hash.as_slice(),
+        taker_secret_hash,
         swap_unique_data: &[],
         swap_contract_address: &None,
         watcher_reward: false,
@@ -152,6 +154,26 @@ fn send_and_refund_taker_funding_secret() {
 
     let refund_tx = block_on(coin.refund_taker_funding_secret(refund_args)).unwrap();
     println!("{:02x}", refund_tx.tx_hash());
+
+    // refund tx has to be confirmed before it can be found as payment spend in native mode
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: refund_tx.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 20,
+        check_every: 1,
+    };
+    coin.wait_for_confirmations(confirm_input).wait().unwrap();
+
+    let found_refund_tx =
+        block_on(coin.search_for_taker_funding_spend(&taker_funding_utxo_tx, 1, taker_secret_hash)).unwrap();
+    match found_refund_tx {
+        Some(FundingTxSpend::RefundedSecret { tx, secret }) => {
+            assert_eq!(refund_tx, tx);
+            assert_eq!(taker_secret, secret);
+        },
+        unexpected => panic!("Got unexpected FundingTxSpend variant {:?}", unexpected),
+    }
 }
 
 #[test]

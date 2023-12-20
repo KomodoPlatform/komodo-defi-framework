@@ -2398,6 +2398,7 @@ fn test_find_output_spend_skips_conflicting_transactions() {
             &tx.outputs[vout].script_pubkey,
             vout,
             BlockHashOrHeight::Height(from_block),
+            TxHashAlgo::DSHA256,
         )
         .wait();
     assert_eq!(actual, Ok(None));

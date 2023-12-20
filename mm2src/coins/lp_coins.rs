@@ -1593,7 +1593,7 @@ impl From<WaitForOutputSpendErr> for WaitForTakerPaymentSpendError {
 
 pub enum FundingTxSpend<T: CoinAssocTypes + ?Sized> {
     RefundedTimelock(T::Tx),
-    RefundedSecret { tx: T::Tx, secret: H256 },
+    RefundedSecret { tx: T::Tx, secret: [u8; 32] },
     TransferredToTakerPayment(T::Tx),
 }
 
@@ -1616,6 +1616,7 @@ impl<T: CoinAssocTypes + ?Sized> fmt::Debug for FundingTxSpend<T> {
 #[derive(Debug)]
 pub enum SearchForFundingSpendErr {
     InvalidInputTx(String),
+    FailedToProcessSpendTx(String),
     Rpc(String),
     FromBlockConversionErr(TryFromIntError),
 }
@@ -1644,6 +1645,7 @@ pub trait TakerCoinSwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
         &self,
         tx: &Self::Tx,
         from_block: u64,
+        secret_hash: &[u8],
     ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr>;
 
     /// Generates and signs a preimage spending funding tx to the combined taker payment
