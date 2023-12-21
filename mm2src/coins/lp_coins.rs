@@ -1381,6 +1381,8 @@ pub enum ValidateSwapV2TxError {
     TxLacksOfOutputs,
     /// Input payment timelock overflows the type used by specific coin.
     LocktimeOverflow(String),
+    /// Internal error
+    Internal(String),
 }
 
 impl From<NumConversError> for ValidateSwapV2TxError {

@@ -716,12 +716,28 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
                     Opcode::OP_1 => Ok(Some(FundingTxSpend::RefundedTimelock(found.spending_tx))),
                     Opcode::OP_PUSHBYTES_32 => Ok(Some(FundingTxSpend::RefundedSecret {
                         tx: found.spending_tx,
-                        secret: maybe_first_op_if.data.unwrap().try_into().unwrap(),
+                        secret: maybe_first_op_if
+                            .data
+                            .ok_or_else(|| {
+                                SearchForFundingSpendErr::FailedToProcessSpendTx(
+                                    "No data at instruction with index 1".into(),
+                                )
+                            })?
+                            .try_into()
+                            .map_err(|e| {
+                                SearchForFundingSpendErr::FailedToProcessSpendTx(format!(
+                                    "Failed to parse data at instruction with index 1 as [u8; 32]: {}",
+                                    e
+                                ))
+                            })?,
                     })),
                     Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => {
                         Ok(Some(FundingTxSpend::TransferredToTakerPayment(found.spending_tx)))
                     },
-                    unimplemented => unimplemented!("{:?}", unimplemented),
+                    unexpected => Err(SearchForFundingSpendErr::FailedToProcessSpendTx(format!(
+                        "Got unexpected opcode {:?} at instruction with index 1",
+                        unexpected
+                    ))),
                 }
             },
             None => Ok(None),

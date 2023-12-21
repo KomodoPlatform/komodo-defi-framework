@@ -8,14 +8,14 @@ use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_s
                           SwapConfirmationsSettings, TransactionIdentifier, MAKER_SWAP_V2_TYPE, MAX_STARTED_AT_DIFF};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
-use coins::{CanRefundHtlc, CoinAssocTypes, ConfirmPaymentInput, FeeApproxStage, GenTakerFundingSpendArgs,
-            GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, RefundPaymentArgs, SendMakerPaymentArgs,
-            SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, Transaction, TxPreimageWithSig,
-            ValidateTakerFundingArgs};
+use coins::{CanRefundHtlc, CoinAssocTypes, ConfirmPaymentInput, FeeApproxStage, FundingTxSpend,
+            GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, RefundMakerPaymentArgs,
+            RefundPaymentArgs, SearchForFundingSpendErr, SendMakerPaymentArgs, SwapTxTypeWithSecretHash,
+            TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, Transaction, TxPreimageWithSig, ValidateTakerFundingArgs};
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
 use common::log::{debug, error, info, warn};
-use common::{Future01CompatExt, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{now_sec, Future01CompatExt, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
@@ -90,6 +90,7 @@ pub enum MakerSwapEvent {
         taker_coin_start_block: u64,
         negotiation_data: StoredNegotiationData,
         maker_payment: TransactionIdentifier,
+        taker_funding: TransactionIdentifier,
         funding_spend_preimage: StoredTxPreimage,
     },
     /// Something went wrong, so maker payment refund is required.
@@ -507,6 +508,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 taker_coin_start_block,
                 negotiation_data,
                 maker_payment,
+                taker_funding,
                 funding_spend_preimage,
             } => Box::new(MakerPaymentSentFundingSpendGenerated {
                 maker_coin_start_block,
@@ -516,6 +518,10 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     &recreate_ctx.maker_coin,
                     &recreate_ctx.taker_coin,
                 )?,
+                taker_funding: recreate_ctx
+                    .taker_coin
+                    .parse_tx(&taker_funding.tx_hex.0)
+                    .map_err(|e| SwapRecreateError::FailedToParseData(e.to_string()))?,
                 funding_spend_preimage: TxPreimageWithSig {
                     preimage: recreate_ctx
                         .taker_coin
@@ -1199,6 +1205,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             maker_coin_start_block: self.maker_coin_start_block,
             taker_coin_start_block: self.taker_coin_start_block,
             negotiation_data: self.negotiation_data,
+            taker_funding: self.taker_funding,
             funding_spend_preimage,
             maker_payment,
         };
@@ -1230,6 +1237,7 @@ struct MakerPaymentSentFundingSpendGenerated<MakerCoin: CoinAssocTypes, TakerCoi
     maker_coin_start_block: u64,
     taker_coin_start_block: u64,
     negotiation_data: NegotiationData<MakerCoin, TakerCoin>,
+    taker_funding: TakerCoin::Tx,
     funding_spend_preimage: TxPreimageWithSig<TakerCoin>,
     maker_payment: MakerCoin::Tx,
 }
@@ -1258,7 +1266,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         };
 
         debug!("Sending maker payment info message {:?}", swap_msg);
-        let abort_handle = broadcast_swap_v2_msg_every(
+        let _abort_handle = broadcast_swap_v2_msg_every(
             state_machine.ctx.clone(),
             state_machine.p2p_topic.clone(),
             swap_msg,
@@ -1266,49 +1274,89 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             state_machine.p2p_keypair,
         );
 
-        let recv_fut = recv_swap_v2_msg(
-            state_machine.ctx.clone(),
-            |store| store.taker_payment.take(),
-            &state_machine.uuid,
-            NEGOTIATION_TIMEOUT_SEC,
-        );
-        let taker_payment_info = match recv_fut.await {
-            Ok(p) => p,
-            Err(e) => {
+        let wait_until = state_machine.started_at + state_machine.lock_duration * 2 / 3;
+        loop {
+            if now_sec() > wait_until {
                 let next_state = MakerPaymentRefundRequired {
                     maker_coin_start_block: self.maker_coin_start_block,
                     taker_coin_start_block: self.taker_coin_start_block,
                     negotiation_data: self.negotiation_data,
                     maker_payment: self.maker_payment,
-                    reason: MakerPaymentRefundReason::DidNotGetTakerPayment(e),
+                    reason: MakerPaymentRefundReason::TakerFundingNotSpentInTime,
                 };
-                return Self::change_state(next_state, state_machine).await;
-            },
-        };
-        drop(abort_handle);
 
-        let taker_payment = match state_machine.taker_coin.parse_tx(&taker_payment_info.tx_bytes) {
-            Ok(tx) => tx,
-            Err(e) => {
-                let next_state = MakerPaymentRefundRequired {
-                    maker_coin_start_block: self.maker_coin_start_block,
-                    taker_coin_start_block: self.taker_coin_start_block,
-                    negotiation_data: self.negotiation_data,
-                    maker_payment: self.maker_payment,
-                    reason: MakerPaymentRefundReason::FailedToParseTakerPayment(e.to_string()),
-                };
-                return Self::change_state(next_state, state_machine).await;
-            },
-        };
+                break Self::change_state(next_state, state_machine).await;
+            }
 
-        let next_state = TakerPaymentReceived {
-            maker_coin_start_block: self.maker_coin_start_block,
-            taker_coin_start_block: self.taker_coin_start_block,
-            maker_payment: self.maker_payment,
-            taker_payment,
-            negotiation_data: self.negotiation_data,
-        };
-        Self::change_state(next_state, state_machine).await
+            let search_result = state_machine
+                .taker_coin
+                .search_for_taker_funding_spend(
+                    &self.taker_funding,
+                    self.taker_coin_start_block,
+                    &self.negotiation_data.taker_secret_hash,
+                )
+                .await;
+            match search_result {
+                Ok(Some(FundingTxSpend::TransferredToTakerPayment(taker_payment))) => {
+                    let next_state = TakerPaymentReceived {
+                        maker_coin_start_block: self.maker_coin_start_block,
+                        taker_coin_start_block: self.taker_coin_start_block,
+                        maker_payment: self.maker_payment,
+                        taker_payment,
+                        negotiation_data: self.negotiation_data,
+                    };
+                    break Self::change_state(next_state, state_machine).await;
+                },
+                // it's not really possible as taker's funding time lock is 3 * lock_duration, though we have to
+                // handle this case anyway
+                Ok(Some(FundingTxSpend::RefundedTimelock(_))) => {
+                    let next_state = MakerPaymentRefundRequired {
+                        maker_coin_start_block: self.maker_coin_start_block,
+                        taker_coin_start_block: self.taker_coin_start_block,
+                        negotiation_data: self.negotiation_data,
+                        maker_payment: self.maker_payment,
+                        reason: MakerPaymentRefundReason::TakerFundingReclaimedTimelock,
+                    };
+
+                    break Self::change_state(next_state, state_machine).await;
+                },
+                Ok(Some(FundingTxSpend::RefundedSecret { secret, tx: _ })) => {
+                    let next_state = MakerPaymentRefundRequired {
+                        maker_coin_start_block: self.maker_coin_start_block,
+                        taker_coin_start_block: self.taker_coin_start_block,
+                        negotiation_data: self.negotiation_data,
+                        maker_payment: self.maker_payment,
+                        reason: MakerPaymentRefundReason::TakerFundingReclaimedSecret(secret.into()),
+                    };
+
+                    break Self::change_state(next_state, state_machine).await;
+                },
+                Ok(None) => {
+                    Timer::sleep(30.).await;
+                },
+                Err(e) => match e {
+                    SearchForFundingSpendErr::Rpc(e) => {
+                        error!("Rpc error {} on search_for_taker_funding_spend", e);
+                        Timer::sleep(30.).await;
+                    },
+                    // Other error cases are considered irrecoverable, so we should proceed to refund stage
+                    // handling using @ binding to trigger a compiler error when new variant is added
+                    e @ SearchForFundingSpendErr::InvalidInputTx(_)
+                    | e @ SearchForFundingSpendErr::FailedToProcessSpendTx(_)
+                    | e @ SearchForFundingSpendErr::FromBlockConversionErr(_) => {
+                        let next_state = MakerPaymentRefundRequired {
+                            maker_coin_start_block: self.maker_coin_start_block,
+                            taker_coin_start_block: self.taker_coin_start_block,
+                            negotiation_data: self.negotiation_data,
+                            maker_payment: self.maker_payment,
+                            reason: MakerPaymentRefundReason::ErrorOnTakerFundingSpendSearch(format!("{:?}", e)),
+                        };
+
+                        break Self::change_state(next_state, state_machine).await;
+                    },
+                },
+            }
+        }
     }
 }
 
@@ -1325,6 +1373,10 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             maker_payment: TransactionIdentifier {
                 tx_hex: self.maker_payment.tx_hex().into(),
                 tx_hash: self.maker_payment.tx_hash(),
+            },
+            taker_funding: TransactionIdentifier {
+                tx_hex: self.taker_funding.tx_hex().into(),
+                tx_hash: self.taker_funding.tx_hash(),
             },
             funding_spend_preimage: StoredTxPreimage {
                 preimage: self.funding_spend_preimage.preimage.to_bytes().into(),
@@ -1344,6 +1396,10 @@ pub enum MakerPaymentRefundReason {
     FailedToParseTakerPreimage(String),
     FailedToParseTakerSignature(String),
     TakerPaymentSpendBroadcastFailed(String),
+    TakerFundingNotSpentInTime,
+    TakerFundingReclaimedTimelock,
+    TakerFundingReclaimedSecret(H256Json),
+    ErrorOnTakerFundingSpendSearch(String),
 }
 
 struct MakerPaymentRefundRequired<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
@@ -1375,6 +1431,35 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             "Entered MakerPaymentRefundRequired state for swap {} with reason {:?}",
             state_machine.uuid, self.reason
         );
+
+        if let MakerPaymentRefundReason::TakerFundingReclaimedSecret(secret) = &self.reason {
+            let args = RefundMakerPaymentArgs {
+                maker_payment_tx: &self.maker_payment,
+                time_lock: state_machine.maker_payment_locktime(),
+                taker_secret_hash: &self.negotiation_data.taker_secret_hash,
+                maker_secret_hash: &state_machine.secret_hash(),
+                taker_secret: &secret.0,
+                taker_pub: &self.negotiation_data.maker_coin_htlc_pub_from_taker,
+                swap_unique_data: &state_machine.unique_data(),
+            };
+
+            let maker_payment_refund = match state_machine.maker_coin.refund_maker_payment_v2_secret(args).await {
+                Ok(tx) => tx,
+                Err(e) => {
+                    let reason = AbortReason::MakerPaymentRefundFailed(e.get_plain_text_format());
+                    return Self::change_state(Aborted::new(reason), state_machine).await;
+                },
+            };
+
+            let next_state = MakerPaymentRefunded {
+                taker_coin: Default::default(),
+                maker_payment: self.maker_payment,
+                maker_payment_refund,
+                reason: self.reason,
+            };
+
+            return Self::change_state(next_state, state_machine).await;
+        }
 
         loop {
             match state_machine

@@ -5285,6 +5285,26 @@ where
             actual: actual_tx_bytes.into(),
         });
     }
+
+    // import funding address in native mode to track funding tx spend
+    let funding_address = Address {
+        checksum_type: coin.as_ref().conf.checksum_type,
+        hash: dhash160(&redeem_script).into(),
+        prefix: coin.as_ref().conf.p2sh_addr_prefix,
+        t_addr_prefix: coin.as_ref().conf.p2sh_t_addr_prefix,
+        hrp: coin.as_ref().conf.bech32_hrp.clone(),
+        addr_format: UtxoAddressFormat::Standard,
+    };
+    if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
+        let addr_string = funding_address
+            .display_address()
+            .map_to_mm(|e| ValidateSwapV2TxError::Internal(e.to_string()))?;
+        client
+            .import_address(&addr_string, &addr_string, false)
+            .compat()
+            .await
+            .map_to_mm(|e| ValidateSwapV2TxError::Rpc(e.to_string()))?;
+    }
     Ok(())
 }
 
@@ -5363,8 +5383,8 @@ pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
         time_lock,
         args.maker_secret_hash,
         args.taker_secret_hash,
-        key_pair.public(),
         args.maker_pub,
+        key_pair.public(),
     )
     .into();
 
