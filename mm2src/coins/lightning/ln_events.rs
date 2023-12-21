@@ -2,6 +2,7 @@ use super::*;
 use crate::lightning::ln_db::{DBChannelDetails, HTLCStatus, LightningDB, PaymentType};
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
 use crate::lightning::ln_sql::SqliteLightningDB;
+use crate::utxo::UtxoCommonOps;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::serialize_hex;
@@ -219,7 +220,9 @@ fn sign_funding_transaction(
         .activated_key_or_err()
         .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
 
-    let prev_script = Builder::build_p2pkh(&my_address.hash);
+    let prev_script = coin
+        .script_for_address(my_address)
+        .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
     let signed = sign_tx(
         unsigned,
         key_pair,
@@ -529,7 +532,7 @@ impl LightningEventHandler {
         let keys_manager = self.keys_manager.clone();
 
         let fut = async move {
-            let change_destination_script = Builder::build_witness_script(&my_address.hash).to_bytes().take().into();
+            let change_destination_script = Builder::build_p2witness(&my_address.hash).to_bytes().take().into();
             let feerate_sat_per_1000_weight = platform.get_est_sat_per_1000_weight(ConfirmationTarget::Normal);
             let output_descriptors = outputs.iter().collect::<Vec<_>>();
             let claiming_tx = match keys_manager.spend_spendable_outputs(

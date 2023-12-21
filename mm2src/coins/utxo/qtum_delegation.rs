@@ -20,7 +20,6 @@ use keys::{AddressHashEnum, Signature};
 use mm2_err_handle::prelude::*;
 use mm2_number::bigdecimal::{BigDecimal, Zero};
 use rpc::v1::types::ToTxHash;
-use script::Builder as ScriptBuilder;
 use serialization::serialize;
 use std::convert::TryInto;
 use std::str::FromStr;
@@ -290,7 +289,9 @@ impl QtumCoin {
                 DelegationError::from_generate_tx_error(gen_tx_error, self.ticker().to_string(), utxo.decimals)
             })?;
 
-        let prev_script = ScriptBuilder::build_p2pkh(&my_address.hash);
+        let prev_script = self
+            .script_for_address(my_address)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
         let signed = sign_tx(
             unsigned,
             key_pair,

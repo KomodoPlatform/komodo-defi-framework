@@ -73,7 +73,7 @@ impl ScriptAddress {
 }
 
 /// Serialized script, used inside transaction inputs and outputs.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Script {
     data: Bytes,
 }
@@ -820,7 +820,7 @@ OP_ADD
         )
         .unwrap()
         .hash;
-        let script = Builder::build_witness_script(&address);
+        let script = Builder::build_p2witness(&address);
         assert_eq!(script.script_type(), ScriptType::WitnessKey);
         assert_eq!(
             script.extract_destinations(),
@@ -838,7 +838,7 @@ OP_ADD
         )
         .unwrap()
         .hash;
-        let script = Builder::build_witness_script(&address);
+        let script = Builder::build_p2witness(&address);
         assert_eq!(script.script_type(), ScriptType::WitnessScript);
         assert_eq!(
             script.extract_destinations(),

@@ -1049,7 +1049,13 @@ fn maker_order_created_p2p_notify(
     let to_broadcast = new_protocol::OrdermatchMessage::MakerOrderCreated(message.clone());
     let (key_pair, peer_id) = p2p_keypair_and_peer_id_to_broadcast(&ctx, order.p2p_keypair());
 
-    let encoded_msg = encode_and_sign(&to_broadcast, key_pair.private_ref()).unwrap();
+    let encoded_msg = match encode_and_sign(&to_broadcast, key_pair.private_ref()) {
+        Ok(msg) => msg,
+        Err(e) => {
+            error!("Couldn't encode and sign the 'maker_order_created' message: {}", e);
+            return;
+        },
+    };
     let item: OrderbookItem = (message, hex::encode(key_pair.public_slice())).into();
     insert_or_update_my_order(&ctx, item, order);
     broadcast_p2p_msg(&ctx, topic, encoded_msg, peer_id);
@@ -1074,7 +1080,13 @@ fn maker_order_updated_p2p_notify(
 ) {
     let msg: new_protocol::OrdermatchMessage = message.clone().into();
     let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(&ctx, p2p_privkey);
-    let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
+    let encoded_msg = match encode_and_sign(&msg, &secret) {
+        Ok(msg) => msg,
+        Err(e) => {
+            error!("Couldn't encode and sign the 'maker_order_updated' message: {}", e);
+            return;
+        },
+    };
     process_my_maker_order_updated(&ctx, &message);
     broadcast_p2p_msg(&ctx, topic, encoded_msg, peer_id);
 }
@@ -2325,7 +2337,13 @@ fn broadcast_ordermatch_message(
     p2p_privkey: Option<&KeyPair>,
 ) {
     let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey);
-    let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
+    let encoded_msg = match encode_and_sign(&msg, &secret) {
+        Ok(encoded_msg) => encoded_msg,
+        Err(e) => {
+            error!("Failed to encode and sign ordermatch message: {}", e);
+            return;
+        },
+    };
     broadcast_p2p_msg(ctx, topic, encoded_msg, peer_id);
 }
 

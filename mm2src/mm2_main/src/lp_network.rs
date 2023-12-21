@@ -464,6 +464,8 @@ pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddress
 pub enum NetIdError {
     #[display(fmt = "Netid {} is larger than max {}", netid, max_netid)]
     LargerThanMax { netid: u16, max_netid: u16 },
+    #[display(fmt = "{} netid is deprecated.", netid)]
+    Deprecated { netid: u16 },
 }
 
 pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), MmError<NetIdError>> {

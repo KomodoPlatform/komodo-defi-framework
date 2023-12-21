@@ -4,11 +4,12 @@ use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, Suf
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, ConfirmPaymentInput, DexFee, FeeApproxStage,
             FoundSwapTxSpend, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
-            PaymentInstructions, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, RefundError,
-            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignatureResult, SolanaCoin, SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionResult,
-            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult,
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
+            SignatureResult, SolanaCoin, SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionFut, TransactionResult, TransactionType,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
             ValidatePaymentInput, ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs,
             WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
@@ -230,6 +231,7 @@ impl SplToken {
     }
 }
 
+#[async_trait]
 impl MarketCoinOps for SplToken {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
@@ -264,6 +266,13 @@ impl MarketCoinOps for SplToken {
     #[inline(always)]
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         self.platform_coin.send_raw_tx_bytes(tx)
+    }
+
+    #[inline(always)]
+    async fn sign_raw_tx(&self, _args: &SignRawTransactionRequest) -> RawTransactionResult {
+        MmError::err(RawTransactionError::NotImplemented {
+            coin: self.ticker().to_string(),
+        })
     }
 
     fn wait_for_confirmations(&self, _input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {

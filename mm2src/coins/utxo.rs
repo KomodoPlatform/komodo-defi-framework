@@ -103,10 +103,10 @@ use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinFutSpawner,
             CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails,
             MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RawTransactionResult,
-            RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
-            UnexpectedDerivationMethod, VerificationError, WithdrawError, WithdrawRequest};
+            PrivKeyPolicyNotAllowed, RawTransactionFut, RpcTransportEventHandler, RpcTransportEventHandlerShared,
+            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
+            TransactionEnum, TransactionErr, UnexpectedDerivationMethod, VerificationError, WithdrawError,
+            WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDAddressId, HDWalletCoinOps, HDWalletOps,
                        InvalidBip44ChainError};
@@ -961,6 +961,9 @@ pub trait UtxoCommonOps:
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.
     fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError>;
+
+    /// For an address create corresponding utxo output script
+    fn script_for_address(&self, address: &Address) -> MmResult<Script, UnsupportedAddr>;
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32>;
 
@@ -1868,7 +1871,8 @@ where
         _ => coin.as_ref().conf.signature_version,
     };
 
-    let prev_script = Builder::build_p2pkh(&my_address.hash);
+    let prev_script = utxo_common::get_script_for_address(coin.as_ref(), my_address)
+        .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
     let signed = try_tx_s!(sign_tx(
         unsigned,
         key_pair,
@@ -1886,12 +1890,12 @@ where
 
 pub fn output_script(address: &Address, script_type: ScriptType) -> Script {
     match address.addr_format {
-        UtxoAddressFormat::Segwit => Builder::build_witness_script(&address.hash),
+        UtxoAddressFormat::Segwit => Builder::build_p2witness(&address.hash),
         _ => match script_type {
             ScriptType::P2PKH => Builder::build_p2pkh(&address.hash),
             ScriptType::P2SH => Builder::build_p2sh(&address.hash),
-            ScriptType::P2WPKH => Builder::build_witness_script(&address.hash),
-            ScriptType::P2WSH => Builder::build_witness_script(&address.hash),
+            ScriptType::P2WPKH => Builder::build_p2witness(&address.hash),
+            ScriptType::P2WSH => Builder::build_p2witness(&address.hash),
         },
     }
 }

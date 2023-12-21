@@ -13,5 +13,8 @@ log = "0.4.17"
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+crossbeam-channel = "0.5.1"
+futures = "0.3.1"
 rusqlite = { version = "0.28", features = ["bundled"] }
 sql-builder = "3.1.1"
+tokio = { version = "1.20", default-features = false, features = ["macros"] }

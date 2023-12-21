@@ -7800,3 +7800,116 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
     block_on(wait_for_swap_negotiation_failure(&mm_bob, &uuids[0], wait_until));
     block_on(wait_for_swap_negotiation_failure(&mm_alice, &uuids[0], wait_until));
 }
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_sign_raw_transaction_rick() {
+    use mm2_test_helpers::for_tests::test_sign_raw_transaction_rpc_helper;
+
+    let bob_seed = "UvCjJf4dKSs2vFGVtCnUTAhR5FTZGdg43DDRa9s7s5DV1sSDX14g";
+    let coins = json!([rick_conf(), morty_conf()]);
+    let conf = Mm2TestConf::seednode(bob_seed, &coins);
+
+    // start bob
+    let mm_bob = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+    // Enable coins on Bob side. Print the replies in case we need the "address".
+    let coin_init_resp = block_on(enable_coins_rick_morty_electrum(&mm_bob));
+    assert_eq!(
+        coin_init_resp["RICK"].result, "success",
+        "enable_coins failed with {}",
+        coin_init_resp["RICK"].result
+    );
+
+    let response = block_on(test_sign_raw_transaction_rpc_helper(
+        &mm_bob,
+        StatusCode::OK,
+        &json!({
+            "coin": "RICK",
+            "type": "UTXO",
+            "tx": {
+                "tx_hex": "0400008085202f89015794e93fbec895035c5321ad5b8b3f9212c25694d9cc67de2093114ab4bd69530000000000ffffffff01605af405000000001976a914b506088aa2a3b4bb1da3a29bf00ce1a550ea1df988ac00000000c1d31e000000000000000000000000",
+                "prev_txns": [{
+                    "tx_hash": "5794e93fbec895035c5321ad5b8b3f9212c25694d9cc67de2093114ab4bd6953", //"5369bdb44a119320de67ccd99456c212923f8b5bad21535c0395c8be3fe99457",
+                    "index": 0,
+                    "script_pub_key": "76a914b506088aa2a3b4bb1da3a29bf00ce1a550ea1df988ac",
+                    "amount": 1.00000000,
+                }]
+            }
+        }),
+    ));
+    assert_eq!(response["result"]["tx_hex"], Json::from("0400008085202f89015794e93fbec895035c5321ad5b8b3f9212c25694d9cc67de2093114ab4bd6953000000006a47304402204d5793070a4f35946a7be6df0ff5e6db4e8e50c37d515dc24e2a70481b0d58d102205c144d2a504d2e59ac939472d90f91927b013b8b799bfd5fab3b71fbbb0d3b970121022cd3021a2197361fb70b862c412bc8e44cff6951fa1de45ceabfdd9b4c520420ffffffff01605af405000000001976a914b506088aa2a3b4bb1da3a29bf00ce1a550ea1df988ac00000000c1d31e000000000000000000000000"));
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_sign_raw_transaction_p2wpkh() {
+    use mm2_test_helpers::for_tests::test_sign_raw_transaction_rpc_helper;
+
+    let bob_seed = "cNPm5PHMLfc4WPvsbGCpNMfVcoueVNZwJeW4fEfW3QWf8QaAT2Hd";
+    let coin = tbtc_segwit_conf();
+    let conf = Mm2TestConf::seednode(bob_seed, &json!([coin]));
+
+    // start bob
+    let mm_bob = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+
+    // Enable coins on Bob side. Print the replies in case we need the "address".
+    let coin_init_resp = block_on(enable_electrum(&mm_bob, "tBTC-Segwit", false, TBTC_ELECTRUMS, None));
+    assert_eq!(
+        coin_init_resp.result, "success",
+        "enable_coins failed with {}",
+        coin_init_resp.result
+    );
+
+    let response = block_on(test_sign_raw_transaction_rpc_helper(
+        &mm_bob,
+        StatusCode::OK,
+        &json!({
+            "coin": "tBTC-Segwit",
+            "type": "UTXO",
+            "tx": {
+                "tx_hex": "02000000010d23d763f12d77a337cc16df2696ac3f48552dda373c9977fa1f5dd8d5025cb20100000000fdffffff01f40100000000000016001488accd2145b7232b958db5cdf09336ad619541e200000000",
+                "prev_txns": [{
+                    "tx_hash": "0d23d763f12d77a337cc16df2696ac3f48552dda373c9977fa1f5dd8d5025cb2",
+                    "index": 1,
+                    "script_pub_key": "001449e3b6b4684c4d4a914b29411af51843c59bfff0",
+                    "amount": 0.00001000,
+                }]
+            }
+        }),
+    ));
+    assert_eq!(response["result"]["tx_hex"], Json::from("020000000001010d23d763f12d77a337cc16df2696ac3f48552dda373c9977fa1f5dd8d5025cb20100000000fdffffff01f40100000000000016001488accd2145b7232b958db5cdf09336ad619541e2024730440220156d185b3fb21725c040b7ddcf84bf862b46f079bb66067eef1941023b8451e602204d877ac51b74932dea34c20874fa8112b3636eb506ac429548f7c05fe54e3faf0121039ad38f67dbc22cf5a6bd48b26920d9fac71681836faf80a9a678ddbaa0fe92f800000000"));
+
+    // bad request: spend from two different addresses
+    let response = block_on(test_sign_raw_transaction_rpc_helper(
+        &mm_bob,
+        StatusCode::BAD_REQUEST,
+        &json!({
+            "coin": "tBTC-Segwit",
+            "type": "UTXO",
+            "tx": {
+                "tx_hex": "02000000020d23d763f12d77a337cc16df2696ac3f48552dda373c9977fa1f5dd8d5025cb20100000000fdffffff257c76e76a42c6833d137230ce94c0300178f3f84bd1ef2d1f8fa53d062fc9960000000000fdffffff01f40100000000000016001488accd2145b7232b958db5cdf09336ad619541e200000000",
+                "prev_txns": [{
+                    "tx_hash": "0d23d763f12d77a337cc16df2696ac3f48552dda373c9977fa1f5dd8d5025cb2",
+                    "index": 1,
+                    "script_pub_key": "001449e3b6b4684c4d4a914b29411af51843c59bfff0",
+                    "amount": 0.00001000,
+                }, {
+                    "tx_hash": "96c92f063da58f1f2defd14bf8f3780130c094ce3072133d83c6426ae7767c25",
+                    "index": 0,
+                    "script_pub_key": "00146538caea0d5579f5b9f4e19ddbe2d6c663f3ea56",
+                    "amount": 0.00002306,
+                }]
+            }
+        }),
+    ));
+    assert_eq!(
+        response["error"],
+        Json::from("Invalid param: spends are from same address only")
+    );
+}

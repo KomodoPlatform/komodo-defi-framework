@@ -58,6 +58,7 @@ use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
+use hex::FromHexError;
 use http::{Response, StatusCode};
 use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{from_ctx, MmArc};
@@ -217,6 +218,7 @@ pub mod eth;
 use eth::GetValidEthWithdrawAddError;
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
           GetEthAddressError, SignedEthTx};
+use ethereum_types::U256;
 
 pub mod hd_confirm_address;
 pub mod hd_pubkey;
@@ -348,17 +350,34 @@ pub enum RawTransactionError {
     HashNotExist(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "Transaction decode error: {}", _0)]
+    DecodeError(String),
+    #[display(fmt = "Invalid param: {}", _0)]
+    InvalidParam(String),
+    #[display(fmt = "Non-existent previous output: {}", _0)]
+    NonExistentPrevOutputError(String),
+    #[display(fmt = "Signing error: {}", _0)]
+    SigningError(String),
+    #[display(fmt = "Not implemented for this coin {}", coin)]
+    NotImplemented { coin: String },
+    #[display(fmt = "Transaction error {}", _0)]
+    TransactionError(String),
 }
 
 impl HttpStatusCode for RawTransactionError {
     fn status_code(&self) -> StatusCode {
         match self {
+            RawTransactionError::Transport(_)
+            | RawTransactionError::InternalError(_)
+            | RawTransactionError::SigningError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             RawTransactionError::NoSuchCoin { .. }
             | RawTransactionError::InvalidHashError(_)
-            | RawTransactionError::HashNotExist(_) => StatusCode::BAD_REQUEST,
-            RawTransactionError::Transport(_) | RawTransactionError::InternalError(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            | RawTransactionError::HashNotExist(_)
+            | RawTransactionError::DecodeError(_)
+            | RawTransactionError::InvalidParam(_)
+            | RawTransactionError::NonExistentPrevOutputError(_)
+            | RawTransactionError::TransactionError(_) => StatusCode::BAD_REQUEST,
+            RawTransactionError::NotImplemented { .. } => StatusCode::NOT_IMPLEMENTED,
         }
     }
 }
@@ -369,6 +388,14 @@ impl From<CoinFindError> for RawTransactionError {
             CoinFindError::NoSuchCoin { coin } => RawTransactionError::NoSuchCoin { coin },
         }
     }
+}
+
+impl From<NumConversError> for RawTransactionError {
+    fn from(e: NumConversError) -> Self { RawTransactionError::InvalidParam(e.to_string()) }
+}
+
+impl From<FromHexError> for RawTransactionError {
+    fn from(e: FromHexError) -> Self { RawTransactionError::InvalidParam(e.to_string()) }
 }
 
 #[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize, SerializeErrorType)]
@@ -413,6 +440,62 @@ pub struct RawTransactionRequest {
 pub struct RawTransactionRes {
     /// Raw bytes of signed transaction in hexadecimal string, this should be return hexadecimal encoded signed transaction for get_raw_transaction
     pub tx_hex: BytesJson,
+}
+
+/// Previous utxo transaction data for signing
+#[derive(Clone, Debug, Deserialize)]
+pub struct PrevTxns {
+    /// transaction hash
+    tx_hash: String,
+    /// transaction output index
+    index: u32,
+    /// transaction output script pub key
+    script_pub_key: String,
+    // TODO: implement if needed:
+    // redeem script for P2SH script pubkey
+    // pub redeem_script: Option<String>,
+    /// transaction output amount
+    amount: BigDecimal,
+}
+
+/// sign_raw_transaction RPC request's params for signing raw utxo transactions
+#[derive(Clone, Debug, Deserialize)]
+pub struct SignUtxoTransactionParams {
+    /// unsigned utxo transaction in hex
+    tx_hex: String,
+    /// optional data of previous transactions referred by unsigned transaction inputs
+    prev_txns: Option<Vec<PrevTxns>>,
+    // TODO: add if needed for utxo:
+    // pub sighash_type: Option<String>, optional signature hash type, one of values: NONE, SINGLE, ALL, NONE|ANYONECANPAY, SINGLE|ANYONECANPAY, ALL|ANYONECANPAY (if not set 'ALL' is used)
+    // pub branch_id: Option<u32>, zcash or komodo optional consensus branch id, used for signing transactions ahead of current height
+}
+
+/// sign_raw_transaction RPC request's params for signing raw eth transactions
+#[derive(Clone, Debug, Deserialize)]
+pub struct SignEthTransactionParams {
+    /// Eth transfer value
+    value: Option<BigDecimal>,
+    /// Eth to address
+    to: Option<String>,
+    /// Eth contract data
+    data: Option<String>,
+    /// Eth gas use limit
+    gas_limit: U256,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type", content = "tx")]
+pub enum SignRawTransactionEnum {
+    UTXO(SignUtxoTransactionParams),
+    ETH(SignEthTransactionParams),
+}
+
+/// sign_raw_transaction RPC request
+#[derive(Clone, Debug, Deserialize)]
+pub struct SignRawTransactionRequest {
+    coin: String,
+    #[serde(flatten)]
+    tx: SignRawTransactionEnum,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1401,6 +1484,7 @@ pub trait SwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
 
 /// Operations that coins have independently from the MarketMaker.
 /// That is, things implemented by the coin wallets or public coin services.
+#[async_trait]
 pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
@@ -1440,6 +1524,9 @@ pub trait MarketCoinOps {
 
     /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
+
+    /// Signs raw utxo transaction in hexadecimal format as input and returns signed transaction in hexadecimal format
+    async fn sign_raw_tx(&self, args: &SignRawTransactionRequest) -> RawTransactionResult;
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
@@ -3872,6 +3959,11 @@ pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> Verificatio
     let is_valid = coin.verify_message(&req.signature, &req.message, &req.address)?;
 
     Ok(VerificationResponse { is_valid })
+}
+
+pub async fn sign_raw_transaction(ctx: MmArc, req: SignRawTransactionRequest) -> RawTransactionResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    coin.sign_raw_tx(&req).await
 }
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {

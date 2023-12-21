@@ -26,7 +26,9 @@ cfg_wasm32! {
 }
 
 cfg_native! {
+    use db_common::async_sql_conn::AsyncConnection;
     use db_common::sqlite::rusqlite::Connection;
+    use futures::lock::Mutex as AsyncMutex;
     use futures_rustls::webpki::DNSNameRef;
     use mm2_metrics::prometheus;
     use mm2_metrics::MmMetricsError;
@@ -110,8 +112,10 @@ pub struct MmCtx {
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
+    /// Deprecated, please use `async_sqlite_connection` for new implementations.
     #[cfg(not(target_arch = "wasm32"))]
     pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
+    /// Deprecated, please create `shared_async_sqlite_conn` for new implementations and call db `KOMODEFI-shared.db`.
     #[cfg(not(target_arch = "wasm32"))]
     pub shared_sqlite_conn: Constructible<Arc<Mutex<Connection>>>,
     pub mm_version: String,
@@ -128,6 +132,9 @@ pub struct MmCtx {
     pub db_namespace: DbNamespaceId,
     /// The context belonging to the `nft` mod: `NftCtx`.
     pub nft_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    /// asynchronous handle for rusqlite connection.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async_sqlite_connection: Constructible<Arc<AsyncMutex<AsyncConnection>>>,
 }
 
 impl MmCtx {
@@ -172,6 +179,8 @@ impl MmCtx {
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
             nft_ctx: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
+            async_sqlite_connection: Constructible::default(),
         }
     }
 
@@ -191,7 +200,21 @@ impl MmCtx {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
-        let port = self.conf["rpcport"].as_u64().unwrap_or(7783);
+        let port = match self.conf.get("rpcport") {
+            Some(rpcport) => {
+                // Check if it's a number or a string that can be parsed into a number
+                rpcport
+                    .as_u64()
+                    .or_else(|| rpcport.as_str().and_then(|s| s.parse::<u64>().ok()))
+                    .ok_or_else(|| {
+                        format!(
+                            "Invalid `rpcport` value. Expected a positive integer, but received: {}",
+                            rpcport
+                        )
+                    })?
+            },
+            None => 7783, // Default port if `rpcport` does not exist in the config
+        };
         if port < 1000 {
             return ERR!("rpcport < 1000");
         }
@@ -309,7 +332,7 @@ impl MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn init_sqlite_connection(&self) -> Result<(), String> {
         let sqlite_file_path = self.dbdir().join("MM2.db");
-        log::debug!("Trying to open SQLite database file {}", sqlite_file_path.display());
+        log_sqlite_file_open_attempt(&sqlite_file_path);
         let connection = try_s!(Connection::open(sqlite_file_path));
         try_s!(self.sqlite_connection.pin(Arc::new(Mutex::new(connection))));
         Ok(())
@@ -318,9 +341,18 @@ impl MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn init_shared_sqlite_conn(&self) -> Result<(), String> {
         let sqlite_file_path = self.shared_dbdir().join("MM2-shared.db");
-        log::debug!("Trying to open SQLite database file {}", sqlite_file_path.display());
+        log_sqlite_file_open_attempt(&sqlite_file_path);
         let connection = try_s!(Connection::open(sqlite_file_path));
         try_s!(self.shared_sqlite_conn.pin(Arc::new(Mutex::new(connection))));
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn init_async_sqlite_connection(&self) -> Result<(), String> {
+        let sqlite_file_path = self.dbdir().join("KOMODEFI.db");
+        log_sqlite_file_open_attempt(&sqlite_file_path);
+        let async_conn = try_s!(AsyncConnection::open(sqlite_file_path).await);
+        try_s!(self.async_sqlite_connection.pin(Arc::new(AsyncMutex::new(async_conn))));
         Ok(())
     }
 
@@ -703,5 +735,17 @@ impl MmCtxBuilder {
         }
 
         MmArc::new(ctx)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn log_sqlite_file_open_attempt(sqlite_file_path: &Path) {
+    match sqlite_file_path.canonicalize() {
+        Ok(absolute_path) => {
+            log::debug!("Trying to open SQLite database file {}", absolute_path.display());
+        },
+        Err(_) => {
+            log::debug!("Trying to open SQLite database file {}", sqlite_file_path.display());
+        },
     }
 }

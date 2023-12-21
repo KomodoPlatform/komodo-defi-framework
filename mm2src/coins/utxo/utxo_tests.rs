@@ -3173,7 +3173,7 @@ fn test_withdraw_to_p2wpkh() {
     let transaction: UtxoTx = deserialize(tx_details.tx_hex.as_slice()).unwrap();
     let output_script: Script = transaction.outputs[0].script_pubkey.clone().into();
 
-    let expected_script = Builder::build_witness_script(&p2wpkh_address.hash);
+    let expected_script = Builder::build_p2witness(&p2wpkh_address.hash);
 
     assert_eq!(output_script, expected_script);
 }
