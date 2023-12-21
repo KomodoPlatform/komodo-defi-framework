@@ -47,7 +47,7 @@ async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Tra
 }
 
 #[test]
-pub fn activate_z_coin_light() {
+pub(crate) fn activate_z_coin_light() {
     let coins = json!([zombie_conf()]);
 
     let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);

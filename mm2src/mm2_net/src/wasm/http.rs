@@ -1,7 +1,7 @@
 use crate::transport::{GetInfoFromUriError, SlurpError, SlurpResult};
 use crate::wasm::body_stream::ResponseBody;
 use common::executor::spawn_local;
-use common::{stringify_js_error, APPLICATION_JSON};
+use common::{drop_mutability, stringify_js_error, APPLICATION_JSON};
 use futures::channel::oneshot;
 use gstuff::ERRL;
 use http::header::{ACCEPT, CONTENT_TYPE};
@@ -59,31 +59,25 @@ fn set_response_headers_and_content_type(
     mut result: Builder,
     response: &JsResponse,
 ) -> Result<(Builder, String), MmError<SlurpError>> {
-    let headers = response.headers();
-
-    let header_iter =
-        js_sys::try_iter(headers.as_ref()).map_to_mm(|err| SlurpError::InvalidRequest(format!("{err:?}")))?;
+    let headers = match js_sys::try_iter(response.headers().as_ref()) {
+        Ok(Some(headers)) => headers,
+        Ok(None) => return MmError::err(SlurpError::InvalidRequest("MissingHeaders".to_string())),
+        Err(err) => return MmError::err(SlurpError::InvalidRequest(format!("{err:?}"))),
+    };
 
     let mut content_type = None;
-
-    if let Some(header_iter) = header_iter {
-        for header in header_iter {
-            let pair: Array = header
-                .map_to_mm(|err| SlurpError::InvalidRequest(format!("{err:?}")))?
-                .into();
-            let (header_name, header_value) = (pair.get(0).as_string(), pair.get(1).as_string());
-            match (header_name, header_value) {
-                (Some(header_name), Some(header_value)) => {
-                    if header_name == CONTENT_TYPE.as_str() {
-                        content_type = Some(header_value.clone());
-                    }
-
-                    result = result.header(header_name, header_value);
-                },
-                _ => continue,
+    for header in headers {
+        let pair: Array = header
+            .map_to_mm(|err| SlurpError::InvalidRequest(format!("{err:?}")))?
+            .into();
+        if let (Some(header_name), Some(header_value)) = (pair.get(0).as_string(), pair.get(1).as_string()) {
+            if header_name == CONTENT_TYPE.as_str() {
+                content_type = Some(header_value.clone());
             }
+            result = result.header(header_name, header_value);
         }
     }
+    drop_mutability!(content_type);
 
     match content_type {
         Some(content_type) => Ok((result, content_type)),

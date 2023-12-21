@@ -111,7 +111,7 @@ pub use z_coin_errors::*;
 pub mod storage;
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
 mod z_coin_native_tests;
-#[cfg(target_arch = "wasm32")] pub mod z_params;
+#[cfg(target_arch = "wasm32")] mod z_params;
 
 /// `ZP2SHSpendError` compatible `TransactionErr` handling macro.
 macro_rules! try_ztx_s {

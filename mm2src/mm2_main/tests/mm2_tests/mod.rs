@@ -8,7 +8,6 @@ mod orderbook_sync_tests;
 mod tendermint_ibc_asset_tests;
 mod tendermint_tests;
 mod z_coin_tests;
-pub use z_coin_tests::activate_z_coin_light;
 
 mod zhtlc_native_reexport {
     pub use common::executor::Timer;
