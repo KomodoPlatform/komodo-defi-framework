@@ -491,7 +491,7 @@ where
                 _ => {},
             };
 
-            let confirmations = if details.block_height == 0 || details.block_height > current_block {
+            let confirmations = if details.block_height > current_block {
                 0
             } else {
                 current_block + 1 - details.block_height

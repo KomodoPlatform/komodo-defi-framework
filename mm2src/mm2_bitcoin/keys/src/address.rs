@@ -216,7 +216,7 @@ impl FromStr for Address {
 }
 
 impl From<&'static str> for Address {
-    fn from(s: &'static str) -> Self { s.parse().unwrap() }
+    fn from(s: &'static str) -> Self { s.parse().unwrap() } // TODO: dangerous unwrap?
 }
 
 impl Address {

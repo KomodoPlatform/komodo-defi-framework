@@ -13,22 +13,23 @@ use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoi
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_utxo_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, AddrFromStrError, BroadcastTxErr, FeePolicy, GenerateTxError,
                   GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
-                  UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
-                  UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
+                  UnsupportedAddr, UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps,
+                  UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom,
+                  UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput,
             DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin,
             MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
             PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
-            RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs, RefundResult,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureResult,
-            SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TransactionResult, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest, WithdrawResult};
+            RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundError, RefundPaymentArgs,
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
@@ -88,6 +89,7 @@ pub enum Qrc20GenTxError {
     ErrorSigningTx(UtxoSignWithKeyPairError),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    InvalidAddress(String),
 }
 
 impl From<GenerateTxError> for Qrc20GenTxError {
@@ -119,6 +121,7 @@ impl Qrc20GenTxError {
             Qrc20GenTxError::ErrorSigningTx(sign_err) => WithdrawError::InternalError(sign_err.to_string()),
             Qrc20GenTxError::PrivKeyPolicyNotAllowed(priv_err) => WithdrawError::InternalError(priv_err.to_string()),
             Qrc20GenTxError::UnexpectedDerivationMethod(addr_err) => WithdrawError::InternalError(addr_err.to_string()),
+            Qrc20GenTxError::InvalidAddress(addr_err) => WithdrawError::InvalidAddress(addr_err),
         }
     }
 }
@@ -538,7 +541,9 @@ impl Qrc20Coin {
         let my_address = self.utxo.derivation_method.single_addr_or_err()?;
         let key_pair = self.utxo.priv_key_policy.activated_key_or_err()?;
 
-        let prev_script = ScriptBuilder::build_p2pkh(&my_address.hash);
+        let prev_script = self
+            .script_for_address(my_address)
+            .map_err(|e| Qrc20GenTxError::InvalidAddress(e.to_string()))?;
         let signed = sign_tx(
             unsigned,
             key_pair,
@@ -668,6 +673,10 @@ impl UtxoCommonOps for Qrc20Coin {
 
     fn address_from_str(&self, address: &str) -> MmResult<UtxoAddress, AddrFromStrError> {
         utxo_common::checked_address_from_str(self, address)
+    }
+
+    fn script_for_address(&self, address: &Address) -> MmResult<Script, UnsupportedAddr> {
+        utxo_common::get_script_for_address(self.as_ref(), address)
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
@@ -1183,6 +1192,7 @@ impl WatcherOps for Qrc20Coin {
     }
 }
 
+#[async_trait]
 impl MarketCoinOps for Qrc20Coin {
     fn ticker(&self) -> &str { &self.utxo.conf.ticker }
 
@@ -1251,6 +1261,11 @@ impl MarketCoinOps for Qrc20Coin {
     #[inline(always)]
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo, tx)
+    }
+
+    #[inline(always)]
+    async fn sign_raw_tx(&self, args: &SignRawTransactionRequest) -> RawTransactionResult {
+        utxo_common::sign_raw_tx(self, args).await
     }
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {

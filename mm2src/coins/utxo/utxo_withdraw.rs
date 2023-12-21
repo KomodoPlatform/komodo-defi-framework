@@ -104,7 +104,12 @@ where
         }
     }
 
-    fn prev_script(&self) -> Script { Builder::build_p2pkh(&self.sender_address().hash) }
+    fn prev_script(&self) -> Script {
+        match self.sender_address().addr_format {
+            UtxoAddressFormat::Segwit => Builder::build_p2witness(&self.sender_address().hash),
+            _ => Builder::build_p2pkh(&self.sender_address().hash),
+        }
+    }
 
     #[allow(clippy::result_large_err)]
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>>;
@@ -301,7 +306,7 @@ where
         sign_params
             .with_signature_version(self.signature_version())
             .with_unsigned_tx(unsigned_tx)
-            .with_prev_script(Builder::build_p2pkh(&self.from_address.hash));
+            .with_prev_script(self.coin.script_for_address(&self.from_address)?);
         let sign_params = sign_params.build()?;
 
         let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;

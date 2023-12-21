@@ -11,7 +11,6 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
             mm2::rpc::lp_commands::{get_public_key, get_public_key_hash, get_shared_db_id, trezor_connection_status}};
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
-use coins::nft;
 use coins::rpc_command::tendermint::{ibc_chains, ibc_transfer_channels, ibc_withdraw};
 use coins::rpc_command::{account_balance::account_balance,
                          get_current_mtp::get_current_mtp_rpc,
@@ -30,8 +29,8 @@ use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
-use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_infos, remove_delegation, sign_message,
-            verify_message, withdraw};
+use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_infos, nft, remove_delegation,
+            sign_message, sign_raw_transaction, verify_message, withdraw};
 #[cfg(all(
     feature = "enable-solana",
     not(target_os = "ios"),
@@ -185,6 +184,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "remove_delegation" => handle_mmrpc(ctx, request, remove_delegation).await,
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
         "sign_message" => handle_mmrpc(ctx, request, sign_message).await,
+        "sign_raw_transaction" => handle_mmrpc(ctx, request, sign_raw_transaction).await,
         "start_simple_market_maker_bot" => handle_mmrpc(ctx, request, start_simple_market_maker_bot).await,
         "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,
         "stop_simple_market_maker_bot" => handle_mmrpc(ctx, request, stop_simple_market_maker_bot).await,

@@ -2,19 +2,18 @@ use crate::eth::eth_addr_to_hex;
 use crate::nft::nft_structs::{Chain, NftFromMoralis, NftListFilters, NftTransferHistoryFilters,
                               NftTransferHistoryFromMoralis, PhishingDomainReq, PhishingDomainRes, SpamContractReq,
                               SpamContractRes, TransferMeta, UriMeta};
-use crate::nft::storage::db_test_helpers::{init_nft_history_storage, init_nft_list_storage, nft, nft_list,
-                                           nft_transfer_history};
+use crate::nft::storage::db_test_helpers::{get_nft_ctx, nft, nft_list, nft_transfer_history};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps, RemoveNftResult};
 use crate::nft::{check_moralis_ipfs_bafy, get_domain_from_url, process_metadata_for_spam_link,
                  process_text_for_spam_link};
 use common::cross_test;
 use ethereum_types::Address;
 use mm2_net::transport::send_post_request_to_uri;
-use mm2_number::BigDecimal;
+use mm2_number::{BigDecimal, BigUint};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
-const MORALIS_API_ENDPOINT_TEST: &str = "https://moralis-proxy.komodo.earth/api/v2";
+const MORALIS_API_ENDPOINT_TEST: &str = "https://moralis-proxy.komodian.info/api/v2";
 const TEST_WALLET_ADDR_EVM: &str = "0x394d86994f954ed931b86791b62fe64f4c5dac37";
 const BLOCKLIST_API_ENDPOINT: &str = "https://nft.antispam.dragonhound.info";
 const TOKEN_ADD: &str = "0xfd913a305d70a60aac4faac70c739563738e1f81";
@@ -158,11 +157,13 @@ cross_test!(test_camo, {
 
 cross_test!(test_add_get_nfts, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let nft_list = nft_list();
     storage.add_nfts_to_list(chain, nft_list, 28056726).await.unwrap();
 
-    let token_id = BigDecimal::from_str(TOKEN_ID).unwrap();
+    let token_id = BigUint::from_str(TOKEN_ID).unwrap();
     let nft = storage
         .get_nft(&chain, TOKEN_ADD.to_string(), token_id)
         .await
@@ -173,7 +174,9 @@ cross_test!(test_add_get_nfts, {
 
 cross_test!(test_last_nft_block, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let nft_list = nft_list();
     storage.add_nfts_to_list(chain, nft_list, 28056726).await.unwrap();
 
@@ -186,7 +189,9 @@ cross_test!(test_last_nft_block, {
 
 cross_test!(test_nft_list, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let nft_list = nft_list();
     storage.add_nfts_to_list(chain, nft_list, 28056726).await.unwrap();
 
@@ -203,11 +208,13 @@ cross_test!(test_nft_list, {
 
 cross_test!(test_remove_nft, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let nft_list = nft_list();
     storage.add_nfts_to_list(chain, nft_list, 28056726).await.unwrap();
 
-    let token_id = BigDecimal::from_str(TOKEN_ID).unwrap();
+    let token_id = BigUint::from_str(TOKEN_ID).unwrap();
     let remove_rslt = storage
         .remove_nft_from_list(&chain, TOKEN_ADD.to_string(), token_id, 28056800)
         .await
@@ -226,7 +233,9 @@ cross_test!(test_remove_nft, {
 
 cross_test!(test_nft_amount, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let mut nft = nft();
     storage
         .add_nfts_to_list(chain, vec![nft.clone()], 25919780)
@@ -236,11 +245,7 @@ cross_test!(test_nft_amount, {
     nft.common.amount -= BigDecimal::from(1);
     storage.update_nft_amount(&chain, nft.clone(), 25919800).await.unwrap();
     let amount = storage
-        .get_nft_amount(
-            &chain,
-            eth_addr_to_hex(&nft.common.token_address),
-            nft.common.token_id.clone(),
-        )
+        .get_nft_amount(&chain, eth_addr_to_hex(&nft.common.token_address), nft.token_id.clone())
         .await
         .unwrap()
         .unwrap();
@@ -255,7 +260,7 @@ cross_test!(test_nft_amount, {
         .await
         .unwrap();
     let amount = storage
-        .get_nft_amount(&chain, eth_addr_to_hex(&nft.common.token_address), nft.common.token_id)
+        .get_nft_amount(&chain, eth_addr_to_hex(&nft.common.token_address), nft.token_id)
         .await
         .unwrap()
         .unwrap();
@@ -266,7 +271,9 @@ cross_test!(test_nft_amount, {
 
 cross_test!(test_refresh_metadata, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let new_symbol = "NEW_SYMBOL";
     let mut nft = nft();
     storage
@@ -276,7 +283,7 @@ cross_test!(test_refresh_metadata, {
     nft.common.symbol = Some(new_symbol.to_string());
     drop_mutability!(nft);
     let token_add = eth_addr_to_hex(&nft.common.token_address);
-    let token_id = nft.common.token_id.clone();
+    let token_id = nft.token_id.clone();
     storage.refresh_nft_metadata(&chain, nft).await.unwrap();
     let nft_upd = storage.get_nft(&chain, token_add, token_id).await.unwrap().unwrap();
     assert_eq!(new_symbol.to_string(), nft_upd.common.symbol.unwrap());
@@ -284,7 +291,9 @@ cross_test!(test_refresh_metadata, {
 
 cross_test!(test_update_nft_spam_by_token_address, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let nft_list = nft_list();
     storage.add_nfts_to_list(chain, nft_list, 28056726).await.unwrap();
 
@@ -303,7 +312,9 @@ cross_test!(test_update_nft_spam_by_token_address, {
 
 cross_test!(test_exclude_nft_spam, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let nft_list = nft_list();
     storage.add_nfts_to_list(chain, nft_list, 28056726).await.unwrap();
 
@@ -320,7 +331,9 @@ cross_test!(test_exclude_nft_spam, {
 
 cross_test!(test_get_animation_external_domains, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let nft_list = nft_list();
     storage.add_nfts_to_list(chain, nft_list, 28056726).await.unwrap();
 
@@ -332,7 +345,9 @@ cross_test!(test_get_animation_external_domains, {
 
 cross_test!(test_update_nft_phishing_by_domain, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let nft_list = nft_list();
     storage.add_nfts_to_list(chain, nft_list, 28056726).await.unwrap();
 
@@ -358,7 +373,9 @@ cross_test!(test_update_nft_phishing_by_domain, {
 
 cross_test!(test_exclude_nft_phishing_spam, {
     let chain = Chain::Bsc;
-    let storage = init_nft_list_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
     let nft_list = nft_list();
     storage.add_nfts_to_list(chain, nft_list, 28056726).await.unwrap();
 
@@ -380,11 +397,13 @@ cross_test!(test_exclude_nft_phishing_spam, {
 
 cross_test!(test_add_get_transfers, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
-    let token_id = BigDecimal::from_str(TOKEN_ID).unwrap();
+    let token_id = BigUint::from_str(TOKEN_ID).unwrap();
     let transfer1 = storage
         .get_transfers_by_token_addr_id(chain, TOKEN_ADD.to_string(), token_id)
         .await
@@ -405,7 +424,9 @@ cross_test!(test_add_get_transfers, {
 
 cross_test!(test_last_transfer_block, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
@@ -418,7 +439,9 @@ cross_test!(test_last_transfer_block, {
 
 cross_test!(test_transfer_history, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
@@ -435,7 +458,9 @@ cross_test!(test_transfer_history, {
 
 cross_test!(test_transfer_history_filters, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
@@ -495,7 +520,9 @@ cross_test!(test_transfer_history_filters, {
 
 cross_test!(test_get_update_transfer_meta, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
@@ -528,7 +555,9 @@ cross_test!(test_get_update_transfer_meta, {
 
 cross_test!(test_update_transfer_spam_by_token_address, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
@@ -547,7 +576,9 @@ cross_test!(test_update_transfer_spam_by_token_address, {
 
 cross_test!(test_get_token_addresses, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
@@ -557,7 +588,9 @@ cross_test!(test_get_token_addresses, {
 
 cross_test!(test_exclude_transfer_spam, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
@@ -578,7 +611,9 @@ cross_test!(test_exclude_transfer_spam, {
 
 cross_test!(test_get_domains, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
@@ -590,7 +625,9 @@ cross_test!(test_get_domains, {
 
 cross_test!(test_update_transfer_phishing_by_domain, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
@@ -616,7 +653,9 @@ cross_test!(test_update_transfer_phishing_by_domain, {
 
 cross_test!(test_exclude_transfer_phishing_spam, {
     let chain = Chain::Bsc;
-    let storage = init_nft_history_storage(&chain).await;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
     let transfers = nft_transfer_history();
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 

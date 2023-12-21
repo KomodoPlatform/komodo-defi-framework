@@ -907,6 +907,20 @@ pub fn mm_ctx_with_custom_db() -> MmArc {
     ctx
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn mm_ctx_with_custom_async_db() -> MmArc {
+    use db_common::async_sql_conn::AsyncConnection;
+    use futures::lock::Mutex as AsyncMutex;
+    use std::sync::Arc;
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let connection = AsyncConnection::open_in_memory().await.unwrap();
+    let _ = ctx.async_sqlite_connection.pin(Arc::new(AsyncMutex::new(connection)));
+
+    ctx
+}
+
 /// Automatically kill a wrapped process.
 pub struct RaiiKill {
     pub handle: Child,
@@ -3112,4 +3126,28 @@ fn test_parse_env_file() {
             None
         )
     );
+}
+
+// test helper to call sign_raw_transaction rpc with utxo coin param
+pub async fn test_sign_raw_transaction_rpc_helper(
+    mm: &MarketMakerIt,
+    expected_ret: StatusCode,
+    json_params: &Json,
+) -> Json {
+    let response = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method":"sign_raw_transaction",
+            "mmrpc":"2.0",
+            "id": 0,
+            "params": json_params
+        }))
+        .await
+        .expect("sign_raw_transaction rpc result okay");
+    assert_eq!(
+        response.0, expected_ret,
+        "'sign_raw_transaction' unexpected return code: {}",
+        response.1
+    );
+    json::from_str(&response.1).expect("response to json conversion must be okay")
 }

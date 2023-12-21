@@ -1,7 +1,6 @@
 use crate::nft::storage::NftStorageError;
 use mm2_db::indexed_db::{DbTransactionError, InitDbError};
 use mm2_err_handle::prelude::*;
-use mm2_number::bigdecimal::ParseBigDecimalError;
 
 pub(crate) mod nft_idb;
 pub(crate) mod wasm_storage;
@@ -20,7 +19,6 @@ pub enum WasmNftCacheError {
     NotSupported(String),
     InternalError(String),
     GetLastNftBlockError(String),
-    ParseBigDecimalError(ParseBigDecimalError),
 }
 
 impl From<InitDbError> for WasmNftCacheError {

@@ -25,13 +25,14 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
             DexFee, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress,
             IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
-            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RefundError, RefundFundingSecretArgs,
-            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SendTakerFundingArgs, SignatureResult, SpendPaymentArgs, SwapOps, SwapOpsV2,
-            TakerSwapMakerCoin, ToBytes, TradePreimageValue, TransactionFut, TransactionResult, TxMarshalingErr,
-            TxPreimageWithSig, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateTakerFundingArgs, ValidateTakerFundingResult, ValidateTakerFundingSpendPreimageResult,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionRequest,
+            RawTransactionResult, RefundError, RefundFundingSecretArgs, RefundPaymentArgs, RefundResult,
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs,
+            SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin,
+            ToBytes, TradePreimageValue, TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateTakerFundingArgs,
+            ValidateTakerFundingResult, ValidateTakerFundingSpendPreimageResult,
             ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput, VerificationResult,
             WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
@@ -188,6 +189,10 @@ impl UtxoCommonOps for UtxoStandardCoin {
 
     fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError> {
         utxo_common::checked_address_from_str(self, address)
+    }
+
+    fn script_for_address(&self, address: &Address) -> MmResult<Script, UnsupportedAddr> {
+        utxo_common::get_script_for_address(self.as_ref(), address)
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
@@ -677,6 +682,7 @@ impl SwapOpsV2 for UtxoStandardCoin {
     }
 }
 
+#[async_trait]
 impl MarketCoinOps for UtxoStandardCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
@@ -713,6 +719,11 @@ impl MarketCoinOps for UtxoStandardCoin {
     #[inline(always)]
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
+    }
+
+    #[inline(always)]
+    async fn sign_raw_tx(&self, args: &SignRawTransactionRequest) -> RawTransactionResult {
+        utxo_common::sign_raw_tx(self, args).await
     }
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
