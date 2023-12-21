@@ -59,6 +59,7 @@ fn activate_z_coin_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     let balance = match activation_result.wallet_balance {
@@ -80,6 +81,7 @@ fn activate_z_coin_light_with_changing_height() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
         None,
     ));
 
@@ -108,6 +110,7 @@ fn activate_z_coin_light_with_changing_height() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        Some(two_days_ago),
     ));
 
     let new_first_sync_block = activation_result.first_sync_block;
@@ -141,6 +144,7 @@ fn activate_z_coin_with_hd_account() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         Some(hd_account_id),
+        None,
     ));
 
     let actual = match activation_result.wallet_balance {
@@ -167,6 +171,7 @@ fn test_z_coin_tx_history() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
         None,
     ));
 
@@ -412,6 +417,7 @@ fn withdraw_z_coin_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     println!("{:?}", activation_result);
@@ -454,6 +460,7 @@ fn trade_rick_zombie_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
         None,
+        None,
     ));
 
     println!("Bob ZOMBIE activation {:?}", zombie_activation);
@@ -486,6 +493,7 @@ fn trade_rick_zombie_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        None,
         None,
     ));
 
@@ -543,6 +551,7 @@ fn activate_pirate_light() {
         ARRR,
         PIRATE_ELECTRUMS,
         PIRATE_LIGHTWALLETD_URLS,
+        None,
         None,
     ));
 

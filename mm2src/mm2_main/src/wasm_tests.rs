@@ -201,7 +201,8 @@ async fn activate_z_coin_light() {
         .await
         .unwrap();
 
-    let activation_result = enable_z_coin_light(&mm, ARRR, PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, None).await;
+    let activation_result =
+        enable_z_coin_light(&mm, ARRR, PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, None, None).await;
 
     let balance = match activation_result.wallet_balance {
         EnableCoinBalance::Iguana(iguana) => iguana,
