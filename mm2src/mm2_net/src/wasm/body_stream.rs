@@ -52,7 +52,11 @@ impl EncodedBytes {
         let is_base64 = match content_type {
             APPLICATION_GRPC_WEB_TEXT | APPLICATION_GRPC_WEB_TEXT_PROTO => true,
             APPLICATION_GRPC_WEB | APPLICATION_GRPC_WEB_PROTO => false,
-            _ => return Err(PostGrpcWebErr::InvalidRequest(content_type.to_owned())),
+            _ => {
+                return Err(PostGrpcWebErr::InvalidRequest(format!(
+                    "Unsupported Content-Type: {content_type}"
+                )))
+            },
         };
 
         Ok(Self {
@@ -193,95 +197,94 @@ impl ResponseBody {
                     if this.buf.is_empty() {
                         // Can't read compression flag right now
                         return Ok(());
-                    } else {
-                        let compression_flag = this.buf.take(1);
+                    };
 
-                        if compression_flag[0] & TRAILER_BIT == 0 {
-                            this.incomplete_data.unsplit(compression_flag);
-                            *this.state = ReadState::DataLength;
-                        } else {
-                            *this.state = ReadState::TrailerLength;
-                        }
+                    let compression_flag = this.buf.take(1);
+                    if compression_flag[0] & TRAILER_BIT == 0 {
+                        this.incomplete_data.unsplit(compression_flag);
+                        *this.state = ReadState::DataLength;
+                    } else {
+                        *this.state = ReadState::TrailerLength;
                     }
                 },
                 ReadState::DataLength => {
                     if this.buf.len() < 4 {
                         // Can't read data length right now
                         return Ok(());
-                    } else {
-                        let data_length_bytes = this.buf.take(4);
-                        let data_length = BigEndian::read_u32(data_length_bytes.as_ref());
+                    };
 
-                        this.incomplete_data.extend_from_slice(&data_length_bytes);
-                        *this.state = ReadState::Data(data_length);
-                    }
+                    let data_length_bytes = this.buf.take(4);
+                    let data_length = BigEndian::read_u32(data_length_bytes.as_ref());
+
+                    this.incomplete_data.extend_from_slice(&data_length_bytes);
+                    *this.state = ReadState::Data(data_length);
                 },
                 ReadState::Data(data_length) => {
                     let data_length = *data_length as usize;
-
                     if this.buf.len() < data_length {
                         // Can't read data right now
                         return Ok(());
+                    };
+
+                    this.incomplete_data.unsplit(this.buf.take(data_length));
+
+                    let new_data = this.incomplete_data.split();
+                    if let Some(data) = this.data {
+                        data.unsplit(new_data);
                     } else {
-                        this.incomplete_data.unsplit(this.buf.take(data_length));
-
-                        let new_data = this.incomplete_data.split();
-
-                        if let Some(data) = this.data {
-                            data.unsplit(new_data);
-                        } else {
-                            *this.data = Some(new_data);
-                        }
-
-                        *this.state = ReadState::CompressionFlag;
+                        *this.data = Some(new_data);
                     }
+
+                    *this.state = ReadState::CompressionFlag;
                 },
                 ReadState::TrailerLength => {
                     if this.buf.len() < 4 {
                         // Can't read data length right now
                         return Ok(());
-                    } else {
-                        let trailer_length_bytes = this.buf.take(4);
-                        let trailer_length = BigEndian::read_u32(trailer_length_bytes.as_ref());
-                        *this.state = ReadState::Trailer(trailer_length);
-                    }
+                    };
+
+                    *this.state = ReadState::Trailer(BigEndian::read_u32(this.buf.take(4).as_ref()));
                 },
                 ReadState::Trailer(trailer_length) => {
                     let trailer_length = *trailer_length as usize;
-
                     if this.buf.len() < trailer_length {
                         // Can't read trailer right now
                         return Ok(());
-                    } else {
-                        let mut trailer_bytes = this.buf.take(trailer_length);
-                        trailer_bytes.put_u8(b'\n');
+                    };
 
-                        let mut trailers_buf = [EMPTY_HEADER; 64];
-                        let parsed_trailers = match httparse::parse_headers(&trailer_bytes, &mut trailers_buf)
-                            .map_err(|err| PostGrpcWebErr::InvalidRequest(err.to_string()))?
-                        {
-                            Status::Complete((_, headers)) => Ok(headers),
-                            Status::Partial => Err(PostGrpcWebErr::InvalidRequest("Invalid".to_string())),
-                        }?;
+                    let mut trailer_bytes = this.buf.take(trailer_length);
+                    trailer_bytes.put_u8(b'\n');
 
-                        let mut trailers = HeaderMap::with_capacity(parsed_trailers.len());
-
-                        for parsed_trailer in parsed_trailers {
-                            let header_name = HeaderName::from_bytes(parsed_trailer.name.as_bytes())
-                                .map_err(|err| PostGrpcWebErr::InvalidRequest(err.to_string()))?;
-                            let header_value = HeaderValue::from_bytes(parsed_trailer.value)
-                                .map_err(|err| PostGrpcWebErr::InvalidRequest(err.to_string()))?;
-                            trailers.insert(header_name, header_value);
-                        }
-
-                        *this.trailer = Some(trailers);
-
-                        *this.state = ReadState::Done;
-                    }
+                    *this.trailer = Some(Self::parse_trailer(&trailer_bytes)?);
+                    *this.state = ReadState::Done;
                 },
                 ReadState::Done => return Ok(()),
             }
         }
+    }
+
+    fn parse_trailer(trailer_bytes: &[u8]) -> Result<HeaderMap, PostGrpcWebErr> {
+        let mut trailers_buf = [EMPTY_HEADER; 64];
+        let parsed_trailers = match httparse::parse_headers(trailer_bytes, &mut trailers_buf)
+            .map_err(|err| PostGrpcWebErr::InvalidRequest(err.to_string()))?
+        {
+            Status::Complete((_, headers)) => Ok(headers),
+            Status::Partial => Err(PostGrpcWebErr::InvalidRequest(
+                "parse header not completed!".to_string(),
+            )),
+        }?;
+
+        let mut trailers = HeaderMap::with_capacity(parsed_trailers.len());
+
+        for parsed_trailer in parsed_trailers {
+            let header_name = HeaderName::from_bytes(parsed_trailer.name.as_bytes())
+                .map_err(|err| PostGrpcWebErr::InvalidRequest(err.to_string()))?;
+            let header_value = HeaderValue::from_bytes(parsed_trailer.value)
+                .map_err(|err| PostGrpcWebErr::InvalidRequest(err.to_string()))?;
+            trailers.insert(header_name, header_value);
+        }
+
+        Ok(trailers)
     }
 }
 

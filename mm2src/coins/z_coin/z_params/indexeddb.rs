@@ -121,14 +121,6 @@ impl ZcashParamsWasmImpl {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
         let params_db = db_transaction.table::<ZcashParamsWasmTable>().await?;
-        let count = params_db.count_all().await?;
-        // if params count in store is not 11 we need to delete the store params, re-download and save fresh params
-        // to avoid bad bytes combinations.
-        if count != TARGET_SPEND_CHUNKS {
-            params_db.delete_items_by_index("ticker", CHAIN).await?;
-            return self.download_and_save_params().await;
-        };
-
         let mut maybe_params = params_db
             .cursor_builder()
             .only("ticker", CHAIN)?

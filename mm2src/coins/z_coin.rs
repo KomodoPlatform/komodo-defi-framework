@@ -1097,25 +1097,25 @@ impl<'a> ZCoinBuilder<'a> {
         let params_db = ZcashParamsWasmImpl::new(self.ctx.clone())
             .await
             .mm_err(|err| ZCoinBuildError::ZCashParamsError(err.to_string()))?;
-        return if !params_db
+        let (sapling_spend, sapling_output) = if !params_db
             .check_params()
             .await
             .mm_err(|err| ZCoinBuildError::ZCashParamsError(err.to_string()))?
         {
             // save params
-            let (sapling_spend, sapling_output) = params_db
+            params_db
                 .download_and_save_params()
                 .await
-                .mm_err(|err| ZCoinBuildError::ZCashParamsError(err.to_string()))?;
-            Ok(LocalTxProver::from_bytes(&sapling_spend[..], &sapling_output[..]))
+                .mm_err(|err| ZCoinBuildError::ZCashParamsError(err.to_string()))?
         } else {
             // get params
-            let (sapling_spend, sapling_output) = params_db
+            params_db
                 .get_params()
                 .await
-                .mm_err(|err| ZCoinBuildError::ZCashParamsError(err.to_string()))?;
-            Ok(LocalTxProver::from_bytes(&sapling_spend[..], &sapling_output[..]))
+                .mm_err(|err| ZCoinBuildError::ZCashParamsError(err.to_string()))?
         };
+
+        Ok(LocalTxProver::from_bytes(&sapling_spend[..], &sapling_output[..]))
     }
 }
 
