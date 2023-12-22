@@ -69,8 +69,8 @@ impl ZcashParamsWasmInner {
 pub(crate) struct ZcashParamsWasmImpl(SharedDb<ZcashParamsWasmInner>);
 
 impl ZcashParamsWasmImpl {
-    pub(crate) async fn new(ctx: MmArc) -> MmResult<Self, ZcoinStorageError> {
-        Ok(Self(ConstructibleDb::new(&ctx).into_shared()))
+    pub(crate) async fn new(ctx: &MmArc) -> MmResult<Self, ZcoinStorageError> {
+        Ok(Self(ConstructibleDb::new(ctx).into_shared()))
     }
 
     async fn lock_db(&self) -> ZcashParamsWasmRes<ZcashParamsInnerLocked<'_>> {

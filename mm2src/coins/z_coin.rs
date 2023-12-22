@@ -1068,7 +1068,7 @@ impl<'a> ZCoinBuilder<'a> {
         let ctx = self.ctx.clone();
         let ticker = self.ticker.to_string();
 
-        BlockDbImpl::new(ctx, ticker, cache_db_path)
+        BlockDbImpl::new(&ctx, ticker, cache_db_path)
             .map_err(|err| MmError::new(ZcoinClientInitError::ZcoinStorageError(err.to_string())))
             .await
     }
@@ -1094,7 +1094,7 @@ impl<'a> ZCoinBuilder<'a> {
 
     #[cfg(target_arch = "wasm32")]
     async fn z_tx_prover(&self) -> Result<LocalTxProver, MmError<ZCoinBuildError>> {
-        let params_db = ZcashParamsWasmImpl::new(self.ctx.clone())
+        let params_db = ZcashParamsWasmImpl::new(self.ctx)
             .await
             .mm_err(|err| ZCoinBuildError::ZCashParamsError(err.to_string()))?;
         let (sapling_spend, sapling_output) = if !params_db

@@ -1,6 +1,7 @@
 pub mod storage;
 pub mod tables;
 
+use crate::z_coin::z_params::ZcashParamsWasmImpl;
 use crate::z_coin::ZcoinStorageError;
 
 use ff::PrimeField;
@@ -20,11 +21,6 @@ struct SpendableNoteConstructor {
     value: BigInt,
     rcm: Vec<u8>,
     witness: Vec<u8>,
-}
-
-fn test_prover() -> LocalTxProver {
-    let (spend_buf, output_buf) = wagyu_zcash_parameters::load_sapling_parameters();
-    LocalTxProver::from_bytes(&spend_buf[..], &output_buf[..])
 }
 
 fn to_spendable_note(note: SpendableNoteConstructor) -> MmResult<SpendableNote, ZcoinStorageError> {
@@ -76,6 +72,7 @@ mod wasm_test {
     use crate::z_coin::storage::{BlockDbImpl, BlockProcessingMode, DataConnStmtCacheWasm, DataConnStmtCacheWrapper};
     use crate::z_coin::{ValidateBlocksError, ZcoinConsensusParams, ZcoinStorageError};
     use crate::ZcoinProtocolInfo;
+    use mm2_core::mm_ctx::MmArc;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
     use protobuf::Message;
     use std::path::PathBuf;
@@ -93,6 +90,12 @@ mod wasm_test {
     wasm_bindgen_test_configure!(run_in_browser);
 
     const TICKER: &str = "ARRR";
+
+    async fn test_prover(ctx: &MmArc) -> LocalTxProver {
+        let params_db = ZcashParamsWasmImpl::new(ctx).await.unwrap();
+        let (spend_buf, output_buf) = params_db.download_and_save_params().await.unwrap();
+        LocalTxProver::from_bytes(&spend_buf[..], &output_buf[..])
+    }
 
     fn consensus_params() -> ZcoinConsensusParams {
         let protocol_info = serde_json::from_value::<ZcoinProtocolInfo>(json!({
@@ -125,16 +128,14 @@ mod wasm_test {
         Network::TestNetwork.activation_height(NetworkUpgrade::Sapling).unwrap()
     }
 
-    async fn wallet_db_from_zcoin_builder_for_test(ticker: &str) -> WalletIndexedDb {
-        let ctx = mm_ctx_with_custom_db();
-        let consensus_params = consensus_params();
-
-        WalletIndexedDb::new(&ctx, ticker, consensus_params).await.unwrap()
+    async fn wallet_db_from_zcoin_builder_for_test(ctx: &MmArc, ticker: &str) -> WalletIndexedDb {
+        WalletIndexedDb::new(ctx, ticker, consensus_params()).await.unwrap()
     }
 
     #[wasm_bindgen_test]
     async fn test_empty_database_has_no_balance() {
-        let db = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let ctx = mm_ctx_with_custom_db();
+        let db = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
 
         // Add an account to the wallet
         let extsk = ExtendedSpendingKey::master(&[]);
@@ -154,7 +155,8 @@ mod wasm_test {
 
     #[wasm_bindgen_test]
     async fn test_init_accounts_table_only_works_once() {
-        let db = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let ctx = mm_ctx_with_custom_db();
+        let db = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
 
         // We can call the function as many times as we want with no data
         assert!(db.init_accounts_table(&[]).await.is_ok());
@@ -170,7 +172,8 @@ mod wasm_test {
 
     #[wasm_bindgen_test]
     async fn test_init_blocks_table_only_works_once() {
-        let db = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let ctx = mm_ctx_with_custom_db();
+        let db = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
 
         // First call with data should initialise the blocks table
         assert!(db
@@ -187,7 +190,8 @@ mod wasm_test {
 
     #[wasm_bindgen_test]
     async fn init_accounts_table_stores_correct_address() {
-        let db = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let ctx = mm_ctx_with_custom_db();
+        let db = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
 
         // Add an account to the wallet
         let extsk = ExtendedSpendingKey::master(&[]);
@@ -203,10 +207,12 @@ mod wasm_test {
     async fn test_valid_chain_state() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let blockdb = BlockDbImpl::new(ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
+            .await
+            .unwrap();
 
         // init walletdb.
-        let walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
 
         // Add an account to the wallet
         let extsk = ExtendedSpendingKey::master(&[]);
@@ -309,10 +315,12 @@ mod wasm_test {
     async fn invalid_chain_cache_disconnected() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let blockdb = BlockDbImpl::new(ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
+            .await
+            .unwrap();
 
         // init walletdb.
-        let walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
         let consensus_params = consensus_params();
 
         // Add an account to the wallet
@@ -396,10 +404,12 @@ mod wasm_test {
     async fn test_invalid_chain_reorg() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let blockdb = BlockDbImpl::new(ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
+            .await
+            .unwrap();
 
         // init walletdb.
-        let walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
         let consensus_params = consensus_params();
 
         // Add an account to the wallet
@@ -483,10 +493,12 @@ mod wasm_test {
     async fn test_data_db_rewinding() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let blockdb = BlockDbImpl::new(ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
+            .await
+            .unwrap();
 
         // init walletdb.
-        let walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
         let consensus_params = consensus_params();
 
         // Add an account to the wallet
@@ -547,10 +559,12 @@ mod wasm_test {
     async fn test_scan_cached_blocks_requires_sequential_blocks() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let blockdb = BlockDbImpl::new(ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
+            .await
+            .unwrap();
 
         // init walletdb.
-        let walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
         let consensus_params = consensus_params();
 
         // Add an account to the wallet
@@ -613,10 +627,12 @@ mod wasm_test {
     async fn test_scan_cached_blokcs_finds_received_notes() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let blockdb = BlockDbImpl::new(ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
+            .await
+            .unwrap();
 
         // init walletdb.
-        let walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
         let consensus_params = consensus_params();
 
         // Add an account to the wallet
@@ -664,10 +680,12 @@ mod wasm_test {
     async fn test_scan_cached_blocks_finds_change_notes() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let blockdb = BlockDbImpl::new(ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
+            .await
+            .unwrap();
 
         // init walletdb.
-        let walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
         let consensus_params = consensus_params();
 
         // Add an account to the wallet
@@ -728,10 +746,10 @@ mod wasm_test {
     //    async fn create_to_address_fails_on_unverified_notes() {
     //        // init blocks_db
     //        let ctx = mm_ctx_with_custom_db();
-    //        let blockdb = BlockDbImpl::new(ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+    //        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
     //
     //        // init walletdb.
-    //        let mut walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+    //        let mut walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
     //        let consensus_params = consensus_params();
     //
     //        // Add an account to the wallet
@@ -789,7 +807,7 @@ mod wasm_test {
     //        match create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(),
+    //            test_prover(&ctx).await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -824,7 +842,7 @@ mod wasm_test {
     //        match create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(),
+    //            test_prover(&ctx).await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -855,7 +873,7 @@ mod wasm_test {
     //        create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(),
+    //            test_prover(&ctx).await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -870,7 +888,8 @@ mod wasm_test {
     #[wasm_bindgen_test]
     async fn test_create_to_address_fails_on_incorrect_extsk() {
         // init walletdb.
-        let mut walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let ctx = mm_ctx_with_custom_db();
+        let mut walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
 
         // Add two accounts to the wallet
         let extsk0 = ExtendedSpendingKey::master(&[]);
@@ -885,7 +904,7 @@ mod wasm_test {
         match create_spend_to_address(
             &mut walletdb,
             &network(),
-            test_prover(),
+            test_prover(&ctx).await,
             AccountId(0),
             &extsk1,
             &to,
@@ -902,7 +921,7 @@ mod wasm_test {
         match create_spend_to_address(
             &mut walletdb,
             &network(),
-            test_prover(),
+            test_prover(&ctx).await,
             AccountId(1),
             &extsk0,
             &to,
@@ -920,7 +939,8 @@ mod wasm_test {
     #[wasm_bindgen_test]
     async fn test_create_to_address_fails_with_no_blocks() {
         // init walletdb.
-        let mut walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let ctx = mm_ctx_with_custom_db();
+        let mut walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
 
         // Add two accounts to the wallet
         let extsk = ExtendedSpendingKey::master(&[]);
@@ -931,7 +951,7 @@ mod wasm_test {
         match create_spend_to_address(
             &mut walletdb,
             &network(),
-            test_prover(),
+            test_prover(&ctx).await,
             AccountId(0),
             &extsk,
             &to,
@@ -949,7 +969,8 @@ mod wasm_test {
     #[wasm_bindgen_test]
     async fn test_create_to_address_fails_on_insufficient_balance() {
         // init walletdb.
-        let mut walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+        let ctx = mm_ctx_with_custom_db();
+        let mut walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
 
         assert!(walletdb
             .init_blocks_table(BlockHeight::from(1), BlockHash([1; 32]), 1, &[])
@@ -969,7 +990,7 @@ mod wasm_test {
         match create_spend_to_address(
             &mut walletdb,
             &network(),
-            test_prover(),
+            test_prover(&ctx).await,
             AccountId(0),
             &extsk,
             &to,
@@ -994,10 +1015,10 @@ mod wasm_test {
     //
     //        // init blocks_db
     //        let ctx = mm_ctx_with_custom_db();
-    //        let blockdb = BlockDbImpl::new(ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+    //        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
     //
     //        // init walletdb.
-    //        let mut walletdb = wallet_db_from_zcoin_builder_for_test(TICKER).await;
+    //        let mut walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
     //        let consensus_params = consensus_params();
     //
     //        // Add an account to the wallet
@@ -1025,7 +1046,7 @@ mod wasm_test {
     //        create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(),
+    //            test_prover(&ctx).await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -1040,7 +1061,7 @@ mod wasm_test {
     //        match create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(),
+    //            test_prover(&ctx).await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -1079,7 +1100,7 @@ mod wasm_test {
     //        match create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(),
+    //            test_prover(&ctx).await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -1115,7 +1136,7 @@ mod wasm_test {
     //        create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(),
+    //            test_prover(&ctx).await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
