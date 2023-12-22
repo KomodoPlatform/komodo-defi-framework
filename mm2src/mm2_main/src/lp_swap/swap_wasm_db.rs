@@ -108,7 +108,7 @@ pub mod tables {
                         )?;
                     },
                     1 => {
-                        let table = upgrader.open_table(Self::table_name())?;
+                        let table = upgrader.open_table(Self::TABLE_NAME)?;
                         table.create_multi_index(IS_FINISHED_SWAP_TYPE_INDEX, &["is_finished", "swap_type"], false)?;
                     },
                     unsupported_version => {
@@ -162,7 +162,7 @@ pub mod tables {
     }
 
     impl TableSignature for SwapsMigrationTable {
-        fn table_name() -> &'static str { "swaps_migration" }
+        const TABLE_NAME: &'static str = "swaps_migration";
 
         fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
             while old_version < new_version {
@@ -172,7 +172,7 @@ pub mod tables {
                         // from version 1 to 2 in order to avoid breaking existing databases
                     },
                     1 => {
-                        let table = upgrader.create_table(Self::table_name())?;
+                        let table = upgrader.create_table(Self::TABLE_NAME)?;
                         table.create_index("migration", true)?;
                     },
                     unsupported_version => {
