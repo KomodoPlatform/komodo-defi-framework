@@ -41,7 +41,7 @@ use web3::types::TransactionId;
 use mm2_net::native_http::send_request_to_uri;
 
 #[cfg(target_arch = "wasm32")]
-use mm2_net::wasm_http::send_request_to_uri;
+use mm2_net::wasm::http::send_request_to_uri;
 
 const MORALIS_API_ENDPOINT: &str = "api/v2";
 /// query parameters for moralis request: The format of the token ID

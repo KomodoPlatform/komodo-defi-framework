@@ -27,7 +27,7 @@ use mm2_net::native_http::send_request_to_uri;
 common::cfg_wasm32! {
     use wasm_bindgen_test::*;
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
-    use mm2_net::wasm_http::send_request_to_uri;
+    use mm2_net::wasm::http::send_request_to_uri;
 }
 
 cross_test!(test_moralis_ipfs_bafy, {

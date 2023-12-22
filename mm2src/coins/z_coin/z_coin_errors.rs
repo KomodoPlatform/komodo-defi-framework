@@ -28,7 +28,6 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 #[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {
-    #[cfg(not(target_arch = "wasm32"))]
     GrpcError(tonic::Status),
     UtxoRpcError(UtxoRpcError),
     InternalError(String),
@@ -38,7 +37,10 @@ pub enum UpdateBlocksCacheErr {
     DecodeError(String),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+impl From<ZcoinStorageError> for UpdateBlocksCacheErr {
+    fn from(err: ZcoinStorageError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
+}
+
 impl From<tonic::Status> for UpdateBlocksCacheErr {
     fn from(err: tonic::Status) -> Self { UpdateBlocksCacheErr::GrpcError(err) }
 }
@@ -51,10 +53,6 @@ impl From<SqliteError> for UpdateBlocksCacheErr {
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteClientError> for UpdateBlocksCacheErr {
     fn from(err: SqliteClientError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
-}
-
-impl From<ZcoinStorageError> for UpdateBlocksCacheErr {
-    fn from(err: ZcoinStorageError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
 }
 
 impl From<UtxoRpcError> for UpdateBlocksCacheErr {
@@ -72,7 +70,7 @@ impl From<JsonRpcError> for UpdateBlocksCacheErr {
 #[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum ZcoinClientInitError {
-    ZcashDBError(String),
+    ZcoinStorageError(String),
     EmptyLightwalletdUris,
     #[display(fmt = "Fail to init clients while iterating lightwalletd urls {:?}", _0)]
     UrlIterFailure(Vec<UrlIterError>),
@@ -81,7 +79,7 @@ pub enum ZcoinClientInitError {
 }
 
 impl From<ZcoinStorageError> for ZcoinClientInitError {
-    fn from(err: ZcoinStorageError) -> Self { ZcoinClientInitError::ZcashDBError(err.to_string()) }
+    fn from(err: ZcoinStorageError) -> Self { ZcoinClientInitError::ZcoinStorageError(err.to_string()) }
 }
 
 impl From<UpdateBlocksCacheErr> for ZcoinClientInitError {
@@ -90,7 +88,7 @@ impl From<UpdateBlocksCacheErr> for ZcoinClientInitError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteClientError> for ZcoinClientInitError {
-    fn from(err: SqliteClientError) -> Self { ZcoinClientInitError::ZcashDBError(err.to_string()) }
+    fn from(err: SqliteClientError) -> Self { ZcoinClientInitError::ZcoinStorageError(err.to_string()) }
 }
 
 #[derive(Debug, Display)]
@@ -131,6 +129,8 @@ pub enum GenTxError {
     LightClientErr(String),
     FailedToCreateNote,
     SpendableNotesError(String),
+    #[cfg(target_arch = "wasm32")]
+    Internal(String),
 }
 
 impl From<GetUnspentWitnessErr> for GenTxError {
@@ -178,6 +178,8 @@ impl From<GenTxError> for WithdrawError {
             | GenTxError::LightClientErr(_)
             | GenTxError::SpendableNotesError(_)
             | GenTxError::FailedToCreateNote => WithdrawError::InternalError(gen_tx.to_string()),
+            #[cfg(target_arch = "wasm32")]
+            GenTxError::Internal(_) => WithdrawError::InternalError(gen_tx.to_string()),
         }
     }
 }
@@ -243,6 +245,7 @@ pub enum ZCoinBuildError {
     Io(std::io::Error),
     RpcClientInitErr(ZcoinClientInitError),
     ZCashParamsNotFound,
+    ZCashParamsError(String),
     ZDerivationPathNotSet,
     SaplingParamsInvalidChecksum,
 }
@@ -305,8 +308,13 @@ pub enum SpendableNotesError {
 }
 
 #[derive(Debug, Display)]
-pub enum ZCoinBalanceError {}
+pub enum ZCoinBalanceError {
+    BalanceError(String),
+}
 
+impl From<ZcoinStorageError> for ZCoinBalanceError {
+    fn from(value: ZcoinStorageError) -> Self { ZCoinBalanceError::BalanceError(value.to_string()) }
+}
 /// The `ValidateBlocksError` enum encapsulates different types of errors that may occur
 /// during the validation and scanning process of zcoin blocks.
 #[derive(Debug, Display)]
@@ -413,6 +421,12 @@ pub enum ZcoinStorageError {
     ChainError(String),
     InternalError(String),
     NotSupported(String),
+    #[cfg(target_arch = "wasm32")]
+    ZcashParamsError(String),
+}
+
+impl From<UpdateBlocksCacheErr> for ZcoinStorageError {
+    fn from(err: UpdateBlocksCacheErr) -> Self { ZcoinStorageError::DbError(err.to_string()) }
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -191,6 +191,8 @@ pub const X_API_KEY: &str = "X-API-Key";
 pub const APPLICATION_JSON: &str = "application/json";
 pub const APPLICATION_GRPC_WEB: &str = "application/grpc-web";
 pub const APPLICATION_GRPC_WEB_PROTO: &str = "application/grpc-web+proto";
+pub const APPLICATION_GRPC_WEB_TEXT: &str = "application/grpc-web-text";
+pub const APPLICATION_GRPC_WEB_TEXT_PROTO: &str = "application/grpc-web-text+proto";
 
 pub const SATOSHIS: u64 = 100_000_000;
 

@@ -23,8 +23,7 @@ pub enum HwRpcTaskAwaitingStatus {
     EnterTrezorPassphrase,
 }
 
-/// When it comes to interacting with a HW device,
-/// this is a common user action in answer to awaiting RPC task status.
+/// When it comes to interacting with a HW device, this is a common user action in answer to awaiting RPC task status.
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "action_type")]
 pub enum HwRpcTaskUserAction {

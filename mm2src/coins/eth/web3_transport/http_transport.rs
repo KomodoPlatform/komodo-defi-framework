@@ -326,7 +326,7 @@ async fn send_request_once(
     event_handlers: &Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
     use http::header::ACCEPT;
-    use mm2_net::wasm_http::FetchRequest;
+    use mm2_net::wasm::http::FetchRequest;
 
     // account for outgoing traffic
     event_handlers.on_outgoing_request(request_payload.as_bytes());

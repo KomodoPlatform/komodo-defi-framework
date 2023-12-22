@@ -26,20 +26,20 @@ pub async fn create_wallet_db(
 ) -> Result<WalletDbAsync<ZcoinConsensusParams>, MmError<ZcoinClientInitError>> {
     let db = async_blocking(move || {
         WalletDbAsync::for_path(wallet_db_path, consensus_params)
-            .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))
+            .map_to_mm(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string()))
     })
     .await?;
     let db_inner = db.inner();
     async_blocking(move || {
         let db_inner = db_inner.lock().unwrap();
         run_optimization_pragmas(db_inner.sql_conn())
-            .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))
+            .map_to_mm(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string()))
     })
     .await?;
 
     init_wallet_db(&db)
         .await
-        .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
+        .map_to_mm(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string()))?;
 
     let get_evk = db.get_extended_full_viewing_keys().await?;
     let extrema = db.block_height_extrema().await?;
@@ -57,7 +57,7 @@ pub async fn create_wallet_db(
         wallet_ops
             .rewind_to_height(u32::MIN.into())
             .await
-            .map_to_mm(|err| ZcoinClientInitError::ZcashDBError(err.to_string()))?;
+            .map_to_mm(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string()))?;
         if let Some(block) = checkpoint_block.clone() {
             init_blocks_table(
                 &db,

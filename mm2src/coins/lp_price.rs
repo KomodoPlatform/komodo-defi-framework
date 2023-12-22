@@ -200,7 +200,7 @@ async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, M
 #[cfg(target_arch = "wasm32")]
 async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
     debug!("Fetching price from: {}", price_url);
-    let (status, headers, body) = mm2_net::wasm_http::slurp_url(price_url).await?;
+    let (status, headers, body) = mm2_net::wasm::http::slurp_url(price_url).await?;
     let (status_code, body, _) = (status, std::str::from_utf8(&body)?.trim().into(), headers);
     if status_code != StatusCode::OK {
         return MmError::err(PriceServiceRequestError::HttpProcessError(body));

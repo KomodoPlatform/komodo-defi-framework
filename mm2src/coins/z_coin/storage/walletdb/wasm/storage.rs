@@ -52,7 +52,7 @@ macro_rules! num_to_bigint {
 
 impl<'a> WalletDbShared {
     pub async fn new(
-        builder: ZCoinBuilder<'a>,
+        builder: &ZCoinBuilder<'a>,
         checkpoint_block: Option<CheckPointBlockInfo>,
         z_spending_key: &ExtendedSpendingKey,
         continue_from_prev_sync: bool,
@@ -168,6 +168,10 @@ impl<'a> WalletIndexedDb {
         } else {
             Ok(false)
         }
+    }
+
+    pub fn get_update_ops(&self) -> MmResult<DataConnStmtCacheWasm, ZcoinStorageError> {
+        Ok(DataConnStmtCacheWasm(self.clone()))
     }
 
     pub(crate) async fn init_accounts_table(&self, extfvks: &[ExtendedFullViewingKey]) -> ZcoinStorageRes<()> {

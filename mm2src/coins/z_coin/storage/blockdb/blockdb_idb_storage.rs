@@ -4,9 +4,8 @@ use crate::z_coin::z_coin_errors::ZcoinStorageError;
 
 use async_trait::async_trait;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{BeBigUint, DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
-                         MultiIndex, OnUpgradeResult, TableSignature};
-use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
+use mm2_db::indexed_db::{BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb,
+                         IndexedDbBuilder, InitDbResult, MultiIndex, OnUpgradeResult, TableSignature};
 use mm2_err_handle::prelude::*;
 use protobuf::Message;
 use std::path::PathBuf;
@@ -28,7 +27,7 @@ pub struct BlockDbTable {
 }
 
 impl BlockDbTable {
-    pub const TICKER_HEIGHT_INDEX: &str = "block_height_ticker_index";
+    pub const TICKER_HEIGHT_INDEX: &str = "ticker_height_index";
 }
 
 impl TableSignature for BlockDbTable {
@@ -97,13 +96,7 @@ impl BlockDbImpl {
             .next()
             .await?;
 
-        let maybe_height = maybe_height.map(|(_, item)| item.height);
-
-        let Some(height) = maybe_height else {
-            return MmError::err(ZcoinStorageError::GetFromStorageError(format!("{ticker} block height not found")));
-        };
-
-        Ok(height)
+        Ok(maybe_height.map(|(_, item)| item.height).unwrap_or_else(|| 0))
     }
 
     /// Insert new block to BlockDbTable given the provided data.
@@ -176,17 +169,18 @@ impl BlockDbImpl {
         let block_db = db_transaction.table::<BlockDbTable>().await?;
 
         // Fetch CompactBlocks block_db are needed for scanning.
+        let min = u32::from(from_height + 1);
         let mut maybe_blocks = block_db
             .cursor_builder()
             .only("ticker", &self.ticker)?
-            .bound("height", u32::from(from_height + 1), limit.unwrap_or(u32::MAX))
+            .bound("height", min, u32::MAX)
             .open_cursor(BlockDbTable::TICKER_HEIGHT_INDEX)
             .await?;
 
         let mut blocks_to_scan = vec![];
         while let Some((_, block)) = maybe_blocks.next().await? {
             if let Some(limit) = limit {
-                if block.height > limit {
+                if blocks_to_scan.len() > limit as usize {
                     break;
                 }
             };
@@ -204,7 +198,6 @@ impl BlockDbImpl {
     ///
     /// Processes blocks based on the provided `BlockProcessingMode` and other parameters,
     /// which may include a starting block height, validation criteria, and a processing limit.
-    #[allow(unused)]
     pub(crate) async fn process_blocks_with_mode(
         &self,
         params: ZcoinConsensusParams,
@@ -221,23 +214,11 @@ impl BlockDbImpl {
                     .unwrap_or(BlockHeight::from_u32(params.sapling_activation_height) - 1)
             })?,
         };
-
-        let blocks = self.query_blocks_by_limit(from_height, limit).await?;
-
         let mut prev_height = from_height;
         let mut prev_hash: Option<BlockHash> = validate_from.map(|(_, hash)| hash);
 
-        for block in blocks {
-            if let Some(limit) = limit {
-                if u32::from(block.height) > limit {
-                    break;
-                }
-            }
-
-            if block.height < from_height {
-                continue;
-            }
-
+        let blocks_to_scan = self.query_blocks_by_limit(from_height, limit).await?;
+        for block in blocks_to_scan {
             let cbr = block;
             let block = CompactBlock::parse_from_bytes(&cbr.data)
                 .map_to_mm(|err| ZcoinStorageError::DecodingError(err.to_string()))?;

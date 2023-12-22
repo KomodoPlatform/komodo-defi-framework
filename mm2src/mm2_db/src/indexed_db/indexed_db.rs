@@ -316,7 +316,6 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/add
     pub async fn add_item(&self, item: &Table) -> DbTransactionResult<ItemId> {
         let item = json::to_value(item).map_to_mm(|e| DbTransactionError::ErrorSerializingItem(e.to_string()))?;
-
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::AddItem { item, result_tx };
         send_event_recv_response(&self.event_tx, event, result_rx).await
@@ -496,7 +495,7 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
         send_event_recv_response(&self.event_tx, event, result_rx).await
     }
 
-    /// Adds the given `item` of replace the previous one.
+    /// Adds the given `item` or replace the previous one.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/put
     pub async fn replace_item(&self, item_id: ItemId, item: &Table) -> DbTransactionResult<ItemId> {
         let item = json::to_value(item).map_to_mm(|e| DbTransactionError::ErrorSerializingItem(e.to_string()))?;

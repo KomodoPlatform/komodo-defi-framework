@@ -10,7 +10,7 @@ use serde_json::{Error, Value as Json};
 pub use crate::native_http::{slurp_post_json, slurp_req, slurp_req_body, slurp_url, slurp_url_with_headers};
 
 #[cfg(target_arch = "wasm32")]
-pub use crate::wasm_http::{slurp_post_json, slurp_url, slurp_url_with_headers};
+pub use crate::wasm::http::{slurp_post_json, slurp_url, slurp_url_with_headers};
 
 pub type SlurpResult = Result<(StatusCode, HeaderMap, Vec<u8>), MmError<SlurpError>>;
 
