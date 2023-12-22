@@ -1240,8 +1240,8 @@ pub struct SendTakerFundingArgs<'a> {
     pub taker_secret_hash: &'a [u8],
     /// Maker's pubkey
     pub maker_pub: &'a [u8],
-    /// DEX fee amount
-    pub dex_fee_amount: BigDecimal,
+    /// DEX fee
+    pub dex_fee: &'a DexFee,
     /// Additional reward for maker (premium)
     pub premium_amount: BigDecimal,
     /// Actual volume of taker's payment
@@ -1291,7 +1291,7 @@ pub struct ValidateTakerFundingArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     /// Taker's pubkey
     pub other_pub: &'a Coin::Pubkey,
     /// DEX fee amount
-    pub dex_fee_amount: BigDecimal,
+    pub dex_fee: &'a DexFee,
     /// Additional reward for maker (premium)
     pub premium_amount: BigDecimal,
     /// Actual volume of taker's payment
@@ -1316,8 +1316,8 @@ pub struct GenTakerPaymentSpendArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub taker_pub: &'a Coin::Pubkey,
     /// Pubkey of address, receiving DEX fees
     pub dex_fee_pub: &'a [u8],
-    /// DEX fee amount
-    pub dex_fee_amount: BigDecimal,
+    /// DEX fee
+    pub dex_fee: &'a DexFee,
     /// Additional reward for maker (premium)
     pub premium_amount: BigDecimal,
     /// Actual volume of taker's payment

@@ -109,7 +109,12 @@ async fn migration_10(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
     set_is_finished_for_legacy_swaps_statements(ctx).await
 }
 
-fn migration_11() -> Vec<(&'static str, Vec<String>)> { vec![(my_swaps::ADD_OTHER_P2P_PUBKEY_FIELD, vec![])] }
+fn migration_11() -> Vec<(&'static str, Vec<String>)> {
+    vec![
+        (my_swaps::ADD_OTHER_P2P_PUBKEY_FIELD, vec![]),
+        (my_swaps::ADD_DEX_FEE_BURN_FIELD, vec![]),
+    ]
+}
 
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {

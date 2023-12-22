@@ -1,7 +1,7 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
-use coins::{ConfirmPaymentInput, FundingTxSpend, GenTakerFundingSpendArgs, MakerCoinSwapOpsV2, MarketCoinOps,
+use coins::{ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, MakerCoinSwapOpsV2, MarketCoinOps,
             RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs, SendMakerPaymentArgs,
             SendTakerFundingArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction, ValidateMakerPaymentArgs,
             ValidateTakerFundingArgs};
@@ -25,12 +25,13 @@ fn send_and_refund_taker_funding_timelock() {
     let time_lock = now_sec() - 1000;
     let taker_secret_hash = &[0; 20];
     let maker_pub = coin.my_public_key().unwrap();
+    let dex_fee = &DexFee::Standard("0.01".into());
 
     let send_args = SendTakerFundingArgs {
         time_lock,
         taker_secret_hash,
         maker_pub,
-        dex_fee_amount: "0.01".parse().unwrap(),
+        dex_fee,
         premium_amount: "0.1".parse().unwrap(),
         trading_amount: 1.into(),
         swap_unique_data: &[],
@@ -55,7 +56,7 @@ fn send_and_refund_taker_funding_timelock() {
         time_lock,
         taker_secret_hash,
         other_pub: maker_pub,
-        dex_fee_amount: "0.01".parse().unwrap(),
+        dex_fee,
         premium_amount: "0.1".parse().unwrap(),
         trading_amount: 1.into(),
         swap_unique_data: &[],
@@ -104,12 +105,13 @@ fn send_and_refund_taker_funding_secret() {
     let taker_secret_hash_owned = dhash160(&taker_secret);
     let taker_secret_hash = taker_secret_hash_owned.as_slice();
     let maker_pub = coin.my_public_key().unwrap();
+    let dex_fee = &DexFee::Standard("0.01".into());
 
     let send_args = SendTakerFundingArgs {
         time_lock,
         taker_secret_hash,
         maker_pub,
-        dex_fee_amount: "0.01".parse().unwrap(),
+        dex_fee,
         premium_amount: "0.1".parse().unwrap(),
         trading_amount: 1.into(),
         swap_unique_data: &[],
@@ -134,7 +136,7 @@ fn send_and_refund_taker_funding_secret() {
         time_lock,
         taker_secret_hash,
         other_pub: maker_pub,
-        dex_fee_amount: "0.01".parse().unwrap(),
+        dex_fee,
         premium_amount: "0.1".parse().unwrap(),
         trading_amount: 1.into(),
         swap_unique_data: &[],
@@ -187,11 +189,13 @@ fn send_and_spend_taker_funding() {
     let taker_pub = taker_coin.my_public_key().unwrap();
     let maker_pub = maker_coin.my_public_key().unwrap();
 
+    let dex_fee = &DexFee::Standard("0.01".into());
+
     let send_args = SendTakerFundingArgs {
         time_lock: funding_time_lock,
         taker_secret_hash,
         maker_pub,
-        dex_fee_amount: "0.01".parse().unwrap(),
+        dex_fee,
         premium_amount: "0.1".parse().unwrap(),
         trading_amount: 1.into(),
         swap_unique_data: &[],
@@ -216,7 +220,7 @@ fn send_and_spend_taker_funding() {
         time_lock: funding_time_lock,
         taker_secret_hash,
         other_pub: taker_pub,
-        dex_fee_amount: "0.01".parse().unwrap(),
+        dex_fee,
         premium_amount: "0.1".parse().unwrap(),
         trading_amount: 1.into(),
         swap_unique_data: &[],

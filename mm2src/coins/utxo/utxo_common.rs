@@ -1563,8 +1563,6 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     args: &GenTakerPaymentSpendArgs<'_, T>,
     n_time: NTimeSetting,
 ) -> GenPreimageResInner {
-    let dex_fee_sat = sat_from_big_decimal(&args.dex_fee_amount, coin.as_ref().decimals)?;
-
     let dex_fee_address = address_from_raw_pubkey(
         args.dex_fee_pub,
         coin.as_ref().conf.pub_addr_prefix,
@@ -1574,10 +1572,8 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
         coin.addr_format().clone(),
     )
     .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive dex_fee_address: {}", e)))?;
-    let dex_fee_output = TransactionOutput {
-        value: dex_fee_sat,
-        script_pubkey: Builder::build_p2pkh(&dex_fee_address.hash).to_bytes(),
-    };
+
+    let outputs = generate_taker_fee_tx_outputs(coin.as_ref().decimals, &dex_fee_address.hash, args.dex_fee)?;
 
     p2sh_spending_tx_preimage(
         coin,
@@ -1585,7 +1581,7 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
         LocktimeSetting::UseExact(0),
         n_time,
         SEQUENCE_FINAL,
-        vec![dex_fee_output],
+        outputs,
     )
     .await
     .map_to_mm(TxGenError::Legacy)
@@ -1605,6 +1601,10 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
 
     let redeem_script =
         swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, args.taker_pub, args.maker_pub);
+
+    // Use SIGHASH_ALL if coin has static fee?
+    let sighash =
+
     let signature = calc_and_sign_sighash(
         &preimage,
         DEFAULT_SWAP_VOUT,
@@ -1760,7 +1760,7 @@ where
     let outputs = try_tx_fus!(generate_taker_fee_tx_outputs(
         coin.as_ref().decimals,
         &address.hash,
-        dex_fee,
+        &dex_fee,
     ));
 
     send_outputs_from_my_address(coin, outputs)
@@ -1769,7 +1769,7 @@ where
 fn generate_taker_fee_tx_outputs(
     decimals: u8,
     address_hash: &AddressHashEnum,
-    dex_fee: DexFee,
+    dex_fee: &DexFee,
 ) -> Result<Vec<TransactionOutput>, MmError<NumConversError>> {
     let fee_amount = dex_fee.fee_uamount(decimals)?;
 
@@ -4332,7 +4332,7 @@ where
 {
     let decimals = coin.as_ref().decimals;
 
-    let outputs = generate_taker_fee_tx_outputs(decimals, &AddressHashEnum::default_address_hash(), dex_fee)?;
+    let outputs = generate_taker_fee_tx_outputs(decimals, &AddressHashEnum::default_address_hash(), &dex_fee)?;
 
     let gas_fee = None;
     let fee_amount = coin
@@ -5152,7 +5152,7 @@ where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
     let taker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
-    let total_amount = &args.dex_fee_amount + &args.premium_amount + &args.trading_amount;
+    let total_amount = &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
 
     let SwapPaymentOutputsResult {
         payment_address,
@@ -5244,7 +5244,8 @@ where
     T: UtxoCommonOps + SwapOps,
 {
     let maker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
-    let total_expected_amount = &args.dex_fee_amount + &args.premium_amount + &args.trading_amount;
+    let total_expected_amount =
+        &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
 
     let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals)?;
 
@@ -5374,8 +5375,8 @@ pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
     let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let script_data = Builder::default()
         .push_data(args.maker_secret)
-        .push_opcode(Opcode::OP_0)
         .push_opcode(Opcode::OP_1)
+        .push_opcode(Opcode::OP_0)
         .into_script();
     let time_lock = try_tx_s!(args.time_lock.try_into());
 
