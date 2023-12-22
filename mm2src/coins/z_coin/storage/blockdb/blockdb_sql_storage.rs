@@ -67,7 +67,8 @@ impl BlockDbImpl {
     }
 
     #[cfg(all(test))]
-    pub(crate) async fn new(ctx: MmArc, ticker: String, _path: PathBuf) -> ZcoinStorageRes<Self> {
+    pub(crate) async fn new(ctx: &MmArc, ticker: String, _path: PathBuf) -> ZcoinStorageRes<Self> {
+        let ctx = ctx.clone();
         async_blocking(move || {
             let conn = ctx
                 .sqlite_connection
