@@ -4,6 +4,8 @@ use async_trait::async_trait;
 use rand::RngCore;
 
 mod protocol;
+#[cfg(all(feature = "trezor-udp", not(target_arch = "wasm32"), not(target_os = "ios")))]
+pub mod udp;
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 pub mod usb;
 #[cfg(target_arch = "wasm32")] pub mod webusb;
@@ -65,4 +67,16 @@ impl SessionId {
 
 impl AsRef<[u8]> for SessionId {
     fn as_ref(&self) -> &[u8] { &self.0 }
+}
+
+/// Wrapper to abstract connectivity to usb and emulator devices
+#[async_trait]
+pub trait ConnectableDeviceWrapper {
+    type TransportType: Transport + Sync + Send;
+
+    async fn find_devices() -> TrezorResult<Vec<Self>>
+    where
+        Self: Sized;
+
+    async fn connect(&self) -> TrezorResult<Self::TransportType>;
 }

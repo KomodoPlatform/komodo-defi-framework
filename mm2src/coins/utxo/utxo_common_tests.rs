@@ -138,6 +138,8 @@ pub(super) fn utxo_coin_fields_for_test(
         block_headers_status_notifier: None,
         block_headers_status_watcher: None,
         abortable_system: AbortableQueue::default(),
+        scripthash_notification_handler: None,
+        ctx: Default::default(),
     }
 }
 

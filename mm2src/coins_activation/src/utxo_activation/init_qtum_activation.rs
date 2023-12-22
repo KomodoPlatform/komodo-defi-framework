@@ -1,6 +1,6 @@
 use crate::context::CoinsActivationContext;
 use crate::prelude::TryFromCoinProtocol;
-use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandle,
+use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandleShared,
                              InitStandaloneCoinTaskManagerShared};
 use crate::utxo_activation::common_impl::{get_activation_result, priv_key_build_policy,
                                           start_history_background_fetching};
@@ -22,7 +22,7 @@ use serde_json::Value as Json;
 use std::collections::HashMap;
 
 pub type QtumTaskManagerShared = InitStandaloneCoinTaskManagerShared<QtumCoin>;
-pub type QtumRpcTaskHandle = InitStandaloneCoinTaskHandle<QtumCoin>;
+pub type QtumRpcTaskHandleShared = InitStandaloneCoinTaskHandleShared<QtumCoin>;
 
 #[derive(Clone)]
 pub struct QtumProtocolInfo;
@@ -59,7 +59,7 @@ impl InitStandaloneCoinActivationOps for QtumCoin {
         coin_conf: Json,
         activation_request: &Self::ActivationRequest,
         _protocol_info: Self::StandaloneProtocol,
-        _task_handle: &QtumRpcTaskHandle,
+        _task_handle: QtumRpcTaskHandleShared,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let priv_key_policy = priv_key_build_policy(&ctx, activation_request.priv_key_policy)?;
 
@@ -73,7 +73,7 @@ impl InitStandaloneCoinActivationOps for QtumCoin {
     async fn get_activation_result(
         &self,
         ctx: MmArc,
-        task_handle: &QtumRpcTaskHandle,
+        task_handle: QtumRpcTaskHandleShared,
         activation_request: &Self::ActivationRequest,
     ) -> MmResult<Self::ActivationResult, InitUtxoStandardError> {
         get_activation_result(&ctx, self, task_handle, activation_request).await

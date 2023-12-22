@@ -1393,13 +1393,13 @@ pub trait ToBytes {
 /// Defines associated types specific to each coin (Pubkey, Address, etc.)
 pub trait CoinAssocTypes {
     type Pubkey: ToBytes + Send + Sync;
-    type PubkeyParseError: Send + std::fmt::Display;
+    type PubkeyParseError: fmt::Debug + Send + fmt::Display;
     type Tx: Transaction + Send + Sync;
-    type TxParseError: Send + std::fmt::Display;
+    type TxParseError: fmt::Debug + Send + fmt::Display;
     type Preimage: ToBytes + Send + Sync;
-    type PreimageParseError: Send + std::fmt::Display;
+    type PreimageParseError: fmt::Debug + Send + fmt::Display;
     type Sig: ToBytes + Send + Sync;
-    type SigParseError: Send + std::fmt::Display;
+    type SigParseError: fmt::Debug + Send + fmt::Display;
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError>;
 

@@ -1,7 +1,8 @@
 use crate::proto::ProtoMessage;
 use crate::transport::protocol::{Link, Protocol, ProtocolV1};
-use crate::transport::{Transport, TREZOR_DEVICES};
+use crate::transport::{ConnectableDeviceWrapper, Transport, TREZOR_DEVICES};
 use crate::TrezorResult;
+
 use async_trait::async_trait;
 use hw_common::transport::libusb::{GetDevicesFilters, UsbAvailableDevice as UsbAvailableDeviceImpl, UsbContext,
                                    UsbDevice};
@@ -52,7 +53,7 @@ impl Link for UsbLink {
     }
 }
 
-pub fn find_devices() -> TrezorResult<Vec<UsbAvailableDevice>> {
+async fn find_devices() -> TrezorResult<Vec<UsbAvailableDevice>> {
     let context = UsbContext::new()?;
     let filters = GetDevicesFilters {
         config_id: CONFIG_ID,
@@ -72,7 +73,7 @@ pub struct UsbAvailableDevice(UsbAvailableDeviceImpl);
 
 impl UsbAvailableDevice {
     /// Please note [`hw_common::transport::libusb::UsbAvailableDevice::connect`] spawns a thread.
-    pub fn connect(self) -> TrezorResult<UsbTransport> {
+    async fn connect(&self) -> TrezorResult<UsbTransport> {
         let link = UsbLink {
             device: self.0.connect()?,
         };
@@ -90,4 +91,18 @@ fn is_trezor(device: &UsbAvailableDeviceImpl) -> bool {
     TREZOR_DEVICES
         .iter()
         .any(|expected| vendor_id == expected.vendor_id && product_id == expected.product_id)
+}
+
+#[async_trait]
+impl ConnectableDeviceWrapper for UsbAvailableDevice {
+    type TransportType = UsbTransport;
+
+    async fn find_devices() -> TrezorResult<Vec<Self>>
+    where
+        Self: Sized,
+    {
+        find_devices().await
+    }
+
+    async fn connect(&self) -> TrezorResult<Self::TransportType> { UsbAvailableDevice::connect(self).await }
 }

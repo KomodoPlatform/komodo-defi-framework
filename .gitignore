@@ -39,6 +39,8 @@ scripts/mm2/seed/unparsed.txt
 /MM_VERSION
 /MM_VERSION.tmp
 /target
+/targettest
+/clippytarget
 
 # Subcrate artefacts
 /mm2src/*/target
@@ -49,6 +51,7 @@ scripts/mm2/seed/unparsed.txt
 /.vscode/settings.json
 /.vscode/tasks.json
 /.vscode/c_cpp_properties.json
+/.vscode/launch.json
 
 # IDE artefacts
 /.vscode/ipch

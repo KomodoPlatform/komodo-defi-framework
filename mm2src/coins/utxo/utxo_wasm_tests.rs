@@ -41,7 +41,10 @@ pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
 
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
     let abortable_system = AbortableQueue::default();
-    builder.electrum_client(abortable_system, args, servers).await.unwrap()
+    builder
+        .electrum_client(abortable_system, args, servers, None)
+        .await
+        .unwrap()
 }
 
 #[wasm_bindgen_test]

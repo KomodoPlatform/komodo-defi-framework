@@ -1061,3 +1061,9 @@ pub struct DisableCoinOrders {
     matching: Vec<Uuid>,
     cancelled: Vec<Uuid>,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct CoinsNeededForKickstartResponse {
+    pub result: Vec<String>,
+}

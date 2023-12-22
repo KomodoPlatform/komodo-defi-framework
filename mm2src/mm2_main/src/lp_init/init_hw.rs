@@ -12,7 +12,9 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+               RpcTaskTypes};
+use std::sync::Arc;
 use std::time::Duration;
 
 const TREZOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -23,7 +25,7 @@ pub type InitHwUserAction = HwRpcTaskUserAction;
 
 pub type InitHwTaskManagerShared = RpcTaskManagerShared<InitHwTask>;
 pub type InitHwStatus = RpcTaskStatus<InitHwResponse, InitHwError, InitHwInProgressStatus, InitHwAwaitingStatus>;
-type InitHwTaskHandle = RpcTaskHandle<InitHwTask>;
+type InitHwTaskHandleShared = RpcTaskHandleShared<InitHwTask>;
 
 #[derive(Clone, Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -58,6 +60,7 @@ impl From<HwCtxInitError<RpcTaskError>> for InitHwError {
             HwCtxInitError::UnexpectedPubkey { .. } => InitHwError::HwError(HwRpcError::FoundUnexpectedDevice),
             HwCtxInitError::HwError(hw_error) => InitHwError::from(hw_error),
             HwCtxInitError::ProcessorError(rpc) => InitHwError::from(rpc),
+            HwCtxInitError::InternalError(err) => InitHwError::Internal(err),
         }
     }
 }
@@ -95,18 +98,19 @@ pub enum InitHwInProgressStatus {
     FollowHwDeviceInstructions,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct InitHwRequest {
     device_pubkey: Option<HwPubkey>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Debug, Deserialize)]
 pub struct InitHwResponse {
     #[serde(flatten)]
     device_info: HwDeviceInfo,
     device_pubkey: HwPubkey,
 }
 
+#[derive(Clone)]
 pub struct InitHwTask {
     ctx: MmArc,
     hw_wallet_type: HwWalletType,
@@ -131,7 +135,7 @@ impl RpcTask for InitHwTask {
         }
     }
 
-    async fn run(&mut self, task_handle: &InitHwTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
+    async fn run(&mut self, task_handle: InitHwTaskHandleShared) -> Result<Self::Item, MmError<Self::Error>> {
         let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
 
         match self.hw_wallet_type {
@@ -147,9 +151,9 @@ impl RpcTask for InitHwTask {
                 })
                 .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)
                 .with_pin_timeout(TREZOR_PIN_TIMEOUT);
-
+                let trezor_connect_processor = Arc::new(trezor_connect_processor);
                 let (device_info, hw_ctx) = crypto_ctx
-                    .init_hw_ctx_with_trezor(&trezor_connect_processor, self.req.device_pubkey)
+                    .init_hw_ctx_with_trezor(trezor_connect_processor, self.req.device_pubkey)
                     .await?;
                 let device_pubkey = hw_ctx.hw_pubkey();
                 Ok(InitHwResponse {

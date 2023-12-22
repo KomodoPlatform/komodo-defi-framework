@@ -14,7 +14,7 @@ mod manager;
 pub mod rpc_common;
 mod task;
 
-pub use handle::RpcTaskHandle;
+pub use handle::{RpcTaskHandle, RpcTaskHandleShared};
 pub use manager::{RpcTaskManager, RpcTaskManagerShared};
 pub use task::{RpcTask, RpcTaskTypes};
 

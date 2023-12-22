@@ -26,7 +26,7 @@ const ZOMBIE_TRADE_BOB_SEED: &str = "RICK ZOMBIE BOB";
 const ZOMBIE_TRADE_ALICE_SEED: &str = "RICK ZOMBIE ALICE";
 
 async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> TransactionDetails {
-    let init = init_withdraw(mm, coin, to, amount).await;
+    let init = init_withdraw(mm, coin, to, amount, None).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(150000);
 

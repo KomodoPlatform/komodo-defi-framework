@@ -271,6 +271,15 @@ pub fn subscribe_to_topic(ctx: &MmArc, topic: String) {
     };
 }
 
+/// Unsubscribe from the given `topic`.
+pub fn unsubscribe_from_topic(ctx: &MmArc, topic: String) {
+    let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
+    let cmd = AdexBehaviourCmd::Unsubscribe { topic };
+    if let Err(e) = p2p_ctx.cmd_tx.lock().try_send(cmd) {
+        log::error!("unsubscribe_from_topic cmd_tx.send error {:?}", e);
+    };
+}
+
 pub async fn request_any_relay<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,

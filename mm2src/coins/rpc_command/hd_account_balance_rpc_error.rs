@@ -26,6 +26,8 @@ pub enum HDAccountBalanceRpcError {
     WalletStorageError(String),
     #[display(fmt = "Electrum/Native RPC invalid response: {}", _0)]
     RpcInvalidResponse(String),
+    #[display(fmt = "Failed scripthash subscription. Error: {_0}")]
+    FailedScripthashSubscription(String),
     #[display(fmt = "Transport: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal: {}", _0)]
@@ -44,6 +46,7 @@ impl HttpStatusCode for HDAccountBalanceRpcError {
             HDAccountBalanceRpcError::Transport(_)
             | HDAccountBalanceRpcError::WalletStorageError(_)
             | HDAccountBalanceRpcError::RpcInvalidResponse(_)
+            | HDAccountBalanceRpcError::FailedScripthashSubscription(_)
             | HDAccountBalanceRpcError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

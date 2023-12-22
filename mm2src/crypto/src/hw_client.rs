@@ -8,6 +8,8 @@ use derive_more::Display;
 use futures::FutureExt;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H160 as H160Json;
+use rpc_task::RpcTaskError;
+use std::sync::Arc;
 use std::time::Duration;
 use trezor::client::TrezorClient;
 use trezor::device_info::TrezorDeviceInfo;
@@ -19,6 +21,7 @@ pub type HwPubkey = H160Json;
 pub enum HwProcessingError<E> {
     HwError(HwError),
     ProcessorError(E),
+    InternalError(String),
 }
 
 impl<E> From<HwError> for HwProcessingError<E> {
@@ -46,7 +49,7 @@ pub enum HwWalletType {
     Trezor,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum HwDeviceInfo {
     Trezor(TrezorDeviceInfo),
@@ -67,6 +70,9 @@ pub trait TrezorConnectProcessor: TrezorRequestProcessor {
     async fn on_connected(&self) -> MmResult<(), HwProcessingError<Self::Error>>;
 
     async fn on_connection_failed(&self) -> MmResult<(), HwProcessingError<Self::Error>>;
+
+    /// Helper to upcast to super trait object
+    fn as_base_shared(&self) -> Arc<dyn TrezorRequestProcessor<Error = Self::Error>>;
 }
 
 #[derive(Clone)]
@@ -86,9 +92,9 @@ impl HwClient {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub(crate) async fn trezor<Processor: TrezorConnectProcessor>(
-        processor: &Processor,
-    ) -> MmResult<TrezorClient, HwProcessingError<Processor::Error>> {
+    pub(crate) async fn trezor(
+        processor: Arc<dyn TrezorConnectProcessor<Error = RpcTaskError>>,
+    ) -> MmResult<TrezorClient, HwProcessingError<RpcTaskError>> {
         let timeout = processor.on_connect().await?;
 
         let fut = async move {
@@ -119,14 +125,18 @@ impl HwClient {
     }
 
     #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
-    pub(crate) async fn trezor<Processor: TrezorConnectProcessor>(
-        processor: &Processor,
-    ) -> MmResult<TrezorClient, HwProcessingError<Processor::Error>> {
+    pub(crate) async fn trezor(
+        processor: Arc<dyn TrezorConnectProcessor<Error = RpcTaskError>>,
+    ) -> MmResult<TrezorClient, HwProcessingError<RpcTaskError>> {
         use common::custom_futures::timeout::TimeoutError;
         use common::executor::Timer;
+        use trezor::transport::ConnectableDeviceWrapper;
 
-        async fn try_to_connect() -> HwResult<Option<TrezorClient>> {
-            let mut devices = trezor::transport::usb::find_devices()?;
+        async fn try_to_connect<C>() -> HwResult<Option<TrezorClient>>
+        where
+            C: ConnectableDeviceWrapper + 'static,
+        {
+            let mut devices = C::find_devices().await?;
             if devices.is_empty() {
                 return Ok(None);
             }
@@ -134,16 +144,23 @@ impl HwClient {
                 return MmError::err(HwError::CannotChooseDevice { count: devices.len() });
             }
             let device = devices.remove(0);
-            let transport = device.connect()?;
+            let transport = device.connect().await?;
             let trezor = TrezorClient::from_transport(transport);
             Ok(Some(trezor))
         }
 
         let fut = async move {
             loop {
-                if let Some(trezor) = try_to_connect().await? {
+                if let Some(trezor) = try_to_connect::<trezor::transport::usb::UsbAvailableDevice>().await? {
                     return Ok(trezor);
                 }
+
+                #[cfg(feature = "trezor-udp")]
+                // try also to connect to emulator over UDP
+                if let Some(trezor) = try_to_connect::<trezor::transport::udp::UdpAvailableDevice>().await? {
+                    return Ok(trezor);
+                }
+
                 Timer::sleep(1.).await;
             }
         };
@@ -167,9 +184,9 @@ impl HwClient {
     }
 
     #[cfg(target_os = "ios")]
-    pub(crate) async fn trezor<Processor: TrezorConnectProcessor>(
-        _processor: &Processor,
-    ) -> MmResult<TrezorClient, HwProcessingError<Processor::Error>> {
+    pub(crate) async fn trezor(
+        _processor: Arc<dyn TrezorConnectProcessor<Error = RpcTaskError>>,
+    ) -> MmResult<TrezorClient, HwProcessingError<RpcTaskError>> {
         MmError::err(HwProcessingError::HwError(HwError::Internal(
             "Not supported on iOS!".into(),
         )))

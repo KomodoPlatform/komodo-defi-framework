@@ -44,3 +44,6 @@ mm2_eth = { path = "../mm2_eth" }
 mm2_metamask = { path = "../mm2_metamask" }
 wasm-bindgen-test = { version = "0.3.2" }
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.19.0", default-features = false }
+
+[features]
+trezor-udp = ["trezor/trezor-udp"]

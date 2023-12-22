@@ -9,10 +9,12 @@ use crate::proto::{ProtoMessage, TrezorMessage};
 use crate::response::TrezorResponse;
 use crate::result_handler::ResultHandler;
 use crate::transport::Transport;
+use crate::TrezorRequestProcessor;
 use crate::{TrezorError, TrezorResult};
 use common::now_ms;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use mm2_err_handle::prelude::*;
+use rpc_task::RpcTaskError;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -33,25 +35,33 @@ impl TrezorClient {
     /// Initialize a Trezor session by sending
     /// [Initialize](https://docs.trezor.io/trezor-firmware/common/communication/sessions.html#examples).
     /// Returns `TrezorDeviceInfo` and `TrezorSession`.
-    pub async fn init_new_session(&self) -> TrezorResult<(TrezorDeviceInfo, TrezorSession<'_>)> {
+    pub async fn init_new_session(
+        &mut self,
+        processor: Arc<dyn TrezorRequestProcessor<Error = RpcTaskError>>,
+    ) -> TrezorResult<(TrezorDeviceInfo, TrezorSession<'_>)> {
         let mut session = TrezorSession {
             inner: self.inner.lock().await,
+            processor: Some(processor.clone()),
         };
         let features = session.initialize_device().await?;
         Ok((TrezorDeviceInfo::from(features), session))
     }
 
     /// Occupies the Trezor device for further interactions by locking a mutex.
-    pub async fn session(&self) -> TrezorSession<'_> {
+    pub async fn session(&self, processor: Arc<dyn TrezorRequestProcessor<Error = RpcTaskError>>) -> TrezorSession<'_> {
         TrezorSession {
             inner: self.inner.lock().await,
+            processor: Some(processor.clone()),
         }
     }
 
     /// Checks if the Trezor device is vacant (not occupied).
     /// Returns `None` if it is occupied already.
+    /// Note: does not return processor and should be used to check connections only
     pub fn try_session_if_not_occupied(&self) -> Option<TrezorSession<'_>> {
-        self.inner.try_lock().map(|inner| TrezorSession { inner })
+        self.inner
+            .try_lock()
+            .map(|inner| TrezorSession { inner, processor: None })
     }
 }
 
@@ -61,6 +71,7 @@ pub struct TrezorClientImpl {
 
 pub struct TrezorSession<'a> {
     inner: AsyncMutexGuard<'a, TrezorClientImpl>,
+    pub processor: Option<Arc<dyn TrezorRequestProcessor<Error = RpcTaskError>>>,
 }
 
 impl<'a> TrezorSession<'a> {

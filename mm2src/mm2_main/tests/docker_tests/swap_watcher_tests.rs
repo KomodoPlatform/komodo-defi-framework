@@ -261,7 +261,7 @@ fn start_swaps_and_get_balances(
 }
 
 fn check_actual_events(mm_alice: &MarketMakerIt, uuid: &str, expected_events: &[&'static str]) -> Value {
-    let status_response = block_on(my_swap_status(mm_alice, uuid));
+    let status_response = block_on(my_swap_status(mm_alice, uuid)).unwrap();
     let events_array = status_response["result"]["events"].as_array().unwrap();
     let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
     let actual_events: Vec<&str> = actual_events.collect();

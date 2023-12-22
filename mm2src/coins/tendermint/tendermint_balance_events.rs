@@ -114,6 +114,7 @@ impl EventBehaviour for TendermintCoin {
                         })
                         .collect();
 
+                    let mut balance_updates = vec![];
                     for denom in denoms {
                         if let Some((ticker, decimals)) = self.active_ticker_and_decimals_from_denom(&denom) {
                             let balance_denom = match self.account_balance_for_denom(&self.account_id, denom).await {
@@ -139,16 +140,21 @@ impl EventBehaviour for TendermintCoin {
                             }
 
                             if broadcast {
-                                let payload = json!({
+                                balance_updates.push(json!({
                                     "ticker": ticker,
                                     "balance": { "spendable": balance_decimal, "unspendable": BigDecimal::default() }
-                                });
-
-                                ctx.stream_channel_controller
-                                    .broadcast(Event::new(Self::EVENT_NAME.to_string(), payload.to_string()))
-                                    .await;
+                                }));
                             }
                         }
+                    }
+
+                    if !balance_updates.is_empty() {
+                        ctx.stream_channel_controller
+                            .broadcast(Event::new(
+                                Self::EVENT_NAME.to_string(),
+                                json!(balance_updates).to_string(),
+                            ))
+                            .await;
                     }
                 }
             }

@@ -14,14 +14,15 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+               RpcTaskTypes};
 use std::time::Duration;
 
 pub type GetNewAddressUserAction = HwRpcTaskUserAction;
 pub type GetNewAddressAwaitingStatus = HwRpcTaskAwaitingStatus;
 pub type GetNewAddressTaskManager = RpcTaskManager<InitGetNewAddressTask>;
 pub type GetNewAddressTaskManagerShared = RpcTaskManagerShared<InitGetNewAddressTask>;
-pub type GetNewAddressTaskHandle = RpcTaskHandle<InitGetNewAddressTask>;
+pub type GetNewAddressTaskHandleShared = RpcTaskHandleShared<InitGetNewAddressTask>;
 pub type GetNewAddressRpcTaskStatus = RpcTaskStatus<
     GetNewAddressResponse,
     GetNewAddressRpcError,
@@ -54,6 +55,8 @@ pub enum GetNewAddressRpcError {
     RpcInvalidResponse(String),
     #[display(fmt = "HD wallet storage error: {_0}")]
     WalletStorageError(String),
+    #[display(fmt = "Failed scripthash subscription. Error: {_0}")]
+    FailedScripthashSubscription(String),
     #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "RPC timed out {_0:?}")]
     Timeout(Duration),
@@ -183,6 +186,7 @@ impl HttpStatusCode for GetNewAddressRpcError {
             GetNewAddressRpcError::Transport(_)
             | GetNewAddressRpcError::RpcInvalidResponse(_)
             | GetNewAddressRpcError::WalletStorageError(_)
+            | GetNewAddressRpcError::FailedScripthashSubscription(_)
             | GetNewAddressRpcError::HwError(_)
             | GetNewAddressRpcError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             GetNewAddressRpcError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
@@ -190,7 +194,7 @@ impl HttpStatusCode for GetNewAddressRpcError {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct GetNewAddressRequest {
     coin: String,
     #[serde(flatten)]
@@ -251,6 +255,7 @@ pub trait GetNewAddressRpcOps {
         ConfirmAddress: HDConfirmAddress;
 }
 
+#[derive(Clone)]
 pub struct InitGetNewAddressTask {
     ctx: MmArc,
     coin: MmCoinEnum,
@@ -272,12 +277,12 @@ impl RpcTask for InitGetNewAddressTask {
     // Do nothing if the task has been cancelled.
     async fn cancel(self) {}
 
-    async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
+    async fn run(&mut self, task_handle: RpcTaskHandleShared<Self>) -> Result<Self::Item, MmError<Self::Error>> {
         async fn get_new_address_helper<Coin>(
             ctx: &MmArc,
             coin: &Coin,
             params: GetNewAddressParams,
-            task_handle: &GetNewAddressTaskHandle,
+            task_handle: GetNewAddressTaskHandleShared,
         ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
         where
             Coin: GetNewAddressRpcOps + Send + Sync,
@@ -291,7 +296,7 @@ impl RpcTask for InitGetNewAddressTask {
                 on_passphrase_request: GetNewAddressAwaitingStatus::EnterTrezorPassphrase,
                 on_ready: GetNewAddressInProgressStatus::RequestingAccountBalance,
             };
-            let confirm_address: RpcTaskConfirmAddress<'_, InitGetNewAddressTask> =
+            let confirm_address: RpcTaskConfirmAddress<InitGetNewAddressTask> =
                 RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses)?;
             coin.get_new_address_rpc(params, &confirm_address).await
         }
@@ -380,8 +385,10 @@ pub(crate) mod common_impl {
     use super::*;
     use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceOps};
     use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
+    use crate::utxo::UtxoCommonOps;
     use crate::{CoinWithDerivationMethod, HDAddress};
     use crypto::RpcDerivationPath;
+    use std::collections::HashSet;
     use std::fmt;
     use std::ops::DerefMut;
 
@@ -435,9 +442,12 @@ pub(crate) mod common_impl {
     ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
     where
         ConfirmAddress: HDConfirmAddress,
-        Coin:
-            HDWalletBalanceOps + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + Send + Sync,
-        <Coin as HDWalletCoinOps>::Address: fmt::Display,
+        Coin: UtxoCommonOps
+            + HDWalletBalanceOps
+            + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
+            + Send
+            + Sync,
+        <Coin as HDWalletCoinOps>::Address: fmt::Display + Into<keys::Address> + std::hash::Hash + std::cmp::Eq,
     {
         let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
 
@@ -462,9 +472,16 @@ pub(crate) mod common_impl {
             .await?;
 
         let balance = coin.known_address_balance(&address).await?;
+
+        let address_as_string = address.to_string();
+
+        coin.prepare_addresses_for_balance_stream_if_enabled(HashSet::from([address]))
+            .await
+            .map_err(|e| GetNewAddressRpcError::FailedScripthashSubscription(e.to_string()))?;
+
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
-                address: address.to_string(),
+                address: address_as_string,
                 derivation_path: RpcDerivationPath(derivation_path),
                 chain,
                 balance,
