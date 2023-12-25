@@ -18,12 +18,13 @@ use crate::watcher_common::validate_watcher_reward;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, DexFee, GenPreimageResult,
             GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress, HDAccountAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
-            RefundFundingSecretArgs, RefundPaymentArgs, RewardTarget, SearchForSwapTxSpendInput,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionEnum,
-            SignRawTransactionRequest, SignUtxoTransactionParams, SignatureError, SignatureResult, SpendPaymentArgs,
-            SwapOps, TradePreimageValue, TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr,
-            TxPreimageWithSig, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateTakerFundingArgs, ValidateTakerFundingError, ValidateTakerFundingResult,
+            RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs, RewardTarget,
+            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest, SignUtxoTransactionParams,
+            SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps,
+            SwapTxTypeWithSecretHash, TradePreimageValue, TransactionFut, TransactionResult, TxFeeDetails, TxGenError,
+            TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut,
+            ValidatePaymentInput, ValidateSwapV2TxError, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
             ValidateTakerFundingSpendPreimageError, ValidateTakerFundingSpendPreimageResult,
             ValidateTakerPaymentSpendPreimageError, ValidateTakerPaymentSpendPreimageResult,
             ValidateWatcherSpendInput, VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput,
@@ -1603,7 +1604,7 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
         swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, args.taker_pub, args.maker_pub);
 
     // Use SIGHASH_ALL if coin has static fee?
-    let sighash =
+    // let sighash =
 
     let signature = calc_and_sign_sighash(
         &preimage,

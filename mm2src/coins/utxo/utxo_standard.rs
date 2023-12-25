@@ -22,23 +22,25 @@ use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShar
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::BlockHashOrHeight;
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
-use crate::utxo::utxo_common::DEFAULT_SWAP_VOUT;
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
-            DexFee, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress,
-            IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
-            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionRequest,
-            RawTransactionResult, RefundError, RefundFundingSecretArgs, RefundPaymentArgs, RefundResult,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs,
-            SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, SwapOpsV2, TakerSwapMakerCoin,
-            ToBytes, TradePreimageValue, TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateTakerFundingArgs,
-            ValidateTakerFundingResult, ValidateTakerFundingSpendPreimageResult,
+            DexFee, FundingTxSpend, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+            GetWithdrawSenderAddress, IguanaPrivKey, MakerCoinSwapOpsV2, MakerSwapTakerCoin, MmCoinEnum,
+            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            PrivKeyBuildPolicy, RawTransactionRequest, RawTransactionResult, RefundError, RefundFundingSecretArgs,
+            RefundMakerPaymentArgs, RefundPaymentArgs, RefundResult, SearchForFundingSpendErr,
+            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SendTakerFundingArgs, SignRawTransactionRequest, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs,
+            SwapOps, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, TakerSwapMakerCoin, ToBytes, TradePreimageValue,
+            TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateMakerPaymentArgs, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxResult,
+            ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageResult,
             ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawSenderAddress};
+            WaitForHTLCTxSpendArgs, WaitForTakerPaymentSpendError, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
+            WithdrawSenderAddress};
 use common::executor::{AbortableSystem, AbortedError};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
@@ -617,7 +619,7 @@ impl MakerCoinSwapOpsV2 for UtxoStandardCoin {
         utxo_common::validate_payment(
             self.clone(),
             args.maker_payment_tx,
-            DEFAULT_SWAP_VOUT,
+            utxo_common::DEFAULT_SWAP_VOUT,
             args.maker_pub,
             &taker_pub,
             SwapTxTypeWithSecretHash::MakerPaymentV2 {
@@ -691,7 +693,7 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
             .find_output_spend(
                 tx.hash(),
                 script_pubkey,
-                DEFAULT_SWAP_VOUT,
+                utxo_common::DEFAULT_SWAP_VOUT,
                 BlockHashOrHeight::Height(from_block),
                 self.as_ref().tx_hash_algo,
             )
