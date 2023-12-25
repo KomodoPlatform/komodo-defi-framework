@@ -1,11 +1,11 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
-use coins::{ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, MakerCoinSwapOpsV2, MarketCoinOps,
-            RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs, SendMakerPaymentArgs,
-            SendTakerFundingArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction, ValidateMakerPaymentArgs,
-            ValidateTakerFundingArgs};
-use common::{block_on, now_sec};
+use coins::{ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+            MakerCoinSwapOpsV2, MarketCoinOps, RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs,
+            SendMakerPaymentArgs, SendTakerFundingArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction,
+            ValidateMakerPaymentArgs, ValidateTakerFundingArgs};
+use common::{block_on, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures01::Future;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin,
@@ -259,6 +259,84 @@ fn send_and_spend_taker_funding() {
         },
         unexpected => panic!("Got unexpected FundingTxSpend variant {:?}", unexpected),
     }
+}
+
+#[test]
+fn send_and_spend_taker_payment_fee_burn() {
+    let (_mm_arc, taker_coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
+    let (_mm_arc, maker_coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
+
+    let funding_time_lock = now_sec() - 1000;
+    let taker_secret_hash = &[0; 20];
+
+    let taker_pub = taker_coin.my_public_key().unwrap();
+    let maker_pub = maker_coin.my_public_key().unwrap();
+
+    let dex_fee = &DexFee::with_burn("0.75".into(), "0.25".into());
+
+    let send_args = SendTakerFundingArgs {
+        time_lock: funding_time_lock,
+        taker_secret_hash,
+        maker_pub,
+        dex_fee,
+        premium_amount: 0.into(),
+        trading_amount: 777.into(),
+        swap_unique_data: &[],
+    };
+    let taker_funding_utxo_tx = block_on(taker_coin.send_taker_funding(send_args)).unwrap();
+    println!("Funding tx {:02x}", taker_funding_utxo_tx.tx_hash());
+    // tx must have 3 outputs: actual funding, OP_RETURN containing the secret hash and change
+    assert_eq!(3, taker_funding_utxo_tx.outputs.len());
+
+    // dex_fee_amount (with burn) + premium_amount (zero) + trading_amount
+    let expected_amount = 77800000000u64;
+    assert_eq!(expected_amount, taker_funding_utxo_tx.outputs[0].value);
+
+    let expected_op_return = Builder::default()
+        .push_opcode(Opcode::OP_RETURN)
+        .push_data(&[0; 20])
+        .into_bytes();
+    assert_eq!(expected_op_return, taker_funding_utxo_tx.outputs[1].script_pubkey);
+
+    let validate_args = ValidateTakerFundingArgs {
+        funding_tx: &taker_funding_utxo_tx,
+        time_lock: funding_time_lock,
+        taker_secret_hash,
+        other_pub: taker_pub,
+        dex_fee,
+        premium_amount: 0.into(),
+        trading_amount: 777.into(),
+        swap_unique_data: &[],
+    };
+    block_on(maker_coin.validate_taker_funding(validate_args)).unwrap();
+
+    let preimage_args = GenTakerFundingSpendArgs {
+        funding_tx: &taker_funding_utxo_tx,
+        maker_pub,
+        taker_pub,
+        funding_time_lock,
+        taker_secret_hash,
+        taker_payment_time_lock: 0,
+        maker_secret_hash: &[0; 20],
+    };
+    let preimage = block_on(maker_coin.gen_taker_funding_spend_preimage(&preimage_args, &[])).unwrap();
+
+    let payment_tx = block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &preimage_args, &[])).unwrap();
+    println!("Taker payment tx {:02x}", payment_tx.tx_hash());
+
+    let gen_taker_payment_spend_args = GenTakerPaymentSpendArgs {
+        taker_tx: &payment_tx,
+        time_lock: 0,
+        secret_hash: &[0; 20],
+        maker_pub,
+        taker_pub,
+        dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
+        dex_fee,
+        premium_amount: 0.into(),
+        trading_amount: 777.into(),
+    };
+    let taker_payment_spend_preimage =
+        block_on(taker_coin.gen_taker_payment_spend_preimage(&gen_taker_payment_spend_args, &[])).unwrap();
 }
 
 #[test]
