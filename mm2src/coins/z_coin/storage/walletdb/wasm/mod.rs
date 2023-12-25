@@ -1,7 +1,6 @@
 pub mod storage;
 pub mod tables;
 
-use crate::z_coin::z_params::ZcashParamsWasmImpl;
 use crate::z_coin::ZcoinStorageError;
 
 use ff::PrimeField;
@@ -14,7 +13,6 @@ use zcash_primitives::merkle_tree::IncrementalWitness;
 use zcash_primitives::sapling::Diversifier;
 use zcash_primitives::sapling::Rseed;
 use zcash_primitives::transaction::components::Amount;
-use zcash_proofs::prover::LocalTxProver;
 
 struct SpendableNoteConstructor {
     diversifier: Vec<u8>,
@@ -66,8 +64,8 @@ fn to_spendable_note(note: SpendableNoteConstructor) -> MmResult<SpendableNote, 
     })
 }
 
+#[cfg(test)]
 mod wasm_test {
-    use super::*;
     use crate::z_coin::storage::walletdb::WalletIndexedDb;
     use crate::z_coin::storage::{BlockDbImpl, BlockProcessingMode, DataConnStmtCacheWasm, DataConnStmtCacheWrapper};
     use crate::z_coin::{ValidateBlocksError, ZcoinConsensusParams, ZcoinStorageError};
@@ -86,14 +84,14 @@ mod wasm_test {
     use zcash_primitives::consensus::{BlockHeight, Network, NetworkUpgrade, Parameters};
     use zcash_primitives::transaction::components::Amount;
     use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
+    use zcash_proofs::prover::LocalTxProver;
 
     wasm_bindgen_test_configure!(run_in_browser);
 
     const TICKER: &str = "ARRR";
 
-    async fn test_prover(ctx: &MmArc) -> LocalTxProver {
-        let params_db = ZcashParamsWasmImpl::new(ctx).await.unwrap();
-        let (spend_buf, output_buf) = params_db.download_and_save_params().await.unwrap();
+    async fn test_prover() -> LocalTxProver {
+        let (spend_buf, output_buf) = wagyu_zcash_parameters::load_sapling_parameters();
         LocalTxProver::from_bytes(&spend_buf[..], &output_buf[..])
     }
 
@@ -807,7 +805,7 @@ mod wasm_test {
     //        match create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(&ctx).await,
+    //            test_prover().await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -842,7 +840,7 @@ mod wasm_test {
     //        match create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(&ctx).await,
+    //            test_prover().await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -873,7 +871,7 @@ mod wasm_test {
     //        create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(&ctx).await,
+    //            test_prover().await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -904,7 +902,7 @@ mod wasm_test {
         match create_spend_to_address(
             &mut walletdb,
             &network(),
-            test_prover(&ctx).await,
+            test_prover().await,
             AccountId(0),
             &extsk1,
             &to,
@@ -921,7 +919,7 @@ mod wasm_test {
         match create_spend_to_address(
             &mut walletdb,
             &network(),
-            test_prover(&ctx).await,
+            test_prover().await,
             AccountId(1),
             &extsk0,
             &to,
@@ -951,7 +949,7 @@ mod wasm_test {
         match create_spend_to_address(
             &mut walletdb,
             &network(),
-            test_prover(&ctx).await,
+            test_prover().await,
             AccountId(0),
             &extsk,
             &to,
@@ -990,7 +988,7 @@ mod wasm_test {
         match create_spend_to_address(
             &mut walletdb,
             &network(),
-            test_prover(&ctx).await,
+            test_prover().await,
             AccountId(0),
             &extsk,
             &to,
@@ -1046,7 +1044,7 @@ mod wasm_test {
     //        create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(&ctx).await,
+    //            test_prover().await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -1061,7 +1059,7 @@ mod wasm_test {
     //        match create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(&ctx).await,
+    //            test_prover().await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -1100,7 +1098,7 @@ mod wasm_test {
     //        match create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(&ctx).await,
+    //            test_prover().await,
     //            AccountId(0),
     //            &extsk,
     //            &to,
@@ -1136,7 +1134,7 @@ mod wasm_test {
     //        create_spend_to_address(
     //            &mut walletdb,
     //            &network(),
-    //            test_prover(&ctx).await,
+    //            test_prover().await,
     //            AccountId(0),
     //            &extsk,
     //            &to,

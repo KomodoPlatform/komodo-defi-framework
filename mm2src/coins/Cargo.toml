@@ -166,6 +166,11 @@ winapi = "0.3"
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wagyu-zcash-parameters = { version = "0.2" }
+
+
+
 [build-dependencies]
 prost-build = { version = "0.10.4", default-features = false }
 tonic-build = { version = "0.7", default-features = false, features = ["prost", "compression"] }
