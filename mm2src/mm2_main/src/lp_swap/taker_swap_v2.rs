@@ -51,6 +51,7 @@ cfg_wasm32!(
 pub struct StoredNegotiationData {
     maker_payment_locktime: u64,
     maker_secret_hash: BytesJson,
+    taker_coin_maker_address: String,
     maker_coin_htlc_pub_from_maker: BytesJson,
     taker_coin_htlc_pub_from_maker: BytesJson,
     maker_coin_swap_contract: Option<BytesJson>,
@@ -1075,6 +1076,17 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             },
         };
 
+        let taker_coin_maker_address = match state_machine
+            .taker_coin
+            .parse_address(&maker_negotiation.taker_coin_address)
+        {
+            Ok(p) => p,
+            Err(e) => {
+                let reason = AbortReason::FailedToParseAddress(e.to_string());
+                return Self::change_state(Aborted::new(reason), state_machine).await;
+            },
+        };
+
         let unique_data = state_machine.unique_data();
         let taker_negotiation = TakerNegotiation {
             action: Some(taker_negotiation::Action::Continue(TakerNegotiationData {
@@ -1133,6 +1145,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 taker_coin_htlc_pub_from_maker,
                 maker_coin_swap_contract: maker_negotiation.maker_coin_swap_contract,
                 taker_coin_swap_contract: maker_negotiation.taker_coin_swap_contract,
+                taker_coin_maker_address,
             },
             taker_payment_fee: self.taker_payment_fee,
             maker_payment_spend_fee: self.maker_payment_spend_fee,
@@ -1148,6 +1161,7 @@ struct NegotiationData<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
     taker_coin_htlc_pub_from_maker: TakerCoin::Pubkey,
     maker_coin_swap_contract: Option<Vec<u8>>,
     taker_coin_swap_contract: Option<Vec<u8>>,
+    taker_coin_maker_address: TakerCoin::Address,
 }
 
 impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> NegotiationData<MakerCoin, TakerCoin> {
@@ -1155,6 +1169,7 @@ impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> NegotiationData<Maker
         StoredNegotiationData {
             maker_payment_locktime: self.maker_payment_locktime,
             maker_secret_hash: self.maker_secret_hash.clone().into(),
+            taker_coin_maker_address: self.taker_coin_maker_address.to_string(),
             maker_coin_htlc_pub_from_maker: self.maker_coin_htlc_pub_from_maker.to_bytes().into(),
             taker_coin_htlc_pub_from_maker: self.taker_coin_htlc_pub_from_maker.to_bytes().into(),
             maker_coin_swap_contract: self.maker_coin_swap_contract.clone().map(|b| b.into()),
@@ -1178,6 +1193,9 @@ impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> NegotiationData<Maker
                 .map_err(|e| SwapRecreateError::FailedToParseData(e.to_string()))?,
             maker_coin_swap_contract: None,
             taker_coin_swap_contract: None,
+            taker_coin_maker_address: taker_coin
+                .parse_address(&stored.taker_coin_maker_address)
+                .map_err(|e| SwapRecreateError::FailedToParseData(e.to_string()))?,
         })
     }
 }
@@ -1617,8 +1635,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let args = GenTakerPaymentSpendArgs {
             taker_tx: &self.taker_payment,
             time_lock: state_machine.taker_payment_locktime(),
-            secret_hash: &self.negotiation_data.maker_secret_hash,
+            maker_secret_hash: &self.negotiation_data.maker_secret_hash,
             maker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_maker,
+            maker_address: &self.negotiation_data.taker_coin_maker_address,
             taker_pub: &state_machine.taker_coin.derive_htlc_pubkey_v2(&unique_data),
             dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &state_machine.dex_fee,
@@ -2179,6 +2198,7 @@ pub enum AbortReason {
     DidNotReceiveMakerNegotiation(String),
     TooLargeStartedAtDiff(u64),
     FailedToParsePubkey(String),
+    FailedToParseAddress(String),
     MakerProvidedInvalidLocktime(u64),
     SecretHashUnexpectedLen(usize),
     DidNotReceiveMakerNegotiated(String),

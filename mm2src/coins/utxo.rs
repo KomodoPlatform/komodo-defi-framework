@@ -1041,6 +1041,8 @@ impl ToBytes for Signature {
 }
 
 impl<T: UtxoCommonOps> CoinAssocTypes for T {
+    type Address = Address;
+    type AddressParseError = MmError<keys::Error>;
     type Pubkey = Public;
     type PubkeyParseError = MmError<keys::Error>;
     type Tx = UtxoTx;
@@ -1049,6 +1051,17 @@ impl<T: UtxoCommonOps> CoinAssocTypes for T {
     type PreimageParseError = MmError<serialization::Error>;
     type Sig = Signature;
     type SigParseError = MmError<secp256k1::Error>;
+
+    fn my_addr(&self) -> &Self::Address {
+        match &self.as_ref().derivation_method {
+            DerivationMethod::SingleAddress(addr) => addr,
+            unimplemented => unimplemented!("{:?}", unimplemented),
+        }
+    }
+
+    fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> {
+        Ok(Address::from_str(address)?)
+    }
 
     #[inline]
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> {

@@ -1,10 +1,11 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
-use coins::{ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            MakerCoinSwapOpsV2, MarketCoinOps, RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs,
-            SendMakerPaymentArgs, SendTakerFundingArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction,
-            ValidateMakerPaymentArgs, ValidateTakerFundingArgs};
+use coins::{CoinAssocTypes, ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArgs,
+            GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MarketCoinOps, RefundFundingSecretArgs,
+            RefundMakerPaymentArgs, RefundPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
+            SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction, ValidateMakerPaymentArgs,
+            ValidateTakerFundingArgs};
 use common::{block_on, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures01::Future;
 use mm2_number::MmNumber;
@@ -269,6 +270,10 @@ fn send_and_spend_taker_payment_fee_burn() {
     let funding_time_lock = now_sec() - 1000;
     let taker_secret_hash = &[0; 20];
 
+    let maker_secret = &[1; 32];
+    let maker_secret_hash_owned = dhash160(maker_secret);
+    let maker_secret_hash = maker_secret_hash_owned.as_slice();
+
     let taker_pub = taker_coin.my_public_key().unwrap();
     let maker_pub = maker_coin.my_public_key().unwrap();
 
@@ -317,7 +322,7 @@ fn send_and_spend_taker_payment_fee_burn() {
         funding_time_lock,
         taker_secret_hash,
         taker_payment_time_lock: 0,
-        maker_secret_hash: &[0; 20],
+        maker_secret_hash,
     };
     let preimage = block_on(maker_coin.gen_taker_funding_spend_preimage(&preimage_args, &[])).unwrap();
 
@@ -327,8 +332,9 @@ fn send_and_spend_taker_payment_fee_burn() {
     let gen_taker_payment_spend_args = GenTakerPaymentSpendArgs {
         taker_tx: &payment_tx,
         time_lock: 0,
-        secret_hash: &[0; 20],
+        maker_secret_hash,
         maker_pub,
+        maker_address: maker_coin.my_addr(),
         taker_pub,
         dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee,
@@ -337,6 +343,26 @@ fn send_and_spend_taker_payment_fee_burn() {
     };
     let taker_payment_spend_preimage =
         block_on(taker_coin.gen_taker_payment_spend_preimage(&gen_taker_payment_spend_args, &[])).unwrap();
+
+    // tx must have 3 outputs, dex fee, dex fee burn, and payment amount spent to maker address
+    assert_eq!(taker_payment_spend_preimage.preimage.outputs.len(), 3);
+    assert_eq!(taker_payment_spend_preimage.preimage.outputs[0].value, 75000000);
+    assert_eq!(taker_payment_spend_preimage.preimage.outputs[1].value, 25000000);
+    assert_eq!(taker_payment_spend_preimage.preimage.outputs[2].value, 77699998000);
+
+    block_on(
+        maker_coin.validate_taker_payment_spend_preimage(&gen_taker_payment_spend_args, &taker_payment_spend_preimage),
+    )
+    .unwrap();
+
+    let taker_payment_spend = block_on(maker_coin.sign_and_broadcast_taker_payment_spend(
+        &taker_payment_spend_preimage,
+        &gen_taker_payment_spend_args,
+        maker_secret,
+        &[],
+    ))
+    .unwrap();
+    println!("Taker payment spend tx {:02x}", taker_payment_spend.tx_hash());
 }
 
 #[test]

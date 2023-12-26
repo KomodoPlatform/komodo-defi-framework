@@ -1574,7 +1574,25 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     )
     .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive dex_fee_address: {}", e)))?;
 
-    let outputs = generate_taker_fee_tx_outputs(coin.as_ref().decimals, &dex_fee_address.hash, args.dex_fee)?;
+    let mut outputs = generate_taker_fee_tx_outputs(coin.as_ref().decimals, &dex_fee_address.hash, args.dex_fee)?;
+    if let DexFee::WithBurn { .. } = args.dex_fee {
+        let script = output_script(args.maker_address, ScriptType::P2PKH);
+        let tx_fee = coin
+            .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+            .await?;
+        let maker_value = args
+            .taker_tx
+            .first_output()
+            .map_to_mm(|e| TxGenError::PrevTxIsNotValid(e.to_string()))?
+            .value
+            - outputs[0].value
+            - outputs[1].value
+            - tx_fee;
+        outputs.push(TransactionOutput {
+            value: maker_value,
+            script_pubkey: script.to_bytes(),
+        })
+    }
 
     p2sh_spending_tx_preimage(
         coin,
@@ -1601,10 +1619,12 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
     let preimage = gen_taker_payment_spend_preimage(coin, args, NTimeSetting::UseNow).await?;
 
     let redeem_script =
-        swap_proto_v2_scripts::taker_payment_script(time_lock, args.secret_hash, args.taker_pub, args.maker_pub);
+        swap_proto_v2_scripts::taker_payment_script(time_lock, args.maker_secret_hash, args.taker_pub, args.maker_pub);
 
-    // Use SIGHASH_ALL if coin has static fee?
-    // let sighash =
+    let sig_hash_type = match args.dex_fee {
+        DexFee::Standard(_) => SIGHASH_SINGLE,
+        DexFee::WithBurn { .. } => SIGHASH_ALL,
+    };
 
     let signature = calc_and_sign_sighash(
         &preimage,
@@ -1612,7 +1632,7 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
         &redeem_script,
         htlc_keypair,
         coin.as_ref().conf.signature_version,
-        SIGHASH_SINGLE,
+        sig_hash_type,
         coin.as_ref().conf.fork_id,
     )?;
     Ok(TxPreimageWithSig {
@@ -1639,16 +1659,22 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
         .map_to_mm(|e: TryFromIntError| ValidateTakerPaymentSpendPreimageError::LocktimeOverflow(e.to_string()))?;
     let redeem_script = swap_proto_v2_scripts::taker_payment_script(
         time_lock,
-        gen_args.secret_hash,
+        gen_args.maker_secret_hash,
         gen_args.taker_pub,
         gen_args.maker_pub,
     );
+
+    let sig_hash_type = match gen_args.dex_fee {
+        DexFee::Standard(_) => SIGHASH_SINGLE,
+        DexFee::WithBurn { .. } => SIGHASH_ALL,
+    };
+
     let sig_hash = signature_hash_to_sign(
         &expected_preimage,
         DEFAULT_SWAP_VOUT,
         &redeem_script,
         coin.as_ref().conf.signature_version,
-        SIGHASH_SINGLE,
+        sig_hash_type,
         coin.as_ref().conf.fork_id,
     )?;
 

@@ -10,14 +10,14 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RawTransactionResult, RefundFundingSecretArgs, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
             SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionRequest,
-            SignatureResult, SpendPaymentArgs, TakerCoinSwapOpsV2, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, Transaction, TransactionErr, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageResult,
-            ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
+            SignatureResult, SpendPaymentArgs, TakerCoinSwapOpsV2, TakerSwapMakerCoin, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, Transaction, TransactionErr, TransactionResult, TxMarshalingErr,
+            TxPreimageWithSig, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
+            ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageResult, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use crate::{DexFee, ToBytes, ValidateWatcherSpendInput};
 use async_trait::async_trait;
 use common::executor::AbortedError;
@@ -426,6 +426,8 @@ impl ToBytes for TestSig {
 }
 
 impl CoinAssocTypes for TestCoin {
+    type Address = String;
+    type AddressParseError = String;
     type Pubkey = TestPubkey;
     type PubkeyParseError = String;
     type Tx = TestTx;
@@ -434,6 +436,10 @@ impl CoinAssocTypes for TestCoin {
     type PreimageParseError = String;
     type Sig = TestSig;
     type SigParseError = String;
+
+    fn my_addr(&self) -> &Self::Address { todo!() }
+
+    fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> { todo!() }
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> { unimplemented!() }
 
