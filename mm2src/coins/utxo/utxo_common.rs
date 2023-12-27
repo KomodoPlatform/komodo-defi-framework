@@ -1717,23 +1717,25 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     payment_input.amount = payment_output.value;
     signer.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
 
-    let miner_fee = try_tx_s!(
-        coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-            .await
-    );
+    if let DexFee::Standard(dex_fee) = gen_args.dex_fee {
+        let dex_fee_sat = try_tx_s!(sat_from_big_decimal(&dex_fee.to_decimal(), coin.as_ref().decimals));
 
-    let maker_amount = &gen_args.trading_amount + &gen_args.premium_amount;
-    let maker_sat = try_tx_s!(sat_from_big_decimal(&maker_amount, coin.as_ref().decimals));
-    if miner_fee + coin.as_ref().dust_amount > maker_sat {
-        return TX_PLAIN_ERR!("Maker amount is too small to cover miner fee + dust");
+        let miner_fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await
+        );
+
+        if miner_fee + coin.as_ref().dust_amount + dex_fee_sat > payment_output.value {
+            return TX_PLAIN_ERR!("Payment amount is too small to cover miner fee + dust + dex_fee_sat");
+        }
+
+        let maker_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err());
+        let maker_output = TransactionOutput {
+            value: payment_output.value - miner_fee - dex_fee_sat,
+            script_pubkey: output_script(maker_address, ScriptType::P2PKH).to_bytes(),
+        };
+        signer.outputs.push(maker_output);
     }
-
-    let maker_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err());
-    let maker_output = TransactionOutput {
-        value: maker_sat - miner_fee,
-        script_pubkey: output_script(maker_address, ScriptType::P2PKH).to_bytes(),
-    };
-    signer.outputs.push(maker_output);
     drop_mutability!(signer);
 
     let maker_signature = try_tx_s!(calc_and_sign_sighash(
@@ -1745,9 +1747,13 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
         SIGHASH_ALL,
         coin.as_ref().conf.fork_id
     ));
-    let sig_hash_single_fork_id = (SIGHASH_SINGLE | coin.as_ref().conf.fork_id) as u8;
     let mut taker_signature_with_sighash = preimage.signature.to_vec();
-    taker_signature_with_sighash.push(sig_hash_single_fork_id);
+    let taker_sig_hash = match gen_args.dex_fee {
+        DexFee::Standard(_) => (SIGHASH_SINGLE | coin.as_ref().conf.fork_id) as u8,
+        DexFee::WithBurn { .. } => (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8,
+    };
+
+    taker_signature_with_sighash.push(taker_sig_hash);
     drop_mutability!(taker_signature_with_sighash);
 
     let sig_hash_all_fork_id = (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8;

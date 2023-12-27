@@ -2133,7 +2133,7 @@ pub async fn wait_for_swap_status(mm: &MarketMakerIt, uuid: &str, wait_sec: i64)
             panic!("Timed out waiting for swap {} status", uuid);
         }
 
-        Timer::sleep(0.5).await;
+        Timer::sleep(1.).await;
     }
 }
 
