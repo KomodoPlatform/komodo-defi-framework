@@ -239,6 +239,15 @@ impl PlatformWithTokensActivationOps for BchCoin {
         Ok(platform_coin)
     }
 
+    #[allow(dead_code)]
+    async fn enable_global_non_fungible_token(
+        &self,
+        _ctx: &MmArc,
+        _activation_request: Self::ActivationRequest,
+    ) -> Result<MmCoinEnum, MmError<Self::ActivationError>> {
+        todo!()
+    }
+
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
     where
         Self: Sized,
@@ -318,6 +327,14 @@ impl PlatformWithTokensActivationOps for BchCoin {
             bch_addresses_infos: HashMap::from([(my_address.to_string(), bch_address_info)]),
             slp_addresses_infos: HashMap::from([(my_slp_address, slp_address_info)]),
         })
+    }
+
+    #[allow(dead_code)]
+    async fn get_nft_activation_result(
+        &self,
+        _activation_request: &Self::ActivationRequest,
+    ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
+        todo!()
     }
 
     fn start_history_background_fetching(

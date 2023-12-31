@@ -3,7 +3,7 @@ use mm2_err_handle::prelude::{MmError, MmResult};
 use url::Url;
 
 pub(crate) mod nft_errors;
-pub(crate) mod nft_structs;
+pub mod nft_structs;
 pub(crate) mod storage;
 
 #[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;

@@ -174,13 +174,13 @@ impl<'de> Deserialize<'de> for Chain {
 }
 
 #[derive(Debug, Display)]
-pub(crate) enum ParseContractTypeError {
+pub enum ParseContractTypeError {
     UnsupportedContractType,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
-pub(crate) enum ContractType {
+pub enum ContractType {
     Erc1155,
     Erc721,
 }
@@ -731,4 +731,21 @@ where
 {
     let s = String::deserialize(deserializer)?;
     BigUint::from_str(&s).map_err(serde::de::Error::custom)
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct NftInfo {
+    token_address: Address,
+    token_id: BigUint,
+    chain: Chain,
+    contract_type: ContractType,
+    amount: BigDecimal,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Deserialize)]
+pub struct NftUrls {
+    pub(crate) url: Url,
+    pub(crate) url_antispam: Url,
 }

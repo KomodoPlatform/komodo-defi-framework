@@ -5,6 +5,7 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
             prelude::*};
 use async_trait::async_trait;
 use coins::eth::EthPrivKeyBuildPolicy;
+use coins::nft::nft_structs::{Chain, NftInfo, NftUrls};
 use coins::{eth::v2_activation::EthPrivKeyActivationPolicy, MmCoinEnum};
 use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
                                   Erc20TokenActivationRequest, EthActivationV2Error, EthActivationV2Request},
@@ -22,6 +23,7 @@ use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {
@@ -123,6 +125,8 @@ pub struct EthWithTokensActivationRequest {
     erc20_tokens_requests: Vec<TokenActivationRequest<Erc20TokenActivationRequest>>,
     #[serde(default = "true_f")]
     pub get_balances: bool,
+    #[allow(dead_code)]
+    nft_urls: Option<NftUrls>,
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
@@ -147,6 +151,7 @@ pub struct EthWithTokensActivationResult {
     current_block: u64,
     eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
     erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    nfts_infos: HashMap<String, NftInfo>,
 }
 
 impl GetPlatformBalance for EthWithTokensActivationResult {
@@ -189,6 +194,15 @@ impl PlatformWithTokensActivationOps for EthCoin {
         .await?;
 
         Ok(platform_coin)
+    }
+
+    async fn enable_global_non_fungible_token(
+        &self,
+        _ctx: &MmArc,
+        _activation_request: Self::ActivationRequest,
+    ) -> Result<MmCoinEnum, MmError<Self::ActivationError>> {
+        let _chain = Chain::from_str(self.ticker());
+        todo!()
     }
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
@@ -246,6 +260,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
                 current_block,
                 eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
                 erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
+                nfts_infos: Default::default(),
             });
         }
 
@@ -268,7 +283,15 @@ impl PlatformWithTokensActivationOps for EthCoin {
             current_block,
             eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
             erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
+            nfts_infos: Default::default(),
         })
+    }
+
+    async fn get_nft_activation_result(
+        &self,
+        _activation_request: &Self::ActivationRequest,
+    ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
+        todo!()
     }
 
     fn start_history_background_fetching(

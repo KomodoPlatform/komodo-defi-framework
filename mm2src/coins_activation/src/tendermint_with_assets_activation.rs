@@ -199,6 +199,15 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         .await
     }
 
+    #[allow(dead_code)]
+    async fn enable_global_non_fungible_token(
+        &self,
+        _ctx: &MmArc,
+        _activation_request: Self::ActivationRequest,
+    ) -> Result<MmCoinEnum, MmError<Self::ActivationError>> {
+        todo!()
+    }
+
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
     where
         Self: Sized,
@@ -271,6 +280,14 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             ticker: self.ticker().to_owned(),
             tokens_tickers: None,
         })
+    }
+
+    #[allow(dead_code)]
+    async fn get_nft_activation_result(
+        &self,
+        _activation_request: &Self::ActivationRequest,
+    ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
+        todo!()
     }
 
     fn start_history_background_fetching(

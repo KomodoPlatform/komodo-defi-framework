@@ -202,6 +202,15 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })
     }
 
+    #[allow(dead_code)]
+    async fn enable_global_non_fungible_token(
+        &self,
+        _ctx: &MmArc,
+        _activation_request: Self::ActivationRequest,
+    ) -> Result<MmCoinEnum, MmError<Self::ActivationError>> {
+        todo!()
+    }
+
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
     where
         Self: Sized,
@@ -280,6 +289,14 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
             solana_addresses_infos: HashMap::from([(my_address.clone(), solana_address_info)]),
             spl_addresses_infos: HashMap::from([(my_address, spl_address_info)]),
         })
+    }
+
+    #[allow(dead_code)]
+    async fn get_nft_activation_result(
+        &self,
+        _activation_request: &Self::ActivationRequest,
+    ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
+        todo!()
     }
 
     fn start_history_background_fetching(
