@@ -4,6 +4,7 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
                                         TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
+use coins::eth::v2_activation::global_nft_from_platform_coin;
 use coins::eth::EthPrivKeyBuildPolicy;
 use coins::nft::nft_structs::{Chain, NftInfo, NftUrls};
 use coins::{eth::v2_activation::EthPrivKeyActivationPolicy, MmCoinEnum};
@@ -198,11 +199,15 @@ impl PlatformWithTokensActivationOps for EthCoin {
 
     async fn enable_global_non_fungible_token(
         &self,
-        _ctx: &MmArc,
-        _activation_request: Self::ActivationRequest,
+        ctx: &MmArc,
+        platform_conf: Json,
+        activation_request: &Self::ActivationRequest,
     ) -> Result<MmCoinEnum, MmError<Self::ActivationError>> {
-        let _chain = Chain::from_str(self.ticker());
-        todo!()
+        let chain = Chain::from_str(self.ticker())?;
+        let nft_global =
+            global_nft_from_platform_coin(ctx, self, &chain, &platform_conf, &activation_request.platform_request)
+                .await?;
+        Ok(MmCoinEnum::EthCoin(nft_global))
     }
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>

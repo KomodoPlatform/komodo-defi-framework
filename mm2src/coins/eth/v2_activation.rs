@@ -1,4 +1,6 @@
 use super::*;
+use crate::nft::nft_errors::ParseChainTypeError;
+use crate::nft::nft_structs::Chain;
 #[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
 use common::executor::AbortedError;
 use crypto::{CryptoCtxError, StandardHDCoinAddress};
@@ -56,6 +58,10 @@ impl From<UnexpectedDerivationMethod> for EthActivationV2Error {
 #[cfg(target_arch = "wasm32")]
 impl From<MetamaskError> for EthActivationV2Error {
     fn from(e: MetamaskError) -> Self { from_metamask_error(e) }
+}
+
+impl From<ParseChainTypeError> for EthActivationV2Error {
+    fn from(e: ParseChainTypeError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
 }
 
 /// An alternative to `crate::PrivKeyActivationPolicy`, typical only for ETH coin.
@@ -328,6 +334,60 @@ pub async fn eth_coin_from_conf_and_request_v2(
     };
 
     Ok(EthCoin(Arc::new(coin)))
+}
+
+pub async fn global_nft_from_platform_coin(
+    ctx: &MmArc,
+    platform: &EthCoin,
+    chain: &Chain,
+    conf: &Json,
+    activation_request: &EthActivationV2Request,
+) -> MmResult<EthCoin, EthActivationV2Error> {
+    let ticker = chain.to_nft_ticker().to_string();
+    let mut map = NONCE_LOCK.lock().unwrap();
+    let nonce_lock = map.entry(ticker.clone()).or_insert_with(new_nonce_lock).clone();
+
+    // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
+    // all spawned futures related to `ETH` coin will be aborted as well.
+    let abortable_system = ctx.abortable_system.create_subsystem()?;
+
+    // param from request should override the config
+    let required_confirmations = activation_request
+        .required_confirmations
+        .unwrap_or_else(|| {
+            conf["required_confirmations"]
+                .as_u64()
+                .unwrap_or(DEFAULT_REQUIRED_CONFIRMATIONS as u64)
+        })
+        .into();
+
+    let global_nft = EthCoinImpl {
+        ticker,
+        // todo change type to NFT
+        coin_type: EthCoinType::Eth,
+        priv_key_policy: platform.priv_key_policy.clone(),
+        my_address: platform.my_address,
+        sign_message_prefix: platform.sign_message_prefix.clone(),
+        swap_contract_address: platform.swap_contract_address,
+        fallback_swap_contract: platform.fallback_swap_contract,
+        contract_supports_watchers: platform.contract_supports_watchers,
+        web3: platform.web3.clone(),
+        web3_instances: platform.web3_instances.clone(),
+        decimals: platform.decimals,
+        gas_station_url: platform.gas_station_url.clone(),
+        gas_station_decimals: platform.gas_station_decimals,
+        gas_station_policy: platform.gas_station_policy.clone(),
+        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
+        required_confirmations,
+        ctx: ctx.weak(),
+        chain_id: platform.chain_id,
+        logs_block_range: platform.logs_block_range,
+        nonce_lock,
+        erc20_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        abortable_system,
+    };
+    Ok(EthCoin(Arc::new(global_nft)))
 }
 
 /// Processes the given `priv_key_policy` and generates corresponding `KeyPair`.

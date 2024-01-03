@@ -115,6 +115,7 @@ pub enum Chain {
 
 pub(crate) trait ConvertChain {
     fn to_ticker(&self) -> &'static str;
+    fn to_nft_ticker(&self) -> &'static str;
 }
 
 impl ConvertChain for Chain {
@@ -125,6 +126,16 @@ impl ConvertChain for Chain {
             Chain::Eth => "ETH",
             Chain::Fantom => "FTM",
             Chain::Polygon => "MATIC",
+        }
+    }
+
+    fn to_nft_ticker(&self) -> &'static str {
+        match self {
+            Chain::Avalanche => "NFT_AVAX",
+            Chain::Bsc => "NFT_BNB",
+            Chain::Eth => "NFT_ETH",
+            Chain::Fantom => "NFT_FTM",
+            Chain::Polygon => "NFT_MATIC",
         }
     }
 }

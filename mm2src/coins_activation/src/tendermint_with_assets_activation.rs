@@ -203,7 +203,8 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     async fn enable_global_non_fungible_token(
         &self,
         _ctx: &MmArc,
-        _activation_request: Self::ActivationRequest,
+        _platform_conf: Json,
+        _activation_request: &Self::ActivationRequest,
     ) -> Result<MmCoinEnum, MmError<Self::ActivationError>> {
         todo!()
     }
