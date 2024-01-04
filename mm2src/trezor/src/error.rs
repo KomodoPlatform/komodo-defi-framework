@@ -33,6 +33,8 @@ pub enum TrezorError {
     UnexpectedInteractionRequest(TrezorUserInteraction),
     Internal(String),
     PongMessageMismatch,
+    #[display("no processor for trezor response")]
+    InternalNoProcessor,
 }
 
 #[derive(Clone, Debug, Display)]
@@ -109,4 +111,9 @@ impl From<UsbError> for TrezorError {
             e => TrezorError::UnderlyingError(e.to_string()),
         }
     }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+impl From<std::io::Error> for TrezorError {
+    fn from(e: std::io::Error) -> Self { TrezorError::UnderlyingError(e.to_string()) }
 }

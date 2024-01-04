@@ -1054,12 +1054,12 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     let max_possible_2 = &qtum_balance - &max_trade_fee;
     // - `max_dex_fee = dex_fee(max_possible_2)`
     let max_dex_fee = dex_fee_amount("QTUM", "MYCOIN", &MmNumber::from(max_possible_2), &qtum_min_tx_amount);
-    debug!("max_dex_fee: {:?}", max_dex_fee.to_fraction());
+    debug!("max_dex_fee: {:?}", max_dex_fee.fee_amount().to_fraction());
 
     // - `max_fee_to_send_taker_fee = fee_to_send_taker_fee(max_dex_fee)`
     // `taker_fee` is sent using general withdraw, and the fee get be obtained from withdraw result
     let max_fee_to_send_taker_fee =
-        block_on(coin.get_fee_to_send_taker_fee(max_dex_fee.to_decimal(), FeeApproxStage::TradePreimage))
+        block_on(coin.get_fee_to_send_taker_fee(max_dex_fee, FeeApproxStage::TradePreimage))
             .expect("!get_fee_to_send_taker_fee");
     let max_fee_to_send_taker_fee = max_fee_to_send_taker_fee.amount.to_decimal();
     debug!("max_fee_to_send_taker_fee: {}", max_fee_to_send_taker_fee);
@@ -1072,7 +1072,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     let expected_max_taker_vol =
         max_taker_vol_from_available(MmNumber::from(available), "QTUM", "MYCOIN", &min_tx_amount)
             .expect("max_taker_vol_from_available");
-    let real_dex_fee = dex_fee_amount("QTUM", "MYCOIN", &expected_max_taker_vol, &qtum_min_tx_amount);
+    let real_dex_fee = dex_fee_amount("QTUM", "MYCOIN", &expected_max_taker_vol, &qtum_min_tx_amount).fee_amount();
     debug!("real_max_dex_fee: {:?}", real_dex_fee.to_fraction());
 
     // check if the actual max_taker_vol equals to the expected
@@ -1105,9 +1105,9 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     let timelock = now_sec() - 200;
     let secret_hash = &[0; 20];
 
-    let dex_fee_amount = dex_fee_amount("QTUM", "MYCOIN", &expected_max_taker_vol, &qtum_min_tx_amount);
+    let dex_fee = dex_fee_amount("QTUM", "MYCOIN", &expected_max_taker_vol, &qtum_min_tx_amount);
     let _taker_fee_tx = coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, dex_fee_amount.to_decimal(), &[])
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, dex_fee, &[])
         .wait()
         .expect("!send_taker_fee");
     let taker_payment_args = SendPaymentArgs {

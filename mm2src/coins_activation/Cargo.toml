@@ -21,6 +21,7 @@ futures = { version = "0.3", package = "futures", features = ["compat", "async-a
 hex = "0.4.2"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_metrics = { path = "../mm2_metrics" }
 mm2_number = { path = "../mm2_number" }
 parking_lot = { version = "0.12.0", features = ["nightly"] }

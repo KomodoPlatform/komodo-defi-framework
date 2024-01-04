@@ -63,12 +63,14 @@ struct PendingRequest {
 #[derive(Debug, Clone)]
 pub enum Protocol {
     Version1,
+    Version2,
 }
 
 impl AsRef<str> for Protocol {
     fn as_ref(&self) -> &str {
         match self {
             Protocol::Version1 => "/request-response/1",
+            Protocol::Version2 => "/request-response/2",
         }
     }
 }
@@ -393,7 +395,8 @@ impl From<libp2p::request_response::Event<PeerRequest, PeerResponse>> for Reques
 /// Build a request-response network behaviour.
 pub fn build_request_response_behaviour() -> RequestResponseBehaviour {
     let config = RequestResponseConfig::default();
-    let protocol = core::iter::once((Protocol::Version1, ProtocolSupport::Full));
+    // We don't want to support V1 since it was only used in 7777 old layer.
+    let protocol = core::iter::once((Protocol::Version2, ProtocolSupport::Full));
     let inner = RequestResponse::new(protocol, config);
 
     let (tx, rx) = mpsc::unbounded();

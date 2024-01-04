@@ -23,7 +23,7 @@ RUN apt install -y  			\
 	lsb-release 				\
 	gnupg
 
-RUN wget https://apt.llvm.org/llvm.sh
+RUN curl --output llvm.sh https://apt.llvm.org/llvm.sh
 
 RUN chmod +x llvm.sh
 
@@ -53,3 +53,5 @@ RUN apt-get install -y 	  \
 	docker-buildx-plugin
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+ENV PATH="/root/.cargo/bin:$PATH"

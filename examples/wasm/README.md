@@ -1,4 +1,4 @@
-# AtomicDEX-API WASM example
+# Komodo DeFi Framework WASM example
 
 **wasm_build** is an example of using **MarketMaker2** in webpages
 via [WebAssembly](https://developer.mozilla.org/en-US/docs/WebAssembly)

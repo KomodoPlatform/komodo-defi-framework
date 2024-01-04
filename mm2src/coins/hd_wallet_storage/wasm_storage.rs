@@ -10,7 +10,6 @@ use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, DbTable, DbTransact
                          TableSignature, WeakDb};
 use mm2_err_handle::prelude::*;
 
-const DB_NAME: &str = "hd_wallet";
 const DB_VERSION: u32 = 1;
 /// An index of the `HDAccountTable` table that consists of the following properties:
 /// * coin - coin ticker
@@ -142,7 +141,7 @@ pub struct HDWalletDb {
 
 #[async_trait]
 impl DbInstance for HDWalletDb {
-    fn db_name() -> &'static str { DB_NAME }
+    const DB_NAME: &'static str = "hd_wallet";
 
     async fn init(db_id: DbIdentifier) -> InitDbResult<Self> {
         let inner = IndexedDbBuilder::new(db_id)

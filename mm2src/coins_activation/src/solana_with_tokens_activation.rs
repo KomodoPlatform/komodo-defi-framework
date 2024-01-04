@@ -18,6 +18,7 @@ use crypto::CryptoCtxError;
 use futures::future::try_join_all;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::EventStreamConfiguration;
 use mm2_number::BigDecimal;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -287,5 +288,12 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: Option<BigDecimal>,
     ) {
+    }
+
+    async fn handle_balance_streaming(
+        &self,
+        _config: &EventStreamConfiguration,
+    ) -> Result<(), MmError<Self::ActivationError>> {
+        Ok(())
     }
 }

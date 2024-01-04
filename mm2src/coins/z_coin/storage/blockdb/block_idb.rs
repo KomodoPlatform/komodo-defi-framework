@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use mm2_db::indexed_db::{BeBigUint, DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
                          OnUpgradeResult, TableSignature};
 
-const DB_NAME: &str = "z_compactblocks_cache";
 const DB_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -39,7 +38,7 @@ impl BlockDbInner {
 
 #[async_trait]
 impl DbInstance for BlockDbInner {
-    fn db_name() -> &'static str { DB_NAME }
+    const DB_NAME: &'static str = "z_compactblocks_cache";
 
     async fn init(db_id: DbIdentifier) -> InitDbResult<Self> {
         let inner = IndexedDbBuilder::new(db_id)

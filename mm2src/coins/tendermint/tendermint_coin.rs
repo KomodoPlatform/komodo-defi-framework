@@ -15,20 +15,20 @@ use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
             PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps, SearchForSwapTxSpendInput,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureError, SignatureResult, SpendPaymentArgs,
-            SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
-            TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom,
-            WithdrawFut, WithdrawRequest};
+            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType, TxFeeDetails,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
@@ -60,7 +60,7 @@ use futures01::Future;
 use hex::FromHexError;
 use itertools::Itertools;
 use keys::KeyPair;
-use mm2_core::mm_ctx::MmArc;
+use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
 use mm2_number::MmNumber;
@@ -142,7 +142,7 @@ pub struct TendermintProtocolInfo {
 #[derive(Clone)]
 pub struct ActivatedTokenInfo {
     pub(crate) decimals: u8,
-    pub(crate) denom: Denom,
+    pub ticker: String,
 }
 
 pub struct TendermintConf {
@@ -237,6 +237,7 @@ pub struct TendermintCoinImpl {
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
     chain_registry_name: Option<String>,
+    pub(crate) ctx: MmWeak,
 }
 
 #[derive(Clone)]
@@ -279,6 +280,7 @@ pub enum TendermintInitErrorKind {
     AvgBlockTimeMissing,
     #[display(fmt = "avg_blocktime must be in-between '0' and '255'.")]
     AvgBlockTimeInvalid,
+    BalanceStreamInitError(String),
 }
 
 #[derive(Display, Debug)]
@@ -441,14 +443,14 @@ impl TendermintCommons for TendermintCoin {
         let ibc_assets_info = self.tokens_info.lock().clone();
 
         let mut requests = Vec::new();
-        for (ticker, info) in ibc_assets_info {
+        for (denom, info) in ibc_assets_info {
             let fut = async move {
                 let balance_denom = self
-                    .account_balance_for_denom(&self.account_id, info.denom.to_string())
+                    .account_balance_for_denom(&self.account_id, denom)
                     .await
                     .map_err(|e| e.into_inner())?;
                 let balance_decimal = big_decimal_from_sat_unsigned(balance_denom, info.decimals);
-                Ok::<_, TendermintCoinRpcError>((ticker.clone(), balance_decimal))
+                Ok::<_, TendermintCoinRpcError>((info.ticker, balance_decimal))
             };
             requests.push(fut);
         }
@@ -544,6 +546,7 @@ impl TendermintCoin {
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
             chain_registry_name: protocol_info.chain_registry_name,
+            ctx: ctx.weak(),
         })))
     }
 
@@ -1178,7 +1181,7 @@ impl TendermintCoin {
     pub fn add_activated_token_info(&self, ticker: String, decimals: u8, denom: Denom) {
         self.tokens_info
             .lock()
-            .insert(ticker, ActivatedTokenInfo { decimals, denom });
+            .insert(denom.to_string(), ActivatedTokenInfo { decimals, ticker });
     }
 
     fn estimate_blocks_from_duration(&self, duration: u64) -> i64 {
@@ -1609,11 +1612,11 @@ impl TendermintCoin {
         ticker: String,
         denom: Denom,
         decimals: u8,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
     ) -> TradePreimageResult<TradeFee> {
         let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.into_inner().to_string())))?;
-        let amount = sat_from_big_decimal(&dex_fee_amount, decimals)?;
+        let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals)?;
 
         let current_block = self.current_block().compat().await.map_err(|e| {
             MmError::new(TradePreimageError::InternalError(format!(
@@ -1820,6 +1823,20 @@ impl TendermintCoin {
             Some(WithdrawFee::CosmosGas { gas_price, gas_limit }) => (*gas_price, *gas_limit),
             _ => (self.gas_price(), fallback_gas_limit),
         }
+    }
+
+    pub(crate) fn active_ticker_and_decimals_from_denom(&self, denom: &str) -> Option<(String, u8)> {
+        if self.denom.as_ref() == denom {
+            return Some((self.ticker.clone(), self.decimals));
+        }
+
+        let tokens = self.tokens_info.lock();
+
+        if let Some(token_info) = tokens.get(denom) {
+            return Some((token_info.ticker.to_owned(), token_info.decimals));
+        }
+
+        None
     }
 }
 
@@ -2157,7 +2174,7 @@ impl MmCoin for TendermintCoin {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         self.get_fee_to_send_taker_fee_for_denom(self.ticker.clone(), self.denom.clone(), self.decimals, dex_fee_amount)
@@ -2197,6 +2214,7 @@ impl MmCoin for TendermintCoin {
     fn on_token_deactivated(&self, _ticker: &str) {}
 }
 
+#[async_trait]
 impl MarketCoinOps for TendermintCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
@@ -2284,6 +2302,13 @@ impl MarketCoinOps for TendermintCoin {
             Ok(broadcast_res.hash.to_string())
         };
         Box::new(fut.boxed().compat())
+    }
+
+    #[inline(always)]
+    async fn sign_raw_tx(&self, _args: &SignRawTransactionRequest) -> RawTransactionResult {
+        MmError::err(RawTransactionError::NotImplemented {
+            coin: self.ticker().to_string(),
+        })
     }
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
@@ -2404,8 +2429,14 @@ impl MarketCoinOps for TendermintCoin {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut {
-        self.send_taker_fee_for_denom(fee_addr, amount, self.denom.clone(), self.decimals, uuid)
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8]) -> TransactionFut {
+        self.send_taker_fee_for_denom(
+            fee_addr,
+            dex_fee.fee_amount().into(),
+            self.denom.clone(),
+            self.decimals,
+            uuid,
+        )
     }
 
     fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
@@ -2553,7 +2584,7 @@ impl SwapOps for TendermintCoin {
             validate_fee_args.fee_tx,
             validate_fee_args.expected_sender,
             validate_fee_args.fee_addr,
-            validate_fee_args.amount,
+            &validate_fee_args.dex_fee.fee_amount().into(),
             self.decimals,
             validate_fee_args.uuid,
             self.denom.to_string(),
@@ -2736,6 +2767,10 @@ impl WatcherOps for TendermintCoin {
     }
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
@@ -3164,13 +3199,13 @@ pub mod tendermint_coin_tests {
             data: TxRaw::decode(create_htlc_tx_bytes.as_slice()).unwrap(),
         });
 
-        let invalid_amount = 1.into();
+        let invalid_amount: MmNumber = 1.into();
         let error = coin
             .validate_fee(ValidateFeeArgs {
                 fee_tx: &create_htlc_tx,
                 expected_sender: &[],
                 fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                amount: &invalid_amount,
+                dex_fee: &DexFee::Standard(invalid_amount.clone()),
                 min_block_number: 0,
                 uuid: &[1; 16],
             })
@@ -3204,7 +3239,7 @@ pub mod tendermint_coin_tests {
                 fee_tx: &random_transfer_tx,
                 expected_sender: &[],
                 fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                amount: &invalid_amount,
+                dex_fee: &DexFee::Standard(invalid_amount.clone()),
                 min_block_number: 0,
                 uuid: &[1; 16],
             })
@@ -3237,7 +3272,7 @@ pub mod tendermint_coin_tests {
                 fee_tx: &dex_fee_tx,
                 expected_sender: &[],
                 fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                amount: &invalid_amount,
+                dex_fee: &DexFee::Standard(invalid_amount),
                 min_block_number: 0,
                 uuid: &[1; 16],
             })
@@ -3257,7 +3292,7 @@ pub mod tendermint_coin_tests {
                 fee_tx: &dex_fee_tx,
                 expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
                 fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                amount: &valid_amount,
+                dex_fee: &DexFee::Standard(valid_amount.clone().into()),
                 min_block_number: 0,
                 uuid: &[1; 16],
             })
@@ -3276,7 +3311,7 @@ pub mod tendermint_coin_tests {
                 fee_tx: &dex_fee_tx,
                 expected_sender: &pubkey,
                 fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                amount: &valid_amount,
+                dex_fee: &DexFee::Standard(valid_amount.into()),
                 min_block_number: 0,
                 uuid: &[1; 16],
             })

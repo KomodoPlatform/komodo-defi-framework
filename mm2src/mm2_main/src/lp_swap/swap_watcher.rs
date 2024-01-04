@@ -1,6 +1,7 @@
 use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
             H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::mm2::lp_network::{P2PRequestError, P2PRequestResult};
+
 use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
@@ -65,9 +66,9 @@ impl WatcherStateMachine {
 pub struct WatcherConf {
     #[serde(default = "common::sixty_f64")]
     wait_taker_payment: f64,
-    #[serde(default = "common::one_f64")]
+    #[serde(default = "default_watcher_maker_payment_spend_factor")]
     wait_maker_payment_spend_factor: f64,
-    #[serde(default = "common::one_and_half_f64")]
+    #[serde(default = "default_watcher_refund_factor")]
     refund_start_factor: f64,
     #[serde(default = "common::three_hundred_f64")]
     search_interval: f64,
@@ -77,12 +78,16 @@ impl Default for WatcherConf {
     fn default() -> Self {
         WatcherConf {
             wait_taker_payment: common::sixty_f64(),
-            wait_maker_payment_spend_factor: common::one_f64(),
-            refund_start_factor: common::one_and_half_f64(),
+            wait_maker_payment_spend_factor: default_watcher_maker_payment_spend_factor(),
+            refund_start_factor: default_watcher_refund_factor(),
             search_interval: common::three_hundred_f64(),
         }
     }
 }
+
+pub fn default_watcher_maker_payment_spend_factor() -> f64 { common::one_f64() }
+
+pub fn default_watcher_refund_factor() -> f64 { common::one_and_half_f64() }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SwapWatcherMsg {
@@ -179,6 +184,7 @@ impl State for ValidateTakerFee {
     type StateMachine = WatcherStateMachine;
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherStateMachine) -> StateResult<WatcherStateMachine> {
+        debug!("Watcher validate taker fee");
         let validated_f = watcher_ctx
             .taker_coin
             .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
@@ -206,6 +212,7 @@ impl State for ValidateTakerPayment {
     type StateMachine = WatcherStateMachine;
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherStateMachine) -> StateResult<WatcherStateMachine> {
+        debug!("Watcher validate taker payment");
         let taker_payment_spend_deadline =
             taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
 
@@ -279,6 +286,7 @@ impl State for WaitForTakerPaymentSpend {
     type StateMachine = WatcherStateMachine;
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherStateMachine) -> StateResult<WatcherStateMachine> {
+        debug!("Watcher wait for taker payment spend");
         let payment_search_interval = watcher_ctx.conf.search_interval;
         let wait_until = watcher_ctx.refund_start_time();
         let search_input = WatcherSearchForSwapTxSpendInput {
@@ -383,6 +391,7 @@ impl State for SpendMakerPayment {
     type StateMachine = WatcherStateMachine;
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherStateMachine) -> StateResult<WatcherStateMachine> {
+        debug!("Watcher spend maker payment");
         let spend_fut = watcher_ctx
             .maker_coin
             .send_maker_payment_spend_preimage(SendMakerPaymentSpendPreimageInput {
@@ -434,6 +443,7 @@ impl State for RefundTakerPayment {
     type StateMachine = WatcherStateMachine;
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherStateMachine) -> StateResult<WatcherStateMachine> {
+        debug!("Watcher refund taker payment");
         if std::env::var("USE_TEST_LOCKTIME").is_err() {
             loop {
                 match watcher_ctx

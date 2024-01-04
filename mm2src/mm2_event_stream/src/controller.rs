@@ -103,22 +103,11 @@ impl<M: Send + Sync> GuardedReceiver<M> {
 #[cfg(any(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
+    use common::cross_test;
 
     common::cfg_wasm32! {
         use wasm_bindgen_test::*;
         wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
-    }
-
-    macro_rules! cross_test {
-        ($test_name:ident, $test_code:block) => {
-            #[cfg(not(target_arch = "wasm32"))]
-            #[tokio::test(flavor = "multi_thread")]
-            async fn $test_name() { $test_code }
-
-            #[cfg(target_arch = "wasm32")]
-            #[wasm_bindgen_test]
-            async fn $test_name() { $test_code }
-        };
     }
 
     cross_test!(test_create_channel_and_broadcast, {

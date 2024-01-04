@@ -62,7 +62,7 @@ For a curated list of Komodo DeFi Framework based projects and resources, check 
 - Perform blockchain transactions without a local native chain (e.g. via Electrum servers)
 - Query orderbooks for all pairs within the [supported coins](https://github.com/KomodoPlatform/coins/blob/master/coins)
 - Buy/sell from the orderbook, or create maker orders
-- Configure automated ["makerbot" trading](https://developers.komodoplatform.com/basic-docs/atomicdex-api-20-dev/start_simple_market_maker_bot.html) with periodic price updates and optional [telegram](https://telegram.org/) alerts
+- Configure automated ["makerbot" trading](https://developers.komodoplatform.com/basic-docs/atomicdex-api-20/start_simple_market_maker_bot.html) with periodic price updates and optional [telegram](https://telegram.org/) alerts
 
 
 ## System Requirements
@@ -73,6 +73,8 @@ For a curated list of Komodo DeFi Framework based projects and resources, check 
 
 ## Building from source
 
+### On Host System:
+
 [Pre-built release binaries](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/get-started-atomicdex.html) are available for OSX, Linux or Windows.
 
 If you want to build from source, the following prerequisites are required:
@@ -82,16 +84,28 @@ If you want to build from source, the following prerequisites are required:
 - (Optional) OSX: run `LIBRARY_PATH=/usr/local/opt/openssl/lib`
 - (Optional) Linux: Install libudev-dev (dpkg) or libudev-devel (rpm) package.
 - [Download](https://github.com/protocolbuffers/protobuf/releases) or [compile](https://github.com/protocolbuffers/protobuf) `protoc 3.21.x+` and add it to your PATH env. It is also available via package managers depending on the OS.
-- Additional Rust Components
-    ```
-    rustup install nightly-2022-10-29
-    rustup default nightly-2022-10-29
-    rustup component add rustfmt-preview
-    ```
 
 To build, run `cargo build` (or `cargo build -vv` to get verbose build output).
 
 For more detailed instructions, please refer to the [Installation Guide](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/get-started-atomicdex.html).
+
+### From Container:
+
+If you want to build from source without installing prerequisites to your host system, you can do so by binding the source code inside a container and compiling it there.
+
+Build the image:
+
+```sh
+docker build -t mm2-build-container -f .docker/Dockerfile .
+```
+
+Bind source code into container and compile it:
+
+```sh
+docker run -v "$(pwd)":/app -w /app mm2-build-container cargo build
+```
+
+Just like building it on your host system, you will now have the target directory containing the build files.
 
 ## Building WASM binary
 

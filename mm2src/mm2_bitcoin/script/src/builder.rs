@@ -40,7 +40,7 @@ impl Builder {
     }
 
     /// Builds p2wpkh or p2wsh script pubkey
-    pub fn build_witness_script(address: &AddressHashEnum) -> Script {
+    pub fn build_p2witness(address: &AddressHashEnum) -> Script {
         Builder::default()
             .push_opcode(Opcode::OP_0)
             .push_bytes(&address.to_vec())
@@ -78,7 +78,7 @@ impl Builder {
     pub fn push_bytes(mut self, bytes: &[u8]) -> Self {
         let len = bytes.len();
         if !(1..=75).contains(&len) {
-            panic!("Canot push {} bytes", len);
+            panic!("Can not push {} bytes", len);
         }
 
         let opcode: Opcode = Opcode::from_u8(((Opcode::OP_PUSHBYTES_1 as usize) + len - 1) as u8)

@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 
 use crate::adex_proc::SmartFractPrecision;
 use crate::helpers::rewrite_json_file;
-#[cfg(unix)] use crate::helpers::set_file_permissions;
 use crate::logging::{error_anyhow, warn_bail};
 
 const PROJECT_QUALIFIER: &str = "com";
@@ -151,14 +150,28 @@ impl AdexConfigImpl {
     }
 
     fn write_to(&self, cfg_path: &Path) -> Result<()> {
-        let adex_path_str = cfg_path
+        let komodefi_path_str = cfg_path
             .to_str()
             .ok_or_else(|| error_anyhow!("Failed to get cfg_path as str"))?;
-        rewrite_json_file(self, adex_path_str)?;
+        rewrite_json_file(self, komodefi_path_str)?;
         #[cfg(unix)]
         {
-            set_file_permissions(adex_path_str, CFG_FILE_PERM_MODE)?;
+            Self::warn_on_insecure_mode(komodefi_path_str)?;
         }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn warn_on_insecure_mode(file_path: &str) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = fs::metadata(file_path)?.permissions();
+        let mode = perms.mode() & 0o777;
+        if mode != CFG_FILE_PERM_MODE {
+            warn!(
+                "Configuration file: '{}' - does not comply to the expected mode: {:o}, the actual one is: {:o}",
+                file_path, CFG_FILE_PERM_MODE, mode
+            );
+        };
         Ok(())
     }
 

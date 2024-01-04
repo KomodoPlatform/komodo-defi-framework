@@ -49,12 +49,14 @@ impl<'de> Deserialize<'de> for PeerIdSerde {
 #[derive(Debug, Clone)]
 pub enum PeersExchangeProtocol {
     Version1,
+    Version2,
 }
 
 impl AsRef<str> for PeersExchangeProtocol {
     fn as_ref(&self) -> &str {
         match self {
             PeersExchangeProtocol::Version1 => "/peers-exchange/1",
+            PeersExchangeProtocol::Version2 => "/peers-exchange/2",
         }
     }
 }
@@ -205,7 +207,8 @@ impl NetworkBehaviour for PeersExchange {
 #[allow(clippy::new_without_default)]
 impl PeersExchange {
     pub fn new(network_info: NetworkInfo) -> Self {
-        let protocol = iter::once((PeersExchangeProtocol::Version1, ProtocolSupport::Full));
+        // We don't want to support V1 since it was only used in 7777 old layer.
+        let protocol = iter::once((PeersExchangeProtocol::Version2, ProtocolSupport::Full));
         let config = RequestResponseConfig::default();
         let request_response = RequestResponse::new(protocol, config);
         PeersExchange {

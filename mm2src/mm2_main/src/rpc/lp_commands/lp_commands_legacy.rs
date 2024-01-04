@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright © 2022 Atomic Private Limited and its contributors               *
+ * Copyright © 2023 Pampex LTD and TillyHK LTD              *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -7,7 +7,7 @@
  * holder information and the developer policies on copyright and licensing.  *
  *                                                                            *
  * Unless otherwise agreed in a custom licensing agreement, no part of the    *
- * AtomicDEX software, including this file may be copied, modified, propagated*
+ * Komodo DeFi Framework software, including this file may be copied, modified, propagated*
  * or distributed except according to the terms contained in the              *
  * LICENSE-COPYRIGHT-NOTICE file.                                             *
  *                                                                            *
@@ -246,12 +246,26 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Stri
     Ok(try_s!(Response::builder().body(res)))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+async fn close_async_connection(ctx: &MmArc) {
+    if let Some(async_conn) = ctx.async_sqlite_connection.as_option() {
+        let mut conn = async_conn.lock().await;
+        if let Err(e) = conn.close().await {
+            error!("Error stopping AsyncConnection: {}", e);
+        }
+    }
+}
+
 pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
     // Should delay the shutdown a bit in order not to trip the "stop" RPC call in unit tests.
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
     let fut = async move {
         Timer::sleep(0.05).await;
+
+        #[cfg(not(target_arch = "wasm32"))]
+        close_async_connection(&ctx).await;
+
         if let Err(e) = ctx.stop() {
             error!("Error stopping MmCtx: {}", e);
         }

@@ -15,6 +15,10 @@ pub trait StateMachineTrait: Send + Sized + 'static {
     /// The associated type for errors that can occur during the state machine's execution.
     type Error: Send;
 
+    /// Asynchronous method called when the state machine starts its execution.
+    /// This method can be overridden by implementing types.
+    async fn on_start(&mut self) -> Result<(), Self::Error> { Ok(()) }
+
     /// Asynchronous method called when the state machine finishes its execution.
     /// This method can be overridden by implementing types.
     async fn on_finished(&mut self) -> Result<(), Self::Error> { Ok(()) }
@@ -22,6 +26,8 @@ pub trait StateMachineTrait: Send + Sized + 'static {
     /// Asynchronous method to run the state machine.
     /// It transitions between states and handles state-specific logic.
     async fn run(&mut self, mut state: Box<dyn State<StateMachine = Self>>) -> Result<Self::Result, Self::Error> {
+        self.on_start().await?;
+
         loop {
             let result = state.on_changed(self).await;
             match result {
@@ -63,7 +69,7 @@ pub trait State: Send + Sync + 'static {
     /// ```rust
     /// return Self::change_state(next_state);
     /// ```
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::StateMachine) -> StateResult<Self::StateMachine>;
+    async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine>;
 }
 
 /// A trait for transitioning between states in the state machine.

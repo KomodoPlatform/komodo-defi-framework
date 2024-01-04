@@ -40,8 +40,11 @@ pub struct EventStreamConfiguration {
 #[derive(Clone, Default, Deserialize)]
 pub struct EventConfig {
     /// The interval in seconds at which the event should be streamed.
+    #[serde(default = "default_stream_interval")]
     pub stream_interval_seconds: f64,
 }
+
+const fn default_stream_interval() -> f64 { 5. }
 
 impl Default for EventStreamConfiguration {
     fn default() -> Self {

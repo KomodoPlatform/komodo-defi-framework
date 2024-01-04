@@ -11,6 +11,8 @@ use super::{z_coin_from_conf_and_params_with_z_key, z_mainnet_constants, Future,
             ZTransaction};
 use crate::z_coin::{z_htlc::z_send_dex_fee, ZcoinActivationParams, ZcoinRpcMode};
 use crate::CoinProtocol;
+use crate::DexFee;
+use mm2_number::MmNumber;
 
 #[test]
 fn zombie_coin_send_and_refund_maker_payment() {
@@ -228,7 +230,7 @@ fn zombie_coin_validate_dex_fee() {
         fee_tx: &tx,
         expected_sender: &[],
         fee_addr: &[],
-        amount: &"0.001".parse().unwrap(),
+        dex_fee: &DexFee::Standard(MmNumber::from("0.001")),
         min_block_number: 12000,
         uuid: &[1; 16],
     };
@@ -244,7 +246,7 @@ fn zombie_coin_validate_dex_fee() {
         fee_tx: &tx,
         expected_sender: &[],
         fee_addr: &[],
-        amount: &"0.01".parse().unwrap(),
+        dex_fee: &DexFee::Standard(MmNumber::from("0.01")),
         min_block_number: 12000,
         uuid: &[2; 16],
     };
@@ -259,7 +261,7 @@ fn zombie_coin_validate_dex_fee() {
         fee_tx: &tx,
         expected_sender: &[],
         fee_addr: &[],
-        amount: &"0.01".parse().unwrap(),
+        dex_fee: &DexFee::Standard(MmNumber::from("0.01")),
         min_block_number: 14000,
         uuid: &[1; 16],
     };
@@ -274,7 +276,7 @@ fn zombie_coin_validate_dex_fee() {
         fee_tx: &tx,
         expected_sender: &[],
         fee_addr: &[],
-        amount: &"0.01".parse().unwrap(),
+        dex_fee: &DexFee::Standard(MmNumber::from("0.01")),
         min_block_number: 12000,
         uuid: &[1; 16],
     };

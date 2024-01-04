@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright © 2022 Atomic Private Limited and its contributors               *
+ * Copyright © 2023 Pampex LTD and TillyHK LTD              *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -7,7 +7,7 @@
  * holder information and the developer policies on copyright and licensing.  *
  *                                                                            *
  * Unless otherwise agreed in a custom licensing agreement, no part of the    *
- * AtomicDEX software, including this file may be copied, modified, propagated*
+ * Komodo DeFi Framework software, including this file may be copied, modified, propagated*
  * or distributed except according to the terms contained in the              *
  * LICENSE-COPYRIGHT-NOTICE file.                                             *
  *                                                                            *
@@ -71,15 +71,18 @@ use uuid::Uuid;
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest,
                              P2PRequestError};
-use crate::mm2::lp_swap::maker_swap_v2::{self, DummyMakerSwapStorage, MakerSwapStateMachine};
-use crate::mm2::lp_swap::taker_swap_v2::{self, DummyTakerSwapStorage, TakerSwapStateMachine};
+use crate::mm2::lp_swap::maker_swap_v2::{self, MakerSwapStateMachine, MakerSwapStorage};
+use crate::mm2::lp_swap::taker_swap_v2::{self, TakerSwapStateMachine, TakerSwapStorage};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                          check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, get_max_maker_vol,
-                          insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
-                          p2p_keypair_and_peer_id_to_broadcast, p2p_private_and_peer_id_to_broadcast, run_maker_swap,
-                          run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult,
-                          CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SecretHashAlgo,
-                          SwapConfirmationsSettings, TakerSwap};
+                          check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
+                          generate_secret, get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned,
+                          lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
+                          p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, swap_v2_topic,
+                          AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap,
+                          RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap, LEGACY_SWAP_TYPE};
+
+#[cfg(any(test, feature = "run-docker-tests"))]
+use crate::mm2::lp_swap::taker_swap::FailAt;
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 pub use orderbook_depth::orderbook_depth_rpc;
@@ -1042,7 +1045,13 @@ fn maker_order_created_p2p_notify(
     let to_broadcast = new_protocol::OrdermatchMessage::MakerOrderCreated(message.clone());
     let (key_pair, peer_id) = p2p_keypair_and_peer_id_to_broadcast(&ctx, order.p2p_keypair());
 
-    let encoded_msg = encode_and_sign(&to_broadcast, key_pair.private_ref()).unwrap();
+    let encoded_msg = match encode_and_sign(&to_broadcast, key_pair.private_ref()) {
+        Ok(msg) => msg,
+        Err(e) => {
+            error!("Couldn't encode and sign the 'maker_order_created' message: {}", e);
+            return;
+        },
+    };
     let item: OrderbookItem = (message, hex::encode(key_pair.public_slice())).into();
     insert_or_update_my_order(&ctx, item, order);
     broadcast_p2p_msg(&ctx, topic, encoded_msg, peer_id);
@@ -1067,7 +1076,13 @@ fn maker_order_updated_p2p_notify(
 ) {
     let msg: new_protocol::OrdermatchMessage = message.clone().into();
     let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(&ctx, p2p_privkey);
-    let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
+    let encoded_msg = match encode_and_sign(&msg, &secret) {
+        Ok(msg) => msg,
+        Err(e) => {
+            error!("Couldn't encode and sign the 'maker_order_updated' message: {}", e);
+            return;
+        },
+    };
     process_my_maker_order_updated(&ctx, &message);
     broadcast_p2p_msg(&ctx, topic, encoded_msg, peer_id);
 }
@@ -2318,7 +2333,13 @@ fn broadcast_ordermatch_message(
     p2p_privkey: Option<&KeyPair>,
 ) {
     let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey);
-    let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
+    let encoded_msg = match encode_and_sign(&msg, &secret) {
+        Ok(encoded_msg) => encoded_msg,
+        Err(e) => {
+            error!("Failed to encode and sign ordermatch message: {}", e);
+            return;
+        },
+    };
     broadcast_p2p_msg(ctx, topic, encoded_msg, peer_id);
 }
 
@@ -2944,11 +2965,8 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         );
 
         let now = now_sec();
-        if let Err(e) = insert_new_swap_to_db(ctx.clone(), maker_coin.ticker(), taker_coin.ticker(), uuid, now).await {
-            error!("Error {} on new swap insertion", e);
-        }
 
-        let secret = match MakerSwap::generate_secret() {
+        let secret = match generate_secret() {
             Ok(s) => s.into(),
             Err(e) => {
                 error!("Error {} on secret generation", e);
@@ -2957,24 +2975,30 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         };
 
         if ctx.use_trading_proto_v2() {
+            let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut maker_swap_state_machine = MakerSwapStateMachine {
+                        storage: MakerSwapStorage::new(ctx.clone()),
+                        abortable_system: ctx
+                            .abortable_system
+                            .create_subsystem()
+                            .expect("create_subsystem should not fail"),
                         ctx,
-                        storage: DummyMakerSwapStorage::default(),
                         started_at: now_sec(),
                         maker_coin: m.clone(),
                         maker_volume: maker_amount,
                         secret,
                         taker_coin: t.clone(),
-                        dex_fee_amount: dex_fee_amount_from_taker_coin(&t, m.ticker(), &taker_amount),
+                        dex_fee_amount: dex_fee_amount_from_taker_coin(&t, m.ticker(), &taker_amount)
+                            .total_spend_amount(),
                         taker_volume: taker_amount,
                         taker_premium: Default::default(),
                         conf_settings: my_conf_settings,
                         p2p_topic: swap_v2_topic(&uuid),
                         uuid,
                         p2p_keypair: maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-                        secret_hash_algo: SecretHashAlgo::DHASH160,
+                        secret_hash_algo,
                         lock_duration: lock_time,
                     };
                     #[allow(clippy::box_default)]
@@ -2986,6 +3010,18 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 _ => todo!("implement fallback to the old protocol here"),
             }
         } else {
+            if let Err(e) = insert_new_swap_to_db(
+                ctx.clone(),
+                maker_coin.ticker(),
+                taker_coin.ticker(),
+                uuid,
+                now,
+                LEGACY_SWAP_TYPE,
+            )
+            .await
+            {
+                error!("Error {} on new swap insertion", e);
+            }
             let maker_swap = MakerSwap::new(
                 ctx.clone(),
                 alice,
@@ -3087,28 +3123,39 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         );
 
         let now = now_sec();
-        if let Err(e) = insert_new_swap_to_db(ctx.clone(), taker_coin.ticker(), maker_coin.ticker(), uuid, now).await {
-            error!("Error {} on new swap insertion", e);
-        }
-
         if ctx.use_trading_proto_v2() {
+            let taker_secret = match generate_secret() {
+                Ok(s) => s.into(),
+                Err(e) => {
+                    error!("Error {} on secret generation", e);
+                    return;
+                },
+            };
+            let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut taker_swap_state_machine = TakerSwapStateMachine {
+                        storage: TakerSwapStorage::new(ctx.clone()),
+                        abortable_system: ctx
+                            .abortable_system
+                            .create_subsystem()
+                            .expect("create_subsystem should not fail"),
                         ctx,
-                        storage: DummyTakerSwapStorage::default(),
-                        started_at: now_sec(),
+                        started_at: now,
                         lock_duration: locktime,
                         maker_coin: m.clone(),
                         maker_volume: maker_amount,
                         taker_coin: t.clone(),
-                        dex_fee: dex_fee_amount_from_taker_coin(&t, maker_coin_ticker, &taker_amount),
+                        dex_fee: dex_fee_amount_from_taker_coin(&t, maker_coin_ticker, &taker_amount)
+                            .total_spend_amount(),
                         taker_volume: taker_amount,
                         taker_premium: Default::default(),
+                        secret_hash_algo,
                         conf_settings: my_conf_settings,
                         p2p_topic: swap_v2_topic(&uuid),
                         uuid,
                         p2p_keypair: taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                        taker_secret,
                     };
                     #[allow(clippy::box_default)]
                     taker_swap_state_machine
@@ -3119,6 +3166,22 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                 _ => todo!("implement fallback to the old protocol here"),
             }
         } else {
+            #[cfg(any(test, feature = "run-docker-tests"))]
+            let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
+
+            if let Err(e) = insert_new_swap_to_db(
+                ctx.clone(),
+                taker_coin.ticker(),
+                maker_coin.ticker(),
+                uuid,
+                now,
+                LEGACY_SWAP_TYPE,
+            )
+            .await
+            {
+                error!("Error {} on new swap insertion", e);
+            }
+
             let taker_swap = TakerSwap::new(
                 ctx.clone(),
                 maker,
@@ -3132,6 +3195,8 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                 taker_coin,
                 locktime,
                 taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+                #[cfg(any(test, feature = "run-docker-tests"))]
+                fail_at,
             );
             run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
         }

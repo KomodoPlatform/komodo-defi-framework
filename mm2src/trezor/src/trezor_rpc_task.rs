@@ -6,7 +6,7 @@ use mm2_err_handle::prelude::*;
 use std::convert::TryInto;
 use std::time::Duration;
 
-pub use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
+pub use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared};
 
 const DEFAULT_USER_ACTION_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -24,6 +24,7 @@ impl<T> TryIntoUserAction for T where
 {
 }
 
+#[derive(Clone)]
 pub struct TrezorRequestStatuses<InProgressStatus, AwaitingStatus> {
     pub on_button_request: InProgressStatus,
     pub on_pin_request: AwaitingStatus,
@@ -31,14 +32,25 @@ pub struct TrezorRequestStatuses<InProgressStatus, AwaitingStatus> {
     pub on_ready: InProgressStatus,
 }
 
-pub struct TrezorRpcTaskProcessor<'a, Task: RpcTask> {
-    task_handle: &'a RpcTaskHandle<Task>,
+pub struct TrezorRpcTaskProcessor<Task: RpcTask> {
+    task_handle: RpcTaskHandleShared<Task>,
     statuses: TrezorRequestStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
     user_action_timeout: Duration,
 }
 
+/// Custom Clone to avoid clone derivations for structs implementing RpcTask
+impl<Task: RpcTask> Clone for TrezorRpcTaskProcessor<Task> {
+    fn clone(&self) -> Self {
+        Self {
+            task_handle: self.task_handle.clone(),
+            statuses: self.statuses.clone(),
+            user_action_timeout: self.user_action_timeout,
+        }
+    }
+}
+
 #[async_trait]
-impl<'a, Task> TrezorRequestProcessor for TrezorRpcTaskProcessor<'a, Task>
+impl<Task> TrezorRequestProcessor for TrezorRpcTaskProcessor<Task>
 where
     Task: RpcTask,
     Task::UserAction: TryIntoUserAction + Send,
@@ -78,11 +90,11 @@ where
     }
 }
 
-impl<'a, Task: RpcTask> TrezorRpcTaskProcessor<'a, Task> {
+impl<Task: RpcTask> TrezorRpcTaskProcessor<Task> {
     pub fn new(
-        task_handle: &'a RpcTaskHandle<Task>,
+        task_handle: RpcTaskHandleShared<Task>,
         statuses: TrezorRequestStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
-    ) -> TrezorRpcTaskProcessor<'a, Task> {
+    ) -> TrezorRpcTaskProcessor<Task> {
         TrezorRpcTaskProcessor {
             task_handle,
             statuses,

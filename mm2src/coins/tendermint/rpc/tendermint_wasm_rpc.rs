@@ -58,6 +58,9 @@ impl HttpClient {
         Ok(HttpClient { uri: url.to_owned() })
     }
 
+    #[inline]
+    pub fn uri(&self) -> http::Uri { Uri::from_str(&self.uri).expect("This should never happen.") }
+
     pub(crate) async fn perform<R>(&self, request: R) -> Result<R::Response, PerformError>
     where
         R: SimpleRequest,

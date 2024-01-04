@@ -12,7 +12,6 @@ use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 
-const DB_NAME: &str = "block_headers_cache";
 const DB_VERSION: u32 = 1;
 
 pub type IDBBlockHeadersStorageRes<T> = MmResult<T, BlockHeaderStorageError>;
@@ -24,7 +23,7 @@ pub struct IDBBlockHeadersInner {
 
 #[async_trait]
 impl DbInstance for IDBBlockHeadersInner {
-    fn db_name() -> &'static str { DB_NAME }
+    const DB_NAME: &'static str = "block_headers_cache";
 
     async fn init(db_id: DbIdentifier) -> InitDbResult<Self> {
         let inner = IndexedDbBuilder::new(db_id)

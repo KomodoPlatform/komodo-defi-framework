@@ -11,7 +11,6 @@ use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-const DB_NAME: &str = "gui_account_storage";
 const DB_VERSION: u32 = 1;
 
 type AccountDbLocked<'a> = DbLocked<'a, AccountDb>;
@@ -342,7 +341,7 @@ struct AccountDb {
 
 #[async_trait]
 impl DbInstance for AccountDb {
-    fn db_name() -> &'static str { DB_NAME }
+    const DB_NAME: &'static str = "gui_account_storage";
 
     async fn init(db_id: DbIdentifier) -> InitDbResult<Self> {
         let inner = IndexedDbBuilder::new(db_id)

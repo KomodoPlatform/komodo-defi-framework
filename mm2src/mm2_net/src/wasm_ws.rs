@@ -684,7 +684,7 @@ mod tests {
 
         let (mut outgoing_tx, mut incoming_rx) = spawn_ws_transport(
             conn_idx,
-            "wss://electrum1.cipig.net:30017",
+            "wss://electrum1.cipig.net:30020",
             &abortable_system.weak_spawner(),
         )
         .expect("!spawn_ws_transport");

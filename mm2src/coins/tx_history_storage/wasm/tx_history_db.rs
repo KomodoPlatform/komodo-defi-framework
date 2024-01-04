@@ -3,7 +3,6 @@ use crate::tx_history_storage::wasm::tx_history_storage_v2::{TxCacheTableV2, TxH
 use async_trait::async_trait;
 use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder, InitDbResult};
 
-const DB_NAME: &str = "tx_history";
 const DB_VERSION: u32 = 1;
 
 pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
@@ -14,7 +13,7 @@ pub struct TxHistoryDb {
 
 #[async_trait]
 impl DbInstance for TxHistoryDb {
-    fn db_name() -> &'static str { DB_NAME }
+    const DB_NAME: &'static str = "tx_history";
 
     async fn init(db_id: DbIdentifier) -> InitDbResult<Self> {
         let inner = IndexedDbBuilder::new(db_id)

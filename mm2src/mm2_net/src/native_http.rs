@@ -13,6 +13,7 @@
 
 use async_trait::async_trait;
 use futures::channel::oneshot::Canceled;
+use http::header::ACCEPT;
 use http::{header, HeaderValue, Request};
 use hyper::client::connect::Connect;
 use hyper::client::ResponseFuture;
@@ -23,7 +24,7 @@ use common::wio::{drive03, HYPER};
 use common::APPLICATION_JSON;
 use mm2_err_handle::prelude::*;
 
-use super::transport::{SlurpError, SlurpResult, SlurpResultJson};
+use super::transport::{GetInfoFromUriError, SlurpError, SlurpResult, SlurpResultJson};
 
 /// Provides requesting http through it
 ///
@@ -229,6 +230,28 @@ impl SlurpError {
 /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
 impl From<http::Error> for SlurpError {
     fn from(e: http::Error) -> Self { SlurpError::InvalidRequest(e.to_string()) }
+}
+
+/// Sends a GET request to the given URI and expects a 2xx status code in response.
+///
+/// # Errors
+///
+/// Returns an error if the HTTP status code of the response is not in the 2xx range.
+pub async fn send_request_to_uri(uri: &str) -> MmResult<Json, GetInfoFromUriError> {
+    let request = http::Request::builder()
+        .method("GET")
+        .uri(uri)
+        .header(ACCEPT, HeaderValue::from_static(APPLICATION_JSON))
+        .body(hyper::Body::from(""))?;
+
+    let (status, _header, body) = slurp_req_body(request).await?;
+    if !status.is_success() {
+        return Err(MmError::new(GetInfoFromUriError::Transport(format!(
+            "Status code not in 2xx range from {}: {}, {}",
+            uri, status, body
+        ))));
+    }
+    Ok(body)
 }
 
 #[cfg(test)]

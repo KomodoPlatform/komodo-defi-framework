@@ -9,7 +9,6 @@ pub use mm2_db::indexed_db::{cursor_prelude, DbTransactionError, DbTransactionRe
 pub use tables::{MyActiveMakerOrdersTable, MyActiveTakerOrdersTable, MyFilteringHistoryOrdersTable,
                  MyHistoryOrdersTable};
 
-const DB_NAME: &str = "ordermatch";
 const DB_VERSION: u32 = 1;
 
 pub struct OrdermatchDb {
@@ -18,7 +17,7 @@ pub struct OrdermatchDb {
 
 #[async_trait]
 impl DbInstance for OrdermatchDb {
-    fn db_name() -> &'static str { DB_NAME }
+    const DB_NAME: &'static str = "ordermatch";
 
     async fn init(db_id: DbIdentifier) -> InitDbResult<Self> {
         let inner = IndexedDbBuilder::new(db_id)

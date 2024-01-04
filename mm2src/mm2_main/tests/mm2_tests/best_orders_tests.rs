@@ -3,10 +3,9 @@ use common::{block_on, log};
 use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::CoinInitResponse;
-use mm2_test_helpers::for_tests::ETH_DEV_NODES;
 use mm2_test_helpers::for_tests::{best_orders_v2, best_orders_v2_by_number, eth_jst_testnet_conf, eth_testnet_conf,
                                   get_passphrase, morty_conf, rick_conf, tbtc_conf, tbtc_segwit_conf, MarketMakerIt,
-                                  Mm2TestConf, RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS};
+                                  Mm2TestConf, DOC_ELECTRUM_ADDRS, ETH_DEV_NODES, TBTC_ELECTRUMS};
 use mm2_test_helpers::structs::{BestOrdersResponse, SetPriceResponse};
 use serde_json::{self as json, json};
 use std::collections::BTreeSet;
@@ -837,22 +836,8 @@ fn test_best_orders_address_and_confirmations() {
     let enable_tbtc_res: CoinInitResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
-    let electrum = block_on(mm_bob.rpc(&json!({
-        "userpass": "pass",
-        "method": "electrum",
-        "coin": "RICK",
-        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
-        "mm2": 1,
-    }))).unwrap();
-    assert_eq!(
-        electrum.0,
-        StatusCode::OK,
-        "RPC «electrum» failed with {} {}",
-        electrum.0,
-        electrum.1
-    );
-    log!("enable RICK: {:?}", electrum);
-    let enable_rick_res: CoinInitResponse = json::from_str(&electrum.1).unwrap();
+    let enable_rick_res = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    log!("enable RICK: {:?}", enable_rick_res);
     let rick_address = enable_rick_res.address;
 
     // issue sell request on Bob side by setting base/rel price
@@ -999,7 +984,7 @@ fn best_orders_must_return_duplicate_for_orderbook_tickers() {
     let t_btc_bob = block_on(enable_electrum(&mm_bob, "tBTC", false, TBTC_ELECTRUMS, None));
     log!("Bob enable tBTC: {:?}", t_btc_bob);
 
-    let rick_bob = block_on(enable_electrum(&mm_bob, "RICK", false, RICK_ELECTRUM_ADDRS, None));
+    let rick_bob = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
     log!("Bob enable RICK: {:?}", rick_bob);
 
     // issue sell request on Bob side by setting base/rel price
@@ -1116,9 +1101,8 @@ fn best_orders_must_return_duplicate_for_orderbook_tickers() {
 #[cfg(feature = "zhtlc-native-tests")]
 fn zhtlc_best_orders() {
     use super::enable_z_coin;
+    use mm2_test_helpers::electrums::doc_electrums;
     use mm2_test_helpers::for_tests::zombie_conf;
-
-    use mm2_test_helpers::electrums::rick_electrums;
 
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
@@ -1150,7 +1134,7 @@ fn zhtlc_best_orders() {
     log!("bob_zombie_cache_path {}", bob_zombie_cache_path.display());
     std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
 
-    block_on(enable_electrum_json(&mm_bob, "RICK", false, rick_electrums(), None));
+    block_on(enable_electrum_json(&mm_bob, "RICK", false, doc_electrums(), None));
     block_on(enable_z_coin(&mm_bob, "ZOMBIE"));
 
     let set_price_json = json!({

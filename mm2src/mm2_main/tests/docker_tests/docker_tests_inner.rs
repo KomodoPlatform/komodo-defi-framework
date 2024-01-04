@@ -1782,11 +1782,10 @@ fn test_trade_preimage_additional_validation() {
     assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
     let actual: RpcErrorResponse<trade_preimage_error::PriceTooLow> = serde_json::from_str(&rc.1).unwrap();
     assert_eq!(actual.error_type, "PriceTooLow");
-    // currently the minimum price is 0.00000001
-    let price_threshold = BigDecimal::from(1) / BigDecimal::from(100_000_000);
+    // currently the minimum price is any value above 0
     let expected = trade_preimage_error::PriceTooLow {
         price: BigDecimal::from(0),
-        threshold: price_threshold,
+        threshold: BigDecimal::from(0),
     };
     assert_eq!(actual.error_data, Some(expected));
 

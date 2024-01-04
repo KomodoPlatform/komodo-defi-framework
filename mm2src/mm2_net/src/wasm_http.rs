@@ -1,11 +1,13 @@
-use crate::transport::{SlurpError, SlurpResult};
+use crate::transport::{GetInfoFromUriError, SlurpError, SlurpResult};
 use common::executor::spawn_local;
 use common::{stringify_js_error, APPLICATION_JSON};
 use futures::channel::oneshot;
-use http::header::CONTENT_TYPE;
+use gstuff::ERRL;
+use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{HeaderMap, StatusCode};
 use js_sys::Uint8Array;
 use mm2_err_handle::prelude::*;
+use serde_json::Value as Json;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -295,6 +297,38 @@ impl RequestBody {
             },
         }
     }
+}
+
+/// Sends a GET request to the given URI and expects a 2xx status code in response.
+///
+/// # Errors
+///
+/// Returns an error if the HTTP status code of the response is not in the 2xx range.
+pub async fn send_request_to_uri(uri: &str) -> MmResult<Json, GetInfoFromUriError> {
+    macro_rules! try_or {
+        ($exp:expr, $errtype:ident) => {
+            match $exp {
+                Ok(x) => x,
+                Err(e) => return Err(MmError::new(GetInfoFromUriError::$errtype(ERRL!("{:?}", e)))),
+            }
+        };
+    }
+
+    let result = FetchRequest::get(uri)
+        .header(ACCEPT.as_str(), APPLICATION_JSON)
+        .request_str()
+        .await;
+    let (status_code, response_str) = try_or!(result, Transport);
+    if !status_code.is_success() {
+        return Err(MmError::new(GetInfoFromUriError::Transport(ERRL!(
+            "Status code not in 2xx range from: {}, {}",
+            status_code,
+            response_str
+        ))));
+    }
+
+    let response: Json = try_or!(serde_json::from_str(&response_str), InvalidResponse);
+    Ok(response)
 }
 
 mod tests {

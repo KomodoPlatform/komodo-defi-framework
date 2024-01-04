@@ -8,6 +8,7 @@ use crypto::CryptoCtxError;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::EventStreamConfiguration;
 use mm2_number::BigDecimal;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
@@ -165,6 +166,11 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         storage: impl TxHistoryStorage,
         initial_balance: Option<BigDecimal>,
     );
+
+    async fn handle_balance_streaming(
+        &self,
+        config: &EventStreamConfiguration,
+    ) -> Result<(), MmError<Self::ActivationError>>;
 }
 
 #[derive(Debug, Deserialize)]
@@ -362,6 +368,10 @@ where
             TxHistoryStorageBuilder::new(&ctx).build()?,
             activation_result.get_platform_balance(),
         );
+    }
+
+    if let Some(config) = &ctx.event_stream_configuration {
+        platform_coin.handle_balance_streaming(config).await?;
     }
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();

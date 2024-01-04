@@ -49,7 +49,9 @@ ethereum-types = { version = "0.13", default-features = false, features = ["std"
 ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
 # Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
 #enum_dispatch = "0.1"
+tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", features = ["rustls-tls-native-roots"]}
 futures01 = { version = "0.1", package = "futures" }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 # using select macro requires the crate to be named futures, compilation failed with futures03 name
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
 group = "0.8.0"
@@ -63,6 +65,7 @@ lazy_static = "1.4"
 libc = "0.2"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_git = { path = "../mm2_git" }
 mm2_io = { path = "../mm2_io" }
 mm2_metrics = { path = "../mm2_metrics" }

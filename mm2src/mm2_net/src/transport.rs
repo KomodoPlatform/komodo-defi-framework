@@ -84,3 +84,53 @@ pub struct GuiAuthValidation {
     pub timestamp_message: i64,
     pub signature: String,
 }
+
+/// Errors encountered when making HTTP requests to fetch information from a URI.
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum GetInfoFromUriError {
+    #[display(fmt = "Invalid request: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Transport: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Invalid response: {}", _0)]
+    InvalidResponse(String),
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+}
+
+/// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
+impl From<http::Error> for GetInfoFromUriError {
+    fn from(e: http::Error) -> Self { GetInfoFromUriError::InvalidRequest(e.to_string()) }
+}
+
+impl From<serde_json::Error> for GetInfoFromUriError {
+    fn from(e: serde_json::Error) -> Self { GetInfoFromUriError::InvalidRequest(e.to_string()) }
+}
+
+impl From<SlurpError> for GetInfoFromUriError {
+    fn from(e: SlurpError) -> Self {
+        let error_str = e.to_string();
+        match e {
+            SlurpError::ErrorDeserializing { .. } => GetInfoFromUriError::InvalidResponse(error_str),
+            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => GetInfoFromUriError::Transport(error_str),
+            SlurpError::InvalidRequest(_) => GetInfoFromUriError::InvalidRequest(error_str),
+            SlurpError::Internal(_) => GetInfoFromUriError::Internal(error_str),
+        }
+    }
+}
+
+/// Sends a POST request to the given URI and expects a 2xx status code in response.
+///
+/// # Errors
+///
+/// Returns an error if the HTTP status code of the response is not in the 2xx range.
+pub async fn send_post_request_to_uri(uri: &str, body: String) -> MmResult<Vec<u8>, GetInfoFromUriError> {
+    let (status, _header, body) = slurp_post_json(uri, body).await?;
+    if !status.is_success() {
+        return Err(MmError::new(GetInfoFromUriError::Transport(format!(
+            "Status code not in 2xx range from {}: {}",
+            uri, status,
+        ))));
+    }
+    Ok(body)
+}

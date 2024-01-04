@@ -5,10 +5,11 @@ use http::StatusCode;
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, CoinInitResponse, OrderbookResponse};
-use mm2_test_helpers::electrums::rick_electrums;
+use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, get_passphrase, morty_conf, orderbook_v2,
-                                  rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf, ETH_DEV_NODES, RICK,
-                                  ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
+                                  rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS,
+                                  ETH_DEV_NODES, MARTY_ELECTRUM_ADDRS, RICK, ZOMBIE_ELECTRUMS,
+                                  ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{GetPublicKeyResult, OrderbookV2Response, RpcV2Response, SetPriceResponse};
 use serde_json::{self as json, json, Value as Json};
@@ -283,23 +284,9 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     let enable_tbtc_res: CoinInitResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
-    let electrum = block_on(mm_bob.rpc(&json!({
-        "userpass": "pass",
-        "method": "electrum",
-        "coin": "RICK",
-        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
-        "mm2": 1,
-    }))).unwrap();
-    assert_eq!(
-        electrum.0,
-        StatusCode::OK,
-        "RPC «electrum» failed with {} {}",
-        electrum.0,
-        electrum.1
-    );
-    log!("enable RICK: {:?}", electrum);
-    let enable_rick_res: Json = json::from_str(&electrum.1).unwrap();
-    let rick_address = enable_rick_res["address"].as_str().unwrap();
+    let enable_rick_res = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    log!("enable RICK: {:?}", enable_rick_res);
+    let rick_address = enable_rick_res.address;
 
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell requests");
@@ -376,20 +363,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     );
     log!("enable Alice tBTC: {:?}", electrum);
 
-    let electrum = block_on(mm_alice.rpc(&json!({
-        "userpass": "pass",
-        "method": "electrum",
-        "coin": "RICK",
-        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
-        "mm2": 1,
-    }))).unwrap();
-    assert_eq!(
-        electrum.0,
-        StatusCode::OK,
-        "RPC «electrum» failed with {} {}",
-        electrum.0,
-        electrum.1
-    );
+    let electrum = block_on(enable_electrum(&mm_alice, "RICK", false, DOC_ELECTRUM_ADDRS, None));
     log!("enable Alice RICK: {:?}", electrum);
 
     // setting the price will trigger Alice's subscription to the orderbook topic
@@ -483,23 +457,9 @@ fn test_orderbook_segwit() {
     let enable_tbtc_res: CoinInitResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
-    let electrum = block_on(mm_bob.rpc(&json!({
-        "userpass": "pass",
-        "method": "electrum",
-        "coin": "RICK",
-        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
-        "mm2": 1,
-    }))).unwrap();
-    assert_eq!(
-        electrum.0,
-        StatusCode::OK,
-        "RPC «electrum» failed with {} {}",
-        electrum.0,
-        electrum.1
-    );
-    log!("enable RICK: {:?}", electrum);
-    let enable_rick_res: Json = json::from_str(&electrum.1).unwrap();
-    let rick_address = enable_rick_res["address"].as_str().unwrap();
+    let enable_rick_res = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    log!("enable RICK: {:?}", enable_rick_res);
+    let rick_address = enable_rick_res.address;
 
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell requests");
@@ -897,28 +857,8 @@ fn orderbook_extended_data() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = &mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    block_on(enable_electrum(
-        &mm,
-        "RICK",
-        false,
-        &[
-            "electrum3.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum1.cipig.net:10017",
-        ],
-        None,
-    ));
-    block_on(enable_electrum(
-        &mm,
-        "MORTY",
-        false,
-        &[
-            "electrum3.cipig.net:10018",
-            "electrum2.cipig.net:10018",
-            "electrum1.cipig.net:10018",
-        ],
-        None,
-    ));
+    block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    block_on(enable_electrum(&mm, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
 
     let bob_orders = &[
         // (base, rel, price, volume)
@@ -1029,28 +969,8 @@ fn orderbook_should_display_base_rel_volumes() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = &mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    block_on(enable_electrum(
-        &mm,
-        "RICK",
-        false,
-        &[
-            "electrum3.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum1.cipig.net:10017",
-        ],
-        None,
-    ));
-    block_on(enable_electrum(
-        &mm,
-        "MORTY",
-        false,
-        &[
-            "electrum3.cipig.net:10018",
-            "electrum2.cipig.net:10018",
-            "electrum1.cipig.net:10018",
-        ],
-        None,
-    ));
+    block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    block_on(enable_electrum(&mm, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
 
     let price = BigRational::new(2.into(), 1.into());
     let volume = BigRational::new(1.into(), 1.into());
@@ -1228,28 +1148,8 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    block_on(enable_electrum(
-        &mm,
-        "RICK",
-        false,
-        &[
-            "electrum3.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum1.cipig.net:10017",
-        ],
-        None,
-    ));
-    block_on(enable_electrum(
-        &mm,
-        "MORTY",
-        false,
-        &[
-            "electrum3.cipig.net:10018",
-            "electrum2.cipig.net:10018",
-            "electrum1.cipig.net:10018",
-        ],
-        None,
-    ));
+    block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    block_on(enable_electrum(&mm, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
 
     // set 2 orders with different prices
     let rc = block_on(mm.rpc(&json!({
@@ -1430,7 +1330,7 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums(), None));
+    block_on(enable_electrum_json(&mm_bob, RICK, false, doc_electrums(), None));
     block_on(enable_z_coin_light(
         &mm_bob,
         ZOMBIE_TICKER,
@@ -1494,7 +1394,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    block_on(enable_electrum_json(&mm_bob, "RICK", false, rick_electrums(), None));
+    block_on(enable_electrum_json(&mm_bob, "RICK", false, doc_electrums(), None));
     block_on(enable_z_coin_light(
         &mm_bob,
         ZOMBIE_TICKER,
@@ -1524,7 +1424,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums(), None));
+    block_on(enable_electrum_json(&mm_alice, RICK, false, doc_electrums(), None));
     block_on(enable_z_coin_light(
         &mm_alice,
         ZOMBIE_TICKER,

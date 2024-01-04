@@ -27,7 +27,8 @@ impl Private {
     pub fn sign(&self, message: &Message) -> Result<Signature, Error> {
         let secret = SecretKey::from_slice(&*self.secret)?;
         let message = SecpMessage::from_slice(&**message)?;
-        let signature = SECP_SIGN.sign(&message, &secret);
+        // use low R signing from bitcoin which reduces signature malleability
+        let signature = SECP_SIGN.sign_low_r(&message, &secret);
         let data = signature.serialize_der();
         Ok(data.as_ref().to_vec().into())
     }

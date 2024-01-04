@@ -1,7 +1,7 @@
 // TODO: a lof of these implementations should be handled in `mm2_net`
 
 /******************************************************************************
- * Copyright © 2022 Atomic Private Limited and its contributors               *
+ * Copyright © 2023 Pampex LTD and TillyHK LTD              *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -9,7 +9,7 @@
  * holder information and the developer policies on copyright and licensing.  *
  *                                                                            *
  * Unless otherwise agreed in a custom licensing agreement, no part of the    *
- * AtomicDEX software, including this file may be copied, modified, propagated*
+ * Komodo DeFi Framework software, including this file may be copied, modified, propagated*
  * or distributed except according to the terms contained in the              *
  * LICENSE-COPYRIGHT-NOTICE file.                                             *
  *                                                                            *
@@ -271,6 +271,15 @@ pub fn subscribe_to_topic(ctx: &MmArc, topic: String) {
     };
 }
 
+/// Unsubscribe from the given `topic`.
+pub fn unsubscribe_from_topic(ctx: &MmArc, topic: String) {
+    let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
+    let cmd = AdexBehaviourCmd::Unsubscribe { topic };
+    if let Err(e) = p2p_ctx.cmd_tx.lock().try_send(cmd) {
+        log::error!("unsubscribe_from_topic cmd_tx.send error {:?}", e);
+    };
+}
+
 pub async fn request_any_relay<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
@@ -464,6 +473,8 @@ pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddress
 pub enum NetIdError {
     #[display(fmt = "Netid {} is larger than max {}", netid, max_netid)]
     LargerThanMax { netid: u16, max_netid: u16 },
+    #[display(fmt = "{} netid is deprecated.", netid)]
+    Deprecated { netid: u16 },
 }
 
 pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), MmError<NetIdError>> {

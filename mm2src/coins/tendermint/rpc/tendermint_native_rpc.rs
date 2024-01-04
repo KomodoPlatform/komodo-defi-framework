@@ -309,6 +309,9 @@ impl HttpClient {
             },
         })
     }
+
+    #[inline]
+    pub fn uri(&self) -> http::Uri { self.inner.uri() }
 }
 
 #[async_trait]
@@ -479,6 +482,13 @@ mod sealed {
             match self {
                 HttpClient::Http(c) => c.perform(request).await,
                 HttpClient::Https(c) => c.perform(request).await,
+            }
+        }
+
+        pub fn uri(&self) -> Uri {
+            match self {
+                HttpClient::Http(client) => client.uri.clone(),
+                HttpClient::Https(client) => client.uri.clone(),
             }
         }
     }

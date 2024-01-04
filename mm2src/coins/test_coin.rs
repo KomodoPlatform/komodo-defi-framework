@@ -2,19 +2,21 @@
 
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
-            ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, GenTakerPaymentSpendArgs,
-            GenTakerPaymentSpendResult, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs, RefundResult,
-            SearchForSwapTxSpendInput, SendCombinedTakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOpsV2, TakerSwapMakerCoin, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
+use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinAssocTypes,
+            CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, GenPreimageResult,
+            GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, MakerSwapTakerCoin, MmCoinEnum,
+            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            RawTransactionResult, RefundFundingSecretArgs, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
+            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionRequest,
+            SignatureResult, SpendPaymentArgs, SwapOpsV2, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionErr, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateTakerPaymentArgs, ValidateTakerPaymentResult, ValidateTakerPaymentSpendPreimageResult,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
-            WithdrawRequest};
+            ValidateTakerFundingArgs, ValidateTakerFundingResult, ValidateTakerFundingSpendPreimageResult,
+            ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
+use crate::{DexFee, ToBytes, ValidateWatcherSpendInput};
 use async_trait::async_trait;
 use common::executor::AbortedError;
 use futures01::Future;
@@ -52,6 +54,7 @@ impl TestCoin {
     pub fn new(ticker: &str) -> TestCoin { TestCoin(Arc::new(TestCoinImpl { ticker: ticker.into() })) }
 }
 
+#[async_trait]
 #[mockable]
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
@@ -79,6 +82,9 @@ impl MarketCoinOps for TestCoin {
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
 
+    #[inline(always)]
+    async fn sign_raw_tx(&self, _args: &SignRawTransactionRequest) -> RawTransactionResult { unimplemented!() }
+
     fn wait_for_confirmations(&self, _input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         unimplemented!()
     }
@@ -95,7 +101,7 @@ impl MarketCoinOps for TestCoin {
 
     fn display_priv_key(&self) -> Result<String, String> { unimplemented!() }
 
-    fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
+    fn min_tx_amount(&self) -> BigDecimal { Default::default() }
 
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 }
@@ -103,7 +109,7 @@ impl MarketCoinOps for TestCoin {
 #[async_trait]
 #[mockable]
 impl SwapOps for TestCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut { unimplemented!() }
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8]) -> TransactionFut { unimplemented!() }
 
     fn send_maker_payment(&self, _maker_payment_args: SendPaymentArgs) -> TransactionFut { unimplemented!() }
 
@@ -279,6 +285,10 @@ impl WatcherOps for TestCoin {
         unimplemented!();
     }
 
+    fn taker_validates_payment_spend_or_refund(&self, input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        unimplemented!()
+    }
+
     async fn watcher_search_for_swap_tx_spend(
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,
@@ -345,7 +355,7 @@ impl MmCoin for TestCoin {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        _dex_fee_amount: BigDecimal,
+        _dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         unimplemented!()
@@ -382,42 +392,122 @@ impl MmCoin for TestCoin {
     fn on_token_deactivated(&self, _ticker: &str) { () }
 }
 
+pub struct TestPubkey {}
+
+impl ToBytes for TestPubkey {
+    fn to_bytes(&self) -> Vec<u8> { vec![] }
+}
+
+#[derive(Debug)]
+pub struct TestTx {}
+
+impl Transaction for TestTx {
+    fn tx_hex(&self) -> Vec<u8> { todo!() }
+
+    fn tx_hash(&self) -> BytesJson { todo!() }
+}
+
+pub struct TestPreimage {}
+
+impl ToBytes for TestPreimage {
+    fn to_bytes(&self) -> Vec<u8> { vec![] }
+}
+
+pub struct TestSig {}
+
+impl ToBytes for TestSig {
+    fn to_bytes(&self) -> Vec<u8> { vec![] }
+}
+
+impl CoinAssocTypes for TestCoin {
+    type Pubkey = TestPubkey;
+    type PubkeyParseError = String;
+    type Tx = TestTx;
+    type TxParseError = String;
+    type Preimage = TestPreimage;
+    type PreimageParseError = String;
+    type Sig = TestSig;
+    type SigParseError = String;
+
+    fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> { unimplemented!() }
+
+    fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> { unimplemented!() }
+
+    fn parse_preimage(&self, preimage: &[u8]) -> Result<Self::Preimage, Self::PreimageParseError> { todo!() }
+
+    fn parse_signature(&self, sig: &[u8]) -> Result<Self::Sig, Self::SigParseError> { todo!() }
+}
+
 #[async_trait]
 #[mockable]
 impl SwapOpsV2 for TestCoin {
-    async fn send_combined_taker_payment(&self, args: SendCombinedTakerPaymentArgs<'_>) -> TransactionResult {
+    async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr> { todo!() }
+
+    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateTakerFundingResult {
         unimplemented!()
     }
 
-    async fn validate_combined_taker_payment(&self, args: ValidateTakerPaymentArgs<'_>) -> ValidateTakerPaymentResult {
-        unimplemented!()
+    async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> TransactionResult { todo!() }
+
+    async fn refund_taker_funding_secret(
+        &self,
+        args: RefundFundingSecretArgs<'_, Self>,
+    ) -> Result<Self::Tx, TransactionErr> {
+        todo!()
+    }
+
+    async fn gen_taker_funding_spend_preimage(
+        &self,
+        args: &GenTakerFundingSpendArgs<'_, Self>,
+        swap_unique_data: &[u8],
+    ) -> GenPreimageResult<Self> {
+        todo!()
+    }
+
+    async fn validate_taker_funding_spend_preimage(
+        &self,
+        gen_args: &GenTakerFundingSpendArgs<'_, Self>,
+        preimage: &TxPreimageWithSig<Self>,
+    ) -> ValidateTakerFundingSpendPreimageResult {
+        todo!()
+    }
+
+    async fn sign_and_send_taker_funding_spend(
+        &self,
+        preimage: &TxPreimageWithSig<Self>,
+        args: &GenTakerFundingSpendArgs<'_, Self>,
+        swap_unique_data: &[u8],
+    ) -> Result<Self::Tx, TransactionErr> {
+        todo!()
     }
 
     async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult { unimplemented!() }
 
     async fn gen_taker_payment_spend_preimage(
         &self,
-        args: &GenTakerPaymentSpendArgs<'_>,
+        args: &GenTakerPaymentSpendArgs<'_, Self>,
         swap_unique_data: &[u8],
-    ) -> GenTakerPaymentSpendResult {
+    ) -> GenPreimageResult<Self> {
         unimplemented!()
     }
 
     async fn validate_taker_payment_spend_preimage(
         &self,
-        gen_args: &GenTakerPaymentSpendArgs<'_>,
-        preimage: &TxPreimageWithSig,
+        gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
+        preimage: &TxPreimageWithSig<Self>,
     ) -> ValidateTakerPaymentSpendPreimageResult {
         unimplemented!()
     }
 
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
-        preimage: &TxPreimageWithSig,
-        gen_args: &GenTakerPaymentSpendArgs<'_>,
+        preimage: &TxPreimageWithSig<Self>,
+        gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionResult {
         unimplemented!()
     }
+
+    fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey { todo!() }
 }
