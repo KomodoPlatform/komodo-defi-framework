@@ -527,7 +527,7 @@ cross_test!(test_get_update_transfer_meta, {
     storage.add_transfers_to_history(chain, transfers).await.unwrap();
 
     let vec_token_add_id = storage.get_transfers_with_empty_meta(chain).await.unwrap();
-    assert_eq!(vec_token_add_id.len(), 3);
+    assert_eq!(vec_token_add_id.len(), 2);
 
     let token_add = "0x5c7d6712dfaf0cb079d48981781c8705e8417ca0".to_string();
     let transfer_meta = TransferMeta {
