@@ -4,9 +4,8 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
                                         TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
-use coins::eth::v2_activation::global_nft_from_platform_coin;
 use coins::eth::EthPrivKeyBuildPolicy;
-use coins::nft::nft_structs::{Chain, NftInfo, NftUrls};
+use coins::nft::nft_structs::{Chain, NftInfo};
 use coins::{eth::v2_activation::EthPrivKeyActivationPolicy, MmCoinEnum};
 use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
                                   Erc20TokenActivationRequest, EthActivationV2Error, EthActivationV2Request},
@@ -25,13 +24,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+use url::Url;
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {
         match err {
             EthActivationV2Error::InvalidPayload(e)
             | EthActivationV2Error::InvalidSwapContractAddr(e)
-            | EthActivationV2Error::InvalidFallbackSwapContract(e) => {
+            | EthActivationV2Error::InvalidFallbackSwapContract(e)
+            | EthActivationV2Error::ErrorDeserializingDerivationPath(e) => {
                 EnablePlatformCoinWithTokensError::InvalidPayload(e)
             },
             #[cfg(target_arch = "wasm32")]
@@ -46,9 +47,6 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             ),
             EthActivationV2Error::CouldNotFetchBalance(e) | EthActivationV2Error::UnreachableNodes(e) => {
                 EnablePlatformCoinWithTokensError::Transport(e)
-            },
-            EthActivationV2Error::ErrorDeserializingDerivationPath(e) => {
-                EnablePlatformCoinWithTokensError::InvalidPayload(e)
             },
             EthActivationV2Error::PrivKeyPolicyNotAllowed(e) => {
                 EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(e)
@@ -126,8 +124,7 @@ pub struct EthWithTokensActivationRequest {
     erc20_tokens_requests: Vec<TokenActivationRequest<Erc20TokenActivationRequest>>,
     #[serde(default = "true_f")]
     pub get_balances: bool,
-    #[allow(dead_code)]
-    nft_urls: Option<NftUrls>,
+    nft_url: Option<Url>,
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
@@ -179,7 +176,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
     async fn enable_platform_coin(
         ctx: MmArc,
         ticker: String,
-        platform_conf: Json,
+        platform_conf: &Json,
         activation_request: Self::ActivationRequest,
         _protocol: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
@@ -188,7 +185,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
         let platform_coin = eth_coin_from_conf_and_request_v2(
             &ctx,
             &ticker,
-            &platform_conf,
+            platform_conf,
             activation_request.platform_request,
             priv_key_policy,
         )
@@ -200,13 +197,21 @@ impl PlatformWithTokensActivationOps for EthCoin {
     async fn enable_global_non_fungible_token(
         &self,
         ctx: &MmArc,
-        platform_conf: Json,
+        platform_conf: &Json,
         activation_request: &Self::ActivationRequest,
     ) -> Result<MmCoinEnum, MmError<Self::ActivationError>> {
+        let url = match &activation_request.nft_url {
+            Some(url) => url,
+            None => {
+                return MmError::err(EthActivationV2Error::InvalidPayload(
+                    "NFT Url was not provided to enable Global Non Fungible Token".to_string(),
+                ))
+            },
+        };
         let chain = Chain::from_str(self.ticker())?;
-        let nft_global =
-            global_nft_from_platform_coin(ctx, self, &chain, &platform_conf, &activation_request.platform_request)
-                .await?;
+        let nft_global = self
+            .global_nft_from_platform_coin(ctx, &chain, platform_conf, &activation_request.platform_request, url)
+            .await?;
         Ok(MmCoinEnum::EthCoin(nft_global))
     }
 

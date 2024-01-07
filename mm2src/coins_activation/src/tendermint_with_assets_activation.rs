@@ -168,11 +168,11 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     async fn enable_platform_coin(
         ctx: MmArc,
         ticker: String,
-        coin_conf: Json,
+        coin_conf: &Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let conf = TendermintConf::try_from_json(&ticker, &coin_conf)?;
+        let conf = TendermintConf::try_from_json(&ticker, coin_conf)?;
 
         let priv_key_build_policy =
             PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).mm_err(|e| TendermintInitError {
@@ -199,11 +199,10 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         .await
     }
 
-    #[allow(dead_code)]
     async fn enable_global_non_fungible_token(
         &self,
         _ctx: &MmArc,
-        _platform_conf: Json,
+        _platform_conf: &Json,
         _activation_request: &Self::ActivationRequest,
     ) -> Result<MmCoinEnum, MmError<Self::ActivationError>> {
         todo!()
@@ -283,7 +282,6 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         })
     }
 
-    #[allow(dead_code)]
     async fn get_nft_activation_result(
         &self,
         _activation_request: &Self::ActivationRequest,

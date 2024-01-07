@@ -142,7 +142,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
     async fn enable_platform_coin(
         ctx: MmArc,
         ticker: String,
-        coin_conf: Json,
+        coin_conf: &Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>>;
@@ -150,7 +150,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
     async fn enable_global_non_fungible_token(
         &self,
         ctx: &MmArc,
-        conf: Json,
+        conf: &Json,
         activation_request: &Self::ActivationRequest,
     ) -> Result<MmCoinEnum, MmError<Self::ActivationError>>;
 
@@ -372,7 +372,7 @@ where
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),
         req.ticker.clone(),
-        platform_conf,
+        &platform_conf,
         req.request.clone(),
         platform_protocol,
     )
@@ -430,14 +430,14 @@ where
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),
         req.ticker.clone(),
-        platform_conf.clone(),
+        &platform_conf,
         req.request.clone(),
         platform_protocol,
     )
     .await?;
 
     let nft_global_token = platform_coin
-        .enable_global_non_fungible_token(&ctx, platform_conf, &req.request)
+        .enable_global_non_fungible_token(&ctx, &platform_conf, &req.request)
         .await?;
 
     let activation_result = platform_coin.get_nft_activation_result(&req.request).await?;

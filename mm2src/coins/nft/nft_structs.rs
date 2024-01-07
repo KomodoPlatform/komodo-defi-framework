@@ -753,10 +753,3 @@ pub struct NftInfo {
     contract_type: ContractType,
     amount: BigDecimal,
 }
-
-#[allow(dead_code)]
-#[derive(Clone, Deserialize)]
-pub struct NftUrls {
-    pub(crate) url: Url,
-    pub(crate) url_antispam: Url,
-}

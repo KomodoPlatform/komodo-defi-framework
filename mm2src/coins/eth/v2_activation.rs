@@ -8,6 +8,7 @@ use enum_from::EnumFromTrait;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
+use url::Url;
 
 #[derive(Clone, Debug, Deserialize, Display, EnumFromTrait, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -227,6 +228,61 @@ impl EthCoin {
 
         Ok(EthCoin(Arc::new(token)))
     }
+
+    pub async fn global_nft_from_platform_coin(
+        &self,
+        ctx: &MmArc,
+        chain: &Chain,
+        conf: &Json,
+        activation_request: &EthActivationV2Request,
+        _url: &Url,
+    ) -> MmResult<EthCoin, EthActivationV2Error> {
+        let ticker = chain.to_nft_ticker().to_string();
+
+        // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
+        // all spawned futures related to global non fungible token will be aborted as well.
+        let abortable_system = ctx.abortable_system.create_subsystem()?;
+
+        // param from request should override the config
+        let required_confirmations = activation_request
+            .required_confirmations
+            .unwrap_or_else(|| {
+                conf["required_confirmations"]
+                    .as_u64()
+                    .unwrap_or(DEFAULT_REQUIRED_CONFIRMATIONS as u64)
+            })
+            .into();
+
+        let global_nft = EthCoinImpl {
+            ticker,
+            // todo change type to NFT
+            coin_type: EthCoinType::Eth,
+            priv_key_policy: self.priv_key_policy.clone(),
+            my_address: self.my_address,
+            sign_message_prefix: self.sign_message_prefix.clone(),
+            swap_contract_address: self.swap_contract_address,
+            fallback_swap_contract: self.fallback_swap_contract,
+            contract_supports_watchers: self.contract_supports_watchers,
+            web3: self.web3.clone(),
+            web3_instances: self.web3_instances.clone(),
+            decimals: self.decimals,
+            gas_station_url: self.gas_station_url.clone(),
+            gas_station_decimals: self.gas_station_decimals,
+            gas_station_policy: self.gas_station_policy.clone(),
+            history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
+            required_confirmations,
+            ctx: ctx.weak(),
+            chain_id: self.chain_id,
+            logs_block_range: self.logs_block_range,
+            nonce_lock: self.nonce_lock.clone(),
+            erc20_tokens_infos: Arc::new(Mutex::new(Default::default())),
+            // todo should be parsed from Moralis. lets not use DB, when we enable NFT.
+            // todo in update_nft RPC check if global NFT was enabled, also update it.
+            non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+            abortable_system,
+        };
+        Ok(EthCoin(Arc::new(global_nft)))
+    }
 }
 
 pub async fn eth_coin_from_conf_and_request_v2(
@@ -334,60 +390,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
     };
 
     Ok(EthCoin(Arc::new(coin)))
-}
-
-pub async fn global_nft_from_platform_coin(
-    ctx: &MmArc,
-    platform: &EthCoin,
-    chain: &Chain,
-    conf: &Json,
-    activation_request: &EthActivationV2Request,
-) -> MmResult<EthCoin, EthActivationV2Error> {
-    let ticker = chain.to_nft_ticker().to_string();
-    let mut map = NONCE_LOCK.lock().unwrap();
-    let nonce_lock = map.entry(ticker.clone()).or_insert_with(new_nonce_lock).clone();
-
-    // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
-    // all spawned futures related to `ETH` coin will be aborted as well.
-    let abortable_system = ctx.abortable_system.create_subsystem()?;
-
-    // param from request should override the config
-    let required_confirmations = activation_request
-        .required_confirmations
-        .unwrap_or_else(|| {
-            conf["required_confirmations"]
-                .as_u64()
-                .unwrap_or(DEFAULT_REQUIRED_CONFIRMATIONS as u64)
-        })
-        .into();
-
-    let global_nft = EthCoinImpl {
-        ticker,
-        // todo change type to NFT
-        coin_type: EthCoinType::Eth,
-        priv_key_policy: platform.priv_key_policy.clone(),
-        my_address: platform.my_address,
-        sign_message_prefix: platform.sign_message_prefix.clone(),
-        swap_contract_address: platform.swap_contract_address,
-        fallback_swap_contract: platform.fallback_swap_contract,
-        contract_supports_watchers: platform.contract_supports_watchers,
-        web3: platform.web3.clone(),
-        web3_instances: platform.web3_instances.clone(),
-        decimals: platform.decimals,
-        gas_station_url: platform.gas_station_url.clone(),
-        gas_station_decimals: platform.gas_station_decimals,
-        gas_station_policy: platform.gas_station_policy.clone(),
-        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        required_confirmations,
-        ctx: ctx.weak(),
-        chain_id: platform.chain_id,
-        logs_block_range: platform.logs_block_range,
-        nonce_lock,
-        erc20_tokens_infos: Arc::new(Mutex::new(Default::default())),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
-        abortable_system,
-    };
-    Ok(EthCoin(Arc::new(global_nft)))
 }
 
 /// Processes the given `priv_key_policy` and generates corresponding `KeyPair`.
