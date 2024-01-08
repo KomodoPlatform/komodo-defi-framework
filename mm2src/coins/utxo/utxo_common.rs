@@ -2225,7 +2225,7 @@ pub async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
     let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
     try_tx_s!(tx_fut.await, transaction);
 
-    Ok(transaction.into())
+    Ok(transaction)
 }
 
 #[inline]
@@ -4658,13 +4658,13 @@ pub fn address_from_pubkey(
 
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(test, mockable)]
-pub async fn validate_payment<T: UtxoCommonOps>(
+pub async fn validate_payment<'a, T: UtxoCommonOps>(
     coin: T,
-    tx: &UtxoTx,
+    tx: &'a UtxoTx,
     output_index: usize,
-    first_pub0: &Public,
-    second_pub0: &Public,
-    tx_type_with_secret_hash: SwapTxTypeWithSecretHash<'_>,
+    first_pub0: &'a Public,
+    second_pub0: &'a Public,
+    tx_type_with_secret_hash: SwapTxTypeWithSecretHash<'a>,
     amount: BigDecimal,
     watcher_reward: Option<WatcherReward>,
     time_lock: u32,
@@ -4729,7 +4729,7 @@ pub async fn validate_payment<T: UtxoCommonOps>(
 
     if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
         if coin.as_ref().conf.spv_conf.is_some() && confirmations != 0 {
-            client.validate_spv_proof(&tx, try_spv_proof_until).await?;
+            client.validate_spv_proof(tx, try_spv_proof_until).await?;
         }
     }
 
@@ -4785,7 +4785,7 @@ async fn search_for_swap_output_spend(
     match spend {
         Some(spent_output_info) => {
             let tx = spent_output_info.spending_tx;
-            let script: Script = spent_output_info.input.script_sig.clone().into();
+            let script: Script = spent_output_info.input.script_sig.into();
             if let Some(Ok(ref i)) = script.iter().nth(2) {
                 if i.opcode == Opcode::OP_0 {
                     return Ok(Some(FoundSwapTxSpend::Spent(tx.into())));
@@ -5332,7 +5332,7 @@ where
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
         let addr_string = funding_address
             .display_address()
-            .map_to_mm(|e| ValidateSwapV2TxError::Internal(e.to_string()))?;
+            .map_to_mm(ValidateSwapV2TxError::Internal)?;
         client
             .import_address(&addr_string, &addr_string, false)
             .compat()
@@ -5587,7 +5587,7 @@ fn test_generate_taker_fee_tx_outputs() {
     let outputs = generate_taker_fee_tx_outputs(
         8,
         &AddressHashEnum::default_address_hash(),
-        DexFee::Standard(amount.into()),
+        &DexFee::Standard(amount.into()),
     )
     .unwrap();
 
@@ -5607,7 +5607,7 @@ fn test_generate_taker_fee_tx_outputs_with_burn() {
     let outputs = generate_taker_fee_tx_outputs(
         8,
         &AddressHashEnum::default_address_hash(),
-        DexFee::with_burn(fee_amount.into(), burn_amount.into()),
+        &DexFee::with_burn(fee_amount.into(), burn_amount.into()),
     )
     .unwrap();
 

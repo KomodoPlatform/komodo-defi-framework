@@ -2241,20 +2241,21 @@ mod slp_tests {
         let my_pub = bch.my_public_key().unwrap();
 
         // standard BCH validation should pass as the output itself is correct
-        utxo_common::validate_payment(
+        block_on(utxo_common::validate_payment(
             bch.clone(),
-            deserialize(payment_tx.as_slice()).unwrap(),
+            &deserialize(payment_tx.as_slice()).unwrap(),
             SLP_SWAP_VOUT,
             my_pub,
             &other_pub,
-            &secret_hash,
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                maker_secret_hash: &secret_hash,
+            },
             fusd.platform_dust_dec(),
             None,
             lock_time,
             wait_until_sec(60),
             1,
-        )
-        .wait()
+        ))
         .unwrap();
 
         let input = ValidatePaymentInput {

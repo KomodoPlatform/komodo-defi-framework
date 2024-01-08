@@ -676,7 +676,7 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         &self,
         tx: &Self::Tx,
         from_block: u64,
-        secret_hash: &[u8],
+        _secret_hash: &[u8],
     ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr> {
         let script_pubkey = &tx
             .first_output()

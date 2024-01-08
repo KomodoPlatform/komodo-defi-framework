@@ -3401,7 +3401,7 @@ pub mod tendermint_coin_tests {
             unique_swap_data: Vec::new(),
             watcher_reward: None,
         };
-        let validate_err = coin.validate_taker_payment(input).wait().unwrap_err();
+        let validate_err = block_on(coin.validate_taker_payment(input)).unwrap_err();
         match validate_err.into_inner() {
             ValidatePaymentError::WrongPaymentTx(e) => assert!(e.contains("Incorrect CreateHtlc message")),
             unexpected => panic!("Unexpected error variant {:?}", unexpected),
@@ -3427,11 +3427,7 @@ pub mod tendermint_coin_tests {
             unique_swap_data: Vec::new(),
             watcher_reward: None,
         };
-        let validate_err = block_on(
-            coin.validate_payment_for_denom(input, "nim".parse().unwrap(), 6)
-                .compat(),
-        )
-        .unwrap_err();
+        let validate_err = block_on(coin.validate_payment_for_denom(input, "nim".parse().unwrap(), 6)).unwrap_err();
         match validate_err.into_inner() {
             ValidatePaymentError::UnexpectedPaymentState(_) => (),
             unexpected => panic!("Unexpected error variant {:?}", unexpected),
