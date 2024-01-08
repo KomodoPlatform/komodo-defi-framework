@@ -212,7 +212,7 @@ pub(super) async fn get_maker_swap_data_for_rpc(
         maker_volume: json_repr.maker_volume.into(),
         taker_volume: json_repr.taker_volume.into(),
         premium: json_repr.taker_premium.into(),
-        dex_fee: json_repr.dex_fee_amount.into(),
+        dex_fee: (json_repr.dex_fee_amount + json_repr.dex_fee_burn).into(),
         lock_duration: json_repr.lock_duration as i64,
         maker_coin_confs: json_repr.conf_settings.maker_coin_confs as i64,
         maker_coin_nota: json_repr.conf_settings.maker_coin_nota,
@@ -252,7 +252,7 @@ pub(super) async fn get_taker_swap_data_for_rpc(
         maker_volume: json_repr.maker_volume.into(),
         taker_volume: json_repr.taker_volume.into(),
         premium: json_repr.taker_premium.into(),
-        dex_fee: json_repr.dex_fee.into(),
+        dex_fee: (json_repr.dex_fee_amount + json_repr.dex_fee_burn).into(),
         lock_duration: json_repr.lock_duration as i64,
         maker_coin_confs: json_repr.conf_settings.maker_coin_confs as i64,
         maker_coin_nota: json_repr.conf_settings.maker_coin_nota,
@@ -283,6 +283,11 @@ impl From<SavedSwapError> for GetSwapDataErr {
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqlError> for GetSwapDataErr {
     fn from(e: SqlError) -> Self { GetSwapDataErr::DbError(e.to_string()) }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl From<SwapV2DbError> for GetSwapDataErr {
+    fn from(e: SwapV2DbError) -> Self { GetSwapDataErr::DbError(e.to_string()) }
 }
 
 async fn get_swap_data_by_uuid_and_type(

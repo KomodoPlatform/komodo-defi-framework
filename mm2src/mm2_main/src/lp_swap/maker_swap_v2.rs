@@ -39,7 +39,6 @@ cfg_native!(
 );
 
 cfg_wasm32!(
-    use crate::mm2::lp_swap::SwapsContext;
     use crate::mm2::lp_swap::swap_wasm_db::{MySwapsFiltersTable, SavedSwapTable};
 );
 
