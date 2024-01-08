@@ -170,6 +170,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
     async fn get_nft_activation_result(
         &self,
         activation_request: &Self::ActivationRequest,
+        nft_global: &MmCoinEnum,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>;
 
     fn start_history_background_fetching(
@@ -440,7 +441,9 @@ where
         .enable_global_non_fungible_token(&ctx, &platform_conf, &req.request)
         .await?;
 
-    let activation_result = platform_coin.get_nft_activation_result(&req.request).await?;
+    let activation_result = platform_coin
+        .get_nft_activation_result(&req.request, &nft_global_token)
+        .await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     if req.request.tx_history() {

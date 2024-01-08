@@ -153,7 +153,7 @@ fn eth_coin_from_keypair(
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
     (ctx, eth_coin)
@@ -341,7 +341,7 @@ fn send_and_refund_erc20_payment() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 
@@ -428,7 +428,7 @@ fn send_and_refund_eth_payment() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 
@@ -537,7 +537,7 @@ fn test_nonce_several_urls() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 
@@ -590,7 +590,7 @@ fn test_wait_for_payment_spend_timeout() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     };
 
@@ -661,7 +661,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 
@@ -773,7 +773,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 
@@ -1457,7 +1457,7 @@ fn test_message_hash() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 
@@ -1503,7 +1503,7 @@ fn test_sign_verify_message() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 
@@ -1556,7 +1556,7 @@ fn test_eth_extract_secret() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+        non_fungible_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 

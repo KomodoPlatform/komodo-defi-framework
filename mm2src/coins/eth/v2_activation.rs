@@ -1,5 +1,6 @@
 use super::*;
-use crate::nft::nft_errors::ParseChainTypeError;
+use crate::nft::get_nfts_for_activation;
+use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError};
 use crate::nft::nft_structs::Chain;
 #[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
 use common::executor::AbortedError;
@@ -38,6 +39,8 @@ pub enum EthActivationV2Error {
     #[from_trait(WithInternal::internal)]
     #[display(fmt = "Internal: {}", _0)]
     InternalError(String),
+    #[display(fmt = "Unexpected coin type")]
+    UnexpectedCoinType,
 }
 
 impl From<MyAddressError> for EthActivationV2Error {
@@ -54,6 +57,32 @@ impl From<CryptoCtxError> for EthActivationV2Error {
 
 impl From<UnexpectedDerivationMethod> for EthActivationV2Error {
     fn from(e: UnexpectedDerivationMethod) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+}
+
+impl From<GetNftInfoError> for EthActivationV2Error {
+    fn from(e: GetNftInfoError) -> Self {
+        match e {
+            GetNftInfoError::InvalidRequest(err) | GetNftInfoError::InvalidResponse(err) => {
+                EthActivationV2Error::InvalidPayload(err)
+            },
+            GetNftInfoError::ContractTypeIsNull => EthActivationV2Error::InvalidPayload(
+                "The contract type is required and should not be null.".to_string(),
+            ),
+            GetNftInfoError::Transport(err) => EthActivationV2Error::UnreachableNodes(err),
+            GetNftInfoError::Internal(err) | GetNftInfoError::DbError(err) => EthActivationV2Error::InternalError(err),
+            GetNftInfoError::GetEthAddressError(err) => EthActivationV2Error::InternalError(err.to_string()),
+            GetNftInfoError::ParseRfc3339Err(err) => EthActivationV2Error::InternalError(err.to_string()),
+            GetNftInfoError::ProtectFromSpamError(err) => EthActivationV2Error::InternalError(err.to_string()),
+            GetNftInfoError::TransferConfirmationsError(err) => EthActivationV2Error::InternalError(err.to_string()),
+            GetNftInfoError::TokenNotFoundInWallet {
+                token_address,
+                token_id,
+            } => EthActivationV2Error::InternalError(format!(
+                "Token not found in wallet: {}, {}",
+                token_address, token_id
+            )),
+        }
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -235,7 +264,7 @@ impl EthCoin {
         chain: &Chain,
         conf: &Json,
         activation_request: &EthActivationV2Request,
-        _url: &Url,
+        url: &Url,
     ) -> MmResult<EthCoin, EthActivationV2Error> {
         let ticker = chain.to_nft_ticker().to_string();
 
@@ -252,6 +281,8 @@ impl EthCoin {
                     .unwrap_or(DEFAULT_REQUIRED_CONFIRMATIONS as u64)
             })
             .into();
+
+        let nft_infos = get_nfts_for_activation(chain, &self.my_address, url).await?;
 
         let global_nft = EthCoinImpl {
             ticker,
@@ -278,7 +309,7 @@ impl EthCoin {
             erc20_tokens_infos: Arc::new(Mutex::new(Default::default())),
             // todo should be parsed from Moralis. lets not use DB, when we enable NFT.
             // todo in update_nft RPC check if global NFT was enabled, also update it.
-            non_fungible_tokens_infos: Arc::new(Mutex::new(Default::default())),
+            non_fungible_tokens_infos: Arc::new(Mutex::new(nft_infos)),
             abortable_system,
         };
         Ok(EthCoin(Arc::new(global_nft)))

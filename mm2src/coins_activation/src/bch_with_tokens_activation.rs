@@ -332,6 +332,7 @@ impl PlatformWithTokensActivationOps for BchCoin {
     async fn get_nft_activation_result(
         &self,
         _activation_request: &Self::ActivationRequest,
+        _nft_global: &MmCoinEnum,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
         todo!()
     }

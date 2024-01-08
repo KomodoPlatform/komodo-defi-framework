@@ -317,6 +317,8 @@ impl<T: NftStorageError> From<T> for UpdateSpamPhishingError {
 pub enum ParseChainTypeError {
     /// The provided string does not correspond to any of the supported blockchain types.
     UnsupportedChainType,
+    /// The provided string of coin does not correspond to any of the supported blockchain types.
+    UnsupportedCoinType,
 }
 
 #[derive(Debug, Display, EnumFromStringify)]

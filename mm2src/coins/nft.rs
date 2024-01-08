@@ -18,9 +18,9 @@ use crate::eth::{eth_addr_to_hex, get_eth_address, withdraw_erc1155, withdraw_er
                  EthTxFeeDetails};
 use crate::nft::nft_errors::{MetaFromUrlError, ProtectFromSpamError, TransferConfirmationsError,
                              UpdateSpamPhishingError};
-use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, NftCommon, NftCtx, NftTransferCommon,
-                              PhishingDomainReq, PhishingDomainRes, RefreshMetadataReq, SpamContractReq,
-                              SpamContractRes, TransferMeta, TransferStatus, UriMeta};
+use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, NftCommon, NftCtx, NftInfo,
+                              NftTransferCommon, PhishingDomainReq, PhishingDomainRes, RefreshMetadataReq,
+                              SpamContractReq, SpamContractRes, TransferMeta, TransferStatus, UriMeta};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
 use common::parse_rfc3339_to_timestamp;
 use crypto::StandardHDCoinAddress;
@@ -624,10 +624,70 @@ async fn get_moralis_nft_list(
             } else {
                 break;
             }
+        } else {
+            break;
         }
     }
     drop_mutability!(res_list);
     Ok(res_list)
+}
+
+pub(crate) async fn get_nfts_for_activation(
+    chain: &Chain,
+    my_address: &Address,
+    url: &Url,
+) -> MmResult<HashMap<String, NftInfo>, GetNftInfoError> {
+    let mut nfts_map = HashMap::new();
+    let mut uri_without_cursor = url.clone();
+    uri_without_cursor.set_path(MORALIS_API_ENDPOINT);
+    uri_without_cursor
+        .path_segments_mut()
+        .map_to_mm(|_| GetNftInfoError::Internal("Invalid URI".to_string()))?
+        .push(&eth_addr_to_hex(my_address))
+        .push("nft");
+    uri_without_cursor
+        .query_pairs_mut()
+        .append_pair("chain", &chain.to_string())
+        .append_pair(MORALIS_FORMAT_QUERY_NAME, MORALIS_FORMAT_QUERY_VALUE);
+    drop_mutability!(uri_without_cursor);
+
+    // The cursor returned in the previous response (used for getting the next page).
+    let mut cursor = String::new();
+    loop {
+        let uri = format!("{}{}", uri_without_cursor, cursor);
+        let response = send_request_to_uri(uri.as_str()).await?;
+        if let Some(nfts_list) = response["result"].as_array() {
+            for nft_json in nfts_list {
+                let nft_moralis: NftFromMoralis = serde_json::from_str(&nft_json.to_string())?;
+                let contract_type = match nft_moralis.contract_type {
+                    Some(contract_type) => contract_type,
+                    None => continue,
+                };
+                let token_address_str = eth_addr_to_hex(&nft_moralis.common.token_address);
+                let nft_info = NftInfo {
+                    token_address: nft_moralis.common.token_address,
+                    token_id: nft_moralis.token_id.0.clone(),
+                    chain: *chain,
+                    contract_type,
+                    amount: nft_moralis.common.amount,
+                };
+                let key = format!("{},{}", token_address_str, nft_moralis.token_id.0);
+                nfts_map.insert(key, nft_info);
+            }
+            // if cursor is not null, there are other NFTs on next page,
+            // and we need to send new request with cursor to get info from the next page.
+            if let Some(cursor_res) = response["cursor"].as_str() {
+                cursor = format!("{}{}", "&cursor=", cursor_res);
+                continue;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    drop_mutability!(nfts_map);
+    Ok(nfts_map)
 }
 
 async fn get_moralis_nft_transfers(
@@ -721,6 +781,8 @@ async fn get_moralis_nft_transfers(
             } else {
                 break;
             }
+        } else {
+            break;
         }
     }
     drop_mutability!(res_list);

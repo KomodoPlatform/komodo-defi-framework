@@ -173,6 +173,24 @@ impl FromStr for Chain {
     }
 }
 
+impl Chain {
+    pub fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
+        match s {
+            "AVAX" => Ok(Chain::Avalanche),
+            "avax" => Ok(Chain::Avalanche),
+            "BNB" => Ok(Chain::Bsc),
+            "bnb" => Ok(Chain::Bsc),
+            "ETH" => Ok(Chain::Eth),
+            "eth" => Ok(Chain::Eth),
+            "FTM" => Ok(Chain::Fantom),
+            "ftm" => Ok(Chain::Fantom),
+            "MATIC" => Ok(Chain::Polygon),
+            "matic" => Ok(Chain::Polygon),
+            _ => MmError::err(ParseChainTypeError::UnsupportedCoinType),
+        }
+    }
+}
+
 /// This implementation will use `FromStr` to deserialize `Chain`.
 impl<'de> Deserialize<'de> for Chain {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -744,12 +762,12 @@ where
     BigUint::from_str(&s).map_err(serde::de::Error::custom)
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct NftInfo {
-    token_address: Address,
-    token_id: BigUint,
-    chain: Chain,
-    contract_type: ContractType,
-    amount: BigDecimal,
+    pub(crate) token_address: Address,
+    #[serde(serialize_with = "serialize_token_id")]
+    pub(crate) token_id: BigUint,
+    pub(crate) chain: Chain,
+    pub(crate) contract_type: ContractType,
+    pub(crate) amount: BigDecimal,
 }

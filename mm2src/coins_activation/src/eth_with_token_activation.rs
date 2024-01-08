@@ -23,7 +23,6 @@ use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
 use url::Url;
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
@@ -56,6 +55,9 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
                 EnablePlatformCoinWithTokensError::Transport(metamask.to_string())
             },
             EthActivationV2Error::InternalError(e) => EnablePlatformCoinWithTokensError::Internal(e),
+            EthActivationV2Error::UnexpectedCoinType => {
+                EnablePlatformCoinWithTokensError::Internal("Unexpected coin type".to_string())
+            },
         }
     }
 }
@@ -208,7 +210,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
                 ))
             },
         };
-        let chain = Chain::from_str(self.ticker())?;
+        let chain = Chain::from_ticker(self.ticker())?;
         let nft_global = self
             .global_nft_from_platform_coin(ctx, &chain, platform_conf, &activation_request.platform_request, url)
             .await?;
@@ -299,9 +301,57 @@ impl PlatformWithTokensActivationOps for EthCoin {
 
     async fn get_nft_activation_result(
         &self,
-        _activation_request: &Self::ActivationRequest,
+        activation_request: &Self::ActivationRequest,
+        nft_global: &MmCoinEnum,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
-        todo!()
+        let nft_global = match nft_global {
+            MmCoinEnum::EthCoin(nft) => nft,
+            _ => return MmError::err(EthActivationV2Error::UnexpectedCoinType),
+        };
+        let current_block = self
+            .current_block()
+            .compat()
+            .await
+            .map_err(EthActivationV2Error::InternalError)?;
+
+        let my_address = self.my_address()?;
+        let pubkey = self.get_public_key()?;
+
+        let mut eth_address_info = CoinAddressInfo {
+            derivation_method: DerivationMethod::Iguana,
+            pubkey,
+            balances: None,
+            tickers: None,
+        };
+
+        if !activation_request.get_balances {
+            drop_mutability!(eth_address_info);
+            let nfts_map = nft_global.get_non_fungible_tokens_infos();
+
+            return Ok(EthWithTokensActivationResult {
+                current_block,
+                eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
+                erc20_addresses_infos: Default::default(),
+                nfts_infos: nfts_map,
+            });
+        }
+
+        let eth_balance = self
+            .my_balance()
+            .compat()
+            .await
+            .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
+        eth_address_info.balances = Some(eth_balance);
+        drop_mutability!(eth_address_info);
+
+        let nfts_map = nft_global.get_non_fungible_tokens_infos();
+
+        Ok(EthWithTokensActivationResult {
+            current_block,
+            eth_addresses_infos: HashMap::from([(my_address, eth_address_info)]),
+            erc20_addresses_infos: Default::default(),
+            nfts_infos: nfts_map,
+        })
     }
 
     fn start_history_background_fetching(
