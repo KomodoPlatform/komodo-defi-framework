@@ -795,7 +795,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         match event {
             TakerSwapEvent::Initialized {
                 taker_payment_fee,
-                maker_payment_spend_fee,
+                maker_payment_spend_fee: _,
                 ..
             } => {
                 let swaps_ctx = SwapsContext::from_ctx(&self.ctx).expect("from_ctx should not fail at this point");
