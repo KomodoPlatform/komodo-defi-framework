@@ -1,4 +1,5 @@
-use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, MnemonicError};
+use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedMnemonicData,
+             MnemonicError};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::de::DeserializeOwned;
@@ -23,6 +24,10 @@ pub enum WalletInitError {
     ErrorDeserializingConfig {
         field: String,
         error: String,
+    },
+    #[display(fmt = "The '{}' field not found in the config", field)]
+    FieldNotFoundInConfig {
+        field: String,
     },
     #[display(fmt = "Wallets storage error: {}", _0)]
     WalletsStorageError(String),
@@ -97,6 +102,86 @@ async fn read_and_decrypt_passphrase(
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+enum Passphrase {
+    Encrypted(EncryptedMnemonicData),
+    Decrypted(String),
+}
+
+fn deserialize_wallet_config(ctx: &MmArc) -> WalletInitResult<(Option<String>, Option<Passphrase>)> {
+    let passphrase = deserialize_config_field::<Option<Passphrase>>(ctx, "passphrase")?;
+    // New approach for passphrase, `wallet_name` is needed in the config to enable multi-wallet support.
+    // In this case the passphrase will be generated if not provided.
+    // The passphrase will then be encrypted and saved whether it was generated or provided.
+    let wallet_name = deserialize_config_field::<Option<String>>(ctx, "wallet_name")?;
+    Ok((wallet_name, passphrase))
+}
+
+async fn handle_passphrase_logic(
+    ctx: &MmArc,
+    wallet_name: Option<String>,
+    passphrase: Option<Passphrase>,
+) -> WalletInitResult<Option<String>> {
+    match (wallet_name, passphrase) {
+        (None, None) => Ok(None),
+        // Legacy approach for passphrase, no `wallet_name` is needed in the config, in this case the passphrase is not encrypted and saved.
+        (None, Some(Passphrase::Decrypted(passphrase))) => Ok(Some(passphrase)),
+        // Importing an encrypted passphrase without a wallet name is not supported since it's not possible to save the passphrase.
+        (None, Some(Passphrase::Encrypted(_))) => MmError::err(WalletInitError::FieldNotFoundInConfig {
+            field: "wallet_name".to_owned(),
+        }),
+        // Passphrase is not provided. Generate, encrypt and save passphrase if not already saved.
+        (Some(wallet_name), None) => {
+            let wallet_password = deserialize_config_field::<String>(ctx, "wallet_password")?;
+            match read_and_decrypt_passphrase(ctx, &wallet_name, &wallet_password).await? {
+                Some(passphrase_from_file) => Ok(Some(passphrase_from_file)),
+                None => {
+                    let new_passphrase = generate_mnemonic(ctx)?.to_string();
+                    encrypt_and_save_passphrase(ctx, &wallet_name, &new_passphrase, &wallet_password).await?;
+                    Ok(Some(new_passphrase))
+                },
+            }
+        },
+        // Passphrase is provided. Encrypt and save passphrase if not already saved.
+        (Some(wallet_name), Some(Passphrase::Decrypted(passphrase))) => {
+            let wallet_password = deserialize_config_field::<String>(ctx, "wallet_password")?;
+            match read_and_decrypt_passphrase(ctx, &wallet_name, &wallet_password).await? {
+                Some(passphrase_from_file) if passphrase == passphrase_from_file => Ok(Some(passphrase)),
+                None => {
+                    encrypt_and_save_passphrase(ctx, &wallet_name, &passphrase, &wallet_password).await?;
+                    Ok(Some(passphrase))
+                },
+                _ => MmError::err(WalletInitError::PassphraseMismatch),
+            }
+        },
+        // Encrypted passphrase is provided. Decrypt and save encrypted passphrase if not already saved.
+        (Some(wallet_name), Some(Passphrase::Encrypted(encrypted_passphrase_data))) => {
+            let wallet_password = deserialize_config_field::<String>(ctx, "wallet_password")?;
+            let passphrase = decrypt_mnemonic(&encrypted_passphrase_data, &wallet_password)?.to_string();
+            match read_and_decrypt_passphrase(ctx, &wallet_name, &wallet_password).await? {
+                Some(passphrase_from_file) if passphrase == passphrase_from_file => Ok(Some(passphrase)),
+                None => {
+                    save_encrypted_passphrase(ctx, &wallet_name, &encrypted_passphrase_data)
+                        .await
+                        .mm_err(|e| WalletInitError::WalletsStorageError(e.to_string()))?;
+                    Ok(Some(passphrase))
+                },
+                _ => MmError::err(WalletInitError::PassphraseMismatch),
+            }
+        },
+    }
+}
+
+fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<()> {
+    // This defaults to false to maintain backward compatibility.
+    match ctx.conf["enable_hd"].as_bool().unwrap_or(false) {
+        true => CryptoCtx::init_with_global_hd_account(ctx.clone(), passphrase)?,
+        false => CryptoCtx::init_with_iguana_passphrase(ctx.clone(), passphrase)?,
+    };
+    Ok(())
+}
+
 /// Initializes and manages the wallet passphrase.
 ///
 /// This function handles several scenarios based on the configuration:
@@ -121,44 +206,11 @@ async fn read_and_decrypt_passphrase(
 /// Returns `MmInitError` if deserialization fails or if there are issues in passphrase handling.
 ///
 pub(crate) async fn initialize_wallet_passphrase(ctx: MmArc) -> WalletInitResult<()> {
-    let passphrase = deserialize_config_field::<Option<String>>(&ctx, "passphrase")?;
-    // New approach for passphrase, `wallet_name` is needed in the config to enable multi-wallet support.
-    // In this case the passphrase will be generated if not provided.
-    // The passphrase will then be encrypted and saved whether it was generated or provided.
-    let wallet_name = deserialize_config_field::<Option<String>>(&ctx, "wallet_name")?;
-
-    let passphrase = match (wallet_name, passphrase) {
-        (None, None) => None,
-        // Legacy approach for passphrase, no `wallet_name` is needed in the config, in this case the passphrase is not encrypted and saved.
-        (None, Some(passphrase)) => Some(passphrase),
-        // New mode, passphrase is not provided. Generate, encrypt and save passphrase.
-        // passphrase is provided. encrypt and save passphrase.
-        (Some(wallet_name), maybe_passphrase) => {
-            let wallet_password = deserialize_config_field::<String>(&ctx, "wallet_password")?;
-            match read_and_decrypt_passphrase(&ctx, &wallet_name, &wallet_password).await? {
-                Some(passphrase_from_file) => match maybe_passphrase {
-                    Some(passphrase) if passphrase == passphrase_from_file => Some(passphrase),
-                    None => Some(passphrase_from_file),
-                    _ => return MmError::err(WalletInitError::PassphraseMismatch),
-                },
-                None => {
-                    let new_passphrase = match maybe_passphrase {
-                        Some(passphrase) => passphrase,
-                        None => generate_mnemonic(&ctx)?.to_string(),
-                    };
-                    encrypt_and_save_passphrase(&ctx, &wallet_name, &new_passphrase, &wallet_password).await?;
-                    Some(new_passphrase)
-                },
-            }
-        },
-    };
+    let (wallet_name, passphrase) = deserialize_wallet_config(&ctx)?;
+    let passphrase = handle_passphrase_logic(&ctx, wallet_name, passphrase).await?;
 
     if let Some(passphrase) = passphrase {
-        // This defaults to false to maintain backward compatibility.
-        match ctx.conf["enable_hd"].as_bool().unwrap_or(false) {
-            true => CryptoCtx::init_with_global_hd_account(ctx.clone(), &passphrase)?,
-            false => CryptoCtx::init_with_iguana_passphrase(ctx.clone(), &passphrase)?,
-        };
+        initialize_crypto_context(&ctx, &passphrase)?;
     }
 
     Ok(())
