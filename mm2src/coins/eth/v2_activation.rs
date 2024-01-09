@@ -307,8 +307,6 @@ impl EthCoin {
             logs_block_range: self.logs_block_range,
             nonce_lock: self.nonce_lock.clone(),
             erc20_tokens_infos: Arc::new(Mutex::new(Default::default())),
-            // todo should be parsed from Moralis. lets not use DB, when we enable NFT.
-            // todo in update_nft RPC check if global NFT was enabled, also update it.
             non_fungible_tokens_infos: Arc::new(Mutex::new(nft_infos)),
             abortable_system,
         };

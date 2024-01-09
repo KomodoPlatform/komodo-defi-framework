@@ -2,7 +2,7 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind_any, CoinProtocol, CoinsContext, MmCoin, MmCoinEnum, PrivKeyPolicyNotAllowed};
+use coins::{coin_conf, lp_coinfind_any, CoinProtocol, CoinsContext, MmCoin, MmCoinEnum, PrivKeyPolicyNotAllowed};
 use common::{log, HttpStatusCode, StatusCode};
 use crypto::CryptoCtxError;
 use derive_more::Display;
@@ -335,16 +335,35 @@ where
 }
 
 pub async fn re_enable_passive_platform_coin_with_nfts<Platform>(
-    _ctx: MmArc,
-    _platform_coin: Platform,
-    _req: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
+    ctx: MmArc,
+    platform_coin: Platform,
+    req: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
 ) -> Result<Platform::ActivationResult, MmError<EnablePlatformCoinWithTokensError>>
 where
     Platform: PlatformWithTokensActivationOps + MmCoin + Clone,
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
     (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
 {
-    todo!()
+    let platform_conf = coin_conf(&ctx, &req.ticker);
+    if platform_conf.is_null() {
+        return MmError::err(CoinConfWithProtocolError::ConfigIsNotFound(req.ticker).into());
+    }
+    let nft_global_token = platform_coin
+        .enable_global_non_fungible_token(&ctx, &platform_conf, &req.request)
+        .await?;
+
+    let activation_result = platform_coin
+        .get_nft_activation_result(&req.request, &nft_global_token)
+        .await?;
+    log::info!("{} current block {}", req.ticker, activation_result.current_block());
+
+    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+    coins_ctx
+        .add_platform_with_tokens(platform_coin.into(), vec![nft_global_token])
+        .await
+        .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
+
+    Ok(activation_result)
 }
 
 pub async fn enable_platform_coin_with_tokens<Platform>(

@@ -415,7 +415,6 @@ impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
 }
 
 /// pImpl idiom.
-#[allow(dead_code)]
 pub struct EthCoinImpl {
     pub ticker: String,
     pub coin_type: EthCoinType,
