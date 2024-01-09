@@ -628,13 +628,14 @@ pub enum TxMarshalingErr {
     Internal(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum TransactionErr {
     /// Keeps transactions while throwing errors.
     TxRecoverable(TransactionEnum, String),
     /// Simply for plain error messages.
     Plain(String),
+    NftProtocolNotSupported(String),
 }
 
 impl TransactionErr {
@@ -653,6 +654,7 @@ impl TransactionErr {
         match self {
             TransactionErr::TxRecoverable(_, err) => err.to_string(),
             TransactionErr::Plain(err) => err.to_string(),
+            TransactionErr::NftProtocolNotSupported(err) => err.to_string(),
         }
     }
 }
@@ -1977,6 +1979,8 @@ pub enum TradePreimageError {
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "Nft Protocol is not supported")]
+    NftProtocolNotSupported,
 }
 
 impl From<NumConversError> for TradePreimageError {
@@ -2427,6 +2431,8 @@ pub enum WithdrawError {
     },
     #[display(fmt = "DB error {}", _0)]
     DbError(String),
+    #[display(fmt = "Nft Protocol is not supported")]
+    NftProtocolNotSupported,
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -2456,9 +2462,10 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
-            WithdrawError::Transport(_) | WithdrawError::InternalError(_) | WithdrawError::DbError(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            WithdrawError::Transport(_)
+            | WithdrawError::InternalError(_)
+            | WithdrawError::DbError(_)
+            | WithdrawError::NftProtocolNotSupported => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -2513,6 +2520,7 @@ impl From<EthGasDetailsErr> for WithdrawError {
             EthGasDetailsErr::InvalidFeePolicy(e) => WithdrawError::InvalidFeePolicy(e),
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
+            EthGasDetailsErr::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,
         }
     }
 }

@@ -215,6 +215,8 @@ pub enum Web3RpcError {
     Timeout(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
+    #[display(fmt = "Nft Protocol is not supported")]
+    NftProtocolNotSupported,
 }
 
 impl From<GasStationReqErr> for Web3RpcError {
@@ -257,6 +259,9 @@ impl From<Web3RpcError> for RawTransactionError {
             Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
                 RawTransactionError::InternalError(internal)
             },
+            Web3RpcError::NftProtocolNotSupported => {
+                RawTransactionError::InternalError("Nft Protocol is not supported".to_string())
+            },
         }
     }
 }
@@ -298,6 +303,7 @@ impl From<Web3RpcError> for WithdrawError {
             Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
                 WithdrawError::InternalError(internal)
             },
+            Web3RpcError::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,
         }
     }
 }
@@ -313,6 +319,7 @@ impl From<Web3RpcError> for TradePreimageError {
             Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
                 TradePreimageError::InternalError(internal)
             },
+            Web3RpcError::NftProtocolNotSupported => TradePreimageError::NftProtocolNotSupported,
         }
     }
 }
@@ -342,6 +349,9 @@ impl From<Web3RpcError> for BalanceError {
         match e {
             Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => BalanceError::Transport(tr),
             Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => BalanceError::Internal(internal),
+            Web3RpcError::NftProtocolNotSupported => {
+                BalanceError::Internal("Nft Protocol is not supported".to_string())
+            },
         }
     }
 }
@@ -366,14 +376,19 @@ struct SavedErc20Events {
     latest_block: U64,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
     Eth,
     /// ERC20 token with smart contract address
     /// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-20.md
-    Erc20 { platform: String, token_addr: Address },
+    Erc20 {
+        platform: String,
+        token_addr: Address,
+    },
+    Nft {
+        platform: String,
+    },
 }
 
 /// An alternative to `crate::PrivKeyBuildPolicy`, typical only for ETH coin.
@@ -669,7 +684,7 @@ impl EthCoinImpl {
     pub fn erc20_token_address(&self) -> Option<Address> {
         match self.coin_type {
             EthCoinType::Erc20 { token_addr, .. } => Some(token_addr),
-            EthCoinType::Eth => None,
+            EthCoinType::Eth | EthCoinType::Nft { .. } => None,
         }
     }
 
@@ -764,6 +779,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
             let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])?;
             (0.into(), data, *token_addr, platform.as_str())
         },
+        EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
     };
     let eth_value_dec = u256_to_big_decimal(eth_value, coin.decimals)?;
 
@@ -936,6 +952,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
                 "Erc20 coin type doesnt support withdraw nft".to_owned(),
             ))
         },
+        EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
     };
     let (gas, gas_price) = get_eth_gas_details(
         &eth_coin,
@@ -1011,6 +1028,8 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
                 "Erc20 coin type doesnt support withdraw nft".to_owned(),
             ))
         },
+        // TODO: start to use NFT GLOBAL TOKEN for withdraw
+        EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
     };
     let (gas, gas_price) = get_eth_gas_details(
         &eth_coin,
@@ -1720,6 +1739,7 @@ impl WatcherOps for EthCoin {
                         )));
                     }
                 },
+                EthCoinType::Nft { .. } => return MmError::err(ValidatePaymentError::NftProtocolNotSupported),
             }
 
             Ok(())
@@ -1961,6 +1981,7 @@ impl WatcherOps for EthCoin {
                         )));
                     }
                 },
+                EthCoinType::Nft { .. } => return MmError::err(ValidatePaymentError::NftProtocolNotSupported),
             }
 
             Ok(())
@@ -2053,6 +2074,11 @@ impl WatcherOps for EthCoin {
                                     ))
                                 })?
                         }
+                    },
+                    EthCoinType::Nft { .. } => {
+                        return MmError::err(WatcherRewardError::InternalError(
+                            "Nft Protocol is not supported".to_string(),
+                        ))
                     },
                 }
             },
@@ -2151,7 +2177,7 @@ impl MarketCoinOps for EthCoin {
     fn platform_ticker(&self) -> &str {
         match &self.coin_type {
             EthCoinType::Eth => self.ticker(),
-            EthCoinType::Erc20 { platform, .. } => platform,
+            EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform } => platform,
         }
     }
 
@@ -2295,6 +2321,11 @@ impl MarketCoinOps for EthCoin {
         let func_name = match self.coin_type {
             EthCoinType::Eth => get_function_name("ethPayment", args.watcher_reward),
             EthCoinType::Erc20 { .. } => get_function_name("erc20Payment", args.watcher_reward),
+            EthCoinType::Nft { .. } => {
+                return Box::new(futures01::future::err(TransactionErr::NftProtocolNotSupported(ERRL!(
+                    "Nft Protocol is not supported"
+                ))))
+            },
         };
 
         let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&func_name));
@@ -2846,6 +2877,14 @@ impl EthCoin {
                 let fee_coin = match &self.coin_type {
                     EthCoinType::Eth => self.ticker(),
                     EthCoinType::Erc20 { platform, .. } => platform.as_str(),
+                    EthCoinType::Nft { .. } => {
+                        ctx.log.log(
+                            "",
+                            &[&"tx_history", &self.ticker],
+                            &ERRL!("Error on getting fee coin: Nft Protocol is not supported"),
+                        );
+                        continue;
+                    },
                 };
                 let fee_details: Option<EthTxFeeDetails> = match receipt {
                     Some(r) => {
@@ -3227,6 +3266,14 @@ impl EthCoin {
                 let fee_coin = match &self.coin_type {
                     EthCoinType::Eth => self.ticker(),
                     EthCoinType::Erc20 { platform, .. } => platform.as_str(),
+                    EthCoinType::Nft { .. } => {
+                        ctx.log.log(
+                            "",
+                            &[&"tx_history", &self.ticker],
+                            &ERRL!("Error on getting fee coin: Nft Protocol is not supported"),
+                        );
+                        continue;
+                    },
                 };
                 let fee_details = match receipt {
                     Some(r) => {
@@ -3348,6 +3395,11 @@ impl EthCoin {
                 let function = try_tx_fus!(abi.function("transfer"));
                 let data = try_tx_fus!(function.encode_input(&[Token::Address(address), Token::Uint(value)]));
                 self.sign_and_send_transaction(0.into(), Action::Call(*token_addr), data, U256::from(210_000))
+            },
+            EthCoinType::Nft { .. } => {
+                return Box::new(futures01::future::err(TransactionErr::NftProtocolNotSupported(ERRL!(
+                    "Nft Protocol is not supported"
+                ))))
             },
         }
     }
@@ -3490,6 +3542,11 @@ impl EthCoin {
                     }
                 }))
             },
+            EthCoinType::Nft { .. } => {
+                return Box::new(futures01::future::err(TransactionErr::NftProtocolNotSupported(ERRL!(
+                    "Nft Protocol is not supported"
+                ))))
+            },
         }
     }
 
@@ -3605,6 +3662,11 @@ impl EthCoin {
                             )
                         }),
                 )
+            },
+            EthCoinType::Nft { .. } => {
+                return Box::new(futures01::future::err(TransactionErr::NftProtocolNotSupported(ERRL!(
+                    "Nft Protocol is not supported"
+                ))))
             },
         }
     }
@@ -3726,6 +3788,11 @@ impl EthCoin {
                         }),
                 )
             },
+            EthCoinType::Nft { .. } => {
+                return Box::new(futures01::future::err(TransactionErr::NftProtocolNotSupported(ERRL!(
+                    "Nft Protocol is not supported"
+                ))))
+            },
         }
     }
 
@@ -3842,6 +3909,11 @@ impl EthCoin {
                             )
                         }),
                 )
+            },
+            EthCoinType::Nft { .. } => {
+                return Box::new(futures01::future::err(TransactionErr::NftProtocolNotSupported(ERRL!(
+                    "Nft Protocol is not supported"
+                ))))
             },
         }
     }
@@ -3961,6 +4033,11 @@ impl EthCoin {
                         }),
                 )
             },
+            EthCoinType::Nft { .. } => {
+                return Box::new(futures01::future::err(TransactionErr::NftProtocolNotSupported(ERRL!(
+                    "Nft Protocol is not supported"
+                ))))
+            },
         }
     }
 
@@ -3982,6 +4059,9 @@ impl EthCoin {
                             MmError::err(BalanceError::InvalidResponse(error))
                         },
                     }
+                },
+                EthCoinType::Nft { .. } => {
+                    MmError::err(BalanceError::Internal("Nft Protocol is not supported".to_string()))
                 },
             }
         };
@@ -4105,6 +4185,7 @@ impl EthCoin {
                         },
                     }
                 },
+                EthCoinType::Nft { .. } => MmError::err(Web3RpcError::NftProtocolNotSupported),
             }
         };
         Box::new(fut.boxed().compat())
@@ -4150,6 +4231,11 @@ impl EthCoin {
             let token_addr = match coin.coin_type {
                 EthCoinType::Eth => return TX_PLAIN_ERR!("'approve' is expected to be call for ERC20 coins only"),
                 EthCoinType::Erc20 { token_addr, .. } => token_addr,
+                EthCoinType::Nft { .. } => {
+                    return Err(TransactionErr::NftProtocolNotSupported(ERRL!(
+                        "Nft Protocol is not supported"
+                    )))
+                },
             };
             let function = try_tx_s!(ERC20_CONTRACT.function("approve"));
             let data = try_tx_s!(function.encode_input(&[Token::Address(spender), Token::Uint(amount)]));
@@ -4457,6 +4543,7 @@ impl EthCoin {
                         )));
                     }
                 },
+                EthCoinType::Nft { .. } => return MmError::err(ValidatePaymentError::NftProtocolNotSupported),
             }
 
             Ok(())
@@ -4502,6 +4589,7 @@ impl EthCoin {
         let func_name = match self.coin_type {
             EthCoinType::Eth => get_function_name("ethPayment", watcher_reward),
             EthCoinType::Erc20 { .. } => get_function_name("erc20Payment", watcher_reward),
+            EthCoinType::Nft { .. } => return ERR!("Nft Protocol is not supported"),
         };
 
         let payment_func = try_s!(SWAP_CONTRACT.function(&func_name));
@@ -4879,6 +4967,7 @@ impl MmCoin for EthCoin {
                 match coin.coin_type {
                     EthCoinType::Eth => coin.process_eth_history(&ctx).await,
                     EthCoinType::Erc20 { ref token_addr, .. } => coin.process_erc20_history(*token_addr, &ctx).await,
+                    EthCoinType::Nft {..} => return Err(())
                 }
                 Ok(())
             };
@@ -4898,6 +4987,7 @@ impl MmCoin for EthCoin {
                     let fee_coin = match &coin.coin_type {
                         EthCoinType::Eth => &coin.ticker,
                         EthCoinType::Erc20 { platform, .. } => platform,
+                        EthCoinType::Nft { .. } => return ERR!("Nft Protocol is not supported"),
                     };
                     Ok(TradeFee {
                         coin: fee_coin.into(),
@@ -4946,6 +5036,7 @@ impl MmCoin for EthCoin {
                     U256::from(300_000)
                 }
             },
+            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
         };
 
         let total_fee = gas_limit * gas_price;
@@ -4953,6 +5044,7 @@ impl MmCoin for EthCoin {
         let fee_coin = match &self.coin_type {
             EthCoinType::Eth => &self.ticker,
             EthCoinType::Erc20 { platform, .. } => platform,
+            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
         };
         Ok(TradeFee {
             coin: fee_coin.into(),
@@ -4971,6 +5063,7 @@ impl MmCoin for EthCoin {
             let fee_coin = match &coin.coin_type {
                 EthCoinType::Eth => &coin.ticker,
                 EthCoinType::Erc20 { platform, .. } => platform,
+                EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
             };
             Ok(TradeFee {
                 coin: fee_coin.into(),
@@ -4998,6 +5091,7 @@ impl MmCoin for EthCoin {
                 let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(dex_fee_amount)])?;
                 (0.into(), data, token_addr, platform)
             },
+            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
         };
 
         let gas_price = self.get_gas_price().compat().await?;
@@ -5237,6 +5331,7 @@ fn validate_fee_impl(coin: EthCoin, validate_fee_args: EthValidateFeeArgs<'_>) -
                     },
                 }
             },
+            EthCoinType::Nft { .. } => return MmError::err(ValidatePaymentError::NftProtocolNotSupported),
         }
 
         Ok(())
@@ -5570,6 +5665,7 @@ pub async fn eth_coin_from_conf_and_request(
     let key_lock = match &coin_type {
         EthCoinType::Eth => String::from(ticker),
         EthCoinType::Erc20 { ref platform, .. } => String::from(platform),
+        EthCoinType::Nft { .. } => return ERR!("Does not support NFT protocol"),
     };
 
     let mut map = NONCE_LOCK.lock().unwrap();
@@ -5819,6 +5915,8 @@ pub enum EthGasDetailsErr {
     Internal(String),
     #[display(fmt = "Transport: {}", _0)]
     Transport(String),
+    #[display(fmt = "Nft Protocol is not supported")]
+    NftProtocolNotSupported,
 }
 
 impl From<web3::Error> for EthGasDetailsErr {
@@ -5830,6 +5928,7 @@ impl From<Web3RpcError> for EthGasDetailsErr {
         match e {
             Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => EthGasDetailsErr::Transport(tr),
             Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => EthGasDetailsErr::Internal(internal),
+            Web3RpcError::NftProtocolNotSupported => EthGasDetailsErr::NftProtocolNotSupported,
         }
     }
 }

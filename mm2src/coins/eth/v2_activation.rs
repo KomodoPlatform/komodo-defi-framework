@@ -286,8 +286,9 @@ impl EthCoin {
 
         let global_nft = EthCoinImpl {
             ticker,
-            // todo change type to NFT
-            coin_type: EthCoinType::Eth,
+            coin_type: EthCoinType::Nft {
+                platform: self.ticker.clone(),
+            },
             priv_key_policy: self.priv_key_policy.clone(),
             my_address: self.my_address,
             sign_message_prefix: self.sign_message_prefix.clone(),
