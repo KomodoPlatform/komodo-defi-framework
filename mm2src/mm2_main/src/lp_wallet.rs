@@ -118,7 +118,97 @@ fn deserialize_wallet_config(ctx: &MmArc) -> WalletInitResult<(Option<String>, O
     Ok((wallet_name, passphrase))
 }
 
-async fn handle_passphrase_logic(
+/// Passphrase is not provided. Generate, encrypt and save passphrase if not already saved.
+async fn retrieve_or_create_passphrase(
+    ctx: &MmArc,
+    wallet_name: &str,
+    wallet_password: &str,
+) -> WalletInitResult<Option<String>> {
+    match read_and_decrypt_passphrase(ctx, wallet_name, wallet_password).await? {
+        Some(passphrase_from_file) => {
+            // If an existing passphrase is found, return it
+            Ok(Some(passphrase_from_file))
+        },
+        None => {
+            // If no passphrase is found, generate a new one
+            let new_passphrase = generate_mnemonic(ctx)?.to_string();
+            // Encrypt and save the new passphrase
+            encrypt_and_save_passphrase(ctx, wallet_name, &new_passphrase, wallet_password).await?;
+            Ok(Some(new_passphrase))
+        },
+    }
+}
+
+/// Passphrase is provided in plaintext. Encrypt and save passphrase if not already saved.
+async fn confirm_or_encrypt_and_store_passphrase(
+    ctx: &MmArc,
+    wallet_name: &str,
+    passphrase: &str,
+    wallet_password: &str,
+) -> WalletInitResult<Option<String>> {
+    match read_and_decrypt_passphrase(ctx, wallet_name, wallet_password).await? {
+        Some(passphrase_from_file) if passphrase == passphrase_from_file => {
+            // If an existing passphrase is found and it matches the provided passphrase, return it
+            Ok(Some(passphrase_from_file))
+        },
+        None => {
+            // If no passphrase is found in the file, encrypt and save the provided passphrase
+            encrypt_and_save_passphrase(ctx, wallet_name, passphrase, wallet_password).await?;
+            Ok(Some(passphrase.to_string()))
+        },
+        _ => {
+            // If an existing passphrase is found and it does not match the provided passphrase, return an error
+            Err(WalletInitError::PassphraseMismatch.into())
+        },
+    }
+}
+
+/// Encrypted passphrase is provided. Decrypt and save encrypted passphrase if not already saved.
+async fn decrypt_validate_or_save_passphrase(
+    ctx: &MmArc,
+    wallet_name: &str,
+    encrypted_passphrase_data: EncryptedMnemonicData,
+    wallet_password: &str,
+) -> WalletInitResult<Option<String>> {
+    // Decrypt the provided encrypted passphrase
+    let decrypted_passphrase = decrypt_mnemonic(&encrypted_passphrase_data, wallet_password)?.to_string();
+
+    match read_and_decrypt_passphrase(ctx, wallet_name, wallet_password).await? {
+        Some(passphrase_from_file) if decrypted_passphrase == passphrase_from_file => {
+            // If an existing passphrase is found and it matches the decrypted passphrase, return it
+            Ok(Some(decrypted_passphrase))
+        },
+        None => {
+            save_encrypted_passphrase(ctx, wallet_name, &encrypted_passphrase_data)
+                .await
+                .mm_err(|e| WalletInitError::WalletsStorageError(e.to_string()))?;
+            Ok(Some(decrypted_passphrase))
+        },
+        _ => {
+            // If an existing passphrase is found and it does not match the decrypted passphrase, return an error
+            Err(WalletInitError::PassphraseMismatch.into())
+        },
+    }
+}
+
+async fn process_wallet_with_name(
+    ctx: &MmArc,
+    wallet_name: &str,
+    passphrase: Option<Passphrase>,
+    wallet_password: &str,
+) -> WalletInitResult<Option<String>> {
+    match passphrase {
+        None => retrieve_or_create_passphrase(ctx, wallet_name, wallet_password).await,
+        Some(Passphrase::Decrypted(passphrase)) => {
+            confirm_or_encrypt_and_store_passphrase(ctx, wallet_name, &passphrase, wallet_password).await
+        },
+        Some(Passphrase::Encrypted(encrypted_data)) => {
+            decrypt_validate_or_save_passphrase(ctx, wallet_name, encrypted_data, wallet_password).await
+        },
+    }
+}
+
+async fn process_passphrase_logic(
     ctx: &MmArc,
     wallet_name: Option<String>,
     passphrase: Option<Passphrase>,
@@ -128,47 +218,14 @@ async fn handle_passphrase_logic(
         // Legacy approach for passphrase, no `wallet_name` is needed in the config, in this case the passphrase is not encrypted and saved.
         (None, Some(Passphrase::Decrypted(passphrase))) => Ok(Some(passphrase)),
         // Importing an encrypted passphrase without a wallet name is not supported since it's not possible to save the passphrase.
-        (None, Some(Passphrase::Encrypted(_))) => MmError::err(WalletInitError::FieldNotFoundInConfig {
+        (None, Some(Passphrase::Encrypted(_))) => Err(WalletInitError::FieldNotFoundInConfig {
             field: "wallet_name".to_owned(),
-        }),
-        // Passphrase is not provided. Generate, encrypt and save passphrase if not already saved.
-        (Some(wallet_name), None) => {
+        }
+        .into()),
+
+        (Some(wallet_name), passphrase_option) => {
             let wallet_password = deserialize_config_field::<String>(ctx, "wallet_password")?;
-            match read_and_decrypt_passphrase(ctx, &wallet_name, &wallet_password).await? {
-                Some(passphrase_from_file) => Ok(Some(passphrase_from_file)),
-                None => {
-                    let new_passphrase = generate_mnemonic(ctx)?.to_string();
-                    encrypt_and_save_passphrase(ctx, &wallet_name, &new_passphrase, &wallet_password).await?;
-                    Ok(Some(new_passphrase))
-                },
-            }
-        },
-        // Passphrase is provided. Encrypt and save passphrase if not already saved.
-        (Some(wallet_name), Some(Passphrase::Decrypted(passphrase))) => {
-            let wallet_password = deserialize_config_field::<String>(ctx, "wallet_password")?;
-            match read_and_decrypt_passphrase(ctx, &wallet_name, &wallet_password).await? {
-                Some(passphrase_from_file) if passphrase == passphrase_from_file => Ok(Some(passphrase)),
-                None => {
-                    encrypt_and_save_passphrase(ctx, &wallet_name, &passphrase, &wallet_password).await?;
-                    Ok(Some(passphrase))
-                },
-                _ => MmError::err(WalletInitError::PassphraseMismatch),
-            }
-        },
-        // Encrypted passphrase is provided. Decrypt and save encrypted passphrase if not already saved.
-        (Some(wallet_name), Some(Passphrase::Encrypted(encrypted_passphrase_data))) => {
-            let wallet_password = deserialize_config_field::<String>(ctx, "wallet_password")?;
-            let passphrase = decrypt_mnemonic(&encrypted_passphrase_data, &wallet_password)?.to_string();
-            match read_and_decrypt_passphrase(ctx, &wallet_name, &wallet_password).await? {
-                Some(passphrase_from_file) if passphrase == passphrase_from_file => Ok(Some(passphrase)),
-                None => {
-                    save_encrypted_passphrase(ctx, &wallet_name, &encrypted_passphrase_data)
-                        .await
-                        .mm_err(|e| WalletInitError::WalletsStorageError(e.to_string()))?;
-                    Ok(Some(passphrase))
-                },
-                _ => MmError::err(WalletInitError::PassphraseMismatch),
-            }
+            process_wallet_with_name(ctx, &wallet_name, passphrase_option, &wallet_password).await
         },
     }
 }
@@ -207,7 +264,7 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 ///
 pub(crate) async fn initialize_wallet_passphrase(ctx: MmArc) -> WalletInitResult<()> {
     let (wallet_name, passphrase) = deserialize_wallet_config(&ctx)?;
-    let passphrase = handle_passphrase_logic(&ctx, wallet_name, passphrase).await?;
+    let passphrase = process_passphrase_logic(&ctx, wallet_name, passphrase).await?;
 
     if let Some(passphrase) = passphrase {
         initialize_crypto_context(&ctx, &passphrase)?;
