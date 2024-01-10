@@ -111,9 +111,35 @@ impl From<std::string::String> for OrderProcessingError {
 }
 
 #[derive(Deserialize)]
+enum PriceSources {
+    #[serde(rename = "price_url")]
+    Singular(String),
+    #[serde(rename = "price_urls")]
+    Multiple(Vec<String>),
+}
+
+impl Default for PriceSources {
+    fn default() -> Self { PriceSources::Multiple(PRICE_ENDPOINTS.iter().map(|url| url.to_string()).collect()) }
+}
+
+impl PriceSources {
+    /// # Important
+    ///
+    /// Always use this to get the data
+    fn get_urls(&self) -> Vec<String> {
+        match self {
+            // TODO: deprecate price_url soon and inform the users
+            PriceSources::Singular(url) => vec![url.clone()],
+            PriceSources::Multiple(urls) => urls.clone(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
 pub struct StartSimpleMakerBotRequest {
     cfg: SimpleMakerBotRegistry,
-    price_urls: Option<Vec<String>>,
+    #[serde(default, flatten)]
+    price_sources: PriceSources,
     bot_refresh_rate: Option<f64>,
 }
 
@@ -736,10 +762,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             *state = RunningState {
                 trading_bot_cfg: req.cfg,
                 bot_refresh_rate: refresh_rate,
-                price_urls: AsyncMutex::new(
-                    req.price_urls
-                        .unwrap_or_else(|| PRICE_ENDPOINTS.iter().map(|url| url.to_string()).collect()),
-                ),
+                price_urls: AsyncMutex::new(req.price_sources.get_urls()),
             }
             .into();
             drop(state);
@@ -794,7 +817,7 @@ mod tests {
         let another_cloned_ctx = ctx.clone();
         let req = StartSimpleMakerBotRequest {
             cfg: Default::default(),
-            price_urls: None,
+            price_sources: Default::default(),
             bot_refresh_rate: None,
         };
         let answer = block_on(start_simple_market_maker_bot(ctx, req)).unwrap();
@@ -802,7 +825,7 @@ mod tests {
 
         let req = StartSimpleMakerBotRequest {
             cfg: Default::default(),
-            price_urls: None,
+            price_sources: Default::default(),
             bot_refresh_rate: None,
         };
         let answer = block_on(start_simple_market_maker_bot(cloned_ctx, req));
