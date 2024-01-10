@@ -1,6 +1,6 @@
 use crate::proto::messages_management::Features;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrezorDeviceInfo {
     /// The device model.
     model: Option<String>,

@@ -200,7 +200,21 @@ impl MmCtx {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
-        let port = self.conf["rpcport"].as_u64().unwrap_or(7783);
+        let port = match self.conf.get("rpcport") {
+            Some(rpcport) => {
+                // Check if it's a number or a string that can be parsed into a number
+                rpcport
+                    .as_u64()
+                    .or_else(|| rpcport.as_str().and_then(|s| s.parse::<u64>().ok()))
+                    .ok_or_else(|| {
+                        format!(
+                            "Invalid `rpcport` value. Expected a positive integer, but received: {}",
+                            rpcport
+                        )
+                    })?
+            },
+            None => 7783, // Default port if `rpcport` does not exist in the config
+        };
         if port < 1000 {
             return ERR!("rpcport < 1000");
         }

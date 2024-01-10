@@ -44,7 +44,7 @@ use std::str;
 use std::time::Duration;
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::mm2::database::init_and_migrate_db;
+use crate::mm2::database::init_and_migrate_sql_db;
 use crate::mm2::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::mm2::lp_network::{lp_network_ports, p2p_event_process_loop, NetIdError};
 use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
@@ -288,6 +288,7 @@ impl From<HwProcessingError<RpcTaskError>> for MmInitError {
         match e {
             HwProcessingError::HwError(hw) => MmInitError::from(hw),
             HwProcessingError::ProcessorError(rpc_task) => MmInitError::from(rpc_task),
+            HwProcessingError::InternalError(err) => MmInitError::Internal(err),
         }
     }
 }
@@ -464,7 +465,7 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
         ctx.init_async_sqlite_connection()
             .await
             .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
-        init_and_migrate_db(&ctx).await?;
+        init_and_migrate_sql_db(&ctx).await?;
         migrate_db(&ctx)?;
     }
 

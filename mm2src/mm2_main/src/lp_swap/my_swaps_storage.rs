@@ -31,7 +31,14 @@ pub enum MySwapsError {
 
 #[async_trait]
 pub trait MySwapsOps {
-    async fn save_new_swap(&self, my_coin: &str, other_coin: &str, uuid: Uuid, started_at: u64) -> MySwapsResult<()>;
+    async fn save_new_swap(
+        &self,
+        my_coin: &str,
+        other_coin: &str,
+        uuid: Uuid,
+        started_at: u64,
+        swap_type: u8,
+    ) -> MySwapsResult<()>;
 
     async fn my_recent_swaps_with_filters(
         &self,
@@ -51,14 +58,14 @@ impl MySwapsStorage {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
-    use crate::mm2::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, SelectRecentSwapsUuidsErr};
+    use crate::mm2::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, SelectSwapsUuidsErr};
     use db_common::sqlite::rusqlite::Error as SqlError;
 
-    impl From<SelectRecentSwapsUuidsErr> for MySwapsError {
-        fn from(e: SelectRecentSwapsUuidsErr) -> Self {
+    impl From<SelectSwapsUuidsErr> for MySwapsError {
+        fn from(e: SelectSwapsUuidsErr) -> Self {
             match e {
-                SelectRecentSwapsUuidsErr::Sql(db) => MySwapsError::UnknownSqlError(db.to_string()),
-                SelectRecentSwapsUuidsErr::Parse(uuid) => MySwapsError::UuidParse(uuid),
+                SelectSwapsUuidsErr::Sql(db) => MySwapsError::UnknownSqlError(db.to_string()),
+                SelectSwapsUuidsErr::Parse(uuid) => MySwapsError::UuidParse(uuid),
             }
         }
     }
@@ -75,6 +82,7 @@ mod native_impl {
             other_coin: &str,
             uuid: Uuid,
             started_at: u64,
+            swap_type: u8,
         ) -> MySwapsResult<()> {
             Ok(insert_new_swap(
                 &self.ctx,
@@ -82,6 +90,7 @@ mod native_impl {
                 other_coin,
                 &uuid.to_string(),
                 &started_at.to_string(),
+                swap_type,
             )?)
         }
 
@@ -104,7 +113,7 @@ mod wasm_impl {
     use super::*;
     use crate::mm2::lp_swap::swap_wasm_db::cursor_prelude::*;
     use crate::mm2::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, MySwapsFiltersTable};
-    use crate::mm2::lp_swap::SwapsContext;
+    use crate::mm2::lp_swap::{SwapsContext, LEGACY_SWAP_TYPE};
     use std::collections::BTreeSet;
     use uuid::Uuid;
 
@@ -165,6 +174,7 @@ mod wasm_impl {
             other_coin: &str,
             uuid: Uuid,
             started_at: u64,
+            swap_type: u8,
         ) -> MySwapsResult<()> {
             let swap_ctx = SwapsContext::from_ctx(&self.ctx).map_to_mm(MySwapsError::InternalError)?;
             let db = swap_ctx.swap_db().await?;
@@ -176,6 +186,8 @@ mod wasm_impl {
                 my_coin: my_coin.to_owned(),
                 other_coin: other_coin.to_owned(),
                 started_at: started_at as u32,
+                is_finished: false.into(),
+                swap_type,
             };
             my_swaps_table.add_item(&item).await?;
             Ok(())
@@ -249,7 +261,10 @@ mod wasm_impl {
                 None => {
                     let total_count = uuids.len();
                     Ok(MyRecentSwapsUuids {
-                        uuids: uuids.into_iter().map(|ordered| ordered.uuid).collect(),
+                        uuids_and_types: uuids
+                            .into_iter()
+                            .map(|ordered| (ordered.uuid, ordered.swap_type))
+                            .collect(),
                         total_count,
                         skipped: 0,
                     })
@@ -276,15 +291,15 @@ mod wasm_impl {
             None => (paging.page_number.get() - 1) * paging.limit,
         };
 
-        let uuids = uuids
+        let uuids_and_types = uuids
             .into_iter()
-            .map(|ordered| ordered.uuid)
+            .map(|ordered| (ordered.uuid, ordered.swap_type))
             .skip(skip)
             .take(paging.limit)
             .collect();
 
         Ok(MyRecentSwapsUuids {
-            uuids,
+            uuids_and_types,
             total_count,
             skipped: skip,
         })
@@ -295,6 +310,7 @@ mod wasm_impl {
     pub(super) struct OrderedUuid {
         pub started_at: u32,
         pub uuid: Uuid,
+        pub swap_type: u8,
     }
 
     impl From<MySwapsFiltersTable> for OrderedUuid {
@@ -302,6 +318,7 @@ mod wasm_impl {
             OrderedUuid {
                 started_at: item.started_at,
                 uuid: item.uuid,
+                swap_type: item.swap_type,
             }
         }
     }
@@ -311,6 +328,7 @@ mod wasm_impl {
 mod wasm_tests {
     use super::wasm_impl::*;
     use super::*;
+    use crate::mm2::lp_swap::{LEGACY_SWAP_TYPE, MAKER_SWAP_V2_TYPE, TAKER_SWAP_V2_TYPE};
     use common::log::wasm_log::register_wasm_log;
     use common::new_uuid;
     use mm2_core::mm_ctx::MmCtxBuilder;
@@ -357,15 +375,17 @@ mod wasm_tests {
             let my_coin = *coins.choose(&mut rng).unwrap();
             let other_coin = *coins.choose(&mut rng).unwrap();
             let started_at = rng.gen_range(timestamp_range.start, timestamp_range.end);
+            let swap_type = rng.gen_range(0, 3);
 
             if is_applied(&filters, my_coin, other_coin, started_at) {
                 expected_uuids.insert(OrderedUuid {
                     started_at: started_at as u32,
                     uuid,
+                    swap_type,
                 });
             }
             my_swaps
-                .save_new_swap(my_coin, other_coin, uuid, started_at)
+                .save_new_swap(my_coin, other_coin, uuid, started_at, swap_type)
                 .await
                 .expect("!MySwapsStorage::save_new_swap");
         }
@@ -377,7 +397,10 @@ mod wasm_tests {
 
         let expected_total_count = expected_uuids.len();
         let expected = MyRecentSwapsUuids {
-            uuids: expected_uuids.into_iter().map(|ordered| ordered.uuid).collect(),
+            uuids_and_types: expected_uuids
+                .into_iter()
+                .map(|ordered| (ordered.uuid, ordered.swap_type))
+                .collect(),
             total_count: expected_total_count,
             skipped: 0,
         };
@@ -389,21 +412,22 @@ mod wasm_tests {
         register_wasm_log();
 
         let uuids: BTreeSet<OrderedUuid> = [
-            (1, "49c79ea4-e1eb-4fb2-a0ef-265bded0b77f"),
-            (2, "2f9afe84-7a89-4194-8947-45fba563118f"),
-            (3, "41383f43-46a5-478c-9386-3b2cce0aca20"),
-            (4, "5acb0e63-8b26-469e-81df-7dd9e4a9ad15"),
-            (5, "3447b727-fe93-4357-8e5a-8cf2699b7e86"),
+            (1, "49c79ea4-e1eb-4fb2-a0ef-265bded0b77f", TAKER_SWAP_V2_TYPE),
+            (2, "2f9afe84-7a89-4194-8947-45fba563118f", MAKER_SWAP_V2_TYPE),
+            (3, "41383f43-46a5-478c-9386-3b2cce0aca20", LEGACY_SWAP_TYPE),
+            (4, "5acb0e63-8b26-469e-81df-7dd9e4a9ad15", TAKER_SWAP_V2_TYPE),
+            (5, "3447b727-fe93-4357-8e5a-8cf2699b7e86", MAKER_SWAP_V2_TYPE),
             // ordered by uuid
-            (6, "8f5b267a-efa8-49d6-a92d-ec0523cca891"),
-            (6, "983ce732-62a8-4a44-b4ac-7e4271adc977"),
-            (7, "c52659d7-4e13-41f5-9c1a-30cc2f646033"),
-            (8, "af5e0383-97f6-4408-8c03-a8eb8d17e46d"),
+            (6, "8f5b267a-efa8-49d6-a92d-ec0523cca891", LEGACY_SWAP_TYPE),
+            (6, "983ce732-62a8-4a44-b4ac-7e4271adc977", TAKER_SWAP_V2_TYPE),
+            (7, "c52659d7-4e13-41f5-9c1a-30cc2f646033", MAKER_SWAP_V2_TYPE),
+            (8, "af5e0383-97f6-4408-8c03-a8eb8d17e46d", LEGACY_SWAP_TYPE),
         ]
         .iter()
-        .map(|(started_at, uuid)| OrderedUuid {
+        .map(|(started_at, uuid, swap_type)| OrderedUuid {
             started_at: *started_at,
             uuid: Uuid::parse_str(uuid).unwrap(),
+            swap_type: *swap_type,
         })
         .collect();
 
@@ -415,9 +439,15 @@ mod wasm_tests {
         };
         let actual = take_according_to_paging_opts(uuids.clone(), &paging).unwrap();
         let expected = MyRecentSwapsUuids {
-            uuids: vec![
-                "983ce732-62a8-4a44-b4ac-7e4271adc977".parse().unwrap(),
-                "c52659d7-4e13-41f5-9c1a-30cc2f646033".parse().unwrap(),
+            uuids_and_types: vec![
+                (
+                    "983ce732-62a8-4a44-b4ac-7e4271adc977".parse().unwrap(),
+                    TAKER_SWAP_V2_TYPE,
+                ),
+                (
+                    "c52659d7-4e13-41f5-9c1a-30cc2f646033".parse().unwrap(),
+                    MAKER_SWAP_V2_TYPE,
+                ),
             ],
             total_count: uuids.len(),
             skipped: 6,
@@ -431,10 +461,19 @@ mod wasm_tests {
         };
         let actual = take_according_to_paging_opts(uuids.clone(), &paging).unwrap();
         let expected = MyRecentSwapsUuids {
-            uuids: vec![
-                "5acb0e63-8b26-469e-81df-7dd9e4a9ad15".parse().unwrap(),
-                "3447b727-fe93-4357-8e5a-8cf2699b7e86".parse().unwrap(),
-                "8f5b267a-efa8-49d6-a92d-ec0523cca891".parse().unwrap(),
+            uuids_and_types: vec![
+                (
+                    "5acb0e63-8b26-469e-81df-7dd9e4a9ad15".parse().unwrap(),
+                    TAKER_SWAP_V2_TYPE,
+                ),
+                (
+                    "3447b727-fe93-4357-8e5a-8cf2699b7e86".parse().unwrap(),
+                    MAKER_SWAP_V2_TYPE,
+                ),
+                (
+                    "8f5b267a-efa8-49d6-a92d-ec0523cca891".parse().unwrap(),
+                    LEGACY_SWAP_TYPE,
+                ),
             ],
             total_count: uuids.len(),
             skipped: 3,

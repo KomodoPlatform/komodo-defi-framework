@@ -10,7 +10,7 @@ use common::SuccessResponse;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
-use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+use rpc_task::{RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
 
@@ -18,7 +18,7 @@ pub type InitL2Response = InitRpcTaskResponse;
 pub type InitL2StatusRequest = RpcTaskStatusRequest;
 pub type InitL2UserActionRequest<UserAction> = RpcTaskUserActionRequest<UserAction>;
 pub type InitL2TaskManagerShared<L2> = RpcTaskManagerShared<InitL2Task<L2>>;
-pub type InitL2TaskHandle<L2> = RpcTaskHandle<InitL2Task<L2>>;
+pub type InitL2TaskHandleShared<L2> = RpcTaskHandleShared<InitL2Task<L2>>;
 
 #[derive(Debug, Deserialize)]
 pub struct InitL2Req<T> {
@@ -61,7 +61,7 @@ pub trait InitL2ActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
         validated_params: Self::ValidatedParams,
         protocol_conf: Self::ProtocolInfo,
         coin_conf: Self::CoinConf,
-        task_handle: &InitL2TaskHandle<Self>,
+        task_handle: InitL2TaskHandleShared<Self>,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>>;
 }
 
@@ -192,8 +192,7 @@ where
             };
         };
     }
-
-    async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
+    async fn run(&mut self, task_handle: RpcTaskHandleShared<Self>) -> Result<Self::Item, MmError<Self::Error>> {
         let (coin, result) = L2::init_l2(
             &self.ctx,
             self.platform_coin.clone(),

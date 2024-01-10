@@ -161,8 +161,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
 
     // The actual script_pubkey will replace this before signing the transaction after receiving the required
     // output script from the other node when the channel is accepted
-    let script_pubkey =
-        Builder::build_witness_script(&AddressHashEnum::WitnessScriptHash(Default::default())).to_bytes();
+    let script_pubkey = Builder::build_p2witness(&AddressHashEnum::WitnessScriptHash(Default::default())).to_bytes();
     let outputs = vec![TransactionOutput { value, script_pubkey }];
 
     let mut tx_builder = UtxoTxBuilder::new(&platform_coin)

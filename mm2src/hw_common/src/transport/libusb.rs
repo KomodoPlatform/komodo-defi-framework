@@ -127,7 +127,7 @@ pub struct UsbAvailableDevice {
 }
 
 impl UsbAvailableDevice {
-    pub fn connect(self) -> UsbResult<UsbDevice> {
+    pub fn connect(&self) -> UsbResult<UsbDevice> {
         // This is a non-blocking function; no requests are sent over the bus.
         let mut device_handle = self.device.open().map_to_mm(UsbError::ErrorOpeningDevice)?;
         // Claiming of interfaces is a purely logical operation.
@@ -277,7 +277,7 @@ impl UsbDevice {
     fn endpoint_number(&self) -> u8 { self.device_info.interface_info.endpoint_number }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct UsbDeviceInfo {
     pub vendor_id: u16,
     pub product_id: u16,
@@ -286,7 +286,7 @@ pub struct UsbDeviceInfo {
     pub interface_info: UsbDeviceInterfaceInfo,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct UsbDeviceInterfaceInfo {
     pub interface_number: u8,
     pub endpoint_number: u8,

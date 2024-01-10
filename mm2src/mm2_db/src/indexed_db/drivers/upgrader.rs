@@ -18,6 +18,17 @@ pub enum OnUpgradeError {
     ErrorOpeningTable { table: String, description: String },
     #[display(fmt = "Error occurred due to creating the '{}' index: {}", index, description)]
     ErrorCreatingIndex { index: String, description: String },
+    #[display(
+        fmt = "Upgrade attempt to an unsupported version: {}, old: {}, new: {}",
+        unsupported_version,
+        old_version,
+        new_version
+    )]
+    UnsupportedVersion {
+        unsupported_version: u32,
+        old_version: u32,
+        new_version: u32,
+    },
 }
 
 pub struct DbUpgrader {

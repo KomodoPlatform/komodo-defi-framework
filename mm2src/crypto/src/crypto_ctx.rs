@@ -16,6 +16,7 @@ use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use parking_lot::RwLock;
 use primitives::hash::H160;
+use rpc_task::RpcTaskError;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -62,6 +63,7 @@ pub enum HwCtxInitError<ProcessorError> {
     },
     HwError(HwError),
     ProcessorError(ProcessorError),
+    InternalError(String),
 }
 
 impl<ProcessorError> From<HwProcessingError<ProcessorError>> for HwCtxInitError<ProcessorError> {
@@ -69,6 +71,7 @@ impl<ProcessorError> From<HwProcessingError<ProcessorError>> for HwCtxInitError<
         match e {
             HwProcessingError::HwError(hw_error) => HwCtxInitError::HwError(hw_error),
             HwProcessingError::ProcessorError(processor_error) => HwCtxInitError::ProcessorError(processor_error),
+            HwProcessingError::InternalError(internal_error) => HwCtxInitError::InternalError(internal_error),
         }
     }
 }
@@ -223,14 +226,11 @@ impl CryptoCtx {
         Self::init_crypto_ctx_with_policy_builder(ctx, passphrase, builder)
     }
 
-    pub async fn init_hw_ctx_with_trezor<Processor>(
+    pub async fn init_hw_ctx_with_trezor(
         &self,
-        processor: &Processor,
+        processor: Arc<dyn TrezorConnectProcessor<Error = RpcTaskError>>,
         expected_pubkey: Option<HwPubkey>,
-    ) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwCtxInitError<Processor::Error>>
-    where
-        Processor: TrezorConnectProcessor + Sync,
-    {
+    ) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwCtxInitError<RpcTaskError>> {
         {
             let mut state = self.hw_ctx.write();
             if let InitializationState::Initializing = state.deref() {
@@ -355,13 +355,10 @@ pub enum KeyPairPolicy {
     GlobalHDAccount(GlobalHDAccountArc),
 }
 
-async fn init_check_hw_ctx_with_trezor<Processor>(
-    processor: &Processor,
+async fn init_check_hw_ctx_with_trezor(
+    processor: Arc<dyn TrezorConnectProcessor<Error = RpcTaskError>>,
     expected_pubkey: Option<HwPubkey>,
-) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwCtxInitError<Processor::Error>>
-where
-    Processor: TrezorConnectProcessor + Sync,
-{
+) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwCtxInitError<RpcTaskError>> {
     let (hw_device_info, hw_ctx) = HardwareWalletCtx::init_with_trezor(processor).await?;
     let expected_pubkey = match expected_pubkey {
         Some(expected) => expected,

@@ -1,4 +1,4 @@
-use crate::sign_common::{complete_tx, p2pkh_spend_with_signature};
+use crate::sign_common::{complete_tx, p2pkh_spend_with_signature, p2wpkh_spend_with_signature};
 use crate::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo, UtxoSignTxParams};
 use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
@@ -9,7 +9,7 @@ use crypto::trezor::TrezorSession;
 use keys::bytes::Bytes;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
-use script::{SignatureVersion, UnsignedTransactionInput};
+use script::UnsignedTransactionInput;
 use serialization::deserialize;
 
 pub struct TrezorTxSigner<'a, TxP> {
@@ -23,10 +23,6 @@ pub struct TrezorTxSigner<'a, TxP> {
 
 impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
     pub async fn sign_tx(mut self) -> UtxoSignTxResult<UtxoTx> {
-        if let SignatureVersion::WitnessV0 = self.params.signature_version {
-            return MmError::err(UtxoSignTxError::TrezorDoesntSupportP2WPKH);
-        }
-
         let trezor_unsigned_tx = self.get_trezor_unsigned_tx().await?;
 
         let TxSignResult {
@@ -48,6 +44,9 @@ impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
             .map(|((unsigned_input, input_info), signature)| match input_info {
                 SpendingInputInfo::P2PKH { address_pubkey, .. } => {
                     p2pkh_spend_with_signature(unsigned_input, address_pubkey, self.fork_id, Bytes::from(signature))
+                },
+                SpendingInputInfo::P2WPKH { address_pubkey, .. } => {
+                    p2wpkh_spend_with_signature(unsigned_input, address_pubkey, self.fork_id, Bytes::from(signature))
                 },
             })
             .collect();
@@ -82,7 +81,9 @@ impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
     fn get_trezor_output(&self, tx_output: &TransactionOutput, output_info: &SendingOutputInfo) -> TxOutput {
         let (address, address_derivation_path) = match output_info.destination_address {
             OutputDestination::Plain { ref address } => (Some(address.clone()), None),
-            OutputDestination::Change { ref derivation_path } => (None, Some(derivation_path.clone())),
+            OutputDestination::Change {
+                ref derivation_path, ..
+            } => (None, Some(derivation_path.clone())),
         };
         TxOutput {
             address,
@@ -107,6 +108,13 @@ impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
             } => (
                 Some(address_derivation_path.clone()),
                 TrezorInputScriptType::SpendAddress,
+            ),
+            SpendingInputInfo::P2WPKH {
+                address_derivation_path,
+                ..
+            } => (
+                Some(address_derivation_path.clone()),
+                TrezorInputScriptType::SpendWitness,
             ),
         };
 

@@ -4,12 +4,12 @@
 use crate::mm2::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
 use common::log::debug;
 use common::PagingOptions;
-use db_common::sqlite::offset_by_uuid;
-use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
+use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
+use db_common::sqlite::{offset_by_uuid, query_single_row};
 use mm2_core::mm_ctx::MmArc;
 use std::convert::TryInto;
-use uuid::Error as UuidError;
+use uuid::{Error as UuidError, Uuid};
 
 const MY_SWAPS_TABLE: &str = "my_swaps";
 
@@ -52,12 +52,24 @@ pub const TRADING_PROTO_UPGRADE_MIGRATION: &[&str] = &[
     "ALTER TABLE my_swaps ADD COLUMN taker_coin_nota BOOLEAN;",
 ];
 
-const INSERT_MY_SWAP: &str = "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
+/// The query to insert swap on migration 1, during this migration swap_type column doesn't exist
+/// in my_swaps table yet.
+const INSERT_MY_SWAP_MIGRATION_1: &str =
+    "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
+const INSERT_MY_SWAP: &str =
+    "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, swap_type) VALUES (?1, ?2, ?3, ?4, ?5)";
 
-pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str, started_at: &str) -> SqlResult<()> {
+pub fn insert_new_swap(
+    ctx: &MmArc,
+    my_coin: &str,
+    other_coin: &str,
+    uuid: &str,
+    started_at: &str,
+    swap_type: u8,
+) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
     let conn = ctx.sqlite_connection();
-    let params = [my_coin, other_coin, uuid, started_at];
+    let params = [my_coin, other_coin, uuid, started_at, &swap_type.to_string()];
     conn.execute(INSERT_MY_SWAP, params).map(|_| ())
 }
 
@@ -107,12 +119,17 @@ pub fn insert_new_swap_v2(ctx: &MmArc, params: &[(&str, &dyn ToSql)]) -> SqlResu
 }
 
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
+/// Use this only in migration code!
 pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
     let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
-    swaps.into_iter().filter_map(insert_saved_swap_sql).collect()
+    swaps
+        .into_iter()
+        .filter_map(insert_saved_swap_sql_migration_1)
+        .collect()
 }
 
-fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)> {
+/// Use this only in migration code!
+fn insert_saved_swap_sql_migration_1(swap: SavedSwap) -> Option<(&'static str, Vec<String>)> {
     let swap_info = match swap.get_my_info() {
         Some(s) => s,
         // get_my_info returning None means that swap did not even start - so we can keep it away from indexing.
@@ -124,25 +141,25 @@ fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)>
         swap.uuid().to_string(),
         swap_info.started_at.to_string(),
     ];
-    Some((INSERT_MY_SWAP, params))
+    Some((INSERT_MY_SWAP_MIGRATION_1, params))
 }
 
 #[derive(Debug)]
-pub enum SelectRecentSwapsUuidsErr {
+pub enum SelectSwapsUuidsErr {
     Sql(SqlError),
     Parse(UuidError),
 }
 
-impl std::fmt::Display for SelectRecentSwapsUuidsErr {
+impl std::fmt::Display for SelectSwapsUuidsErr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{:?}", self) }
 }
 
-impl From<SqlError> for SelectRecentSwapsUuidsErr {
-    fn from(err: SqlError) -> Self { SelectRecentSwapsUuidsErr::Sql(err) }
+impl From<SqlError> for SelectSwapsUuidsErr {
+    fn from(err: SqlError) -> Self { SelectSwapsUuidsErr::Sql(err) }
 }
 
-impl From<UuidError> for SelectRecentSwapsUuidsErr {
-    fn from(err: UuidError) -> Self { SelectRecentSwapsUuidsErr::Parse(err) }
+impl From<UuidError> for SelectSwapsUuidsErr {
+    fn from(err: UuidError) -> Self { SelectSwapsUuidsErr::Parse(err) }
 }
 
 /// Adds where clauses determined by MySwapsFilter
@@ -172,7 +189,7 @@ pub fn select_uuids_by_my_swaps_filter(
     conn: &Connection,
     filter: &MySwapsFilter,
     paging_options: Option<&PagingOptions>,
-) -> SqlResult<MyRecentSwapsUuids, SelectRecentSwapsUuidsErr> {
+) -> SqlResult<MyRecentSwapsUuids, SelectSwapsUuidsErr> {
     let mut query_builder = SqlBuilder::select_from(MY_SWAPS_TABLE);
     let mut params = vec![];
     apply_my_swaps_filter(&mut query_builder, &mut params, filter);
@@ -191,8 +208,9 @@ pub fn select_uuids_by_my_swaps_filter(
         return Ok(MyRecentSwapsUuids::default());
     }
 
-    // query the uuids finally
+    // query the uuids and types finally
     query_builder.field("uuid");
+    query_builder.field("swap_type");
     query_builder.order_desc("started_at");
 
     let skipped = match paging_options {
@@ -212,25 +230,27 @@ pub fn select_uuids_by_my_swaps_filter(
     let uuids_query = query_builder.sql().expect("SQL query builder should never fail here");
     debug!("Trying to execute SQL query {} with params {:?}", uuids_query, params);
     let mut stmt = conn.prepare(&uuids_query)?;
-    let uuids = stmt
-        .query_map_named(params_as_trait.as_slice(), |row| row.get(0))?
-        .collect::<SqlResult<Vec<String>>>()?;
-    let uuids: SqlResult<Vec<_>, _> = uuids.into_iter().map(|uuid| uuid.parse()).collect();
-    let uuids = uuids?;
+    let uuids_and_types = stmt
+        .query_map_named(params_as_trait.as_slice(), |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<SqlResult<Vec<(String, u8)>>>()?;
+    let uuids_and_types: SqlResult<Vec<(Uuid, u8)>, UuidError> = uuids_and_types
+        .into_iter()
+        .map(|(uuid, swap_type)| Ok((uuid.parse()?, swap_type)))
+        .collect();
+    let uuids_and_types = uuids_and_types?;
 
     Ok(MyRecentSwapsUuids {
-        uuids,
+        uuids_and_types,
         total_count,
         skipped,
     })
 }
 
-/// Queries swap type by uuid
-pub fn get_swap_type(conn: &Connection, uuid: &str) -> SqlResult<u8> {
-    const SELECT_SWAP_TYPE_BY_UUID: &str = "SELECT swap_type FROM my_swaps WHERE uuid = :uuid;";
-    let mut stmt = conn.prepare(SELECT_SWAP_TYPE_BY_UUID)?;
-    let swap_type = stmt.query_row(&[(":uuid", uuid)], |row| row.get(0))?;
-    Ok(swap_type)
+/// Returns whether a swap with specified uuid exists in DB
+pub fn does_swap_exist(conn: &Connection, uuid: &str) -> SqlResult<bool> {
+    const SELECT_SWAP_ID_BY_UUID: &str = "SELECT id FROM my_swaps WHERE uuid = :uuid;";
+    let res: Option<i64> = query_single_row(conn, SELECT_SWAP_ID_BY_UUID, &[(":uuid", uuid)], |row| row.get(0))?;
+    Ok(res.is_some())
 }
 
 /// Queries swap events by uuid
@@ -249,13 +269,26 @@ pub fn update_swap_events(conn: &Connection, uuid: &str, events_json: &str) -> S
         .map(|_| ())
 }
 
+const UPDATE_SWAP_IS_FINISHED_BY_UUID: &str = "UPDATE my_swaps SET is_finished = 1 WHERE uuid = :uuid;";
 pub fn set_swap_is_finished(conn: &Connection, uuid: &str) -> SqlResult<()> {
-    const UPDATE_SWAP_IS_FINISHED_BY_UUID: &str = "UPDATE my_swaps SET is_finished = 1 WHERE uuid = :uuid;";
     let mut stmt = conn.prepare(UPDATE_SWAP_IS_FINISHED_BY_UUID)?;
     stmt.execute(&[(":uuid", uuid)]).map(|_| ())
 }
 
-const SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID: &str = r#"SELECT
+pub fn select_unfinished_swaps_uuids(conn: &Connection, swap_type: u8) -> SqlResult<Vec<Uuid>, SelectSwapsUuidsErr> {
+    const SELECT_UNFINISHED_SWAPS_UUIDS_BY_TYPE: &str =
+        "SELECT uuid FROM my_swaps WHERE is_finished = 0 AND swap_type = :type;";
+    let mut stmt = conn.prepare(SELECT_UNFINISHED_SWAPS_UUIDS_BY_TYPE)?;
+    let uuids = stmt
+        .query_map_named(&[(":type", &swap_type)], |row| row.get(0))?
+        .collect::<SqlResult<Vec<String>>>()?;
+    let uuids: SqlResult<Vec<_>, _> = uuids.into_iter().map(|uuid| uuid.parse()).collect();
+    Ok(uuids?)
+}
+
+/// The SQL query selecting upgraded swap data and send it to user through RPC API
+/// It omits sensitive data (swap secret, p2p privkey, etc) for security reasons
+pub const SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID: &str = r#"SELECT
     my_coin,
     other_coin,
     uuid,
@@ -266,8 +299,6 @@ const SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID: &str = r#"SELECT
     taker_volume,
     premium,
     dex_fee,
-    secret_hash,
-    secret_hash_algo,
     lock_duration,
     maker_coin_confs,
     maker_coin_nota,
@@ -277,55 +308,41 @@ FROM my_swaps
 WHERE uuid = :uuid;
 "#;
 
-/// Represents data of the swap used for RPC, omits fields that should be kept in secret
-#[derive(Debug, Serialize)]
-pub struct MySwapForRpc {
-    my_coin: String,
-    other_coin: String,
-    uuid: String,
-    started_at: i64,
-    is_finished: bool,
-    events_json: String,
-    maker_volume: String,
-    taker_volume: String,
-    premium: String,
-    dex_fee: String,
-    secret_hash: Vec<u8>,
-    secret_hash_algo: i64,
-    lock_duration: i64,
-    maker_coin_confs: i64,
-    maker_coin_nota: bool,
-    taker_coin_confs: i64,
-    taker_coin_nota: bool,
-}
+/// The SQL query selecting upgraded swap data required to re-initialize the swap e.g., on restart.
+pub const SELECT_MY_SWAP_V2_BY_UUID: &str = r#"SELECT
+    my_coin,
+    other_coin,
+    uuid,
+    started_at,
+    secret,
+    secret_hash,
+    secret_hash_algo,
+    events_json,
+    maker_volume,
+    taker_volume,
+    premium,
+    dex_fee,
+    lock_duration,
+    maker_coin_confs,
+    maker_coin_nota,
+    taker_coin_confs,
+    taker_coin_nota,
+    p2p_privkey
+FROM my_swaps
+WHERE uuid = :uuid;
+"#;
 
-impl MySwapForRpc {
-    fn from_row(row: &Row) -> SqlResult<Self> {
-        Ok(Self {
-            my_coin: row.get(0)?,
-            other_coin: row.get(1)?,
-            uuid: row.get(2)?,
-            started_at: row.get(3)?,
-            is_finished: row.get(4)?,
-            events_json: row.get(5)?,
-            maker_volume: row.get(6)?,
-            taker_volume: row.get(7)?,
-            premium: row.get(8)?,
-            dex_fee: row.get(9)?,
-            secret_hash: row.get(10)?,
-            secret_hash_algo: row.get(11)?,
-            lock_duration: row.get(12)?,
-            maker_coin_confs: row.get(13)?,
-            maker_coin_nota: row.get(14)?,
-            taker_coin_confs: row.get(15)?,
-            taker_coin_nota: row.get(16)?,
+/// Returns SQL statements to set is_finished to 1 for completed legacy swaps
+pub async fn set_is_finished_for_legacy_swaps_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+    let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
+    swaps
+        .into_iter()
+        .filter_map(|swap| {
+            if swap.is_finished() {
+                Some((UPDATE_SWAP_IS_FINISHED_BY_UUID, vec![swap.uuid().to_string()]))
+            } else {
+                None
+            }
         })
-    }
-}
-
-/// Queries `MySwapForRpc` by uuid
-pub fn get_swap_data_for_rpc(conn: &Connection, uuid: &str) -> SqlResult<MySwapForRpc> {
-    let mut stmt = conn.prepare(SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID)?;
-    let swap_data = stmt.query_row(&[(":uuid", uuid)], MySwapForRpc::from_row)?;
-    Ok(swap_data)
+        .collect()
 }

@@ -13,6 +13,7 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_msg_e
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::MakerOrderBuilder;
+use crate::mm2::lp_swap::swap_v2_common::mark_swap_as_finished;
 use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MmCoin,
@@ -2130,6 +2131,10 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         command = c;
                     },
                     None => {
+                        if let Err(e) = mark_swap_as_finished(ctx.clone(), running_swap.uuid).await {
+                            error!("!mark_swap_finished({}): {}", uuid, e);
+                        }
+
                         if to_broadcast {
                             if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
                                 error!("!broadcast_my_swap_status({}): {}", uuid, e);
