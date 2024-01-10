@@ -28,8 +28,8 @@ use std::process::Command;
 use std::str::FromStr;
 use std::time::Duration;
 use testcontainers::clients::Cli;
-use testcontainers::images::generic::{GenericImage, WaitFor};
-use testcontainers::{Docker, Image};
+use testcontainers::core::WaitFor;
+use testcontainers::GenericImage;
 
 pub const QTUM_REGTEST_DOCKER_IMAGE: &str = "docker.io/sergeyboyko/qtumregtest";
 
@@ -88,10 +88,8 @@ impl QtumDockerOps {
     }
 }
 
-pub fn qtum_docker_node(docker: &Cli, port: u16) -> UtxoDockerNode {
-    let args = vec!["-p".into(), format!("127.0.0.1:{}:{}", port, port)];
-    let image = GenericImage::new(QTUM_REGTEST_DOCKER_IMAGE)
-        .with_args(args)
+pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode {
+    let image = GenericImage::new(QTUM_REGTEST_DOCKER_IMAGE, "latest")
         .with_env_var("CLIENTS", "2")
         .with_env_var("COIN_RPC_PORT", port.to_string())
         .with_env_var("ADDRESS_LABEL", QTUM_ADDRESS_LABEL)
@@ -118,7 +116,7 @@ pub fn qtum_docker_node(docker: &Cli, port: u16) -> UtxoDockerNode {
     }
 
     unsafe { QTUM_CONF_PATH = Some(conf_path) };
-    UtxoDockerNode {
+    DockerNode {
         container,
         ticker: name.to_owned(),
         port,

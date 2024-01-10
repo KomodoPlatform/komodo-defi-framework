@@ -43,8 +43,8 @@ use std::sync::Mutex;
 pub use std::thread;
 use std::time::Duration;
 use testcontainers::clients::Cli;
-use testcontainers::images::generic::{GenericImage, WaitFor};
-use testcontainers::{Container, Docker, Image};
+use testcontainers::core::WaitFor;
+use testcontainers::{Container, GenericImage};
 
 lazy_static! {
     static ref MY_COIN_LOCK: Mutex<()> = Mutex::new(());
@@ -66,6 +66,7 @@ pub static mut QRC20_SWAP_CONTRACT_ADDRESS: Option<H160Eth> = None;
 pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain:multiarch";
+pub const GETH_DOCKER_IMAGE: &str = "docker.io/ethereum/client-go:stable";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
@@ -318,9 +319,9 @@ impl CoinDockerOps for BchDockerOps {
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
 }
 
-pub struct UtxoDockerNode<'a> {
+pub struct DockerNode<'a> {
     #[allow(dead_code)]
-    pub container: Container<'a, Cli, GenericImage>,
+    pub container: Container<'a, GenericImage>,
     #[allow(dead_code)]
     pub ticker: String,
     #[allow(dead_code)]
@@ -332,7 +333,7 @@ pub fn random_secp256k1_secret() -> Secp256k1Secret {
     Secp256k1Secret::from(*priv_key.as_ref())
 }
 
-pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> UtxoDockerNode<'a> {
+pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
     let args = vec![
         "-v".into(),
         format!("{}:/root/.zcash-params", zcash_params_path().display()),
@@ -370,7 +371,25 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
         };
         assert!(now_ms() < timeout, "Test timed out");
     }
-    UtxoDockerNode {
+    DockerNode {
+        container,
+        ticker: ticker.into(),
+        port,
+    }
+}
+
+pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
+    let args = vec![
+        "-p".into(),
+        format!("{}:{}", port, port),
+        "--dev".into(),
+        "--http".into(),
+    ];
+    let image = GenericImage::new(GETH_DOCKER_IMAGE)
+        .with_args(args)
+        .with_wait_for(WaitFor::message_on_stdout("Started P2P networking"));
+    let container = docker.run(image);
+    DockerNode {
         container,
         ticker: ticker.into(),
         port,
