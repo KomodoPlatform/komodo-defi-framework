@@ -2762,6 +2762,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "headers"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3e372db8e5c0d213e0cd0b9be18be2aca3d44cf2fe30a9d46a65581cd454584"
+dependencies = [
+ "base64 0.13.0",
+ "bitflags",
+ "bytes 1.4.0",
+ "headers-core",
+ "http 0.2.7",
+ "httpdate",
+ "mime",
+ "sha1",
+]
+
+[[package]]
+name = "headers-core"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7f66481bfee273957b1f20485a4ff3362987f85b2c236580d81b4eb7a326429"
+dependencies = [
+ "http 0.2.7",
+]
+
+[[package]]
 name = "heck"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4454,6 +4479,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
+ "web3",
  "winapi",
 ]
 
@@ -6721,6 +6747,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
+dependencies = [
+ "cfg-if 1.0.0",
+ "cpufeatures 0.2.1",
+ "digest 0.10.7",
+]
+
+[[package]]
 name = "sha2"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8884,12 +8921,15 @@ version = "0.19.0"
 source = "git+https://github.com/KomodoPlatform/rust-web3?tag=v0.19.0#ec5e72a5c95e3935ea0c9ab77b501e3926686fa9"
 dependencies = [
  "arrayvec 0.7.1",
+ "base64 0.13.0",
+ "bytes 1.4.0",
  "derive_more",
  "ethabi",
  "ethereum-types",
  "futures 0.3.28",
  "futures-timer",
  "getrandom 0.2.9",
+ "headers",
  "hex",
  "idna",
  "js-sys",
@@ -8898,11 +8938,13 @@ dependencies = [
  "parking_lot 0.12.0",
  "pin-project",
  "rand 0.8.4",
+ "reqwest",
  "rlp",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
  "tiny-keccak 2.0.2",
+ "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
 ]

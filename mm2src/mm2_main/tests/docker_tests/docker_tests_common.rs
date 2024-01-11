@@ -44,7 +44,7 @@ pub use std::thread;
 use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::core::WaitFor;
-use testcontainers::{Container, GenericImage};
+use testcontainers::{Container, GenericImage, RunnableImage};
 
 lazy_static! {
     static ref MY_COIN_LOCK: Mutex<()> = Mutex::new(());
@@ -65,8 +65,10 @@ pub static mut QORTY_TOKEN_ADDRESS: Option<H160Eth> = None;
 pub static mut QRC20_SWAP_CONTRACT_ADDRESS: Option<H160Eth> = None;
 pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
 
-pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain:multiarch";
-pub const GETH_DOCKER_IMAGE: &str = "docker.io/ethereum/client-go:stable";
+pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain";
+pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testblockchain:multiarch";
+pub const GETH_DOCKER_IMAGE: &str = "docker.io/ethereum/client-go";
+pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stable";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
@@ -334,14 +336,8 @@ pub fn random_secp256k1_secret() -> Secp256k1Secret {
 }
 
 pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
-    let args = vec![
-        "-v".into(),
-        format!("{}:/root/.zcash-params", zcash_params_path().display()),
-        "-p".into(),
-        format!("{}:{}", port, port),
-    ];
-    let image = GenericImage::new(UTXO_ASSET_DOCKER_IMAGE)
-        .with_args(args)
+    let image = GenericImage::new(UTXO_ASSET_DOCKER_IMAGE, "multiarch")
+        .with_volume(zcash_params_path().display().to_string(), "/root/.zcash-params")
         .with_env_var("CLIENTS", "2")
         .with_env_var("CHAIN", ticker)
         .with_env_var("TEST_ADDY", "R9imXLs1hEcU9KbFDQq2hJEEJ1P5UoekaF")
@@ -354,6 +350,7 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
         .with_env_var("COIN", "Komodo")
         .with_env_var("COIN_RPC_PORT", port.to_string())
         .with_wait_for(WaitFor::message_on_stdout("config is ready"));
+    let image = RunnableImage::from(image).with_mapped_port((port, port));
     let container = docker.run(image);
     let mut conf_path = coin_daemon_data_dir(ticker, true);
     std::fs::create_dir_all(&conf_path).unwrap();
@@ -379,15 +376,9 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
 }
 
 pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
-    let args = vec![
-        "-p".into(),
-        format!("{}:{}", port, port),
-        "--dev".into(),
-        "--http".into(),
-    ];
-    let image = GenericImage::new(GETH_DOCKER_IMAGE)
-        .with_args(args)
-        .with_wait_for(WaitFor::message_on_stdout("Started P2P networking"));
+    let image = GenericImage::new(GETH_DOCKER_IMAGE, "stable");
+    let args = vec!["--dev".into(), "--http".into(), "--http.addr=0.0.0.0".into()];
+    let image = RunnableImage::from((image, args)).with_mapped_port((port, port));
     let container = docker.run(image);
     DockerNode {
         container,

@@ -26,9 +26,13 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
+use web3::transports::Http;
+use web3::Web3;
+
 mod docker_tests;
 use docker_tests::docker_tests_common::*;
-use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE};
+use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
+
 #[allow(dead_code)] mod integration_tests_common;
 
 // AP: custom test runner is intended to initialize the required environment (e.g. coin daemons in the docker containers)
@@ -45,12 +49,12 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     let mut containers = vec![];
     // skip Docker containers initialization if we are intended to run test_mm_start only
     if std::env::var("_MM2_TEST_CONF").is_err() {
-        pull_docker_image(UTXO_ASSET_DOCKER_IMAGE);
-        pull_docker_image(QTUM_REGTEST_DOCKER_IMAGE);
-        pull_docker_image(GETH_DOCKER_IMAGE);
-        remove_docker_containers(UTXO_ASSET_DOCKER_IMAGE);
-        remove_docker_containers(QTUM_REGTEST_DOCKER_IMAGE);
-        remove_docker_containers(GETH_DOCKER_IMAGE);
+        pull_docker_image(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
+        pull_docker_image(QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG);
+        pull_docker_image(GETH_DOCKER_IMAGE_WITH_TAG);
+        remove_docker_containers(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
+        remove_docker_containers(QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG);
+        remove_docker_containers(GETH_DOCKER_IMAGE_WITH_TAG);
 
         let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
         let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
@@ -69,6 +73,11 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         qtum_ops.initialize_contracts();
         for_slp_ops.wait_ready(4);
         for_slp_ops.initialize_slp();
+
+        let web3_transport = Http::new("http://127.0.0.1:8545").unwrap();
+        let web3 = Web3::new(web3_transport);
+        let accounts = block_on(web3.eth().accounts()).unwrap();
+        println!("Geth accounts {:?}", accounts);
 
         containers.push(utxo_node);
         containers.push(utxo_node1);
