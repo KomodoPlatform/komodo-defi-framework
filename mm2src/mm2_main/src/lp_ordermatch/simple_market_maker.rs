@@ -9,7 +9,6 @@ use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq,
                                  OrdermatchContext, SetPriceReq},
                  lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
-use coins::hd_wallet::AsyncMutex;
 use coins::lp_price::{fetch_price_tickers, Provider, RateInfos, PRICE_ENDPOINTS};
 use coins::{lp_coinfind, GetNonZeroBalance};
 use common::{executor::{SpawnFuture, Timer},
@@ -640,15 +639,15 @@ async fn execute_create_single_order(
 
 async fn process_bot_logic(ctx: &MmArc) {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
-    let state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
-    let (cfg, mut price_urls) = match &*state {
-        TradingBotState::Running(running_state) => (
-            running_state.trading_bot_cfg.clone(),
-            running_state.price_urls.lock().await,
-        ),
+    let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
+    let running_state = match &mut *state {
+        TradingBotState::Running(running_state) => running_state,
         TradingBotState::Stopping(_) | TradingBotState::Stopped(_) => return,
     };
-    let rates_registry = match fetch_price_tickers(&mut price_urls).await {
+
+    let cfg = running_state.trading_bot_cfg.clone();
+    let price_urls = &mut running_state.price_urls;
+    let rates_registry = match fetch_price_tickers(price_urls).await {
         Ok(model) => model,
         Err(err) => {
             let nb_orders = cancel_pending_orders(ctx, &cfg).await;
@@ -656,63 +655,53 @@ async fn process_bot_logic(ctx: &MmArc) {
             return;
         },
     };
-    drop(price_urls);
+
     drop(state);
 
     let mut memoization_pair_registry: HashSet<String> = HashSet::new();
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
-    let mut futures_order_update = Vec::with_capacity(0);
-    // Iterating over maker orders and update order that are present in cfg as the key_trade_pair e.g KMD/LTC
-    for (uuid, order_mutex) in maker_orders.into_iter() {
+    let mut futures_order_update = Vec::with_capacity(maker_orders.len());
+    for (uuid, order_mutex) in maker_orders {
         let order = order_mutex.lock().await;
         let key_trade_pair = TradingPair::new(order.base.clone(), order.rel.clone());
-        match cfg.get(&key_trade_pair.as_combination()) {
-            Some(coin_cfg) => {
-                if !coin_cfg.enable {
-                    continue;
-                }
-                let cloned_infos = (
-                    ctx.clone(),
-                    rates_registry
-                        .get_cex_rates(&coin_cfg.base, &coin_cfg.rel)
-                        .unwrap_or_default(),
-                    key_trade_pair.clone(),
-                    coin_cfg.clone(),
-                );
-                futures_order_update.push(execute_update_order(uuid, order.clone(), cloned_infos));
-                memoization_pair_registry.insert(key_trade_pair.as_combination());
-            },
-            _ => continue,
+
+        if let Some(coin_cfg) = cfg.get(&key_trade_pair.as_combination()) {
+            if !coin_cfg.enable {
+                continue;
+            }
+            let cloned_infos = (
+                ctx.clone(),
+                rates_registry
+                    .get_cex_rates(&coin_cfg.base, &coin_cfg.rel)
+                    .unwrap_or_default(),
+                key_trade_pair.clone(),
+                coin_cfg.clone(),
+            );
+            futures_order_update.push(execute_update_order(uuid, order.clone(), cloned_infos));
+            memoization_pair_registry.insert(key_trade_pair.as_combination());
         }
     }
 
-    let all_updated_orders_tasks = futures::future::join_all(futures_order_update);
-    let _results_order_updates = all_updated_orders_tasks.await;
+    let _results_order_updates = futures::future::join_all(futures_order_update).await;
 
-    let mut futures_order_creation = Vec::with_capacity(0);
+    let mut futures_order_creation = Vec::with_capacity(cfg.len());
     // Now iterate over the registry and for every pairs that are not hit let's create an order
-    for (trading_pair, cur_cfg) in cfg.into_iter() {
-        match memoization_pair_registry.get(&trading_pair) {
-            Some(_) => continue,
-            None => {
-                if !cur_cfg.enable {
-                    continue;
-                }
-                let rates_infos = rates_registry
-                    .get_cex_rates(&cur_cfg.base, &cur_cfg.rel)
-                    .unwrap_or_default();
-                futures_order_creation.push(execute_create_single_order(
-                    rates_infos,
-                    cur_cfg,
-                    trading_pair.clone(),
-                    ctx,
-                ));
-            },
-        };
+    for (trading_pair, cur_cfg) in cfg {
+        if memoization_pair_registry.get(&trading_pair).is_some() || !cur_cfg.enable {
+            continue;
+        }
+        let rates_infos = rates_registry
+            .get_cex_rates(&cur_cfg.base, &cur_cfg.rel)
+            .unwrap_or_default();
+        futures_order_creation.push(execute_create_single_order(
+            rates_infos,
+            cur_cfg,
+            trading_pair.clone(),
+            ctx,
+        ));
     }
-    let all_created_orders_tasks = futures::future::join_all(futures_order_creation);
-    let _results_order_creations = all_created_orders_tasks.await;
+    let _results_order_creations = futures::future::join_all(futures_order_creation).await;
 }
 
 pub async fn lp_bot_loop(ctx: MmArc) {
@@ -762,7 +751,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             *state = RunningState {
                 trading_bot_cfg: req.cfg,
                 bot_refresh_rate: refresh_rate,
-                price_urls: AsyncMutex::new(req.price_sources.get_urls()),
+                price_urls: req.price_sources.get_urls(),
             }
             .into();
             drop(state);
