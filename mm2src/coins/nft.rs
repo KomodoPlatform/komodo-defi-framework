@@ -8,7 +8,8 @@ pub(crate) mod storage;
 
 #[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;
 
-use crate::{coin_conf, get_my_address, lp_coinfind_or_err, MarketCoinOps, MmCoinEnum, MyAddressReq, WithdrawError};
+use crate::{coin_conf, get_my_address, lp_coinfind_or_err, CoinsContext, MarketCoinOps, MmCoinEnum, MmCoinStruct,
+            MyAddressReq, WithdrawError};
 use nft_errors::{GetNftInfoError, UpdateNftError};
 use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftList, NftListReq, NftMetadataReq,
                   NftTransferHistory, NftTransferHistoryFromMoralis, NftTransfersReq, NftsTransferHistoryList,
@@ -257,6 +258,15 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
                 })
             },
         };
+        let coin_enum = lp_coinfind_or_err(&ctx, chain.to_nft_ticker()).await?;
+        let nft_global = match coin_enum {
+            MmCoinEnum::EthCoin(eth_coin) => eth_coin,
+            _ => {
+                return MmError::err(UpdateNftError::GlobalNftTypeMismatch {
+                    token: coin_enum.ticker().to_owned(),
+                })
+            },
+        };
         let nft_transfers = get_moralis_nft_transfers(&ctx, chain, from_block, &req.url, eth_coin).await?;
         storage.add_transfers_to_history(*chain, nft_transfers).await?;
 
@@ -306,11 +316,69 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
             &req.url_antispam,
         )
         .await?;
+        update_nft_global_in_coins_ctx(&ctx, &storage, *chain, nft_global).await?;
         update_transfers_with_empty_meta(&storage, chain, &req.url, &req.url_antispam).await?;
         update_spam(&storage, *chain, &req.url_antispam).await?;
         update_phishing(&storage, chain, &req.url_antispam).await?;
     }
     Ok(())
+}
+
+/// Updates the global NFT information in the coins context.
+///
+/// This function uses the up to date NFT list for a given chain and updates the
+/// corresponding global NFT information in the coins context.
+///
+/// # Arguments
+///
+/// * `ctx`: Shared global context containing the coins context.
+/// * `storage`: Storage interface for NFT list operations.
+/// * `chain`: The blockchain to retrieve NFT information for.
+/// * `nft_global`: Currently the EthCoin object to update with the latest NFT information.
+///
+/// # Returns
+///
+/// * `MmResult<(), UpdateNftError>`: Result indicating the success or failure of the update operation.
+async fn update_nft_global_in_coins_ctx<T>(
+    ctx: &MmArc,
+    storage: &T,
+    chain: Chain,
+    mut nft_global: EthCoin,
+) -> MmResult<(), UpdateNftError>
+where
+    T: NftListStorageOps + NftTransferHistoryStorageOps,
+{
+    let nft_list = storage.get_nft_list(vec![chain], true, 1, None, None).await?;
+    let coins_ctx = CoinsContext::from_ctx(ctx).map_to_mm(UpdateNftError::Internal)?;
+    let mut coins = coins_ctx.coins.lock().await;
+
+    update_nft_infos(&mut nft_global, nft_list.nfts).await;
+
+    coins.insert(
+        nft_global.ticker.to_string(),
+        MmCoinStruct::new(MmCoinEnum::EthCoin(nft_global)),
+    );
+    Ok(())
+}
+
+async fn update_nft_infos(nft_global: &mut EthCoin, nft_list: Vec<Nft>) {
+    let new_nft_infos: HashMap<String, NftInfo> = nft_list
+        .into_iter()
+        .map(|nft| {
+            let key = format!("{},{}", nft.common.token_address, nft.token_id);
+            let nft_info = NftInfo {
+                token_address: nft.common.token_address,
+                token_id: nft.token_id,
+                chain: nft.chain,
+                contract_type: nft.contract_type,
+                amount: nft.common.amount,
+            };
+            (key, nft_info)
+        })
+        .collect();
+
+    let mut global_nft_infos = nft_global.non_fungible_tokens_infos.lock().await;
+    *global_nft_infos = new_nft_infos;
 }
 
 /// `update_spam` function updates spam contracts info in NFT list and NFT transfers.

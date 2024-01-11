@@ -299,6 +299,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
         })
     }
 
+    /// Retrieves the activation result for a platform coin with its associated NFTs.
     async fn get_nft_activation_result(
         &self,
         activation_request: &Self::ActivationRequest,
@@ -326,7 +327,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
 
         if !activation_request.get_balances {
             drop_mutability!(eth_address_info);
-            let nfts_map = nft_global.get_non_fungible_tokens_infos();
+            let nfts_map = nft_global.get_non_fungible_tokens_infos().await;
 
             return Ok(EthWithTokensActivationResult {
                 current_block,
@@ -344,7 +345,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
         eth_address_info.balances = Some(eth_balance);
         drop_mutability!(eth_address_info);
 
-        let nfts_map = nft_global.get_non_fungible_tokens_infos();
+        let nfts_map = nft_global.get_non_fungible_tokens_infos().await;
 
         Ok(EthWithTokensActivationResult {
             current_block,

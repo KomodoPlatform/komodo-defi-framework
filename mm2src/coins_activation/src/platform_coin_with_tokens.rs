@@ -327,13 +327,19 @@ where
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.clone().into(), mm_tokens)
+        .add_platform_with_tokens(platform_coin.clone().into(), mm_tokens, false)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 
     Ok(activation_result)
 }
 
+/// Re-enables a passive platform coin along with its non-fungible tokens (NFTs).
+///
+/// This function is used to reactivate a platform coin that is currently in a passive state.
+/// It enables the associated global non-fungible token for the coin and updates the coins
+/// context to reflect these changes. The function ensures the platform coin is configured
+/// correctly before proceeding with the reactivation and NFT initialization.
 pub async fn re_enable_passive_platform_coin_with_nfts<Platform>(
     ctx: MmArc,
     platform_coin: Platform,
@@ -359,7 +365,7 @@ where
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.into(), vec![nft_global_token])
+        .add_platform_with_tokens(platform_coin.into(), vec![nft_global_token], true)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 
@@ -421,13 +427,19 @@ where
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.into(), mm_tokens)
+        .add_platform_with_tokens(platform_coin.into(), mm_tokens, false)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 
     Ok(activation_result)
 }
 
+/// Enables a platform coin along with its associated non-fungible tokens (NFTs).
+///
+/// This function activates a platform coin and initializes its global NFT token.
+/// It checks if the platform coin is already available and, if not, proceeds with the activation process.
+/// The function is responsible for setting up the platform coin, enabling the global NFT token,
+/// and updating the coins context with the newly activated coin and NFTs.
 pub async fn enable_platform_coin_with_non_fungible_tokens<Platform>(
     ctx: MmArc,
     req: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
@@ -479,7 +491,7 @@ where
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.into(), vec![nft_global_token])
+        .add_platform_with_tokens(platform_coin.into(), vec![nft_global_token], true)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 
