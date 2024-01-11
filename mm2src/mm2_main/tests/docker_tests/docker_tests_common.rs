@@ -45,6 +45,8 @@ use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::core::WaitFor;
 use testcontainers::{Container, GenericImage, RunnableImage};
+use web3::transports::Http;
+use web3::Web3;
 
 lazy_static! {
     static ref MY_COIN_LOCK: Mutex<()> = Mutex::new(());
@@ -58,12 +60,15 @@ lazy_static! {
     pub static ref SLP_TOKEN_OWNERS: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::with_capacity(18));
     static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
     static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
+    pub static ref GETH_WEB3: Web3<Http> = Web3::new(Http::new("http://127.0.0.1:8545").unwrap());
 }
 
 pub static mut QICK_TOKEN_ADDRESS: Option<H160Eth> = None;
 pub static mut QORTY_TOKEN_ADDRESS: Option<H160Eth> = None;
 pub static mut QRC20_SWAP_CONTRACT_ADDRESS: Option<H160Eth> = None;
 pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
+/// The account supplied with ETH on Geth dev node creation
+pub static mut GETH_ACCOUNT: H160Eth = H160Eth::zero();
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain";
 pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testblockchain:multiarch";

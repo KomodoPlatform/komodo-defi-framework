@@ -26,8 +26,7 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
-use web3::transports::Http;
-use web3::Web3;
+use web3::types::{TransactionRequest, U256};
 
 mod docker_tests;
 use docker_tests::docker_tests_common::*;
@@ -67,17 +66,43 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         let qtum_ops = QtumDockerOps::new();
         let for_slp_ops = BchDockerOps::from_ticker("FORSLP");
 
-        utxo_ops.wait_ready(4);
-        utxo_ops1.wait_ready(4);
         qtum_ops.wait_ready(2);
         qtum_ops.initialize_contracts();
         for_slp_ops.wait_ready(4);
         for_slp_ops.initialize_slp();
+        utxo_ops.wait_ready(4);
+        utxo_ops1.wait_ready(4);
 
-        let web3_transport = Http::new("http://127.0.0.1:8545").unwrap();
-        let web3 = Web3::new(web3_transport);
-        let accounts = block_on(web3.eth().accounts()).unwrap();
-        println!("Geth accounts {:?}", accounts);
+        let accounts = block_on(GETH_WEB3.eth().accounts()).unwrap();
+        unsafe {
+            GETH_ACCOUNT = accounts[0];
+            println!("GETH ACCOUNT {:?}", GETH_ACCOUNT);
+
+            let to_addr = ethereum_types::Address::zero();
+
+            let to_addr_balance = block_on(GETH_WEB3.eth().balance(to_addr, None)).unwrap();
+            println!("To address balance before transfer {}", to_addr_balance);
+
+            let tx_request = TransactionRequest {
+                from: GETH_ACCOUNT,
+                to: Some(to_addr),
+                gas: None,
+                gas_price: None,
+                value: Some(U256::from(10).pow(U256::from(18))),
+                data: None,
+                nonce: None,
+                condition: None,
+                transaction_type: None,
+                access_list: None,
+                max_fee_per_gas: None,
+                max_priority_fee_per_gas: None,
+            };
+            let tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request)).unwrap();
+            println!("Sent transaction {:?}", tx_hash);
+
+            let to_addr_balance = block_on(GETH_WEB3.eth().balance(to_addr, None)).unwrap();
+            println!("To address balance {}", to_addr_balance);
+        };
 
         containers.push(utxo_node);
         containers.push(utxo_node1);
