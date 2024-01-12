@@ -22,10 +22,13 @@ extern crate serde_json;
 #[cfg(test)] extern crate ser_error_derive;
 #[cfg(test)] extern crate test;
 
+use coins::eth::{u256_to_big_decimal, ERC20_ABI, SWAP_CONTRACT_ABI};
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
+use web3::contract::{Contract, Options};
+use web3::ethabi::Token;
 use web3::types::{TransactionRequest, U256};
 
 mod docker_tests;
@@ -102,6 +105,77 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
 
             let to_addr_balance = block_on(GETH_WEB3.eth().balance(to_addr, None)).unwrap();
             println!("To address balance {}", to_addr_balance);
+
+            let tx_request_deploy_erc20 = TransactionRequest {
+                from: GETH_ACCOUNT,
+                to: None,
+                gas: None,
+                gas_price: None,
+                value: None,
+                data: Some(hex::decode(ERC20_TOKEN_BYTES).unwrap().into()),
+                nonce: None,
+                condition: None,
+                transaction_type: None,
+                access_list: None,
+                max_fee_per_gas: None,
+                max_priority_fee_per_gas: None,
+            };
+
+            let deploy_erc20_tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_erc20)).unwrap();
+            println!("Sent deploy transaction {:?}", deploy_erc20_tx_hash);
+
+            let deploy_tx_receipt = block_on(GETH_WEB3.eth().transaction_receipt(deploy_erc20_tx_hash)).unwrap();
+            println!("Deploy tx receipt {:?}", deploy_tx_receipt);
+
+            GETH_ERC20_CONTRACT = deploy_tx_receipt.unwrap().contract_address.unwrap();
+            println!("GETH_ERC20_CONTRACT {:?}", GETH_ERC20_CONTRACT);
+
+            let erc20_contract =
+                Contract::from_json(GETH_WEB3.eth(), GETH_ERC20_CONTRACT, ERC20_ABI.as_bytes()).unwrap();
+            let balance: U256 =
+                block_on(erc20_contract.query("balanceOf", GETH_ACCOUNT, None, Options::default(), None)).unwrap();
+            println!("Token balance {}", u256_to_big_decimal(balance, 8).unwrap());
+
+            let token_receiver = [1; 20].into();
+            let erc20_transfer = block_on(erc20_contract.call(
+                "transfer",
+                (Token::Address(token_receiver), Token::Uint(U256::from(1000))),
+                GETH_ACCOUNT,
+                Options::default(),
+            ))
+            .unwrap();
+            println!("Sent erc20_transfer {:?}", erc20_transfer);
+
+            let balance: U256 =
+                block_on(erc20_contract.query("balanceOf", token_receiver, None, Options::default(), None)).unwrap();
+            println!("Token balance {}", u256_to_big_decimal(balance, 8).unwrap());
+
+            let tx_request_deploy_swap_contract = TransactionRequest {
+                from: GETH_ACCOUNT,
+                to: None,
+                gas: None,
+                gas_price: None,
+                value: None,
+                data: Some(hex::decode(SWAP_CONTRACT_BYTES).unwrap().into()),
+                nonce: None,
+                condition: None,
+                transaction_type: None,
+                access_list: None,
+                max_fee_per_gas: None,
+                max_priority_fee_per_gas: None,
+            };
+            let deploy_swap_tx_hash =
+                block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_swap_contract)).unwrap();
+            println!("Sent deploy swap contract transaction {:?}", deploy_swap_tx_hash);
+
+            let deploy_swap_tx_receipt = block_on(GETH_WEB3.eth().transaction_receipt(deploy_swap_tx_hash)).unwrap();
+            println!("Deploy swap tx receipt {:?}", deploy_swap_tx_receipt);
+
+            GETH_SWAP_CONTRACT = deploy_swap_tx_receipt.unwrap().contract_address.unwrap();
+            println!("GETH_SWAP_CONTRACT {:?}", GETH_SWAP_CONTRACT);
+
+            let swap_contract =
+                Contract::from_json(GETH_WEB3.eth(), GETH_SWAP_CONTRACT, SWAP_CONTRACT_ABI.as_bytes()).unwrap();
         };
 
         containers.push(utxo_node);
