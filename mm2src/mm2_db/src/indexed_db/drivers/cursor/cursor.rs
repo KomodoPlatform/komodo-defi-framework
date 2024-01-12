@@ -282,14 +282,16 @@ impl CursorDriver {
             let item: InternalItem =
                 deserialize_from_js(js_value).map_to_mm(|e| CursorError::ErrorDeserializingItem(e.to_string()))?;
 
-            let (item_action, cursor_action) = self.inner.on_iteration(key)?;
+            let (mut item_action, cursor_action) = self.inner.on_iteration(key)?;
 
             let (id, val) = item.into_pair();
             // Checks if the given `where_` condition, represented by an optional closure (`cursor_condition`),
-            // is satisfied for the provided `item`. If the condition is met, returns the corresponding `(id, val)` to stop attempting `cursor.continue_()` after.
+            // is satisfied for the provided `item`. If the condition is met, returns the corresponding `(id, val)` or advance the cursor to the next item.
             if let Some(cursor_condition) = &where_ {
                 if cursor_condition(val.clone())? {
                     return Ok(Some((id, val)));
+                } else {
+                    item_action = CursorItemAction::Skip
                 }
             };
 
