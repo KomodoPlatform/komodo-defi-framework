@@ -286,7 +286,7 @@ impl CursorDriver {
 
             let (id, val) = item.into_pair();
             // Checks if the given `where_` condition, represented by an optional closure (`cursor_condition`),
-            // is satisfied for the provided `item`. If the condition is met, returns the corresponding `(id, val)` or advance the cursor to the next item.
+            // is satisfied for the provided `item`. If the condition is met, return the corresponding `(id, val)` or skip to the next item.
             if let Some(cursor_condition) = &where_ {
                 if cursor_condition(val.clone())? {
                     return Ok(Some((id, val)));
@@ -310,8 +310,8 @@ impl CursorDriver {
                 // Here we set the `stopped` flag so we return `Ok(None)` at the next iteration immediately.
                 // This is required because `item_action` can be `CollectItemAction::Include`,
                 // and at this iteration we will return `Ok(Some)`.
-                CursorAction::Stop => (),
-            };
+                CursorAction::Stop => self.stopped = true,
+            }
 
             match item_action {
                 CursorItemAction::Include => return Ok(Some((id, val))),
