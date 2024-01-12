@@ -22,9 +22,14 @@ extern crate serde_json;
 #[cfg(test)] extern crate ser_error_derive;
 #[cfg(test)] extern crate test;
 
-use coins::eth::{u256_to_big_decimal, ERC20_ABI, SWAP_CONTRACT_ABI};
+use coins::eth::{checksum_address, eth_coin_from_conf_and_request, u256_to_big_decimal, ERC20_ABI};
+use coins::{CoinProtocol, ConfirmPaymentInput, MarketCoinOps, PrivKeyBuildPolicy, RefundPaymentArgs, SendPaymentArgs,
+            SwapOps, SwapTxTypeWithSecretHash};
+use futures01::Future;
+use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf};
 use std::io::{BufRead, BufReader};
 use std::process::Command;
+use std::time::Duration;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
 use web3::contract::{Contract, Options};
@@ -81,31 +86,6 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             GETH_ACCOUNT = accounts[0];
             println!("GETH ACCOUNT {:?}", GETH_ACCOUNT);
 
-            let to_addr = ethereum_types::Address::zero();
-
-            let to_addr_balance = block_on(GETH_WEB3.eth().balance(to_addr, None)).unwrap();
-            println!("To address balance before transfer {}", to_addr_balance);
-
-            let tx_request = TransactionRequest {
-                from: GETH_ACCOUNT,
-                to: Some(to_addr),
-                gas: None,
-                gas_price: None,
-                value: Some(U256::from(10).pow(U256::from(18))),
-                data: None,
-                nonce: None,
-                condition: None,
-                transaction_type: None,
-                access_list: None,
-                max_fee_per_gas: None,
-                max_priority_fee_per_gas: None,
-            };
-            let tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request)).unwrap();
-            println!("Sent transaction {:?}", tx_hash);
-
-            let to_addr_balance = block_on(GETH_WEB3.eth().balance(to_addr, None)).unwrap();
-            println!("To address balance {}", to_addr_balance);
-
             let tx_request_deploy_erc20 = TransactionRequest {
                 from: GETH_ACCOUNT,
                 to: None,
@@ -124,30 +104,22 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             let deploy_erc20_tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_erc20)).unwrap();
             println!("Sent deploy transaction {:?}", deploy_erc20_tx_hash);
 
-            let deploy_tx_receipt = block_on(GETH_WEB3.eth().transaction_receipt(deploy_erc20_tx_hash)).unwrap();
-            println!("Deploy tx receipt {:?}", deploy_tx_receipt);
+            loop {
+                let deploy_tx_receipt = block_on(GETH_WEB3.eth().transaction_receipt(deploy_erc20_tx_hash)).unwrap();
+                println!("Deploy tx receipt {:?}", deploy_tx_receipt);
 
-            GETH_ERC20_CONTRACT = deploy_tx_receipt.unwrap().contract_address.unwrap();
-            println!("GETH_ERC20_CONTRACT {:?}", GETH_ERC20_CONTRACT);
+                if let Some(receipt) = deploy_tx_receipt {
+                    GETH_ERC20_CONTRACT = receipt.contract_address.unwrap();
+                    println!("GETH_ERC20_CONTRACT {:?}", GETH_ERC20_CONTRACT);
+                    break;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
 
             let erc20_contract =
                 Contract::from_json(GETH_WEB3.eth(), GETH_ERC20_CONTRACT, ERC20_ABI.as_bytes()).unwrap();
             let balance: U256 =
                 block_on(erc20_contract.query("balanceOf", GETH_ACCOUNT, None, Options::default(), None)).unwrap();
-            println!("Token balance {}", u256_to_big_decimal(balance, 8).unwrap());
-
-            let token_receiver = [1; 20].into();
-            let erc20_transfer = block_on(erc20_contract.call(
-                "transfer",
-                (Token::Address(token_receiver), Token::Uint(U256::from(1000))),
-                GETH_ACCOUNT,
-                Options::default(),
-            ))
-            .unwrap();
-            println!("Sent erc20_transfer {:?}", erc20_transfer);
-
-            let balance: U256 =
-                block_on(erc20_contract.query("balanceOf", token_receiver, None, Options::default(), None)).unwrap();
             println!("Token balance {}", u256_to_big_decimal(balance, 8).unwrap());
 
             let tx_request_deploy_swap_contract = TransactionRequest {
@@ -168,14 +140,144 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                 block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_swap_contract)).unwrap();
             println!("Sent deploy swap contract transaction {:?}", deploy_swap_tx_hash);
 
-            let deploy_swap_tx_receipt = block_on(GETH_WEB3.eth().transaction_receipt(deploy_swap_tx_hash)).unwrap();
-            println!("Deploy swap tx receipt {:?}", deploy_swap_tx_receipt);
+            loop {
+                let deploy_swap_tx_receipt =
+                    block_on(GETH_WEB3.eth().transaction_receipt(deploy_swap_tx_hash)).unwrap();
+                println!("Deploy tx receipt {:?}", deploy_swap_tx_receipt);
 
-            GETH_SWAP_CONTRACT = deploy_swap_tx_receipt.unwrap().contract_address.unwrap();
-            println!("GETH_SWAP_CONTRACT {:?}", GETH_SWAP_CONTRACT);
+                if let Some(receipt) = deploy_swap_tx_receipt {
+                    GETH_SWAP_CONTRACT = receipt.contract_address.unwrap();
+                    println!("GETH_SWAP_CONTRACT {:?}", GETH_SWAP_CONTRACT);
+                    break;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
 
-            let swap_contract =
-                Contract::from_json(GETH_WEB3.eth(), GETH_SWAP_CONTRACT, SWAP_CONTRACT_ABI.as_bytes()).unwrap();
+            let eth_conf = eth_dev_conf();
+            let req = json!({
+                "method": "enable",
+                "coin": "ETH",
+                "urls": ["http://127.0.0.1:8545"],
+                "swap_contract_address": GETH_SWAP_CONTRACT,
+            });
+
+            let eth_coin = block_on(eth_coin_from_conf_and_request(
+                &MM_CTX,
+                "ETH",
+                &eth_conf,
+                &req,
+                CoinProtocol::ETH,
+                PrivKeyBuildPolicy::IguanaPrivKey(random_secp256k1_secret()),
+            ))
+            .unwrap();
+
+            let tx_request = TransactionRequest {
+                from: GETH_ACCOUNT,
+                to: Some(eth_coin.my_address),
+                gas: None,
+                gas_price: None,
+                // 100 ETH
+                value: Some(U256::from(10).pow(U256::from(20))),
+                data: None,
+                nonce: None,
+                condition: None,
+                transaction_type: None,
+                access_list: None,
+                max_fee_per_gas: None,
+                max_priority_fee_per_gas: None,
+            };
+            let tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request)).unwrap();
+            println!("Sent transaction {:?}", tx_hash);
+
+            let balance = eth_coin.my_balance().wait().unwrap();
+            println!("New address ETH balance {}", balance.spendable);
+
+            let erc20_conf = erc20_dev_conf(GETH_ERC20_CONTRACT);
+            let req = json!({
+                "method": "enable",
+                "coin": "ERC20DEV",
+                "urls": ["http://127.0.0.1:8545"],
+                "swap_contract_address": GETH_SWAP_CONTRACT,
+            });
+            let erc20_coin = block_on(eth_coin_from_conf_and_request(
+                &MM_CTX,
+                "ERC20DEV",
+                &erc20_conf,
+                &req,
+                CoinProtocol::ERC20 {
+                    platform: "ETH".to_string(),
+                    contract_address: checksum_address(&format!("{:02x}", GETH_ERC20_CONTRACT)),
+                },
+                PrivKeyBuildPolicy::IguanaPrivKey(random_secp256k1_secret()),
+            ))
+            .unwrap();
+
+            let erc20_transfer = block_on(erc20_contract.call(
+                "transfer",
+                (
+                    Token::Address(erc20_coin.my_address),
+                    Token::Uint(U256::from(100000000)),
+                ),
+                GETH_ACCOUNT,
+                Options::default(),
+            ))
+            .unwrap();
+            println!("Sent erc20_transfer {:?}", erc20_transfer);
+
+            let balance = erc20_coin.my_balance().wait().unwrap();
+            println!("New address ERC20 balance {}", balance.spendable);
+
+            let time_lock = now_sec() - 100;
+            let other_pubkey = &[
+                0x02, 0xc6, 0x6e, 0x7d, 0x89, 0x66, 0xb5, 0xc5, 0x55, 0xaf, 0x58, 0x05, 0x98, 0x9d, 0xa9, 0xfb, 0xf8,
+                0xdb, 0x95, 0xe1, 0x56, 0x31, 0xce, 0x35, 0x8c, 0x3a, 0x17, 0x10, 0xc9, 0x62, 0x67, 0x90, 0x63,
+            ];
+
+            let send_payment_args = SendPaymentArgs {
+                time_lock_duration: 100,
+                time_lock,
+                other_pubkey,
+                secret_hash: &[0; 20],
+                amount: 1.into(),
+                swap_contract_address: &Some(GETH_SWAP_CONTRACT.as_bytes().into()),
+                swap_unique_data: &[],
+                payment_instructions: &None,
+                watcher_reward: None,
+                wait_for_confirmation_until: 0,
+            };
+            let eth_maker_payment = eth_coin.send_maker_payment(send_payment_args).wait().unwrap();
+
+            let confirm_input = ConfirmPaymentInput {
+                payment_tx: eth_maker_payment.tx_hex(),
+                confirmations: 1,
+                requires_nota: false,
+                wait_until: now_sec() + 60,
+                check_every: 1,
+            };
+            eth_coin.wait_for_confirmations(confirm_input).wait().unwrap();
+
+            let refund_args = RefundPaymentArgs {
+                payment_tx: &eth_maker_payment.tx_hex(),
+                time_lock,
+                other_pubkey,
+                tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                    maker_secret_hash: &[0; 20],
+                },
+                swap_contract_address: &Some(GETH_SWAP_CONTRACT.as_bytes().into()),
+                swap_unique_data: &[],
+                watcher_reward: false,
+            };
+            let payment_refund = block_on(eth_coin.send_maker_refunds_payment(refund_args)).unwrap();
+            println!("Payment refund tx hash {:02x}", payment_refund.tx_hash());
+
+            let confirm_input = ConfirmPaymentInput {
+                payment_tx: payment_refund.tx_hex(),
+                confirmations: 1,
+                requires_nota: false,
+                wait_until: now_sec() + 60,
+                check_every: 1,
+            };
+            eth_coin.wait_for_confirmations(confirm_input).wait().unwrap();
         };
 
         containers.push(utxo_node);
