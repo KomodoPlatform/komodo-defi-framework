@@ -1,4 +1,4 @@
-use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandle};
+use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandleShared};
 use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
 use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
                                                           UtxoStandardUserAction};
@@ -22,7 +22,7 @@ use std::collections::HashMap;
 pub(crate) async fn get_activation_result<Coin>(
     ctx: &MmArc,
     coin: &Coin,
-    task_handle: &InitStandaloneCoinTaskHandle<Coin>,
+    task_handle: InitStandaloneCoinTaskHandleShared<Coin>,
     activation_params: &UtxoActivationParams,
 ) -> MmResult<UtxoStandardActivationResult, InitUtxoStandardError>
 where
@@ -44,7 +44,7 @@ where
     // Construct an Xpub extractor without checking if the MarketMaker supports HD wallet ops.
     // [`EnableCoinBalanceOps::enable_coin_balance`] won't just use `xpub_extractor`
     // if the coin has been initialized with an Iguana priv key.
-    let xpub_extractor = RpcTaskXPubExtractor::new_unchecked(ctx, task_handle, xpub_extractor_rpc_statuses());
+    let xpub_extractor = RpcTaskXPubExtractor::new_unchecked(ctx, task_handle.clone(), xpub_extractor_rpc_statuses());
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::RequestingWalletBalance)?;
     let wallet_balance = coin
         .enable_coin_balance(&xpub_extractor, activation_params.enable_params.clone())

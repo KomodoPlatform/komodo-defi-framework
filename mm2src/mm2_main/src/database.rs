@@ -12,7 +12,7 @@ use db_common::sqlite::run_optimization_pragmas;
 use db_common::sqlite::rusqlite::{params_from_iter, Result as SqlResult};
 use mm2_core::mm_ctx::MmArc;
 
-use my_swaps::fill_my_swaps_from_json_statements;
+use my_swaps::{fill_my_swaps_from_json_statements, set_is_finished_for_legacy_swaps_statements};
 use stats_swaps::create_and_fill_stats_swaps_from_json_statements;
 
 const SELECT_MIGRATION: &str = "SELECT * FROM migration ORDER BY current_migration DESC LIMIT 1;";
@@ -22,7 +22,7 @@ fn get_current_migration(ctx: &MmArc) -> SqlResult<i64> {
     conn.query_row(SELECT_MIGRATION, [], |row| row.get(0))
 }
 
-pub async fn init_and_migrate_db(ctx: &MmArc) -> SqlResult<()> {
+pub async fn init_and_migrate_sql_db(ctx: &MmArc) -> SqlResult<()> {
     info!("Checking the current SQLite migration");
     match get_current_migration(ctx) {
         Ok(current_migration) => {
@@ -105,6 +105,10 @@ fn migration_9() -> Vec<(&'static str, Vec<String>)> {
     db_common::sqlite::execute_batch(my_swaps::TRADING_PROTO_UPGRADE_MIGRATION)
 }
 
+async fn migration_10(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+    set_is_finished_for_legacy_swaps_statements(ctx).await
+}
+
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
         1 => Some(migration_1(ctx).await),
@@ -116,6 +120,7 @@ async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option
         7 => Some(migration_7()),
         8 => Some(migration_8()),
         9 => Some(migration_9()),
+        10 => Some(migration_10(ctx).await),
         _ => None,
     }
 }

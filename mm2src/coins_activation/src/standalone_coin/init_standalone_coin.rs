@@ -8,13 +8,12 @@ use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
 use coins::{lp_coinfind, lp_register_coin, CoinsContext, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
 use common::{log, SuccessResponse};
-use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
-use rpc_task::{RpcTask, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+use rpc_task::{RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -23,9 +22,9 @@ pub type InitStandaloneCoinResponse = InitRpcTaskResponse;
 pub type InitStandaloneCoinStatusRequest = RpcTaskStatusRequest;
 pub type InitStandaloneCoinUserActionRequest<UserAction> = RpcTaskUserActionRequest<UserAction>;
 pub type InitStandaloneCoinTaskManagerShared<Standalone> = RpcTaskManagerShared<InitStandaloneCoinTask<Standalone>>;
-pub type InitStandaloneCoinTaskHandle<Standalone> = RpcTaskHandle<InitStandaloneCoinTask<Standalone>>;
+pub type InitStandaloneCoinTaskHandleShared<Standalone> = RpcTaskHandleShared<InitStandaloneCoinTask<Standalone>>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct InitStandaloneCoinReq<T> {
     ticker: String,
     activation_params: T,
@@ -59,13 +58,13 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
         coin_conf: Json,
         activation_request: &Self::ActivationRequest,
         protocol_info: Self::StandaloneProtocol,
-        task_handle: &InitStandaloneCoinTaskHandle<Self>,
+        task_handle: InitStandaloneCoinTaskHandleShared<Self>,
     ) -> Result<Self, MmError<Self::ActivationError>>;
 
     async fn get_activation_result(
         &self,
         ctx: MmArc,
-        task_handle: &InitStandaloneCoinTaskHandle<Self>,
+        task_handle: InitStandaloneCoinTaskHandleShared<Self>,
         activation_request: &Self::ActivationRequest,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>;
 
@@ -159,6 +158,7 @@ pub async fn cancel_init_standalone_coin<Standalone: InitStandaloneCoinActivatio
     Ok(SuccessResponse::new())
 }
 
+#[derive(Clone)]
 pub struct InitStandaloneCoinTask<Standalone: InitStandaloneCoinActivationOps> {
     ctx: MmArc,
     request: InitStandaloneCoinReq<Standalone::ActivationRequest>,
@@ -192,7 +192,7 @@ where
         };
     }
 
-    async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
+    async fn run(&mut self, task_handle: RpcTaskHandleShared<Self>) -> Result<Self::Item, MmError<Self::Error>> {
         let ticker = self.request.ticker.clone();
         let coin = Standalone::init_standalone_coin(
             self.ctx.clone(),
@@ -200,7 +200,7 @@ where
             self.coin_conf.clone(),
             &self.request.activation_params,
             self.protocol_info.clone(),
-            task_handle,
+            task_handle.clone(),
         )
         .await?;
 

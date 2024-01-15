@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::hd_wallet::NewAccountCreatingError;
 use async_trait::async_trait;
 use crypto::hw_rpc_task::HwConnectStatuses;
@@ -8,7 +10,7 @@ use crypto::{CryptoCtx, CryptoCtxError, DerivationPath, EcdsaCurve, HardwareWall
              XPub, XPubConverter, XpubError};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
+use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared};
 
 const SHOW_PUBKEY_ON_DISPLAY: bool = false;
 
@@ -48,6 +50,7 @@ impl From<HwProcessingError<RpcTaskError>> for HDExtractPubkeyError {
         match e {
             HwProcessingError::HwError(hw) => HDExtractPubkeyError::from(hw),
             HwProcessingError::ProcessorError(rpc) => HDExtractPubkeyError::RpcTaskError(rpc),
+            HwProcessingError::InternalError(err) => HDExtractPubkeyError::Internal(err),
         }
     }
 }
@@ -93,16 +96,16 @@ pub trait HDXPubExtractor: Sync {
     ) -> MmResult<XPub, HDExtractPubkeyError>;
 }
 
-pub enum RpcTaskXPubExtractor<'task, Task: RpcTask> {
+pub enum RpcTaskXPubExtractor<Task: RpcTask> {
     Trezor {
         hw_ctx: HardwareWalletArc,
-        task_handle: &'task RpcTaskHandle<Task>,
+        task_handle: RpcTaskHandleShared<Task>,
         statuses: HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
     },
 }
 
 #[async_trait]
-impl<'task, Task> HDXPubExtractor for RpcTaskXPubExtractor<'task, Task>
+impl<Task> HDXPubExtractor for RpcTaskXPubExtractor<Task>
 where
     Task: RpcTask,
     Task::UserAction: TryIntoUserAction + Send,
@@ -118,23 +121,29 @@ where
                 task_handle,
                 statuses,
             } => {
-                Self::extract_utxo_xpub_from_trezor(hw_ctx, task_handle, statuses, trezor_utxo_coin, derivation_path)
-                    .await
+                Self::extract_utxo_xpub_from_trezor(
+                    hw_ctx,
+                    task_handle.clone(),
+                    statuses,
+                    trezor_utxo_coin,
+                    derivation_path,
+                )
+                .await
             },
         }
     }
 }
 
-impl<'task, Task> RpcTaskXPubExtractor<'task, Task>
+impl<Task> RpcTaskXPubExtractor<Task>
 where
     Task: RpcTask,
     Task::UserAction: TryIntoUserAction + Send,
 {
     pub fn new(
         ctx: &MmArc,
-        task_handle: &'task RpcTaskHandle<Task>,
+        task_handle: RpcTaskHandleShared<Task>,
         statuses: HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
-    ) -> MmResult<RpcTaskXPubExtractor<'task, Task>, HDExtractPubkeyError> {
+    ) -> MmResult<RpcTaskXPubExtractor<Task>, HDExtractPubkeyError> {
         let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
@@ -149,22 +158,22 @@ where
     /// Constructs an Xpub extractor without checking if the MarketMaker is initialized with a hardware wallet.
     pub fn new_unchecked(
         ctx: &MmArc,
-        task_handle: &'task RpcTaskHandle<Task>,
+        task_handle: RpcTaskHandleShared<Task>,
         statuses: HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
-    ) -> XPubExtractorUnchecked<RpcTaskXPubExtractor<'task, Task>> {
+    ) -> XPubExtractorUnchecked<RpcTaskXPubExtractor<Task>> {
         XPubExtractorUnchecked(Self::new(ctx, task_handle, statuses))
     }
 
     async fn extract_utxo_xpub_from_trezor(
         hw_ctx: &HardwareWalletArc,
-        task_handle: &RpcTaskHandle<Task>,
+        task_handle: RpcTaskHandleShared<Task>,
         statuses: &HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
         trezor_coin: String,
         derivation_path: DerivationPath,
     ) -> MmResult<XPub, HDExtractPubkeyError> {
-        let mut trezor_session = hw_ctx.trezor().await?;
-
         let pubkey_processor = TrezorRpcTaskProcessor::new(task_handle, statuses.to_trezor_request_statuses());
+        let pubkey_processor = Arc::new(pubkey_processor);
+        let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await?;
         let xpub = trezor_session
             .get_public_key(
                 derivation_path,
@@ -174,7 +183,7 @@ where
                 IGNORE_XPUB_MAGIC,
             )
             .await?
-            .process(&pubkey_processor)
+            .process(pubkey_processor.clone())
             .await?;
 
         // Despite we pass `IGNORE_XPUB_MAGIC` to the [`TrezorSession::get_public_key`] method,

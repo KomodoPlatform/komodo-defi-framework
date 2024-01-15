@@ -101,6 +101,10 @@ pub enum AdexBehaviourCmd {
         /// Subscribe to this topic
         topic: String,
     },
+    Unsubscribe {
+        /// Unsubscribe from this topic
+        topic: String,
+    },
     PublishMsg {
         topic: String,
         msg: Vec<u8>,
@@ -328,6 +332,9 @@ impl AtomicDexBehaviour {
         match cmd {
             AdexBehaviourCmd::Subscribe { topic } => {
                 self.core.gossipsub.subscribe(&IdentTopic::new(topic))?;
+            },
+            AdexBehaviourCmd::Unsubscribe { topic } => {
+                self.core.gossipsub.unsubscribe(&IdentTopic::new(topic))?;
             },
             AdexBehaviourCmd::PublishMsg { topic, msg } => {
                 self.core.gossipsub.publish(TopicHash::from_raw(topic), msg)?;

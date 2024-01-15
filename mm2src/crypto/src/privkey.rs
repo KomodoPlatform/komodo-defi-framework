@@ -48,6 +48,8 @@ impl From<KeysError> for PrivKeyError {
     fn from(e: KeysError) -> Self { PrivKeyError::InvalidPrivKey(e.to_string()) }
 }
 
+impl std::error::Error for PrivKeyError {}
+
 fn private_from_seed(seed: &str) -> PrivKeyResult<Private> {
     match seed.parse() {
         Ok(private) => return Ok(private),
@@ -133,7 +135,7 @@ impl PartialEq for SerializableSecp256k1Keypair {
 impl Eq for SerializableSecp256k1Keypair {}
 
 impl SerializableSecp256k1Keypair {
-    fn new(key: [u8; 32]) -> PrivKeyResult<Self> {
+    pub fn new(key: [u8; 32]) -> PrivKeyResult<Self> {
         Ok(SerializableSecp256k1Keypair {
             inner: key_pair_from_secret(&key)?,
         })
@@ -143,7 +145,7 @@ impl SerializableSecp256k1Keypair {
 
     pub fn public_slice(&self) -> &[u8] { self.inner.public_slice() }
 
-    fn priv_key(&self) -> [u8; 32] { self.inner.private().secret.take() }
+    pub fn priv_key(&self) -> [u8; 32] { self.inner.private().secret.take() }
 
     pub fn random() -> Self {
         SerializableSecp256k1Keypair {

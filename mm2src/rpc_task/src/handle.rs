@@ -4,10 +4,11 @@ use common::custom_futures::timeout::FutureTimerExt;
 use common::log::LogOnError;
 use futures::channel::oneshot;
 use mm2_err_handle::prelude::*;
-use std::sync::MutexGuard;
+use std::sync::{Arc, MutexGuard};
 use std::time::Duration;
 
 type TaskManagerLock<'a, Task> = MutexGuard<'a, RpcTaskManager<Task>>;
+pub type RpcTaskHandleShared<Task> = Arc<RpcTaskHandle<Task>>;
 
 pub struct RpcTaskHandle<Task: RpcTask> {
     pub(crate) task_manager: RpcTaskManagerWeak<Task>,
@@ -56,13 +57,13 @@ impl<Task: RpcTask> RpcTaskHandle<Task> {
             .map_to_mm(|_canceled| RpcTaskError::Cancelled)
     }
 
-    pub(crate) fn finish(self, result: Result<Task::Item, MmError<Task::Error>>) {
+    pub(crate) fn finish(&self, result: Result<Task::Item, MmError<Task::Error>>) {
         let task_status = Self::prepare_task_result(result);
         self.lock_and_then(|mut task_manager| task_manager.update_task_status(self.task_id, task_status))
             .warn_log();
     }
 
-    pub(crate) fn on_cancelled(self) {
+    pub(crate) fn on_cancelled(&self) {
         self.lock_and_then(|mut task_manager| task_manager.on_task_cancelling_finished(self.task_id))
             .warn_log();
     }

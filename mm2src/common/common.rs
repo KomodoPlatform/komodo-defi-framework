@@ -123,6 +123,7 @@ pub mod write_safe;
 #[macro_use]
 pub mod log;
 
+pub mod bool_as_int;
 pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;

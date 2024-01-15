@@ -50,14 +50,14 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                 .map_to_mm(|e| RpcTaskError::Internal(format!("RpcTaskManager is not available: {}", e)))?;
             task_manager.register_task(initial_task_status)?
         };
-        let task_handle = RpcTaskHandle {
+        let task_handle = Arc::new(RpcTaskHandle {
             task_manager: RpcTaskManagerShared::downgrade(this),
             task_id,
-        };
+        });
 
         let fut = async move {
             debug!("Spawn RPC task '{}'", task_id);
-            let task_fut = task.run(&task_handle);
+            let task_fut = task.run(task_handle.clone());
             let task_result = match select(task_fut, task_abort_handler).await {
                 // The task has finished.
                 Either::Left((task_result, _abort_handler)) => Some(task_result),

@@ -286,6 +286,22 @@ impl Mm2TestConf {
         }
     }
 
+    pub fn seednode_with_hd_account_trade_v2(passphrase: &str, coins: &Json) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "i_am_seed": true,
+                "enable_hd": true,
+                "use_trading_proto_v2": true,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+        }
+    }
+
     pub fn light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
         Mm2TestConf {
             conf: json!({
@@ -347,6 +363,22 @@ impl Mm2TestConf {
         }
     }
 
+    pub fn light_node_with_hd_account_trade_v2(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "seednodes": seednodes,
+                "enable_hd": true,
+                "use_trading_proto_v2": true,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+        }
+    }
+
     pub fn no_login_node(coins: &Json, seednodes: &[&str]) -> Self {
         Mm2TestConf {
             conf: json!({
@@ -365,10 +397,10 @@ pub struct Mm2TestConfForSwap;
 
 impl Mm2TestConfForSwap {
     /// TODO consider moving it to read it from a env file.
-    const BOB_HD_PASSPHRASE: &'static str =
+    pub const BOB_HD_PASSPHRASE: &'static str =
         "involve work eager scene give acoustic tooth mimic dance smoke hold foster";
     /// TODO consider moving it to read it from a env file.
-    const ALICE_HD_PASSPHRASE: &'static str =
+    pub const ALICE_HD_PASSPHRASE: &'static str =
         "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     pub fn bob_conf_with_policy(priv_key_policy: &Mm2InitPrivKeyPolicy, coins: &Json) -> Mm2TestConf {
@@ -709,6 +741,24 @@ pub fn tbtc_with_spv_conf() -> Json {
     })
 }
 
+pub fn tbtc_legacy_conf() -> Json {
+    json!({
+        "coin": "tBTC",
+        "asset":"tBTC",
+        "pubtype": 111,
+        "p2shtype": 196,
+        "wiftype": 239,
+        "segwit": false,
+        "bech32_hrp": "tb",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "required_confirmations": 0,
+        "protocol": {
+            "type": "UTXO"
+        }
+    })
+}
+
 pub fn eth_testnet_conf() -> Json {
     json!({
         "coin": "ETH",
@@ -892,11 +942,18 @@ pub fn mm_ctx_with_iguana(passphrase: Option<&str>) -> MmArc {
 pub fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn mm_ctx_with_custom_db() -> MmArc {
+pub fn mm_ctx_with_custom_db() -> MmArc { mm_ctx_with_custom_db_with_conf(None) }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn mm_ctx_with_custom_db_with_conf(conf: Option<Json>) -> MmArc {
     use db_common::sqlite::rusqlite::Connection;
     use std::sync::Arc;
 
-    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let mut ctx_builder = MmCtxBuilder::new();
+    if let Some(conf) = conf {
+        ctx_builder = ctx_builder.with_conf(conf);
+    }
+    let ctx = ctx_builder.into_mm_arc();
 
     let connection = Connection::open_in_memory().unwrap();
     let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
@@ -2046,7 +2103,7 @@ pub fn find_metrics_in_json(
     })
 }
 
-pub async fn my_swap_status(mm: &MarketMakerIt, uuid: &str) -> Json {
+pub async fn my_swap_status(mm: &MarketMakerIt, uuid: &str) -> Result<Json, String> {
     let response = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2057,8 +2114,43 @@ pub async fn my_swap_status(mm: &MarketMakerIt, uuid: &str) -> Json {
         }))
         .await
         .unwrap();
-    assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
-    json::from_str(&response.1).unwrap()
+
+    if !response.0.is_success() {
+        return Err(format!("!status of {}: {}", uuid, response.1));
+    }
+
+    Ok(json::from_str(&response.1).unwrap())
+}
+
+pub async fn wait_for_swap_status(mm: &MarketMakerIt, uuid: &str, wait_sec: i64) {
+    let wait_until = get_utc_timestamp() + wait_sec;
+    loop {
+        if my_swap_status(mm, uuid).await.is_ok() {
+            break;
+        }
+
+        if get_utc_timestamp() > wait_until {
+            panic!("Timed out waiting for swap {} status", uuid);
+        }
+
+        Timer::sleep(0.5).await;
+    }
+}
+
+pub async fn wait_for_swap_finished(mm: &MarketMakerIt, uuid: &str, wait_sec: i64) {
+    let wait_until = get_utc_timestamp() + wait_sec;
+    loop {
+        let status = my_swap_status(mm, uuid).await.unwrap();
+        if status["result"]["is_finished"].as_bool().unwrap() {
+            break;
+        }
+
+        if get_utc_timestamp() > wait_until {
+            panic!("Timed out waiting for swap {} to finish", uuid);
+        }
+
+        Timer::sleep(0.5).await;
+    }
 }
 
 pub async fn wait_for_swap_contract_negotiation(mm: &MarketMakerIt, swap: &str, expected_contract: Json, until: i64) {
@@ -2067,7 +2159,7 @@ pub async fn wait_for_swap_contract_negotiation(mm: &MarketMakerIt, swap: &str, 
             panic!("Timed out");
         }
 
-        let swap_status = my_swap_status(mm, swap).await;
+        let swap_status = my_swap_status(mm, swap).await.unwrap();
         let events = swap_status["result"]["events"].as_array().unwrap();
         if events.len() < 2 {
             Timer::sleep(1.).await;
@@ -2093,7 +2185,7 @@ pub async fn wait_for_swap_negotiation_failure(mm: &MarketMakerIt, swap: &str, u
             panic!("Timed out");
         }
 
-        let swap_status = my_swap_status(mm, swap).await;
+        let swap_status = my_swap_status(mm, swap).await.unwrap();
         let events = swap_status["result"]["events"].as_array().unwrap();
         if events.len() < 2 {
             Timer::sleep(1.).await;
@@ -2107,8 +2199,11 @@ pub async fn wait_for_swap_negotiation_failure(mm: &MarketMakerIt, swap: &str, u
 
 /// Helper function requesting my swap status and checking it's events
 pub async fn check_my_swap_status(mm: &MarketMakerIt, uuid: &str, maker_amount: BigDecimal, taker_amount: BigDecimal) {
-    let status_response = my_swap_status(mm, uuid).await;
-    let swap_type = status_response["result"]["type"].as_str().unwrap();
+    let status_response = my_swap_status(mm, uuid).await.unwrap();
+    let swap_type = match status_response["result"]["type"].as_str() {
+        Some(t) => t,
+        None => return,
+    };
 
     let success_events: Vec<String> = json::from_value(status_response["result"]["success_events"].clone()).unwrap();
     if swap_type == "Taker" {
@@ -2143,7 +2238,7 @@ pub async fn check_my_swap_status_amounts(
     maker_amount: BigDecimal,
     taker_amount: BigDecimal,
 ) {
-    let status_response = my_swap_status(mm, &uuid.to_string()).await;
+    let status_response = my_swap_status(mm, &uuid.to_string()).await.unwrap();
 
     let events_array = status_response["result"]["events"].as_array().unwrap();
     let actual_maker_amount = json::from_value(events_array[0]["event"]["data"]["maker_amount"].clone()).unwrap();
@@ -2314,7 +2409,7 @@ pub async fn best_orders_v2_by_number(
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
+pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str, from: Option<Json>) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2324,6 +2419,7 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
                 "coin": coin,
                 "to": to,
                 "amount": amount,
+                "from": from,
             }
         }))
         .await
@@ -2769,7 +2865,23 @@ pub async fn enable_tendermint_token(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn init_utxo_electrum(mm: &MarketMakerIt, coin: &str, servers: Vec<Json>) -> Json {
+pub async fn init_utxo_electrum(
+    mm: &MarketMakerIt,
+    coin: &str,
+    servers: Vec<Json>,
+    priv_key_policy: Option<&str>,
+) -> Json {
+    let mut activation_params = json!({
+        "mode": {
+            "rpc": "Electrum",
+            "rpc_data": {
+                "servers": servers
+            }
+        }
+    });
+    if let Some(priv_key_policy) = priv_key_policy {
+        activation_params["priv_key_policy"] = priv_key_policy.into();
+    }
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2777,14 +2889,7 @@ pub async fn init_utxo_electrum(mm: &MarketMakerIt, coin: &str, servers: Vec<Jso
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
-                "activation_params": {
-                    "mode": {
-                        "rpc": "Electrum",
-                        "rpc_data": {
-                            "servers": servers
-                        }
-                    }
-                },
+                "activation_params": activation_params,
             }
         }))
         .await
@@ -2910,16 +3015,8 @@ pub async fn start_swaps(
 
     for uuid in uuids.iter() {
         // ensure the swaps are started
-        let expected_log = format!("Taker swap {} has successfully started", uuid);
-        taker
-            .wait_for_log(10., |log| log.contains(&expected_log))
-            .await
-            .unwrap();
-        let expected_log = format!("Maker swap {} has successfully started", uuid);
-        maker
-            .wait_for_log(10., |log| log.contains(&expected_log))
-            .await
-            .unwrap()
+        wait_for_swap_status(taker, uuid, 10).await;
+        wait_for_swap_status(maker, uuid, 10).await;
     }
 
     uuids
@@ -2933,22 +3030,8 @@ pub async fn wait_for_swaps_finish_and_check_status(
     maker_price: f64,
 ) {
     for uuid in uuids.iter() {
-        maker
-            .wait_for_log(900., |log| {
-                log.contains(&format!("[swap uuid={}] Finished", uuid.as_ref()))
-            })
-            .await
-            .unwrap();
-
-        taker
-            .wait_for_log(900., |log| {
-                log.contains(&format!("[swap uuid={}] Finished", uuid.as_ref()))
-            })
-            .await
-            .unwrap();
-
-        log!("Waiting a few second for the fresh swap status to be saved..");
-        Timer::sleep(3.33).await;
+        wait_for_swap_finished(maker, uuid.as_ref(), 900).await;
+        wait_for_swap_finished(taker, uuid.as_ref(), 900).await;
 
         log!("Checking taker status..");
         check_my_swap_status(
@@ -3102,6 +3185,23 @@ pub async fn get_locked_amount(mm: &MarketMakerIt, coin: &str) -> GetLockedAmoun
     response.result
 }
 
+pub async fn coins_needed_for_kickstart(mm: &MarketMakerIt) -> Vec<String> {
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "coins_needed_for_kick_start",
+        "params": []
+    });
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(
+        response.0,
+        StatusCode::OK,
+        "'coins_needed_for_kick_start' failed: {}",
+        response.1
+    );
+    let result: CoinsNeededForKickstartResponse = json::from_str(&response.1).unwrap();
+    result.result
+}
+
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_parse_env_file() {
@@ -3126,4 +3226,94 @@ fn test_parse_env_file() {
             None
         )
     );
+}
+
+/// test helper to call sign_raw_transaction rpc with utxo coin param
+pub async fn test_sign_raw_transaction_rpc_helper(
+    mm: &MarketMakerIt,
+    expected_ret: StatusCode,
+    json_params: &Json,
+) -> Json {
+    let response = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method":"sign_raw_transaction",
+            "mmrpc":"2.0",
+            "id": 0,
+            "params": json_params
+        }))
+        .await
+        .expect("sign_raw_transaction rpc result okay");
+    assert_eq!(
+        response.0, expected_ret,
+        "'sign_raw_transaction' unexpected return code: {}",
+        response.1
+    );
+    json::from_str(&response.1).expect("response to json conversion must be okay")
+}
+
+/// Helper to call init trezor rpc
+pub async fn init_trezor_rpc(mm: &MarketMakerIt, coin: &str) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::init_trezor::init",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": coin,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::init_trezor::init' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+/// Helper to call init trezor status
+pub async fn init_trezor_status_rpc(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::init_trezor::status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::init_trezor::status' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn init_trezor_user_action_rpc(mm: &MarketMakerIt, task_id: u64, user_action: Json) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::init_trezor::user_action",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+                "user_action": user_action
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::init_trezor::user_action' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
 }

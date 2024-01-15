@@ -32,6 +32,7 @@ pub mod rpc_clients;
 pub mod slp;
 pub mod spv;
 pub mod swap_proto_v2_scripts;
+pub mod utxo_balance_events;
 pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
@@ -55,7 +56,7 @@ use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, ChildNumber, DerivationPat
              StandardHDCoinAddress, StandardHDPathError, StandardHDPathToAccount, StandardHDPathToCoin};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
-use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedSender};
+use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedReceiver, UnboundedSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures01::Future;
@@ -65,7 +66,7 @@ pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Key
                Type as ScriptType};
 #[cfg(not(target_arch = "wasm32"))]
 use lightning_invoice::Currency as LightningCurrency;
-use mm2_core::mm_ctx::MmArc;
+use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
@@ -103,10 +104,10 @@ use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinFutSpawner,
             CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails,
             MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RawTransactionResult,
-            RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
-            UnexpectedDerivationMethod, VerificationError, WithdrawError, WithdrawRequest};
+            PrivKeyPolicyNotAllowed, RawTransactionFut, RpcTransportEventHandler, RpcTransportEventHandlerShared,
+            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
+            TransactionEnum, TransactionErr, UnexpectedDerivationMethod, VerificationError, WithdrawError,
+            WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDAddressId, HDWalletCoinOps, HDWalletOps,
                        InvalidBip44ChainError};
@@ -141,6 +142,15 @@ pub type HistoryUtxoTxMap = HashMap<H256Json, HistoryUtxoTx>;
 pub type MatureUnspentMap = HashMap<Address, MatureUnspentList>;
 pub type RecentlySpentOutPointsGuard<'a> = AsyncMutexGuard<'a, RecentlySpentOutPoints>;
 pub type UtxoHDAddress = HDAddress<Address, Public>;
+
+pub enum ScripthashNotification {
+    Triggered(String),
+    SubscribeToAddresses(HashSet<Address>),
+    RefreshSubscriptions,
+}
+
+pub type ScripthashNotificationSender = Option<UnboundedSender<ScripthashNotification>>;
+type ScripthashNotificationHandler = Option<Arc<AsyncMutex<UnboundedReceiver<ScripthashNotification>>>>;
 
 #[cfg(windows)]
 #[cfg(not(target_arch = "wasm32"))]
@@ -610,6 +620,11 @@ pub struct UtxoCoinFields {
     /// This abortable system is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
+    pub(crate) ctx: MmWeak,
+    /// This is used for balance event streaming implementation for UTXOs.
+    /// If balance event streaming isn't enabled, this value will always be `None`; otherwise,
+    /// it will be used for receiving scripthash notifications to re-fetch balances.
+    scripthash_notification_handler: ScripthashNotificationHandler,
 }
 
 #[derive(Debug, Display)]
@@ -961,6 +976,9 @@ pub trait UtxoCommonOps:
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.
     fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError>;
+
+    /// For an address create corresponding utxo output script
+    fn script_for_address(&self, address: &Address) -> MmResult<Script, UnsupportedAddr>;
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32>;
 
@@ -1868,7 +1886,8 @@ where
         _ => coin.as_ref().conf.signature_version,
     };
 
-    let prev_script = Builder::build_p2pkh(&my_address.hash);
+    let prev_script = utxo_common::get_script_for_address(coin.as_ref(), my_address)
+        .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
     let signed = try_tx_s!(sign_tx(
         unsigned,
         key_pair,
@@ -1886,12 +1905,12 @@ where
 
 pub fn output_script(address: &Address, script_type: ScriptType) -> Script {
     match address.addr_format {
-        UtxoAddressFormat::Segwit => Builder::build_witness_script(&address.hash),
+        UtxoAddressFormat::Segwit => Builder::build_p2witness(&address.hash),
         _ => match script_type {
             ScriptType::P2PKH => Builder::build_p2pkh(&address.hash),
             ScriptType::P2SH => Builder::build_p2sh(&address.hash),
-            ScriptType::P2WPKH => Builder::build_witness_script(&address.hash),
-            ScriptType::P2WSH => Builder::build_witness_script(&address.hash),
+            ScriptType::P2WPKH => Builder::build_p2witness(&address.hash),
+            ScriptType::P2WSH => Builder::build_p2witness(&address.hash),
         },
     }
 }
@@ -1941,6 +1960,61 @@ fn parse_hex_encoded_u32(hex_encoded: &str) -> Result<u32, MmError<String>> {
         .try_into()
         .map_to_mm(|e: TryFromSliceError| e.to_string())?;
     Ok(u32::from_be_bytes(be_bytes))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub mod for_tests {
+    use crate::rpc_command::init_withdraw::{init_withdraw, withdraw_status, WithdrawStatusRequest};
+    use crate::{TransactionDetails, WithdrawError, WithdrawFrom, WithdrawRequest};
+    use common::executor::Timer;
+    use common::{now_ms, wait_until_ms};
+    use mm2_core::mm_ctx::MmArc;
+    use mm2_err_handle::prelude::MmResult;
+    use mm2_number::BigDecimal;
+    use rpc_task::RpcTaskStatus;
+    use std::str::FromStr;
+
+    /// Helper to call init_withdraw and wait for completion
+    pub async fn test_withdraw_init_loop(
+        ctx: MmArc,
+        ticker: &str,
+        to: &str,
+        amount: &str,
+        from_derivation_path: &str,
+    ) -> MmResult<TransactionDetails, WithdrawError> {
+        let withdraw_req = WithdrawRequest {
+            amount: BigDecimal::from_str(amount).unwrap(),
+            from: Some(WithdrawFrom::DerivationPath {
+                derivation_path: from_derivation_path.to_owned(),
+            }),
+            to: to.to_owned(),
+            coin: ticker.to_owned(),
+            max: false,
+            fee: None,
+            memo: None,
+        };
+        let init = init_withdraw(ctx.clone(), withdraw_req).await.unwrap();
+        let timeout = wait_until_ms(150000);
+        loop {
+            if now_ms() > timeout {
+                panic!("{} init_withdraw timed out", ticker);
+            }
+            let status = withdraw_status(ctx.clone(), WithdrawStatusRequest {
+                task_id: init.task_id,
+                forget_if_finished: true,
+            })
+            .await;
+            if let Ok(status) = status {
+                match status {
+                    RpcTaskStatus::Ok(tx_details) => break Ok(tx_details),
+                    RpcTaskStatus::Error(e) => break Err(e),
+                    _ => Timer::sleep(1.).await,
+                }
+            } else {
+                panic!("{} could not get withdraw_status", ticker)
+            }
+        }
+    }
 }
 
 #[test]

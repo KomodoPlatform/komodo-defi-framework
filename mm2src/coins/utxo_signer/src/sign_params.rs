@@ -2,7 +2,7 @@ use crate::{UtxoSignTxError, UtxoSignTxResult};
 use chain::TransactionOutput;
 use crypto::trezor::utxo::TrezorOutputScriptType;
 use crypto::DerivationPath;
-use keys::Public as PublicKey;
+use keys::{AddressFormat, Public as PublicKey};
 use mm2_err_handle::prelude::*;
 use script::{Script, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput};
 
@@ -21,21 +21,34 @@ pub enum SpendingInputInfo {
         address_derivation_path: DerivationPath,
         address_pubkey: PublicKey,
     },
+    P2WPKH {
+        address_derivation_path: DerivationPath,
+        address_pubkey: PublicKey,
+    },
     // The fields are used to generate `trezor::proto::messages_bitcoin::MultisigRedeemScriptType`
     // P2SH {}
 }
 
 /// Either plain destination address or derivation path of a change address.
 pub enum OutputDestination {
-    Plain { address: String },
-    Change { derivation_path: DerivationPath },
+    Plain {
+        address: String,
+    },
+    Change {
+        derivation_path: DerivationPath,
+        addr_format: AddressFormat,
+    },
 }
 
 impl OutputDestination {
     pub fn plain(address: String) -> OutputDestination { OutputDestination::Plain { address } }
 
-    pub fn change(derivation_path: DerivationPath) -> OutputDestination {
-        OutputDestination::Change { derivation_path }
+    #[inline]
+    pub fn change(derivation_path: DerivationPath, addr_format: AddressFormat) -> OutputDestination {
+        OutputDestination::Change {
+            derivation_path,
+            addr_format,
+        }
     }
 }
 
@@ -46,7 +59,15 @@ pub struct SendingOutputInfo {
 
 impl SendingOutputInfo {
     /// For now, returns [`TrezorOutputScriptType::PayToAddress`] since we don't support SLP tokens yet.
-    pub fn trezor_output_script_type(&self) -> TrezorOutputScriptType { TrezorOutputScriptType::PayToAddress }
+    #[inline]
+    pub fn trezor_output_script_type(&self) -> TrezorOutputScriptType {
+        match self.destination_address {
+            OutputDestination::Change { ref addr_format, .. } if *addr_format == AddressFormat::Segwit => {
+                TrezorOutputScriptType::PayToWitness
+            },
+            OutputDestination::Change { .. } | OutputDestination::Plain { .. } => TrezorOutputScriptType::PayToAddress,
+        }
+    }
 }
 
 pub struct UtxoSignTxParamsBuilder {
