@@ -1,4 +1,4 @@
-use crate::docker_tests::docker_tests_common::generate_utxo_coin_with_privkey;
+use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, GETH_RPC_URL};
 use crate::integration_tests_common::*;
 use crate::{fill_address, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
             utxo_coin_from_privkey};
@@ -15,7 +15,7 @@ use futures01::Future;
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf, get_locked_amount, kmd_conf,
                                   max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
-                                  MarketMakerIt, Mm2TestConf, ETH_DEV_NODES};
+                                  MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -3415,8 +3415,8 @@ fn test_match_utxo_with_eth_taker_sell() {
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
-    block_on(enable_native(&mm_bob, "ETH", ETH_DEV_NODES, None));
-    block_on(enable_native(&mm_alice, "ETH", ETH_DEV_NODES, None));
+    block_on(enable_native(&mm_bob, "ETH", &[GETH_RPC_URL], None));
+    block_on(enable_native(&mm_alice, "ETH", &[GETH_RPC_URL], None));
 
     let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
@@ -3491,9 +3491,9 @@ fn test_match_utxo_with_eth_taker_buy() {
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
-    block_on(enable_native(&mm_bob, "ETH", ETH_DEV_NODES, None));
+    block_on(enable_native(&mm_bob, "ETH", &[GETH_RPC_URL], None));
 
-    block_on(enable_native(&mm_alice, "ETH", ETH_DEV_NODES, None));
+    block_on(enable_native(&mm_alice, "ETH", &[GETH_RPC_URL], None));
 
     let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,

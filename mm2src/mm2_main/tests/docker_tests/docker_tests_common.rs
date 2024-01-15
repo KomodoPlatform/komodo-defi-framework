@@ -46,6 +46,7 @@ use testcontainers::clients::Cli;
 use testcontainers::core::WaitFor;
 use testcontainers::{Container, GenericImage, RunnableImage};
 use web3::transports::Http;
+use web3::types::TransactionRequest;
 use web3::Web3;
 
 lazy_static! {
@@ -60,7 +61,7 @@ lazy_static! {
     pub static ref SLP_TOKEN_OWNERS: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::with_capacity(18));
     static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
     pub static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
-    pub static ref GETH_WEB3: Web3<Http> = Web3::new(Http::new("http://127.0.0.1:8545").unwrap());
+    pub static ref GETH_WEB3: Web3<Http> = Web3::new(Http::new(GETH_RPC_URL).unwrap());
 }
 
 pub static mut QICK_TOKEN_ADDRESS: Option<H160Eth> = None;
@@ -73,6 +74,7 @@ pub static mut GETH_ACCOUNT: H160Eth = H160Eth::zero();
 pub static mut GETH_ERC20_CONTRACT: H160Eth = H160Eth::zero();
 /// Swap contract address on Geth dev node
 pub static mut GETH_SWAP_CONTRACT: H160Eth = H160Eth::zero();
+pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain";
 pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testblockchain:multiarch";
@@ -1044,4 +1046,69 @@ pub fn withdraw_max_and_send_v1(mm: &MarketMakerIt, coin: &str, to: &str) -> Tra
     assert_eq!(rc.0, StatusCode::OK, "send_raw_transaction request failed {}", rc.1);
 
     tx_details
+}
+
+pub fn init_geth_node() {
+    unsafe {
+        let accounts = block_on(GETH_WEB3.eth().accounts()).unwrap();
+        GETH_ACCOUNT = accounts[0];
+        println!("GETH ACCOUNT {:?}", GETH_ACCOUNT);
+
+        let tx_request_deploy_erc20 = TransactionRequest {
+            from: GETH_ACCOUNT,
+            to: None,
+            gas: None,
+            gas_price: None,
+            value: None,
+            data: Some(hex::decode(ERC20_TOKEN_BYTES).unwrap().into()),
+            nonce: None,
+            condition: None,
+            transaction_type: None,
+            access_list: None,
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
+        };
+
+        let deploy_erc20_tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_erc20)).unwrap();
+        println!("Sent ERC20 deploy transaction {:?}", deploy_erc20_tx_hash);
+
+        loop {
+            let deploy_tx_receipt = block_on(GETH_WEB3.eth().transaction_receipt(deploy_erc20_tx_hash)).unwrap();
+
+            if let Some(receipt) = deploy_tx_receipt {
+                GETH_ERC20_CONTRACT = receipt.contract_address.unwrap();
+                println!("GETH_ERC20_CONTRACT {:?}", GETH_ERC20_CONTRACT);
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        let tx_request_deploy_swap_contract = TransactionRequest {
+            from: GETH_ACCOUNT,
+            to: None,
+            gas: None,
+            gas_price: None,
+            value: None,
+            data: Some(hex::decode(SWAP_CONTRACT_BYTES).unwrap().into()),
+            nonce: None,
+            condition: None,
+            transaction_type: None,
+            access_list: None,
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
+        };
+        let deploy_swap_tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_swap_contract)).unwrap();
+        println!("Sent deploy swap contract transaction {:?}", deploy_swap_tx_hash);
+
+        loop {
+            let deploy_swap_tx_receipt = block_on(GETH_WEB3.eth().transaction_receipt(deploy_swap_tx_hash)).unwrap();
+
+            if let Some(receipt) = deploy_swap_tx_receipt {
+                GETH_SWAP_CONTRACT = receipt.contract_address.unwrap();
+                println!("GETH_SWAP_CONTRACT {:?}", GETH_SWAP_CONTRACT);
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
 }
