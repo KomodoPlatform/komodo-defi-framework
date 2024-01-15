@@ -1375,23 +1375,23 @@ pub(crate) fn get_domain_from_url(url: Option<&str>) -> Option<String> {
 
 /// Clears NFT data from the database for specified chains.
 pub async fn clear_nft_db(ctx: MmArc, req: ClearNftDbReq) -> MmResult<(), ClearNftDbError> {
-    if req.chains.is_none() && !req.clear_all {
-        return MmError::err(ClearNftDbError::InvalidRequest(
-            "Nothing to clear was specified".to_string(),
-        ));
-    }
-    let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(ClearNftDbError::Internal)?;
-    let storage = nft_ctx.lock_db().await?;
-
     if req.clear_all {
+        let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(ClearNftDbError::Internal)?;
+        let storage = nft_ctx.lock_db().await?;
         storage.clear_all_nft_data().await?;
         storage.clear_all_history_data().await?;
     } else if let Some(chains) = req.chains {
+        let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(ClearNftDbError::Internal)?;
+        let storage = nft_ctx.lock_db().await?;
         for chain in chains.iter() {
             if let Err(e) = clear_data_for_chain(&storage, chain).await {
                 error!("Failed to clear data for chain {}: {}", chain, e);
             }
         }
+    } else {
+        return MmError::err(ClearNftDbError::InvalidRequest(
+            "Nothing to clear was specified".to_string(),
+        ));
     }
 
     Ok(())

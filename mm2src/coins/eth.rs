@@ -4042,7 +4042,7 @@ impl EthCoin {
                 ))
             },
         };
-        let wallet_amount = BigDecimal::from_str(&wallet_amount_uint.to_string()).map_err(NumConversError::from)?;
+        let wallet_amount = u256_to_big_decimal(wallet_amount_uint, self.decimals)?;
         Ok(wallet_amount)
     }
 
