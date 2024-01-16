@@ -37,7 +37,7 @@ use common::{now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy, StandardHDCoinAddress};
 use derive_more::Display;
-use enum_from::EnumFromStringify;
+use enum_utilities::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};

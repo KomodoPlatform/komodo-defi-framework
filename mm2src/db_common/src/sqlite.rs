@@ -99,7 +99,7 @@ pub fn validate_table_name(table_name: &str) -> SqlResult<()> {
 
 /// Represents a SQL table name that has been validated for safety.
 #[derive(Clone, Debug)]
-pub struct SafeTableName(pub String);
+pub struct SafeTableName(String);
 
 impl SafeTableName {
     /// Creates a new SafeTableName, validating the provided table name.
@@ -107,6 +107,9 @@ impl SafeTableName {
         validate_table_name(table_name)?;
         Ok(SafeTableName(table_name.to_owned()))
     }
+
+    /// Retrieves the table name.
+    pub fn get_name(&self) -> &str { &self.0 }
 }
 
 /// Calculates the offset to skip records by uuid.

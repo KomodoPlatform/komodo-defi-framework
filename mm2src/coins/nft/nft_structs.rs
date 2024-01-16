@@ -1,5 +1,5 @@
 use common::ten;
-use enum_from::EnumVariantList;
+use enum_utilities::EnumVariantList;
 use ethereum_types::Address;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
@@ -85,20 +85,19 @@ pub struct NftMetadataReq {
 }
 
 /// Contains parameters required to refresh metadata for a specified NFT.
-/// # Fields
-/// * `token_address`: The address of the NFT token whose metadata needs to be refreshed.
-/// * `token_id`: The ID of the NFT token.
-/// * `chain`: The blockchain where the NFT exists.
-/// * `url`: URL to fetch the metadata.
-/// * `url_antispam`: URL used to validate if the fetched contract addresses are associated
-/// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
 #[derive(Debug, Deserialize)]
 pub struct RefreshMetadataReq {
+    /// The address of the NFT token whose metadata needs to be refreshed.
     pub(crate) token_address: Address,
+    /// The ID of the NFT token.
     #[serde(deserialize_with = "deserialize_token_id")]
     pub(crate) token_id: BigUint,
+    /// The blockchain where the NFT exists.
     pub(crate) chain: Chain,
+    /// URL to fetch the metadata.
     pub(crate) url: Url,
+    /// URL used to validate if the fetched contract addresses are associated
+    /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
 }
 
@@ -387,56 +386,50 @@ pub struct NftList {
 }
 
 /// Parameters for withdrawing an ERC-1155 token.
-///
-/// Fields:
-/// - `chain`: The blockchain network to perform the withdrawal on.
-/// - `to`: The address to send the NFT to.
-/// - `token_address`: The address of the ERC-1155 token contract.
-/// - `token_id`: The unique identifier of the NFT to withdraw.
-/// - `amount`: Optional amount of the token to withdraw. Defaults to 1 if not specified.
-/// - `max`: If set to `true`, withdraws the maximum amount available. Overrides the `amount` field.
-/// - `fee`: Optional details for the withdrawal fee.
 #[derive(Clone, Deserialize)]
 pub struct WithdrawErc1155 {
+    /// The blockchain network to perform the withdrawal on.
     pub(crate) chain: Chain,
+    /// The address to send the NFT to.
     pub(crate) to: String,
+    /// The address of the ERC-1155 token contract.
     pub(crate) token_address: String,
+    /// The unique identifier of the NFT to withdraw.
     #[serde(deserialize_with = "deserialize_token_id")]
     pub(crate) token_id: BigUint,
+    /// Optional amount of the token to withdraw. Defaults to 1 if not specified.
     pub(crate) amount: Option<BigDecimal>,
+    /// If set to `true`, withdraws the maximum amount available. Overrides the `amount` field.
     #[serde(default)]
     pub(crate) max: bool,
+    /// Optional details for the withdrawal fee.
     pub(crate) fee: Option<WithdrawFee>,
 }
 
 /// Parameters for withdrawing an ERC-721 token.
-///
-/// Fields:
-/// - `chain`: The blockchain network to perform the withdrawal on.
-/// - `to`: The address to send the NFT to.
-/// - `token_address`: The address of the ERC-721 token contract.
-/// - `token_id`: The unique identifier of the NFT to withdraw.
-/// - `fee`: Optional details for the withdrawal fee.
 #[derive(Clone, Deserialize)]
 pub struct WithdrawErc721 {
+    /// The blockchain network to perform the withdrawal on.
     pub(crate) chain: Chain,
+    /// The address to send the NFT to.
     pub(crate) to: String,
+    /// The address of the ERC-721 token contract.
     pub(crate) token_address: String,
+    /// The unique identifier of the NFT to withdraw.
     #[serde(deserialize_with = "deserialize_token_id")]
     pub(crate) token_id: BigUint,
+    /// Optional details for the withdrawal fee.
     pub(crate) fee: Option<WithdrawFee>,
 }
 
 /// Represents a request for withdrawing an NFT, supporting different ERC standards.
-///
-/// Variants:
-/// - `WithdrawErc1155`: Parameters for withdrawing an ERC-1155 token.
-/// - `WithdrawErc721`: Parameters for withdrawing an ERC-721 token.
 #[derive(Clone, Deserialize)]
 #[serde(tag = "type", content = "withdraw_data")]
 #[serde(rename_all = "snake_case")]
 pub enum WithdrawNftReq {
+    /// Parameters for withdrawing an ERC-1155 token.
     WithdrawErc1155(WithdrawErc1155),
+    /// Parameters for withdrawing an ERC-721 token.
     WithdrawErc721(WithdrawErc721),
 }
 
@@ -620,33 +613,44 @@ pub struct NftTransferHistoryFilters {
 }
 
 /// Contains parameters required to update NFT transfer history and NFT list.
-/// # Fields
-/// * `chains`: A list of blockchains for which the NFTs need to be updated.
-/// * `url`: URL to fetch the NFT data.
-/// * `url_antispam`: URL used to validate if the fetched contract addresses are associated
-/// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
 #[derive(Debug, Deserialize)]
 pub struct UpdateNftReq {
+    /// A list of blockchains for which the NFTs need to be updated.
     pub(crate) chains: Vec<Chain>,
+    /// URL to fetch the NFT data.
     pub(crate) url: Url,
+    /// URL used to validate if the fetched contract addresses are associated
+    /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
 }
 
+/// Represents a unique identifier for an NFT, consisting of its token address and token ID.
 #[derive(Debug, Deserialize, Eq, Hash, PartialEq)]
 pub struct NftTokenAddrId {
+    /// The address of the NFT token contract.
     pub(crate) token_address: String,
+    /// The unique identifier of the NFT within its contract.
     pub(crate) token_id: BigUint,
 }
 
+/// Holds metadata information for an NFT transfer.
 #[derive(Debug)]
 pub struct TransferMeta {
+    /// The address of the NFT token contract.
     pub(crate) token_address: String,
+    /// The unique identifier of the NFT.
     pub(crate) token_id: BigUint,
+    /// Optional URI for the NFT's metadata.
     pub(crate) token_uri: Option<String>,
+    /// Optional domain associated with the NFT's metadata.
     pub(crate) token_domain: Option<String>,
+    /// Optional name of the NFT's collection.
     pub(crate) collection_name: Option<String>,
+    /// Optional URL for the NFT's image.
     pub(crate) image_url: Option<String>,
+    /// Optional domain for the NFT's image.
     pub(crate) image_domain: Option<String>,
+    /// Optional name of the NFT.
     pub(crate) token_name: Option<String>,
 }
 
@@ -761,16 +765,11 @@ where
 }
 
 /// Request parameters for clearing NFT data from the database.
-///
-/// - `chains`: (Optional) Specifies the blockchain networks (e.g., Ethereum, BSC) to clear NFT data.
-///   This field is used and required only when `clear_all` is `false`.
-/// - `clear_all`: If `true`, clears NFT data for all chains, ignoring the `chains` field.
-///   Defaults to `false`.
-///
-/// Note: If `clear_all` is `false` and `chains` is `None`, the request will be considered invalid and result in an error.
 #[derive(Debug, Deserialize)]
 pub struct ClearNftDbReq {
+    /// (Optional) Specifies the blockchain networks (e.g., Ethereum, BSC) to clear NFT data.
     pub(crate) chains: Option<Vec<Chain>>,
+    /// If `true`, clears NFT data for all chains, ignoring the `chains` field. Defaults to `false`.
     #[serde(default)]
     pub(crate) clear_all: bool,
 }

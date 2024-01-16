@@ -7,7 +7,7 @@ use common::{HttpStatusCode, ParseRfc3339Err};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
-use enum_from::EnumFromStringify;
+use enum_utilities::EnumFromStringify;
 use http::StatusCode;
 use mm2_net::transport::{GetInfoFromUriError, SlurpError};
 use serde::{Deserialize, Serialize};
@@ -393,18 +393,16 @@ impl From<CoinFindError> for TransferConfirmationsError {
 }
 
 /// Enumerates errors that can occur while clearing NFT data from the database.
-///
-/// Variants:
-/// - `DbError`: Represents errors related to database operations.
-/// - `Internal`: Indicates internal errors not directly associated with database operations.
-/// - `InvalidRequest`: Used for various types of invalid requests, such as missing or contradictory parameters.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ClearNftDbError {
+    /// Represents errors related to database operations.
     #[display(fmt = "DB error {}", _0)]
     DbError(String),
+    /// Indicates internal errors not directly associated with database operations.
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
+    /// Used for various types of invalid requests, such as missing or contradictory parameters.
     #[display(fmt = "Invalid request: {}", _0)]
     InvalidRequest(String),
 }

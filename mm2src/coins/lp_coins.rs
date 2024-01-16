@@ -52,7 +52,7 @@ use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
 use crypto::{derive_secp256k1_secret, Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc,
              HwRpcError, KeyPairPolicy, Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin, WithHwRpcError};
 use derive_more::Display;
-use enum_from::{EnumFromStringify, EnumFromTrait};
+use enum_utilities::{EnumFromStringify, EnumFromTrait};
 use ethereum_types::H256;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
