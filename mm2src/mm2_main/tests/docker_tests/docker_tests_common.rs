@@ -7,9 +7,10 @@ pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, 
                                       ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 
+use crate::docker_tests::eth_docker_tests::fill_eth;
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
-use coins::eth::{eth_coin_from_conf_and_request, EthCoin};
+use coins::eth::{addr_from_raw_pubkey, eth_coin_from_conf_and_request, EthCoin};
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
 use coins::qrc20::{qrc20_coin_with_priv_key, Qrc20ActivationParams, Qrc20Coin};
 use coins::utxo::bch::{bch_coin_with_priv_key, BchActivationRequest, BchCoin};
@@ -23,7 +24,7 @@ use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path,
 use coins::{CoinProtocol, ConfirmPaymentInput, MarketCoinOps, PrivKeyBuildPolicy, Transaction};
 use crypto::privkey::key_pair_from_seed;
 use crypto::Secp256k1Secret;
-use ethereum_types::H160 as H160Eth;
+use ethereum_types::{H160 as H160Eth, U256};
 use futures01::Future;
 use http::StatusCode;
 use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
@@ -62,6 +63,8 @@ lazy_static! {
     static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
     pub static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
     pub static ref GETH_WEB3: Web3<Http> = Web3::new(Http::new(GETH_RPC_URL).unwrap());
+    // Mutex used to prevent nonce re-usage during funding addresses used in tests
+    pub static ref GETH_NONCE_LOCK: Mutex<()> = Mutex::new(());
 }
 
 pub static mut QICK_TOKEN_ADDRESS: Option<H160Eth> = None;
@@ -415,6 +418,15 @@ pub fn import_address<T>(coin: &T)
 where
     T: MarketCoinOps + AsRef<UtxoCoinFields>,
 {
+    let mutex = match coin.ticker() {
+        "MYCOIN" => &*MY_COIN_LOCK,
+        "MYCOIN1" => &*MY_COIN1_LOCK,
+        "QTUM" | "QICK" | "QORTY" => &*QTUM_LOCK,
+        "FORSLP" => &*FOR_SLP_LOCK,
+        ticker => panic!("Unknown ticker {}", ticker),
+    };
+    let _lock = mutex.lock().unwrap();
+
     match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref native) => {
             let my_address = coin.my_address().unwrap();
@@ -1110,5 +1122,17 @@ pub fn init_geth_node() {
             }
             thread::sleep(Duration::from_millis(100));
         }
+
+        let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+        let alice_keypair = key_pair_from_seed(&alice_passphrase).unwrap();
+        let alice_eth_addr = addr_from_raw_pubkey(alice_keypair.public()).unwrap();
+        // 100 ETH
+        fill_eth(alice_eth_addr, U256::from(10).pow(U256::from(20)));
+
+        let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+        let bob_keypair = key_pair_from_seed(&bob_passphrase).unwrap();
+        let bob_eth_addr = addr_from_raw_pubkey(bob_keypair.public()).unwrap();
+        // 100 ETH
+        fill_eth(bob_eth_addr, U256::from(10).pow(U256::from(20)));
     }
 }

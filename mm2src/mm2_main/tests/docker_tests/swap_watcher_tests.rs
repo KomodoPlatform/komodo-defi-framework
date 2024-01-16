@@ -15,8 +15,7 @@ use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use futures01::Future;
 use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, generate_secret, get_payment_locktime,
                              MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG, MAKER_PAYMENT_SPEND_SENT_LOG,
-                             REFUND_TEST_FAILURE_LOG, SWAP_FINISHED_LOG, TAKER_PAYMENT_REFUND_SENT_LOG,
-                             WATCHER_MESSAGE_SENT_LOG};
+                             REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_testnet_conf, eth_testnet_conf, mm_dump, my_balance,
@@ -387,10 +386,9 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker
     block_on(mm_bob.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
     block_on(mm_watcher.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
 
-    restart_taker_and_wait_until(&alice_conf, &[], &format!("[swap uuid={}] Finished", &uuids[0]));
     block_on(mm_alice.stop()).unwrap();
 
-    let mm_alice = restart_taker_and_wait_until(&alice_conf, &[], &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]));
+    let mm_alice = restart_taker_and_wait_until(&alice_conf, &[], &format!("[swap uuid={}] Finished", &uuids[0]));
 
     let expected_events = [
         "Started",
@@ -439,10 +437,9 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_
     block_on(mm_bob.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
     block_on(mm_watcher.wait_for_log(120., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
 
-    restart_taker_and_wait_until(&alice_conf, &[], &format!("[swap uuid={}] Finished", &uuids[0]));
     block_on(mm_alice.stop()).unwrap();
 
-    let mm_alice = restart_taker_and_wait_until(&alice_conf, &[], &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]));
+    let mm_alice = restart_taker_and_wait_until(&alice_conf, &[], &format!("[swap uuid={}] Finished", &uuids[0]));
 
     let expected_events = [
         "Started",
@@ -501,17 +498,12 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
     block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
     block_on(mm_watcher.wait_for_log(120., |log| log.contains(TAKER_PAYMENT_REFUND_SENT_LOG))).unwrap();
 
-    restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_TEST_LOCKTIME", "")],
-        &format!("[swap uuid={}] Finished", &uuids[0]),
-    );
     block_on(mm_alice.stop()).unwrap();
 
     let mm_alice = restart_taker_and_wait_until(
         &alice_conf,
         &[("USE_TEST_LOCKTIME", "")],
-        &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]),
+        &format!("[swap uuid={}] Finished", &uuids[0]),
     );
 
     let expected_events = [
@@ -570,17 +562,12 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
     block_on(mm_alice.wait_for_log(120., |log| log.contains(REFUND_TEST_FAILURE_LOG))).unwrap();
     block_on(mm_watcher.wait_for_log(120., |log| log.contains(TAKER_PAYMENT_REFUND_SENT_LOG))).unwrap();
 
-    restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_TEST_LOCKTIME", "")],
-        &format!("[swap uuid={}] Finished", &uuids[0]),
-    );
     block_on(mm_alice.stop()).unwrap();
 
     let mm_alice = restart_taker_and_wait_until(
         &alice_conf,
         &[("USE_TEST_LOCKTIME", "")],
-        &format!("{} {}", SWAP_FINISHED_LOG, uuids[0]),
+        &format!("[swap uuid={}] Finished", &uuids[0]),
     );
 
     let expected_events = [

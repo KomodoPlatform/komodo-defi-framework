@@ -1,5 +1,5 @@
 use crate::docker_tests::docker_tests_common::{random_secp256k1_secret, GETH_ACCOUNT, GETH_ERC20_CONTRACT,
-                                               GETH_SWAP_CONTRACT, GETH_WEB3, MM_CTX};
+                                               GETH_NONCE_LOCK, GETH_SWAP_CONTRACT, GETH_WEB3, MM_CTX};
 use bitcrypto::dhash160;
 use coins::eth::{checksum_address, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
 use coins::{CoinProtocol, ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, PrivKeyBuildPolicy, RefundPaymentArgs,
@@ -27,6 +27,38 @@ fn swap_contract() -> Address { unsafe { GETH_SWAP_CONTRACT } }
 /// GETH_ERC20_CONTRACT is set once during initialization before tests start
 fn erc20_contract() -> Address { unsafe { GETH_ERC20_CONTRACT } }
 
+pub fn fill_eth(to_addr: Address, amount: U256) {
+    let _guard = GETH_NONCE_LOCK.lock().unwrap();
+    let tx_request = TransactionRequest {
+        from: geth_account(),
+        to: Some(to_addr),
+        gas: None,
+        gas_price: None,
+        value: Some(amount),
+        data: None,
+        nonce: None,
+        condition: None,
+        transaction_type: None,
+        access_list: None,
+        max_fee_per_gas: None,
+        max_priority_fee_per_gas: None,
+    };
+    block_on(GETH_WEB3.eth().send_transaction(tx_request)).unwrap();
+}
+
+fn fill_erc20(to_addr: Address, amount: U256) {
+    let _guard = GETH_NONCE_LOCK.lock().unwrap();
+    let erc20_contract = Contract::from_json(GETH_WEB3.eth(), erc20_contract(), ERC20_ABI.as_bytes()).unwrap();
+
+    block_on(erc20_contract.call(
+        "transfer",
+        (Token::Address(to_addr), Token::Uint(amount)),
+        geth_account(),
+        Options::default(),
+    ))
+    .unwrap();
+}
+
 /// Creates ETH protocol coin supplied with 100 ETH
 fn eth_coin_with_random_privkey() -> EthCoin {
     let eth_conf = eth_dev_conf();
@@ -48,22 +80,9 @@ fn eth_coin_with_random_privkey() -> EthCoin {
     ))
     .unwrap();
 
-    let tx_request = TransactionRequest {
-        from: geth_account(),
-        to: Some(eth_coin.my_address),
-        gas: None,
-        gas_price: None,
-        // 100 ETH
-        value: Some(U256::from(10).pow(U256::from(20))),
-        data: None,
-        nonce: None,
-        condition: None,
-        transaction_type: None,
-        access_list: None,
-        max_fee_per_gas: None,
-        max_priority_fee_per_gas: None,
-    };
-    block_on(GETH_WEB3.eth().send_transaction(tx_request)).unwrap();
+    // 100 ETH
+    fill_eth(eth_coin.my_address, U256::from(10).pow(U256::from(20)));
+
     eth_coin
 }
 
@@ -89,36 +108,10 @@ fn erc20_coin_with_random_privkey() -> EthCoin {
     ))
     .unwrap();
 
-    let erc20_contract = Contract::from_json(GETH_WEB3.eth(), erc20_contract(), ERC20_ABI.as_bytes()).unwrap();
-
-    block_on(erc20_contract.call(
-        "transfer",
-        (
-            Token::Address(erc20_coin.my_address),
-            // 100 tokens (it has 8 decimals)
-            Token::Uint(U256::from(10000000000u64)),
-        ),
-        geth_account(),
-        Options::default(),
-    ))
-    .unwrap();
-
-    let tx_request = TransactionRequest {
-        from: geth_account(),
-        to: Some(erc20_coin.my_address),
-        gas: None,
-        gas_price: None,
-        // 1 ETH
-        value: Some(U256::from(10).pow(U256::from(18))),
-        data: None,
-        nonce: None,
-        condition: None,
-        transaction_type: None,
-        access_list: None,
-        max_fee_per_gas: None,
-        max_priority_fee_per_gas: None,
-    };
-    block_on(GETH_WEB3.eth().send_transaction(tx_request)).unwrap();
+    // 1 ETH
+    fill_eth(erc20_coin.my_address, U256::from(10).pow(U256::from(18)));
+    // 100 tokens (it has 8 decimals)
+    fill_erc20(erc20_coin.my_address, U256::from(10000000000u64));
 
     erc20_coin
 }
