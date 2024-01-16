@@ -274,13 +274,12 @@ impl HttpStatusCode for UpdateNftError {
 }
 
 /// Enumerates the errors that can occur during spam protection operations.
-///
-/// This includes issues such as regex failures during text validation and
-/// serialization/deserialization problems.
 #[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize)]
 pub enum ProtectFromSpamError {
+    /// Error related to regular expression operations.
     #[from_stringify("regex::Error")]
     RegexError(String),
+    /// Error related to serialization or deserialization with serde_json.
     #[from_stringify("serde_json::Error")]
     SerdeError(String),
 }
@@ -346,14 +345,12 @@ impl From<GetInfoFromUriError> for MetaFromUrlError {
 }
 
 /// Represents errors that can occur while locking the NFT database.
-///
-/// Variants:
-/// - `WasmNftCacheError`: Errors specific to the WebAssembly (WASM) environment's NFT cache.
-/// - `SqlError`: Errors related to SQL operations in non-WASM environments.
 #[derive(Debug, Display)]
 pub enum LockDBError {
+    /// Errors specific to the WebAssembly (WASM) environment's NFT cache.
     #[cfg(target_arch = "wasm32")]
     WasmNftCacheError(WasmNftCacheError),
+    /// Errors related to SQL operations in non-WASM environments.
     #[cfg(not(target_arch = "wasm32"))]
     SqlError(SqlError),
 }
@@ -369,17 +366,15 @@ impl From<WasmNftCacheError> for LockDBError {
 }
 
 /// Errors related to calculating transfer confirmations for NFTs.
-///
-/// Variants:
-/// - `NoSuchCoin`: Occurs when the specified coin does not exist.
-/// - `CoinDoesntSupportNft`: Triggered when the specified coin does not support NFT operations.
-/// - `GetCurrentBlockErr`: Represents errors encountered while retrieving the current block number.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum TransferConfirmationsError {
+    /// Occurs when the specified coin does not exist.
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
+    /// Triggered when the specified coin does not support NFT operations.
     #[display(fmt = "{} coin doesn't support NFT", coin)]
     CoinDoesntSupportNft { coin: String },
+    /// Represents errors encountered while retrieving the current block number.
     #[display(fmt = "Get current block error: {}", _0)]
     GetCurrentBlockErr(String),
 }

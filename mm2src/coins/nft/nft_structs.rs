@@ -68,18 +68,17 @@ pub struct NftListFilters {
 }
 
 /// Contains parameters required to fetch metadata for a specified NFT.
-/// # Fields
-/// * `token_address`: The address of the NFT token.
-/// * `token_id`: The ID of the NFT token.
-/// * `chain`: The blockchain where the NFT exists.
-/// * `protect_from_spam`: Indicates whether to check and redact potential spam. If set to true,
-/// the internal function `protect_from_nft_spam` is utilized.
 #[derive(Debug, Deserialize)]
 pub struct NftMetadataReq {
+    /// The address of the NFT token.
     pub(crate) token_address: Address,
+    /// The ID of the NFT token.
     #[serde(deserialize_with = "deserialize_token_id")]
     pub(crate) token_id: BigUint,
+    /// The blockchain where the NFT exists.
     pub(crate) chain: Chain,
+    /// Indicates whether to check and redact potential spam. If set to true,
+    /// the internal function `protect_from_nft_spam` is utilized.
     #[serde(default)]
     pub(crate) protect_from_spam: bool,
 }
