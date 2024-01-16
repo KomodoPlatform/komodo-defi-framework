@@ -62,7 +62,7 @@ use secp256k1::PublicKey;
 use serde_json::{self as json, Value as Json};
 use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
@@ -440,7 +440,7 @@ pub struct EthCoinImpl {
     /// the block range used for eth_getLogs
     logs_block_range: u64,
     nonce_lock: Arc<AsyncMutex<()>>,
-    erc20_tokens_infos: Arc<Mutex<BTreeMap<String, Erc20TokenInfo>>>,
+    erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenInfo>>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
@@ -679,7 +679,7 @@ impl EthCoinImpl {
     /// # Warning
     /// Be very careful using this function since it returns dereferenced clone
     /// of value behind the MutexGuard and makes it non-thread-safe.
-    pub fn get_erc_tokens_infos(&self) -> BTreeMap<String, Erc20TokenInfo> {
+    pub fn get_erc_tokens_infos(&self) -> HashMap<String, Erc20TokenInfo> {
         let guard = self.erc20_tokens_infos.lock().unwrap();
         (*guard).clone()
     }

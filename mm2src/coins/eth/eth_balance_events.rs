@@ -10,7 +10,7 @@ use mm2_err_handle::prelude::MmError;
 use mm2_event_stream::{behaviour::{EventBehaviour, EventInitStatus},
                        Event, EventStreamConfiguration};
 use mm2_number::BigDecimal;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use super::EthCoin;
 use crate::{eth::{u256_to_big_decimal, Erc20TokenInfo},
@@ -73,7 +73,7 @@ impl EventBehaviour for EthCoin {
         async fn with_socket(_coin: EthCoin, _ctx: MmArc) { todo!() }
 
         async fn with_polling(coin: EthCoin, ctx: MmArc, interval: f64) {
-            let mut cache: BTreeMap<String, BigDecimal> = BTreeMap::new();
+            let mut cache: HashMap<String, BigDecimal> = HashMap::new();
 
             loop {
                 let now = Instant::now();
