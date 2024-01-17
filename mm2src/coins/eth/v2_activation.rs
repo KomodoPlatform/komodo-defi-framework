@@ -4,7 +4,6 @@ use common::executor::AbortedError;
 use crypto::{CryptoCtxError, StandardHDCoinAddress};
 use enum_from::EnumFromTrait;
 use mm2_err_handle::common_errors::WithInternal;
-use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
 
@@ -331,11 +330,9 @@ pub async fn eth_coin_from_conf_and_request_v2(
     };
 
     let coin = EthCoin(Arc::new(coin));
-    if let Some(stream_config) = &ctx.event_stream_configuration {
-        if let EventInitStatus::Failed(err) = EventBehaviour::spawn_if_active(coin.clone(), stream_config).await {
-            return MmError::err(EthActivationV2Error::FailedSpawningBalanceEvents(err));
-        }
-    }
+    coin.spawn_balance_stream_if_enabled(ctx)
+        .await
+        .map_err(EthActivationV2Error::FailedSpawningBalanceEvents)?;
 
     Ok(coin)
 }

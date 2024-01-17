@@ -4774,6 +4774,16 @@ impl EthCoin {
         };
         Box::new(fut.boxed().compat())
     }
+
+    async fn spawn_balance_stream_if_enabled(&self, ctx: &MmArc) -> Result<(), String> {
+        if let Some(stream_config) = &ctx.event_stream_configuration {
+            if let EventInitStatus::Failed(err) = EventBehaviour::spawn_if_active(self.clone(), stream_config).await {
+                return ERR!("Failed spawning balance events. Error: {}", err);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -5598,11 +5608,7 @@ pub async fn eth_coin_from_conf_and_request(
     };
 
     let coin = EthCoin(Arc::new(coin));
-    if let Some(stream_config) = &ctx.event_stream_configuration {
-        if let EventInitStatus::Failed(err) = EventBehaviour::spawn_if_active(coin.clone(), stream_config).await {
-            return ERR!("Failed spawning balance events. Error: {}", err);
-        }
-    }
+    coin.spawn_balance_stream_if_enabled(ctx).await?;
 
     Ok(coin)
 }
