@@ -103,7 +103,7 @@ impl ZcashParamsWasmImpl {
             .map(|_| ())?)
     }
 
-    /// Check if z_params is already save to storage previously.
+    /// Check if z_params is previously stored.
     pub(crate) async fn check_params(&self) -> MmResult<bool, ZcoinStorageError> {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
@@ -174,9 +174,7 @@ fn sapling_spend_to_chunks(sapling_spend: &[u8]) -> Vec<&[u8]> {
     let mut start = 0;
     for i in 0..TARGET_SPEND_CHUNKS {
         let end = start + chunk_size + usize::from(i < remainder);
-        // Extract the current chunk from the original vector
         sapling_spend_chunks.push(&sapling_spend[start..end]);
-        // Move the start index to the next position
         start = end;
     }
 

@@ -346,6 +346,7 @@ impl From<MmError<ZcoinStorageError>> for ValidateBlocksError {
 }
 
 impl ValidateBlocksError {
+    /// The hash of the parent block given by a proposed new chain tip does not match the hash of the current chain tip.
     pub fn prev_hash_mismatch(height: BlockHeight) -> ValidateBlocksError {
         ValidateBlocksError::ChainInvalid {
             height,
@@ -353,6 +354,8 @@ impl ValidateBlocksError {
         }
     }
 
+    /// The block height field of the proposed new chain tip is not equal to the height of the previous chain tip + 1.
+    /// This variant stores a copy of the incorrect height value for reporting purposes.
     pub fn block_height_discontinuity(height: BlockHeight, found: BlockHeight) -> ValidateBlocksError {
         ValidateBlocksError::ChainInvalid {
             height,
