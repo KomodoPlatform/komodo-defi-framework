@@ -16,7 +16,7 @@ use url::Url;
 
 use crate::eth::EthTxFeeDetails;
 use crate::nft::eth_addr_to_hex;
-use crate::nft::nft_errors::{LockDBError, ParseChainTypeError};
+use crate::nft::nft_errors::{LockDBError, ParseChainTypeError, ParseContractTypeError};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
 use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 
@@ -202,15 +202,16 @@ impl<'de> Deserialize<'de> for Chain {
     }
 }
 
-#[derive(Debug, Display)]
-pub enum ParseContractTypeError {
-    UnsupportedContractType,
-}
-
+/// Represents the type of smart contract used for NFTs.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum ContractType {
+    /// Represents an ERC-1155 contract, which allows a single contract to manage
+    /// multiple types of NFTs. This means ERC-1155 represents both fungible and non-fungible assets within a single contract.
+    /// ERC-1155 provides a way for each token ID to represent multiple assets.
     Erc1155,
+    /// Represents an ERC-721 contract, a standard for non-fungible tokens on EVM based chains,
+    /// where each token is unique and owned individually.
     Erc721,
 }
 
@@ -762,12 +763,20 @@ where
     BigUint::from_str(&s).map_err(serde::de::Error::custom)
 }
 
+/// Represents detailed information about a Non-Fungible Token (NFT).
+/// This struct is used to keep info about NFTs owned by user in global Non Fungible Token.
 #[derive(Clone, Debug, Serialize)]
 pub struct NftInfo {
+    /// The address of the NFT token.
     pub(crate) token_address: Address,
+    /// The ID of the NFT token.
     #[serde(serialize_with = "serialize_token_id")]
     pub(crate) token_id: BigUint,
+    /// The blockchain where the NFT exists.
     pub(crate) chain: Chain,
+    /// The type of smart contract that governs this NFT.
     pub(crate) contract_type: ContractType,
+    /// The quantity of this type of NFT owned. Particularly relevant for ERC-1155 tokens,
+    /// where a single token ID can represent multiple assets.
     pub(crate) amount: BigDecimal,
 }

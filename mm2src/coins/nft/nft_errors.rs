@@ -373,3 +373,10 @@ impl From<CoinFindError> for TransferConfirmationsError {
         }
     }
 }
+
+/// An error type for issues encountered while parsing contract type.
+#[derive(Debug, Display)]
+pub enum ParseContractTypeError {
+    /// Indicates that the contract type being parsed is not supported or recognized.
+    UnsupportedContractType,
+}
