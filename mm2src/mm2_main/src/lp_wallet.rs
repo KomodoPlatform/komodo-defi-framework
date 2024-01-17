@@ -5,16 +5,26 @@ use mm2_err_handle::prelude::*;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json};
 
+cfg_wasm32! {
+    use crate::mm2::lp_wallet::mnemonics_wasm_db::WalletsDb;
+    use mm2_core::mm_ctx::from_ctx;
+    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, InitDbResult};
+    use mnemonics_wasm_db::{read_encrypted_passphrase, save_encrypted_passphrase};
+    use std::sync::Arc;
+
+    type WalletsDbLocked<'a> = DbLocked<'a, WalletsDb>;
+}
+
+cfg_native! {
+    use mnemonics_storage::{read_encrypted_passphrase, save_encrypted_passphrase};
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "lp_wallet/mnemonics_storage.rs"]
 mod mnemonics_storage;
-#[cfg(not(target_arch = "wasm32"))]
-use mnemonics_storage::{read_encrypted_passphrase, save_encrypted_passphrase};
 #[cfg(target_arch = "wasm32")]
 #[path = "lp_wallet/mnemonics_wasm_db.rs"]
 mod mnemonics_wasm_db;
-#[cfg(target_arch = "wasm32")]
-use mnemonics_wasm_db::{read_encrypted_passphrase, save_encrypted_passphrase};
 
 type WalletInitResult<T> = Result<T, MmError<WalletInitError>>;
 
@@ -48,6 +58,25 @@ impl From<MnemonicError> for WalletInitError {
 
 impl From<CryptoInitError> for WalletInitError {
     fn from(e: CryptoInitError) -> Self { WalletInitError::CryptoInitError(e.to_string()) }
+}
+
+#[cfg(target_arch = "wasm32")]
+struct WalletsContext {
+    wallets_db: ConstructibleDb<WalletsDb>,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl WalletsContext {
+    /// Obtains a reference to this crate context, creating it if necessary.
+    fn from_ctx(ctx: &MmArc) -> Result<Arc<WalletsContext>, String> {
+        Ok(try_s!(from_ctx(&ctx.wallets_ctx, move || {
+            Ok(WalletsContext {
+                #[cfg(target_arch = "wasm32")]
+                wallets_db: ConstructibleDb::new_global_db(ctx),
+            })
+        })))
+    }
+    pub async fn wallets_db(&self) -> InitDbResult<WalletsDbLocked<'_>> { self.wallets_db.get_or_initialize().await }
 }
 
 // Utility function for deserialization to reduce repetition

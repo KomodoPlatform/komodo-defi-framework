@@ -1,10 +1,15 @@
+use crate::mm2::lp_wallet::WalletsContext;
+use async_trait::async_trait;
 use crypto::EncryptedMnemonicData;
 use mm2_core::mm_ctx::MmArc;
 use mm2_core::DbNamespaceId;
-use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, OnUpgradeError,
-                         OnUpgradeResult, TableSignature};
+use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
+                         OnUpgradeError, OnUpgradeResult, TableSignature};
 use mm2_err_handle::prelude::*;
 use std::collections::HashMap;
+use std::ops::Deref;
+
+const DB_VERSION: u32 = 1;
 
 type WalletsDBResult<T> = Result<T, MmError<WalletsDBError>>;
 
@@ -27,6 +32,30 @@ pub enum WalletsDBError {
 struct MnemonicsTable {
     wallet_name: String,
     encrypted_mnemonic: String,
+}
+
+pub struct WalletsDb {
+    inner: IndexedDb,
+}
+
+#[async_trait]
+impl DbInstance for WalletsDb {
+    const DB_NAME: &'static str = "wallets";
+
+    async fn init(db_id: DbIdentifier) -> InitDbResult<Self> {
+        let inner = IndexedDbBuilder::new(db_id)
+            .with_version(DB_VERSION)
+            .with_table::<MnemonicsTable>()
+            .build()
+            .await?;
+        Ok(WalletsDb { inner })
+    }
+}
+
+impl Deref for WalletsDb {
+    type Target = IndexedDb;
+
+    fn deref(&self) -> &Self::Target { &self.inner }
 }
 
 impl TableSignature for MnemonicsTable {
@@ -60,26 +89,9 @@ pub(super) async fn save_encrypted_passphrase(
     wallet_name: &str,
     encrypted_passphrase_data: &EncryptedMnemonicData,
 ) -> WalletsDBResult<()> {
-    const DB_VERSION: u32 = 1;
-
-    // Create the database identifier
-    let db_name = "wallets";
-    let db_id = match ctx.db_namespace {
-        DbNamespaceId::Main => format!("MAIN::KOMODEFI::{}", db_name),
-        DbNamespaceId::Test(u) => format!("TEST_{}::KOMODEFI::{}", u, db_name),
-    };
-
-    let indexed_db_builder = IndexedDbBuilder {
-        db_name: db_id,
-        db_version: 1,
-        tables: HashMap::new(),
-    };
-
-    // Initialize the database instance with the mnemonic table
-    let db = indexed_db_builder
-        .with_version(DB_VERSION)
-        .with_table::<MnemonicsTable>()
-        .build()
+    let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
+    let db = wallets_ctx
+        .wallets_db()
         .await
         .mm_err(|e| WalletsDBError::Internal(e.to_string()))?;
 
@@ -113,26 +125,9 @@ pub(super) async fn read_encrypted_passphrase(
     ctx: &MmArc,
     wallet_name: &str,
 ) -> WalletsDBResult<Option<EncryptedMnemonicData>> {
-    const DB_VERSION: u32 = 1;
-
-    // Create the database identifier
-    let db_name = "wallets";
-    let db_id = match ctx.db_namespace {
-        DbNamespaceId::Main => format!("MAIN::KOMODEFI::{}", db_name),
-        DbNamespaceId::Test(u) => format!("TEST_{}::KOMODEFI::{}", u, db_name),
-    };
-
-    let indexed_db_builder = IndexedDbBuilder {
-        db_name: db_id,
-        db_version: 1,
-        tables: HashMap::new(),
-    };
-
-    // Initialize the database instance with the mnemonic table
-    let db = indexed_db_builder
-        .with_version(DB_VERSION)
-        .with_table::<MnemonicsTable>()
-        .build()
+    let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
+    let db = wallets_ctx
+        .wallets_db()
         .await
         .mm_err(|e| WalletsDBError::Internal(e.to_string()))?;
 
