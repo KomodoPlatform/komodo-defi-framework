@@ -3408,6 +3408,8 @@ impl EthCoin {
                     Some(reward) => {
                         let reward_amount = try_tx_fus!(wei_from_big_decimal(&reward.amount, self.decimals));
 
+                        println!("Reward amount {}", reward_amount);
+
                         match reward.reward_target {
                             RewardTarget::Contract | RewardTarget::PaymentSender => value += reward_amount,
                             RewardTarget::PaymentSpender => amount += reward_amount,
@@ -3439,6 +3441,8 @@ impl EthCoin {
                 };
 
                 let wait_for_required_allowance_until = args.wait_for_confirmation_until;
+
+                println!("Payment ETH value {}", value);
 
                 let arc = self.clone();
                 Box::new(allowance_fut.and_then(move |allowed| -> EthTxFut {
@@ -3562,6 +3566,10 @@ impl EthCoin {
                 let reward_target = try_tx_fus!(get_function_input_data(&decoded, payment_func, 6));
                 let sends_contract_reward = try_tx_fus!(get_function_input_data(&decoded, payment_func, 7));
                 let reward_amount = try_tx_fus!(get_function_input_data(&decoded, payment_func, 8));
+
+                println!("reward_target {:?}", reward_target);
+                println!("sends_contract_reward {:?}", reward_target);
+                println!("reward_amount {:?}", reward_amount);
 
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
 

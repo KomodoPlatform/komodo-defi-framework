@@ -1,4 +1,6 @@
-use crate::docker_tests::docker_tests_common::{eth_distributor, generate_jst_with_seed};
+use crate::docker_tests::docker_tests_common::{eth_distributor, generate_jst_with_seed, GETH_WATCHERS_SWAP_CONTRACT,
+                                               GETH_WEB3};
+use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, watchers_swap_contract};
 use crate::integration_tests_common::*;
 use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 use coins::coin_errors::ValidatePaymentError;
@@ -3073,14 +3075,12 @@ fn test_taker_validates_maker_payment_spend_eth() {
 fn test_taker_validates_maker_payment_spend_erc20() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
 
-    let taker_seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
-    let taker_coin = generate_jst_with_seed(&taker_seed);
+    let taker_coin = erc20_coin_with_random_privkey(watchers_swap_contract());
     let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
     let taker_pub = taker_keypair.public();
 
-    let maker_seed = get_passphrase!(".env.client", "BOB_PASSPHRASE").unwrap();
-    let maker_coin = generate_jst_with_seed(&maker_seed);
-    let maker_keypair = key_pair_from_seed(&maker_seed).unwrap();
+    let maker_coin = erc20_coin_with_random_privkey(watchers_swap_contract());
+    let maker_keypair = maker_coin.derive_htlc_key_pair(&[]);
     let maker_pub = maker_keypair.public();
 
     let time_lock_duration = get_payment_locktime();
@@ -3097,6 +3097,8 @@ fn test_taker_validates_maker_payment_spend_erc20() {
         wait_for_confirmation_until,
     ))
     .unwrap();
+
+    println!("Watcher reward {:?}", watcher_reward);
 
     let maker_payment = maker_coin
         .send_maker_payment(SendPaymentArgs {
@@ -3125,6 +3127,9 @@ fn test_taker_validates_maker_payment_spend_erc20() {
         .wait()
         .unwrap();
 
+    let contract_eth_balance = block_on(GETH_WEB3.eth().balance(unsafe { GETH_WATCHERS_SWAP_CONTRACT }, None)).unwrap();
+    println!("contract_eth_balance {}", contract_eth_balance);
+
     let maker_payment_spend_preimage = taker_coin
         .create_maker_payment_spend_preimage(
             &maker_payment.tx_hex(),
@@ -3147,6 +3152,17 @@ fn test_taker_validates_maker_payment_spend_erc20() {
         .wait()
         .unwrap();
 
+    maker_coin
+        .wait_for_confirmations(ConfirmPaymentInput {
+            payment_tx: maker_payment_spend.tx_hex(),
+            confirmations: 1,
+            requires_nota: false,
+            wait_until: timeout,
+            check_every: 1,
+        })
+        .wait()
+        .unwrap();
+
     let validate_input = ValidateWatcherSpendInput {
         payment_tx: maker_payment_spend.tx_hex(),
         maker_pub: maker_pub.to_vec(),
@@ -3158,10 +3174,10 @@ fn test_taker_validates_maker_payment_spend_erc20() {
         spend_type: WatcherSpendType::MakerPaymentSpend,
     };
 
-    let validate_watcher_spend = taker_coin
+    taker_coin
         .taker_validates_payment_spend_or_refund(validate_input)
-        .wait();
-    assert!(validate_watcher_spend.is_ok());
+        .wait()
+        .unwrap();
 
     let validate_input = ValidateWatcherSpendInput {
         payment_tx: maker_payment_spend.tx_hex(),
