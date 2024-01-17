@@ -19,7 +19,7 @@ const ENUM_VARIANT_LIST_IDENT: &str = "EnumVariantList";
 /// # Usage
 ///
 /// ```rust
-/// use enum_utilities::EnumFromInner;
+/// use enum_derives::EnumFromInner;
 ///
 /// #[derive(EnumFromInner)]
 /// enum FooBar {
@@ -52,7 +52,7 @@ pub fn enum_from_inner(input: TokenStream) -> TokenStream {
 /// # Usage
 ///
 /// ```rust
-/// use enum_utilities::EnumFromTrait;
+/// use enum_derives::EnumFromTrait;
 ///
 /// #[derive(EnumFromTrait)]
 /// enum FooBar {
@@ -94,7 +94,7 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 /// ### USAGE:
 ///
 /// ```rust
-/// use enum_utilities::EnumFromStringify;
+/// use enum_derives::EnumFromStringify;
 /// use std::fmt::{Display, Formatter};
 /// use std::io::{Error, ErrorKind};
 ///
@@ -132,7 +132,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 /// ### USAGE:
 ///
 /// ```rust
-/// use enum_utilities::EnumVariantList;
+/// use enum_derives::EnumVariantList;
 ///
 /// #[derive(EnumVariantList)]
 /// enum Chain {

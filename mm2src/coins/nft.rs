@@ -1380,10 +1380,10 @@ pub async fn clear_nft_db(ctx: MmArc, req: ClearNftDbReq) -> MmResult<(), ClearN
         let storage = nft_ctx.lock_db().await?;
         storage.clear_all_nft_data().await?;
         storage.clear_all_history_data().await?;
-    } else if let Some(chains) = req.chains {
+    } else if !req.chains.is_empty() {
         let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(ClearNftDbError::Internal)?;
         let storage = nft_ctx.lock_db().await?;
-        for chain in chains.iter() {
+        for chain in req.chains.iter() {
             if let Err(e) = clear_data_for_chain(&storage, chain).await {
                 error!("Failed to clear data for chain {}: {}", chain, e);
             }

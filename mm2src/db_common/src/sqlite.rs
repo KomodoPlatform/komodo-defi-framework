@@ -109,7 +109,8 @@ impl SafeTableName {
     }
 
     /// Retrieves the table name.
-    pub fn get_name(&self) -> &str { &self.0 }
+    #[inline(always)]
+    pub fn inner(&self) -> &str { &self.0 }
 }
 
 /// Calculates the offset to skip records by uuid.

@@ -7,7 +7,7 @@ use common::{HttpStatusCode, ParseRfc3339Err};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
-use enum_utilities::EnumFromStringify;
+use enum_derives::EnumFromStringify;
 use http::StatusCode;
 use mm2_net::transport::{GetInfoFromUriError, SlurpError};
 use serde::{Deserialize, Serialize};
@@ -125,7 +125,9 @@ impl From<NumConversError> for GetNftInfoError {
 impl HttpStatusCode for GetNftInfoError {
     fn status_code(&self) -> StatusCode {
         match self {
-            GetNftInfoError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            GetNftInfoError::InvalidRequest(_) | GetNftInfoError::TransferConfirmationsError(_) => {
+                StatusCode::BAD_REQUEST
+            },
             GetNftInfoError::InvalidResponse(_) | GetNftInfoError::ParseRfc3339Err(_) => StatusCode::FAILED_DEPENDENCY,
             GetNftInfoError::ContractTypeIsNull => StatusCode::NOT_FOUND,
             GetNftInfoError::Transport(_)
@@ -134,7 +136,6 @@ impl HttpStatusCode for GetNftInfoError {
             | GetNftInfoError::TokenNotFoundInWallet { .. }
             | GetNftInfoError::DbError(_)
             | GetNftInfoError::ProtectFromSpamError(_)
-            | GetNftInfoError::TransferConfirmationsError(_)
             | GetNftInfoError::NumConversError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

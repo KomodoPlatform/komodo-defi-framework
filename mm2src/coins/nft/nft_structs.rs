@@ -1,5 +1,5 @@
 use common::ten;
-use enum_utilities::EnumVariantList;
+use enum_derives::EnumVariantList;
 use ethereum_types::Address;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
@@ -766,8 +766,8 @@ where
 /// Request parameters for clearing NFT data from the database.
 #[derive(Debug, Deserialize)]
 pub struct ClearNftDbReq {
-    /// (Optional) Specifies the blockchain networks (e.g., Ethereum, BSC) to clear NFT data.
-    pub(crate) chains: Option<Vec<Chain>>,
+    /// Specifies the blockchain networks (e.g., Ethereum, BSC) to clear NFT data.
+    pub(crate) chains: Vec<Chain>,
     /// If `true`, clears NFT data for all chains, ignoring the `chains` field. Defaults to `false`.
     #[serde(default)]
     pub(crate) clear_all: bool,

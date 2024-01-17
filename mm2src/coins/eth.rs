@@ -37,7 +37,7 @@ use common::{now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy, StandardHDCoinAddress};
 use derive_more::Display;
-use enum_utilities::EnumFromStringify;
+use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
@@ -5830,16 +5830,12 @@ pub async fn get_eth_address(
 }
 
 /// Errors encountered while validating Ethereum addresses for NFT withdrawal.
-///
-/// Variants:
-/// - `CoinDoesntSupportNftWithdraw`: The specified coin does not support NFT withdrawal.
-/// - `InvalidAddress`: The provided address is invalid.
 #[derive(Display)]
 pub enum GetValidEthWithdrawAddError {
+    /// The specified coin does not support NFT withdrawal.
     #[display(fmt = "{} coin doesn't support NFT withdrawing", coin)]
-    CoinDoesntSupportNftWithdraw {
-        coin: String,
-    },
+    CoinDoesntSupportNftWithdraw { coin: String },
+    /// The provided address is invalid.
     InvalidAddress(String),
 }
 
