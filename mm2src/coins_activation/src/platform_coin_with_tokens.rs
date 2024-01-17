@@ -354,18 +354,18 @@ where
     if platform_conf.is_null() {
         return MmError::err(CoinConfWithProtocolError::ConfigIsNotFound(req.ticker).into());
     }
-    let nft_global_token = platform_coin
+    let nft_global = platform_coin
         .enable_global_non_fungible_token(&ctx, &platform_conf, &req.request)
         .await?;
 
     let activation_result = platform_coin
-        .get_nft_activation_result(&req.request, &nft_global_token)
+        .get_nft_activation_result(&req.request, &nft_global)
         .await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.into(), vec![nft_global_token], true)
+        .add_platform_with_tokens(platform_coin.into(), vec![nft_global], true)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 
@@ -468,12 +468,12 @@ where
     )
     .await?;
 
-    let nft_global_token = platform_coin
+    let nft_global = platform_coin
         .enable_global_non_fungible_token(&ctx, &platform_conf, &req.request)
         .await?;
 
     let activation_result = platform_coin
-        .get_nft_activation_result(&req.request, &nft_global_token)
+        .get_nft_activation_result(&req.request, &nft_global)
         .await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
@@ -491,7 +491,7 @@ where
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.into(), vec![nft_global_token], true)
+        .add_platform_with_tokens(platform_coin.into(), vec![nft_global], true)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 

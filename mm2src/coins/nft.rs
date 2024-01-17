@@ -653,19 +653,7 @@ async fn get_moralis_nft_list(
     let ticker = chain.to_ticker();
     let conf = coin_conf(ctx, ticker);
     let my_address = get_eth_address(ctx, &conf, ticker, &StandardHDCoinAddress::default()).await?;
-
-    let mut uri_without_cursor = url.clone();
-    uri_without_cursor.set_path(MORALIS_API_ENDPOINT);
-    uri_without_cursor
-        .path_segments_mut()
-        .map_to_mm(|_| GetNftInfoError::Internal("Invalid URI".to_string()))?
-        .push(&my_address.wallet_address)
-        .push("nft");
-    uri_without_cursor
-        .query_pairs_mut()
-        .append_pair("chain", &chain.to_string())
-        .append_pair(MORALIS_FORMAT_QUERY_NAME, MORALIS_FORMAT_QUERY_VALUE);
-    drop_mutability!(uri_without_cursor);
+    let uri_without_cursor = construct_moralis_uri_for_nft(url, &my_address.wallet_address, chain)?;
 
     // The cursor returned in the previous response (used for getting the next page).
     let mut cursor = String::new();
@@ -706,18 +694,7 @@ pub(crate) async fn get_nfts_for_activation(
     url: &Url,
 ) -> MmResult<HashMap<String, NftInfo>, GetNftInfoError> {
     let mut nfts_map = HashMap::new();
-    let mut uri_without_cursor = url.clone();
-    uri_without_cursor.set_path(MORALIS_API_ENDPOINT);
-    uri_without_cursor
-        .path_segments_mut()
-        .map_to_mm(|_| GetNftInfoError::Internal("Invalid URI".to_string()))?
-        .push(&eth_addr_to_hex(my_address))
-        .push("nft");
-    uri_without_cursor
-        .query_pairs_mut()
-        .append_pair("chain", &chain.to_string())
-        .append_pair(MORALIS_FORMAT_QUERY_NAME, MORALIS_FORMAT_QUERY_VALUE);
-    drop_mutability!(uri_without_cursor);
+    let uri_without_cursor = construct_moralis_uri_for_nft(url, &eth_addr_to_hex(my_address), chain)?;
 
     // The cursor returned in the previous response (used for getting the next page).
     let mut cursor = String::new();
@@ -1526,4 +1503,17 @@ async fn build_nft_from_moralis(
 pub(crate) fn get_domain_from_url(url: Option<&str>) -> Option<String> {
     url.and_then(|uri| Url::parse(uri).ok())
         .and_then(|url| url.domain().map(String::from))
+}
+
+fn construct_moralis_uri_for_nft(base_url: &Url, address: &str, chain: &Chain) -> MmResult<Url, GetNftInfoError> {
+    let mut uri = base_url.clone();
+    uri.set_path(MORALIS_API_ENDPOINT);
+    uri.path_segments_mut()
+        .map_to_mm(|_| GetNftInfoError::Internal("Invalid URI".to_string()))?
+        .push(address)
+        .push("nft");
+    uri.query_pairs_mut()
+        .append_pair("chain", &chain.to_string())
+        .append_pair(MORALIS_FORMAT_QUERY_NAME, MORALIS_FORMAT_QUERY_VALUE);
+    Ok(uri)
 }
