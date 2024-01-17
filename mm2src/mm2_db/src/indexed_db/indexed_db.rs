@@ -108,9 +108,8 @@ impl DbIdentifier {
 
     pub fn display_rmd160(&self) -> String {
         self.wallet_rmd160
-            .map(|rmd160| hex::encode(rmd160))
+            .map(hex::encode)
             .unwrap_or_else(|| "KOMODEFI".to_string())
-        // hex::encode(*self.wallet_rmd160)
     }
 }
 
