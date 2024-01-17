@@ -37,29 +37,38 @@ async fn get_all_balance_results_concurrently(
 
     let jobs = tokens
         .into_iter()
-        .map(|(token_ticker, info)| async move {
-            if token_ticker == coin.ticker {
-                let balance_as_u256 = coin
-                    .address_balance(coin.my_address)
-                    .compat()
-                    .await
-                    .map_err(|e| (token_ticker.clone(), e))?;
-                let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, coin.decimals)
-                    .map_err(|e| (token_ticker.clone(), e.into()))?;
-                Ok((coin.ticker.clone(), balance_as_big_decimal))
-            } else {
-                let balance_as_u256 = coin
-                    .get_token_balance_by_address(info.token_address)
-                    .await
-                    .map_err(|e| (token_ticker.clone(), e))?;
-                let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)
-                    .map_err(|e| (token_ticker.clone(), e.into()))?;
-                Ok((token_ticker, balance_as_big_decimal))
-            }
-        })
+        .map(|(token_ticker, info)| async move { fetch_balance(coin, token_ticker, &info).await })
         .collect::<FuturesUnordered<_>>();
 
     jobs.collect().await
+}
+
+async fn fetch_balance(
+    coin: &EthCoin,
+    token_ticker: String,
+    info: &Erc20TokenInfo,
+) -> Result<(String, BigDecimal), (String, MmError<BalanceError>)> {
+    let (balance_as_u256, decimals) = if token_ticker == coin.ticker {
+        (
+            coin.address_balance(coin.my_address)
+                .compat()
+                .await
+                .map_err(|e| (token_ticker.clone(), e))?,
+            coin.decimals,
+        )
+    } else {
+        (
+            coin.get_token_balance_by_address(info.token_address)
+                .await
+                .map_err(|e| (token_ticker.clone(), e))?,
+            info.decimals,
+        )
+    };
+
+    let balance_as_big_decimal =
+        u256_to_big_decimal(balance_as_u256, decimals).map_err(|e| (token_ticker.clone(), e.into()))?;
+
+    Ok((token_ticker, balance_as_big_decimal))
 }
 
 #[async_trait]
