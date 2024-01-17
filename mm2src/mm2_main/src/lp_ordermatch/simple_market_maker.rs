@@ -118,7 +118,7 @@ enum PriceSources {
 }
 
 impl Default for PriceSources {
-    fn default() -> Self { PriceSources::Multiple(PRICE_ENDPOINTS.iter().map(|url| url.to_string()).collect()) }
+    fn default() -> Self { PriceSources::Multiple(PRICE_ENDPOINTS.iter().map(ToString::to_string).collect()) }
 }
 
 impl PriceSources {
@@ -646,8 +646,7 @@ async fn process_bot_logic(ctx: &MmArc) {
     };
 
     let cfg = running_state.trading_bot_cfg.clone();
-    let price_urls = &mut running_state.price_urls;
-    let rates_registry = match fetch_price_tickers(price_urls).await {
+    let rates_registry = match fetch_price_tickers(&mut running_state.price_urls).await {
         Ok(model) => model,
         Err(err) => {
             let nb_orders = cancel_pending_orders(ctx, &cfg).await;
