@@ -102,7 +102,7 @@ impl EventBehaviour for EthCoin {
                             cache.insert(ticker.to_owned(), balance);
                         },
                         Err((ticker, e)) => {
-                            log::error!("Failed getting balance for '{ticker}'. Error: {e}");
+                            log::error!("Failed getting balance for '{ticker}' with {interval} interval. Error: {e}");
                             let e = serde_json::to_value(e).expect("Serialization should't fail.");
                             ctx.stream_channel_controller
                                 .broadcast(Event::new(
