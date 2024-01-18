@@ -1585,7 +1585,7 @@ pub enum WaitForTakerPaymentSpendError {
         wait_until: u64,
         now: u64,
     },
-    Internal(String),
+    InvalidInputTx(String),
 }
 
 impl From<WaitForOutputSpendErr> for WaitForTakerPaymentSpendError {
@@ -1595,7 +1595,7 @@ impl From<WaitForOutputSpendErr> for WaitForTakerPaymentSpendError {
                 WaitForTakerPaymentSpendError::Timeout { wait_until, now }
             },
             WaitForOutputSpendErr::NoOutputWithIndex(index) => {
-                WaitForTakerPaymentSpendError::Internal(format!("Tx doesn't have output with index {}", index))
+                WaitForTakerPaymentSpendError::InvalidInputTx(format!("Tx doesn't have output with index {}", index))
             },
         }
     }
@@ -1613,8 +1613,8 @@ impl<T: CoinAssocTypes + ?Sized> fmt::Debug for FundingTxSpend<T> {
             FundingTxSpend::RefundedTimelock(tx) => {
                 write!(f, "RefundedTimelock({:?})", tx)
             },
-            FundingTxSpend::RefundedSecret { tx, secret } => {
-                write!(f, "RefundedSecret {{ tx: {:?}, secret: {:?} }}", tx, secret)
+            FundingTxSpend::RefundedSecret { tx, secret: _ } => {
+                write!(f, "RefundedSecret {{ tx: {:?} }}", tx)
             },
             FundingTxSpend::TransferredToTakerPayment(tx) => {
                 write!(f, "TransferredToTakerPayment({:?})", tx)
