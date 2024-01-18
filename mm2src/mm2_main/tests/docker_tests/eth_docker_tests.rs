@@ -66,13 +66,13 @@ fn fill_erc20(to_addr: Address, amount: U256) {
 }
 
 /// Creates ETH protocol coin supplied with 100 ETH
-fn eth_coin_with_random_privkey() -> EthCoin {
+pub fn eth_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
     let eth_conf = eth_dev_conf();
     let req = json!({
         "method": "enable",
         "coin": "ETH",
         "urls": ["http://127.0.0.1:8545"],
-        "swap_contract_address": swap_contract(),
+        "swap_contract_address": swap_contract,
     });
 
     let secret = random_secp256k1_secret();
@@ -125,7 +125,7 @@ pub fn erc20_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
 
 #[test]
 fn send_and_refund_eth_maker_payment() {
-    let eth_coin = eth_coin_with_random_privkey();
+    let eth_coin = eth_coin_with_random_privkey(swap_contract());
 
     let time_lock = now_sec() - 100;
     let other_pubkey = &[
@@ -199,8 +199,8 @@ fn send_and_refund_eth_maker_payment() {
 
 #[test]
 fn send_and_spend_eth_maker_payment() {
-    let maker_eth_coin = eth_coin_with_random_privkey();
-    let taker_eth_coin = eth_coin_with_random_privkey();
+    let maker_eth_coin = eth_coin_with_random_privkey(swap_contract());
+    let taker_eth_coin = eth_coin_with_random_privkey(swap_contract());
 
     let time_lock = now_sec() + 1000;
     let maker_pubkey = maker_eth_coin.derive_htlc_pubkey(&[]);

@@ -3413,7 +3413,12 @@ impl EthCoin {
                         match reward.reward_target {
                             RewardTarget::Contract | RewardTarget::PaymentSender => value += reward_amount,
                             RewardTarget::PaymentSpender => amount += reward_amount,
-                            _ => (),
+                            _ => {
+                                // TODO tests passed without this change, need to research on how it worked
+                                if reward.send_contract_reward_on_spend {
+                                    value += reward_amount
+                                }
+                            },
                         };
 
                         try_tx_fus!(function.encode_input(&[
@@ -3568,7 +3573,7 @@ impl EthCoin {
                 let reward_amount = try_tx_fus!(get_function_input_data(&decoded, payment_func, 8));
 
                 println!("reward_target {:?}", reward_target);
-                println!("sends_contract_reward {:?}", reward_target);
+                println!("sends_contract_reward {:?}", sends_contract_reward);
                 println!("reward_amount {:?}", reward_amount);
 
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
