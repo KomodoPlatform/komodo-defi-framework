@@ -169,7 +169,7 @@ impl StateMachineStorage for MakerSwapStorage {
                 ":maker_coin_nota": repr.conf_settings.maker_coin_nota,
                 ":taker_coin_confs": repr.conf_settings.taker_coin_confs,
                 ":taker_coin_nota": repr.conf_settings.taker_coin_nota,
-                ":other_p2p_pub": repr.taker_p2p_pub.into_inner().serialize(),
+                ":other_p2p_pub": repr.taker_p2p_pub.to_bytes(),
             };
             insert_new_swap_v2(&ctx, sql_params)?;
             Ok(())
@@ -642,7 +642,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             p2p_topic: swap_v2_topic(&uuid),
             uuid,
             p2p_keypair: repr.p2p_keypair.map(|k| k.into_inner()),
-            taker_p2p_pubkey: repr.taker_p2p_pub.into_inner(),
+            taker_p2p_pubkey: repr.taker_p2p_pub.into(),
         };
 
         Ok((RestoredMachine::new(machine), current_state))

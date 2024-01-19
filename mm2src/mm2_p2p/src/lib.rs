@@ -118,12 +118,16 @@ fn sha256(input: impl AsRef<[u8]>) -> [u8; 32] { Sha256::new().chain(input).fina
 #[derive(Debug, Eq, PartialEq)]
 pub struct Secp256k1PubkeySerialize(Secp256k1Pubkey);
 
-impl Secp256k1PubkeySerialize {
-    pub fn into_inner(self) -> Secp256k1Pubkey { self.0 }
+impl From<Secp256k1PubkeySerialize> for Secp256k1Pubkey {
+    fn from(pubkey: Secp256k1PubkeySerialize) -> Secp256k1Pubkey { pubkey.0 }
 }
 
 impl From<Secp256k1Pubkey> for Secp256k1PubkeySerialize {
     fn from(pubkey: Secp256k1Pubkey) -> Self { Secp256k1PubkeySerialize(pubkey) }
+}
+
+impl Secp256k1PubkeySerialize {
+    pub fn to_bytes(&self) -> [u8; 33] { self.0.serialize() }
 }
 
 impl Serialize for Secp256k1PubkeySerialize {

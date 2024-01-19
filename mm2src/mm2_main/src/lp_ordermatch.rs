@@ -3000,7 +3000,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                         secret_hash_algo,
                         lock_duration: lock_time,
                         taker_p2p_pubkey: match taker_p2p_pubkey {
-                            PublicKey::Secp256k1(pubkey) => pubkey.into_inner(),
+                            PublicKey::Secp256k1(pubkey) => pubkey.into(),
                         },
                     };
                     #[allow(clippy::box_default)]
@@ -3158,7 +3158,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                         p2p_keypair: taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
                         taker_secret,
                         maker_p2p_pubkey: match maker_p2p_pubkey {
-                            PublicKey::Secp256k1(pubkey) => pubkey.into_inner(),
+                            PublicKey::Secp256k1(pubkey) => pubkey.into(),
                         },
                         require_maker_payment_confirm_before_funding_spend: true,
                     };
