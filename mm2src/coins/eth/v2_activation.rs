@@ -307,19 +307,26 @@ impl EthCoin {
                 platform: self.ticker.clone(),
             },
             priv_key_policy: self.priv_key_policy.clone(),
+            my_address: self.my_address,
             sign_message_prefix: self.sign_message_prefix.clone(),
+            swap_contract_address: self.swap_contract_address,
+            fallback_swap_contract: self.fallback_swap_contract,
+            contract_supports_watchers: self.contract_supports_watchers,
             web3: self.web3.clone(),
             web3_instances: self.web3_instances.clone(),
+            decimals: self.decimals,
             gas_station_url: self.gas_station_url.clone(),
+            gas_station_decimals: self.gas_station_decimals,
             gas_station_policy: self.gas_station_policy.clone(),
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             required_confirmations,
             ctx: self.ctx.clone(),
+            chain_id: self.chain_id,
+            logs_block_range: self.logs_block_range,
             nonce_lock: self.nonce_lock.clone(),
             erc20_tokens_infos: Default::default(),
             non_fungible_tokens_infos: Arc::new(AsyncMutex::new(nft_infos)),
             abortable_system,
-            ..**self
         };
         Ok(EthCoin(Arc::new(global_nft)))
     }
