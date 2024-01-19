@@ -95,7 +95,6 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
             protect_from_nft_spam_links(nft, true)?;
         }
     }
-    drop_mutability!(nft_list);
     Ok(nft_list)
 }
 
@@ -134,7 +133,6 @@ pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, 
     if req.protect_from_spam {
         protect_from_nft_spam_links(&mut nft, true)?;
     }
-    drop_mutability!(nft);
     Ok(nft)
 }
 
@@ -176,7 +174,6 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
         }
     }
     process_transfers_confirmations(&ctx, req.chains, &mut transfer_history_list).await?;
-    drop_mutability!(transfer_history_list);
     Ok(transfer_history_list)
 }
 
@@ -684,7 +681,6 @@ async fn get_moralis_nft_list(
             break;
         }
     }
-    drop_mutability!(res_list);
     Ok(res_list)
 }
 
@@ -731,7 +727,6 @@ pub(crate) async fn get_nfts_for_activation(
             break;
         }
     }
-    drop_mutability!(nfts_map);
     Ok(nfts_map)
 }
 
@@ -830,7 +825,6 @@ async fn get_moralis_nft_transfers(
             break;
         }
     }
-    drop_mutability!(res_list);
     Ok(res_list)
 }
 
@@ -950,7 +944,6 @@ async fn get_uri_meta(token_uri: Option<&str>, metadata: Option<&str>, url_antis
         }
     }
     update_uri_moralis_ipfs_fields(&mut uri_meta);
-    drop_mutability!(uri_meta);
     uri_meta
 }
 
