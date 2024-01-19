@@ -155,37 +155,31 @@ impl fmt::Display for Chain {
 impl FromStr for Chain {
     type Err = ParseChainTypeError;
 
-    #[inline]
+    /// Converts a string slice to a `Chain` enum.
+    /// This implementation is primarily used in the context of deserialization with Serde.
+    #[inline(always)]
     fn from_str(s: &str) -> Result<Chain, ParseChainTypeError> {
         match s {
-            "AVALANCHE" => Ok(Chain::Avalanche),
-            "avalanche" => Ok(Chain::Avalanche),
-            "BSC" => Ok(Chain::Bsc),
-            "bsc" => Ok(Chain::Bsc),
-            "ETH" => Ok(Chain::Eth),
-            "eth" => Ok(Chain::Eth),
-            "FANTOM" => Ok(Chain::Fantom),
-            "fantom" => Ok(Chain::Fantom),
-            "POLYGON" => Ok(Chain::Polygon),
-            "polygon" => Ok(Chain::Polygon),
+            "AVALANCHE" | "avalanche" => Ok(Chain::Avalanche),
+            "BSC" | "bsc" => Ok(Chain::Bsc),
+            "ETH" | "eth" => Ok(Chain::Eth),
+            "FANTOM" | "fantom" => Ok(Chain::Fantom),
+            "POLYGON" | "polygon" => Ok(Chain::Polygon),
             _ => Err(ParseChainTypeError::UnsupportedChainType),
         }
     }
 }
 
 impl Chain {
+    /// Converts a coin ticker string to a `Chain` enum.
+    #[inline(always)]
     pub fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
         match s {
-            "AVAX" => Ok(Chain::Avalanche),
-            "avax" => Ok(Chain::Avalanche),
-            "BNB" => Ok(Chain::Bsc),
-            "bnb" => Ok(Chain::Bsc),
-            "ETH" => Ok(Chain::Eth),
-            "eth" => Ok(Chain::Eth),
-            "FTM" => Ok(Chain::Fantom),
-            "ftm" => Ok(Chain::Fantom),
-            "MATIC" => Ok(Chain::Polygon),
-            "matic" => Ok(Chain::Polygon),
+            "AVAX" | "avax" => Ok(Chain::Avalanche),
+            "BNB" | "bnb" => Ok(Chain::Bsc),
+            "ETH" | "eth" => Ok(Chain::Eth),
+            "FTM" | "ftm" => Ok(Chain::Fantom),
+            "MATIC" | "matic" => Ok(Chain::Polygon),
             _ => MmError::err(ParseChainTypeError::UnsupportedCoinType),
         }
     }
