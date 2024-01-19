@@ -32,6 +32,7 @@ use mm2_err_handle::map_to_mm::MapToMmResult;
 use mm2_net::transport::send_post_request_to_uri;
 use mm2_number::{BigDecimal, BigUint};
 use regex::Regex;
+use serde::Deserialize;
 use serde_json::Value as Json;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -659,7 +660,7 @@ async fn get_moralis_nft_list(
         let response = send_request_to_uri(uri.as_str()).await?;
         if let Some(nfts_list) = response["result"].as_array() {
             for nft_json in nfts_list {
-                let nft_moralis: NftFromMoralis = serde_json::from_str(&nft_json.to_string())?;
+                let nft_moralis = NftFromMoralis::deserialize(nft_json)?;
                 let contract_type = match nft_moralis.contract_type {
                     Some(contract_type) => contract_type,
                     None => continue,
@@ -698,23 +699,7 @@ pub(crate) async fn get_nfts_for_activation(
         let uri = format!("{}{}", uri_without_cursor, cursor);
         let response = send_request_to_uri(uri.as_str()).await?;
         if let Some(nfts_list) = response["result"].as_array() {
-            for nft_json in nfts_list {
-                let nft_moralis: NftFromMoralis = serde_json::from_str(&nft_json.to_string())?;
-                let contract_type = match nft_moralis.contract_type {
-                    Some(contract_type) => contract_type,
-                    None => continue,
-                };
-                let token_address_str = eth_addr_to_hex(&nft_moralis.common.token_address);
-                let nft_info = NftInfo {
-                    token_address: nft_moralis.common.token_address,
-                    token_id: nft_moralis.token_id.0.clone(),
-                    chain: *chain,
-                    contract_type,
-                    amount: nft_moralis.common.amount,
-                };
-                let key = format!("{},{}", token_address_str, nft_moralis.token_id.0);
-                nfts_map.insert(key, nft_info);
-            }
+            process_nft_list_for_activation(nfts_list, chain, &mut nfts_map)?;
             // if cursor is not null, there are other NFTs on next page,
             // and we need to send new request with cursor to get info from the next page.
             if let Some(cursor_res) = response["cursor"].as_str() {
@@ -728,6 +713,31 @@ pub(crate) async fn get_nfts_for_activation(
         }
     }
     Ok(nfts_map)
+}
+
+fn process_nft_list_for_activation(
+    nfts_list: &[Json],
+    chain: &Chain,
+    nfts_map: &mut HashMap<String, NftInfo>,
+) -> MmResult<(), GetNftInfoError> {
+    for nft_json in nfts_list {
+        let nft_moralis = NftFromMoralis::deserialize(nft_json)?;
+        let contract_type = match nft_moralis.contract_type {
+            Some(contract_type) => contract_type,
+            None => continue,
+        };
+        let token_address_str = eth_addr_to_hex(&nft_moralis.common.token_address);
+        let nft_info = NftInfo {
+            token_address: nft_moralis.common.token_address,
+            token_id: nft_moralis.token_id.0.clone(),
+            chain: *chain,
+            contract_type,
+            amount: nft_moralis.common.amount,
+        };
+        let key = format!("{},{}", token_address_str, nft_moralis.token_id.0);
+        nfts_map.insert(key, nft_info);
+    }
+    Ok(())
 }
 
 async fn get_moralis_nft_transfers(
@@ -768,51 +778,7 @@ async fn get_moralis_nft_transfers(
         let uri = format!("{}{}", uri_without_cursor, cursor);
         let response = send_request_to_uri(uri.as_str()).await?;
         if let Some(transfer_list) = response["result"].as_array() {
-            for transfer in transfer_list {
-                let transfer_moralis: NftTransferHistoryFromMoralis = serde_json::from_str(&transfer.to_string())?;
-                let contract_type = match transfer_moralis.contract_type {
-                    Some(contract_type) => contract_type,
-                    None => continue,
-                };
-                let status =
-                    get_transfer_status(&wallet_address, &eth_addr_to_hex(&transfer_moralis.common.to_address));
-                let block_timestamp = parse_rfc3339_to_timestamp(&transfer_moralis.block_timestamp)?;
-                let fee_details = get_fee_details(&eth_coin, &transfer_moralis.common.transaction_hash).await;
-                let transfer_history = NftTransferHistory {
-                    common: NftTransferCommon {
-                        block_hash: transfer_moralis.common.block_hash,
-                        transaction_hash: transfer_moralis.common.transaction_hash,
-                        transaction_index: transfer_moralis.common.transaction_index,
-                        log_index: transfer_moralis.common.log_index,
-                        value: transfer_moralis.common.value,
-                        transaction_type: transfer_moralis.common.transaction_type,
-                        token_address: transfer_moralis.common.token_address,
-                        from_address: transfer_moralis.common.from_address,
-                        to_address: transfer_moralis.common.to_address,
-                        amount: transfer_moralis.common.amount,
-                        verified: transfer_moralis.common.verified,
-                        operator: transfer_moralis.common.operator,
-                        possible_spam: transfer_moralis.common.possible_spam,
-                    },
-                    chain: *chain,
-                    token_id: transfer_moralis.token_id.0,
-                    block_number: *transfer_moralis.block_number,
-                    block_timestamp,
-                    contract_type,
-                    token_uri: None,
-                    token_domain: None,
-                    collection_name: None,
-                    image_url: None,
-                    image_domain: None,
-                    token_name: None,
-                    status,
-                    possible_phishing: false,
-                    fee_details,
-                    confirmations: 0,
-                };
-                // collect NFTs transfers from the page
-                res_list.push(transfer_history);
-            }
+            process_transfer_list(transfer_list, chain, wallet_address.as_str(), &eth_coin, &mut res_list).await?;
             // if the cursor is not null, there are other NFTs transfers on next page,
             // and we need to send new request with cursor to get info from the next page.
             if let Some(cursor_res) = response["cursor"].as_str() {
@@ -826,6 +792,60 @@ async fn get_moralis_nft_transfers(
         }
     }
     Ok(res_list)
+}
+
+async fn process_transfer_list(
+    transfer_list: &[Json],
+    chain: &Chain,
+    wallet_address: &str,
+    eth_coin: &EthCoin,
+    res_list: &mut Vec<NftTransferHistory>,
+) -> MmResult<(), GetNftInfoError> {
+    for transfer in transfer_list {
+        let transfer_moralis = NftTransferHistoryFromMoralis::deserialize(transfer)?;
+        let contract_type = match transfer_moralis.contract_type {
+            Some(contract_type) => contract_type,
+            None => continue,
+        };
+        let status = get_transfer_status(wallet_address, &eth_addr_to_hex(&transfer_moralis.common.to_address));
+        let block_timestamp = parse_rfc3339_to_timestamp(&transfer_moralis.block_timestamp)?;
+        let fee_details = get_fee_details(eth_coin, &transfer_moralis.common.transaction_hash).await;
+        let transfer_history = NftTransferHistory {
+            common: NftTransferCommon {
+                block_hash: transfer_moralis.common.block_hash,
+                transaction_hash: transfer_moralis.common.transaction_hash,
+                transaction_index: transfer_moralis.common.transaction_index,
+                log_index: transfer_moralis.common.log_index,
+                value: transfer_moralis.common.value,
+                transaction_type: transfer_moralis.common.transaction_type,
+                token_address: transfer_moralis.common.token_address,
+                from_address: transfer_moralis.common.from_address,
+                to_address: transfer_moralis.common.to_address,
+                amount: transfer_moralis.common.amount,
+                verified: transfer_moralis.common.verified,
+                operator: transfer_moralis.common.operator,
+                possible_spam: transfer_moralis.common.possible_spam,
+            },
+            chain: *chain,
+            token_id: transfer_moralis.token_id.0,
+            block_number: *transfer_moralis.block_number,
+            block_timestamp,
+            contract_type,
+            token_uri: None,
+            token_domain: None,
+            collection_name: None,
+            image_url: None,
+            image_domain: None,
+            token_name: None,
+            status,
+            possible_phishing: false,
+            fee_details,
+            confirmations: 0,
+        };
+        // collect NFTs transfers from the page
+        res_list.push(transfer_history);
+    }
+    Ok(())
 }
 
 // TODO: get fee details from non fungible token instead of eth coin?
