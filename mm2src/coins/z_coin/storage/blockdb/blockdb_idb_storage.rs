@@ -27,7 +27,7 @@ pub struct BlockDbTable {
 }
 
 impl BlockDbTable {
-    pub const TICKER_HEIGHT_INDEX: &str = "ticker_height_index";
+    pub const TICKER_HEIGHT_INDEX: &'static str = "ticker_height_index";
 }
 
 impl TableSignature for BlockDbTable {
@@ -122,22 +122,26 @@ impl BlockDbImpl {
     /// removing data beyond the specified height from the storage.    
     pub async fn rewind_to_height(&self, height: u32) -> ZcoinStorageRes<usize> {
         let ticker = self.ticker.clone();
-        let latest_height = self.get_latest_block().await?;
-
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
         let block_db = db_transaction.table::<BlockDbTable>().await?;
 
-        let height_to_remove_from = height + 1;
-        for i in height_to_remove_from..=latest_height {
-            let index_keys = MultiIndex::new(BlockDbTable::TICKER_HEIGHT_INDEX)
-                .with_value(&ticker)?
-                .with_value(i)?;
-
-            block_db.delete_item_by_unique_multi_index(index_keys).await?;
+        let mut deleted = 0;
+        let blocks = block_db.get_items("ticker", &ticker).await?;
+        for (_, block) in blocks {
+            if block.height > height {
+                block_db
+                    .delete_item_by_unique_multi_index(
+                        MultiIndex::new(BlockDbTable::TICKER_HEIGHT_INDEX)
+                            .with_value(&ticker)?
+                            .with_value(block.height)?,
+                    )
+                    .await?;
+                deleted += 1;
+            }
         }
 
-        Ok((height_to_remove_from + latest_height) as usize)
+        Ok(deleted)
     }
 
     #[allow(unused)]

@@ -21,7 +21,6 @@ use parking_lot::Mutex;
 use prost::Message;
 use rpc::v1::types::{Bytes, H256 as H256Json};
 use std::convert::TryFrom;
-use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use z_coin_grpc::{BlockId, BlockRange, TreeState, TxFilter};
@@ -237,13 +236,14 @@ impl ZRpcOps for LightRpcClient {
                 hash: Vec::new(),
             }),
         });
+
         let mut response = selfi
             .get_block_range(request)
             .await
             .map_to_mm(UpdateBlocksCacheErr::GrpcError)?
             .into_inner();
-        // without Pin method get_mut is not found in current scope
-        while let Some(block) = Pin::new(&mut response).get_mut().message().await? {
+        while let Some(block) = response.next().await {
+            let block = block.map_err(|_| UpdateBlocksCacheErr::DecodeError("Error getting block".to_string()))?;
             debug!("Got block {}", block.height);
             let height = u32::try_from(block.height)
                 .map_err(|_| UpdateBlocksCacheErr::DecodeError("Block height too large".to_string()))?;
@@ -684,7 +684,8 @@ impl SaplingSyncLoopHandle {
         rpc: &mut (dyn ZRpcOps + Send),
     ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
         let current_block = rpc.get_block_height().await?;
-        let current_block_in_db = self.blocks_db.get_latest_block().await?;
+        let block_db = self.blocks_db.clone();
+        let current_block_in_db = block_db.get_latest_block().await?;
         let wallet_db = self.wallet_db.clone();
         let extrema = wallet_db.db.block_height_extrema().await?;
         let mut from_block = self
@@ -697,8 +698,7 @@ impl SaplingSyncLoopHandle {
         }
 
         if current_block >= from_block {
-            let blocksdb = self.blocks_db.clone();
-            let scan_blocks = rpc.scan_blocks(from_block, current_block, &blocksdb, self);
+            let scan_blocks = rpc.scan_blocks(from_block, current_block, &block_db, self);
             scan_blocks.await?;
         }
 
