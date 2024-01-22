@@ -1482,7 +1482,7 @@ impl WatcherOps for EthCoin {
             .watcher_reward
             .clone()
             .ok_or_else(|| ValidatePaymentError::WatcherRewardError("Watcher reward not found".to_string())));
-        let expected_reward_amount = try_f!(wei_from_big_decimal(&watcher_reward.amount, self.decimals));
+        let expected_reward_amount = try_f!(wei_from_big_decimal(&watcher_reward.amount, 18));
 
         let expected_swap_contract_address = try_f!(input
             .swap_contract_address
@@ -3458,8 +3458,6 @@ impl EthCoin {
 
                 let wait_for_required_allowance_until = args.wait_for_confirmation_until;
 
-                println!("Payment ETH value {}", value);
-
                 let arc = self.clone();
                 Box::new(allowance_fut.and_then(move |allowed| -> EthTxFut {
                     if allowed < amount {
@@ -3582,10 +3580,6 @@ impl EthCoin {
                 let reward_target = try_tx_fus!(get_function_input_data(&decoded, payment_func, 6));
                 let sends_contract_reward = try_tx_fus!(get_function_input_data(&decoded, payment_func, 7));
                 let reward_amount = try_tx_fus!(get_function_input_data(&decoded, payment_func, 8));
-
-                println!("reward_target {:?}", reward_target);
-                println!("sends_contract_reward {:?}", sends_contract_reward);
-                println!("reward_amount {:?}", reward_amount);
 
                 let state_f = self.payment_status(swap_contract_address, swap_id_input.clone());
 

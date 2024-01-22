@@ -781,21 +781,21 @@ fn test_watcher_spends_maker_payment_eth_erc20() {
 
 #[test]
 fn test_watcher_spends_maker_payment_erc20_eth() {
-    let alice_privkey = "2fd8d83e3b9799fa0a02cdaf6776dd36eee3243a62d399a54dc9a68f5e77b27c";
-    let bob_privkey = "6425a922265573100165b60ff380fba5035c7406169087a43aefdee66aceccc1";
-    let watcher_privkey = "b9b5fa738dcf7c99073b0f7d518a50b72139a7636ba3488766944fd3dc4df646";
+    let alice_coin = eth_coin_with_random_privkey(watchers_swap_contract());
+    let bob_coin = erc20_coin_with_random_privkey(watchers_swap_contract());
+    let watcher_coin = eth_coin_with_random_privkey(watchers_swap_contract());
 
     let balances = start_swaps_and_get_balances(
         "ETH",
-        "JST",
+        "ERC20DEV",
         0.01,
         0.01,
         1.,
         &[("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
-        alice_privkey,
-        bob_privkey,
-        watcher_privkey,
+        &alice_coin.display_priv_key().unwrap()[2..],
+        &bob_coin.display_priv_key().unwrap()[2..],
+        &watcher_coin.display_priv_key().unwrap()[2..],
     );
 
     let jst_volume = BigDecimal::from_str("1").unwrap();
@@ -814,21 +814,21 @@ fn test_watcher_spends_maker_payment_erc20_eth() {
 
 #[test]
 fn test_watcher_spends_maker_payment_utxo_erc20() {
-    let alice_privkey = "e4fc65b69c323312ee3ba46406671bc9f2d524190621d82eeb51452701cfe43b";
-    let bob_privkey = "721fc6b7f56495f7f721e1e11cddcaf593351264705c4044e83656f06eb595ef";
-    let watcher_privkey = "a1f1c2666be032492a3cb772abc8a2845adfd6dca299fbed13416ccc6feb57ee";
+    let alice_coin = erc20_coin_with_random_privkey(watchers_swap_contract());
+    let bob_coin = eth_coin_with_random_privkey(watchers_swap_contract());
+    let watcher_coin = eth_coin_with_random_privkey(watchers_swap_contract());
 
     let balances = start_swaps_and_get_balances(
-        "JST",
+        "ERC20DEV",
         "MYCOIN",
         1.,
         1.,
         1.,
         &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
-        alice_privkey,
-        bob_privkey,
-        watcher_privkey,
+        &alice_coin.display_priv_key().unwrap()[2..],
+        &bob_coin.display_priv_key().unwrap()[2..],
+        &watcher_coin.display_priv_key().unwrap()[2..],
     );
 
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
@@ -847,30 +847,35 @@ fn test_watcher_spends_maker_payment_utxo_erc20() {
 
 #[test]
 fn test_watcher_spends_maker_payment_erc20_utxo() {
-    let alice_privkey = "5c9fbc69376c3ee6bb56d8d2b715f24b3bb92ccd47e93332d4d94899aa9fc7ae";
-    let bob_privkey = "ccc24b9653087d939949d513756cefe1eff657de4c5bf34febc97843a6b26782";
-    let watcher_privkey = "a1f1c2666be032492a3cb772abc8a2845adfd6dca299fbed13416ccc6feb57ee";
+    let alice_coin = eth_coin_with_random_privkey(watchers_swap_contract());
+    let bob_coin = erc20_coin_with_random_privkey(watchers_swap_contract());
+    let watcher_coin = eth_coin_with_random_privkey(watchers_swap_contract());
 
     let balances = start_swaps_and_get_balances(
         "MYCOIN",
-        "JST",
+        "ERC20DEV",
         1.,
         1.,
         1.,
         &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherSpendsMakerPayment,
-        alice_privkey,
-        bob_privkey,
-        watcher_privkey,
+        &alice_coin.display_priv_key().unwrap()[2..],
+        &bob_coin.display_priv_key().unwrap()[2..],
+        &watcher_coin.display_priv_key().unwrap()[2..],
     );
 
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
     let jst_volume = BigDecimal::from_str("1").unwrap();
 
     let min_tx_amount = BigDecimal::from_str("0.00001").unwrap().into();
-    let dex_fee: BigDecimal = dex_fee_amount("MYCOIN", "JST", &MmNumber::from(mycoin_volume.clone()), &min_tx_amount)
-        .fee_amount()
-        .into();
+    let dex_fee: BigDecimal = dex_fee_amount(
+        "MYCOIN",
+        "ERC20DEV",
+        &MmNumber::from(mycoin_volume.clone()),
+        &min_tx_amount,
+    )
+    .fee_amount()
+    .into();
     let alice_mycoin_reward_sent = balances.alice_acoin_balance_before
         - balances.alice_acoin_balance_after.clone()
         - mycoin_volume.clone()
@@ -921,22 +926,23 @@ fn test_watcher_refunds_taker_payment_utxo() {
 
 #[test]
 fn test_watcher_refunds_taker_payment_eth() {
-    let alice_privkey = "0816c0558b934fafa845946bdd2b3163fe6b928e6160ea9aa10a8bea221e3813";
-    let bob_privkey = "e5cb76954c5160d7df5bfa5798540d3583c73c9daa46903b98abb9eed2edecc6";
-    let watcher_privkey = "ccd7f2c0da8f6428b60b42a27c0e37af59abd42251773156f4f59c5d16855f8c";
+    let alice_coin = eth_coin_with_random_privkey(watchers_swap_contract());
+    let bob_coin = erc20_coin_with_random_privkey(watchers_swap_contract());
+    let watcher_coin = eth_coin_with_random_privkey(watchers_swap_contract());
 
     let balances = start_swaps_and_get_balances(
         "ETH",
-        "JST",
+        "ERC20DEV",
         0.01,
         0.01,
         1.,
         &[("USE_TEST_LOCKTIME", ""), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherRefundsTakerPayment,
-        alice_privkey,
-        bob_privkey,
-        watcher_privkey,
+        &alice_coin.display_priv_key().unwrap()[2..],
+        &bob_coin.display_priv_key().unwrap()[2..],
+        &watcher_coin.display_priv_key().unwrap()[2..],
     );
+
     assert_eq!(
         balances.alice_acoin_balance_after.with_scale(2),
         balances.alice_acoin_balance_before.with_scale(2)
@@ -1002,21 +1008,21 @@ fn test_watcher_waits_for_taker_utxo() {
 
 #[test]
 fn test_watcher_waits_for_taker_eth() {
-    let alice_privkey = "814ea055c807c1ff2d49c81abfc3434fa0d10a427369b1f8d60fc78ab1da7d16";
-    let bob_privkey = "36533ec51a61f4b32856c8ce2ee811a263c625ae26e45ee68e6d28b65c8f9298";
-    let watcher_privkey = "baa1c83a0993ba96f88ffc943919991792ce9e2498fc41f42b38030915d58f9f";
+    let alice_coin = erc20_coin_with_random_privkey(watchers_swap_contract());
+    let bob_coin = eth_coin_with_random_privkey(watchers_swap_contract());
+    let watcher_coin = eth_coin_with_random_privkey(watchers_swap_contract());
 
     start_swaps_and_get_balances(
-        "JST",
+        "ERC20DEV",
         "ETH",
         100.,
         100.,
         0.01,
         &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
         SwapFlow::TakerSpendsMakerPayment,
-        alice_privkey,
-        bob_privkey,
-        watcher_privkey,
+        &alice_coin.display_priv_key().unwrap()[2..],
+        &bob_coin.display_priv_key().unwrap()[2..],
+        &watcher_coin.display_priv_key().unwrap()[2..],
     );
 }
 
