@@ -31,7 +31,10 @@ pub fn watchers_swap_contract() -> Address { unsafe { GETH_WATCHERS_SWAP_CONTRAC
 /// # Safety
 ///
 /// GETH_ERC20_CONTRACT is set once during initialization before tests start
-fn erc20_contract() -> Address { unsafe { GETH_ERC20_CONTRACT } }
+pub fn erc20_contract() -> Address { unsafe { GETH_ERC20_CONTRACT } }
+
+/// Return ERC20 dev token contract address in checksum format
+pub fn erc20_contract_checksum() -> String { checksum_address(&format!("{:02x}", erc20_contract())) }
 
 pub fn fill_eth(to_addr: Address, amount: U256) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
@@ -94,7 +97,7 @@ pub fn eth_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
 
 /// Creates ERC20 protocol coin supplied with 1 ETH and 100 token
 pub fn erc20_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
-    let erc20_conf = erc20_dev_conf(erc20_contract());
+    let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
     let req = json!({
         "method": "enable",
         "coin": "ERC20DEV",

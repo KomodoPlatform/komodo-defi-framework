@@ -1660,10 +1660,12 @@ impl WatcherOps for EthCoin {
                         .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                     let total_amount = match input.spend_type {
                         WatcherSpendType::MakerPaymentSpend => {
-                            if let RewardTarget::None = watcher_reward.reward_target {
-                                trade_amount
-                            } else {
+                            if !matches!(watcher_reward.reward_target, RewardTarget::None)
+                                || watcher_reward.send_contract_reward_on_spend
+                            {
                                 trade_amount + expected_reward_amount
+                            } else {
+                                trade_amount
                             }
                         },
                         WatcherSpendType::TakerPaymentRefund => trade_amount + expected_reward_amount,
@@ -3366,7 +3368,7 @@ impl EthCoin {
                 let data = match &args.watcher_reward {
                     Some(reward) => {
                         let reward_amount = try_tx_fus!(wei_from_big_decimal(&reward.amount, self.decimals));
-                        if !matches!(reward.reward_target, RewardTarget::None) {
+                        if !matches!(reward.reward_target, RewardTarget::None) || reward.send_contract_reward_on_spend {
                             value += reward_amount;
                         }
 
@@ -3406,17 +3408,26 @@ impl EthCoin {
 
                 let data = match args.watcher_reward {
                     Some(reward) => {
-                        let reward_amount = try_tx_fus!(wei_from_big_decimal(&reward.amount, self.decimals));
-
-                        println!("Reward amount {}", reward_amount);
-
-                        match reward.reward_target {
-                            RewardTarget::Contract | RewardTarget::PaymentSender => value += reward_amount,
-                            RewardTarget::PaymentSpender => amount += reward_amount,
+                        let reward_amount = match reward.reward_target {
+                            RewardTarget::Contract | RewardTarget::PaymentSender => {
+                                let eth_reward_amount = try_tx_fus!(wei_from_big_decimal(&reward.amount, 18));
+                                value += eth_reward_amount;
+                                eth_reward_amount
+                            },
+                            RewardTarget::PaymentSpender => {
+                                let token_reward_amount =
+                                    try_tx_fus!(wei_from_big_decimal(&reward.amount, self.decimals));
+                                amount += token_reward_amount;
+                                token_reward_amount
+                            },
                             _ => {
                                 // TODO tests passed without this change, need to research on how it worked
                                 if reward.send_contract_reward_on_spend {
-                                    value += reward_amount
+                                    let eth_reward_amount = try_tx_fus!(wei_from_big_decimal(&reward.amount, 18));
+                                    value += eth_reward_amount;
+                                    eth_reward_amount
+                                } else {
+                                    0.into()
                                 }
                             },
                         };
@@ -4333,7 +4344,11 @@ impl EthCoin {
                         )?;
 
                         match watcher_reward.reward_target {
-                            RewardTarget::None | RewardTarget::PaymentReceiver => (),
+                            RewardTarget::None | RewardTarget::PaymentReceiver => {
+                                if watcher_reward.send_contract_reward_on_spend {
+                                    expected_value += actual_reward_amount
+                                }
+                            },
                             RewardTarget::PaymentSender | RewardTarget::PaymentSpender | RewardTarget::Contract => {
                                 expected_value += actual_reward_amount
                             },

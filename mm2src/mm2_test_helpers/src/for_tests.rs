@@ -786,7 +786,7 @@ pub fn eth_dev_conf() -> Json {
 }
 
 /// ERC20 token configuration used for dockerized Geth dev node
-pub fn erc20_dev_conf(contract_address: impl Serialize) -> Json {
+pub fn erc20_dev_conf(contract_address: &str) -> Json {
     json!({
         "coin": "ERC20DEV",
         "name": "erc20dev",

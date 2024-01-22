@@ -1,10 +1,10 @@
-use crate::docker_tests::docker_tests_common::{eth_distributor, generate_jst_with_seed, GETH_WATCHERS_SWAP_CONTRACT,
-                                               GETH_WEB3};
-use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, eth_coin_with_random_privkey,
-                                            watchers_swap_contract};
+use crate::docker_tests::docker_tests_common::{eth_distributor, generate_jst_with_seed, GETH_RPC_URL};
+use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
+                                            eth_coin_with_random_privkey, watchers_swap_contract};
 use crate::integration_tests_common::*;
 use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 use coins::coin_errors::ValidatePaymentError;
+use coins::eth::checksum_address;
 use coins::utxo::{dhash160, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
             SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps,
@@ -21,10 +21,10 @@ use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, gen
                              REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
-use mm2_test_helpers::for_tests::{enable_eth_coin, eth_jst_testnet_conf, eth_testnet_conf, mm_dump, my_balance,
-                                  my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
-                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
-                                  DEFAULT_RPC_PASSWORD, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
+use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf,
+                                  eth_testnet_conf, mm_dump, my_balance, my_swap_status, mycoin1_conf, mycoin_conf,
+                                  start_swaps, wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
+                                  DEFAULT_RPC_PASSWORD};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
 use num_traits::{One, Zero};
@@ -34,8 +34,6 @@ use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
-
-use super::docker_tests_common::generate_eth_coin_with_seed;
 
 #[derive(Debug, Clone)]
 struct BalanceResult {
@@ -69,9 +67,9 @@ fn enable_eth(mm_node: &MarketMakerIt, coin: &str) {
     dbg!(block_on(enable_eth_coin(
         mm_node,
         coin,
-        ETH_DEV_NODES,
-        ETH_DEV_SWAP_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT),
+        &[GETH_RPC_URL],
+        &checksum_address(&format!("{:02x}", watchers_swap_contract())),
+        Some(&checksum_address(&format!("{:02x}", watchers_swap_contract()))),
         true
     )));
 }
@@ -97,8 +95,8 @@ fn start_swaps_and_get_balances(
     watcher_privkey: &str,
 ) -> BalanceResult {
     let coins = json!([
-        eth_testnet_conf(),
-        eth_jst_testnet_conf(),
+        eth_dev_conf(),
+        erc20_dev_conf(&erc20_contract_checksum()),
         mycoin_conf(1000),
         mycoin1_conf(1000)
     ]);
@@ -949,12 +947,12 @@ fn test_watcher_refunds_taker_payment_eth() {
 
 #[test]
 fn test_watcher_refunds_taker_payment_erc20() {
-    let alice_privkey = "82c1bb28bb13488f901eff67f886e9895c4dfa28e3e24f1ed7873a73231c9492";
-    let bob_privkey = "9a4721db00336ea0d8b7a373cdbdefc321285e7959fff8aea493af6f485b683f";
-    let watcher_privkey = "8fdf25f087140b2797deb2a1d3ce66bd59e2449cc805b99958b3bfa8cd621eb8";
+    let alice_coin = erc20_coin_with_random_privkey(watchers_swap_contract());
+    let bob_coin = eth_coin_with_random_privkey(watchers_swap_contract());
+    let watcher_coin = eth_coin_with_random_privkey(watchers_swap_contract());
 
     let balances = start_swaps_and_get_balances(
-        "JST",
+        "ERC20DEV",
         "ETH",
         100.,
         100.,
@@ -965,16 +963,19 @@ fn test_watcher_refunds_taker_payment_erc20() {
             ("USE_WATCHER_REWARD", ""),
         ],
         SwapFlow::WatcherRefundsTakerPayment,
-        alice_privkey,
-        bob_privkey,
-        watcher_privkey,
+        &alice_coin.display_priv_key().unwrap()[2..],
+        &bob_coin.display_priv_key().unwrap()[2..],
+        &watcher_coin.display_priv_key().unwrap()[2..],
     );
-    let jst_volume = BigDecimal::from_str("1").unwrap();
+    let erc20_volume = BigDecimal::from_str("1").unwrap();
 
     assert_eq!(
         balances.alice_acoin_balance_after,
-        balances.alice_acoin_balance_middle + jst_volume
+        balances.alice_acoin_balance_middle + erc20_volume
     );
+
+    println!("watcher_bcoin_balance_before {}", balances.watcher_bcoin_balance_before);
+    println!("watcher_bcoin_balance_after {}", balances.watcher_bcoin_balance_after);
 
     assert!(balances.watcher_bcoin_balance_after > balances.watcher_bcoin_balance_before);
 }
@@ -1339,8 +1340,7 @@ fn test_watcher_validate_taker_fee_erc20() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let lock_duration = get_payment_locktime();
 
-    let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
-    let taker_coin = generate_jst_with_seed(&seed);
+    let taker_coin = erc20_coin_with_random_privkey(watchers_swap_contract());
     let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
     let taker_pubkey = taker_keypair.public();
 
@@ -2224,14 +2224,13 @@ fn test_taker_validates_taker_payment_refund_utxo() {
 fn test_taker_validates_taker_payment_refund_eth() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
 
-    let taker_coin = eth_distributor();
+    let taker_coin = eth_coin_with_random_privkey(watchers_swap_contract());
     let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
     let taker_pub = taker_keypair.public();
 
-    let maker_seed = get_passphrase!(".env.client", "BOB_PASSPHRASE").unwrap();
-    let maker_keypair = key_pair_from_seed(&maker_seed).unwrap();
+    let maker_coin = eth_coin_with_random_privkey(watchers_swap_contract());
+    let maker_keypair = maker_coin.derive_htlc_key_pair(&[]);
     let maker_pub = maker_keypair.public();
-    let maker_coin = generate_eth_coin_with_seed(&maker_seed);
 
     let time_lock_duration = get_payment_locktime();
     let wait_for_confirmation_until = wait_until_sec(time_lock_duration);
@@ -2546,8 +2545,7 @@ fn test_taker_validates_taker_payment_refund_eth() {
 fn test_taker_validates_taker_payment_refund_erc20() {
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
 
-    let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
-    let taker_coin = generate_jst_with_seed(&seed);
+    let taker_coin = erc20_coin_with_random_privkey(watchers_swap_contract());
     let taker_keypair = taker_coin.derive_htlc_key_pair(&[]);
     let taker_pub = taker_keypair.public();
 
@@ -3109,8 +3107,6 @@ fn test_taker_validates_maker_payment_spend_erc20() {
     ))
     .unwrap();
 
-    println!("Watcher reward {:?}", watcher_reward);
-
     let maker_payment = maker_coin
         .send_maker_payment(SendPaymentArgs {
             time_lock_duration,
@@ -3137,9 +3133,6 @@ fn test_taker_validates_maker_payment_spend_erc20() {
         })
         .wait()
         .unwrap();
-
-    let contract_eth_balance = block_on(GETH_WEB3.eth().balance(unsafe { GETH_WATCHERS_SWAP_CONTRACT }, None)).unwrap();
-    println!("contract_eth_balance {}", contract_eth_balance);
 
     let maker_payment_spend_preimage = taker_coin
         .create_maker_payment_spend_preimage(
