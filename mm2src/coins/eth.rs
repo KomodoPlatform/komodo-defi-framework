@@ -1994,7 +1994,6 @@ impl WatcherOps for EthCoin {
             RewardTarget::PaymentSender
         };
 
-        let is_exact_amount = reward_amount.is_some();
         let amount = match reward_amount {
             Some(amount) => amount,
             None => self.get_watcher_reward_amount(wait_until).await?,
@@ -2004,7 +2003,7 @@ impl WatcherOps for EthCoin {
 
         Ok(WatcherReward {
             amount,
-            is_exact_amount,
+            is_exact_amount: false,
             reward_target,
             send_contract_reward_on_spend,
         })
