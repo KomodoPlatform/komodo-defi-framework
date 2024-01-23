@@ -132,7 +132,7 @@ impl SpendMakerPayment {
 }
 
 struct Stopped {
-    _stop_reason: StopReason,
+    stop_reason: StopReason,
 }
 
 #[derive(Debug)]
@@ -161,11 +161,7 @@ enum WatcherError {
 }
 
 impl Stopped {
-    fn from_reason(stop_reason: StopReason) -> Stopped {
-        Stopped {
-            _stop_reason: stop_reason,
-        }
-    }
+    fn from_reason(stop_reason: StopReason) -> Stopped { Stopped { stop_reason } }
 }
 
 impl TransitionFrom<ValidateTakerFee> for ValidateTakerPayment {}
@@ -515,7 +511,12 @@ impl State for RefundTakerPayment {
 impl LastState for Stopped {
     type StateMachine = WatcherStateMachine;
 
-    async fn on_changed(self: Box<Self>, _watcher_ctx: &mut WatcherStateMachine) -> () {}
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherStateMachine) -> () {
+        info!(
+            "Watcher loop for swap {} stopped with reason {:?}",
+            watcher_ctx.data.uuid, self.stop_reason
+        )
+    }
 }
 
 pub fn process_watcher_msg(ctx: MmArc, msg: &[u8]) -> P2PRequestResult<()> {

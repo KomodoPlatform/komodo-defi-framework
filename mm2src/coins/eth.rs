@@ -1740,7 +1740,6 @@ impl WatcherOps for EthCoin {
         };
         let expected_swap_contract_address = self.swap_contract_address;
         let fallback_swap_contract = self.fallback_swap_contract;
-        let decimals = self.decimals;
 
         let fut = async move {
             let tx_from_rpc = selfi.web3.eth().transaction(TransactionId::Hash(tx.hash)).await?;
@@ -1784,7 +1783,7 @@ impl WatcherOps for EthCoin {
                 .get_taker_watcher_reward(&input.maker_coin, None, None, None, input.wait_until)
                 .await
                 .map_err(|err| ValidatePaymentError::WatcherRewardError(err.into_inner().to_string()))?;
-            let expected_reward_amount = wei_from_big_decimal(&watcher_reward.amount, decimals)?;
+            let expected_reward_amount = wei_from_big_decimal(&watcher_reward.amount, 18)?;
 
             match &selfi.coin_type {
                 EthCoinType::Eth => {
@@ -4430,7 +4429,8 @@ impl EthCoin {
                             )));
                         }
 
-                        let expected_reward_amount = wei_from_big_decimal(&watcher_reward.amount, decimals)?;
+                        let expected_reward_amount = wei_from_big_decimal(&watcher_reward.amount, 18)?;
+
                         let actual_reward_amount = get_function_input_data(&decoded, function, 8)
                             .map_to_mm(ValidatePaymentError::TxDeserializationError)?
                             .into_uint()
@@ -4451,7 +4451,11 @@ impl EthCoin {
                                 expected_value += actual_reward_amount
                             },
                             RewardTarget::PaymentSpender => expected_amount += actual_reward_amount,
-                            _ => (),
+                            _ => {
+                                if watcher_reward.send_contract_reward_on_spend {
+                                    expected_value += actual_reward_amount
+                                }
+                            },
                         };
 
                         if decoded[1] != Token::Uint(expected_amount) {
@@ -4465,7 +4469,7 @@ impl EthCoin {
                     if tx_from_rpc.value != expected_value {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx value arg {:?} is invalid, expected {:?}",
-                            tx_from_rpc.value, trade_amount
+                            tx_from_rpc.value, expected_value
                         )));
                     }
                 },
