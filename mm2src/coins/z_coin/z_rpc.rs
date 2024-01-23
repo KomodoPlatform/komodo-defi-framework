@@ -55,6 +55,8 @@ cfg_native!(
 
 cfg_wasm32!(
     use mm2_net::wasm::tonic_client::TonicClient;
+
+    const MAX_CHUNK_SIZE: u64 = 60000;
 );
 
 /// ZRpcOps trait provides asynchronous methods for performing various operations related to
@@ -191,6 +193,39 @@ where
     Ok(CompactTxStreamerClient::new(conn))
 }
 
+/// Generate multiple gRPC requests to fetch block ranges efficiently.
+/// It takes the starting block height and the last block height as input and constructs requests for fetching
+/// consecutive block ranges within the specified limits.
+#[cfg(target_arch = "wasm32")]
+fn construct_block_range_requests(start_block: u64, last_block: u64) -> Vec<tonic::Request<BlockRange>> {
+    let mut requests = Vec::new();
+    let mut current_start = start_block;
+
+    while current_start <= last_block {
+        let current_end = if current_start + MAX_CHUNK_SIZE - 1 <= last_block {
+            current_start + MAX_CHUNK_SIZE - 1
+        } else {
+            last_block
+        };
+
+        let block_range = BlockRange {
+            start: Some(BlockId {
+                height: current_start,
+                hash: Vec::new(),
+            }),
+            end: Some(BlockId {
+                height: current_end,
+                hash: Vec::new(),
+            }),
+        };
+
+        requests.push(tonic::Request::new(block_range));
+        current_start = current_end + 1;
+    }
+
+    requests
+}
+
 #[async_trait]
 impl ZRpcOps for LightRpcClient {
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>> {
@@ -226,7 +261,8 @@ impl ZRpcOps for LightRpcClient {
         handler: &mut SaplingSyncLoopHandle,
     ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
         let mut selfi = self.get_live_client().await?;
-        let request = tonic::Request::new(BlockRange {
+        #[cfg(not(target_arch = "wasm32"))]
+        let requests = vec![tonic::Request::new(BlockRange {
             start: Some(BlockId {
                 height: start_block,
                 hash: Vec::new(),
@@ -235,23 +271,27 @@ impl ZRpcOps for LightRpcClient {
                 height: last_block,
                 hash: Vec::new(),
             }),
-        });
+        })];
 
-        let mut response = selfi
-            .get_block_range(request)
-            .await
-            .map_to_mm(UpdateBlocksCacheErr::GrpcError)?
-            .into_inner();
-        while let Some(block) = response.next().await {
-            let block = block.map_err(|_| UpdateBlocksCacheErr::DecodeError("Error getting block".to_string()))?;
-            debug!("Got block {}", block.height);
-            let height = u32::try_from(block.height)
-                .map_err(|_| UpdateBlocksCacheErr::DecodeError("Block height too large".to_string()))?;
-            db.insert_block(height, block.encode_to_vec())
+        #[cfg(target_arch = "wasm32")]
+        let requests = construct_block_range_requests(start_block, last_block);
+        for request in requests {
+            let mut response = selfi
+                .get_block_range(request)
                 .await
-                .map_err(|err| UpdateBlocksCacheErr::ZcashDBError(err.to_string()))?;
+                .map_to_mm(UpdateBlocksCacheErr::GrpcError)?
+                .into_inner();
+            while let Some(block) = response.next().await {
+                let block = block.map_err(|_| UpdateBlocksCacheErr::DecodeError("Error getting block".to_string()))?;
+                debug!("Got block {}", block.height);
+                let height = u32::try_from(block.height)
+                    .map_err(|_| UpdateBlocksCacheErr::DecodeError("Block height too large".to_string()))?;
+                db.insert_block(height, block.encode_to_vec())
+                    .await
+                    .map_err(|err| UpdateBlocksCacheErr::ZcashDBError(err.to_string()))?;
 
-            handler.notify_blocks_cache_status(block.height, last_block);
+                handler.notify_blocks_cache_status(block.height, last_block);
+            }
         }
         Ok(())
     }
