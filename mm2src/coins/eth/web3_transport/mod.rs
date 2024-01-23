@@ -13,12 +13,15 @@ use web3::{Error, RequestId, Transport};
 
 pub(crate) mod http_transport;
 #[cfg(target_arch = "wasm32")] pub(crate) mod metamask_transport;
+pub(crate) mod websocket_transport;
 
 type Web3SendOut = BoxFuture<'static, Result<Json, Error>>;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Web3Transport {
     Http(http_transport::HttpTransport),
+    #[allow(dead_code)] // TODO: remove this
+    Websocket(websocket_transport::WebsocketTransport),
     #[cfg(target_arch = "wasm32")]
     Metamask(metamask_transport::MetamaskTransport),
 }
@@ -52,6 +55,8 @@ impl Web3Transport {
     pub fn gui_auth_validation_generator_as_mut(&mut self) -> Option<&mut GuiAuthValidationGenerator> {
         match self {
             Web3Transport::Http(http) => http.gui_auth_validation_generator.as_mut(),
+            // TODO
+            Web3Transport::Websocket(_) => None,
             #[cfg(target_arch = "wasm32")]
             Web3Transport::Metamask(_) => None,
         }
@@ -64,6 +69,7 @@ impl Transport for Web3Transport {
     fn prepare(&self, method: &str, params: Vec<Value>) -> (RequestId, Call) {
         match self {
             Web3Transport::Http(http) => http.prepare(method, params),
+            Web3Transport::Websocket(websocket) => websocket.prepare(method, params),
             #[cfg(target_arch = "wasm32")]
             Web3Transport::Metamask(metamask) => metamask.prepare(method, params),
         }
@@ -72,6 +78,7 @@ impl Transport for Web3Transport {
     fn send(&self, id: RequestId, request: Call) -> Self::Out {
         match self {
             Web3Transport::Http(http) => http.send(id, request),
+            Web3Transport::Websocket(websocket) => websocket.send(id, request),
             #[cfg(target_arch = "wasm32")]
             Web3Transport::Metamask(metamask) => metamask.send(id, request),
         }
