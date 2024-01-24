@@ -193,30 +193,6 @@ pub fn _fill_eth(to_addr: &str) {
         .unwrap();
 }
 
-pub fn generate_jst_with_seed(seed: &str) -> EthCoin {
-    let req = json!({
-        "method": "enable",
-        "coin": "JST",
-        "urls": ETH_DEV_NODES,
-        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
-    });
-
-    let keypair = key_pair_from_seed(seed).unwrap();
-    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
-    block_on(eth_coin_from_conf_and_request(
-        &MM_CTX,
-        "JST",
-        &eth_jst_testnet_conf(),
-        &req,
-        CoinProtocol::ERC20 {
-            platform: "ETH".into(),
-            contract_address: String::from(ETH_DEV_TOKEN_CONTRACT),
-        },
-        priv_key_policy,
-    ))
-    .unwrap()
-}
-
 impl BchDockerOps {
     pub fn from_ticker(ticker: &str) -> BchDockerOps {
         let conf = json!({"asset": ticker,"txfee":1000,"network": "regtest","txversion":4,"overwintered":1});

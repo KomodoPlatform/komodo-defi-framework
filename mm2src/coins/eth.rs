@@ -3404,6 +3404,8 @@ impl EthCoin {
                 let mut value = U256::from(0);
                 let mut amount = trade_amount;
 
+                debug!("Using watcher reward {:?} for swap payment", args.watcher_reward);
+
                 let data = match args.watcher_reward {
                     Some(reward) => {
                         let reward_amount = match reward.reward_target {
@@ -4428,7 +4430,22 @@ impl EthCoin {
                             )));
                         }
 
-                        let expected_reward_amount = wei_from_big_decimal(&watcher_reward.amount, 18)?;
+                        let expected_reward_amount = match watcher_reward.reward_target {
+                            RewardTarget::Contract | RewardTarget::PaymentSender => {
+                                wei_from_big_decimal(&watcher_reward.amount, 18)?
+                            },
+                            RewardTarget::PaymentSpender => {
+                                wei_from_big_decimal(&watcher_reward.amount, selfi.decimals)?
+                            },
+                            _ => {
+                                // TODO tests passed without this change, need to research on how it worked
+                                if watcher_reward.send_contract_reward_on_spend {
+                                    wei_from_big_decimal(&watcher_reward.amount, 18)?
+                                } else {
+                                    0.into()
+                                }
+                            },
+                        };
 
                         let actual_reward_amount = get_function_input_data(&decoded, function, 8)
                             .map_to_mm(ValidatePaymentError::TxDeserializationError)?

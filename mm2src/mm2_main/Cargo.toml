@@ -16,7 +16,7 @@ custom-swap-locktime = [] # only for testing purposes, should never be activated
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
-run-docker-tests = []
+run-docker-tests = ["coins/run-docker-tests"]
 # TODO
 enable-solana = []
 default = []
