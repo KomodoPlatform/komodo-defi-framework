@@ -20,7 +20,6 @@ type Web3SendOut = BoxFuture<'static, Result<Json, Error>>;
 #[derive(Clone, Debug)]
 pub(crate) enum Web3Transport {
     Http(http_transport::HttpTransport),
-    #[allow(dead_code)] // TODO: remove this
     Websocket(websocket_transport::WebsocketTransport),
     #[cfg(target_arch = "wasm32")]
     Metamask(metamask_transport::MetamaskTransport),
@@ -32,6 +31,13 @@ impl Web3Transport {
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Web3Transport {
         http_transport::HttpTransport::with_event_handlers(nodes, event_handlers).into()
+    }
+
+    pub fn new_websocket(
+        nodes: Vec<websocket_transport::WebsocketTransportNode>,
+        event_handlers: Vec<RpcTransportEventHandlerShared>,
+    ) -> Web3Transport {
+        websocket_transport::WebsocketTransport::with_event_handlers(nodes, event_handlers).into()
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -87,6 +93,10 @@ impl Transport for Web3Transport {
 
 impl From<http_transport::HttpTransport> for Web3Transport {
     fn from(http: http_transport::HttpTransport) -> Self { Web3Transport::Http(http) }
+}
+
+impl From<websocket_transport::WebsocketTransport> for Web3Transport {
+    fn from(websocket: websocket_transport::WebsocketTransport) -> Self { Web3Transport::Websocket(websocket) }
 }
 
 #[cfg(target_arch = "wasm32")]

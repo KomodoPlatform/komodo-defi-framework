@@ -1,6 +1,7 @@
 #![allow(unused)] // TODO: remove this
 
 use crate::eth::web3_transport::Web3SendOut;
+use crate::eth::RpcTransportEventHandlerShared;
 use futures::lock::Mutex as AsyncMutex;
 use jsonrpc_core::Call;
 use std::sync::Arc;
@@ -23,6 +24,21 @@ struct WebsocketTransportRpcClientImpl {
 #[derive(Clone, Debug)]
 pub struct WebsocketTransport {
     client: Arc<WebsocketTransportRpcClient>,
+    event_handlers: Vec<RpcTransportEventHandlerShared>,
+}
+
+impl WebsocketTransport {
+    pub fn with_event_handlers(
+        nodes: Vec<WebsocketTransportNode>,
+        event_handlers: Vec<RpcTransportEventHandlerShared>,
+    ) -> Self {
+        let client_impl = WebsocketTransportRpcClientImpl { nodes };
+
+        WebsocketTransport {
+            client: Arc::new(WebsocketTransportRpcClient(AsyncMutex::new(client_impl))),
+            event_handlers,
+        }
+    }
 }
 
 impl Transport for WebsocketTransport {
