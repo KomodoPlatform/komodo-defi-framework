@@ -52,13 +52,10 @@ mod block_db_storage_tests {
     }
 
     pub(crate) async fn test_rewind_to_height_impl() {
-        info!("Running!");
         let ctx = mm_ctx_with_custom_db();
-        info!("Rewinding to height started!");
         let db = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
             .await
             .unwrap();
-        info!("Rewinding to height started!");
         // insert block
         for header in HEADERS.iter() {
             db.insert_block(header.0, hex::decode(header.1).unwrap()).await.unwrap();
@@ -67,6 +64,10 @@ mod block_db_storage_tests {
         // rewind height to 1900000
         let rewind_result = db.rewind_to_height(1900000).await;
         assert!(rewind_result.is_ok());
+
+        // get last height - we expect it to be 1900000
+        let last_height = db.get_latest_block().await.unwrap();
+        assert_eq!(1900000, last_height);
         info!("Rewinding to height ended!");
 
         // get last height - we expect it to be 1900000
@@ -125,7 +126,7 @@ mod wasm_tests {
     #[wasm_bindgen_test]
     async fn test_transport() {
         register_wasm_log();
-        let mut client = LightRpcClient::new(vec!["http://pirate.battlefield.earth:8581".to_string()])
+        let mut client = LightRpcClient::new(vec!["https://pirate.battlefield.earth:8581".to_string()])
             .await
             .unwrap();
         let tree_state = client.get_block_height().await;

@@ -123,20 +123,27 @@ impl BlockDbImpl {
 
     /// Asynchronously rewinds the storage to a specified block height, effectively
     /// removing data beyond the specified height from the storage.    
-    pub async fn rewind_to_height(&self, _height: u32) -> ZcoinStorageRes<usize> {
+    pub async fn rewind_to_height(&self, height: u32) -> ZcoinStorageRes<usize> {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
         let block_db = db_transaction.table::<BlockDbTable>().await?;
 
-        let deleted = block_db.delete_items_by_index("ticker", &self.ticker).await?;
-        // Perform a safe check to ensure the deletion was successful.
-        if deleted.is_empty() {
-            return MmError::err(ZcoinStorageError::RemoveFromStorageErr(
-                "no block header was deleted".to_string(),
-            ));
+        let mut deleted = 0;
+        let blocks = block_db.get_items("ticker", &self.ticker).await?;
+        for (_, block) in blocks {
+            if block.height > height {
+                block_db
+                    .delete_item_by_unique_multi_index(
+                        MultiIndex::new(BlockDbTable::TICKER_HEIGHT_INDEX)
+                            .with_value(&self.ticker)?
+                            .with_value(block.height)?,
+                    )
+                    .await?;
+                deleted += 1;
+            }
         }
 
-        Ok(deleted[deleted.len() - 1] as usize)
+        Ok(deleted)
     }
 
     #[allow(unused)]
