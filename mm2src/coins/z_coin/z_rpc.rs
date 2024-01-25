@@ -214,6 +214,7 @@ async fn handle_block_cache_update(
 
 /// Wraps the client (`selfi`) in an `Arc` to enable safe cloning and sharing across futures.
 /// This is necessary to avoid the error "cannot return reference to local variable `selfi`."
+#[cfg(target_arch = "wasm32")]
 async fn get_block_range_wrapper(
     mut selfi: CompactTxStreamerClient<RpcClientType>,
     request: BlockRange,
