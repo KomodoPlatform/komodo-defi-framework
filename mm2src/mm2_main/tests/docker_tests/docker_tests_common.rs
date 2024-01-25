@@ -117,7 +117,7 @@ pub trait CoinDockerOps {
                             let hash = client.get_block_hash(n).wait().unwrap();
                             let block = client.get_block(hash).wait().unwrap();
                             let coinbase = client.get_verbose_transaction(&block.tx[0]).wait().unwrap();
-                            println!("Coinbase tx {:?} in block {}", coinbase, n);
+                            log!("Coinbase tx {:?} in block {}", coinbase, n);
                             if coinbase.version == expected_tx_version {
                                 break;
                             }
@@ -1022,7 +1022,7 @@ pub fn init_geth_node() {
     unsafe {
         let accounts = block_on(GETH_WEB3.eth().accounts()).unwrap();
         GETH_ACCOUNT = accounts[0];
-        println!("GETH ACCOUNT {:?}", GETH_ACCOUNT);
+        log!("GETH ACCOUNT {:?}", GETH_ACCOUNT);
 
         let tx_request_deploy_erc20 = TransactionRequest {
             from: GETH_ACCOUNT,
@@ -1040,14 +1040,20 @@ pub fn init_geth_node() {
         };
 
         let deploy_erc20_tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_erc20)).unwrap();
-        println!("Sent ERC20 deploy transaction {:?}", deploy_erc20_tx_hash);
+        log!("Sent ERC20 deploy transaction {:?}", deploy_erc20_tx_hash);
 
         loop {
-            let deploy_tx_receipt = block_on(GETH_WEB3.eth().transaction_receipt(deploy_erc20_tx_hash)).unwrap();
+            let deploy_tx_receipt = match block_on(GETH_WEB3.eth().transaction_receipt(deploy_erc20_tx_hash)) {
+                Ok(receipt) => receipt,
+                Err(_) => {
+                    thread::sleep(Duration::from_millis(100));
+                    continue;
+                },
+            };
 
             if let Some(receipt) = deploy_tx_receipt {
                 GETH_ERC20_CONTRACT = receipt.contract_address.unwrap();
-                println!("GETH_ERC20_CONTRACT {:?}", GETH_ERC20_CONTRACT);
+                log!("GETH_ERC20_CONTRACT {:?}", GETH_ERC20_CONTRACT);
                 break;
             }
             thread::sleep(Duration::from_millis(100));
@@ -1068,14 +1074,20 @@ pub fn init_geth_node() {
             max_priority_fee_per_gas: None,
         };
         let deploy_swap_tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_swap_contract)).unwrap();
-        println!("Sent deploy swap contract transaction {:?}", deploy_swap_tx_hash);
+        log!("Sent deploy swap contract transaction {:?}", deploy_swap_tx_hash);
 
         loop {
-            let deploy_swap_tx_receipt = block_on(GETH_WEB3.eth().transaction_receipt(deploy_swap_tx_hash)).unwrap();
+            let deploy_swap_tx_receipt = match block_on(GETH_WEB3.eth().transaction_receipt(deploy_swap_tx_hash)) {
+                Ok(receipt) => receipt,
+                Err(_) => {
+                    thread::sleep(Duration::from_millis(100));
+                    continue;
+                },
+            };
 
             if let Some(receipt) = deploy_swap_tx_receipt {
                 GETH_SWAP_CONTRACT = receipt.contract_address.unwrap();
-                println!("GETH_SWAP_CONTRACT {:?}", GETH_SWAP_CONTRACT);
+                log!("GETH_SWAP_CONTRACT {:?}", GETH_SWAP_CONTRACT);
                 break;
             }
             thread::sleep(Duration::from_millis(100));
@@ -1101,18 +1113,24 @@ pub fn init_geth_node() {
                 .send_transaction(tx_request_deploy_watchers_swap_contract),
         )
         .unwrap();
-        println!(
+        log!(
             "Sent deploy watchers swap contract transaction {:?}",
             deploy_watchers_swap_tx_hash
         );
 
         loop {
             let deploy_watchers_swap_tx_receipt =
-                block_on(GETH_WEB3.eth().transaction_receipt(deploy_watchers_swap_tx_hash)).unwrap();
+                match block_on(GETH_WEB3.eth().transaction_receipt(deploy_watchers_swap_tx_hash)) {
+                    Ok(receipt) => receipt,
+                    Err(_) => {
+                        thread::sleep(Duration::from_millis(100));
+                        continue;
+                    },
+                };
 
             if let Some(receipt) = deploy_watchers_swap_tx_receipt {
                 GETH_WATCHERS_SWAP_CONTRACT = receipt.contract_address.unwrap();
-                println!("GETH_WATCHERS_SWAP_CONTRACT {:?}", GETH_SWAP_CONTRACT);
+                log!("GETH_WATCHERS_SWAP_CONTRACT {:?}", GETH_SWAP_CONTRACT);
                 break;
             }
             thread::sleep(Duration::from_millis(100));
