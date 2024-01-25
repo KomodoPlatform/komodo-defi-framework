@@ -33,7 +33,7 @@ pub(crate) mod z_coin_grpc {
     tonic::include_proto!("pirate.wallet.sdk.rpc");
 }
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
-use z_coin_grpc::ChainSpec;
+use z_coin_grpc::{ChainSpec, CompactBlock as TonicCompactBlock};
 
 cfg_native!(
     use crate::ZTransaction;
@@ -49,14 +49,14 @@ cfg_native!(
     use tonic::transport::{Channel, ClientTlsConfig};
     use tonic::codegen::StdError;
 
-    use z_coin_grpc::{CompactBlock as TonicCompactBlock, CompactOutput as TonicCompactOutput,
-                  CompactSpend as TonicCompactSpend, CompactTx as TonicCompactTx};
+    use z_coin_grpc::{CompactOutput as TonicCompactOutput, CompactSpend as TonicCompactSpend, CompactTx as TonicCompactTx};
 );
 
 cfg_wasm32!(
+    use futures_util::future::try_join_all;
     use mm2_net::wasm::tonic_client::TonicClient;
 
-    const MAX_CHUNK_SIZE: u64 = 60000;
+    const MAX_CHUNK_SIZE: u64 = 20000;
 );
 
 /// ZRpcOps trait provides asynchronous methods for performing various operations related to
@@ -101,8 +101,9 @@ type RpcClientType = Channel;
 #[cfg(target_arch = "wasm32")]
 type RpcClientType = TonicClient;
 
+#[derive(Clone)]
 pub struct LightRpcClient {
-    rpc_clients: AsyncMutex<Vec<CompactTxStreamerClient<RpcClientType>>>,
+    rpc_clients: Arc<AsyncMutex<Vec<CompactTxStreamerClient<RpcClientType>>>>,
 }
 
 impl LightRpcClient {
@@ -155,7 +156,7 @@ impl LightRpcClient {
         }
 
         Ok(LightRpcClient {
-            rpc_clients: AsyncMutex::new(rpc_clients),
+            rpc_clients: AsyncMutex::new(rpc_clients).into(),
         })
     }
 }
@@ -193,37 +194,31 @@ where
     Ok(CompactTxStreamerClient::new(conn))
 }
 
-/// Generate multiple gRPC requests to fetch block ranges efficiently.
-/// It takes the starting block height and the last block height as input and constructs requests for fetching
-/// consecutive block ranges within the specified limits.
-#[cfg(target_arch = "wasm32")]
-fn construct_block_range_requests(start_block: u64, last_block: u64) -> Vec<tonic::Request<BlockRange>> {
-    let mut requests = Vec::new();
-    let mut current_start = start_block;
+async fn handle_block_cache_update(
+    db: &BlockDbImpl,
+    handler: &mut SaplingSyncLoopHandle,
+    block: Result<TonicCompactBlock, tonic::Status>,
+    last_block: u64,
+) -> Result<(), MmError<UpdateBlocksCacheErr>> {
+    let block = block.map_err(|_| UpdateBlocksCacheErr::DecodeError("Error getting block".to_string()))?;
+    debug!("Got block {}", block.height);
+    let height = u32::try_from(block.height)
+        .map_err(|_| UpdateBlocksCacheErr::DecodeError("Block height too large".to_string()))?;
+    db.insert_block(height, block.encode_to_vec())
+        .await
+        .map_err(|err| UpdateBlocksCacheErr::ZcashDBError(err.to_string()))?;
 
-    while current_start <= last_block {
-        let current_end = if current_start + MAX_CHUNK_SIZE - 1 <= last_block {
-            current_start + MAX_CHUNK_SIZE - 1
-        } else {
-            last_block
-        };
+    handler.notify_blocks_cache_status(block.height, last_block);
+    Ok(())
+}
 
-        let block_range = BlockRange {
-            start: Some(BlockId {
-                height: current_start,
-                hash: Vec::new(),
-            }),
-            end: Some(BlockId {
-                height: current_end,
-                hash: Vec::new(),
-            }),
-        };
-
-        requests.push(tonic::Request::new(block_range));
-        current_start = current_end + 1;
-    }
-
-    requests
+/// Wraps the client (`selfi`) in an `Arc` to enable safe cloning and sharing across futures.
+/// This is necessary to avoid the error "cannot return reference to local variable `selfi`."
+async fn get_block_range_wrapper(
+    mut selfi: CompactTxStreamerClient<RpcClientType>,
+    request: BlockRange,
+) -> Result<tonic::Response<tonic::Streaming<TonicCompactBlock>>, tonic::Status> {
+    selfi.get_block_range(tonic::Request::new(request)).await
 }
 
 #[async_trait]
@@ -253,6 +248,54 @@ impl ZRpcOps for LightRpcClient {
             .into_inner())
     }
 
+    #[cfg(target_arch = "wasm32")]
+    async fn scan_blocks(
+        &self,
+        start_block: u64,
+        last_block: u64,
+        db: &BlockDbImpl,
+        handler: &mut SaplingSyncLoopHandle,
+    ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
+        let mut requests = Vec::new();
+        let mut current_start = start_block;
+        let selfi = self.get_live_client().await?;
+        // Generate multiple gRPC requests to fetch block ranges efficiently.
+        // It takes the starting block height and the last block height as input and constructs requests for fetching
+        // consecutive block ranges within the specified limits.
+        while current_start <= last_block {
+            let current_end = if current_start + MAX_CHUNK_SIZE - 1 <= last_block {
+                current_start + MAX_CHUNK_SIZE - 1
+            } else {
+                last_block
+            };
+
+            let block_range = BlockRange {
+                start: Some(BlockId {
+                    height: current_start,
+                    hash: Vec::new(),
+                }),
+                end: Some(BlockId {
+                    height: current_end,
+                    hash: Vec::new(),
+                }),
+            };
+
+            requests.push(get_block_range_wrapper(selfi.clone(), block_range));
+            current_start = current_end + 1;
+        }
+
+        let responses = try_join_all(requests).await?;
+        for response in responses {
+            let mut response = response.into_inner();
+            while let Some(block) = response.next().await {
+                handle_block_cache_update(db, handler, block, last_block).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     async fn scan_blocks(
         &self,
         start_block: u64,
@@ -261,8 +304,7 @@ impl ZRpcOps for LightRpcClient {
         handler: &mut SaplingSyncLoopHandle,
     ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
         let mut selfi = self.get_live_client().await?;
-        #[cfg(not(target_arch = "wasm32"))]
-        let requests = vec![tonic::Request::new(BlockRange {
+        let request = tonic::Request::new(BlockRange {
             start: Some(BlockId {
                 height: start_block,
                 hash: Vec::new(),
@@ -271,28 +313,16 @@ impl ZRpcOps for LightRpcClient {
                 height: last_block,
                 hash: Vec::new(),
             }),
-        })];
-
-        #[cfg(target_arch = "wasm32")]
-        let requests = construct_block_range_requests(start_block, last_block);
-        for request in requests {
-            let mut response = selfi
-                .get_block_range(request)
-                .await
-                .map_to_mm(UpdateBlocksCacheErr::GrpcError)?
-                .into_inner();
-            while let Some(block) = response.next().await {
-                let block = block.map_err(|_| UpdateBlocksCacheErr::DecodeError("Error getting block".to_string()))?;
-                debug!("Got block {}", block.height);
-                let height = u32::try_from(block.height)
-                    .map_err(|_| UpdateBlocksCacheErr::DecodeError("Block height too large".to_string()))?;
-                db.insert_block(height, block.encode_to_vec())
-                    .await
-                    .map_err(|err| UpdateBlocksCacheErr::ZcashDBError(err.to_string()))?;
-
-                handler.notify_blocks_cache_status(block.height, last_block);
-            }
+        });
+        let mut response = selfi
+            .get_block_range(request)
+            .await
+            .map_to_mm(UpdateBlocksCacheErr::GrpcError)?
+            .into_inner();
+        while let Some(block) = response.next().await {
+            handle_block_cache_update(db, handler, block, last_block).await?;
         }
+
         Ok(())
     }
 

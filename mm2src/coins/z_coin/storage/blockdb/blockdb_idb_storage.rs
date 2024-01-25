@@ -115,33 +115,28 @@ impl BlockDbImpl {
             ticker,
         };
 
-        Ok(block_db.replace_item_by_unique_multi_index(indexes, &block).await? as usize)
+        Ok(block_db
+            .add_item_or_ignore_by_unique_multi_index(indexes, &block)
+            .await?
+            .get_id() as usize)
     }
 
     /// Asynchronously rewinds the storage to a specified block height, effectively
     /// removing data beyond the specified height from the storage.    
-    pub async fn rewind_to_height(&self, height: u32) -> ZcoinStorageRes<usize> {
-        let ticker = self.ticker.clone();
+    pub async fn rewind_to_height(&self, _height: u32) -> ZcoinStorageRes<usize> {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
         let block_db = db_transaction.table::<BlockDbTable>().await?;
 
-        let mut deleted = 0;
-        let blocks = block_db.get_items("ticker", &ticker).await?;
-        for (_, block) in blocks {
-            if block.height > height {
-                block_db
-                    .delete_item_by_unique_multi_index(
-                        MultiIndex::new(BlockDbTable::TICKER_HEIGHT_INDEX)
-                            .with_value(&ticker)?
-                            .with_value(block.height)?,
-                    )
-                    .await?;
-                deleted += 1;
-            }
+        let deleted = block_db.delete_items_by_index("ticker", &self.ticker).await?;
+        // Perform a safe check to ensure the deletion was successful.
+        if deleted.is_empty() {
+            return MmError::err(ZcoinStorageError::RemoveFromStorageErr(
+                "no block header was deleted".to_string(),
+            ));
         }
 
-        Ok(deleted)
+        Ok(deleted[deleted.len() - 1] as usize)
     }
 
     #[allow(unused)]

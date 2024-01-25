@@ -311,6 +311,14 @@ pub enum AddOrIgnoreResult {
     ExistAlready(ItemId),
 }
 
+impl AddOrIgnoreResult {
+    pub fn get_id(&self) -> ItemId {
+        match self {
+            AddOrIgnoreResult::Added(id) => *id,
+            AddOrIgnoreResult::ExistAlready(id) => *id,
+        }
+    }
+}
 impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
     /// Adds the given item to the table.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/add
