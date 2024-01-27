@@ -831,6 +831,7 @@ pub enum SyncStartPoint {
 
 // ZcoinRpcMode reprs available RPC modes for interacting with the Zcoin network. It includes
 /// modes for both native and light client, each with their own configuration options.
+#[allow(unused)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "rpc", content = "rpc_data")]
 pub enum ZcoinRpcMode {
@@ -846,7 +847,7 @@ pub enum ZcoinRpcMode {
         sync_params: Option<SyncStartPoint>,
         /// Indicates that synchronization parameters will be skipped and continue sync from last synced block.
         /// Will use `sync_params` if no last synced block found.
-        // skip_sync_params: Option<bool>,
+        _skip_sync_params: Option<bool>,
     },
 }
 
