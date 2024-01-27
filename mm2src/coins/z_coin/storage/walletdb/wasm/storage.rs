@@ -2,10 +2,10 @@ use crate::z_coin::storage::walletdb::wasm::tables::{WalletDbAccountsTable, Wall
                                                      WalletDbReceivedNotesTable, WalletDbSaplingWitnessesTable,
                                                      WalletDbSentNotesTable, WalletDbTransactionsTable};
 use crate::z_coin::storage::wasm::{to_spendable_note, SpendableNoteConstructor};
+use crate::z_coin::storage::ZcoinStorageRes;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
 use crate::z_coin::{CheckPointBlockInfo, WalletDbShared, ZCoinBuilder, ZcoinConsensusParams};
 
-use crate::z_coin::storage::ZcoinStorageRes;
 use async_trait::async_trait;
 use common::log::info;
 use ff::PrimeField;
@@ -806,15 +806,28 @@ impl WalletRead for WalletIndexedDb {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
         let block_headers_db = db_transaction.table::<WalletDbBlocksTable>().await?;
-        let maybe_items = block_headers_db.get_items("ticker", &self.ticker).await?;
-        let (mut min, mut max) = (None, None);
-        if !maybe_items.is_empty() {
-            min = Some(maybe_items[0].1.height);
-            max = Some(maybe_items[maybe_items.len() - 1].1.height);
-        }
+        let earlist_block = block_headers_db
+            .cursor_builder()
+            .only("ticker", &self.ticker)?
+            .bound("height", 0u32, u32::MAX)
+            .open_cursor(WalletDbBlocksTable::TICKER_HEIGHT_INDEX)
+            .await?
+            .next()
+            .await?;
+        let db_transaction = locked_db.get_inner().transaction().await?;
+        let block_headers_db = db_transaction.table::<WalletDbBlocksTable>().await?;
+        let latest_block = block_headers_db
+            .cursor_builder()
+            .only("ticker", &self.ticker)?
+            .bound("height", 0u32, u32::MAX)
+            .reverse()
+            .open_cursor(WalletDbBlocksTable::TICKER_HEIGHT_INDEX)
+            .await?
+            .next()
+            .await?;
 
-        if let (Some(min), Some(max)) = (min, max) {
-            Ok(Some((BlockHeight::from(min), BlockHeight::from(max))))
+        if let (Some(min), Some(max)) = (earlist_block, latest_block) {
+            Ok(Some((BlockHeight::from(min.1.height), BlockHeight::from(max.1.height))))
         } else {
             Ok(None)
         }

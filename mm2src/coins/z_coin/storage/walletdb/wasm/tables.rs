@@ -52,11 +52,11 @@ impl WalletDbBlocksTable {
     /// A **unique** index that consists of the following properties:
     /// * ticker
     /// * height
-    pub const TICKER_HEIGHT_INDEX: &str = "ticker_height_index";
+    pub const TICKER_HEIGHT_INDEX: &'static str = "ticker_height_index";
     /// A **unique** index that consists of the following properties:
     /// * ticker
     /// * hash
-    pub const TICKER_HASH_INDEX: &str = "ticker_hash_index";
+    pub const TICKER_HASH_INDEX: &'static str = "ticker_hash_index";
 }
 
 impl TableSignature for WalletDbBlocksTable {

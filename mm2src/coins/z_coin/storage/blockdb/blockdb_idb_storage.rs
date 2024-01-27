@@ -128,22 +128,29 @@ impl BlockDbImpl {
         let db_transaction = locked_db.get_inner().transaction().await?;
         let block_db = db_transaction.table::<BlockDbTable>().await?;
 
-        let mut deleted = 0;
-        let blocks = block_db.get_items("ticker", &self.ticker).await?;
-        for (_, block) in blocks {
-            if block.height > height {
+        let mut latest_block = block_db
+            .cursor_builder()
+            .only("ticker", &self.ticker)?
+            .bound("height", 0u32, u32::MAX)
+            .reverse()
+            .open_cursor(BlockDbTable::TICKER_HEIGHT_INDEX)
+            .await?;
+
+        let mut latest_height = None;
+        if let Some((_, latest)) = latest_block.next().await? {
+            latest_height = Some(latest.height);
+            for i in (height + 1)..=latest.height {
                 block_db
                     .delete_item_by_unique_multi_index(
                         MultiIndex::new(BlockDbTable::TICKER_HEIGHT_INDEX)
                             .with_value(&self.ticker)?
-                            .with_value(block.height)?,
+                            .with_value(i)?,
                     )
                     .await?;
-                deleted += 1;
             }
         }
 
-        Ok(deleted)
+        Ok(latest_height.unwrap_or_default() as usize)
     }
 
     #[allow(unused)]

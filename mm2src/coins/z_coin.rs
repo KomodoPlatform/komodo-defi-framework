@@ -844,6 +844,9 @@ pub enum ZcoinRpcMode {
         /// Specifies the parameters for synchronizing the wallet from a specific block. This overrides the
         /// `CheckPointBlockInfo` configuration in the coin settings.
         sync_params: Option<SyncStartPoint>,
+        /// Indicates that synchronization parameters will be skipped and continue sync from last synced block.
+        /// Will use `sync_params` if no last synced block found.
+        // skip_sync_params: Option<bool>,
     },
 }
 
