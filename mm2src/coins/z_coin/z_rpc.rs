@@ -507,6 +507,7 @@ pub(super) async fn init_light_client<'a>(
     lightwalletd_urls: Vec<String>,
     blocks_db: BlockDbImpl,
     sync_params: &Option<SyncStartPoint>,
+    skip_sync_params: bool,
     z_spending_key: &ExtendedSpendingKey,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
@@ -515,17 +516,18 @@ pub(super) async fn init_light_client<'a>(
 
     let mut light_rpc_clients = LightRpcClient::new(lightwalletd_urls).await?;
 
+    let min_height = blocks_db.get_earliest_block().await? as u64;
     let current_block_height = light_rpc_clients
         .get_block_height()
         .await
         .mm_err(ZcoinClientInitError::UpdateBlocksCacheErr)?;
     let sapling_activation_height = builder.protocol_info.consensus_params.sapling_activation_height as u64;
-    let sync_height = match sync_params {
+    let sync_height = match *sync_params {
         Some(SyncStartPoint::Date(date)) => builder
-            .calculate_starting_height_from_date(*date, current_block_height)
+            .calculate_starting_height_from_date(date, current_block_height)
             .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?
             .unwrap_or(sapling_activation_height),
-        Some(SyncStartPoint::Height(height)) => *height,
+        Some(SyncStartPoint::Height(height)) => height,
         Some(SyncStartPoint::Earliest) => sapling_activation_height,
         None => builder
             .calculate_starting_height_from_date(now_sec() - DAY_IN_SECONDS, current_block_height)
@@ -535,15 +537,14 @@ pub(super) async fn init_light_client<'a>(
     let maybe_checkpoint_block = light_rpc_clients
         .checkpoint_block_from_height(sync_height.max(sapling_activation_height), &coin)
         .await?;
-    let min_height = blocks_db.get_earliest_block().await?;
-    // check if no sync_params was provided and continue syncing from last height in db if it's > 0.
-    let continue_from_prev_sync = min_height > 0 && sync_params.is_none();
+
+    // check if no sync_params was provided and continue syncing from last height in db if it's > 0 or skip_sync_params is true.
+    let continue_from_prev_sync =
+        (min_height > 0 && sync_params.is_none()) || (skip_sync_params && min_height < sapling_activation_height);
     let wallet_db =
         WalletDbShared::new(builder, maybe_checkpoint_block, z_spending_key, continue_from_prev_sync).await?;
-
-    // Get min_height in blocks_db and rewind blocks_db to 0 if sync_height != min_height
-    let min_height = blocks_db.get_earliest_block().await?;
-    if !continue_from_prev_sync && (sync_height != min_height as u64) {
+    // Check min_height in blocks_db and rewind blocks_db to 0 if sync_height != min_height
+    if !continue_from_prev_sync && (sync_height != min_height) {
         // let user know we're clearing cache and resyncing from new provided height.
         if min_height > 0 {
             info!("Older/Newer sync height detected!, rewinding blocks_db to new height: {sync_height:?}");
@@ -656,7 +657,6 @@ impl SaplingSyncRespawnGuard {
 ///   the first synchronization block, the current scanned block, and the latest block.
 /// - `TemporaryError(String)`: Represents a temporary error state, with an associated error message
 ///   providing details about the error.
-/// - `RequestingWalletBalance`: Indicates the process of requesting the wallet balance.
 /// - `Finishing`: Represents the finishing state of an operation.
 pub enum SyncStatus {
     UpdatingBlocksCache {

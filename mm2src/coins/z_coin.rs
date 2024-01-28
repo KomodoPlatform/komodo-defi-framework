@@ -847,7 +847,7 @@ pub enum ZcoinRpcMode {
         sync_params: Option<SyncStartPoint>,
         /// Indicates that synchronization parameters will be skipped and continue sync from last synced block.
         /// Will use `sync_params` if no last synced block found.
-        _skip_sync_params: Option<bool>,
+        skip_sync_params: Option<bool>,
     },
 }
 
@@ -990,6 +990,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
             ZcoinRpcMode::Light {
                 light_wallet_d_servers,
                 sync_params,
+                skip_sync_params,
                 ..
             } => {
                 init_light_client(
@@ -997,6 +998,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                     light_wallet_d_servers.clone(),
                     blocks_db,
                     sync_params,
+                    skip_sync_params.unwrap_or_default(),
                     &z_spending_key,
                 )
                 .await?
