@@ -142,6 +142,7 @@ impl WebsocketTransport {
 
     async fn stop_connection(self) { todo!() }
 
+    // TODO: implement timeouts
     async fn rpc_send_and_receive(&self, request: Call, request_id: usize) -> Result<serde_json::Value, Error> {
         let mut tx = self.request_handler.tx.clone();
         let mut rx = self.response_handler.rx.lock().await;
