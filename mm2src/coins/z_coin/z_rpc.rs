@@ -549,7 +549,7 @@ pub(super) async fn init_light_client<'a>(
         if min_height > 0 {
             info!("Older/Newer sync height detected!, rewinding blocks_db to new height: {sync_height:?}");
         }
-        blocks_db.rewind_to_height(u32::MIN).await?;
+        blocks_db.rewind_to_height(u32::MIN.into()).await?;
     };
 
     let sync_handle = SaplingSyncLoopHandle {
@@ -780,39 +780,40 @@ impl SaplingSyncLoopHandle {
     /// Scans cached blocks, validates the chain and updates WalletDb.
     /// For more notes on the process, check https://github.com/zcash/librustzcash/blob/master/zcash_client_backend/src/data_api/chain.rs#L2
     async fn scan_validate_and_update_blocks(&mut self) -> Result<(), MmError<ZcoinStorageError>> {
-        let wallet_db = self.wallet_db.clone().db;
-        let wallet_ops_guard = wallet_db.get_update_ops().expect("get_update_ops always returns Ok");
-        let mut wallet_ops_guard_clone = wallet_ops_guard.clone();
-
         let blocks_db = self.blocks_db.clone();
-        let validate_chain = blocks_db
+        let wallet_db = self.wallet_db.clone().db;
+        let mut wallet_ops = wallet_db.get_update_ops().expect("get_update_ops always returns Ok");
+
+        if let Err(e) = blocks_db
             .process_blocks_with_mode(
                 self.consensus_params.clone(),
                 BlockProcessingMode::Validate,
-                wallet_ops_guard.get_max_height_hash().await?,
+                wallet_ops.get_max_height_hash().await?,
                 None,
             )
-            .await;
-        if let Err(e) = validate_chain {
+            .await
+        {
             match e.into_inner() {
-                ZcoinStorageError::ValidateBlocksError(ValidateBlocksError::ChainInvalid { height, .. }) => {
-                    let lower_bound = height;
+                ZcoinStorageError::ValidateBlocksError(ValidateBlocksError::ChainInvalid {
+                    height: lower_bound,
+                    ..
+                }) => {
                     let rewind_height = if lower_bound > BlockHeight::from_u32(10) {
                         lower_bound - 10
                     } else {
                         BlockHeight::from_u32(0)
                     };
-                    wallet_ops_guard_clone.rewind_to_height(rewind_height).await?;
-                    self.blocks_db.rewind_to_height(rewind_height.into()).await?;
+                    wallet_ops.rewind_to_height(rewind_height).await?;
+                    blocks_db.rewind_to_height(rewind_height).await?;
                 },
                 e => return MmError::err(e),
             }
         }
 
-        let latest_block_height = self.blocks_db.get_latest_block().await?;
+        let latest_block_height = blocks_db.get_latest_block().await?;
         let current_block = BlockHeight::from_u32(latest_block_height);
         loop {
-            match wallet_ops_guard_clone.block_height_extrema().await? {
+            match wallet_ops.block_height_extrema().await? {
                 Some((_, max_in_wallet)) => {
                     if max_in_wallet >= current_block {
                         break;
@@ -823,8 +824,7 @@ impl SaplingSyncLoopHandle {
                 None => self.notify_building_wallet_db(0, current_block.into()),
             }
 
-            let wallet_ops_guard = wallet_db.get_update_ops().expect("get_update_ops always returns Ok");
-            let scan = DataConnStmtCacheWrapper::new(wallet_ops_guard);
+            let scan = DataConnStmtCacheWrapper::new(wallet_ops.clone());
             blocks_db
                 .process_blocks_with_mode(
                     self.consensus_params.clone(),

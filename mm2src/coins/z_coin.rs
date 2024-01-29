@@ -984,8 +984,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => {
-                let native_client = self.native_client()?;
-                init_native_client(&self, native_client, blocks_db, &z_spending_key).await?
+                init_native_client(&self, self.native_client()?, blocks_db, &z_spending_key).await?
             },
             ZcoinRpcMode::Light {
                 light_wallet_d_servers,

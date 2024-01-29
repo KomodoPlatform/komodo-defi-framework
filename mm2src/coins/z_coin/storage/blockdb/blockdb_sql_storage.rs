@@ -121,12 +121,12 @@ impl BlockDbImpl {
         .await
     }
 
-    pub(crate) async fn rewind_to_height(&self, height: u32) -> ZcoinStorageRes<usize> {
+    pub(crate) async fn rewind_to_height(&self, height: BlockHeight) -> ZcoinStorageRes<usize> {
         let db = self.db.clone();
         async_blocking(move || {
             db.lock()
                 .unwrap()
-                .execute("DELETE from compactblocks WHERE height > ?1", [height])
+                .execute("DELETE from compactblocks WHERE height > ?1", [u32::from(height)])
                 .map_to_mm(|err| ZcoinStorageError::RemoveFromStorageErr(err.to_string()))
         })
         .await

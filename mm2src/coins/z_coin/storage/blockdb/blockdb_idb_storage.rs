@@ -123,7 +123,7 @@ impl BlockDbImpl {
 
     /// Asynchronously rewinds the storage to a specified block height, effectively
     /// removing data beyond the specified height from the storage.    
-    pub async fn rewind_to_height(&self, height: u32) -> ZcoinStorageRes<usize> {
+    pub async fn rewind_to_height(&self, height: BlockHeight) -> ZcoinStorageRes<usize> {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
         let block_db = db_transaction.table::<BlockDbTable>().await?;
@@ -139,7 +139,7 @@ impl BlockDbImpl {
         let mut latest_height = None;
         if let Some((_, latest)) = latest_block.next().await? {
             latest_height = Some(latest.height);
-            for i in (height + 1)..=latest.height {
+            for i in (u32::from(height) + 1)..=latest.height {
                 block_db
                     .delete_item_by_unique_multi_index(
                         MultiIndex::new(BlockDbTable::TICKER_HEIGHT_INDEX)

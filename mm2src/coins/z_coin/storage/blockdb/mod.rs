@@ -62,7 +62,7 @@ mod block_db_storage_tests {
         }
 
         // rewind height to 1900000
-        let rewind_result = db.rewind_to_height(1900000).await;
+        let rewind_result = db.rewind_to_height(1900000.into()).await;
         assert!(rewind_result.is_ok());
 
         // get last height - we expect it to be 1900000
