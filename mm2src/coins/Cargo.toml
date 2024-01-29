@@ -124,6 +124,7 @@ spl-associated-token-account = { version = "1", optional = true }
 blake2b_simd = "0.5"
 ff = "0.8"
 futures-util = "0.3"
+instant = "0.1.12"
 jubjub = "0.5.1"
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
@@ -145,6 +146,7 @@ hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
+instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 lightning = "0.0.113"
 lightning-background-processor = "0.0.113"
 lightning-invoice = { version = "0.21.0", features = ["serde"] }

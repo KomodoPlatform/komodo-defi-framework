@@ -17,6 +17,7 @@ use crate::{tendermint::TendermintCommons, utxo::utxo_common::big_decimal_from_s
 #[async_trait]
 impl EventBehaviour for TendermintCoin {
     const EVENT_NAME: &'static str = "COIN_BALANCE";
+    const ERROR_EVENT_NAME: &'static str = "COIN_BALANCE_ERROR";
 
     async fn handle(self, _interval: f64, tx: oneshot::Sender<EventInitStatus>) {
         fn generate_subscription_query(query_filter: String) -> String {
@@ -120,7 +121,15 @@ impl EventBehaviour for TendermintCoin {
                             let balance_denom = match self.account_balance_for_denom(&self.account_id, denom).await {
                                 Ok(balance_denom) => balance_denom,
                                 Err(e) => {
-                                    log::error!("{e}");
+                                    log::error!("Failed getting balance for '{ticker}'. Error: {e}");
+                                    let e = serde_json::to_value(e).expect("Serialization should't fail.");
+                                    ctx.stream_channel_controller
+                                        .broadcast(Event::new(
+                                            format!("{}:{}", Self::ERROR_EVENT_NAME, ticker),
+                                            e.to_string(),
+                                        ))
+                                        .await;
+
                                     continue;
                                 },
                             };

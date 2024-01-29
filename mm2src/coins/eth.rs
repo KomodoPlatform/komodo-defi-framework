@@ -50,6 +50,7 @@ use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
@@ -102,6 +103,7 @@ use super::{coin_conf, lp_coinfind_or_err, AsyncMutex, BalanceError, BalanceFut,
             INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
 pub use rlp;
 
+mod eth_balance_events;
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
 mod web3_transport;
@@ -4772,6 +4774,16 @@ impl EthCoin {
         };
         Box::new(fut.boxed().compat())
     }
+
+    async fn spawn_balance_stream_if_enabled(&self, ctx: &MmArc) -> Result<(), String> {
+        if let Some(stream_config) = &ctx.event_stream_configuration {
+            if let EventInitStatus::Failed(err) = EventBehaviour::spawn_if_active(self.clone(), stream_config).await {
+                return ERR!("Failed spawning balance events. Error: {}", err);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -5561,9 +5573,10 @@ pub async fn eth_coin_from_conf_and_request(
         EthCoinType::Erc20 { ref platform, .. } => String::from(platform),
     };
 
-    let mut map = NONCE_LOCK.lock().unwrap();
-
-    let nonce_lock = map.entry(key_lock).or_insert_with(new_nonce_lock).clone();
+    let nonce_lock = {
+        let mut map = NONCE_LOCK.lock().unwrap();
+        map.entry(key_lock).or_insert_with(new_nonce_lock).clone()
+    };
 
     // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
     // all spawned futures related to `ETH` coin will be aborted as well.
@@ -5593,7 +5606,11 @@ pub async fn eth_coin_from_conf_and_request(
         erc20_tokens_infos: Default::default(),
         abortable_system,
     };
-    Ok(EthCoin(Arc::new(coin)))
+
+    let coin = EthCoin(Arc::new(coin));
+    coin.spawn_balance_stream_if_enabled(ctx).await?;
+
+    Ok(coin)
 }
 
 /// Displays the address in mixed-case checksum form

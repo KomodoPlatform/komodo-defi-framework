@@ -28,6 +28,8 @@ pub enum EthActivationV2Error {
     #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
     ErrorDeserializingDerivationPath(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    #[display(fmt = "Failed spawning balance events. Error: {_0}")]
+    FailedSpawningBalanceEvents(String),
     #[cfg(target_arch = "wasm32")]
     #[from_trait(WithMetamaskRpcError::metamask_rpc_error)]
     #[display(fmt = "{}", _0)]
@@ -293,8 +295,10 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).ok();
 
-    let mut map = NONCE_LOCK.lock().unwrap();
-    let nonce_lock = map.entry(ticker.clone()).or_insert_with(new_nonce_lock).clone();
+    let nonce_lock = {
+        let mut map = NONCE_LOCK.lock().unwrap();
+        map.entry(ticker.clone()).or_insert_with(new_nonce_lock).clone()
+    };
 
     // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
     // all spawned futures related to `ETH` coin will be aborted as well.
@@ -325,7 +329,12 @@ pub async fn eth_coin_from_conf_and_request_v2(
         abortable_system,
     };
 
-    Ok(EthCoin(Arc::new(coin)))
+    let coin = EthCoin(Arc::new(coin));
+    coin.spawn_balance_stream_if_enabled(ctx)
+        .await
+        .map_err(EthActivationV2Error::FailedSpawningBalanceEvents)?;
+
+    Ok(coin)
 }
 
 /// Processes the given `priv_key_policy` and generates corresponding `KeyPair`.
