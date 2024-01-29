@@ -290,7 +290,7 @@ use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 pub mod nft;
 use nft::nft_errors::GetNftInfoError;
-use script::{Builder, Script};
+use script::Script;
 
 pub mod z_coin;
 use crate::coin_errors::ValidatePaymentResult;
@@ -863,23 +863,15 @@ impl<'a> SwapTxTypeWithSecretHash<'a> {
         }
     }
 
-    pub fn add_op_return_data(&self, op_return_builder: Builder) -> Builder {
+    pub fn op_return_data(&self) -> Vec<u8> {
         match self {
-            SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => {
-                op_return_builder.push_bytes(maker_secret_hash)
-            },
-            SwapTxTypeWithSecretHash::TakerFunding { taker_secret_hash } => {
-                op_return_builder.push_bytes(taker_secret_hash)
-            },
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => maker_secret_hash.to_vec(),
+            SwapTxTypeWithSecretHash::TakerFunding { taker_secret_hash } => taker_secret_hash.to_vec(),
             SwapTxTypeWithSecretHash::MakerPaymentV2 {
                 maker_secret_hash,
                 taker_secret_hash,
-            } => op_return_builder
-                .push_bytes(maker_secret_hash)
-                .push_bytes(taker_secret_hash),
-            SwapTxTypeWithSecretHash::TakerPaymentV2 { maker_secret_hash } => {
-                op_return_builder.push_bytes(maker_secret_hash)
-            },
+            } => [*maker_secret_hash, *taker_secret_hash].concat(),
+            SwapTxTypeWithSecretHash::TakerPaymentV2 { maker_secret_hash } => maker_secret_hash.to_vec(),
         }
     }
 }

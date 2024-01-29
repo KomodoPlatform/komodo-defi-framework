@@ -493,10 +493,10 @@ fn send_and_refund_maker_payment_timelock() {
     let expected_amount = 100000000u64;
     assert_eq!(expected_amount, maker_payment.outputs[0].value);
 
+    let expected_op_return_data = [maker_secret_hash.as_slice(), taker_secret_hash].concat();
     let expected_op_return = Builder::default()
         .push_opcode(Opcode::OP_RETURN)
-        .push_bytes(&[1; 20])
-        .push_bytes(&[0; 20])
+        .push_data(&expected_op_return_data)
         .into_bytes();
     assert_eq!(expected_op_return, maker_payment.outputs[1].script_pubkey);
 
@@ -557,10 +557,10 @@ fn send_and_refund_maker_payment_taker_secret() {
     let expected_amount = 100000000u64;
     assert_eq!(expected_amount, maker_payment.outputs[0].value);
 
+    let op_return_data = [maker_secret_hash, taker_secret_hash].concat();
     let expected_op_return = Builder::default()
         .push_opcode(Opcode::OP_RETURN)
-        .push_bytes(&[1; 20])
-        .push_bytes(taker_secret_hash)
+        .push_data(&op_return_data)
         .into_bytes();
     assert_eq!(expected_op_return, maker_payment.outputs[1].script_pubkey);
 

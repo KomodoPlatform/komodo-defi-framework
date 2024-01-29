@@ -4840,7 +4840,7 @@ where
     op_return_builder = if coin.as_ref().conf.ticker == "ARRR" {
         op_return_builder.push_data(&redeem_script)
     } else {
-        tx_type.add_op_return_data(op_return_builder)
+        op_return_builder.push_data(&tx_type.op_return_data())
     };
 
     let op_return_script = op_return_builder.into_bytes();
