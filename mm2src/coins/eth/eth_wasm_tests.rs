@@ -34,10 +34,9 @@ async fn test_send() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
+            web3,
             is_parity: false,
         }],
-        web3,
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,

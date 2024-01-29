@@ -828,7 +828,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 
             // Please note that this method may take a long time
             // due to `wallet_switchEthereumChain` and `eth_sendTransaction` requests.
-            let tx_hash = coin.web3.eth().send_transaction(tx_to_send).await?;
+            let tx_hash = coin.web3().eth().send_transaction(tx_to_send).await?;
 
             let signed_tx = coin
                 .wait_for_tx_appears_on_rpc(tx_hash, wait_rpc_timeout, check_every)
@@ -2522,7 +2522,7 @@ async fn sign_and_send_transaction_with_metamask(
 
     // Please note that this method may take a long time
     // due to `wallet_switchEthereumChain` and `eth_sendTransaction` requests.
-    let tx_hash = try_tx_s!(coin.web3.eth().send_transaction(tx_to_send).await);
+    let tx_hash = try_tx_s!(coin.web3().eth().send_transaction(tx_to_send).await);
 
     let maybe_signed_tx = try_tx_s!(
         coin.wait_for_tx_appears_on_rpc(tx_hash, wait_rpc_timeout, check_every)
@@ -4684,7 +4684,7 @@ impl EthCoin {
     ) -> Web3RpcResult<Option<SignedEthTx>> {
         let wait_until = wait_until_ms(wait_rpc_timeout_ms);
         while now_ms() < wait_until {
-            let maybe_tx = self.web3.eth().transaction(TransactionId::Hash(tx_hash)).await?;
+            let maybe_tx = self.web3().eth().transaction(TransactionId::Hash(tx_hash)).await?;
             if let Some(tx) = maybe_tx {
                 let signed_tx = signed_tx_from_web3_tx(tx).map_to_mm(Web3RpcError::InvalidResponse)?;
                 return Ok(Some(signed_tx));

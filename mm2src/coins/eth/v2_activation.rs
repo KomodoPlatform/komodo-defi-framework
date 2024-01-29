@@ -465,7 +465,7 @@ async fn build_metamask_transport(
     ctx: &MmArc,
     coin_ticker: String,
     chain_id: u64,
-) -> MmResult<(Web3<Web3Transport>, Vec<Web3Instance>), EthActivationV2Error> {
+) -> MmResult<Vec<Web3Instance>, EthActivationV2Error> {
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
 
     let eth_config = web3_transport::metamask_transport::MetamaskEthConfig { chain_id };
@@ -478,11 +478,11 @@ async fn build_metamask_transport(
     // MetaMask doesn't use Parity nodes. So `MetamaskTransport` doesn't support `parity_nextNonce` RPC.
     // An example of the `web3_clientVersion` RPC - `MetaMask/v10.22.1`.
     let web3_instances = vec![Web3Instance {
-        web3: web3.clone(),
+        web3: web3,
         is_parity: false,
     }];
 
-    Ok((web3, web3_instances))
+    Ok(web3_instances)
 }
 
 /// This method is based on the fact that `MetamaskTransport` tries to switch the `ChainId`
