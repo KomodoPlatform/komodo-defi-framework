@@ -1020,6 +1020,7 @@ dependencies = [
  "ethkey",
  "futures 0.1.29",
  "futures 0.3.28",
+ "futures-ticker",
  "futures-util",
  "group 0.8.0",
  "gstuff",

@@ -477,10 +477,7 @@ async fn build_metamask_transport(
 
     // MetaMask doesn't use Parity nodes. So `MetamaskTransport` doesn't support `parity_nextNonce` RPC.
     // An example of the `web3_clientVersion` RPC - `MetaMask/v10.22.1`.
-    let web3_instances = vec![Web3Instance {
-        web3: web3,
-        is_parity: false,
-    }];
+    let web3_instances = vec![Web3Instance { web3, is_parity: false }];
 
     Ok(web3_instances)
 }

@@ -5,7 +5,9 @@ use crate::eth::RpcTransportEventHandlerShared;
 use common::log;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::lock::Mutex as AsyncMutex;
-use futures_util::{FutureExt, StreamExt};
+use futures_ticker::Ticker;
+use futures_util::{FutureExt, SinkExt, StreamExt};
+use instant::Duration;
 use jsonrpc_core::Call;
 use mm2_net::transport::GuiAuthValidationGenerator;
 use std::collections::HashSet;
@@ -16,7 +18,7 @@ use web3::{helpers::build_request, RequestId, Transport};
 
 enum RequestMessage {
     Request(Call),
-    Response(Result<serde_json::Value, Error>),
+    Response(serde_json::Value),
 }
 
 #[derive(Clone, Debug)]
@@ -70,22 +72,41 @@ impl WebsocketTransport {
                     continue;
                 },
             };
+            let mut keepalive_interval = Ticker::new(Duration::from_secs(10));
 
-            // TODO
             loop {
                 futures_util::select! {
+                    _ = keepalive_interval.next().fuse() => {
+                        const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id":67}"#;
+                        if let Err(e) = wsocket.send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string())).await {
+                            log::error!("{e}");
+                            continue;
+                        }
+                    }
+
+                    // TODO: handle `RequestMessage` for sending requests
+
                     message = wsocket.next().fuse() => {
                         match message {
-                             Some(Ok(tokio_tungstenite_wasm::Message::Text(_))) => todo!(),
+                             Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
+                                 if let Ok(inc_event) = serde_json::from_str::<serde_json::Value>(&inc_event) {
+                                     if let Some(id) = inc_event.get("id") {
+                                         awaiting_requests.remove(&(id.as_u64().unwrap_or_default() as usize));
+                                         // TODO: return response with `RequestMessage`
+                                     }
+                                 }
+                             },
                              Some(Ok(tokio_tungstenite_wasm::Message::Binary(_))) => todo!(),
-                             Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => todo!(),
-                             Some(Err(e)) => {},
-                             None => {},
+                             Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => break,
+                             Some(Err(e)) => {
+                                log::error!("{e}");
+                                break;
+                             },
+                             None => continue,
                         }
                     }
                 }
             }
-
         }
     }
 
