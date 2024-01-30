@@ -214,7 +214,7 @@ fn start_swaps_and_get_balances(
         block_on(mm_bob.stop()).unwrap();
     }
     if !matches!(swap_flow, SwapFlow::TakerSpendsMakerPayment) {
-        block_on(mm_alice.wait_for_log(120., |log| log.contains("Taker payment confirmed"))).unwrap();
+        block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
         alice_acoin_balance_middle = block_on(my_balance(&mm_alice, a_coin)).balance;
         alice_bcoin_balance_middle = block_on(my_balance(&mm_alice, b_coin)).balance;
         alice_eth_balance_middle = block_on(my_balance(&mm_alice, "ETH")).balance;
