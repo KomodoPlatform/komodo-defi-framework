@@ -1060,12 +1060,12 @@ impl<T: UtxoCommonOps> CoinAssocTypes for T {
     }
 
     fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> {
-        Ok(Address::from_str(address)?)
+        Address::from_str(address).map_err(MmError::from)
     }
 
     #[inline]
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> {
-        Ok(Public::from_slice(pubkey)?)
+        Public::from_slice(pubkey).map_err(MmError::from)
     }
 
     #[inline]
