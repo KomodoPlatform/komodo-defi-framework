@@ -30,6 +30,7 @@ use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
+use common::executor::{AbortSettings, SpawnAbortable};
 use common::log::{debug, error, info, warn};
 use common::number_type_casting::SafeTypeCastingNumbers;
 use common::{get_utc_timestamp, now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -485,7 +486,11 @@ async fn make_gas_station_request(url: &str) -> GasStationResult {
 }
 
 impl EthCoinImpl {
-    pub(crate) fn web3(&self) -> Web3<Web3Transport> { todo!() }
+    pub(crate) fn web3(&self) -> Web3<Web3Transport> {
+        // TODO
+        self.web3_instances.first().unwrap().web3.clone()
+    }
+
     /// Gets Transfer events from ERC20 smart contract `addr` between `from_block` and `to_block`
     fn erc20_transfer_events(
         &self,
@@ -5508,7 +5513,7 @@ pub async fn eth_coin_from_conf_and_request(
             Some("ws") | Some("wss") => {
                 let node = WebsocketTransportNode { uri, gui_auth: false };
 
-                Web3Transport::new_websocket(vec![node], event_handlers.clone())
+                Web3Transport::new_websocket(ctx, vec![node], event_handlers.clone())
             },
             _ => {
                 let node = HttpTransportNode { uri, gui_auth: false };
@@ -5606,7 +5611,7 @@ pub async fn eth_coin_from_conf_and_request(
         gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
         gas_station_decimals: gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
         gas_station_policy,
-        web3_instances,
+        web3_instances: web3_instances.clone(),
         history_sync_state: Mutex::new(initial_history_state),
         ctx: ctx.weak(),
         required_confirmations,

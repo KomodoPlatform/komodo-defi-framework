@@ -1,7 +1,9 @@
-use crate::RpcTransportEventHandlerShared;
+use crate::{MmCoin, RpcTransportEventHandlerShared};
+use common::executor::{AbortSettings, SpawnAbortable};
 use ethereum_types::U256;
 use futures::future::BoxFuture;
 use jsonrpc_core::Call;
+use mm2_core::mm_ctx::MmArc;
 #[cfg(target_arch = "wasm32")] use mm2_metamask::MetamaskResult;
 use mm2_net::transport::GuiAuthValidationGenerator;
 use serde_json::Value as Json;
@@ -34,10 +36,18 @@ impl Web3Transport {
     }
 
     pub fn new_websocket(
+        ctx: &MmArc,
         nodes: Vec<websocket_transport::WebsocketTransportNode>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Web3Transport {
-        websocket_transport::WebsocketTransport::with_event_handlers(nodes, event_handlers).into()
+        let transport = websocket_transport::WebsocketTransport::with_event_handlers(nodes, event_handlers);
+
+        // TODO: Don't do this here
+        let fut = transport.clone().start_connection_loop();
+        let settings = AbortSettings::info_on_abort("TODO".to_string());
+        ctx.spawner().spawn_with_settings(fut, settings);
+
+        transport.into()
     }
 
     #[cfg(target_arch = "wasm32")]

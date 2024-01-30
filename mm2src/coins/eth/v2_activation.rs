@@ -403,7 +403,7 @@ async fn build_web3_instances(
             Some("ws") | Some("wss") => {
                 let node = WebsocketTransportNode { uri, gui_auth: false };
 
-                Web3Transport::new_websocket(vec![node], event_handlers.clone())
+                Web3Transport::new_websocket(ctx, vec![node], event_handlers.clone())
             },
             _ => {
                 let node = HttpTransportNode { uri, gui_auth: false };
