@@ -9,9 +9,11 @@ use common::{block_on, now_sec};
 use ethereum_types::U256;
 use futures01::Future;
 use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf};
+use std::thread;
+use std::time::Duration;
 use web3::contract::{Contract, Options};
 use web3::ethabi::Token;
-use web3::types::{Address, TransactionRequest};
+use web3::types::{Address, TransactionRequest, H256};
 
 /// # Safety
 ///
@@ -36,6 +38,20 @@ pub fn erc20_contract() -> Address { unsafe { GETH_ERC20_CONTRACT } }
 /// Return ERC20 dev token contract address in checksum format
 pub fn erc20_contract_checksum() -> String { checksum_address(&format!("{:02x}", erc20_contract())) }
 
+fn wait_for_confirmation(tx_hash: H256) {
+    loop {
+        match block_on(GETH_WEB3.eth().transaction_receipt(tx_hash)) {
+            Ok(Some(r)) => match r.block_hash {
+                Some(_) => break,
+                None => thread::sleep(Duration::from_millis(100)),
+            },
+            _ => {
+                thread::sleep(Duration::from_millis(100));
+            },
+        }
+    }
+}
+
 pub fn fill_eth(to_addr: Address, amount: U256) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let tx_request = TransactionRequest {
@@ -52,20 +68,22 @@ pub fn fill_eth(to_addr: Address, amount: U256) {
         max_fee_per_gas: None,
         max_priority_fee_per_gas: None,
     };
-    block_on(GETH_WEB3.eth().send_transaction(tx_request)).unwrap();
+    let tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request)).unwrap();
+    wait_for_confirmation(tx_hash);
 }
 
 fn fill_erc20(to_addr: Address, amount: U256) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc20_contract = Contract::from_json(GETH_WEB3.eth(), erc20_contract(), ERC20_ABI.as_bytes()).unwrap();
 
-    block_on(erc20_contract.call(
+    let tx_hash = block_on(erc20_contract.call(
         "transfer",
         (Token::Address(to_addr), Token::Uint(amount)),
         geth_account(),
         Options::default(),
     ))
     .unwrap();
+    wait_for_confirmation(tx_hash);
 }
 
 /// Creates ETH protocol coin supplied with 100 ETH
