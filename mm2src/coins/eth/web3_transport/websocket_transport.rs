@@ -64,7 +64,7 @@ struct WsRequest {
 /// The implemented algorithm for socket request-response is already thread-safe,
 /// so we don't care about race conditions.
 ///
-/// TODO: handle deallocation
+/// TODO: gracefully deallocations
 #[derive(Clone, Debug)]
 struct SafeMapPtr(*mut HashMap<RequestId, serde_json::Value>);
 
@@ -96,70 +96,72 @@ impl WebsocketTransport {
         // TODO: clear disconnected channels every 30s or so.
         let mut response_map: HashMap<RequestId, oneshot::Sender<()>> = HashMap::new();
 
-        for node in self.client.0.lock().await.nodes.clone() {
-            let mut wsocket = match tokio_tungstenite_wasm::connect(node.uri.to_string()).await {
-                Ok(ws) => ws,
-                Err(e) => {
-                    log::error!("{e}");
-                    continue;
-                },
-            };
+        loop {
+            for node in self.client.0.lock().await.nodes.clone() {
+                let mut wsocket = match tokio_tungstenite_wasm::connect(node.uri.to_string()).await {
+                    Ok(ws) => ws,
+                    Err(e) => {
+                        log::error!("{e}");
+                        continue;
+                    },
+                };
 
-            // id list of awaiting requests
-            let mut keepalive_interval = Ticker::new(Duration::from_secs(10));
-            let mut req_rx = self.request_handler.rx.lock().await;
+                // id list of awaiting requests
+                let mut keepalive_interval = Ticker::new(Duration::from_secs(10));
+                let mut req_rx = self.request_handler.rx.lock().await;
 
-            loop {
-                futures_util::select! {
-                    _ = keepalive_interval.next().fuse() => {
-                        const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
+                loop {
+                    futures_util::select! {
+                        _ = keepalive_interval.next().fuse() => {
+                            const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
 
-                        if let Err(e) = wsocket.send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string())).await {
-                            log::error!("{e}");
-                            // TODO: try couple times at least before continue
-                            continue;
-                        }
-                    }
-
-                    request = req_rx.next().fuse() => {
-                        if let Some( WsRequest { request_id, request, response_notifier }) = request {
-                            let serialized_request = to_string(&request);
-                            response_map.insert(request_id, response_notifier);
-                            if let Err(e) = wsocket.send(tokio_tungstenite_wasm::Message::Text(serialized_request)).await {
+                            if let Err(e) = wsocket.send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string())).await {
                                 log::error!("{e}");
-                                let _ = response_map.remove(&request_id);
                                 // TODO: try couple times at least before continue
                                 continue;
                             }
                         }
-                    }
 
-                    message = wsocket.next().fuse() => {
-                        match message {
-                             Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
-                                 if let Ok(inc_event) = serde_json::from_str::<serde_json::Value>(&inc_event) {
-                                     if !inc_event.is_object() {
-                                         continue;
-                                     }
+                        request = req_rx.next().fuse() => {
+                            if let Some( WsRequest { request_id, request, response_notifier }) = request {
+                                let serialized_request = to_string(&request);
+                                response_map.insert(request_id, response_notifier);
+                                if let Err(e) = wsocket.send(tokio_tungstenite_wasm::Message::Text(serialized_request)).await {
+                                    log::error!("{e}");
+                                    let _ = response_map.remove(&request_id);
+                                    // TODO: try couple times at least before continue
+                                    continue;
+                                }
+                            }
+                        }
 
-                                     if let Some(id) = inc_event.get("id") {
-                                         let request_id = id.as_u64().unwrap_or_default() as usize;
+                        message = wsocket.next().fuse() => {
+                            match message {
+                                 Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
+                                     if let Ok(inc_event) = serde_json::from_str::<serde_json::Value>(&inc_event) {
+                                         if !inc_event.is_object() {
+                                             continue;
+                                         }
 
-                                         if let Some(notifier) = response_map.remove(&request_id) {
-                                             let response_map = unsafe { &mut *self.responses.0 };
-                                             let _ = response_map.insert(request_id, inc_event.get("result").expect("TODO").clone());
-                                             notifier.send(()).expect("TODO");
+                                         if let Some(id) = inc_event.get("id") {
+                                             let request_id = id.as_u64().unwrap_or_default() as usize;
+
+                                             if let Some(notifier) = response_map.remove(&request_id) {
+                                                 let response_map = unsafe { &mut *self.responses.0 };
+                                                 let _ = response_map.insert(request_id, inc_event.get("result").expect("TODO").clone());
+                                                 notifier.send(()).expect("TODO");
+                                             }
                                          }
                                      }
-                                 }
-                             },
-                             Some(Ok(tokio_tungstenite_wasm::Message::Binary(_))) => todo!(),
-                             Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => break,
-                             Some(Err(e)) => {
-                                log::error!("{e}");
-                                break;
-                             },
-                             None => continue,
+                                 },
+                                 Some(Ok(tokio_tungstenite_wasm::Message::Binary(_))) => todo!(),
+                                 Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => break,
+                                 Some(Err(e)) => {
+                                    log::error!("{e}");
+                                    break;
+                                 },
+                                 None => continue,
+                            }
                         }
                     }
                 }
