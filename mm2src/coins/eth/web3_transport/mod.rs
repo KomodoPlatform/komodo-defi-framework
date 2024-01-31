@@ -1,4 +1,4 @@
-use crate::{MmCoin, RpcTransportEventHandlerShared};
+use crate::RpcTransportEventHandlerShared;
 use common::executor::{AbortSettings, SpawnAbortable};
 use ethereum_types::U256;
 use futures::future::BoxFuture;
