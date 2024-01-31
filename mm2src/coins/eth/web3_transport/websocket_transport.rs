@@ -1,8 +1,11 @@
-#![allow(unused)] // TODO: remove this
+//! This module offers a transport layer for managing request-response style communication
+//! with Ethereum nodes using websockets in a wait and lock-free manner. In comparison to
+//! HTTP transport, this approach proves to be much quicker (low-latency) and consumes less
+//! bandwidth. This efficiency is achieved by avoiding the handling of TCP
+//! handshakes (connection reusability) for each request.
 
 use crate::eth::web3_transport::Web3SendOut;
 use crate::eth::RpcTransportEventHandlerShared;
-use common::executor::Timer;
 use common::log;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
@@ -11,8 +14,6 @@ use futures_ticker::Ticker;
 use futures_util::{FutureExt, SinkExt, StreamExt};
 use instant::Duration;
 use jsonrpc_core::Call;
-use mm2_net::transport::GuiAuthValidationGenerator;
-use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::sync::{atomic::{AtomicUsize, Ordering},
                 Arc};
@@ -39,7 +40,6 @@ pub struct WebsocketTransport {
     request_id: Arc<AtomicUsize>,
     client: Arc<WebsocketTransportRpcClient>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    // TODO: explain why this is used and how safe it is
     responses: SafeMapPtr,
     request_handler: RequestHandler,
 }
@@ -57,6 +57,14 @@ struct WsRequest {
     response_notifier: oneshot::Sender<()>,
 }
 
+/// A wrapper type for raw pointers used as a mutable Send & Sync HashMap reference.
+///
+/// Safety notes:
+///
+/// The implemented algorithm for socket request-response is already thread-safe,
+/// so we don't care about race conditions.
+///
+/// TODO: handle deallocation
 #[derive(Clone, Debug)]
 struct SafeMapPtr(*mut HashMap<RequestId, serde_json::Value>);
 
@@ -69,10 +77,8 @@ impl WebsocketTransport {
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Self {
         let client_impl = WebsocketTransportRpcClientImpl { nodes };
-
         let (req_tx, req_rx) = futures::channel::mpsc::unbounded();
-
-        let mut hashmap = HashMap::default();
+        let hashmap = HashMap::default();
 
         WebsocketTransport {
             client: Arc::new(WebsocketTransportRpcClient(AsyncMutex::new(client_impl))),
@@ -90,7 +96,7 @@ impl WebsocketTransport {
         // TODO: clear disconnected channels every 30s or so.
         let mut response_map: HashMap<RequestId, oneshot::Sender<()>> = HashMap::new();
 
-        for node in (*self.client.0.lock().await).nodes.clone() {
+        for node in self.client.0.lock().await.nodes.clone() {
             let mut wsocket = match tokio_tungstenite_wasm::connect(node.uri.to_string()).await {
                 Ok(ws) => ws,
                 Err(e) => {
@@ -164,7 +170,7 @@ impl WebsocketTransport {
     async fn stop_connection(self) { todo!() }
 }
 
-async fn rpc_send_and_receive(
+async fn send_request(
     transport: WebsocketTransport,
     request: Call,
     request_id: RequestId,
@@ -184,7 +190,7 @@ async fn rpc_send_and_receive(
     if let Ok(_ping) = notification_receiver.await {
         let response_map = unsafe { &mut *transport.responses.0 };
         if let Some(response) = response_map.remove(&request_id) {
-            return Ok(response.clone());
+            return Ok(response);
         }
     };
 
@@ -201,7 +207,5 @@ impl Transport for WebsocketTransport {
         (request_id, request)
     }
 
-    fn send(&self, id: RequestId, request: Call) -> Self::Out {
-        Box::pin(rpc_send_and_receive(self.clone(), request, id))
-    }
+    fn send(&self, id: RequestId, request: Call) -> Self::Out { Box::pin(send_request(self.clone(), request, id)) }
 }

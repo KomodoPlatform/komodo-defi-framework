@@ -155,7 +155,7 @@ impl EthCoin {
         let conf = coin_conf(&ctx, &ticker);
 
         let decimals = match conf["decimals"].as_u64() {
-            None | Some(0) => get_token_decimals(&self.web3(), protocol.token_addr)
+            None | Some(0) => get_token_decimals(self.web3(), protocol.token_addr)
                 .await
                 .map_err(Erc20TokenActivationError::InternalError)?,
             Some(d) => d as u8,
