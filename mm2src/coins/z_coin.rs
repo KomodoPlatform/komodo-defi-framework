@@ -771,8 +771,8 @@ type TxResult = MmResult<(zcash_primitives::transaction::Transaction, Transactio
 
 #[cfg(target_arch = "wasm32")]
 /// Spawns an asynchronous task to build a transaction and sends the result through a oneshot channel.
-struct TxBuilderSpawner {
-    pub tx_result: TxResult,
+pub(crate) struct TxBuilderSpawner {
+    pub(crate) tx_result: TxResult,
     _abort_handle: AbortOnDropHandle,
 }
 
@@ -798,7 +798,7 @@ impl TxBuilderSpawner {
     }
 
     /// Requests a transaction asynchronously using the provided builder, branch ID, and prover.
-    async fn request_tx_result(
+    pub(crate) async fn request_tx_result(
         builder: ZTxBuilder<'static, ZcoinConsensusParams, OsRng>,
         branch_id: BranchId,
         prover: Arc<LocalTxProver>,
