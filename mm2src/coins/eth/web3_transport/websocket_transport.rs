@@ -221,6 +221,7 @@ async fn send_request(
     .await
     .expect("TODO");
 
+    // TODO: we need timeout here
     if let Ok(_ping) = notification_receiver.await {
         let response_map = unsafe { &mut *transport.responses.ptr };
         if let Some(response) = response_map.remove(&request_id) {
