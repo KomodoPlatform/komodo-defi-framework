@@ -25,10 +25,10 @@ pub fn generate_contract_call_script_pubkey(
 
     Ok(ScriptBuilder::default()
         .push_opcode(Opcode::OP_4)
-        .push_bytes(&gas_limit)
-        .push_bytes(&gas_price)
+        .push_data(&gas_limit)
+        .push_data(&gas_price)
         .push_data(function_call)
-        .push_bytes(contract_address)
+        .push_data(contract_address)
         .push_opcode(Opcode::OP_CALL)
         .into_script())
 }

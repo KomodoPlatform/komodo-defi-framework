@@ -4868,26 +4868,26 @@ where
 pub fn payment_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1: &Public) -> Script {
     let mut builder = Builder::default()
         .push_opcode(Opcode::OP_IF)
-        .push_bytes(&time_lock.to_le_bytes())
+        .push_data(&time_lock.to_le_bytes())
         .push_opcode(Opcode::OP_CHECKLOCKTIMEVERIFY)
         .push_opcode(Opcode::OP_DROP)
-        .push_bytes(pub_0)
+        .push_data(pub_0)
         .push_opcode(Opcode::OP_CHECKSIG)
         .push_opcode(Opcode::OP_ELSE)
         .push_opcode(Opcode::OP_SIZE)
-        .push_bytes(&[32])
+        .push_data(&[32])
         .push_opcode(Opcode::OP_EQUALVERIFY)
         .push_opcode(Opcode::OP_HASH160);
 
     if secret_hash.len() == 32 {
-        builder = builder.push_bytes(ripemd160(secret_hash).as_slice());
+        builder = builder.push_data(ripemd160(secret_hash).as_slice());
     } else {
-        builder = builder.push_bytes(secret_hash);
+        builder = builder.push_data(secret_hash);
     }
 
     builder
         .push_opcode(Opcode::OP_EQUALVERIFY)
-        .push_bytes(pub_1)
+        .push_data(pub_1)
         .push_opcode(Opcode::OP_CHECKSIG)
         .push_opcode(Opcode::OP_ENDIF)
         .into_script()
@@ -4896,16 +4896,16 @@ pub fn payment_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1:
 pub fn dex_fee_script(uuid: [u8; 16], time_lock: u32, watcher_pub: &Public, sender_pub: &Public) -> Script {
     let builder = Builder::default();
     builder
-        .push_bytes(&uuid)
+        .push_data(&uuid)
         .push_opcode(Opcode::OP_DROP)
         .push_opcode(Opcode::OP_IF)
-        .push_bytes(&time_lock.to_le_bytes())
+        .push_data(&time_lock.to_le_bytes())
         .push_opcode(Opcode::OP_CHECKLOCKTIMEVERIFY)
         .push_opcode(Opcode::OP_DROP)
-        .push_bytes(sender_pub)
+        .push_data(sender_pub)
         .push_opcode(Opcode::OP_CHECKSIG)
         .push_opcode(Opcode::OP_ELSE)
-        .push_bytes(watcher_pub)
+        .push_data(watcher_pub)
         .push_opcode(Opcode::OP_CHECKSIG)
         .push_opcode(Opcode::OP_ENDIF)
         .into_script()
