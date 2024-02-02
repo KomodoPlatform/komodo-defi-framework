@@ -1179,6 +1179,7 @@ dependencies = [
  "primitive-types",
  "rand 0.7.3",
  "regex",
+ "rustc-hash",
  "ser_error",
  "ser_error_derive",
  "serde",
