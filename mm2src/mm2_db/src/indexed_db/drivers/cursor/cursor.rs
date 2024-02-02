@@ -262,7 +262,7 @@ impl CursorDriver {
             })?,
             CursorAction::ContinueWithValue(next_value) => {
                 cursor
-                    .continue_with_key(&next_value)
+                    .continue_with_key(next_value)
                     .map_to_mm(|e| CursorError::AdvanceError {
                         description: stringify_js_error(&e),
                     })?
