@@ -1064,4 +1064,49 @@ mod tests {
         // maybe_swap should return swap with uuid4 since it's the item with the highest rel_coin_value in the store.
         assert_eq!(maybe_swap, Some(swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281)));
     }
+
+    #[wasm_bindgen_test]
+    async fn test_cursor_where_first_condition_with_limit() {
+        const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
+        const DB_VERSION: u32 = 1;
+
+        register_wasm_log();
+
+        let items = vec![
+            swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
+            swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
+            swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281), // +
+            swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92),        // +
+            swap_item!("uuid5", "QRC20", "RICK", 2, 4, 721),
+            swap_item!("uuid6", "KMD", "MORTY", 12, 3124, 214), // +
+        ];
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<SwapTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<SwapTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+        fill_table(&table, items).await;
+
+        let maybe_swap = table
+            .cursor_builder()
+            .bound("rel_coin_value", 5u32, u32::MAX)
+            .where_first()
+            .open_cursor("rel_coin_value")
+            .await
+            .expect("!CursorBuilder::open_cursor")
+            .next()
+            .await
+            .expect("!Cursor next result")
+            .map(|(_, swap)| swap);
+
+        // maybe_swap should return swap with uuid4 since it's the item with the lowest rel_coin_value in the store.
+        assert_eq!(maybe_swap, Some(swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92)));
+    }
 }
