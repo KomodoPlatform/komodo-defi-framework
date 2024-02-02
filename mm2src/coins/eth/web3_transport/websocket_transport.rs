@@ -6,6 +6,7 @@
 
 use crate::eth::web3_transport::Web3SendOut;
 use crate::eth::RpcTransportEventHandlerShared;
+use common::expirable_map::ExpirableMap;
 use common::log;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
@@ -20,6 +21,8 @@ use std::sync::{atomic::{AtomicUsize, Ordering},
 use web3::error::Error;
 use web3::helpers::to_string;
 use web3::{helpers::build_request, RequestId, Transport};
+
+const REQUEST_TIMEOUT_AS_SEC: u64 = 10;
 
 #[derive(Clone, Debug)]
 pub struct WebsocketTransportNode {
@@ -81,7 +84,7 @@ struct SafeMapPtr {
 
 impl Drop for WebsocketTransport {
     fn drop(&mut self) {
-        if !self.responses.guard.try_lock().is_none() {
+        if self.responses.guard.try_lock().is_some() {
             // let the compiler do the job
             let _ = unsafe { Box::from_raw(self.responses.ptr) };
         }
@@ -117,8 +120,7 @@ impl WebsocketTransport {
 
     pub async fn start_connection_loop(self) {
         let _ptr_guard = self.responses.guard.lock().await;
-        // TODO: clear disconnected channels every 30s or so.
-        let mut response_map: HashMap<RequestId, oneshot::Sender<()>> = HashMap::new();
+        let mut response_notifiers: ExpirableMap<RequestId, oneshot::Sender<()>> = ExpirableMap::default();
 
         loop {
             for node in self.client.0.lock().await.nodes.clone() {
@@ -137,8 +139,10 @@ impl WebsocketTransport {
                 loop {
                     futures_util::select! {
                         _ = keepalive_interval.next().fuse() => {
-                            const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
+                            // Drop expired response notifier channels
+                            response_notifiers.clear_expired_entries();
 
+                            const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
                             if let Err(e) = wsocket.send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string())).await {
                                 log::error!("{e}");
                                 // TODO: try couple times at least before continue
@@ -150,10 +154,10 @@ impl WebsocketTransport {
                             match request {
                                 Some(ControllerMessage::Request(WsRequest { request_id, request, response_notifier })) => {
                                     let serialized_request = to_string(&request);
-                                    response_map.insert(request_id, response_notifier);
+                                    response_notifiers.insert(request_id, response_notifier, Duration::from_secs(REQUEST_TIMEOUT_AS_SEC));
                                     if let Err(e) = wsocket.send(tokio_tungstenite_wasm::Message::Text(serialized_request)).await {
                                         log::error!("{e}");
-                                        let _ = response_map.remove(&request_id);
+                                        let _ = response_notifiers.remove(&request_id);
                                         // TODO: try couple times at least before continue
                                         continue;
                                     }
@@ -174,7 +178,7 @@ impl WebsocketTransport {
                                          if let Some(id) = inc_event.get("id") {
                                              let request_id = id.as_u64().unwrap_or_default() as usize;
 
-                                             if let Some(notifier) = response_map.remove(&request_id) {
+                                             if let Some(notifier) = response_notifiers.remove(&request_id) {
                                                  let response_map = unsafe { &mut *self.responses.ptr };
                                                  let _ = response_map.insert(request_id, inc_event.get("result").expect("TODO").clone());
                                                  notifier.send(()).expect("TODO");
