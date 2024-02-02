@@ -57,7 +57,7 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
         });
     }
 
-    // Removes a key-value pair from the map and returns the associated value, if present.
+    // Removes a key-value pair from the map and returns the associated value if present.
     #[inline]
     pub fn remove(&mut self, k: &K) -> Option<V> { self.0.remove(k).map(|v| v.value) }
 }
