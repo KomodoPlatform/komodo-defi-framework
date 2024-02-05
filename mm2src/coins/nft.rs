@@ -22,7 +22,7 @@ use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, ClearNf
                               NftTransferCommon, PhishingDomainReq, PhishingDomainRes, RefreshMetadataReq,
                               SpamContractReq, SpamContractRes, TransferMeta, TransferStatus, UriMeta};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
-use common::{log::error, parse_rfc3339_to_timestamp};
+use common::parse_rfc3339_to_timestamp;
 use crypto::StandardHDCoinAddress;
 use ethereum_types::{Address, H256};
 use futures::compat::Future01CompatExt;
@@ -1380,18 +1380,25 @@ pub async fn clear_nft_db(ctx: MmArc, req: ClearNftDbReq) -> MmResult<(), ClearN
         let storage = nft_ctx.lock_db().await?;
         storage.clear_all_nft_data().await?;
         storage.clear_all_history_data().await?;
-    } else if !req.chains.is_empty() {
-        let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(ClearNftDbError::Internal)?;
-        let storage = nft_ctx.lock_db().await?;
-        for chain in req.chains.iter() {
-            if let Err(e) = clear_data_for_chain(&storage, chain).await {
-                error!("Failed to clear data for chain {}: {}", chain, e);
-            }
-        }
-    } else {
+        return Ok(());
+    }
+
+    if req.chains.is_empty() {
         return MmError::err(ClearNftDbError::InvalidRequest(
             "Nothing to clear was specified".to_string(),
         ));
+    }
+
+    let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(ClearNftDbError::Internal)?;
+    let storage = nft_ctx.lock_db().await?;
+    let mut errors = Vec::new();
+    for chain in req.chains.iter() {
+        if let Err(e) = clear_data_for_chain(&storage, chain).await {
+            errors.push(e);
+        }
+    }
+    if !errors.is_empty() {
+        return MmError::err(ClearNftDbError::DbError(format!("{:?}", errors)));
     }
 
     Ok(())

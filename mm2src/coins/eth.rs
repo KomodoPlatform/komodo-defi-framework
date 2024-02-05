@@ -902,12 +902,10 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
-            let token_id_u256 = U256::from_dec_str(token_id_str)
-                .map_err(|e| format!("{:?}", e))
-                .map_to_mm(NumConversError::new)?;
-            let amount_u256 = U256::from_dec_str(&amount_dec.to_string())
-                .map_err(|e| format!("{:?}", e))
-                .map_to_mm(NumConversError::new)?;
+            let token_id_u256 =
+                U256::from_dec_str(token_id_str).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
+            let amount_u256 =
+                U256::from_dec_str(&amount_dec.to_string()).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
             let data = function.encode_input(&[
                 Token::Address(eth_coin.my_address),
                 Token::Address(to_addr),
@@ -993,8 +991,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         EthCoinType::Eth => {
             let function = ERC721_CONTRACT.function("safeTransferFrom")?;
             let token_id_u256 = U256::from_dec_str(&withdraw_type.token_id.to_string())
-                .map_err(|e| format!("{:?}", e))
-                .map_to_mm(NumConversError::new)?;
+                .map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
             let data = function.encode_input(&[
                 Token::Address(my_address),
                 Token::Address(to_addr),
@@ -4022,9 +4019,8 @@ impl EthCoin {
         let wallet_amount_uint = match self.coin_type {
             EthCoinType::Eth => {
                 let function = ERC1155_CONTRACT.function("balanceOf")?;
-                let token_id_u256 = U256::from_dec_str(token_id)
-                    .map_err(|e| format!("{:?}", e))
-                    .map_to_mm(NumConversError::new)?;
+                let token_id_u256 =
+                    U256::from_dec_str(token_id).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
                 let data = function.encode_input(&[Token::Address(self.my_address), Token::Uint(token_id_u256)])?;
                 let result = self.call_request(token_addr, None, Some(data.into())).await?;
                 let decoded = function.decode_output(&result.0)?;
@@ -4050,9 +4046,8 @@ impl EthCoin {
         let owner_address = match self.coin_type {
             EthCoinType::Eth => {
                 let function = ERC721_CONTRACT.function("ownerOf")?;
-                let token_id_u256 = U256::from_dec_str(token_id)
-                    .map_err(|e| format!("{:?}", e))
-                    .map_to_mm(NumConversError::new)?;
+                let token_id_u256 =
+                    U256::from_dec_str(token_id).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
                 let data = function.encode_input(&[Token::Uint(token_id_u256)])?;
                 let result = self.call_request(token_addr, None, Some(data.into())).await?;
                 let decoded = function.decode_output(&result.0)?;
@@ -5355,9 +5350,7 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
     } else {
         amount.insert_str(amount.len(), &"0".repeat(decimals));
     }
-    U256::from_dec_str(&amount)
-        .map_err(|e| format!("{:?}", e))
-        .map_to_mm(NumConversError::new)
+    U256::from_dec_str(&amount).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
 }
 
 impl Transaction for SignedEthTx {
