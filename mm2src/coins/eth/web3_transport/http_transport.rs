@@ -47,6 +47,7 @@ struct HttpTransportRpcClient(AsyncMutex<HttpTransportRpcClientImpl>);
 
 #[derive(Debug)]
 struct HttpTransportRpcClientImpl {
+    // TODO: remove client rotation from this module as we already do that in protocol level
     nodes: Vec<HttpTransportNode>,
 }
 
