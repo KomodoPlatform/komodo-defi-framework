@@ -16,6 +16,7 @@ use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSen
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::StreamExt;
 use hex::{FromHex, FromHexError};
+use http::Uri;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
 use prost::Message;
@@ -43,7 +44,6 @@ cfg_native!(
 
     use futures::compat::Future01CompatExt;
     use group::GroupEncoding;
-    use http::Uri;
     use std::convert::TryInto;
     use std::num::TryFromIntError;
     use tonic::transport::{Channel, ClientTlsConfig};
@@ -102,12 +102,9 @@ type RpcClientType = Channel;
 type RpcClientType = TonicClient;
 
 #[derive(Clone)]
-pub struct LightRpcClient {
-    rpc_clients: Arc<AsyncMutex<Vec<CompactTxStreamerClient<RpcClientType>>>>,
-}
+pub struct LightRpcClient(pub(crate) Arc<AsyncMutex<Vec<CompactTxStreamerClient<RpcClientType>>>>);
 
 impl LightRpcClient {
-    #[allow(unused_mut)]
     pub async fn new(lightwalletd_urls: Vec<String>) -> Result<Self, MmError<ZcoinClientInitError>> {
         let mut rpc_clients = Vec::new();
         if lightwalletd_urls.is_empty() {
@@ -116,7 +113,6 @@ impl LightRpcClient {
 
         let mut errors = Vec::new();
         for url in &lightwalletd_urls {
-            #[cfg(not(target_arch = "wasm32"))]
             let uri = match Uri::from_str(url) {
                 Ok(uri) => uri,
                 Err(err) => {
@@ -133,21 +129,21 @@ impl LightRpcClient {
                 },
             };
             #[cfg(not(target_arch = "wasm32"))]
-            let client = match connect_endpoint(endpoint).await {
-                Ok(tonic_channel) => tonic_channel,
+            let client = match Self::connect_endpoint(endpoint).await {
+                Ok(tonic_channel) => tonic_channel.accept_gzip(),
                 Err(err) => {
                     errors.push(UrlIterError::ConnectionFailure(err));
                     continue;
                 },
             };
 
-            #[cfg(target_arch = "wasm32")]
-            let client = CompactTxStreamerClient::new(TonicClient::new(url.to_string()));
+            cfg_wasm32!(
+                let  client = CompactTxStreamerClient::new(TonicClient::new(uri.to_string())).accept_gzip();
+            );
 
             rpc_clients.push(client);
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
         drop_mutability!(errors);
         drop_mutability!(rpc_clients);
         // check if rpc_clients is empty, then for loop wasn't successful
@@ -155,9 +151,18 @@ impl LightRpcClient {
             return MmError::err(ZcoinClientInitError::UrlIterFailure(errors));
         }
 
-        Ok(LightRpcClient {
-            rpc_clients: AsyncMutex::new(rpc_clients).into(),
-        })
+        Ok(LightRpcClient(AsyncMutex::new(rpc_clients).into()))
+    }
+
+    /// Attempt to create a new client by connecting to a given endpoint.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn connect_endpoint<D>(dst: D) -> Result<CompactTxStreamerClient<Channel>, tonic::transport::Error>
+    where
+        D: TryInto<tonic::transport::Endpoint>,
+        D::Error: Into<StdError>,
+    {
+        let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+        Ok(CompactTxStreamerClient::new(conn))
     }
 }
 
@@ -167,7 +172,7 @@ impl RpcCommonOps for LightRpcClient {
     type Error = MmError<UpdateBlocksCacheErr>;
 
     async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
-        let mut clients = self.rpc_clients.lock().await;
+        let mut clients = self.0.lock().await;
         for (i, mut client) in clients.clone().into_iter().enumerate() {
             let request = tonic::Request::new(ChainSpec {});
             // use get_latest_block method as a health check
@@ -181,17 +186,6 @@ impl RpcCommonOps for LightRpcClient {
             "All the current light clients are unavailable.".to_string(),
         )));
     }
-}
-
-/// Attempt to create a new client by connecting to a given endpoint.
-#[cfg(not(target_arch = "wasm32"))]
-pub async fn connect_endpoint<D>(dst: D) -> Result<CompactTxStreamerClient<Channel>, tonic::transport::Error>
-where
-    D: std::convert::TryInto<tonic::transport::Endpoint>,
-    D::Error: Into<StdError>,
-{
-    let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
-    Ok(CompactTxStreamerClient::new(conn))
 }
 
 async fn handle_block_cache_update(
@@ -210,16 +204,6 @@ async fn handle_block_cache_update(
 
     handler.notify_blocks_cache_status(block.height, last_block);
     Ok(())
-}
-
-/// Wraps the client (`selfi`) in an `Arc` to enable safe cloning and sharing across futures.
-/// This is necessary to avoid the error "cannot return reference to local variable `selfi`."
-#[cfg(target_arch = "wasm32")]
-async fn get_block_range_wrapper(
-    mut selfi: CompactTxStreamerClient<RpcClientType>,
-    request: BlockRange,
-) -> Result<tonic::Response<tonic::Streaming<TonicCompactBlock>>, tonic::Status> {
-    selfi.get_block_range(tonic::Request::new(request)).await
 }
 
 #[async_trait]
@@ -260,6 +244,16 @@ impl ZRpcOps for LightRpcClient {
         let mut requests = Vec::new();
         let mut current_start = start_block;
         let selfi = self.get_live_client().await?;
+
+        /// Wraps the client (`selfi`) in an `Arc` to enable safe cloning and sharing across futures.
+        /// This is necessary to avoid the error "cannot return reference to local variable `selfi`."
+        async fn get_block_range_wrapper(
+            mut selfi: CompactTxStreamerClient<RpcClientType>,
+            request: BlockRange,
+        ) -> Result<tonic::Response<tonic::Streaming<TonicCompactBlock>>, tonic::Status> {
+            selfi.get_block_range(tonic::Request::new(request)).await
+        }
+
         // Generate multiple gRPC requests to fetch block ranges efficiently.
         // It takes the starting block height and the last block height as input and constructs requests for fetching
         // consecutive block ranges within the specified limits.
