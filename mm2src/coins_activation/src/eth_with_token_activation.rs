@@ -80,7 +80,8 @@ impl From<Erc20TokenActivationError> for InitTokensAsMmCoinsError {
     fn from(error: Erc20TokenActivationError) -> Self {
         match error {
             Erc20TokenActivationError::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
-            Erc20TokenActivationError::CouldNotFetchBalance(e) => InitTokensAsMmCoinsError::CouldNotFetchBalance(e),
+            Erc20TokenActivationError::CouldNotFetchBalance(e)
+            | Erc20TokenActivationError::ClientConnectionFailed(e) => InitTokensAsMmCoinsError::CouldNotFetchBalance(e),
         }
     }
 }

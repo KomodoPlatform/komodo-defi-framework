@@ -33,7 +33,9 @@ async fn test_send() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        web3_instances: vec![Web3Instance { web3, is_parity: false }],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
+        },
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,

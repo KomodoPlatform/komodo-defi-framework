@@ -116,6 +116,7 @@ pub struct EthNode {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum Erc20TokenActivationError {
     InternalError(String),
+    ClientConnectionFailed(String),
     CouldNotFetchBalance(String),
 }
 
@@ -155,14 +156,23 @@ impl EthCoin {
         let conf = coin_conf(&ctx, &ticker);
 
         let decimals = match conf["decimals"].as_u64() {
-            None | Some(0) => get_token_decimals(self.web3(), protocol.token_addr)
-                .await
-                .map_err(Erc20TokenActivationError::InternalError)?,
+            None | Some(0) => get_token_decimals(
+                &self
+                    .web3()
+                    .await
+                    .map_err(|e| Erc20TokenActivationError::ClientConnectionFailed(e.to_string()))?,
+                protocol.token_addr,
+            )
+            .await
+            .map_err(Erc20TokenActivationError::InternalError)?,
             Some(d) => d as u8,
         };
 
         let web3_instances: Vec<Web3Instance> = self
+            .client
             .web3_instances
+            .lock()
+            .await
             .iter()
             .map(|node| {
                 let mut transport = node.web3.transport().clone();
@@ -202,7 +212,9 @@ impl EthCoin {
             gas_station_url: self.gas_station_url.clone(),
             gas_station_decimals: self.gas_station_decimals,
             gas_station_policy: self.gas_station_policy.clone(),
-            web3_instances,
+            client: EthClient {
+                web3_instances: AsyncMutex::new(web3_instances),
+            },
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             ctx: self.ctx.clone(),
             required_confirmations,
@@ -310,7 +322,9 @@ pub async fn eth_coin_from_conf_and_request_v2(
         gas_station_url: req.gas_station_url,
         gas_station_decimals: req.gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
         gas_station_policy: req.gas_station_policy,
-        web3_instances,
+        client: EthClient {
+            web3_instances: AsyncMutex::new(web3_instances),
+        },
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         ctx: ctx.weak(),
         required_confirmations,

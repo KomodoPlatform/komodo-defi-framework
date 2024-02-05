@@ -729,7 +729,7 @@ async fn get_moralis_nft_transfers(
 
 async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<EthTxFeeDetails> {
     let hash = H256::from_str(transaction_hash).ok()?;
-    let receipt = eth_coin.web3().eth().transaction_receipt(hash).await.ok()?;
+    let receipt = eth_coin.web3().await.ok()?.eth().transaction_receipt(hash).await.ok()?;
     let fee_coin = match eth_coin.coin_type {
         EthCoinType::Eth => eth_coin.ticker(),
         EthCoinType::Erc20 { .. } => return None,
@@ -743,6 +743,8 @@ async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<E
                 None => {
                     let web3_tx = eth_coin
                         .web3()
+                        .await
+                        .ok()?
                         .eth()
                         .transaction(TransactionId::Hash(hash))
                         .await

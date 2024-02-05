@@ -142,7 +142,9 @@ fn eth_coin_from_keypair(
         fallback_swap_contract,
         contract_supports_watchers: false,
         ticker,
-        web3_instances: vec![Web3Instance { web3, is_parity: false }],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
+        },
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
@@ -320,7 +322,9 @@ fn send_and_refund_erc20_payment() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        web3_instances: vec![Web3Instance { web3, is_parity: false }],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
+        },
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -402,7 +406,9 @@ fn send_and_refund_eth_payment() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        web3_instances: vec![Web3Instance { web3, is_parity: false }],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
+        },
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -496,20 +502,22 @@ fn test_nonce_several_urls() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        web3_instances: vec![
-            Web3Instance {
-                web3: web3_devnet,
-                is_parity: false,
-            },
-            Web3Instance {
-                web3: web3_sepolia,
-                is_parity: false,
-            },
-            Web3Instance {
-                web3: web3_failing,
-                is_parity: false,
-            },
-        ],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![
+                Web3Instance {
+                    web3: web3_devnet,
+                    is_parity: false,
+                },
+                Web3Instance {
+                    web3: web3_sepolia,
+                    is_parity: false,
+                },
+                Web3Instance {
+                    web3: web3_failing,
+                    is_parity: false,
+                },
+            ]),
+        },
         decimals: 18,
         gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -529,7 +537,7 @@ fn test_nonce_several_urls() {
     let payment = coin.send_to_address(coin.my_address, 200000000.into()).wait().unwrap();
 
     log!("{:?}", payment);
-    let new_nonce = get_addr_nonce(coin.my_address, coin.web3_instances.clone())
+    let new_nonce = get_addr_nonce(coin.my_address, block_on(coin.client.web3_instances.lock()).to_vec())
         .wait()
         .unwrap();
     log!("{:?}", new_nonce);
@@ -562,7 +570,9 @@ fn test_wait_for_payment_spend_timeout() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         ticker: "ETH".into(),
-        web3_instances: vec![Web3Instance { web3, is_parity: false }],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
+        },
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
@@ -628,7 +638,9 @@ fn test_search_for_swap_tx_spend_was_spent() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         ticker: "ETH".into(),
-        web3_instances: vec![Web3Instance { web3, is_parity: false }],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
+        },
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
@@ -735,7 +747,9 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         ticker: "BAT".into(),
-        web3_instances: vec![Web3Instance { web3, is_parity: false }],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
+        },
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
@@ -1141,7 +1155,7 @@ fn validate_dex_fee_invalid_sender_eth() {
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None);
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
-    let tx = block_on(coin.web3().eth().transaction(TransactionId::Hash(
+    let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
         H256::from_str("0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f").unwrap(),
     )))
     .unwrap()
@@ -1175,7 +1189,7 @@ fn validate_dex_fee_invalid_sender_erc() {
     );
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0xd6403b41c79f9c9e9c83c03d920ee1735e7854d85d94cef48d95dfeca95cd600
-    let tx = block_on(coin.web3().eth().transaction(TransactionId::Hash(
+    let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
         H256::from_str("0xd6403b41c79f9c9e9c83c03d920ee1735e7854d85d94cef48d95dfeca95cd600").unwrap(),
     )))
     .unwrap()
@@ -1211,7 +1225,7 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None);
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
-    let tx = block_on(coin.web3().eth().transaction(TransactionId::Hash(
+    let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
         H256::from_str("0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f").unwrap(),
     )))
     .unwrap()
@@ -1247,7 +1261,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
     );
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0xd6403b41c79f9c9e9c83c03d920ee1735e7854d85d94cef48d95dfeca95cd600
-    let tx = block_on(coin.web3().eth().transaction(TransactionId::Hash(
+    let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
         H256::from_str("0xd6403b41c79f9c9e9c83c03d920ee1735e7854d85d94cef48d95dfeca95cd600").unwrap(),
     )))
     .unwrap()
@@ -1409,7 +1423,9 @@ fn test_message_hash() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        web3_instances: vec![Web3Instance { web3, is_parity: false }],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
+        },
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -1450,7 +1466,9 @@ fn test_sign_verify_message() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        web3_instances: vec![Web3Instance { web3, is_parity: false }],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
+        },
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -1503,7 +1521,9 @@ fn test_eth_extract_secret() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         ticker: "ETH".into(),
-        web3_instances: vec![Web3Instance { web3, is_parity: true }],
+        client: EthClient {
+            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: true }]),
+        },
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
