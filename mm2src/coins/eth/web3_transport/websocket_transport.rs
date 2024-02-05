@@ -6,6 +6,7 @@
 
 use crate::eth::web3_transport::Web3SendOut;
 use crate::eth::RpcTransportEventHandlerShared;
+use crate::RpcTransportEventHandler;
 use common::expirable_map::ExpirableMap;
 use common::log;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -212,10 +213,14 @@ async fn send_request(
     transport: WebsocketTransport,
     request: Call,
     request_id: RequestId,
+    event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<serde_json::Value, Error> {
     let mut tx = transport.controller_channel.tx.clone();
 
     let (notification_sender, notification_receiver) = futures::channel::oneshot::channel::<()>();
+
+    let serialized_request = to_string(&request);
+    event_handlers.on_outgoing_request(serialized_request.as_bytes());
 
     tx.send(ControllerMessage::Request(WsRequest {
         request_id,
@@ -229,6 +234,11 @@ async fn send_request(
     if let Ok(_ping) = notification_receiver.await {
         let response_map = unsafe { &mut *transport.responses.ptr };
         if let Some(response) = response_map.remove(&request_id) {
+            let mut res_bytes: Vec<u8> = Vec::new();
+            if let Ok(_) = serde_json::to_writer(&mut res_bytes, &response) {
+                event_handlers.on_incoming_response(&res_bytes);
+            }
+
             return Ok(response);
         }
     };
@@ -246,5 +256,7 @@ impl Transport for WebsocketTransport {
         (request_id, request)
     }
 
-    fn send(&self, id: RequestId, request: Call) -> Self::Out { Box::pin(send_request(self.clone(), request, id)) }
+    fn send(&self, id: RequestId, request: Call) -> Self::Out {
+        Box::pin(send_request(self.clone(), request, id, self.event_handlers.clone()))
+    }
 }
