@@ -207,7 +207,7 @@ impl WebsocketTransport {
                                  }
                              },
                              Some(Ok(tokio_tungstenite_wasm::Message::Binary(_))) => continue,
-                             Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => return,
+                             Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => break,
                              Some(Err(e)) => {
                                 log::error!("{e}");
                                 return;
