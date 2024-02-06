@@ -4,6 +4,7 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
                                         TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
+use coins::eth::v2_activation::NftActivationRequest;
 use coins::eth::EthPrivKeyBuildPolicy;
 use coins::nft::nft_structs::{Chain, NftInfo};
 use coins::{eth::v2_activation::EthPrivKeyActivationPolicy, MmCoinEnum};
@@ -23,7 +24,6 @@ use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
-use url::Url;
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {
@@ -126,7 +126,7 @@ pub struct EthWithTokensActivationRequest {
     erc20_tokens_requests: Vec<TokenActivationRequest<Erc20TokenActivationRequest>>,
     #[serde(default = "true_f")]
     pub get_balances: bool,
-    nft_url: Option<Url>,
+    nft_req: Option<NftActivationRequest>,
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
@@ -196,14 +196,14 @@ impl PlatformWithTokensActivationOps for EthCoin {
         Ok(platform_coin)
     }
 
-    async fn enable_global_non_fungible_token(
+    async fn enable_global_nft(
         &self,
         ctx: &MmArc,
         platform_conf: &Json,
         activation_request: &Self::ActivationRequest,
     ) -> Result<MmCoinEnum, MmError<Self::ActivationError>> {
-        let url = match &activation_request.nft_url {
-            Some(url) => url,
+        let url = match &activation_request.nft_req {
+            Some(nft_req) => &nft_req.url,
             None => {
                 return MmError::err(EthActivationV2Error::InvalidPayload(
                     "NFT Url was not provided to enable Global Non Fungible Token".to_string(),

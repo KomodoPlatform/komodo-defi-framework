@@ -199,7 +199,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         .await
     }
 
-    async fn enable_global_non_fungible_token(
+    async fn enable_global_nft(
         &self,
         _ctx: &MmArc,
         _platform_conf: &Json,

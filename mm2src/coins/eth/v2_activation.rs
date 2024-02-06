@@ -171,6 +171,11 @@ pub struct Erc20Protocol {
     pub token_addr: Address,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct NftActivationRequest {
+    pub url: Url,
+}
+
 #[cfg_attr(test, mockable)]
 impl EthCoin {
     pub async fn initialize_erc20_token(

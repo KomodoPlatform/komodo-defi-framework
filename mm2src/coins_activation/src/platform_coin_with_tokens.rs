@@ -147,7 +147,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>>;
 
-    async fn enable_global_non_fungible_token(
+    async fn enable_global_nft(
         &self,
         ctx: &MmArc,
         conf: &Json,
@@ -355,7 +355,7 @@ where
         return MmError::err(CoinConfWithProtocolError::ConfigIsNotFound(req.ticker).into());
     }
     let nft_global = platform_coin
-        .enable_global_non_fungible_token(&ctx, &platform_conf, &req.request)
+        .enable_global_nft(&ctx, &platform_conf, &req.request)
         .await?;
 
     let activation_result = platform_coin
@@ -469,7 +469,7 @@ where
     .await?;
 
     let nft_global = platform_coin
-        .enable_global_non_fungible_token(&ctx, &platform_conf, &req.request)
+        .enable_global_nft(&ctx, &platform_conf, &req.request)
         .await?;
 
     let activation_result = platform_coin
