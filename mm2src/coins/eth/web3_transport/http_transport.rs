@@ -5,7 +5,7 @@ use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
 use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
 use serde_json::Value as Json;
-#[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use web3::error::{Error, TransportError};
@@ -19,10 +19,9 @@ pub struct AuthPayload<'a> {
     pub signed_message: GuiAuthValidation,
 }
 
-/// Parse bytes RPC response into `Result`.
+/// Deserialize bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport
-#[cfg(not(target_arch = "wasm32"))]
-fn single_response<T>(response: T, rpc_url: &str) -> Result<Json, Error>
+pub(crate) fn de_rpc_response<T>(response: T, rpc_url: &str) -> Result<Json, Error>
 where
     T: Deref<Target = [u8]> + std::fmt::Debug,
 {
@@ -223,7 +222,7 @@ async fn send_request(
         ));
     }
 
-    let res = match single_response(body, &node.uri.to_string()) {
+    let res = match de_rpc_response(body, &node.uri.to_string()) {
         Ok(r) => r,
         Err(err) => {
             return Err(request_failed_error(

@@ -4,6 +4,7 @@
 //! bandwidth. This efficiency is achieved by avoiding the handling of TCP
 //! handshakes (connection reusability) for each request.
 
+use super::http_transport::de_rpc_response;
 use crate::eth::web3_transport::Web3SendOut;
 use crate::eth::{EthCoin, RpcTransportEventHandlerShared};
 use crate::{MmCoin, RpcTransportEventHandler};
@@ -71,7 +72,7 @@ struct WsRequest {
 ///
 /// As for deallocations, see the `Drop` implementation below.
 #[derive(Debug)]
-struct SafeMapPtr(*mut HashMap<RequestId, serde_json::Value>);
+struct SafeMapPtr(*mut HashMap<RequestId, Vec<u8>>);
 
 impl Drop for SafeMapPtr {
     fn drop(&mut self) {
@@ -193,10 +194,14 @@ impl WebsocketTransport {
                                          let request_id = id.as_u64().unwrap_or_default() as usize;
 
                                          if let Some(notifier) = response_notifiers.remove(&request_id) {
-                                             let response_map = unsafe { &mut *self.responses.0 };
-                                             let _ = response_map.insert(request_id, inc_event.get("result").expect("TODO").clone());
+                                             let mut res_bytes: Vec<u8> = Vec::new();
+                                             if serde_json::to_writer(&mut res_bytes, &inc_event).is_ok() {
+                                                 let response_map = unsafe { &mut *self.responses.0 };
+                                                 let _ = response_map.insert(request_id, res_bytes);
 
-                                             notifier.send(()).expect("receiver channel must be alive");
+                                                 notifier.send(()).expect("receiver channel must be alive");
+                                             }
+
                                          }
                                      }
                                  }
@@ -259,12 +264,9 @@ async fn send_request(
     if let Ok(_ping) = notification_receiver.await {
         let response_map = unsafe { &mut *transport.responses.0 };
         if let Some(response) = response_map.remove(&request_id) {
-            let mut res_bytes: Vec<u8> = Vec::new();
-            if serde_json::to_writer(&mut res_bytes, &response).is_ok() {
-                event_handlers.on_incoming_response(&res_bytes);
-            }
+            event_handlers.on_incoming_response(&response);
 
-            return Ok(response);
+            return de_rpc_response(response, &transport.node.uri.to_string());
         }
     };
 
