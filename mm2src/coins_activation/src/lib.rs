@@ -32,7 +32,7 @@ pub use utxo_activation::for_tests;
 #[cfg(not(target_arch = "wasm32"))] mod z_coin_activation;
 
 pub use l2::{cancel_init_l2, init_l2, init_l2_status, init_l2_user_action};
-pub use platform_coin_with_tokens::{enable_platform_coin_with_non_fungible_tokens, enable_platform_coin_with_tokens};
+pub use platform_coin_with_tokens::enable_platform_coin_with_tokens;
 pub use standalone_coin::{cancel_init_standalone_coin, init_standalone_coin, init_standalone_coin_status,
                           init_standalone_coin_user_action, InitStandaloneCoinReq, InitStandaloneCoinStatusRequest};
 pub use token::enable_token;

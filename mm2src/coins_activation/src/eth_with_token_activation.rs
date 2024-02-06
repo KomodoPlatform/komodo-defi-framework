@@ -201,20 +201,16 @@ impl PlatformWithTokensActivationOps for EthCoin {
         ctx: &MmArc,
         platform_conf: &Json,
         activation_request: &Self::ActivationRequest,
-    ) -> Result<MmCoinEnum, MmError<Self::ActivationError>> {
+    ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
         let url = match &activation_request.nft_req {
             Some(nft_req) => &nft_req.url,
-            None => {
-                return MmError::err(EthActivationV2Error::InvalidPayload(
-                    "NFT Url was not provided to enable Global Non Fungible Token".to_string(),
-                ))
-            },
+            None => return Ok(None),
         };
         let chain = Chain::from_ticker(self.ticker())?;
         let nft_global = self
             .global_nft_from_platform_coin(ctx, &chain, platform_conf, &activation_request.platform_request, url)
             .await?;
-        Ok(MmCoinEnum::EthCoin(nft_global))
+        Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
@@ -238,7 +234,14 @@ impl PlatformWithTokensActivationOps for EthCoin {
     async fn get_activation_result(
         &self,
         activation_request: &Self::ActivationRequest,
+        nft_global: &Option<MmCoinEnum>,
     ) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {
+        let nfts_map = if let Some(MmCoinEnum::EthCoin(nft_global)) = nft_global {
+            nft_global.get_nfts_infos().await
+        } else {
+            Default::default()
+        };
+
         let current_block = self
             .current_block()
             .compat()
@@ -272,7 +275,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
                 current_block,
                 eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
                 erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
-                nfts_infos: Default::default(),
+                nfts_infos: nfts_map,
             });
         }
 
@@ -295,7 +298,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
             current_block,
             eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
             erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
-            nfts_infos: Default::default(),
+            nfts_infos: nfts_map,
         })
     }
 

@@ -152,7 +152,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         ctx: &MmArc,
         conf: &Json,
         activation_request: &Self::ActivationRequest,
-    ) -> Result<MmCoinEnum, MmError<Self::ActivationError>>;
+    ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>>;
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
     where
@@ -165,6 +165,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
     async fn get_activation_result(
         &self,
         activation_request: &Self::ActivationRequest,
+        nft_global: &Option<MmCoinEnum>,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>;
 
     async fn get_nft_activation_result(
@@ -322,34 +323,6 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let activation_result = platform_coin.get_activation_result(&req.request).await?;
-    log::info!("{} current block {}", req.ticker, activation_result.current_block());
-
-    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-    coins_ctx
-        .add_platform_with_tokens(platform_coin.clone().into(), mm_tokens, false)
-        .await
-        .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
-
-    Ok(activation_result)
-}
-
-/// Re-enables a passive platform coin along with its non-fungible tokens (NFTs).
-///
-/// This function is used to reactivate a platform coin that is currently in a passive state.
-/// It enables the associated global non-fungible token for the coin and updates the coins
-/// context to reflect these changes. The function ensures the platform coin is configured
-/// correctly before proceeding with the reactivation and NFT initialization.
-pub async fn re_enable_passive_platform_coin_with_nfts<Platform>(
-    ctx: MmArc,
-    platform_coin: Platform,
-    req: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
-) -> Result<Platform::ActivationResult, MmError<EnablePlatformCoinWithTokensError>>
-where
-    Platform: PlatformWithTokensActivationOps + MmCoin + Clone,
-    EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
-    (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
-{
     let platform_conf = coin_conf(&ctx, &req.ticker);
     if platform_conf.is_null() {
         return MmError::err(CoinConfWithProtocolError::ConfigIsNotFound(req.ticker).into());
@@ -358,14 +331,16 @@ where
         .enable_global_nft(&ctx, &platform_conf, &req.request)
         .await?;
 
-    let activation_result = platform_coin
-        .get_nft_activation_result(&req.request, &nft_global)
-        .await?;
+    let activation_result = platform_coin.get_activation_result(&req.request, &nft_global).await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
+
+    if let Some(nft) = nft_global {
+        mm_tokens.push(nft);
+    }
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.into(), vec![nft_global], true)
+        .add_platform_with_tokens(platform_coin.clone().into(), mm_tokens, false)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 
@@ -410,7 +385,11 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let activation_result = platform_coin.get_activation_result(&req.request).await?;
+    let nft_global = platform_coin
+        .enable_global_nft(&ctx, &platform_conf, &req.request)
+        .await?;
+
+    let activation_result = platform_coin.get_activation_result(&req.request, &nft_global).await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     if req.request.tx_history() {
@@ -423,75 +402,15 @@ where
 
     if let Some(config) = &ctx.event_stream_configuration {
         platform_coin.handle_balance_streaming(config).await?;
+    }
+
+    if let Some(nft_global) = nft_global {
+        mm_tokens.push(nft_global);
     }
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
         .add_platform_with_tokens(platform_coin.into(), mm_tokens, false)
-        .await
-        .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
-
-    Ok(activation_result)
-}
-
-/// Enables a platform coin along with its associated non-fungible tokens (NFTs).
-///
-/// This function activates a platform coin and initializes its global NFT token.
-/// It checks if the platform coin is already available and, if not, proceeds with the activation process.
-/// The function is responsible for setting up the platform coin, enabling the global NFT token,
-/// and updating the coins context with the newly activated coin and NFTs.
-pub async fn enable_platform_coin_with_non_fungible_tokens<Platform>(
-    ctx: MmArc,
-    req: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
-) -> Result<Platform::ActivationResult, MmError<EnablePlatformCoinWithTokensError>>
-where
-    Platform: PlatformWithTokensActivationOps + MmCoin + Clone,
-    EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
-    (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
-{
-    if let Ok(Some(coin)) = lp_coinfind_any(&ctx, &req.ticker).await {
-        if !coin.is_available() {
-            if let Some(platform_coin) = Platform::try_from_mm_coin(coin.inner) {
-                return re_enable_passive_platform_coin_with_nfts(ctx, platform_coin, req).await;
-            }
-        }
-    }
-
-    let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
-
-    let platform_coin = Platform::enable_platform_coin(
-        ctx.clone(),
-        req.ticker.clone(),
-        &platform_conf,
-        req.request.clone(),
-        platform_protocol,
-    )
-    .await?;
-
-    let nft_global = platform_coin
-        .enable_global_nft(&ctx, &platform_conf, &req.request)
-        .await?;
-
-    let activation_result = platform_coin
-        .get_nft_activation_result(&req.request, &nft_global)
-        .await?;
-    log::info!("{} current block {}", req.ticker, activation_result.current_block());
-
-    if req.request.tx_history() {
-        platform_coin.start_history_background_fetching(
-            ctx.clone(),
-            TxHistoryStorageBuilder::new(&ctx).build()?,
-            activation_result.get_platform_balance(),
-        );
-    }
-
-    if let Some(config) = &ctx.event_stream_configuration {
-        platform_coin.handle_balance_streaming(config).await?;
-    }
-
-    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-    coins_ctx
-        .add_platform_with_tokens(platform_coin.into(), vec![nft_global], true)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 

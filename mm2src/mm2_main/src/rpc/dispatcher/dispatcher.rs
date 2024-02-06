@@ -39,9 +39,9 @@ use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_inf
     not(target_arch = "wasm32")
 ))]
 use coins::{SolanaCoin, SplToken};
-use coins_activation::{cancel_init_l2, cancel_init_standalone_coin, enable_platform_coin_with_non_fungible_tokens,
-                       enable_platform_coin_with_tokens, enable_token, init_l2, init_l2_status, init_l2_user_action,
-                       init_standalone_coin, init_standalone_coin_status, init_standalone_coin_user_action};
+use coins_activation::{cancel_init_l2, cancel_init_standalone_coin, enable_platform_coin_with_tokens, enable_token,
+                       init_l2, init_l2_status, init_l2_user_action, init_standalone_coin,
+                       init_standalone_coin_status, init_standalone_coin_user_action};
 use common::log::{error, warn};
 use common::HttpStatusCode;
 use futures::Future as Future03;
@@ -159,9 +159,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
         "enable_eth_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<EthCoin>).await,
-        "enable_eth_with_non_fungible_tokens" => {
-            handle_mmrpc(ctx, request, enable_platform_coin_with_non_fungible_tokens::<EthCoin>).await
-        },
         "enable_erc20" => handle_mmrpc(ctx, request, enable_token::<EthCoin>).await,
         "enable_tendermint_with_assets" => {
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
