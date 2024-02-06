@@ -251,7 +251,7 @@ impl EthCoin {
             logs_block_range: self.logs_block_range,
             nonce_lock: self.nonce_lock.clone(),
             erc20_tokens_infos: Default::default(),
-            non_fungible_tokens_infos: Default::default(),
+            nfts_infos: Default::default(),
             abortable_system,
         };
 
@@ -325,7 +325,7 @@ impl EthCoin {
             logs_block_range: self.logs_block_range,
             nonce_lock: self.nonce_lock.clone(),
             erc20_tokens_infos: Default::default(),
-            non_fungible_tokens_infos: Arc::new(AsyncMutex::new(nft_infos)),
+            nfts_infos: Arc::new(AsyncMutex::new(nft_infos)),
             abortable_system,
         };
         Ok(EthCoin(Arc::new(global_nft)))
@@ -432,7 +432,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Default::default(),
+        nfts_infos: Default::default(),
         abortable_system,
     };
 

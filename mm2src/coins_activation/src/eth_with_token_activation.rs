@@ -327,7 +327,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
 
         if !activation_request.get_balances {
             drop_mutability!(eth_address_info);
-            let nfts_map = nft_global.get_non_fungible_tokens_infos().await;
+            let nfts_map = nft_global.get_nfts_infos().await;
 
             return Ok(EthWithTokensActivationResult {
                 current_block,
@@ -345,7 +345,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
         eth_address_info.balances = Some(eth_balance);
         drop_mutability!(eth_address_info);
 
-        let nfts_map = nft_global.get_non_fungible_tokens_infos().await;
+        let nfts_map = nft_global.get_nfts_infos().await;
 
         Ok(EthWithTokensActivationResult {
             current_block,

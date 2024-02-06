@@ -3192,7 +3192,7 @@ impl CoinsContext {
     ///
     /// * `platform`: The platform coin to be added.
     /// * `tokens`: A vector of tokens (regular or NFTs) associated with the platform coin.
-    /// * `is_nft_tokens`: A boolean flag indicating if the tokens are NFTs.
+    /// * `is_nfts`: A boolean flag indicating if the tokens are NFTs.
     ///
     /// # Returns
     ///
@@ -3202,7 +3202,7 @@ impl CoinsContext {
         &self,
         platform: MmCoinEnum,
         tokens: Vec<MmCoinEnum>,
-        is_nft_tokens: bool,
+        is_nfts: bool,
     ) -> Result<(), MmError<PlatformIsAlreadyActivatedErr>> {
         let mut coins = self.coins.lock().await;
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
@@ -3231,8 +3231,8 @@ impl CoinsContext {
             let token_ticker = token.ticker().to_string();
             token_tickers.insert(token_ticker.clone());
 
-            if is_nft_tokens {
-                // For NFT tokens, overwrite existing data
+            if is_nfts {
+                // For NFTs, overwrite existing data
                 coins.insert(token_ticker, MmCoinStruct::new(token));
             } else {
                 // For regular tokens, use entry to avoid overwriting

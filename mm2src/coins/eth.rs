@@ -458,7 +458,7 @@ pub struct EthCoinImpl {
     erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenInfo>>>,
     /// Stores NFT information where each value is uniquely identified by a string key composed of
     /// the token address and token ID, separated by a comma.
-    pub(crate) non_fungible_tokens_infos: Arc<AsyncMutex<HashMap<String, NftInfo>>>,
+    pub(crate) nfts_infos: Arc<AsyncMutex<HashMap<String, NftInfo>>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
@@ -705,8 +705,8 @@ impl EthCoinImpl {
     /// # Warning
     /// Be very careful using this function since it returns dereferenced clone
     /// of value behind the MutexGuard and makes it non-thread-safe.
-    pub async fn get_non_fungible_tokens_infos(&self) -> HashMap<String, NftInfo> {
-        let guard = self.non_fungible_tokens_infos.lock().await;
+    pub async fn get_nfts_infos(&self) -> HashMap<String, NftInfo> {
+        let guard = self.nfts_infos.lock().await;
         (*guard).clone()
     }
 }
@@ -5700,7 +5700,7 @@ pub async fn eth_coin_from_conf_and_request(
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
         erc20_tokens_infos: Default::default(),
-        non_fungible_tokens_infos: Default::default(),
+        nfts_infos: Default::default(),
         abortable_system,
     };
     Ok(EthCoin(Arc::new(coin)))

@@ -375,7 +375,7 @@ async fn update_nft_infos(nft_global: &mut EthCoin, nft_list: Vec<Nft>) {
         })
         .collect();
 
-    let mut global_nft_infos = nft_global.non_fungible_tokens_infos.lock().await;
+    let mut global_nft_infos = nft_global.nfts_infos.lock().await;
     *global_nft_infos = new_nft_infos;
 }
 
@@ -1343,8 +1343,8 @@ async fn update_transfers_with_empty_meta<T>(
 where
     T: NftListStorageOps + NftTransferHistoryStorageOps,
 {
-    let nft_token_addr_id = storage.get_transfers_with_empty_meta(*chain).await?;
-    for addr_id_pair in nft_token_addr_id.into_iter() {
+    let token_addr_id = storage.get_transfers_with_empty_meta(*chain).await?;
+    for addr_id_pair in token_addr_id.into_iter() {
         let mut nft_meta = match get_moralis_metadata(
             addr_id_pair.token_address.clone(),
             addr_id_pair.token_id,
