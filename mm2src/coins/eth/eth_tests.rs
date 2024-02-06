@@ -105,17 +105,21 @@ fn eth_coin_from_keypair(
     fallback_swap_contract: Option<Address>,
     key_pair: KeyPair,
 ) -> (MmArc, EthCoin) {
-    let mut nodes = vec![];
+    let mut web3_instances = vec![];
     for url in urls.iter() {
-        nodes.push(HttpTransportNode {
+        let node = HttpTransportNode {
             uri: url.parse().unwrap(),
             gui_auth: false,
-        });
-    }
-    drop_mutability!(nodes);
+        };
 
-    let transport = Web3Transport::with_nodes(nodes);
-    let web3 = Web3::new(transport);
+        let transport = Web3Transport::with_node(node);
+        let web3 = Web3::new(transport);
+
+        web3_instances.push(Web3Instance { web3, is_parity: false });
+    }
+
+    drop_mutability!(web3_instances);
+
     let conf = json!({
         "coins":[
             eth_testnet_conf(),
@@ -143,7 +147,7 @@ fn eth_coin_from_keypair(
         contract_supports_watchers: false,
         ticker,
         client: EthClient {
-            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
+            web3_instances: AsyncMutex::new(web3_instances),
         },
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
@@ -307,7 +311,13 @@ fn send_and_refund_erc20_payment() {
     fill_eth(key_pair.address(), 0.001);
     fill_jst(key_pair.address(), 0.0001);
 
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::with_node(node);
+
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -394,7 +404,13 @@ fn send_and_refund_erc20_payment() {
 fn send_and_refund_eth_payment() {
     let key_pair = Random.generate().unwrap();
     fill_eth(key_pair.address(), 0.001);
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::with_node(node);
+
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -483,10 +499,27 @@ fn test_nonce_several_urls() {
     )
     .unwrap();
 
-    let devnet_transport = Web3Transport::single_node(ETH_DEV_NODE, false);
-    let sepolia_transport = Web3Transport::single_node("https://rpc2.sepolia.org", false);
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let devnet_transport = Web3Transport::with_node(node);
+
+    let node = HttpTransportNode {
+        uri: "https://rpc2.sepolia.org".parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let sepolia_transport = Web3Transport::with_node(node);
+
+    let node = HttpTransportNode {
+        uri: "http://195.201.0.6:8989".parse().unwrap(),
+        gui_auth: false,
+    };
+
     // get nonce must succeed if some nodes are down at the moment for some reason
-    let failing_transport = Web3Transport::single_node("http://195.201.0.6:8989", false);
+    let failing_transport = Web3Transport::with_node(node);
 
     let web3_devnet = Web3::new(devnet_transport);
     let web3_sepolia = Web3::new(sepolia_transport);
@@ -552,7 +585,12 @@ fn test_wait_for_payment_spend_timeout() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::with_node(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -619,7 +657,12 @@ fn test_search_for_swap_tx_spend_was_spent() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node(ETH_MAINNET_NODE, false);
+    let node = HttpTransportNode {
+        uri: ETH_MAINNET_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::with_node(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -725,7 +768,12 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node(ETH_MAINNET_NODE, false);
+    let node = HttpTransportNode {
+        uri: ETH_MAINNET_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::with_node(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -1411,7 +1459,12 @@ fn test_message_hash() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::with_node(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -1453,7 +1506,13 @@ fn test_sign_verify_message() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::with_node(node);
 
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1499,7 +1558,15 @@ fn test_eth_extract_secret() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node("https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b", false);
+    let node = HttpTransportNode {
+        uri: "https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"
+            .parse()
+            .unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::with_node(node);
+
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 

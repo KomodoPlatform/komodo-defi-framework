@@ -1,3 +1,5 @@
+use self::web3_transport::websocket_transport::WebsocketTransport;
+
 /******************************************************************************
  * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
  *                                                                            *
@@ -30,6 +32,7 @@ use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
+use common::executor::{AbortSettings, SpawnAbortable};
 use common::log::{debug, error, info, warn};
 use common::number_type_casting::SafeTypeCastingNumbers;
 use common::{get_utc_timestamp, now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -489,51 +492,7 @@ async fn make_gas_station_request(url: &str) -> GasStationResult {
     Ok(result)
 }
 
-#[async_trait]
-impl RpcCommonOps for EthCoinImpl {
-    type RpcClient = Web3Instance;
-    type Error = Web3RpcError;
-
-    async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
-        let mut clients = self.client.web3_instances.lock().await;
-
-        // try to find first live client
-        for (i, client) in clients.clone().into_iter().enumerate() {
-            match client
-                .web3
-                .web3()
-                .client_version()
-                .timeout(Duration::from_secs(15))
-                .await
-            {
-                Ok(Ok(_)) => {
-                    // Bring the live client to the front of rpc_clients
-                    clients.rotate_left(i);
-                    return Ok(client);
-                },
-                Ok(Err(rpc_error)) => {
-                    debug!("Could not get client version on: {:?}. Error: {}", &client, rpc_error);
-                },
-                Err(timeout_error) => {
-                    debug!(
-                        "Client version timeout exceed on: {:?}. Error: {}",
-                        &client, timeout_error
-                    );
-                },
-            };
-        }
-
-        return Err(Web3RpcError::Transport(
-            "All the current rpc nodes are unavailable.".to_string(),
-        ));
-    }
-}
-
 impl EthCoinImpl {
-    pub(crate) async fn web3(&self) -> Result<Web3<Web3Transport>, Web3RpcError> {
-        self.get_live_client().await.map(|t| t.web3)
-    }
-
     #[cfg(not(target_arch = "wasm32"))]
     fn eth_traces_path(&self, ctx: &MmArc) -> PathBuf {
         ctx.dbdir()
@@ -2573,7 +2532,63 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
     }
 }
 
+#[async_trait]
+impl RpcCommonOps for EthCoin {
+    type RpcClient = Web3Instance;
+    type Error = Web3RpcError;
+
+    async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
+        let mut clients = self.client.web3_instances.lock().await;
+
+        // try to find first live client
+        for (i, client) in clients.clone().into_iter().enumerate() {
+            match client
+                .web3
+                .web3()
+                .client_version()
+                .timeout(Duration::from_secs(15))
+                .await
+            {
+                Ok(Ok(_)) => {
+                    if let Web3Transport::Websocket(socket_transport) = &client.web3.transport() {
+                        socket_transport.maybe_spawn_connection_loop(self.clone());
+                    };
+
+                    // Bring the live client to the front of rpc_clients
+                    clients.rotate_left(i);
+                    return Ok(client);
+                },
+                Ok(Err(rpc_error)) => {
+                    debug!("Could not get client version on: {:?}. Error: {}", &client, rpc_error);
+
+                    if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
+                        socket_transport.stop_connection_loop().await;
+                    };
+                },
+                Err(timeout_error) => {
+                    debug!(
+                        "Client version timeout exceed on: {:?}. Error: {}",
+                        &client, timeout_error
+                    );
+
+                    if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
+                        socket_transport.stop_connection_loop().await;
+                    };
+                },
+            };
+        }
+
+        return Err(Web3RpcError::Transport(
+            "All the current rpc nodes are unavailable.".to_string(),
+        ));
+    }
+}
+
 impl EthCoin {
+    pub(crate) async fn web3(&self) -> Result<Web3<Web3Transport>, Web3RpcError> {
+        self.get_live_client().await.map(|t| t.web3)
+    }
+
     /// Gets `SenderRefunded` events from etomic swap smart contract since `from_block`
     fn refund_events(
         &self,
@@ -5679,13 +5694,21 @@ pub async fn eth_coin_from_conf_and_request(
         let transport = match uri.scheme_str() {
             Some("ws") | Some("wss") => {
                 let node = WebsocketTransportNode { uri, gui_auth: false };
+                let websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
 
-                Web3Transport::new_websocket(ctx, vec![node], event_handlers.clone())
+                // Temporarily start the connection loop (we close the connection once we have the client version below).
+                // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
+                // dropping websocket support on parity nodes.
+                let fut = websocket_transport.clone().start_connection_loop();
+                let settings = AbortSettings::info_on_abort("TODO".to_string());
+                ctx.spawner().spawn_with_settings(fut, settings);
+
+                Web3Transport::Websocket(websocket_transport)
             },
             _ => {
                 let node = HttpTransportNode { uri, gui_auth: false };
 
-                Web3Transport::new_http(vec![node], event_handlers.clone())
+                Web3Transport::new_http(node, event_handlers.clone())
             },
         };
 
@@ -5694,8 +5717,17 @@ pub async fn eth_coin_from_conf_and_request(
             Ok(v) => v,
             Err(e) => {
                 error!("Couldn't get client version for url {}: {}", url, e);
+
+                if let Web3Transport::Websocket(socket_transport) = web3.transport() {
+                    socket_transport.stop_connection_loop().await;
+                };
+
                 continue;
             },
+        };
+
+        if let Web3Transport::Websocket(socket_transport) = web3.transport() {
+            socket_transport.stop_connection_loop().await;
         };
 
         web3_instances.push(Web3Instance {

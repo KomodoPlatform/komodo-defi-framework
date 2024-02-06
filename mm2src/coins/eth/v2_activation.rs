@@ -6,6 +6,7 @@ use enum_from::EnumFromTrait;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
+use v2_activation::web3_transport::websocket_transport::WebsocketTransport;
 
 #[derive(Clone, Debug, Deserialize, Display, EnumFromTrait, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -416,17 +417,25 @@ async fn build_web3_instances(
         let transport = match uri.scheme_str() {
             Some("ws") | Some("wss") => {
                 let node = WebsocketTransportNode { uri, gui_auth: false };
+                let websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
 
-                Web3Transport::new_websocket(ctx, vec![node], event_handlers.clone())
+                // Temporarily start the connection loop (we close the connection once we have the client version below).
+                // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
+                // dropping websocket support on parity nodes.
+                let fut = websocket_transport.clone().start_connection_loop();
+                let settings = AbortSettings::info_on_abort("TODO".to_string());
+                ctx.spawner().spawn_with_settings(fut, settings);
+
+                Web3Transport::Websocket(websocket_transport)
             },
             _ => {
                 let node = HttpTransportNode { uri, gui_auth: false };
 
-                build_single_http_transport(
+                build_http_transport(
                     coin_ticker.clone(),
                     address.clone(),
                     key_pair,
-                    vec![node],
+                    node,
                     event_handlers.clone(),
                 )
             },
@@ -437,8 +446,17 @@ async fn build_web3_instances(
             Ok(v) => v,
             Err(e) => {
                 error!("Couldn't get client version for url {}: {}", url, e);
+
+                if let Web3Transport::Websocket(socket_transport) = web3.transport() {
+                    socket_transport.stop_connection_loop().await;
+                };
+
                 continue;
             },
+        };
+
+        if let Web3Transport::Websocket(socket_transport) = web3.transport() {
+            socket_transport.stop_connection_loop().await;
         };
 
         web3_instances.push(Web3Instance {
@@ -456,16 +474,16 @@ async fn build_web3_instances(
     Ok(web3_instances)
 }
 
-fn build_single_http_transport(
+fn build_http_transport(
     coin_ticker: String,
     address: String,
     key_pair: &KeyPair,
-    nodes: Vec<HttpTransportNode>,
+    node: HttpTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Web3Transport {
     use crate::eth::web3_transport::http_transport::HttpTransport;
 
-    let mut http_transport = HttpTransport::with_event_handlers(nodes, event_handlers);
+    let mut http_transport = HttpTransport::with_event_handlers(node, event_handlers);
     http_transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
         coin_ticker,
         secret: key_pair.secret().clone(),

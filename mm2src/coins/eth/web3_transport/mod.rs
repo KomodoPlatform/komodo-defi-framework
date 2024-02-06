@@ -1,9 +1,7 @@
 use crate::RpcTransportEventHandlerShared;
-use common::executor::{AbortSettings, SpawnAbortable};
 use ethereum_types::U256;
 use futures::future::BoxFuture;
 use jsonrpc_core::Call;
-use mm2_core::mm_ctx::MmArc;
 #[cfg(target_arch = "wasm32")] use mm2_metamask::MetamaskResult;
 use mm2_net::transport::GuiAuthValidationGenerator;
 use serde_json::Value as Json;
@@ -29,25 +27,10 @@ pub(crate) enum Web3Transport {
 
 impl Web3Transport {
     pub fn new_http(
-        nodes: Vec<http_transport::HttpTransportNode>,
+        node: http_transport::HttpTransportNode,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Web3Transport {
-        http_transport::HttpTransport::with_event_handlers(nodes, event_handlers).into()
-    }
-
-    pub fn new_websocket(
-        ctx: &MmArc,
-        nodes: Vec<websocket_transport::WebsocketTransportNode>,
-        event_handlers: Vec<RpcTransportEventHandlerShared>,
-    ) -> Web3Transport {
-        let transport = websocket_transport::WebsocketTransport::with_event_handlers(nodes, event_handlers);
-
-        // TODO: Don't do this here
-        let fut = transport.clone().start_connection_loop();
-        let settings = AbortSettings::info_on_abort("TODO".to_string());
-        ctx.spawner().spawn_with_settings(fut, settings);
-
-        transport.into()
+        http_transport::HttpTransport::with_event_handlers(node, event_handlers).into()
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -58,14 +41,9 @@ impl Web3Transport {
         Ok(metamask_transport::MetamaskTransport::detect(eth_config, event_handlers)?.into())
     }
 
-    #[cfg(test)]
-    pub fn with_nodes(nodes: Vec<http_transport::HttpTransportNode>) -> Web3Transport {
-        http_transport::HttpTransport::new(nodes).into()
-    }
-
-    #[allow(dead_code)]
-    pub fn single_node(url: &'static str, gui_auth: bool) -> Self {
-        http_transport::HttpTransport::single_node(url, gui_auth).into()
+    #[cfg(any(test, target_arch = "wasm32"))]
+    pub fn with_node(node: http_transport::HttpTransportNode) -> Web3Transport {
+        http_transport::HttpTransport::new(node).into()
     }
 
     pub fn gui_auth_validation_generator_as_mut(&mut self) -> Option<&mut GuiAuthValidationGenerator> {

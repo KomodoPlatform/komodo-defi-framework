@@ -5,8 +5,9 @@
 //! handshakes (connection reusability) for each request.
 
 use crate::eth::web3_transport::Web3SendOut;
-use crate::eth::RpcTransportEventHandlerShared;
-use crate::RpcTransportEventHandler;
+use crate::eth::{EthCoin, RpcTransportEventHandlerShared};
+use crate::{MmCoin, RpcTransportEventHandler};
+use common::executor::{AbortSettings, SpawnAbortable};
 use common::expirable_map::ExpirableMap;
 use common::log;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -26,31 +27,26 @@ use web3::{helpers::build_request, RequestId, Transport};
 const REQUEST_TIMEOUT_AS_SEC: u64 = 10;
 
 #[derive(Clone, Debug)]
-pub struct WebsocketTransportNode {
+pub(crate) struct WebsocketTransportNode {
     pub(crate) uri: http::Uri,
+    // TODO: We need to support this mechanism on the komodo-defi-proxy
+    #[allow(dead_code)]
     pub(crate) gui_auth: bool,
-}
-
-#[derive(Debug)]
-struct WebsocketTransportRpcClient(AsyncMutex<WebsocketTransportRpcClientImpl>);
-
-#[derive(Debug)]
-struct WebsocketTransportRpcClientImpl {
-    nodes: Vec<WebsocketTransportNode>,
 }
 
 #[derive(Clone, Debug)]
 pub struct WebsocketTransport {
     request_id: Arc<AtomicUsize>,
-    client: Arc<WebsocketTransportRpcClient>,
+    node: WebsocketTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    responses: SafeMapPtr,
-    controller_channel: ControllerChannel,
+    responses: Arc<SafeMapPtr>,
+    controller_channel: Arc<ControllerChannel>,
+    connection_guard: Arc<AsyncMutex<()>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct ControllerChannel {
-    tx: UnboundedSender<ControllerMessage>,
+    tx: Arc<AsyncMutex<UnboundedSender<ControllerMessage>>>,
     rx: Arc<AsyncMutex<UnboundedReceiver<ControllerMessage>>>,
 }
 
@@ -73,22 +69,14 @@ struct WsRequest {
 /// The implemented algorithm for socket request-response is already thread-safe,
 /// so we don't care about race conditions.
 ///
-/// As for deallocations, we use a mutex as a pointer guard in the socket connection.
-/// Whenever it is no longer held there and `drop` is called for `WebsocketTransport`,
-/// this means that the pointer is no longer in use, so we can switch raw pointer into
-/// a smart pointer (`Box`) for letting compiler to clean up the memory.
-#[derive(Clone, Debug)]
-struct SafeMapPtr {
-    ptr: *mut HashMap<RequestId, serde_json::Value>,
-    guard: Arc<AsyncMutex<()>>,
-}
+/// As for deallocations, see the `Drop` implementation below.
+#[derive(Debug)]
+struct SafeMapPtr(*mut HashMap<RequestId, serde_json::Value>);
 
-impl Drop for WebsocketTransport {
+impl Drop for SafeMapPtr {
     fn drop(&mut self) {
-        if self.responses.guard.try_lock().is_some() {
-            // let the compiler do the job
-            let _ = unsafe { Box::from_raw(self.responses.ptr) };
-        }
+        // Let the compiler do the job.
+        let _ = unsafe { Box::from_raw(self.0) };
     }
 }
 
@@ -96,105 +84,130 @@ unsafe impl Send for SafeMapPtr {}
 unsafe impl Sync for SafeMapPtr {}
 
 impl WebsocketTransport {
-    pub fn with_event_handlers(
-        nodes: Vec<WebsocketTransportNode>,
+    pub(crate) fn with_event_handlers(
+        node: WebsocketTransportNode,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Self {
-        let client_impl = WebsocketTransportRpcClientImpl { nodes };
         let (req_tx, req_rx) = futures::channel::mpsc::unbounded();
-        let hashmap = HashMap::default();
 
         WebsocketTransport {
-            client: Arc::new(WebsocketTransportRpcClient(AsyncMutex::new(client_impl))),
+            node,
             event_handlers,
-            responses: SafeMapPtr {
-                ptr: Box::into_raw(hashmap.into()),
-                guard: Arc::new(AsyncMutex::new(())),
-            },
+            responses: Arc::new(SafeMapPtr(Box::into_raw(Default::default()))),
             request_id: Arc::new(AtomicUsize::new(1)),
             controller_channel: ControllerChannel {
-                tx: req_tx,
+                tx: Arc::new(AsyncMutex::new(req_tx)),
                 rx: Arc::new(AsyncMutex::new(req_rx)),
-            },
+            }
+            .into(),
+            connection_guard: Arc::new(AsyncMutex::new(())),
         }
     }
 
-    pub async fn start_connection_loop(self) {
-        let _ptr_guard = self.responses.guard.lock().await;
+    pub(crate) async fn start_connection_loop(self) {
+        let _guard = self.connection_guard.lock().await;
+
         let mut response_notifiers: ExpirableMap<RequestId, oneshot::Sender<()>> = ExpirableMap::default();
 
         loop {
-            for node in self.client.0.lock().await.nodes.clone() {
-                let mut wsocket = match tokio_tungstenite_wasm::connect(node.uri.to_string()).await {
-                    Ok(ws) => ws,
-                    Err(e) => {
-                        log::error!("{e}");
-                        continue;
-                    },
-                };
+            let mut wsocket = match tokio_tungstenite_wasm::connect(self.node.uri.to_string()).await {
+                Ok(ws) => ws,
+                Err(e) => {
+                    log::error!("{e}");
+                    continue;
+                },
+            };
 
-                // id list of awaiting requests
-                let mut keepalive_interval = Ticker::new(Duration::from_secs(10));
-                let mut req_rx = self.controller_channel.rx.lock().await;
+            // List of awaiting requests IDs
+            let mut keepalive_interval = Ticker::new(Duration::from_secs(10));
+            let mut req_rx = self.controller_channel.rx.lock().await;
 
-                loop {
-                    futures_util::select! {
-                        _ = keepalive_interval.next().fuse() => {
-                            // Drop expired response notifier channels
-                            response_notifiers.clear_expired_entries();
+            loop {
+                futures_util::select! {
+                    _ = keepalive_interval.next().fuse() => {
+                        // Drop expired response notifier channels
+                        response_notifiers.clear_expired_entries();
 
-                            const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
-                            if let Err(e) = wsocket.send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string())).await {
-                                log::error!("{e}");
-                                // TODO: try couple times at least before continue
-                                continue;
-                            }
-                        }
+                        const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
 
-                        request = req_rx.next().fuse() => {
-                            match request {
-                                Some(ControllerMessage::Request(WsRequest { request_id, request, response_notifier })) => {
-                                    let serialized_request = to_string(&request);
-                                    response_notifiers.insert(request_id, response_notifier, Duration::from_secs(REQUEST_TIMEOUT_AS_SEC));
-                                    if let Err(e) = wsocket.send(tokio_tungstenite_wasm::Message::Text(serialized_request)).await {
-                                        log::error!("{e}");
-                                        let _ = response_notifiers.remove(&request_id);
-                                        // TODO: try couple times at least before continue
-                                        continue;
-                                    }
+                        let mut should_continue = Default::default();
+                        for _ in 0..3 {
+                            match wsocket.send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string())).await {
+                                Ok(_) => {
+                                    should_continue = false;
+                                    break;
                                 },
-                                Some(ControllerMessage::Close) => return,
-                                _ => {},
-                            }
+                                Err(e) => {
+                                    log::error!("{e}");
+                                    should_continue = true;
+                                }
+                            };
                         }
 
-                        message = wsocket.next().fuse() => {
-                            match message {
-                                 Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
-                                     if let Ok(inc_event) = serde_json::from_str::<serde_json::Value>(&inc_event) {
-                                         if !inc_event.is_object() {
-                                             continue;
-                                         }
+                        if should_continue {
+                            continue;
+                        }
+                    }
 
-                                         if let Some(id) = inc_event.get("id") {
-                                             let request_id = id.as_u64().unwrap_or_default() as usize;
+                    request = req_rx.next().fuse() => {
+                        match request {
+                            Some(ControllerMessage::Request(WsRequest { request_id, request, response_notifier })) => {
+                                let serialized_request = to_string(&request);
+                                response_notifiers.insert(request_id, response_notifier, Duration::from_secs(REQUEST_TIMEOUT_AS_SEC));
 
-                                             if let Some(notifier) = response_notifiers.remove(&request_id) {
-                                                 let response_map = unsafe { &mut *self.responses.ptr };
-                                                 let _ = response_map.insert(request_id, inc_event.get("result").expect("TODO").clone());
-                                                 notifier.send(()).expect("TODO");
-                                             }
+                                let mut should_continue = Default::default();
+                                for _ in 0..3 {
+                                    match wsocket.send(tokio_tungstenite_wasm::Message::Text(serialized_request.clone())).await {
+                                        Ok(_) => {
+                                            should_continue = false;
+                                            break;
+                                        },
+                                        Err(e) => {
+                                            log::error!("{e}");
+                                            should_continue = true;
+                                        }
+                                    }
+                                }
+
+                                if should_continue {
+                                    let _ = response_notifiers.remove(&request_id);
+                                    continue;
+                                }
+                            },
+                            Some(ControllerMessage::Close) => {
+                                break;
+                            },
+                            _ => {},
+                        }
+                    }
+
+                    message = wsocket.next().fuse() => {
+                        match message {
+                             Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
+                                 if let Ok(inc_event) = serde_json::from_str::<serde_json::Value>(&inc_event) {
+                                     if !inc_event.is_object() {
+                                         continue;
+                                     }
+
+                                     if let Some(id) = inc_event.get("id") {
+                                         let request_id = id.as_u64().unwrap_or_default() as usize;
+
+                                         if let Some(notifier) = response_notifiers.remove(&request_id) {
+                                             let response_map = unsafe { &mut *self.responses.0 };
+                                             let _ = response_map.insert(request_id, inc_event.get("result").expect("TODO").clone());
+
+                                             notifier.send(()).expect("receiver channel must be alive");
                                          }
                                      }
-                                 },
-                                 Some(Ok(tokio_tungstenite_wasm::Message::Binary(_))) => todo!(),
-                                 Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => break,
-                                 Some(Err(e)) => {
-                                    log::error!("{e}");
-                                    break;
-                                 },
-                                 None => continue,
-                            }
+                                 }
+                             },
+                             Some(Ok(tokio_tungstenite_wasm::Message::Binary(_))) => continue,
+                             Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => return,
+                             Some(Err(e)) => {
+                                log::error!("{e}");
+                                return;
+                             },
+                             None => continue,
                         }
                     }
                 }
@@ -202,10 +215,23 @@ impl WebsocketTransport {
         }
     }
 
-    async fn stop_connection(self) {
-        let mut tx = self.controller_channel.tx.clone();
-        tx.send(ControllerMessage::Close).await.expect("TODO");
-        let _ = unsafe { Box::from_raw(self.responses.ptr) };
+    pub(crate) async fn stop_connection_loop(&self) {
+        let mut tx = self.controller_channel.tx.lock().await;
+        tx.send(ControllerMessage::Close)
+            .await
+            .expect("receiver channel must be alive");
+
+        let response_map = unsafe { &mut *self.responses.0 };
+        response_map.clear();
+    }
+
+    pub(crate) fn maybe_spawn_connection_loop(&self, coin: EthCoin) {
+        // if we can acquire the lock here, it means connection loop is not alive
+        if self.connection_guard.try_lock().is_some() {
+            let fut = self.clone().start_connection_loop();
+            let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", self.node.uri));
+            coin.spawner().spawn_with_settings(fut, settings);
+        }
     }
 }
 
@@ -215,7 +241,7 @@ async fn send_request(
     request_id: RequestId,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<serde_json::Value, Error> {
-    let mut tx = transport.controller_channel.tx.clone();
+    let mut tx = transport.controller_channel.tx.lock().await;
 
     let (notification_sender, notification_receiver) = futures::channel::oneshot::channel::<()>();
 
@@ -228,14 +254,13 @@ async fn send_request(
         response_notifier: notification_sender,
     }))
     .await
-    .expect("TODO");
+    .expect("receiver channel must be alive");
 
-    // TODO: we need timeout here
     if let Ok(_ping) = notification_receiver.await {
-        let response_map = unsafe { &mut *transport.responses.ptr };
+        let response_map = unsafe { &mut *transport.responses.0 };
         if let Some(response) = response_map.remove(&request_id) {
             let mut res_bytes: Vec<u8> = Vec::new();
-            if let Ok(_) = serde_json::to_writer(&mut res_bytes, &response) {
+            if serde_json::to_writer(&mut res_bytes, &response).is_ok() {
                 event_handlers.on_incoming_response(&res_bytes);
             }
 

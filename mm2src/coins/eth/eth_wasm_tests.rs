@@ -21,7 +21,11 @@ async fn test_send() {
     let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
     let keypair = key_pair_from_seed(&seed).unwrap();
     let key_pair = KeyPair::from_secret_slice(keypair.private_ref()).unwrap();
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+    let transport = Web3Transport::with_node(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
