@@ -121,10 +121,7 @@ pub(super) async fn save_encrypted_passphrase(
     Ok(())
 }
 
-pub(super) async fn read_encrypted_passphrase(
-    ctx: &MmArc,
-    wallet_name: &str,
-) -> WalletsDBResult<Option<EncryptedMnemonicData>> {
+pub(super) async fn read_encrypted_passphrase(ctx: &MmArc) -> WalletsDBResult<Option<EncryptedMnemonicData>> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
     let db = wallets_ctx
         .wallets_db()
@@ -140,6 +137,13 @@ pub(super) async fn read_encrypted_passphrase(
         .await
         .mm_err(|e| WalletsDBError::Internal(e.to_string()))?;
 
+    let wallet_name = ctx
+        .wallet_name
+        .ok_or(WalletsDBError::Internal(
+            "`wallet_name` not initialized yet!".to_string(),
+        ))?
+        .clone()
+        .ok_or_else(|| WalletsDBError::Internal("`wallet_name` can't be None!".to_string()))?;
     match table.get_item_by_unique_index("wallet_name", wallet_name).await {
         Ok(Some((_item_id, wallet_table_item))) => serde_json::from_str(&wallet_table_item.encrypted_mnemonic)
             .map_to_mm(|e| WalletsDBError::DeserializationError {

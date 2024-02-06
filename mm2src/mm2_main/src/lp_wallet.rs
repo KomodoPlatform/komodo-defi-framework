@@ -1,12 +1,14 @@
+use common::HttpStatusCode;
 use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedMnemonicData,
              MnemonicError};
+use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json};
 
 cfg_wasm32! {
-    use crate::mm2::lp_wallet::mnemonics_wasm_db::WalletsDb;
+    use crate::mm2::lp_wallet::mnemonics_wasm_db::{WalletsDb, WalletsDBError};
     use mm2_core::mm_ctx::from_ctx;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, InitDbResult};
     use mnemonics_wasm_db::{read_encrypted_passphrase, save_encrypted_passphrase};
@@ -16,7 +18,7 @@ cfg_wasm32! {
 }
 
 cfg_native! {
-    use mnemonics_storage::{read_encrypted_passphrase, save_encrypted_passphrase};
+    use mnemonics_storage::{read_encrypted_passphrase, save_encrypted_passphrase, WalletsStorageError};
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -45,19 +47,36 @@ pub enum WalletInitError {
         fmt = "Passphrase doesn't match the one from file, please create a new wallet if you want to use a new passphrase"
     )]
     PassphraseMismatch,
-    #[display(fmt = "Error generating mnemonic: {}", _0)]
-    GenerateMnemonicError(String),
+    #[display(fmt = "Error generating or decrypting mnemonic: {}", _0)]
+    MnemonicError(String),
     #[display(fmt = "Error initializing crypto context: {}", _0)]
     CryptoInitError(String),
     Internal(String),
 }
 
 impl From<MnemonicError> for WalletInitError {
-    fn from(e: MnemonicError) -> Self { WalletInitError::GenerateMnemonicError(e.to_string()) }
+    fn from(e: MnemonicError) -> Self { WalletInitError::MnemonicError(e.to_string()) }
 }
 
 impl From<CryptoInitError> for WalletInitError {
     fn from(e: CryptoInitError) -> Self { WalletInitError::CryptoInitError(e.to_string()) }
+}
+
+#[derive(Debug, Deserialize, Display, Serialize)]
+pub enum ReadPassphraseError {
+    #[display(fmt = "Wallets storage error: {}", _0)]
+    WalletsStorageError(String),
+    #[display(fmt = "Error decrypting passphrase: {}", _0)]
+    DecryptionError(String),
+}
+
+impl From<ReadPassphraseError> for WalletInitError {
+    fn from(e: ReadPassphraseError) -> Self {
+        match e {
+            ReadPassphraseError::WalletsStorageError(e) => WalletInitError::WalletsStorageError(e),
+            ReadPassphraseError::DecryptionError(e) => WalletInitError::MnemonicError(e),
+        }
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -116,15 +135,15 @@ async fn encrypt_and_save_passphrase(
 /// Returns specific `MmInitError` variants for different failure scenarios.
 async fn read_and_decrypt_passphrase(
     ctx: &MmArc,
-    wallet_name: &str,
     wallet_password: &str,
-) -> WalletInitResult<Option<String>> {
-    match read_encrypted_passphrase(ctx, wallet_name)
+) -> MmResult<Option<String>, ReadPassphraseError> {
+    match read_encrypted_passphrase(ctx)
         .await
-        .mm_err(|e| WalletInitError::WalletsStorageError(e.to_string()))?
+        .mm_err(|e| ReadPassphraseError::WalletsStorageError(e.to_string()))?
     {
         Some(encrypted_passphrase) => {
-            let mnemonic = decrypt_mnemonic(&encrypted_passphrase, wallet_password)?;
+            let mnemonic = decrypt_mnemonic(&encrypted_passphrase, wallet_password)
+                .mm_err(|e| ReadPassphraseError::DecryptionError(e.to_string()))?;
             Ok(Some(mnemonic.to_string()))
         },
         None => Ok(None),
@@ -153,7 +172,7 @@ async fn retrieve_or_create_passphrase(
     wallet_name: &str,
     wallet_password: &str,
 ) -> WalletInitResult<Option<String>> {
-    match read_and_decrypt_passphrase(ctx, wallet_name, wallet_password).await? {
+    match read_and_decrypt_passphrase(ctx, wallet_password).await? {
         Some(passphrase_from_file) => {
             // If an existing passphrase is found, return it
             Ok(Some(passphrase_from_file))
@@ -175,7 +194,7 @@ async fn confirm_or_encrypt_and_store_passphrase(
     passphrase: &str,
     wallet_password: &str,
 ) -> WalletInitResult<Option<String>> {
-    match read_and_decrypt_passphrase(ctx, wallet_name, wallet_password).await? {
+    match read_and_decrypt_passphrase(ctx, wallet_password).await? {
         Some(passphrase_from_file) if passphrase == passphrase_from_file => {
             // If an existing passphrase is found and it matches the provided passphrase, return it
             Ok(Some(passphrase_from_file))
@@ -202,7 +221,7 @@ async fn decrypt_validate_or_save_passphrase(
     // Decrypt the provided encrypted passphrase
     let decrypted_passphrase = decrypt_mnemonic(&encrypted_passphrase_data, wallet_password)?.to_string();
 
-    match read_and_decrypt_passphrase(ctx, wallet_name, wallet_password).await? {
+    match read_and_decrypt_passphrase(ctx, wallet_password).await? {
         Some(passphrase_from_file) if decrypted_passphrase == passphrase_from_file => {
             // If an existing passphrase is found and it matches the decrypted passphrase, return it
             Ok(Some(decrypted_passphrase))
@@ -293,6 +312,9 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 ///
 pub(crate) async fn initialize_wallet_passphrase(ctx: MmArc) -> WalletInitResult<()> {
     let (wallet_name, passphrase) = deserialize_wallet_config(&ctx)?;
+    ctx.wallet_name
+        .pin(wallet_name.clone())
+        .map_to_mm(WalletInitError::Internal)?;
     let passphrase = process_passphrase_logic(&ctx, wallet_name, passphrase).await?;
 
     if let Some(passphrase) = passphrase {
@@ -300,4 +322,198 @@ pub(crate) async fn initialize_wallet_passphrase(ctx: MmArc) -> WalletInitResult
     }
 
     Ok(())
+}
+
+/// `MnemonicFormat` is an enum representing the format of a mnemonic.
+///
+/// It has two variants:
+/// - `Encrypted`: This variant represents an encrypted mnemonic. It does not carry any associated data.
+/// - `PlainText`: This variant represents a plaintext mnemonic. It carries the password to decrypt the mnemonic in string format.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "format", content = "password", rename_all = "lowercase")]
+pub enum MnemonicFormat {
+    Encrypted,
+    PlainText(String),
+}
+
+/// `GetMnemonicRequest` is a struct representing a request to get a mnemonic.
+///
+/// It contains a single field, `mnemonic_format`, which is an instance of the `MnemonicFormat` enum.
+/// The `#[serde(flatten)]` attribute is used so that the fields of the `MnemonicFormat` enum are included
+/// directly in the `GetMnemonicRequest` when it is deserialized, rather than nested under a
+/// `mnemonic_format` field.
+///
+/// # Examples
+///
+/// For a `GetMnemonicRequest` where the `MnemonicFormat` is `Encrypted`, the JSON representation would be:
+/// ```json
+/// {
+///   "format": "encrypted"
+/// }
+/// ```
+///
+/// For a `GetMnemonicRequest` where the `MnemonicFormat` is `PlainText` with a password of "password123", the JSON representation would be:
+/// ```json
+/// {
+///   "format": "plaintext",
+///   "password": "password123"
+/// }
+/// ```
+#[derive(Debug, Deserialize)]
+pub struct GetMnemonicRequest {
+    #[serde(flatten)]
+    pub mnemonic_format: MnemonicFormat,
+}
+
+/// `MnemonicForRpc` is an enum representing the format of a mnemonic for RPC communication.
+///
+/// It has two variants:
+/// - `Encrypted`: This variant represents an encrypted mnemonic. It carries the [`EncryptedMnemonicData`] struct.
+/// - `PlainText`: This variant represents a plaintext mnemonic. It carries the mnemonic as a `String`.
+#[derive(Serialize)]
+#[serde(tag = "format", rename_all = "lowercase")]
+pub enum MnemonicForRpc {
+    Encrypted {
+        encrypted_mnemonic_data: EncryptedMnemonicData,
+    },
+    PlainText {
+        mnemonic: String,
+    },
+}
+
+impl From<EncryptedMnemonicData> for MnemonicForRpc {
+    fn from(encrypted_mnemonic_data: EncryptedMnemonicData) -> Self {
+        MnemonicForRpc::Encrypted {
+            encrypted_mnemonic_data,
+        }
+    }
+}
+
+impl From<String> for MnemonicForRpc {
+    fn from(mnemonic: String) -> Self { MnemonicForRpc::PlainText { mnemonic } }
+}
+
+/// [`GetMnemonicResponse`] is a struct representing the response to a get mnemonic request.
+///
+/// It contains a single field, `mnemonic`, which is an instance of the [`MnemonicForRpc`] enum.
+/// The `#[serde(flatten)]` attribute is used so that the fields of the [`MnemonicForRpc`] enum are included
+/// directly in the [`GetMnemonicResponse`] when it is serialized, rather than nested under a
+/// `mnemonic` field.
+///
+/// # Examples
+///
+/// For a [`GetMnemonicResponse`] where the [`MnemonicForRpc`] is `Encrypted` with some [`EncryptedMnemonicData`], the JSON representation would be:
+/// ```json
+/// {
+///   "format": "encrypted",
+///   "encrypted_mnemonic_data": {
+///     // EncryptedMnemonicData fields go here
+///   }
+/// }
+/// ```
+///
+/// For a `GetMnemonicResponse` where the `MnemonicForRpc` is `PlainText` with a mnemonic of "your_mnemonic_here", the JSON representation would be:
+/// ```json
+/// {
+///   "format": "plaintext",
+///   "mnemonic": "your_mnemonic_here"
+/// }
+/// ```
+#[derive(Serialize)]
+pub struct GetMnemonicResponse {
+    #[serde(flatten)]
+    pub mnemonic: MnemonicForRpc,
+}
+
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum GetMnemonicError {
+    #[display(fmt = "Invalid request error: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Wallets storage error: {}", _0)]
+    WalletsStorageError(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+}
+
+impl HttpStatusCode for GetMnemonicError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            GetMnemonicError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            GetMnemonicError::WalletsStorageError(_) | GetMnemonicError::Internal(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<WalletsStorageError> for GetMnemonicError {
+    fn from(e: WalletsStorageError) -> Self { GetMnemonicError::WalletsStorageError(e.to_string()) }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl From<WalletsDBError> for GetMnemonicError {
+    fn from(e: WalletsDBError) -> Self { GetMnemonicError::WalletsStorageError(e.to_string()) }
+}
+
+impl From<ReadPassphraseError> for GetMnemonicError {
+    fn from(e: ReadPassphraseError) -> Self { GetMnemonicError::WalletsStorageError(e.to_string()) }
+}
+
+/// Retrieves the wallet mnemonic in the requested format.
+///
+/// # Arguments
+///
+/// * `ctx` - The [`MmArc`] context containing the application state and configuration.
+/// * `req` - The [`GetMnemonicRequest`] containing the requested mnemonic format.
+///
+/// # Returns
+///
+/// A `Result` type containing:
+///
+/// * [`Ok`]([`GetMnemonicResponse`]) - The wallet mnemonic in the requested format.
+/// * [`MmError`]<[`GetMnemonicError>`]> - Returns specific [`GetMnemonicError`] variants for different failure scenarios.
+///
+/// # Errors
+///
+/// This function will return an error in the following situations:
+///
+/// * The wallet name is not found in the context.
+/// * The wallet is initialized without a name.
+/// * The wallet passphrase file is not found for `MnemonicFormat::Encrypted`.
+/// * The wallet mnemonic file is not found for `MnemonicFormat::PlainText`.
+///
+/// # Examples
+///
+/// ```rust
+/// let ctx = MmArc::new(MmCtx::default());
+/// let req = GetMnemonicRequest {
+///     mnemonic_format: MnemonicFormat::Encrypted,
+/// };
+/// let result = get_mnemonic_rpc(ctx, req).await;
+/// match result {
+///     Ok(response) => println!("Mnemonic: {:?}", response.mnemonic),
+///     Err(e) => println!("Error: {:?}", e),
+/// }
+/// ```
+pub async fn get_mnemonic_rpc(ctx: MmArc, req: GetMnemonicRequest) -> MmResult<GetMnemonicResponse, GetMnemonicError> {
+    match req.mnemonic_format {
+        MnemonicFormat::Encrypted => {
+            let encrypted_mnemonic = read_encrypted_passphrase(&ctx)
+                .await?
+                .ok_or_else(|| GetMnemonicError::InvalidRequest("Wallet passphrase file not found".to_string()))?;
+            Ok(GetMnemonicResponse {
+                mnemonic: encrypted_mnemonic.into(),
+            })
+        },
+        MnemonicFormat::PlainText(wallet_password) => {
+            let plaintext_mnemonic = read_and_decrypt_passphrase(&ctx, &wallet_password)
+                .await?
+                .ok_or_else(|| GetMnemonicError::InvalidRequest("Wallet mnemonic file not found".to_string()))?;
+            Ok(GetMnemonicResponse {
+                mnemonic: plaintext_mnemonic.into(),
+            })
+        },
+    }
 }

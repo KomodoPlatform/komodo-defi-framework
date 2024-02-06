@@ -13,6 +13,8 @@ pub enum WalletsStorageError {
     FsWriteError(String),
     #[display(fmt = "Error reading from file: {}", _0)]
     FsReadError(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
 }
 
 /// Saves the passphrase to a file associated with the given wallet name.
@@ -57,11 +59,15 @@ pub(super) async fn save_encrypted_passphrase(
 /// # Errors
 /// Returns an `io::Error` if the file cannot be read or the data cannot be deserialized into
 /// `EncryptedPassphraseData`.
-pub(super) async fn read_encrypted_passphrase(
-    ctx: &MmArc,
-    wallet_name: &str,
-) -> WalletsStorageResult<Option<EncryptedMnemonicData>> {
-    let wallet_path = ctx.wallet_file_path(wallet_name);
+pub(super) async fn read_encrypted_passphrase(ctx: &MmArc) -> WalletsStorageResult<Option<EncryptedMnemonicData>> {
+    let wallet_name = ctx
+        .wallet_name
+        .ok_or(WalletsStorageError::Internal(
+            "`wallet_name` not initialized yet!".to_string(),
+        ))?
+        .clone()
+        .ok_or_else(|| WalletsStorageError::Internal("`wallet_name` cannot be None!".to_string()))?;
+    let wallet_path = ctx.wallet_file_path(&wallet_name);
     mm2_io::fs::read_json(&wallet_path).await.mm_err(|e| {
         WalletsStorageError::FsReadError(format!(
             "Error reading passphrase from file {}: {}",
