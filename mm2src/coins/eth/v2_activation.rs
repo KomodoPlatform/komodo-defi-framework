@@ -148,17 +148,23 @@ pub struct EthNode {
 
 #[derive(Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
-pub enum Erc20TokenActivationError {
+pub enum EthTokenActivationError {
     InternalError(String),
     CouldNotFetchBalance(String),
 }
 
-impl From<AbortedError> for Erc20TokenActivationError {
-    fn from(e: AbortedError) -> Self { Erc20TokenActivationError::InternalError(e.to_string()) }
+impl From<AbortedError> for EthTokenActivationError {
+    fn from(e: AbortedError) -> Self { EthTokenActivationError::InternalError(e.to_string()) }
 }
 
-impl From<MyAddressError> for Erc20TokenActivationError {
+impl From<MyAddressError> for EthTokenActivationError {
     fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+}
+
+#[derive(Clone, Deserialize)]
+pub enum EthTokenActivationParams {
+    Erc20(Erc20TokenActivationRequest),
+    Nft(NftActivationRequest),
 }
 
 #[derive(Clone, Deserialize)]
@@ -166,14 +172,23 @@ pub struct Erc20TokenActivationRequest {
     pub required_confirmations: Option<u64>,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct NftActivationRequest {
+    pub url: Url,
+}
+
+pub enum EthTokenProtocol {
+    Erc20(Erc20Protocol),
+    Nft(NftProtocol),
+}
+
 pub struct Erc20Protocol {
     pub platform: String,
     pub token_addr: Address,
 }
 
-#[derive(Clone, Deserialize)]
-pub struct NftActivationRequest {
-    pub url: Url,
+pub struct NftProtocol {
+    pub platform: String,
 }
 
 #[cfg_attr(test, mockable)]
@@ -183,20 +198,20 @@ impl EthCoin {
         activation_params: Erc20TokenActivationRequest,
         protocol: Erc20Protocol,
         ticker: String,
-    ) -> MmResult<EthCoin, Erc20TokenActivationError> {
+    ) -> MmResult<EthCoin, EthTokenActivationError> {
         // TODO
         // Check if ctx is required.
         // Remove it to avoid circular references if possible
         let ctx = MmArc::from_weak(&self.ctx)
             .ok_or_else(|| String::from("No context"))
-            .map_err(Erc20TokenActivationError::InternalError)?;
+            .map_err(EthTokenActivationError::InternalError)?;
 
         let conf = coin_conf(&ctx, &ticker);
 
         let decimals = match conf["decimals"].as_u64() {
             None | Some(0) => get_token_decimals(&self.web3, protocol.token_addr)
                 .await
-                .map_err(Erc20TokenActivationError::InternalError)?,
+                .map_err(EthTokenActivationError::InternalError)?,
             Some(d) => d as u8,
         };
 

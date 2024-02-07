@@ -6,10 +6,10 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
 use async_trait::async_trait;
 use coins::eth::v2_activation::NftActivationRequest;
 use coins::eth::EthPrivKeyBuildPolicy;
-use coins::nft::nft_structs::{Chain, NftInfo};
+use coins::nft::nft_structs::{Chain, ConvertChain, NftInfo};
 use coins::{eth::v2_activation::EthPrivKeyActivationPolicy, MmCoinEnum};
-use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
-                                  Erc20TokenActivationRequest, EthActivationV2Error, EthActivationV2Request},
+use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
+                                  EthActivationV2Error, EthActivationV2Request, EthTokenActivationError},
                   Erc20TokenInfo, EthCoin, EthCoinType},
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
@@ -78,11 +78,11 @@ pub struct Erc20Initializer {
     platform_coin: EthCoin,
 }
 
-impl From<Erc20TokenActivationError> for InitTokensAsMmCoinsError {
-    fn from(error: Erc20TokenActivationError) -> Self {
+impl From<EthTokenActivationError> for InitTokensAsMmCoinsError {
+    fn from(error: EthTokenActivationError) -> Self {
         match error {
-            Erc20TokenActivationError::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
-            Erc20TokenActivationError::CouldNotFetchBalance(e) => InitTokensAsMmCoinsError::CouldNotFetchBalance(e),
+            EthTokenActivationError::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
+            EthTokenActivationError::CouldNotFetchBalance(e) => InitTokensAsMmCoinsError::CouldNotFetchBalance(e),
         }
     }
 }
@@ -92,7 +92,7 @@ impl TokenInitializer for Erc20Initializer {
     type Token = EthCoin;
     type TokenActivationRequest = Erc20TokenActivationRequest;
     type TokenProtocol = Erc20Protocol;
-    type InitTokensError = Erc20TokenActivationError;
+    type InitTokensError = EthTokenActivationError;
 
     fn tokens_requests_from_platform_request(
         platform_params: &EthWithTokensActivationRequest,
@@ -103,7 +103,7 @@ impl TokenInitializer for Erc20Initializer {
     async fn enable_tokens(
         &self,
         activation_params: Vec<TokenActivationParams<Erc20TokenActivationRequest, Erc20Protocol>>,
-    ) -> Result<Vec<EthCoin>, MmError<Erc20TokenActivationError>> {
+    ) -> Result<Vec<EthCoin>, MmError<EthTokenActivationError>> {
         let mut tokens = vec![];
         for param in activation_params {
             let token: EthCoin = self

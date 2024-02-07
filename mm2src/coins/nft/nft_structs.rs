@@ -113,12 +113,15 @@ pub enum Chain {
     Polygon,
 }
 
-pub(crate) trait ConvertChain {
+pub trait ConvertChain {
     fn to_ticker(&self) -> &'static str;
+    fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError>;
     fn to_nft_ticker(&self) -> &'static str;
+    fn from_nft_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError>;
 }
 
 impl ConvertChain for Chain {
+    #[inline(always)]
     fn to_ticker(&self) -> &'static str {
         match self {
             Chain::Avalanche => "AVAX",
@@ -129,6 +132,20 @@ impl ConvertChain for Chain {
         }
     }
 
+    /// Converts a coin ticker string to a `Chain` enum.
+    #[inline(always)]
+    fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
+        match s {
+            "AVAX" | "avax" => Ok(Chain::Avalanche),
+            "BNB" | "bnb" => Ok(Chain::Bsc),
+            "ETH" | "eth" => Ok(Chain::Eth),
+            "FTM" | "ftm" => Ok(Chain::Fantom),
+            "MATIC" | "matic" => Ok(Chain::Polygon),
+            _ => MmError::err(ParseChainTypeError::Coin),
+        }
+    }
+
+    #[inline(always)]
     fn to_nft_ticker(&self) -> &'static str {
         match self {
             Chain::Avalanche => "NFT_AVAX",
@@ -136,6 +153,19 @@ impl ConvertChain for Chain {
             Chain::Eth => "NFT_ETH",
             Chain::Fantom => "NFT_FTM",
             Chain::Polygon => "NFT_MATIC",
+        }
+    }
+
+    /// Converts a NFT ticker string to a `Chain` enum.
+    #[inline(always)]
+    fn from_nft_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
+        match s.to_uppercase().as_str() {
+            "NFT_AVAX" => Ok(Chain::Avalanche),
+            "NFT_BNB" => Ok(Chain::Bsc),
+            "NFT_ETH" => Ok(Chain::Eth),
+            "NFT_FTM" => Ok(Chain::Fantom),
+            "NFT_MATIC" => Ok(Chain::Polygon),
+            _ => MmError::err(ParseChainTypeError::Nft),
         }
     }
 }
@@ -165,22 +195,7 @@ impl FromStr for Chain {
             "ETH" | "eth" => Ok(Chain::Eth),
             "FANTOM" | "fantom" => Ok(Chain::Fantom),
             "POLYGON" | "polygon" => Ok(Chain::Polygon),
-            _ => Err(ParseChainTypeError::UnsupportedChainType),
-        }
-    }
-}
-
-impl Chain {
-    /// Converts a coin ticker string to a `Chain` enum.
-    #[inline(always)]
-    pub fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
-        match s {
-            "AVAX" | "avax" => Ok(Chain::Avalanche),
-            "BNB" | "bnb" => Ok(Chain::Bsc),
-            "ETH" | "eth" => Ok(Chain::Eth),
-            "FTM" | "ftm" => Ok(Chain::Fantom),
-            "MATIC" | "matic" => Ok(Chain::Polygon),
-            _ => MmError::err(ParseChainTypeError::UnsupportedCoinType),
+            _ => Err(ParseChainTypeError::Chain),
         }
     }
 }
