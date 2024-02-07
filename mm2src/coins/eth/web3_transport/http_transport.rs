@@ -1,5 +1,5 @@
-use crate::eth::{web3_transport::Web3SendOut, EthCoin, GuiAuthMessages, RpcTransportEventHandler,
-                 RpcTransportEventHandlerShared, Web3RpcError};
+use crate::eth::web3_transport::handle_gui_auth_payload;
+use crate::eth::{web3_transport::Web3SendOut, RpcTransportEventHandler, RpcTransportEventHandlerShared, Web3RpcError};
 use common::APPLICATION_JSON;
 use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
@@ -108,45 +108,6 @@ impl Transport for HttpTransport {
     }
 }
 
-/// Generates a signed message and inserts it into request
-/// payload if gui_auth is activated. Returns false on errors.
-fn handle_gui_auth_payload_if_activated(
-    gui_auth_validation_generator: &Option<GuiAuthValidationGenerator>,
-    node: &HttpTransportNode,
-    request: &Call,
-) -> Result<Option<String>, Web3RpcError> {
-    if !node.gui_auth {
-        return Ok(None);
-    }
-
-    let generator = match gui_auth_validation_generator.clone() {
-        Some(gen) => gen,
-        None => {
-            return Err(Web3RpcError::Internal(format!(
-                "GuiAuthValidationGenerator is not provided for {:?} node",
-                node
-            )));
-        },
-    };
-
-    let signed_message = match EthCoin::generate_gui_auth_signed_validation(generator) {
-        Ok(t) => t,
-        Err(e) => {
-            return Err(Web3RpcError::Internal(format!(
-                "GuiAuth signed message generation failed for {:?} node, error: {:?}",
-                node, e
-            )));
-        },
-    };
-
-    let auth_request = AuthPayload {
-        request,
-        signed_message,
-    };
-
-    Ok(Some(to_string(&auth_request)))
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_request(
     request: Call,
@@ -163,16 +124,16 @@ async fn send_request(
 
     const REQUEST_TIMEOUT_S: f64 = 20.;
 
-    let serialized_request = to_string(&request);
+    let mut serialized_request = to_string(&request);
 
-    let serialized_request = match handle_gui_auth_payload_if_activated(&gui_auth_validation_generator, &node, &request)
-    {
-        Ok(Some(r)) => r,
-        Ok(None) => serialized_request.clone(),
-        Err(e) => {
-            return Err(request_failed_error(request, e));
-        },
-    };
+    if node.gui_auth {
+        match handle_gui_auth_payload(&gui_auth_validation_generator, &request) {
+            Ok(r) => serialized_request = r,
+            Err(e) => {
+                return Err(request_failed_error(request, e));
+            },
+        };
+    }
 
     event_handlers.on_outgoing_request(serialized_request.as_bytes());
 
@@ -242,19 +203,19 @@ async fn send_request(
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {
-    let serialized_request = to_string(&request);
+    let mut serialized_request = to_string(&request);
 
-    let serialized_request = match handle_gui_auth_payload_if_activated(&gui_auth_validation_generator, &node, &request)
-    {
-        Ok(Some(r)) => r,
-        Ok(None) => serialized_request.clone(),
-        Err(e) => {
-            return Err(request_failed_error(
-                request,
-                Web3RpcError::Transport(format!("Server: '{}', error: {}", node.uri, e)),
-            ));
-        },
-    };
+    if node.gui_auth {
+        match handle_gui_auth_payload(&gui_auth_validation_generator, &request) {
+            Ok(r) => serialized_request = r,
+            Err(e) => {
+                return Err(request_failed_error(
+                    request,
+                    Web3RpcError::Transport(format!("Server: '{}', error: {}", node.uri, e)),
+                ));
+            },
+        };
+    }
 
     match send_request_once(serialized_request, &node.uri, &event_handlers).await {
         Ok(response_json) => Ok(response_json),

@@ -416,8 +416,20 @@ async fn build_web3_instances(
 
         let transport = match uri.scheme_str() {
             Some("ws") | Some("wss") => {
-                let node = WebsocketTransportNode { uri, gui_auth: false };
-                let websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
+                let node = WebsocketTransportNode {
+                    uri,
+                    gui_auth: eth_node.gui_auth,
+                };
+
+                let mut websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
+
+                if eth_node.gui_auth {
+                    websocket_transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+                        coin_ticker: coin_ticker.clone(),
+                        secret: key_pair.secret().clone(),
+                        address: address.clone(),
+                    });
+                }
 
                 // Temporarily start the connection loop (we close the connection once we have the client version below).
                 // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
@@ -486,12 +498,16 @@ fn build_http_transport(
 ) -> Web3Transport {
     use crate::eth::web3_transport::http_transport::HttpTransport;
 
+    let gui_auth = node.gui_auth;
     let mut http_transport = HttpTransport::with_event_handlers(node, event_handlers);
-    http_transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
-        coin_ticker,
-        secret: key_pair.secret().clone(),
-        address,
-    });
+
+    if gui_auth {
+        http_transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+            coin_ticker,
+            secret: key_pair.secret().clone(),
+            address,
+        });
+    }
     Web3Transport::from(http_transport)
 }
 

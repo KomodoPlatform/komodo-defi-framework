@@ -1,4 +1,3 @@
-use crate::RpcTransportEventHandlerShared;
 use ethereum_types::U256;
 use futures::future::BoxFuture;
 use jsonrpc_core::Call;
@@ -7,9 +6,13 @@ use mm2_net::transport::GuiAuthValidationGenerator;
 use serde_json::Value as Json;
 use serde_json::Value;
 use web3::api::Namespace;
-use web3::helpers::{self, CallFuture};
+use web3::helpers::{self, to_string, CallFuture};
 use web3::types::BlockNumber;
 use web3::{Error, RequestId, Transport};
+
+use self::http_transport::AuthPayload;
+use super::{EthCoin, GuiAuthMessages, Web3RpcError};
+use crate::RpcTransportEventHandlerShared;
 
 pub(crate) mod http_transport;
 #[cfg(target_arch = "wasm32")] pub(crate) mod metamask_transport;
@@ -131,4 +134,36 @@ impl<T: Transport> EthFeeHistoryNamespace<T> {
         let params = vec![count, block, reward_percentiles];
         CallFuture::new(self.transport.execute("eth_feeHistory", params))
     }
+}
+
+/// Generates a signed message and inserts it into the request payload.
+pub(super) fn handle_gui_auth_payload(
+    gui_auth_validation_generator: &Option<GuiAuthValidationGenerator>,
+    request: &Call,
+) -> Result<String, Web3RpcError> {
+    let generator = match gui_auth_validation_generator.clone() {
+        Some(gen) => gen,
+        None => {
+            return Err(Web3RpcError::Internal(
+                "GuiAuthValidationGenerator is not provided for".to_string(),
+            ));
+        },
+    };
+
+    let signed_message = match EthCoin::generate_gui_auth_signed_validation(generator) {
+        Ok(t) => t,
+        Err(e) => {
+            return Err(Web3RpcError::Internal(format!(
+                "GuiAuth signed message generation failed. Error: {:?}",
+                e
+            )));
+        },
+    };
+
+    let auth_request = AuthPayload {
+        request,
+        signed_message,
+    };
+
+    Ok(to_string(&auth_request))
 }

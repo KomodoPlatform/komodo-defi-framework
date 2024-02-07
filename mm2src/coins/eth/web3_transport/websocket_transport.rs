@@ -4,11 +4,12 @@
 //! bandwidth. This efficiency is achieved by avoiding the handling of TCP
 //! handshakes (connection reusability) for each request.
 
+use super::handle_gui_auth_payload;
 use super::http_transport::de_rpc_response;
 use crate::eth::web3_transport::Web3SendOut;
 use crate::eth::{EthCoin, RpcTransportEventHandlerShared};
 use crate::{MmCoin, RpcTransportEventHandler};
-use common::executor::{AbortSettings, SpawnAbortable};
+use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::expirable_map::ExpirableMap;
 use common::log;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -18,10 +19,11 @@ use futures_ticker::Ticker;
 use futures_util::{FutureExt, SinkExt, StreamExt};
 use instant::Duration;
 use jsonrpc_core::Call;
+use mm2_net::transport::GuiAuthValidationGenerator;
 use std::collections::HashMap;
 use std::sync::{atomic::{AtomicUsize, Ordering},
                 Arc};
-use web3::error::Error;
+use web3::error::{Error, TransportError};
 use web3::helpers::to_string;
 use web3::{helpers::build_request, RequestId, Transport};
 
@@ -30,8 +32,6 @@ const REQUEST_TIMEOUT_AS_SEC: u64 = 10;
 #[derive(Clone, Debug)]
 pub(crate) struct WebsocketTransportNode {
     pub(crate) uri: http::Uri,
-    // TODO: We need to support this mechanism on the komodo-defi-proxy
-    #[allow(dead_code)]
     pub(crate) gui_auth: bool,
 }
 
@@ -40,6 +40,7 @@ pub struct WebsocketTransport {
     request_id: Arc<AtomicUsize>,
     node: WebsocketTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
     responses: Arc<SafeMapPtr>,
     controller_channel: Arc<ControllerChannel>,
     connection_guard: Arc<AsyncMutex<()>>,
@@ -58,7 +59,7 @@ enum ControllerMessage {
 
 #[derive(Debug)]
 struct WsRequest {
-    request: Call,
+    serialized_request: String,
     request_id: RequestId,
     response_notifier: oneshot::Sender<()>,
 }
@@ -102,6 +103,7 @@ impl WebsocketTransport {
             }
             .into(),
             connection_guard: Arc::new(AsyncMutex::new(())),
+            gui_auth_validation_generator: None,
         }
     }
 
@@ -111,10 +113,17 @@ impl WebsocketTransport {
         let mut response_notifiers: ExpirableMap<RequestId, oneshot::Sender<()>> = ExpirableMap::default();
 
         loop {
+            let mut attempts = 0;
             let mut wsocket = match tokio_tungstenite_wasm::connect(self.node.uri.to_string()).await {
                 Ok(ws) => ws,
                 Err(e) => {
-                    log::error!("{e}");
+                    attempts += 1;
+                    if attempts > 3 {
+                        log::error!("Connection could not established for {}. Error {e}", self.node.uri);
+                        break;
+                    }
+
+                    Timer::sleep(1.).await;
                     continue;
                 },
             };
@@ -143,6 +152,8 @@ impl WebsocketTransport {
                                     should_continue = true;
                                 }
                             };
+
+                            Timer::sleep(1.).await;
                         }
 
                         if should_continue {
@@ -152,8 +163,7 @@ impl WebsocketTransport {
 
                     request = req_rx.next().fuse() => {
                         match request {
-                            Some(ControllerMessage::Request(WsRequest { request_id, request, response_notifier })) => {
-                                let serialized_request = to_string(&request);
+                            Some(ControllerMessage::Request(WsRequest { request_id, serialized_request, response_notifier })) => {
                                 response_notifiers.insert(request_id, response_notifier, Duration::from_secs(REQUEST_TIMEOUT_AS_SEC));
 
                                 let mut should_continue = Default::default();
@@ -168,6 +178,8 @@ impl WebsocketTransport {
                                             should_continue = true;
                                         }
                                     }
+
+                                    Timer::sleep(1.).await;
                                 }
 
                                 if should_continue {
@@ -246,16 +258,29 @@ async fn send_request(
     request_id: RequestId,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<serde_json::Value, Error> {
+    let mut serialized_request = to_string(&request);
+
+    if transport.node.gui_auth {
+        match handle_gui_auth_payload(&transport.gui_auth_validation_generator, &request) {
+            Ok(r) => serialized_request = r,
+            Err(e) => {
+                return Err(Error::Transport(TransportError::Message(format!(
+                    "Couldn't generate signed message payload for {:?}. Error: {e}",
+                    request
+                ))));
+            },
+        };
+    }
+
     let mut tx = transport.controller_channel.tx.lock().await;
 
     let (notification_sender, notification_receiver) = futures::channel::oneshot::channel::<()>();
 
-    let serialized_request = to_string(&request);
     event_handlers.on_outgoing_request(serialized_request.as_bytes());
 
     tx.send(ControllerMessage::Request(WsRequest {
         request_id,
-        request,
+        serialized_request,
         response_notifier: notification_sender,
     }))
     .await
@@ -270,7 +295,10 @@ async fn send_request(
         }
     };
 
-    Err(Error::Internal)
+    Err(Error::Transport(TransportError::Message(format!(
+        "Sending {:?} failed.",
+        request
+    ))))
 }
 
 impl Transport for WebsocketTransport {
