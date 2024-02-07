@@ -126,7 +126,7 @@ mod wasm_tests {
     #[wasm_bindgen_test]
     async fn test_transport() {
         register_wasm_log();
-        let mut client = LightRpcClient::new(vec!["https://pirate.battlefield.earth:8581".to_string()])
+        let client = LightRpcClient::new(vec!["https://pirate.battlefield.earth:8581".to_string()])
             .await
             .unwrap();
         let tree_state = client.get_block_height().await;
