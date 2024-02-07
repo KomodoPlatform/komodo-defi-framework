@@ -269,7 +269,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
                 activated_key: key_pair,
                 ..
             },
-        ) => build_web3_instances(ctx, ticker.clone(), my_address_str, key_pair, &req.nodes).await?,
+        ) => build_web3_instances(ctx, ticker.clone(), my_address_str, key_pair, req.nodes.clone()).await?,
         (EthRpcMode::Default, EthPrivKeyPolicy::Trezor) => {
             return MmError::err(EthActivationV2Error::PrivKeyPolicyNotAllowed(
                 PrivKeyPolicyNotAllowed::HardwareWalletNotSupported,
@@ -395,24 +395,24 @@ async fn build_web3_instances(
     coin_ticker: String,
     address: String,
     key_pair: &KeyPair,
-    eth_nodes: &[EthNode],
+    mut eth_nodes: Vec<EthNode>,
 ) -> MmResult<Vec<Web3Instance>, EthActivationV2Error> {
     if eth_nodes.is_empty() {
         return MmError::err(EthActivationV2Error::AtLeastOneNodeRequired);
     }
 
-    let mut urls: Vec<String> = eth_nodes.iter().map(|n| n.url.clone()).collect();
     let mut rng = small_rng();
-    urls.as_mut_slice().shuffle(&mut rng);
-    drop_mutability!(urls);
+    eth_nodes.as_mut_slice().shuffle(&mut rng);
+    drop_mutability!(eth_nodes);
 
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
 
-    let mut web3_instances = Vec::with_capacity(urls.len());
-    for url in urls {
-        let uri: Uri = url
+    let mut web3_instances = Vec::with_capacity(eth_nodes.len());
+    for eth_node in eth_nodes {
+        let uri: Uri = eth_node
+            .url
             .parse()
-            .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed.", url)))?;
+            .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed.", eth_node.url)))?;
 
         let transport = match uri.scheme_str() {
             Some("ws") | Some("wss") => {
@@ -429,7 +429,10 @@ async fn build_web3_instances(
                 Web3Transport::Websocket(websocket_transport)
             },
             _ => {
-                let node = HttpTransportNode { uri, gui_auth: false };
+                let node = HttpTransportNode {
+                    uri,
+                    gui_auth: eth_node.gui_auth,
+                };
 
                 build_http_transport(
                     coin_ticker.clone(),
@@ -445,7 +448,7 @@ async fn build_web3_instances(
         let version = match web3.web3().client_version().await {
             Ok(v) => v,
             Err(e) => {
-                error!("Couldn't get client version for url {}: {}", url, e);
+                error!("Couldn't get client version for url {}: {}", eth_node.url, e);
 
                 if let Web3Transport::Websocket(socket_transport) = web3.transport() {
                     socket_transport.stop_connection_loop().await;

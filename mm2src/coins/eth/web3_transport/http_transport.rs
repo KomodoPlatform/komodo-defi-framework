@@ -12,7 +12,7 @@ use web3::error::{Error, TransportError};
 use web3::helpers::{build_request, to_result_from_output, to_string};
 use web3::{RequestId, Transport};
 
-#[derive(Serialize, Clone)]
+#[derive(Clone, Serialize)]
 pub struct AuthPayload<'a> {
     #[serde(flatten)]
     pub request: &'a Call,
