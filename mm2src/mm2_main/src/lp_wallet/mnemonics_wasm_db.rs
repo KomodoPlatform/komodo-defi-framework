@@ -1,6 +1,6 @@
 use crate::mm2::lp_wallet::WalletsContext;
 use async_trait::async_trait;
-use crypto::EncryptedMnemonicData;
+use crypto::EncryptedData;
 use mm2_core::mm_ctx::MmArc;
 use mm2_core::DbNamespaceId;
 use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
@@ -87,7 +87,7 @@ impl TableSignature for MnemonicsTable {
 pub(super) async fn save_encrypted_passphrase(
     ctx: &MmArc,
     wallet_name: &str,
-    encrypted_passphrase_data: &EncryptedMnemonicData,
+    encrypted_passphrase_data: &EncryptedData,
 ) -> WalletsDBResult<()> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
     let db = wallets_ctx
@@ -121,7 +121,7 @@ pub(super) async fn save_encrypted_passphrase(
     Ok(())
 }
 
-pub(super) async fn read_encrypted_passphrase(ctx: &MmArc) -> WalletsDBResult<Option<EncryptedMnemonicData>> {
+pub(super) async fn read_encrypted_passphrase(ctx: &MmArc) -> WalletsDBResult<Option<EncryptedData>> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
     let db = wallets_ctx
         .wallets_db()

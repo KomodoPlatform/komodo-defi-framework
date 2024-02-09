@@ -1,4 +1,4 @@
-use crypto::EncryptedMnemonicData;
+use crypto::EncryptedData;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_io::fs::ensure_file_is_writable;
@@ -29,7 +29,7 @@ pub enum WalletsStorageError {
 pub(super) async fn save_encrypted_passphrase(
     ctx: &MmArc,
     wallet_name: &str,
-    encrypted_passphrase_data: &EncryptedMnemonicData,
+    encrypted_passphrase_data: &EncryptedData,
 ) -> WalletsStorageResult<()> {
     let wallet_path = ctx.wallet_file_path(wallet_name);
     ensure_file_is_writable(&wallet_path).map_to_mm(|_| WalletsStorageError::DbFileIsNotWritable {
@@ -43,7 +43,7 @@ pub(super) async fn save_encrypted_passphrase(
 /// Reads the encrypted passphrase data from the file associated with the given wallet name.
 ///
 /// This function is responsible for retrieving the encrypted passphrase data from a file.
-/// The data is expected to be in the format of `EncryptedMnemonicData`, which includes
+/// The data is expected to be in the format of `EncryptedData`, which includes
 /// all necessary components for decryption, such as the encryption algorithm, key derivation
 /// details, salts, IV, ciphertext, and HMAC tag.
 ///
@@ -58,8 +58,8 @@ pub(super) async fn save_encrypted_passphrase(
 ///
 /// # Errors
 /// Returns an `io::Error` if the file cannot be read or the data cannot be deserialized into
-/// `EncryptedPassphraseData`.
-pub(super) async fn read_encrypted_passphrase(ctx: &MmArc) -> WalletsStorageResult<Option<EncryptedMnemonicData>> {
+/// `EncryptedData`.
+pub(super) async fn read_encrypted_passphrase(ctx: &MmArc) -> WalletsStorageResult<Option<EncryptedData>> {
     let wallet_name = ctx
         .wallet_name
         .ok_or(WalletsStorageError::Internal(

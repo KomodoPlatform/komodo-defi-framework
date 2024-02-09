@@ -1,5 +1,5 @@
 use common::HttpStatusCode;
-use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedMnemonicData,
+use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData,
              MnemonicError};
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
@@ -153,7 +153,7 @@ async fn read_and_decrypt_passphrase(
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 enum Passphrase {
-    Encrypted(EncryptedMnemonicData),
+    Encrypted(EncryptedData),
     Decrypted(String),
 }
 
@@ -215,7 +215,7 @@ async fn confirm_or_encrypt_and_store_passphrase(
 async fn decrypt_validate_or_save_passphrase(
     ctx: &MmArc,
     wallet_name: &str,
-    encrypted_passphrase_data: EncryptedMnemonicData,
+    encrypted_passphrase_data: EncryptedData,
     wallet_password: &str,
 ) -> WalletInitResult<Option<String>> {
     // Decrypt the provided encrypted passphrase
@@ -368,21 +368,17 @@ pub struct GetMnemonicRequest {
 /// `MnemonicForRpc` is an enum representing the format of a mnemonic for RPC communication.
 ///
 /// It has two variants:
-/// - `Encrypted`: This variant represents an encrypted mnemonic. It carries the [`EncryptedMnemonicData`] struct.
+/// - `Encrypted`: This variant represents an encrypted mnemonic. It carries the [`EncryptedData`] struct.
 /// - `PlainText`: This variant represents a plaintext mnemonic. It carries the mnemonic as a `String`.
 #[derive(Serialize)]
 #[serde(tag = "format", rename_all = "lowercase")]
 pub enum MnemonicForRpc {
-    Encrypted {
-        encrypted_mnemonic_data: EncryptedMnemonicData,
-    },
-    PlainText {
-        mnemonic: String,
-    },
+    Encrypted { encrypted_mnemonic_data: EncryptedData },
+    PlainText { mnemonic: String },
 }
 
-impl From<EncryptedMnemonicData> for MnemonicForRpc {
-    fn from(encrypted_mnemonic_data: EncryptedMnemonicData) -> Self {
+impl From<EncryptedData> for MnemonicForRpc {
+    fn from(encrypted_mnemonic_data: EncryptedData) -> Self {
         MnemonicForRpc::Encrypted {
             encrypted_mnemonic_data,
         }
@@ -402,12 +398,12 @@ impl From<String> for MnemonicForRpc {
 ///
 /// # Examples
 ///
-/// For a [`GetMnemonicResponse`] where the [`MnemonicForRpc`] is `Encrypted` with some [`EncryptedMnemonicData`], the JSON representation would be:
+/// For a [`GetMnemonicResponse`] where the [`MnemonicForRpc`] is `Encrypted` with some [`EncryptedData`], the JSON representation would be:
 /// ```json
 /// {
 ///   "format": "encrypted",
 ///   "encrypted_mnemonic_data": {
-///     // EncryptedMnemonicData fields go here
+///     // EncryptedData fields go here
 ///   }
 /// }
 /// ```

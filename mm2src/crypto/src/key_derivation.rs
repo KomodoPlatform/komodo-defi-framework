@@ -8,6 +8,12 @@ use mm2_err_handle::prelude::*;
 use sha2::Sha512;
 use std::convert::TryInto;
 
+const ARGON2_ALGORITHM: &str = "Argon2id";
+const ARGON2ID_VERSION: &str = "0x13";
+const ARGON2ID_M_COST: u32 = 65536;
+const ARGON2ID_T_COST: u32 = 2;
+const ARGON2ID_P_COST: u32 = 1;
+
 type HmacSha512 = Hmac<Sha512>;
 
 #[derive(Debug, Display, PartialEq)]
@@ -24,6 +30,71 @@ impl From<argon2::password_hash::Error> for KeyDerivationError {
     fn from(e: argon2::password_hash::Error) -> Self { KeyDerivationError::PasswordHashingFailed(e.to_string()) }
 }
 
+/// Parameters for the Argon2 key derivation function.
+///
+/// This struct defines the configuration parameters used by Argon2, one of the
+/// most secure and widely used key derivation functions, especially for
+/// password hashing.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Argon2Params {
+    /// The specific variant of the Argon2 algorithm used (e.g., Argon2id).
+    algorithm: String,
+
+    /// The version of the Argon2 algorithm (e.g., 0x13 for the latest version).
+    version: String,
+
+    /// The memory cost parameter defining the memory usage of the algorithm.
+    /// Expressed in kibibytes (KiB).
+    m_cost: u32,
+
+    /// The time cost parameter defining the execution time and number of
+    /// iterations of the algorithm.
+    t_cost: u32,
+
+    /// The parallelism cost parameter defining the number of parallel threads.
+    p_cost: u32,
+}
+
+impl Default for Argon2Params {
+    fn default() -> Self {
+        Argon2Params {
+            algorithm: ARGON2_ALGORITHM.to_string(),
+            version: ARGON2ID_VERSION.to_string(),
+            m_cost: ARGON2ID_M_COST,
+            t_cost: ARGON2ID_T_COST,
+            p_cost: ARGON2ID_P_COST,
+        }
+    }
+}
+
+/// Enum representing different key derivation details.
+///
+/// This enum allows for flexible specification of various key derivation
+/// algorithms and their parameters, making it easier to extend and support
+/// multiple algorithms in the future.
+#[derive(Serialize, Deserialize, Debug)]
+pub enum KeyDerivationDetails {
+    /// Argon2 algorithm for key derivation.
+    Argon2 {
+        /// The parameters for the Argon2 key derivation function.
+        params: Argon2Params,
+        /// The salt used in the key derivation process for the AES key.
+        /// Stored as a Base64-encoded string.
+        salt_aes: String,
+        /// The salt used in the key derivation process for the HMAC key.
+        /// This is applicable if HMAC is used for ensuring data integrity and authenticity.
+        /// Stored as a Base64-encoded string.
+        salt_hmac: String,
+    },
+    /// Algorithm for deriving a hierarchy of symmetric keys from a master secret according to [SLIP-0021](https://github.com/satoshilabs/slips/blob/master/slip-0021.md).
+    SLIP0021 {
+        encryption_path: String,
+        authentication_path: String,
+    },
+    // Placeholder for future algorithms.
+    // Future algorithms can be added here.
+}
+
 /// Derives AES and HMAC keys from a given password and salts for mnemonic encryption/decryption.
 ///
 /// # Arguments
@@ -33,7 +104,7 @@ impl From<argon2::password_hash::Error> for KeyDerivationError {
 ///
 /// # Returns
 /// A tuple containing the AES key and HMAC key as byte arrays, or a `MnemonicError` in case of failure.
-pub fn derive_keys_for_mnemonic(
+pub(crate) fn derive_keys_for_mnemonic(
     password: &str,
     salt_aes: &SaltString,
     salt_hmac: &SaltString,
