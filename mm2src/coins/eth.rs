@@ -2542,6 +2542,10 @@ impl RpcCommonOps for EthCoin {
 
         // try to find first live client
         for (i, client) in clients.clone().into_iter().enumerate() {
+            if let Web3Transport::Websocket(socket_transport) = &client.web3.transport() {
+                socket_transport.maybe_spawn_connection_loop(self.clone());
+            };
+
             match client
                 .web3
                 .web3()
@@ -2550,10 +2554,6 @@ impl RpcCommonOps for EthCoin {
                 .await
             {
                 Ok(Ok(_)) => {
-                    if let Web3Transport::Websocket(socket_transport) = &client.web3.transport() {
-                        socket_transport.maybe_spawn_connection_loop(self.clone());
-                    };
-
                     // Bring the live client to the front of rpc_clients
                     clients.rotate_left(i);
                     return Ok(client);
