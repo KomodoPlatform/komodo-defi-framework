@@ -7,6 +7,7 @@ mod hw_client;
 mod hw_ctx;
 mod hw_error;
 pub mod hw_rpc_task;
+mod key_derivation;
 pub mod mnemonic;
 pub mod privkey;
 mod shared_db_id;

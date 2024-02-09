@@ -1,7 +1,7 @@
+use crate::key_derivation::{derive_keys_for_mnemonic, KeyDerivationError};
 use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use aes::Aes256;
-use argon2::password_hash::{PasswordHasher, SaltString};
-use argon2::Argon2;
+use argon2::password_hash::SaltString;
 use bip39::{Language, Mnemonic};
 use common::drop_mutability;
 use derive_more::Display;
@@ -9,7 +9,6 @@ use hmac::{Hmac, Mac};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use sha2::Sha256;
-use std::convert::TryInto;
 
 const ARGON2_ALGORITHM: &str = "Argon2id";
 const ARGON2ID_VERSION: &str = "0x13";
@@ -27,8 +26,8 @@ pub enum MnemonicError {
     BIP39Error(String),
     #[display(fmt = "Error generating random bytes: {}", _0)]
     UnableToGenerateRandomBytes(String),
-    #[display(fmt = "Error hashing password: {}", _0)]
-    PasswordHashingFailed(String),
+    #[display(fmt = "Error deriving key: {}", _0)]
+    KeyDerivationError(String),
     #[display(fmt = "AES cipher error: {}", _0)]
     AESCipherError(String),
     #[display(fmt = "Error decoding string: {}", _0)]
@@ -43,11 +42,15 @@ impl From<bip39::Error> for MnemonicError {
 }
 
 impl From<argon2::password_hash::Error> for MnemonicError {
-    fn from(e: argon2::password_hash::Error) -> Self { MnemonicError::PasswordHashingFailed(e.to_string()) }
+    fn from(e: argon2::password_hash::Error) -> Self { MnemonicError::KeyDerivationError(e.to_string()) }
 }
 
 impl From<base64::DecodeError> for MnemonicError {
     fn from(e: base64::DecodeError) -> Self { MnemonicError::DecodeError(e.to_string()) }
+}
+
+impl From<KeyDerivationError> for MnemonicError {
+    fn from(e: KeyDerivationError) -> Self { MnemonicError::KeyDerivationError(e.to_string()) }
 }
 
 /// Enum representing different encryption algorithms.
@@ -189,47 +192,6 @@ pub fn generate_mnemonic(ctx: &MmArc) -> MmResult<Mnemonic, MnemonicError> {
     Ok(mnemonic)
 }
 
-/// Derives AES and HMAC keys from a given password and salts.
-///
-/// # Arguments
-/// * `password` - The password used for key derivation.
-/// * `salt_aes` - The salt used for AES key derivation.
-/// * `salt_hmac` - The salt used for HMAC key derivation.
-///
-/// # Returns
-/// A tuple containing the AES key and HMAC key as byte arrays, or a `MnemonicError` in case of failure.
-fn derive_aes_hmac_keys(
-    password: &str,
-    salt_aes: &SaltString,
-    salt_hmac: &SaltString,
-) -> MmResult<([u8; 32], [u8; 32]), MnemonicError> {
-    let argon2 = Argon2::default();
-
-    // Derive AES Key
-    let aes_password_hash = argon2.hash_password(password.as_bytes(), salt_aes)?;
-    let key_aes_output = aes_password_hash
-        .serialize()
-        .hash()
-        .ok_or_else(|| MnemonicError::PasswordHashingFailed("Error finding AES key hashing output".to_string()))?;
-    let key_aes = key_aes_output
-        .as_bytes()
-        .try_into()
-        .map_err(|_| MnemonicError::PasswordHashingFailed("Invalid AES key length".to_string()))?;
-
-    // Derive HMAC Key
-    let hmac_password_hash = argon2.hash_password(password.as_bytes(), salt_hmac)?;
-    let key_hmac_output = hmac_password_hash
-        .serialize()
-        .hash()
-        .ok_or_else(|| MnemonicError::PasswordHashingFailed("Error finding HMAC key hashing output".to_string()))?;
-    let key_hmac = key_hmac_output
-        .as_bytes()
-        .try_into()
-        .map_err(|_| MnemonicError::PasswordHashingFailed("Invalid HMAC key length".to_string()))?;
-
-    Ok((key_aes, key_hmac))
-}
-
 /// Encrypts a mnemonic phrase using a specified password.
 ///
 /// This function performs several operations:
@@ -263,7 +225,7 @@ pub fn encrypt_mnemonic(mnemonic: &str, password: &str) -> MmResult<EncryptedMne
     drop_mutability!(iv);
 
     // Derive AES and HMAC keys
-    let (key_aes, key_hmac) = derive_aes_hmac_keys(password, &salt_aes, &salt_hmac)?;
+    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &salt_aes, &salt_hmac)?;
 
     // Create an AES-256-CBC cipher instance, encrypt the data with the key and the IV and get the ciphertext
     let msg_len = mnemonic.len();
@@ -322,7 +284,7 @@ pub fn decrypt_mnemonic(encrypted_data: &EncryptedMnemonicData, password: &str) 
     let salt_hmac = SaltString::from_b64(&encrypted_data.salt_hmac)?;
 
     // Re-create the keys from the password and salts
-    let (key_aes, key_hmac) = derive_aes_hmac_keys(password, &salt_aes, &salt_hmac)?;
+    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &salt_aes, &salt_hmac)?;
 
     // Verify HMAC tag before decrypting
     let mut mac = Hmac::<Sha256>::new_from_slice(&key_hmac).map_to_mm(|e| MnemonicError::Internal(e.to_string()))?;
