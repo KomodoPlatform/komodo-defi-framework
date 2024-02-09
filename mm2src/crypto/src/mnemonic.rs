@@ -1,19 +1,14 @@
+use crate::decrypt::decrypt_data;
 use crate::encrypt::encrypt_data;
 use crate::key_derivation::{derive_keys_for_mnemonic, Argon2Params, KeyDerivationDetails, KeyDerivationError};
 use crate::EncryptedData;
-use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
-use aes::Aes256;
 use argon2::password_hash::SaltString;
 use bip39::{Language, Mnemonic};
 use derive_more::Display;
-use hmac::{Hmac, Mac};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use sha2::Sha256;
 
 const DEFAULT_WORD_COUNT: u64 = 12;
-
-type Aes256CbcDec = cbc::Decryptor<Aes256>;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum MnemonicError {
@@ -21,14 +16,12 @@ pub enum MnemonicError {
     BIP39Error(String),
     #[display(fmt = "Error deriving key: {}", _0)]
     KeyDerivationError(String),
-    #[display(fmt = "AES cipher error: {}", _0)]
-    AESCipherError(String),
     #[display(fmt = "Error decoding string: {}", _0)]
     DecodeError(String),
-    #[display(fmt = "Error verifying HMAC tag: {}", _0)]
-    HMACError(String),
     #[display(fmt = "Error encrypting mnemonic: {}", _0)]
     EncryptionError(String),
+    #[display(fmt = "Error decrypting mnemonic: {}", _0)]
+    DecryptionError(String),
     Internal(String),
 }
 
@@ -38,10 +31,6 @@ impl From<bip39::Error> for MnemonicError {
 
 impl From<argon2::password_hash::Error> for MnemonicError {
     fn from(e: argon2::password_hash::Error) -> Self { MnemonicError::KeyDerivationError(e.to_string()) }
-}
-
-impl From<base64::DecodeError> for MnemonicError {
-    fn from(e: base64::DecodeError) -> Self { MnemonicError::DecodeError(e.to_string()) }
 }
 
 impl From<KeyDerivationError> for MnemonicError {
@@ -127,11 +116,6 @@ pub fn encrypt_mnemonic(mnemonic: &str, password: &str) -> MmResult<EncryptedDat
 /// # Errors
 /// This function can return various errors related to decoding, key derivation, encryption, and HMAC verification.
 pub fn decrypt_mnemonic(encrypted_data: &EncryptedData, password: &str) -> MmResult<Mnemonic, MnemonicError> {
-    // Decode the Base64-encoded values
-    let iv = base64::decode(&encrypted_data.iv)?;
-    let mut ciphertext = base64::decode(&encrypted_data.ciphertext)?;
-    let tag = base64::decode(&encrypted_data.tag)?;
-
     // Re-create the salts from Base64-encoded strings
     let (salt_aes, salt_hmac) = match &encrypted_data.key_derivation_details {
         KeyDerivationDetails::Argon2 {
@@ -147,21 +131,12 @@ pub fn decrypt_mnemonic(encrypted_data: &EncryptedData, password: &str) -> MmRes
     // Re-create the keys from the password and salts
     let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &salt_aes, &salt_hmac)?;
 
-    // Verify HMAC tag before decrypting
-    let mut mac = Hmac::<Sha256>::new_from_slice(&key_hmac).map_to_mm(|e| MnemonicError::Internal(e.to_string()))?;
-    mac.update(&ciphertext);
-    mac.update(&iv);
-    mac.verify_slice(&tag)
-        .map_to_mm(|e| MnemonicError::HMACError(e.to_string()))?;
-
     // Decrypt the ciphertext
-    let decrypted_data = Aes256CbcDec::new(&key_aes.into(), iv.as_slice().into())
-        .decrypt_padded_mut::<Pkcs7>(&mut ciphertext)
-        .map_to_mm(|e| MnemonicError::AESCipherError(e.to_string()))?;
+    let decrypted_data =
+        decrypt_data(encrypted_data, &key_aes, &key_hmac).mm_err(|e| MnemonicError::DecryptionError(e.to_string()))?;
 
     // Convert decrypted data back to a string
-    let mnemonic_str =
-        String::from_utf8(decrypted_data.to_vec()).map_to_mm(|e| MnemonicError::DecodeError(e.to_string()))?;
+    let mnemonic_str = String::from_utf8(decrypted_data).map_to_mm(|e| MnemonicError::DecodeError(e.to_string()))?;
     let mnemonic = Mnemonic::parse_normalized(&mnemonic_str)?;
     Ok(mnemonic)
 }

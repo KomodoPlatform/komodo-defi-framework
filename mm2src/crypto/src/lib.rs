@@ -2,6 +2,7 @@
 
 mod bip32_child;
 mod crypto_ctx;
+mod decrypt;
 mod encrypt;
 mod global_hd_ctx;
 mod hw_client;

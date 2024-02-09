@@ -14,6 +14,7 @@ const ARGON2ID_M_COST: u32 = 65536;
 const ARGON2ID_T_COST: u32 = 2;
 const ARGON2ID_P_COST: u32 = 1;
 
+#[allow(dead_code)]
 type HmacSha512 = Hmac<Sha512>;
 
 #[derive(Debug, Display, PartialEq)]
@@ -104,6 +105,7 @@ pub enum KeyDerivationDetails {
 ///
 /// # Returns
 /// A tuple containing the AES key and HMAC key as byte arrays, or a `MnemonicError` in case of failure.
+#[allow(dead_code)]
 pub(crate) fn derive_keys_for_mnemonic(
     password: &str,
     salt_aes: &SaltString,
@@ -163,6 +165,7 @@ fn derive_key_from_path(master_node: &[u8], path: &str) -> MmResult<[u8; 32], Ke
 ///
 /// # Returns
 /// A tuple containing the encryption and authentication keys as byte arrays, or an error in case of failure.
+#[allow(dead_code)]
 fn derive_encryption_authentication_keys(
     master_secret: &[u8; 64],
     derivation_path: &str,
