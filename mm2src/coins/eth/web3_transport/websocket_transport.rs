@@ -110,6 +110,7 @@ impl WebsocketTransport {
     pub(crate) async fn start_connection_loop(self) {
         let _guard = self.connection_guard.lock().await;
 
+        // List of awaiting requests
         let mut response_notifiers: ExpirableMap<RequestId, oneshot::Sender<()>> = ExpirableMap::default();
 
         loop {
@@ -128,7 +129,6 @@ impl WebsocketTransport {
                 },
             };
 
-            // List of awaiting requests IDs
             let mut keepalive_interval = Ticker::new(Duration::from_secs(10));
             let mut req_rx = self.controller_channel.rx.lock().await;
 

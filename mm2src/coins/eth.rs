@@ -1,5 +1,3 @@
-use self::web3_transport::websocket_transport::WebsocketTransport;
-
 /******************************************************************************
  * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
  *                                                                            *
@@ -23,7 +21,7 @@ use self::web3_transport::websocket_transport::WebsocketTransport;
 //  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
 //
 use super::eth::Action::{Call, Create};
-use crate::eth::web3_transport::websocket_transport::WebsocketTransportNode;
+use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_structs::{ContractType, ConvertChain, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
 use crate::{DexFee, RpcCommonOps, ValidateWatcherSpendInput, WatcherSpendType};
@@ -5693,14 +5691,17 @@ pub async fn eth_coin_from_conf_and_request(
 
         let transport = match uri.scheme_str() {
             Some("ws") | Some("wss") => {
-                let node = WebsocketTransportNode { uri, gui_auth: false };
+                let node = WebsocketTransportNode {
+                    uri: uri.clone(),
+                    gui_auth: false,
+                };
                 let websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
 
                 // Temporarily start the connection loop (we close the connection once we have the client version below).
                 // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
                 // dropping websocket support on parity nodes.
                 let fut = websocket_transport.clone().start_connection_loop();
-                let settings = AbortSettings::info_on_abort("TODO".to_string());
+                let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", uri));
                 ctx.spawner().spawn_with_settings(fut, settings);
 
                 Web3Transport::Websocket(websocket_transport)
@@ -5708,7 +5709,7 @@ pub async fn eth_coin_from_conf_and_request(
             _ => {
                 let node = HttpTransportNode { uri, gui_auth: false };
 
-                Web3Transport::new_http(node, event_handlers.clone())
+                Web3Transport::new_http_with_event_handlers(node, event_handlers.clone())
             },
         };
 
@@ -5748,8 +5749,16 @@ pub async fn eth_coin_from_conf_and_request(
         } => {
             let token_addr = try_s!(valid_addr_from_str(&contract_address));
             let decimals = match conf["decimals"].as_u64() {
-                // TODO
-                None | Some(0) => try_s!(get_token_decimals(&web3_instances.first().unwrap().web3, token_addr).await),
+                None | Some(0) => try_s!(
+                    get_token_decimals(
+                        &web3_instances
+                            .first()
+                            .expect("web3_instances can't be empty in ETH activation")
+                            .web3,
+                        token_addr
+                    )
+                    .await
+                ),
                 Some(d) => d as u8,
             };
             (EthCoinType::Erc20 { platform, token_addr }, decimals)

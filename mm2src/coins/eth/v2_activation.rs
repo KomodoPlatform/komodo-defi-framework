@@ -417,7 +417,7 @@ async fn build_web3_instances(
         let transport = match uri.scheme_str() {
             Some("ws") | Some("wss") => {
                 let node = WebsocketTransportNode {
-                    uri,
+                    uri: uri.clone(),
                     gui_auth: eth_node.gui_auth,
                 };
 
@@ -435,7 +435,7 @@ async fn build_web3_instances(
                 // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
                 // dropping websocket support on parity nodes.
                 let fut = websocket_transport.clone().start_connection_loop();
-                let settings = AbortSettings::info_on_abort("TODO".to_string());
+                let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", uri));
                 ctx.spawner().spawn_with_settings(fut, settings);
 
                 Web3Transport::Websocket(websocket_transport)
@@ -520,7 +520,10 @@ async fn build_metamask_transport(
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
 
     let eth_config = web3_transport::metamask_transport::MetamaskEthConfig { chain_id };
-    let web3 = Web3::new(Web3Transport::new_metamask(eth_config, event_handlers)?);
+    let web3 = Web3::new(Web3Transport::new_metamask_with_event_handlers(
+        eth_config,
+        event_handlers,
+    )?);
 
     // Check if MetaMask supports the given `chain_id`.
     // Please note that this request may take a long time.
@@ -549,7 +552,7 @@ async fn check_metamask_supports_chain_id(
 
     match web3.eth().chain_id().await {
         Ok(chain_id) if chain_id == U256::from(expected_chain_id) => Ok(()),
-        // The RPC client should have returned ChainId with which it has been created on [`Web3Transport::new_metamask`].
+        // The RPC client should have returned ChainId with which it has been created on [`Web3Transport::new_metamask_with_event_handlers`].
         Ok(unexpected_chain_id) => {
             let error = format!("Expected '{expected_chain_id}' ChainId, found '{unexpected_chain_id}'");
             MmError::err(EthActivationV2Error::InternalError(error))

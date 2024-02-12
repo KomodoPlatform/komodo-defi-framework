@@ -112,7 +112,7 @@ fn eth_coin_from_keypair(
             gui_auth: false,
         };
 
-        let transport = Web3Transport::with_node(node);
+        let transport = Web3Transport::new_http(node);
         let web3 = Web3::new(transport);
 
         web3_instances.push(Web3Instance { web3, is_parity: false });
@@ -316,7 +316,7 @@ fn send_and_refund_erc20_payment() {
         gui_auth: false,
     };
 
-    let transport = Web3Transport::with_node(node);
+    let transport = Web3Transport::new_http(node);
 
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -409,7 +409,7 @@ fn send_and_refund_eth_payment() {
         gui_auth: false,
     };
 
-    let transport = Web3Transport::with_node(node);
+    let transport = Web3Transport::new_http(node);
 
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -504,14 +504,14 @@ fn test_nonce_several_urls() {
         gui_auth: false,
     };
 
-    let devnet_transport = Web3Transport::with_node(node);
+    let devnet_transport = Web3Transport::new_http(node);
 
     let node = HttpTransportNode {
         uri: "https://rpc2.sepolia.org".parse().unwrap(),
         gui_auth: false,
     };
 
-    let sepolia_transport = Web3Transport::with_node(node);
+    let sepolia_transport = Web3Transport::new_http(node);
 
     let node = HttpTransportNode {
         uri: "http://195.201.0.6:8989".parse().unwrap(),
@@ -519,7 +519,7 @@ fn test_nonce_several_urls() {
     };
 
     // get nonce must succeed if some nodes are down at the moment for some reason
-    let failing_transport = Web3Transport::with_node(node);
+    let failing_transport = Web3Transport::new_http(node);
 
     let web3_devnet = Web3::new(devnet_transport);
     let web3_sepolia = Web3::new(sepolia_transport);
@@ -590,7 +590,7 @@ fn test_wait_for_payment_spend_timeout() {
         gui_auth: false,
     };
 
-    let transport = Web3Transport::with_node(node);
+    let transport = Web3Transport::new_http(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -662,7 +662,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         gui_auth: false,
     };
 
-    let transport = Web3Transport::with_node(node);
+    let transport = Web3Transport::new_http(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -773,7 +773,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         gui_auth: false,
     };
 
-    let transport = Web3Transport::with_node(node);
+    let transport = Web3Transport::new_http(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -1464,7 +1464,7 @@ fn test_message_hash() {
         gui_auth: false,
     };
 
-    let transport = Web3Transport::with_node(node);
+    let transport = Web3Transport::new_http(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -1512,7 +1512,7 @@ fn test_sign_verify_message() {
         gui_auth: false,
     };
 
-    let transport = Web3Transport::with_node(node);
+    let transport = Web3Transport::new_http(node);
 
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1565,7 +1565,7 @@ fn test_eth_extract_secret() {
         gui_auth: false,
     };
 
-    let transport = Web3Transport::with_node(node);
+    let transport = Web3Transport::new_http(node);
 
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();

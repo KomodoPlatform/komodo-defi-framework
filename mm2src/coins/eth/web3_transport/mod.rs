@@ -29,7 +29,7 @@ pub(crate) enum Web3Transport {
 }
 
 impl Web3Transport {
-    pub fn new_http(
+    pub fn new_http_with_event_handlers(
         node: http_transport::HttpTransportNode,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Web3Transport {
@@ -37,7 +37,7 @@ impl Web3Transport {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub(crate) fn new_metamask(
+    pub(crate) fn new_metamask_with_event_handlers(
         eth_config: metamask_transport::MetamaskEthConfig,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> MetamaskResult<Web3Transport> {
@@ -45,15 +45,14 @@ impl Web3Transport {
     }
 
     #[cfg(any(test, target_arch = "wasm32"))]
-    pub fn with_node(node: http_transport::HttpTransportNode) -> Web3Transport {
+    pub fn new_http(node: http_transport::HttpTransportNode) -> Web3Transport {
         http_transport::HttpTransport::new(node).into()
     }
 
     pub fn gui_auth_validation_generator_as_mut(&mut self) -> Option<&mut GuiAuthValidationGenerator> {
         match self {
             Web3Transport::Http(http) => http.gui_auth_validation_generator.as_mut(),
-            // TODO
-            Web3Transport::Websocket(_) => None,
+            Web3Transport::Websocket(websocket) => websocket.gui_auth_validation_generator.as_mut(),
             #[cfg(target_arch = "wasm32")]
             Web3Transport::Metamask(_) => None,
         }

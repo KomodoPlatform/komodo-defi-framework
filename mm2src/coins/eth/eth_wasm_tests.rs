@@ -25,7 +25,7 @@ async fn test_send() {
         uri: ETH_DEV_NODE.parse().unwrap(),
         gui_auth: false,
     };
-    let transport = Web3Transport::with_node(node);
+    let transport = Web3Transport::new_http(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
