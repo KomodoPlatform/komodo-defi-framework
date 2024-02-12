@@ -121,7 +121,7 @@ pub fn decrypt_mnemonic(encrypted_data: &EncryptedData, password: &str) -> MmRes
         KeyDerivationDetails::Argon2 {
             salt_aes, salt_hmac, ..
         } => (SaltString::from_b64(salt_aes)?, SaltString::from_b64(salt_hmac)?),
-        KeyDerivationDetails::SLIP0021 { .. } => {
+        _ => {
             return MmError::err(MnemonicError::KeyDerivationError(
                 "Key derivation details should be Argon2!".to_string(),
             ))

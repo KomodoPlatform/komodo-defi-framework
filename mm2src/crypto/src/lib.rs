@@ -13,6 +13,7 @@ mod key_derivation;
 pub mod mnemonic;
 pub mod privkey;
 mod shared_db_id;
+mod slip21;
 mod standard_hd_path;
 mod xpub;
 

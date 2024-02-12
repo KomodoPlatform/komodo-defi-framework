@@ -161,18 +161,18 @@ fn derive_key_from_path(master_node: &[u8], path: &str) -> MmResult<[u8; 32], Ke
 ///
 /// # Arguments
 /// * `master_secret` - The master private key used for key derivation. Can be a BIP-39 seed if this is used to derive keys for wallet data/files encryption.
-/// * `derivation_path` - The additional derivation path used for encryption and authentication key derivation.
+/// * `encryption_path` - The derivation path used for encryption key derivation.
+/// * `authentication_path` - The derivation path used for authentication key derivation.
 ///
 /// # Returns
-/// A tuple containing the encryption and authentication keys as byte arrays, or an error in case of failure.
+/// A tuple containing the encryption and authentication keys as byte arrays, or a [`KeyDerivationError`] in case of failure.
 #[allow(dead_code)]
-fn derive_encryption_authentication_keys(
+pub(crate) fn derive_encryption_authentication_keys(
     master_secret: &[u8; 64],
-    derivation_path: &str,
+    encryption_path: &str,
+    authentication_path: &str,
 ) -> MmResult<([u8; 32], [u8; 32]), KeyDerivationError> {
     const SYMMETRIC_KEY_SEED: &[u8] = b"Symmetric key seed";
-    const ENCRYPTION_PATH: &str = "SLIP-0021/Master encryption key/";
-    const AUTHENTICATION_PATH: &str = "SLIP-0021/Authentication key/";
 
     // Generate the master node `m` according to SLIP-0021.
     let mut mac =
@@ -182,12 +182,10 @@ fn derive_encryption_authentication_keys(
     let master_key_material = mac.finalize().into_bytes();
 
     // Derive encryption key
-    let encryption_path = ENCRYPTION_PATH.to_string() + derivation_path;
-    let encryption_key = derive_key_from_path(&master_key_material, &encryption_path)?;
+    let encryption_key = derive_key_from_path(&master_key_material, encryption_path)?;
 
     // Derive authentication key
-    let authentication_path = AUTHENTICATION_PATH.to_string() + derivation_path;
-    let authentication_key = derive_key_from_path(&master_key_material, &authentication_path)?;
+    let authentication_key = derive_key_from_path(&master_key_material, authentication_path)?;
 
     Ok((encryption_key, authentication_key))
 }
@@ -195,6 +193,7 @@ fn derive_encryption_authentication_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::slip21::{AUTHENTICATION_PATH, ENCRYPTION_PATH};
 
     #[test]
     // https://github.com/satoshilabs/slips/blob/master/slip-0021.md#example
@@ -207,9 +206,12 @@ mod tests {
             hex::decode("47194e938ab24cc82bfa25f6486ed54bebe79c40ae2a5a32ea6db294d81861a6").unwrap();
 
         // Directly derive the encryption and authentication keys from the master secret
-        let (derived_encryption_key, derived_authentication_key) =
-            derive_encryption_authentication_keys(&master_secret.try_into().expect("Invalid master secret"), "")
-                .expect("Key derivation failed");
+        let (derived_encryption_key, derived_authentication_key) = derive_encryption_authentication_keys(
+            &master_secret.try_into().expect("Invalid master secret"),
+            ENCRYPTION_PATH,
+            AUTHENTICATION_PATH,
+        )
+        .expect("Key derivation failed");
 
         // Verify the derived keys against the expected values
         assert_eq!(
