@@ -5,9 +5,10 @@ use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::RpcTaskUserActionRequest;
 use serde::Serialize;
 use std::convert::TryFrom;
+use std::sync::Arc;
 use std::time::Duration;
-use trezor::trezor_rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, TrezorRequestStatuses, TrezorRpcTaskProcessor,
-                              TryIntoUserAction};
+use trezor::trezor_rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, TrezorRequestStatuses,
+                              TrezorRpcTaskProcessor, TryIntoUserAction};
 use trezor::user_interaction::TrezorPassphraseResponse;
 use trezor::{TrezorProcessingError, TrezorRequestProcessor};
 
@@ -17,7 +18,7 @@ pub type HwRpcTaskUserActionRequest = RpcTaskUserActionRequest<HwRpcTaskUserActi
 
 /// When it comes to interacting with a HW device, this is a common awaiting RPC status.
 /// The status says to the user that he should pass a Trezor PIN to continue the pending RPC task.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum HwRpcTaskAwaitingStatus {
     EnterTrezorPin,
     EnterTrezorPassphrase,
@@ -84,8 +85,8 @@ where
     }
 }
 
-pub struct TrezorRpcTaskConnectProcessor<'a, Task: RpcTask> {
-    request_processor: TrezorRpcTaskProcessor<'a, Task>,
+pub struct TrezorRpcTaskConnectProcessor<Task: RpcTask> {
+    request_processor: TrezorRpcTaskProcessor<Task>,
     on_connect: Task::InProgressStatus,
     on_connected: Task::InProgressStatus,
     on_connection_failed: Task::InProgressStatus,
@@ -93,7 +94,7 @@ pub struct TrezorRpcTaskConnectProcessor<'a, Task: RpcTask> {
 }
 
 #[async_trait]
-impl<'a, Task> TrezorRequestProcessor for TrezorRpcTaskConnectProcessor<'a, Task>
+impl<Task> TrezorRequestProcessor for TrezorRpcTaskConnectProcessor<Task>
 where
     Task: RpcTask,
     Task::UserAction: TryIntoUserAction + Send,
@@ -118,7 +119,7 @@ where
 }
 
 #[async_trait]
-impl<'a, Task> TrezorConnectProcessor for TrezorRpcTaskConnectProcessor<'a, Task>
+impl<Task> TrezorConnectProcessor for TrezorRpcTaskConnectProcessor<Task>
 where
     Task: RpcTask,
     Task::UserAction: TryIntoUserAction,
@@ -140,11 +141,15 @@ where
             .request_processor
             .update_in_progress_status(self.on_connection_failed.clone())?)
     }
+
+    fn as_base_shared(&self) -> Arc<dyn TrezorRequestProcessor<Error = RpcTaskError>> {
+        Arc::new(self.request_processor.clone())
+    }
 }
 
-impl<'a, Task: RpcTask> TrezorRpcTaskConnectProcessor<'a, Task> {
+impl<Task: RpcTask> TrezorRpcTaskConnectProcessor<Task> {
     pub fn new(
-        task_handle: &'a RpcTaskHandle<Task>,
+        task_handle: RpcTaskHandleShared<Task>,
         statuses: HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
     ) -> Self {
         let request_statuses = TrezorRequestStatuses {

@@ -70,8 +70,7 @@ async fn test_send() {
     console::log_1(&format!("{:?}", block).into());
 }
 
-#[wasm_bindgen_test]
-async fn test_init_eth_coin() {
+async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
     let conf = json!({
         "coins": [{
             "coin": "ETH",
@@ -96,5 +95,27 @@ async fn test_init_eth_coin() {
         "urls":[ETH_DEV_NODE],
         "swap_contract_address":ETH_DEV_SWAP_CONTRACT
     });
-    let _coin = lp_coininit(&ctx, "ETH", &req).await.unwrap();
+    Ok((ctx.clone(), lp_coininit(&ctx, "ETH", &req).await?))
+}
+
+#[wasm_bindgen_test]
+async fn test_init_eth_coin() { let (_ctx, _coin) = init_eth_coin_helper().await.unwrap(); }
+
+#[wasm_bindgen_test]
+async fn wasm_test_sign_eth_tx() {
+    // we need to hold ref to _ctx until the end of the test (because of the weak ref to MmCtx in EthCoinImpl)
+    let (_ctx, coin) = init_eth_coin_helper().await.unwrap();
+    let sign_req = json::from_value(json!({
+        "coin": "ETH",
+        "type": "ETH",
+        "tx": {
+            "to": "0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94".to_string(),
+            "value": "1.234",
+            "gas_limit": "21000"
+        }
+    }))
+    .unwrap();
+    let res = coin.sign_raw_tx(&sign_req).await;
+    console::log_1(&format!("res={:?}", res).into());
+    assert!(res.is_ok());
 }

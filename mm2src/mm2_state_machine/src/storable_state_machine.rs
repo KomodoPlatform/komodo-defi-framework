@@ -23,15 +23,55 @@ pub trait OnNewState<S>: StateMachineTrait {
     async fn on_new_state(&mut self, state: &S) -> Result<(), <Self as StateMachineTrait>::Error>;
 }
 
+pub trait StateMachineDbRepr: Send {
+    type Event: Send;
+
+    fn add_event(&mut self, event: Self::Event);
+}
+
 /// A trait for the storage of state machine events.
 #[async_trait]
 pub trait StateMachineStorage: Send + Sync {
     /// The type representing a unique identifier for a state machine.
-    type MachineId: Send;
-    /// The type representing an event that can be stored.
-    type Event: Send;
+    type MachineId: Send + Sync;
+    /// The type representing state machine's DB representation.
+    type DbRepr: StateMachineDbRepr;
     /// The type representing an error that can occur during storage operations.
     type Error: Send;
+
+    /// Stores a DB representation of a given state machine.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: The unique identifier of the state machine.
+    /// - `repr`: The representation to be stored.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success (`Ok(())`) or an error (`Err(Self::Error)`).
+    async fn store_repr(&mut self, id: Self::MachineId, repr: Self::DbRepr) -> Result<(), Self::Error>;
+
+    /// Gets a DB representation of a given state machine.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: The unique identifier of the state machine.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing representation (`Ok(Self::DbRepr)`) or an error (`Err(Self::Error)`).
+    async fn get_repr(&self, id: Self::MachineId) -> Result<Self::DbRepr, Self::Error>;
+
+    /// Returns whether DB stores a state machine with the given id.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: The unique identifier of the state machine.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating the existense of the DB record.
+    async fn has_record_for(&mut self, id: &Self::MachineId) -> Result<bool, Self::Error>;
 
     /// Stores an event for a given state machine.
     ///
@@ -43,7 +83,11 @@ pub trait StateMachineStorage: Send + Sync {
     /// # Returns
     ///
     /// A `Result` indicating success (`Ok(())`) or an error (`Err(Self::Error)`).
-    async fn store_event(&mut self, id: Self::MachineId, event: Self::Event) -> Result<(), Self::Error>;
+    async fn store_event(
+        &mut self,
+        id: Self::MachineId,
+        event: <Self::DbRepr as StateMachineDbRepr>::Event,
+    ) -> Result<(), Self::Error>;
 
     /// Retrieves a list of unfinished state machines.
     ///
@@ -65,19 +109,29 @@ pub trait StateMachineStorage: Send + Sync {
 }
 
 /// A struct representing a restored state machine.
-#[allow(dead_code)]
 pub struct RestoredMachine<M> {
-    machine: M,
-    current_state: Box<dyn State<StateMachine = M>>,
+    pub machine: M,
+    pub current_state: Box<dyn State<StateMachine = M>>,
 }
 
 /// A trait for storable state machines.
 #[async_trait]
-pub trait StorableStateMachine: Send + Sized + 'static {
+pub trait StorableStateMachine: Send + Sync + Sized + 'static {
     /// The type of storage for the state machine.
     type Storage: StateMachineStorage;
     /// The result type of the state machine.
     type Result: Send;
+    /// The error type of the state machine
+    type Error: From<<Self::Storage as StateMachineStorage>::Error> + Send;
+    /// The reentrancy lock type of the state machine
+    type ReentrancyLock: Send;
+    /// The additional context required to recreate state machine.
+    type RecreateCtx: Send;
+    /// Type representing the error, which can happen during state machine's re-creation
+    type RecreateError: Send;
+
+    /// Returns State machine's DB representation()
+    fn to_db_repr(&self) -> <Self::Storage as StateMachineStorage>::DbRepr;
 
     /// Gets a mutable reference to the storage for the state machine.
     fn storage(&mut self) -> &mut Self::Storage;
@@ -85,20 +139,24 @@ pub trait StorableStateMachine: Send + Sized + 'static {
     /// Gets the unique identifier of the state machine.
     fn id(&self) -> <Self::Storage as StateMachineStorage>::MachineId;
 
-    /// Restores a state machine from storage.
+    /// Recreates a state machine from DB representation.
     ///
     /// # Parameters
     ///
-    /// - `id`: The unique identifier of the state machine to be restored.
-    /// - `storage`: The storage containing the state machine's data.
+    /// - `id`: The unique identifier of the state machine to be recreated.
+    /// - `storage`: Storage instance.
+    /// - `repr`: State machine's DB representation.
+    /// - `from_repr_ctx`: Additional context required to recreate the state machine.
     ///
     /// # Returns
     ///
     /// A `Result` containing a `RestoredMachine` or an error.
-    fn restore_from_storage(
+    async fn recreate_machine(
         id: <Self::Storage as StateMachineStorage>::MachineId,
         storage: Self::Storage,
-    ) -> Result<RestoredMachine<Self>, <Self::Storage as StateMachineStorage>::Error>;
+        repr: <Self::Storage as StateMachineStorage>::DbRepr,
+        from_repr_ctx: Self::RecreateCtx,
+    ) -> Result<RestoredMachine<Self>, Self::RecreateError>;
 
     /// Stores an event for the state machine.
     ///
@@ -111,7 +169,7 @@ pub trait StorableStateMachine: Send + Sized + 'static {
     /// A `Result` indicating success (`Ok(())`) or an error (`Err(Self::Error)`).
     async fn store_event(
         &mut self,
-        event: <Self::Storage as StateMachineStorage>::Event,
+        event: <<Self::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event,
     ) -> Result<(), <Self::Storage as StateMachineStorage>::Error> {
         let id = self.id();
         self.storage().store_event(id, event).await
@@ -126,6 +184,23 @@ pub trait StorableStateMachine: Send + Sized + 'static {
         let id = self.id();
         self.storage().mark_finished(id).await
     }
+
+    /// Attempts to acquire reentrancy lock for a state machine
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing reentrancy lock guard success (`Ok(Self::ReentrancyLock)`) or an error (`Err(Self::Error)`).
+    async fn acquire_reentrancy_lock(&self) -> Result<Self::ReentrancyLock, Self::Error>;
+
+    /// Spawns the thread or future renewing the reentrancy lock.
+    /// Graceful shutdown of this activity is responsibility of an actual implementation.
+    fn spawn_reentrancy_lock_renew(&mut self, guard: Self::ReentrancyLock);
+
+    /// Initializes additional context actions (spawn futures, etc.)
+    fn init_additional_context(&mut self);
+
+    /// Cleans additional context up
+    fn clean_up_context(&mut self);
 }
 
 // Ensure that StandardStateMachine won't be occasionally implemented for StorableStateMachine.
@@ -138,10 +213,24 @@ impl<T: StorableState> !InitialState for T {}
 #[async_trait]
 impl<T: StorableStateMachine> StateMachineTrait for T {
     type Result = T::Result;
-    type Error = <T::Storage as StateMachineStorage>::Error;
+    type Error = T::Error;
 
-    async fn on_finished(&mut self) -> Result<(), <T::Storage as StateMachineStorage>::Error> {
-        self.mark_finished().await
+    async fn on_start(&mut self) -> Result<(), Self::Error> {
+        let reentrancy_lock = self.acquire_reentrancy_lock().await?;
+        let id = self.id();
+        if !self.storage().has_record_for(&id).await? {
+            let repr = self.to_db_repr();
+            self.storage().store_repr(id, repr).await?;
+        }
+        self.spawn_reentrancy_lock_renew(reentrancy_lock);
+        self.init_additional_context();
+        Ok(())
+    }
+
+    async fn on_finished(&mut self) -> Result<(), T::Error> {
+        self.mark_finished().await?;
+        self.clean_up_context();
+        Ok(())
     }
 }
 
@@ -151,7 +240,7 @@ pub trait StorableState {
     type StateMachine: StorableStateMachine;
 
     /// Gets the event associated with this state.
-    fn get_event(&self) -> <<Self::StateMachine as StorableStateMachine>::Storage as StateMachineStorage>::Event;
+    fn get_event(&self) -> <<<Self::StateMachine as StorableStateMachine>::Storage as StateMachineStorage>::DbRepr as StateMachineDbRepr>::Event;
 }
 
 /// Implementation of `OnNewState` for storable state machines and their related states.
@@ -166,9 +255,9 @@ impl<T: StorableStateMachine + Sync, S: StorableState<StateMachine = T> + Sync> 
     /// # Returns
     ///
     /// A `Result` indicating success (`Ok(())`) or an error (`Err(Self::Error)`).
-    async fn on_new_state(&mut self, state: &S) -> Result<(), <T::Storage as StateMachineStorage>::Error> {
+    async fn on_new_state(&mut self, state: &S) -> Result<(), T::Error> {
         let event = state.get_event();
-        self.store_event(event).await
+        Ok(self.store_event(event).await?)
     }
 }
 
@@ -288,17 +377,33 @@ mod tests {
         ForState4,
     }
 
+    struct TestStateMachineRepr {}
+
+    impl StateMachineDbRepr for TestStateMachineRepr {
+        type Event = TestEvent;
+
+        fn add_event(&mut self, _event: Self::Event) { unimplemented!() }
+    }
+
     #[async_trait]
     impl StateMachineStorage for StorageTest {
         type MachineId = usize;
-        type Event = TestEvent;
+        type DbRepr = TestStateMachineRepr;
         type Error = Infallible;
 
-        async fn store_event(&mut self, machine_id: usize, events: Self::Event) -> Result<(), Self::Error> {
+        async fn store_repr(&mut self, _id: Self::MachineId, _repr: Self::DbRepr) -> Result<(), Self::Error> { Ok(()) }
+
+        async fn get_repr(&self, _id: Self::MachineId) -> Result<Self::DbRepr, Self::Error> {
+            Ok(TestStateMachineRepr {})
+        }
+
+        async fn has_record_for(&mut self, _id: &Self::MachineId) -> Result<bool, Self::Error> { Ok(false) }
+
+        async fn store_event(&mut self, machine_id: usize, event: TestEvent) -> Result<(), Self::Error> {
             self.events_unfinished
                 .entry(machine_id)
                 .or_insert_with(Vec::new)
-                .push(events);
+                .push(event);
             Ok(())
         }
 
@@ -313,18 +418,27 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl StorableStateMachine for StorableStateMachineTest {
         type Storage = StorageTest;
         type Result = ();
+        type Error = Infallible;
+        type ReentrancyLock = ();
+        type RecreateCtx = ();
+        type RecreateError = Infallible;
+
+        fn to_db_repr(&self) -> TestStateMachineRepr { TestStateMachineRepr {} }
 
         fn storage(&mut self) -> &mut Self::Storage { &mut self.storage }
 
         fn id(&self) -> <Self::Storage as StateMachineStorage>::MachineId { self.id }
 
-        fn restore_from_storage(
+        async fn recreate_machine(
             id: <Self::Storage as StateMachineStorage>::MachineId,
             storage: Self::Storage,
-        ) -> Result<RestoredMachine<Self>, <Self::Storage as StateMachineStorage>::Error> {
+            _repr: <Self::Storage as StateMachineStorage>::DbRepr,
+            _recreate_ctx: Self::RecreateCtx,
+        ) -> Result<RestoredMachine<Self>, Infallible> {
             let events = storage.events_unfinished.get(&id).unwrap();
             let current_state: Box<dyn State<StateMachine = Self>> = match events.last() {
                 None => Box::new(State1 {}),
@@ -334,6 +448,14 @@ mod tests {
             let machine = StorableStateMachineTest { id, storage };
             Ok(RestoredMachine { machine, current_state })
         }
+
+        async fn acquire_reentrancy_lock(&self) -> Result<Self::ReentrancyLock, Self::Error> { Ok(()) }
+
+        fn spawn_reentrancy_lock_renew(&mut self, _guard: Self::ReentrancyLock) {}
+
+        fn init_additional_context(&mut self) {}
+
+        fn clean_up_context(&mut self) {}
     }
 
     struct State1 {}
@@ -430,7 +552,13 @@ mod tests {
         let RestoredMachine {
             mut machine,
             current_state,
-        } = StorableStateMachineTest::restore_from_storage(id, storage).unwrap();
+        } = block_on(StorableStateMachineTest::recreate_machine(
+            id,
+            storage,
+            TestStateMachineRepr {},
+            (),
+        ))
+        .unwrap();
 
         block_on(machine.run(current_state)).unwrap();
 

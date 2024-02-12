@@ -20,6 +20,8 @@ run-docker-tests = []
 # TODO
 enable-solana = []
 default = []
+trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
+run-device-tests = []
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
@@ -113,6 +115,7 @@ rcgen = "0.10"
 rustls = { version = "0.20", default-features = false }
 rustls-pemfile = "1.0.2"
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
+mm2_test_helpers = { path = "../mm2_test_helpers" }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"

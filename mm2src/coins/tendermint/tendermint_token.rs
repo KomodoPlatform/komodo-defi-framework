@@ -10,17 +10,18 @@ use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
             CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MyAddressError,
-            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, RawTransactionFut,
-            RawTransactionRequest, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignatureResult, SpendPaymentArgs, SwapOps,
-            TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFrom, WithdrawFut, WithdrawRequest};
-use crate::{MmCoinEnum, PaymentInstructionArgs, ValidateWatcherSpendInput, WatcherReward, WatcherRewardError};
+            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, RawTransactionError,
+            RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundError, RefundPaymentArgs,
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionErr, TransactionFut, TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFrom, WithdrawFut,
+            WithdrawRequest};
+use crate::{DexFee, MmCoinEnum, PaymentInstructionArgs, ValidateWatcherSpendInput, WatcherReward, WatcherRewardError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -268,9 +269,14 @@ impl TendermintToken {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintToken {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut {
-        self.platform_coin
-            .send_taker_fee_for_denom(fee_addr, amount, self.denom.clone(), self.decimals, uuid)
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8]) -> TransactionFut {
+        self.platform_coin.send_taker_fee_for_denom(
+            fee_addr,
+            dex_fee.fee_amount().into(),
+            self.denom.clone(),
+            self.decimals,
+            uuid,
+        )
     }
 
     fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
@@ -322,7 +328,7 @@ impl SwapOps for TendermintToken {
             validate_fee_args.fee_tx,
             validate_fee_args.expected_sender,
             validate_fee_args.fee_addr,
-            validate_fee_args.amount,
+            &validate_fee_args.dex_fee.fee_amount().into(),
             self.decimals,
             validate_fee_args.uuid,
             self.denom.to_string(),
@@ -530,6 +536,7 @@ impl WatcherOps for TendermintToken {
     }
 }
 
+#[async_trait]
 impl MarketCoinOps for TendermintToken {
     fn ticker(&self) -> &str { &self.ticker }
 
@@ -572,6 +579,13 @@ impl MarketCoinOps for TendermintToken {
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         self.platform_coin.send_raw_tx_bytes(tx)
+    }
+
+    #[inline(always)]
+    async fn sign_raw_tx(&self, _args: &SignRawTransactionRequest) -> RawTransactionResult {
+        MmError::err(RawTransactionError::NotImplemented {
+            coin: self.ticker().to_string(),
+        })
     }
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
@@ -835,7 +849,7 @@ impl MmCoin for TendermintToken {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         self.platform_coin

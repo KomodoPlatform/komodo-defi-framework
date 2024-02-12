@@ -29,8 +29,9 @@ use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
-use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime,
-                 WssCerts};
+use mm2_libp2p::behaviours::atomicdex::DEPRECATED_NETID_LIST;
+use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SeedNodeInfo,
+                 SwarmRuntime, WssCerts};
 use mm2_metrics::mm_gauge;
 use mm2_net::network_event::NetworkEvent;
 use mm2_net::p2p::P2PContext;
@@ -43,7 +44,7 @@ use std::str;
 use std::time::Duration;
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::mm2::database::init_and_migrate_db;
+use crate::mm2::database::init_and_migrate_sql_db;
 use crate::mm2::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::mm2::lp_network::{lp_network_ports, p2p_event_process_loop, NetIdError};
 use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
@@ -69,10 +70,47 @@ cfg_wasm32! {
     pub mod init_metamask;
 }
 
-const NETID_8762_SEEDNODES: [&str; 3] = [
-    "streamseed1.komodo.earth",
-    "streamseed2.komodo.earth",
-    "streamseed3.komodo.earth",
+const DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
+    SeedNodeInfo::new(
+        "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
+        "168.119.236.251",
+        "viserion.dragon-seed.com",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF",
+        "168.119.236.240",
+        "rhaegal.dragon-seed.com",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
+        "168.119.236.239",
+        "drogon.dragon-seed.com",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb",
+        "168.119.237.8",
+        "falkor.dragon-seed.com",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWEWzbYcosK2JK9XpFXzumfgsWJW1F7BZS15yLTrhfjX2Z",
+        "65.21.51.47",
+        "smaug.dragon-seed.com",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd",
+        "135.181.34.220",
+        "balerion.dragon-seed.com",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d",
+        "168.119.237.13",
+        "kalessin.dragon-seed.com",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
+        "46.4.78.11",
+        "fr1.cipig.net",
+    ),
 ];
 
 pub type P2PResult<T> = Result<T, MmError<P2PInitError>>;
@@ -247,6 +285,7 @@ impl From<HwProcessingError<RpcTaskError>> for MmInitError {
         match e {
             HwProcessingError::HwError(hw) => MmInitError::from(hw),
             HwProcessingError::ProcessorError(rpc_task) => MmInitError::from(rpc_task),
+            HwProcessingError::InternalError(err) => MmInitError::Internal(err),
         }
     }
 }
@@ -264,9 +303,9 @@ impl MmInitError {
 #[cfg(target_arch = "wasm32")]
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
     if netid == 8762 {
-        NETID_8762_SEEDNODES
+        DEFAULT_NETID_SEEDNODES
             .iter()
-            .map(|seed| RelayAddress::Dns(seed.to_string()))
+            .map(|SeedNodeInfo { domain, .. }| RelayAddress::Dns(domain.to_string()))
             .collect()
     } else {
         Vec::new()
@@ -277,9 +316,9 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
     use crate::mm2::lp_network::addr_to_ipv4_string;
     if netid == 8762 {
-        NETID_8762_SEEDNODES
+        DEFAULT_NETID_SEEDNODES
             .iter()
-            .filter_map(|seed| addr_to_ipv4_string(seed).ok())
+            .filter_map(|SeedNodeInfo { domain, .. }| addr_to_ipv4_string(domain).ok())
             .map(RelayAddress::IPv4)
             .collect()
     } else {
@@ -416,7 +455,10 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
             .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
         ctx.init_shared_sqlite_conn()
             .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
-        init_and_migrate_db(&ctx).await?;
+        ctx.init_async_sqlite_connection()
+            .await
+            .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
+        init_and_migrate_sql_db(&ctx).await?;
         migrate_db(&ctx)?;
     }
 
@@ -511,6 +553,10 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
 pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
     let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
     let netid = ctx.netid();
+
+    if DEPRECATED_NETID_LIST.contains(&netid) {
+        return MmError::err(P2PInitError::InvalidNetId(NetIdError::Deprecated { netid }));
+    }
 
     let seednodes = seednodes(&ctx)?;
 

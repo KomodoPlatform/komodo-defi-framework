@@ -13,6 +13,7 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_msg_e
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::MakerOrderBuilder;
+use crate::mm2::lp_swap::swap_v2_common::mark_swap_as_finished;
 use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MmCoin,
@@ -748,8 +749,7 @@ impl MakerSwap {
         info!("Taker fee tx {:02x}", hash);
 
         let taker_amount = MmNumber::from(self.taker_amount.clone());
-        let fee_amount =
-            dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &taker_amount);
+        let dex_fee = dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &taker_amount);
         let other_taker_coin_htlc_pub = self.r().other_taker_coin_htlc_pub;
         let taker_coin_start_block = self.r().data.taker_coin_start_block;
 
@@ -761,7 +761,7 @@ impl MakerSwap {
                     fee_tx: &taker_fee,
                     expected_sender: &*other_taker_coin_htlc_pub,
                     fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                    amount: &fee_amount.clone().into(),
+                    dex_fee: &dex_fee,
                     min_block_number: taker_coin_start_block,
                     uuid: self.uuid.as_bytes(),
                 })
@@ -2131,6 +2131,10 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         command = c;
                     },
                     None => {
+                        if let Err(e) = mark_swap_as_finished(ctx.clone(), running_swap.uuid).await {
+                            error!("!mark_swap_finished({}): {}", uuid, e);
+                        }
+
                         if to_broadcast {
                             if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
                                 error!("!broadcast_my_swap_status({}): {}", uuid, e);

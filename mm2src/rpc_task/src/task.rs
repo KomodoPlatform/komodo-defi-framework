@@ -1,4 +1,4 @@
-use crate::handle::RpcTaskHandle;
+use crate::handle::RpcTaskHandleShared;
 use async_trait::async_trait;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
@@ -18,5 +18,5 @@ pub trait RpcTask: RpcTaskTypes + Sized + Send + 'static {
     /// The method is invoked when the task has been cancelled.
     async fn cancel(self);
 
-    async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>>;
+    async fn run(&mut self, task_handle: RpcTaskHandleShared<Self>) -> Result<Self::Item, MmError<Self::Error>>;
 }

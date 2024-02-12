@@ -12,6 +12,7 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_msg
             SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::TakerOrderBuilder;
+use crate::mm2::lp_swap::swap_v2_common::mark_swap_as_finished;
 use crate::mm2::lp_swap::taker_restart::get_command_based_on_watcher_activity;
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
                           wait_for_maker_payment_conf_duration, TakerSwapWatcherData, MAX_STARTED_AT_DIFF};
@@ -483,6 +484,10 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                         command = c;
                     },
                     None => {
+                        if let Err(e) = mark_swap_as_finished(ctx.clone(), running_swap.uuid).await {
+                            error!("!mark_swap_finished({}): {}", uuid, e);
+                        }
+
                         if to_broadcast {
                             if let Err(e) = broadcast_my_swap_status(&ctx, running_swap.uuid).await {
                                 error!("!broadcast_my_swap_status({}): {}", uuid, e);
@@ -998,7 +1003,7 @@ impl TakerSwap {
 
         let fee_to_send_dex_fee_fut = self
             .taker_coin
-            .get_fee_to_send_taker_fee(dex_fee.to_decimal(), stage.clone());
+            .get_fee_to_send_taker_fee(dex_fee.clone(), stage.clone());
         let fee_to_send_dex_fee = match fee_to_send_dex_fee_fut.await {
             Ok(fee) => fee,
             Err(e) => {
@@ -1027,7 +1032,7 @@ impl TakerSwap {
         };
 
         let params = TakerSwapPreparedParams {
-            dex_fee: dex_fee.clone(),
+            dex_fee: dex_fee.total_spend_amount(),
             fee_to_send_dex_fee: fee_to_send_dex_fee.clone(),
             taker_payment_trade_fee: taker_payment_trade_fee.clone(),
             maker_payment_spend_trade_fee: maker_payment_spend_trade_fee.clone(),
@@ -1272,7 +1277,7 @@ impl TakerSwap {
             dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &self.taker_amount);
         let fee_tx = self
             .taker_coin
-            .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), self.uuid.as_bytes())
+            .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount, self.uuid.as_bytes())
             .compat()
             .await;
         let transaction = match fee_tx {
@@ -2291,7 +2296,7 @@ impl AtomicSwap for TakerSwap {
         if self.r().taker_fee.is_none() {
             result.push(LockedAmount {
                 coin: self.taker_coin.ticker().to_owned(),
-                amount: taker_fee_amount,
+                amount: taker_fee_amount.total_spend_amount(),
                 trade_fee,
             });
         }
@@ -2356,7 +2361,7 @@ pub async fn check_balance_for_taker_swap(
         None => {
             let dex_fee = dex_fee_amount_from_taker_coin(my_coin, other_coin.ticker(), &volume);
             let fee_to_send_dex_fee = my_coin
-                .get_fee_to_send_taker_fee(dex_fee.to_decimal(), stage.clone())
+                .get_fee_to_send_taker_fee(dex_fee.clone(), stage.clone())
                 .await
                 .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
             let preimage_value = TradePreimageValue::Exact(volume.to_decimal());
@@ -2370,7 +2375,7 @@ pub async fn check_balance_for_taker_swap(
                 .await
                 .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
             TakerSwapPreparedParams {
-                dex_fee,
+                dex_fee: dex_fee.total_spend_amount(),
                 fee_to_send_dex_fee,
                 taker_payment_trade_fee,
                 maker_payment_spend_trade_fee,
@@ -2445,12 +2450,12 @@ pub async fn taker_swap_trade_preimage(
     let dex_amount = dex_fee_amount_from_taker_coin(my_coin.deref(), other_coin_ticker, &my_coin_volume);
     let taker_fee = TradeFee {
         coin: my_coin_ticker.to_owned(),
-        amount: dex_amount.clone(),
+        amount: dex_amount.total_spend_amount(),
         paid_from_trading_vol: false,
     };
 
     let fee_to_send_taker_fee = my_coin
-        .get_fee_to_send_taker_fee(dex_amount.to_decimal(), stage.clone())
+        .get_fee_to_send_taker_fee(dex_amount.clone(), stage.clone())
         .await
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, my_coin_ticker))?;
 
@@ -2466,7 +2471,7 @@ pub async fn taker_swap_trade_preimage(
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, other_coin_ticker))?;
 
     let prepared_params = TakerSwapPreparedParams {
-        dex_fee: dex_amount,
+        dex_fee: dex_amount.total_spend_amount(),
         fee_to_send_dex_fee: fee_to_send_taker_fee.clone(),
         taker_payment_trade_fee: my_coin_trade_fee.clone(),
         maker_payment_spend_trade_fee: other_coin_trade_fee.clone(),
@@ -2590,7 +2595,7 @@ pub async fn calc_max_taker_vol(
         let max_possible_2 = &max_possible - &max_trade_fee.amount;
         let max_dex_fee = dex_fee_amount_from_taker_coin(coin.deref(), other_coin, &max_possible_2);
         let max_fee_to_send_taker_fee = coin
-            .get_fee_to_send_taker_fee(max_dex_fee.to_decimal(), stage)
+            .get_fee_to_send_taker_fee(max_dex_fee.clone(), stage)
             .await
             .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin))?;
         let min_max_possible = &max_possible_2 - &max_fee_to_send_taker_fee.amount;
@@ -2601,7 +2606,7 @@ pub async fn calc_max_taker_vol(
             balance.to_fraction(),
             locked.to_fraction(),
             max_trade_fee.amount.to_fraction(),
-            max_dex_fee.to_fraction(),
+            max_dex_fee.total_spend_amount().to_fraction(),
             max_fee_to_send_taker_fee.amount.to_fraction()
         );
         max_taker_vol_from_available(min_max_possible, my_coin, other_coin, &min_tx_amount)
@@ -3078,7 +3083,7 @@ mod taker_swap_tests {
             let max_taker_vol = max_taker_vol_from_available(available.clone(), "RICK", "MORTY", &min_tx_amount)
                 .expect("!max_taker_vol_from_available");
 
-            let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &min_tx_amount);
+            let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &min_tx_amount).fee_amount();
             assert!(min_tx_amount < dex_fee);
             assert!(min_tx_amount <= max_taker_vol);
             assert_eq!(max_taker_vol + dex_fee, available);
@@ -3098,7 +3103,7 @@ mod taker_swap_tests {
             let base = if is_kmd { "KMD" } else { "RICK" };
             let max_taker_vol = max_taker_vol_from_available(available.clone(), base, "MORTY", &min_tx_amount)
                 .expect("!max_taker_vol_from_available");
-            let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &min_tx_amount);
+            let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &min_tx_amount).fee_amount();
             println!(
                 "available={:?} max_taker_vol={:?} dex_fee={:?}",
                 available.to_decimal(),

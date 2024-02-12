@@ -58,6 +58,7 @@ use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
+use hex::FromHexError;
 use http::{Response, StatusCode};
 use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{from_ctx, MmArc};
@@ -217,6 +218,7 @@ pub mod eth;
 use eth::GetValidEthWithdrawAddError;
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
           GetEthAddressError, SignedEthTx};
+use ethereum_types::U256;
 
 pub mod hd_confirm_address;
 pub mod hd_pubkey;
@@ -348,17 +350,34 @@ pub enum RawTransactionError {
     HashNotExist(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "Transaction decode error: {}", _0)]
+    DecodeError(String),
+    #[display(fmt = "Invalid param: {}", _0)]
+    InvalidParam(String),
+    #[display(fmt = "Non-existent previous output: {}", _0)]
+    NonExistentPrevOutputError(String),
+    #[display(fmt = "Signing error: {}", _0)]
+    SigningError(String),
+    #[display(fmt = "Not implemented for this coin {}", coin)]
+    NotImplemented { coin: String },
+    #[display(fmt = "Transaction error {}", _0)]
+    TransactionError(String),
 }
 
 impl HttpStatusCode for RawTransactionError {
     fn status_code(&self) -> StatusCode {
         match self {
+            RawTransactionError::Transport(_)
+            | RawTransactionError::InternalError(_)
+            | RawTransactionError::SigningError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             RawTransactionError::NoSuchCoin { .. }
             | RawTransactionError::InvalidHashError(_)
-            | RawTransactionError::HashNotExist(_) => StatusCode::BAD_REQUEST,
-            RawTransactionError::Transport(_) | RawTransactionError::InternalError(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            | RawTransactionError::HashNotExist(_)
+            | RawTransactionError::DecodeError(_)
+            | RawTransactionError::InvalidParam(_)
+            | RawTransactionError::NonExistentPrevOutputError(_)
+            | RawTransactionError::TransactionError(_) => StatusCode::BAD_REQUEST,
+            RawTransactionError::NotImplemented { .. } => StatusCode::NOT_IMPLEMENTED,
         }
     }
 }
@@ -369,6 +388,14 @@ impl From<CoinFindError> for RawTransactionError {
             CoinFindError::NoSuchCoin { coin } => RawTransactionError::NoSuchCoin { coin },
         }
     }
+}
+
+impl From<NumConversError> for RawTransactionError {
+    fn from(e: NumConversError) -> Self { RawTransactionError::InvalidParam(e.to_string()) }
+}
+
+impl From<FromHexError> for RawTransactionError {
+    fn from(e: FromHexError) -> Self { RawTransactionError::InvalidParam(e.to_string()) }
 }
 
 #[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize, SerializeErrorType)]
@@ -413,6 +440,62 @@ pub struct RawTransactionRequest {
 pub struct RawTransactionRes {
     /// Raw bytes of signed transaction in hexadecimal string, this should be return hexadecimal encoded signed transaction for get_raw_transaction
     pub tx_hex: BytesJson,
+}
+
+/// Previous utxo transaction data for signing
+#[derive(Clone, Debug, Deserialize)]
+pub struct PrevTxns {
+    /// transaction hash
+    tx_hash: String,
+    /// transaction output index
+    index: u32,
+    /// transaction output script pub key
+    script_pub_key: String,
+    // TODO: implement if needed:
+    // redeem script for P2SH script pubkey
+    // pub redeem_script: Option<String>,
+    /// transaction output amount
+    amount: BigDecimal,
+}
+
+/// sign_raw_transaction RPC request's params for signing raw utxo transactions
+#[derive(Clone, Debug, Deserialize)]
+pub struct SignUtxoTransactionParams {
+    /// unsigned utxo transaction in hex
+    tx_hex: String,
+    /// optional data of previous transactions referred by unsigned transaction inputs
+    prev_txns: Option<Vec<PrevTxns>>,
+    // TODO: add if needed for utxo:
+    // pub sighash_type: Option<String>, optional signature hash type, one of values: NONE, SINGLE, ALL, NONE|ANYONECANPAY, SINGLE|ANYONECANPAY, ALL|ANYONECANPAY (if not set 'ALL' is used)
+    // pub branch_id: Option<u32>, zcash or komodo optional consensus branch id, used for signing transactions ahead of current height
+}
+
+/// sign_raw_transaction RPC request's params for signing raw eth transactions
+#[derive(Clone, Debug, Deserialize)]
+pub struct SignEthTransactionParams {
+    /// Eth transfer value
+    value: Option<BigDecimal>,
+    /// Eth to address
+    to: Option<String>,
+    /// Eth contract data
+    data: Option<String>,
+    /// Eth gas use limit
+    gas_limit: U256,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type", content = "tx")]
+pub enum SignRawTransactionEnum {
+    UTXO(SignUtxoTransactionParams),
+    ETH(SignEthTransactionParams),
+}
+
+/// sign_raw_transaction RPC request
+#[derive(Clone, Debug, Deserialize)]
+pub struct SignRawTransactionRequest {
+    coin: String,
+    #[serde(flatten)]
+    tx: SignRawTransactionEnum,
 }
 
 #[derive(Debug, Deserialize)]
@@ -572,6 +655,10 @@ impl TransactionErr {
             TransactionErr::Plain(err) => err.to_string(),
         }
     }
+}
+
+impl From<keys::Error> for TransactionErr {
+    fn from(e: keys::Error) -> Self { TransactionErr::Plain(e.to_string()) }
 }
 
 #[derive(Debug, PartialEq)]
@@ -820,7 +907,7 @@ pub struct ValidateFeeArgs<'a> {
     pub fee_tx: &'a TransactionEnum,
     pub expected_sender: &'a [u8],
     pub fee_addr: &'a [u8],
-    pub amount: &'a BigDecimal,
+    pub dex_fee: &'a DexFee,
     pub min_block_number: u64,
     pub uuid: &'a [u8],
 }
@@ -903,7 +990,7 @@ pub enum WatcherRewardError {
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut;
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8]) -> TransactionFut;
 
     fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionFut;
 
@@ -1310,13 +1397,13 @@ pub trait ToBytes {
 /// Defines associated types specific to each coin (Pubkey, Address, etc.)
 pub trait CoinAssocTypes {
     type Pubkey: ToBytes + Send + Sync;
-    type PubkeyParseError: Send + std::fmt::Display;
+    type PubkeyParseError: fmt::Debug + Send + fmt::Display;
     type Tx: Transaction + Send + Sync;
-    type TxParseError: Send + std::fmt::Display;
+    type TxParseError: fmt::Debug + Send + fmt::Display;
     type Preimage: ToBytes + Send + Sync;
-    type PreimageParseError: Send + std::fmt::Display;
+    type PreimageParseError: fmt::Debug + Send + fmt::Display;
     type Sig: ToBytes + Send + Sync;
-    type SigParseError: Send + std::fmt::Display;
+    type SigParseError: fmt::Debug + Send + fmt::Display;
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError>;
 
@@ -1401,6 +1488,7 @@ pub trait SwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
 
 /// Operations that coins have independently from the MarketMaker.
 /// That is, things implemented by the coin wallets or public coin services.
+#[async_trait]
 pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
@@ -1440,6 +1528,9 @@ pub trait MarketCoinOps {
 
     /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
+
+    /// Signs raw utxo transaction in hexadecimal format as input and returns signed transaction in hexadecimal format
+    async fn sign_raw_tx(&self, args: &SignRawTransactionRequest) -> RawTransactionResult;
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
@@ -1981,7 +2072,8 @@ impl NumConversError {
     pub fn description(&self) -> &str { &self.0 }
 }
 
-#[derive(Clone, Debug, Display, PartialEq, Serialize)]
+#[derive(Clone, Debug, Display, PartialEq, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum BalanceError {
     #[display(fmt = "Transport: {}", _0)]
     Transport(String),
@@ -2673,7 +2765,7 @@ pub trait MmCoin:
     /// Get transaction fee the Taker has to pay to send a `TakerFee` transaction and check if the wallet has sufficient balance to pay the fee.
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee>;
 
@@ -2948,6 +3040,72 @@ impl MmCoinStruct {
         }
 
         self.is_available.store(to, AtomicOrdering::SeqCst);
+    }
+}
+
+/// Represents the different types of DEX fees.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DexFee {
+    /// Standard dex fee which will be sent to the dex fee address
+    Standard(MmNumber),
+    /// Dex fee with the burn amount.
+    ///   - `fee_amount` goes to the dex fee address.
+    ///   - `burn_amount` will be added as `OP_RETURN` output in the dex fee transaction.
+    WithBurn {
+        fee_amount: MmNumber,
+        burn_amount: MmNumber,
+    },
+}
+
+impl DexFee {
+    /// Creates a new `DexFee` with burn amounts.
+    pub fn with_burn(fee_amount: MmNumber, burn_amount: MmNumber) -> DexFee {
+        DexFee::WithBurn {
+            fee_amount,
+            burn_amount,
+        }
+    }
+
+    /// Gets the fee amount associated with the dex fee.
+    pub fn fee_amount(&self) -> MmNumber {
+        match self {
+            DexFee::Standard(t) => t.clone(),
+            DexFee::WithBurn { fee_amount, .. } => fee_amount.clone(),
+        }
+    }
+
+    /// Gets the burn amount associated with the dex fee, if applicable.
+    pub fn burn_amount(&self) -> Option<MmNumber> {
+        match self {
+            DexFee::Standard(_) => None,
+            DexFee::WithBurn { burn_amount, .. } => Some(burn_amount.clone()),
+        }
+    }
+
+    /// Calculates the total spend amount, considering both the fee and burn amounts.
+    pub fn total_spend_amount(&self) -> MmNumber {
+        match self {
+            DexFee::Standard(t) => t.clone(),
+            DexFee::WithBurn {
+                fee_amount,
+                burn_amount,
+            } => fee_amount + burn_amount,
+        }
+    }
+
+    /// Converts the fee amount to micro-units based on the specified decimal places.
+    pub fn fee_uamount(&self, decimals: u8) -> NumConversResult<u64> {
+        let fee_amount = self.fee_amount();
+        utxo::sat_from_big_decimal(&fee_amount.into(), decimals)
+    }
+
+    /// Converts the burn amount to micro-units, if applicable, based on the specified decimal places.
+    pub fn burn_uamount(&self, decimals: u8) -> NumConversResult<Option<u64>> {
+        if let Some(burn_amount) = self.burn_amount() {
+            Ok(Some(utxo::sat_from_big_decimal(&burn_amount.into(), decimals)?))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -3808,6 +3966,11 @@ pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> Verificatio
     Ok(VerificationResponse { is_valid })
 }
 
+pub async fn sign_raw_transaction(ctx: MmArc, req: SignRawTransactionRequest) -> RawTransactionResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    coin.sign_raw_tx(&req).await
+}
+
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
@@ -4100,7 +4263,7 @@ struct ConvertUtxoAddressReq {
 
 pub async fn convert_utxo_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: ConvertUtxoAddressReq = try_s!(json::from_value(req));
-    let mut addr: utxo::Address = try_s!(req.address.parse());
+    let mut addr: utxo::LegacyAddress = try_s!(req.address.parse()); // Only legacy addresses supported as source
     let coin = match lp_coinfind(&ctx, &req.to_coin).await {
         Ok(Some(c)) => c,
         _ => return ERR!("Coin {} is not activated", req.to_coin),
@@ -4109,8 +4272,7 @@ pub async fn convert_utxo_address(ctx: MmArc, req: Json) -> Result<Response<Vec<
         MmCoinEnum::UtxoCoin(utxo) => utxo,
         _ => return ERR!("Coin {} is not utxo", req.to_coin),
     };
-    addr.prefix = coin.as_ref().conf.pub_addr_prefix;
-    addr.t_addr_prefix = coin.as_ref().conf.pub_t_addr_prefix;
+    addr.prefix = coin.as_ref().conf.address_prefixes.p2pkh.clone();
     addr.checksum_type = coin.as_ref().conf.checksum_type;
 
     let response = try_s!(json::to_vec(&json!({

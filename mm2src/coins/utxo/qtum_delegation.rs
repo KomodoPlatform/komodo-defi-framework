@@ -20,7 +20,6 @@ use keys::{AddressHashEnum, Signature};
 use mm2_err_handle::prelude::*;
 use mm2_number::bigdecimal::{BigDecimal, Zero};
 use rpc::v1::types::ToTxHash;
-use script::Builder as ScriptBuilder;
 use serialization::serialize;
 use std::convert::TryInto;
 use std::str::FromStr;
@@ -219,7 +218,7 @@ impl QtumCoin {
                 amount,
                 staker,
                 am_i_staking,
-                is_staking_supported: !my_address.addr_format.is_segwit(),
+                is_staking_supported: !my_address.addr_format().is_segwit(),
             }
             .into(),
         };
@@ -235,14 +234,14 @@ impl QtumCoin {
         if let Some(staking_addr) = self.am_i_currently_staking().await? {
             return MmError::err(DelegationError::AlreadyDelegating(staking_addr));
         }
-        let to_addr =
-            Address::from_str(request.address.as_str()).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
+        let to_addr = Address::from_legacyaddress(request.address.as_str(), &self.as_ref().conf.address_prefixes)
+            .map_to_mm(DelegationError::AddressError)?;
         let fee = request.fee.unwrap_or(QTUM_DELEGATION_STANDARD_FEE);
         let _utxo_lock = UTXO_LOCK.lock();
         let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone())?;
         let delegation_output = self.add_delegation_output(
             staker_address_hex,
-            to_addr.hash,
+            to_addr.hash().clone(),
             fee,
             QRC20_GAS_LIMIT_DELEGATION,
             QRC20_GAS_PRICE_DEFAULT,
@@ -290,7 +289,9 @@ impl QtumCoin {
                 DelegationError::from_generate_tx_error(gen_tx_error, self.ticker().to_string(), utxo.decimals)
             })?;
 
-        let prev_script = ScriptBuilder::build_p2pkh(&my_address.hash);
+        let prev_script = self
+            .script_for_address(my_address)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
         let signed = sign_tx(
             unsigned,
             key_pair,

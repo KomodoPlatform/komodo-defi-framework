@@ -627,7 +627,8 @@ mod tests {
     use bytes::Bytes;
     use chain::{OutPoint, Transaction, TransactionOutput};
     use hash::{H160, H256};
-    use keys::{Address, AddressHashEnum, Private};
+    use keys::{prefixes::{BTC_PREFIXES, T_BTC_PREFIXES},
+               Address, AddressHashEnum, Private};
     use script::Script;
     use ser::deserialize;
     use sign::SignerHashAlgo;
@@ -641,8 +642,8 @@ mod tests {
         let previous_tx_hash =
             H256::from_reversed_str("81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48");
         let previous_output_index = 0;
-        let to: Address = "1KKKK6N21XKo48zWKuQKXdvSsCf95ibHFa".into();
-        assert!(to.hash.is_address_hash());
+        let to: Address = Address::from_legacyaddress("1KKKK6N21XKo48zWKuQKXdvSsCf95ibHFa", &BTC_PREFIXES).unwrap();
+        assert!(to.hash().is_address_hash());
         let previous_output = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
         let current_output: Bytes = "76a914c8e90996c7c6080ee06284600c684ed904d14c5c88ac".into();
         let value = 91234;
@@ -650,8 +651,8 @@ mod tests {
 
         // this is irrelevant
         let mut hash = H160::default();
-        if let AddressHashEnum::AddressHash(h) = to.hash {
-            hash = h;
+        if let AddressHashEnum::AddressHash(h) = to.hash() {
+            hash = *h;
         }
         assert_eq!(&current_output[3..23], &*hash);
 
@@ -700,8 +701,8 @@ mod tests {
         let previous_tx_hash =
             H256::from_reversed_str("0bc54ed426950f50bf2c2776034a03592e844757b42330eb908eb04492dad2c6");
         let previous_output_index = 1;
-        let to: Address = "msj7SEQmH7pUCUx8YU6R87DrAHYzcABdzw".into();
-        assert!(to.hash.is_address_hash());
+        let to: Address = Address::from_legacyaddress("msj7SEQmH7pUCUx8YU6R87DrAHYzcABdzw", &T_BTC_PREFIXES).unwrap();
+        assert!(to.hash().is_address_hash());
         let previous_output = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
         let current_output: Bytes = "76a91485ee21a7f8cdd9034fb55004e0d8ed27db1c03c288ac".into();
         let value = 100000000;

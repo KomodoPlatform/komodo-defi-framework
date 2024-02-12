@@ -33,6 +33,7 @@ pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, PublicKey a
 pub use libp2p::{Multiaddr, PeerId};
 
 // relay-address related re-exports
+pub use network::SeedNodeInfo;
 pub use relay_address::RelayAddress;
 pub use relay_address::RelayAddressError;
 
@@ -41,7 +42,7 @@ lazy_static! {
     static ref SECP_SIGN: Secp256k1<SignOnly> = Secp256k1::signing_only();
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum NetworkInfo {
     /// The in-memory network.
     InMemory,
@@ -53,7 +54,7 @@ impl NetworkInfo {
     pub fn in_memory(&self) -> bool { matches!(self, NetworkInfo::InMemory) }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct NetworkPorts {
     pub tcp: u16,
     pub wss: u16,
@@ -78,9 +79,11 @@ struct SignedMessageSerdeHelper<'a> {
 }
 
 pub fn encode_and_sign<T: Serialize>(message: &T, secret: &[u8; 32]) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-    let secret = SecretKey::from_slice(secret).unwrap();
+    let secret = SecretKey::from_slice(secret)
+        .map_err(|e| rmp_serde::encode::Error::Syntax(format!("Error {} parsing secret", e)))?;
     let encoded = encode_message(message)?;
-    let sig_hash = SecpMessage::from_slice(&sha256(&encoded)).expect("Message::from_slice should never fail");
+    let sig_hash = SecpMessage::from_slice(&sha256(&encoded))
+        .map_err(|e| rmp_serde::encode::Error::Syntax(format!("Error {} parsing message", e)))?;
     let sig = SECP_SIGN.sign(&sig_hash, &secret);
     let serialized_sig = sig.serialize_compact();
     let pubkey = PublicKey::from(Secp256k1Pubkey::from_secret_key(&*SECP_SIGN, &secret));

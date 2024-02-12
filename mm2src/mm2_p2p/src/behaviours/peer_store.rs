@@ -23,6 +23,9 @@ pub struct Connection {
 }
 
 /// A request/response protocol for some message codec.
+///
+/// TODO: implement a scoring algorithm of peers depending on
+/// their activities/connections.
 #[derive(Default)]
 pub struct Behaviour {
     /// The currently connected peers, their pending outbound and inbound responses and their known,

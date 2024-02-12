@@ -261,7 +261,7 @@ fn start_swaps_and_get_balances(
 }
 
 fn check_actual_events(mm_alice: &MarketMakerIt, uuid: &str, expected_events: &[&'static str]) -> Value {
-    let status_response = block_on(my_swap_status(mm_alice, uuid));
+    let status_response = block_on(my_swap_status(mm_alice, uuid)).unwrap();
     let events_array = status_response["result"]["events"].as_array().unwrap();
     let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
     let actual_events: Vec<&str> = actual_events.collect();
@@ -738,8 +738,9 @@ fn test_watcher_spends_maker_payment_eth_utxo() {
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
     let min_tx_amount = BigDecimal::from_str("0.00001").unwrap().into();
 
-    let dex_fee: BigDecimal =
-        dex_fee_amount("MYCOIN", "ETH", &MmNumber::from(mycoin_volume.clone()), &min_tx_amount).into();
+    let dex_fee: BigDecimal = dex_fee_amount("MYCOIN", "ETH", &MmNumber::from(mycoin_volume.clone()), &min_tx_amount)
+        .fee_amount()
+        .into();
     let alice_mycoin_reward_sent = balances.alice_acoin_balance_before
         - balances.alice_acoin_balance_after.clone()
         - mycoin_volume.clone()
@@ -878,8 +879,9 @@ fn test_watcher_spends_maker_payment_erc20_utxo() {
     let jst_volume = BigDecimal::from_str("1").unwrap();
 
     let min_tx_amount = BigDecimal::from_str("0.00001").unwrap().into();
-    let dex_fee: BigDecimal =
-        dex_fee_amount("MYCOIN", "JST", &MmNumber::from(mycoin_volume.clone()), &min_tx_amount).into();
+    let dex_fee: BigDecimal = dex_fee_amount("MYCOIN", "JST", &MmNumber::from(mycoin_volume.clone()), &min_tx_amount)
+        .fee_amount()
+        .into();
     let alice_mycoin_reward_sent = balances.alice_acoin_balance_before
         - balances.alice_acoin_balance_after.clone()
         - mycoin_volume.clone()
@@ -1130,7 +1132,7 @@ fn test_watcher_validate_taker_fee_utxo() {
     let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, maker_coin.ticker(), &taker_amount);
 
     let taker_fee = taker_coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), Uuid::new_v4().as_bytes())
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount, Uuid::new_v4().as_bytes())
         .wait()
         .unwrap();
 
@@ -1251,7 +1253,7 @@ fn test_watcher_validate_taker_fee_eth() {
     let taker_amount = MmNumber::from((1, 1));
     let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, "ETH", &taker_amount);
     let taker_fee = taker_coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), Uuid::new_v4().as_bytes())
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount, Uuid::new_v4().as_bytes())
         .wait()
         .unwrap();
 
@@ -1354,7 +1356,7 @@ fn test_watcher_validate_taker_fee_erc20() {
     let taker_amount = MmNumber::from((1, 1));
     let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, "ETH", &taker_amount);
     let taker_fee = taker_coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), Uuid::new_v4().as_bytes())
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount, Uuid::new_v4().as_bytes())
         .wait()
         .unwrap();
 

@@ -29,12 +29,12 @@ void = "1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 instant = "0.1.12"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.1", default-features = false, features = ["dns", "identify", "floodsub", "gossipsub", "noise", "ping", "request-response", "secp256k1", "tcp", "tokio", "websocket", "macros", "yamux"] }
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.2", default-features = false, features = ["dns", "identify", "floodsub", "gossipsub", "noise", "ping", "request-response", "secp256k1", "tcp", "tokio", "websocket", "macros", "yamux"] }
 tokio = { version = "1.20",  default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.1", default-features = false, features = ["identify", "floodsub", "noise", "gossipsub", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket", "macros", "yamux"] }
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.2", default-features = false, features = ["identify", "floodsub", "noise", "gossipsub", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket", "macros", "yamux"] }
 
 [dev-dependencies]
 async-std = "1.6.2"

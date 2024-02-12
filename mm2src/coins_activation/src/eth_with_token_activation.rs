@@ -28,7 +28,8 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
         match err {
             EthActivationV2Error::InvalidPayload(e)
             | EthActivationV2Error::InvalidSwapContractAddr(e)
-            | EthActivationV2Error::InvalidFallbackSwapContract(e) => {
+            | EthActivationV2Error::InvalidFallbackSwapContract(e)
+            | EthActivationV2Error::ErrorDeserializingDerivationPath(e) => {
                 EnablePlatformCoinWithTokensError::InvalidPayload(e)
             },
             #[cfg(target_arch = "wasm32")]
@@ -44,11 +45,11 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::CouldNotFetchBalance(e) | EthActivationV2Error::UnreachableNodes(e) => {
                 EnablePlatformCoinWithTokensError::Transport(e)
             },
-            EthActivationV2Error::ErrorDeserializingDerivationPath(e) => {
-                EnablePlatformCoinWithTokensError::InvalidPayload(e)
-            },
             EthActivationV2Error::PrivKeyPolicyNotAllowed(e) => {
                 EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(e)
+            },
+            EthActivationV2Error::FailedSpawningBalanceEvents(e) => {
+                EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(e)
             },
             #[cfg(target_arch = "wasm32")]
             EthActivationV2Error::MetamaskError(metamask) => {

@@ -1,7 +1,11 @@
 use crate::eth::GetEthAddressError;
-use crate::nft::storage::{CreateNftStorageError, NftStorageError};
-use crate::{GetMyAddressError, WithdrawError};
+#[cfg(target_arch = "wasm32")]
+use crate::nft::storage::wasm::WasmNftCacheError;
+use crate::nft::storage::NftStorageError;
+use crate::{CoinFindError, GetMyAddressError, WithdrawError};
 use common::{HttpStatusCode, ParseRfc3339Err};
+#[cfg(not(target_arch = "wasm32"))]
+use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
 use enum_from::EnumFromStringify;
 use http::StatusCode;
@@ -38,6 +42,7 @@ pub enum GetNftInfoError {
     #[display(fmt = "The contract type is required and should not be null.")]
     ContractTypeIsNull,
     ProtectFromSpamError(ProtectFromSpamError),
+    TransferConfirmationsError(TransferConfirmationsError),
 }
 
 impl From<GetNftInfoError> for WithdrawError {
@@ -73,14 +78,6 @@ impl From<GetEthAddressError> for GetNftInfoError {
     fn from(e: GetEthAddressError) -> Self { GetNftInfoError::GetEthAddressError(e) }
 }
 
-impl From<CreateNftStorageError> for GetNftInfoError {
-    fn from(e: CreateNftStorageError) -> Self {
-        match e {
-            CreateNftStorageError::Internal(err) => GetNftInfoError::Internal(err),
-        }
-    }
-}
-
 impl<T: NftStorageError> From<T> for GetNftInfoError {
     fn from(err: T) -> Self { GetNftInfoError::DbError(format!("{:?}", err)) }
 }
@@ -104,6 +101,14 @@ impl From<ProtectFromSpamError> for GetNftInfoError {
     fn from(e: ProtectFromSpamError) -> Self { GetNftInfoError::ProtectFromSpamError(e) }
 }
 
+impl From<LockDBError> for GetNftInfoError {
+    fn from(e: LockDBError) -> Self { GetNftInfoError::DbError(e.to_string()) }
+}
+
+impl From<TransferConfirmationsError> for GetNftInfoError {
+    fn from(e: TransferConfirmationsError) -> Self { GetNftInfoError::TransferConfirmationsError(e) }
+}
+
 impl HttpStatusCode for GetNftInfoError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -115,7 +120,8 @@ impl HttpStatusCode for GetNftInfoError {
             | GetNftInfoError::GetEthAddressError(_)
             | GetNftInfoError::TokenNotFoundInWallet { .. }
             | GetNftInfoError::DbError(_)
-            | GetNftInfoError::ProtectFromSpamError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | GetNftInfoError::ProtectFromSpamError(_)
+            | GetNftInfoError::TransferConfirmationsError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -184,14 +190,14 @@ pub enum UpdateNftError {
     #[from_stringify("serde_json::Error")]
     SerdeError(String),
     ProtectFromSpamError(ProtectFromSpamError),
-}
-
-impl From<CreateNftStorageError> for UpdateNftError {
-    fn from(e: CreateNftStorageError) -> Self {
-        match e {
-            CreateNftStorageError::Internal(err) => UpdateNftError::Internal(err),
-        }
-    }
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin {
+        coin: String,
+    },
+    #[display(fmt = "{} coin doesn't support NFT", coin)]
+    CoinDoesntSupportNft {
+        coin: String,
+    },
 }
 
 impl From<GetNftInfoError> for UpdateNftError {
@@ -218,6 +224,18 @@ impl From<ProtectFromSpamError> for UpdateNftError {
     fn from(e: ProtectFromSpamError) -> Self { UpdateNftError::ProtectFromSpamError(e) }
 }
 
+impl From<LockDBError> for UpdateNftError {
+    fn from(e: LockDBError) -> Self { UpdateNftError::DbError(e.to_string()) }
+}
+
+impl From<CoinFindError> for UpdateNftError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => UpdateNftError::NoSuchCoin { coin },
+        }
+    }
+}
+
 impl HttpStatusCode for UpdateNftError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -234,7 +252,9 @@ impl HttpStatusCode for UpdateNftError {
             | UpdateNftError::UpdateSpamPhishingError(_)
             | UpdateNftError::GetInfoFromUriError(_)
             | UpdateNftError::SerdeError(_)
-            | UpdateNftError::ProtectFromSpamError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | UpdateNftError::ProtectFromSpamError(_)
+            | UpdateNftError::NoSuchCoin { .. }
+            | UpdateNftError::CoinDoesntSupportNft { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -309,4 +329,40 @@ pub(crate) enum MetaFromUrlError {
 
 impl From<GetInfoFromUriError> for MetaFromUrlError {
     fn from(e: GetInfoFromUriError) -> Self { MetaFromUrlError::GetInfoFromUriError(e) }
+}
+
+#[derive(Debug, Display)]
+pub enum LockDBError {
+    #[cfg(target_arch = "wasm32")]
+    WasmNftCacheError(WasmNftCacheError),
+    #[cfg(not(target_arch = "wasm32"))]
+    SqlError(SqlError),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<SqlError> for LockDBError {
+    fn from(e: SqlError) -> Self { LockDBError::SqlError(e) }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl From<WasmNftCacheError> for LockDBError {
+    fn from(e: WasmNftCacheError) -> Self { LockDBError::WasmNftCacheError(e) }
+}
+
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum TransferConfirmationsError {
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
+    #[display(fmt = "{} coin doesn't support NFT", coin)]
+    CoinDoesntSupportNft { coin: String },
+    #[display(fmt = "Get current block error: {}", _0)]
+    GetCurrentBlockErr(String),
+}
+
+impl From<CoinFindError> for TransferConfirmationsError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => TransferConfirmationsError::NoSuchCoin { coin },
+        }
+    }
 }

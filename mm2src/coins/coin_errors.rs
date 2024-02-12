@@ -81,6 +81,10 @@ impl From<Web3RpcError> for ValidatePaymentError {
     }
 }
 
+impl From<keys::Error> for ValidatePaymentError {
+    fn from(err: keys::Error) -> Self { Self::InternalError(err.to_string()) }
+}
+
 #[derive(Debug, Display)]
 pub enum MyAddressError {
     UnexpectedDerivationMethod(String),

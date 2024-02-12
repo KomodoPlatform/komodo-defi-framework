@@ -10,16 +10,17 @@ use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinProtocol,
-            CoinWithDerivationMethod, ConfirmPaymentInput, IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum,
+            CoinWithDerivationMethod, ConfirmPaymentInput, DexFee, IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, RefundError, RefundPaymentArgs,
-            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
-            SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradePreimageValue, TransactionFut,
-            TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
+            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundError,
+            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps,
+            TakerSwapMakerCoin, TradePreimageValue, TransactionFut, TransactionResult, TransactionType, TxFeeDetails,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawFut};
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
 use derive_more::Display;
@@ -156,11 +157,7 @@ impl BchCoin {
 
     pub fn slp_address(&self, address: &Address) -> Result<CashAddress, String> {
         let conf = &self.as_ref().conf;
-        address.to_cashaddress(
-            &self.slp_prefix().to_string(),
-            conf.pub_addr_prefix,
-            conf.p2sh_addr_prefix,
-        )
+        address.to_cashaddress(&self.slp_prefix().to_string(), &conf.address_prefixes)
     }
 
     pub fn bchd_urls(&self) -> &[String] { &self.bchd_urls }
@@ -347,11 +344,8 @@ impl BchCoin {
 
     pub fn get_my_slp_address(&self) -> Result<CashAddress, String> {
         let my_address = try_s!(self.as_ref().derivation_method.single_addr_or_err());
-        let slp_address = my_address.to_cashaddress(
-            &self.slp_prefix().to_string(),
-            self.as_ref().conf.pub_addr_prefix,
-            self.as_ref().conf.p2sh_addr_prefix,
-        )?;
+        let slp_address =
+            my_address.to_cashaddress(&self.slp_prefix().to_string(), &self.as_ref().conf.address_prefixes)?;
         Ok(slp_address)
     }
 
@@ -758,6 +752,10 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::checked_address_from_str(self, address)
     }
 
+    fn script_for_address(&self, address: &Address) -> MmResult<Script, UnsupportedAddr> {
+        utxo_common::output_script_checked(self.as_ref(), address)
+    }
+
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
         utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::Standard).await
     }
@@ -828,8 +826,7 @@ impl UtxoCommonOps for BchCoin {
         let addr_format = self.addr_format().clone();
         utxo_common::address_from_pubkey(
             pubkey,
-            conf.pub_addr_prefix,
-            conf.pub_t_addr_prefix,
+            conf.address_prefixes.clone(),
             conf.checksum_type,
             conf.bech32_hrp.clone(),
             addr_format,
@@ -840,8 +837,8 @@ impl UtxoCommonOps for BchCoin {
 #[async_trait]
 impl SwapOps for BchCoin {
     #[inline]
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
-        utxo_common::send_taker_fee(self.clone(), fee_addr, amount)
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8]) -> TransactionFut {
+        utxo_common::send_taker_fee(self.clone(), fee_addr, dex_fee)
     }
 
     #[inline]
@@ -884,7 +881,7 @@ impl SwapOps for BchCoin {
             tx,
             utxo_common::DEFAULT_FEE_VOUT,
             validate_fee_args.expected_sender,
-            validate_fee_args.amount,
+            validate_fee_args.dex_fee,
             validate_fee_args.min_block_number,
             validate_fee_args.fee_addr,
         )
@@ -1137,6 +1134,7 @@ impl WatcherOps for BchCoin {
     }
 }
 
+#[async_trait]
 impl MarketCoinOps for BchCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
@@ -1181,6 +1179,11 @@ impl MarketCoinOps for BchCoin {
     #[inline(always)]
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
+    }
+
+    #[inline(always)]
+    async fn sign_raw_tx(&self, args: &SignRawTransactionRequest) -> RawTransactionResult {
+        utxo_common::sign_raw_tx(self, args).await
     }
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
@@ -1268,7 +1271,7 @@ impl MmCoin for BchCoin {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
+        dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         utxo_common::get_fee_to_send_taker_fee(self, dex_fee_amount, stage).await

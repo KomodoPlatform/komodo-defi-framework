@@ -17,6 +17,7 @@ use crate::{tendermint::TendermintCommons, utxo::utxo_common::big_decimal_from_s
 #[async_trait]
 impl EventBehaviour for TendermintCoin {
     const EVENT_NAME: &'static str = "COIN_BALANCE";
+    const ERROR_EVENT_NAME: &'static str = "COIN_BALANCE_ERROR";
 
     async fn handle(self, _interval: f64, tx: oneshot::Sender<EventInitStatus>) {
         fn generate_subscription_query(query_filter: String) -> String {
@@ -114,12 +115,21 @@ impl EventBehaviour for TendermintCoin {
                         })
                         .collect();
 
+                    let mut balance_updates = vec![];
                     for denom in denoms {
                         if let Some((ticker, decimals)) = self.active_ticker_and_decimals_from_denom(&denom) {
                             let balance_denom = match self.account_balance_for_denom(&self.account_id, denom).await {
                                 Ok(balance_denom) => balance_denom,
                                 Err(e) => {
-                                    log::error!("{e}");
+                                    log::error!("Failed getting balance for '{ticker}'. Error: {e}");
+                                    let e = serde_json::to_value(e).expect("Serialization should't fail.");
+                                    ctx.stream_channel_controller
+                                        .broadcast(Event::new(
+                                            format!("{}:{}", Self::ERROR_EVENT_NAME, ticker),
+                                            e.to_string(),
+                                        ))
+                                        .await;
+
                                     continue;
                                 },
                             };
@@ -139,16 +149,21 @@ impl EventBehaviour for TendermintCoin {
                             }
 
                             if broadcast {
-                                let payload = json!({
+                                balance_updates.push(json!({
                                     "ticker": ticker,
                                     "balance": { "spendable": balance_decimal, "unspendable": BigDecimal::default() }
-                                });
-
-                                ctx.stream_channel_controller
-                                    .broadcast(Event::new(Self::EVENT_NAME.to_string(), payload.to_string()))
-                                    .await;
+                                }));
                             }
                         }
+                    }
+
+                    if !balance_updates.is_empty() {
+                        ctx.stream_channel_controller
+                            .broadcast(Event::new(
+                                Self::EVENT_NAME.to_string(),
+                                json!(balance_updates).to_string(),
+                            ))
+                            .await;
                     }
                 }
             }

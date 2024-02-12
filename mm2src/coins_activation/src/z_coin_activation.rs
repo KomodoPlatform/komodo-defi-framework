@@ -1,7 +1,7 @@
 use crate::context::CoinsActivationContext;
 use crate::prelude::*;
 use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinError,
-                             InitStandaloneCoinInitialStatus, InitStandaloneCoinTaskHandle,
+                             InitStandaloneCoinInitialStatus, InitStandaloneCoinTaskHandleShared,
                              InitStandaloneCoinTaskManagerShared};
 use async_trait::async_trait;
 use coins::coin_balance::{CoinBalanceReport, IguanaWalletBalance};
@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 pub type ZcoinTaskManagerShared = InitStandaloneCoinTaskManagerShared<ZCoin>;
-pub type ZcoinRpcTaskHandle = InitStandaloneCoinTaskHandle<ZCoin>;
+pub type ZcoinRpcTaskHandleShared = InitStandaloneCoinTaskHandleShared<ZCoin>;
 pub type ZcoinAwaitingStatus = HwRpcTaskAwaitingStatus;
 pub type ZcoinUserAction = HwRpcTaskUserAction;
 
@@ -227,7 +227,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         coin_conf: Json,
         activation_request: &ZcoinActivationParams,
         protocol_info: ZcoinProtocolInfo,
-        task_handle: &ZcoinRpcTaskHandle,
+        task_handle: ZcoinRpcTaskHandleShared,
     ) -> MmResult<Self, ZcoinInitError> {
         // When `ZCoin` supports Trezor, we'll need to check [`ZcoinActivationParams::priv_key_policy`]
         // instead of using [`PrivKeyBuildPolicy::detect_priv_key_policy`].
@@ -276,7 +276,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
     async fn get_activation_result(
         &self,
         _ctx: MmArc,
-        task_handle: &ZcoinRpcTaskHandle,
+        task_handle: ZcoinRpcTaskHandleShared,
         _activation_request: &Self::ActivationRequest,
     ) -> MmResult<Self::ActivationResult, ZcoinInitError> {
         task_handle.update_in_progress_status(ZcoinInProgressStatus::RequestingWalletBalance)?;

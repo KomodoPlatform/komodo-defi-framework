@@ -58,7 +58,7 @@ impl From<bech32::Error> for Error {
 
 /// The different types of segwit addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AddressType {
+pub enum SegwitAddrType {
     P2wpkh,
     /// pay-to-witness-script-hash
     P2wsh,
@@ -86,12 +86,12 @@ impl SegwitAddress {
 
     /// Get the address type of the address.
     /// None if unknown or non-standard.
-    pub fn address_type(&self) -> Option<AddressType> {
+    pub fn address_type(&self) -> Option<SegwitAddrType> {
         // BIP-141 p2wpkh or p2wsh addresses.
         match self.version.to_u8() {
             0 => match self.program.len() {
-                20 => Some(AddressType::P2wpkh),
-                32 => Some(AddressType::P2wsh),
+                20 => Some(SegwitAddrType::P2wpkh),
+                32 => Some(SegwitAddrType::P2wsh),
                 _ => None,
             },
             _ => None,
@@ -211,7 +211,7 @@ mod tests {
         let hrp = "bc";
         let addr = SegwitAddress::new(&AddressHashEnum::AddressHash(hash), hrp.to_string());
         assert_eq!(&addr.to_string(), "bc1qvzvkjn4q3nszqxrv3nraga2r822xjty3ykvkuw");
-        assert_eq!(addr.address_type(), Some(AddressType::P2wpkh));
+        assert_eq!(addr.address_type(), Some(SegwitAddrType::P2wpkh));
     }
 
     #[test]
@@ -225,7 +225,7 @@ mod tests {
             &addr.to_string(),
             "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"
         );
-        assert_eq!(addr.address_type(), Some(AddressType::P2wsh));
+        assert_eq!(addr.address_type(), Some(SegwitAddrType::P2wsh));
     }
 
     #[test]

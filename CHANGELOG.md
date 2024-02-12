@@ -1,3 +1,57 @@
+## v2.0.0-beta - 2023-12-15
+**Features:**
+- KMD Burn [#2010](https://github.com/KomodoPlatform/komodo-defi-framework/issues/2010)
+  - Burn 25% of taker fee when paid in KMD [#2006](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2006).
+- Trading Protocol Upgrade [#1895](https://github.com/KomodoPlatform/atomicDEX-API/issues/1895)
+  - Implement successful swaps v2 of UTXO to UTXO coins in [#1958](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1958).
+  - Add Swaps V2 message exchange using Protobuf in [#1958](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1958).
+  - Storing upgraded swaps data to SQLite DB was partially implemented in [#1980](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1980).
+  - Protocol enhancement for UTXO coins by adding one more funding tx for taker, which can be reclaimed immediately if maker back-outs was implemented in [#1980](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1980).
+- Event Streaming [#1901](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1901)
+  - Streaming channels using mpsc and SSE to send data to clients continuously was implemented in [#1945](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1945).
+  - NETWORK event was implemented to show this new functionality in [#1945](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1945).
+  - Wasm event streaming using workers was added in [#1978](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1978).
+  - `COIN_BALANCE` events for Tendermint Protocol were added in [#1978](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1978).
+
+**Enhancements/Fixes:**
+- Network Enhancements:
+  - P2P layer now uses the latest stable libp2p version in [#1878](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1878).
+  - `7777` network was deprecated in [#2020](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2020).
+  - Seednodes for `netid` `8762` were updated in [#2024](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2024).
+  - `libp2p-yamux` now uses yamux `v0.13` (new version) by default and fall back to yamux `v0.12` (old version) when setting any configuration options in [#2030](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2030).
+  - The backpressure buffer cap was increased from `25` to `256` in [#2030](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2030).
+  - New protocol version (Version2) was used for peer exchange and request-response behaviours in [#2030](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2030).
+  - Network information is now written to stdout to find mm2 ports easily after [#2034](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2034).
+- NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
+  - `exclude_spam` and `exclude_phishing` params were added for `get_nft_list` and `get_nft_transfers` RPCs in [#1959](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1959).
+  - `nft_cache_db` was added in `NftCtx` for non wasm targets in [#1989](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1989).
+  - `AsyncConnection` structure that can be used as async wrapper for sqlite connection was added in [#1989](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1989).
+  - `async_sqlite_connection` field was added to `MmCtx` in [#1989](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1989).
+  - Spam transfers with empty meta no longer update after [#1989](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1989).
+- ARRR/Pirate:
+  - ARRR infrastructure for lightwallet servers uses a fork of lightwalletd, the grpc service was renamed `from cash.z.wallet.sdk.rpc` to `pirate.wallet.sdk.rpc` to use the lightwalletd fork in [#1963](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1963).
+  - Previous blocks/wallet sync will be resumed if `sync_params` are not provided after restart in [#1967](https://github.com/KomodoPlatform/atomicDEX-API/issues/1967).
+- Adex-CLI [#1682](https://github.com/KomodoPlatform/atomicDEX-API/issues/1682)
+  - Exact dependency versions of `hyper-rustls`, `rustls` and other deps was set in [#1956](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1956).
+  - A warning was added on insecure cli configuration file mode in [#1956](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1956).
+- Storable State Machine abstraction was added while having few changes to existing state machines in [#1958](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1958).
+- EVM web3 requests timeout was reduced to 20s in [#1973](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1973).
+- Fixed 0.0001 min threshold for TakerFee was removed in [#1971](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1971).
+- The minimum trading volume for evm and tendermint was changed to be the smallest possible amount of the coin in [#1971](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1971).
+- Minimum trading price is reduced to be any value above 0 in [#1971](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1971).
+- Cryptocondition script type was added to utxo transactions in [#1991](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1991).
+- On response error the next web3 node is tried in [#1998](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1998).
+- Watchtower taker-side restart bug was fixed in [#1908](https://github.com/KomodoPlatform/komodo-defi-framework/pull/1908).
+- 'version' method was added to `PUBLIC_METHODS` that require no login in [#2001](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2001).
+- `rpcport` value can now accept a string after [#2026](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2026).
+- An additional `PRICE_ENDPOINTS` url which is a cached copy of `https://prices.komodian.info/api/v2/tickers` and is updated every minute was added in [#2032](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2032).
+
+**NB - Backwards compatibility breaking changes:**
+- `7777` Network deprecation and the upgrade to a new p2p layer breaks compatibility with previous versions of Komodo DeFi Framework. Connections between nodes/clients running an older version of Komodo DeFi Framework and nodes/clients running this latest version will not be possible. To avoid this, all nodes/clients must be upgraded to the latest version of Komodo DeFi Framework.
+- Because of KMD burn of a part of the taker fee, the taker fee outputs for any `coin/KMD` swap are changed and makers running older versions will not be able to validate the taker fee, this will cause the swap to fail. This case will never happen anyway because older versions will not be able to connect to this latest version due to the network upgrade.
+- Because of the removal of the fixed 0.0001 min threshold for TakerFee, taker fee validation will also fail for these cases. Again, this case will never happen as the previous case.
+
+
 ## v1.0.7-beta - 2023-09-08
 **Features:**
 - Trading Protocol Upgrade [#1895](https://github.com/KomodoPlatform/atomicDEX-API/issues/1895)
