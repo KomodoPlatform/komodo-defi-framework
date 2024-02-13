@@ -16,9 +16,7 @@
 /// - **BodyStream**: A struct that represents a stream of bytes for the response body. It is used internally by ResponseBody to read the response data from a web stream. The `new` method creates a new instance based on an `IntoStream`, and the `empty` method creates an empty stream. This struct also implements the `Body` trait, providing methods to read data from the stream and return trailers.
 use crate::grpc_web::PostGrpcWebErr;
 
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
-use byteorder::{BigEndian, ByteOrder};
+use base64::prelude::*;
 use bytes::{BufMut, Bytes, BytesMut};
 use common::{APPLICATION_GRPC_WEB, APPLICATION_GRPC_WEB_PROTO, APPLICATION_GRPC_WEB_TEXT,
              APPLICATION_GRPC_WEB_TEXT_PROTO};
@@ -29,6 +27,7 @@ use http_body::Body;
 use httparse::{Status, EMPTY_HEADER};
 use js_sys::{Object, Uint8Array};
 use pin_project::pin_project;
+use std::convert::TryInto;
 use std::ops::{Deref, DerefMut};
 use std::{pin::Pin,
           task::{Context, Poll}};
@@ -214,7 +213,7 @@ impl ResponseBody {
                     };
 
                     let data_length_bytes = this.buf.take(4);
-                    let data_length = BigEndian::read_u32(data_length_bytes.as_ref());
+                    let data_length = u32::from_be_bytes(data_length_bytes.to_vec().try_into().unwrap());
 
                     this.incomplete_data.extend_from_slice(&data_length_bytes);
                     *this.state = ReadState::Data(data_length);
@@ -243,7 +242,7 @@ impl ResponseBody {
                         return Ok(());
                     };
 
-                    *this.state = ReadState::Trailer(BigEndian::read_u32(this.buf.take(4).as_ref()));
+                    *this.state = ReadState::Trailer(u32::from_be_bytes(this.buf.take(4).to_vec().try_into().unwrap()));
                 },
                 ReadState::Trailer(trailer_length) => {
                     let trailer_length = *trailer_length as usize;

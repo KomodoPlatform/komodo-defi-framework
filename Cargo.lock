@@ -408,9 +408,9 @@ checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 
 [[package]]
 name = "base64"
-version = "0.21.2"
+version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "604178f6c5c21f02dc555784810edfb88d34ac2c73b2eae109655649ee73ce3d"
+checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
 name = "base64ct"
@@ -3559,7 +3559,7 @@ version = "0.45.0"
 source = "git+https://github.com/KomodoPlatform/rust-libp2p.git?tag=k-0.52.2#15dd3a3c32b1d9b393cbb108f479675cacf71b99"
 dependencies = [
  "asynchronous-codec",
- "base64 0.21.2",
+ "base64 0.21.7",
  "byteorder",
  "bytes 1.4.0",
  "either",
@@ -4159,7 +4159,7 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a4964177ddfdab1e3a2b37aec7cf320e14169abb0ed73999f558136409178d5"
 dependencies = [
- "base64 0.21.2",
+ "base64 0.21.7",
  "hyper",
  "indexmap",
  "ipnet",
@@ -4550,8 +4550,7 @@ version = "0.1.0"
 dependencies = [
  "async-stream",
  "async-trait",
- "base64 0.21.2",
- "byteorder",
+ "base64 0.21.7",
  "bytes 1.4.0",
  "cfg-if 1.0.0",
  "common",
@@ -6366,7 +6365,7 @@ version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d194b56d58803a43635bdc398cd17e383d6f71f9182b9a192c127ca42494a59b"
 dependencies = [
- "base64 0.21.2",
+ "base64 0.21.7",
 ]
 
 [[package]]
