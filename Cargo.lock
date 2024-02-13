@@ -4458,7 +4458,6 @@ dependencies = [
  "futures 0.3.28",
  "futures-rustls 0.21.1",
  "gstuff",
- "h2",
  "hash-db",
  "hash256-std-hasher",
  "hex 0.4.3",

@@ -129,7 +129,9 @@ mod wasm_tests {
         let client = LightRpcClient::new(vec!["https://pirate.battlefield.earth:8581".to_string()])
             .await
             .unwrap();
-        let tree_state = client.get_block_height().await;
-        info!("LATEST BLOCK: {tree_state:?}");
+        let latest_height = client.get_block_height().await;
+
+        assert!(latest_height.is_ok());
+        info!("LATEST BLOCK: {latest_height:?}");
     }
 }
