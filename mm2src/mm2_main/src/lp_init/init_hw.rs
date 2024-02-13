@@ -6,7 +6,7 @@ use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskU
 use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, HwCtxInitError, HwDeviceInfo, HwError, HwPubkey, HwRpcError,
              HwWalletType, WithHwRpcError};
 use derive_more::Display;
-use enum_from::EnumFromTrait;
+use enum_derives::EnumFromTrait;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;

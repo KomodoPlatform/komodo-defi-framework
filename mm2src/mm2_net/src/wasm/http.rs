@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Request as JsRequest, RequestInit, RequestMode, Response as JsResponse};
+use web_sys::{Request as JsRequest, RequestInit, RequestMode, Response as JsResponse, Window, WorkerGlobalScope};
 
 /// The result containing either a pair of (HTTP status code, body) or a stringified error.
 pub type FetchResult<T> = Result<(StatusCode, T), MmError<SlurpError>>;
@@ -83,6 +83,22 @@ fn set_response_headers_and_content_type(
         Some(content_type) => Ok((result, content_type)),
         None => MmError::err(SlurpError::InvalidRequest("MissingContentType".to_string())),
     }
+}
+
+/// This function is a wrapper around the `fetch_with_request`, providing compatibility across
+/// different execution environments, such as window and worker.
+fn compatible_fetch_with_request(js_request: &web_sys::Request) -> MmResult<js_sys::Promise, SlurpError> {
+    let global = js_sys::global();
+
+    if let Some(scope) = global.dyn_ref::<Window>() {
+        return Ok(scope.fetch_with_request(js_request));
+    }
+
+    if let Some(scope) = global.dyn_ref::<WorkerGlobalScope>() {
+        return Ok(scope.fetch_with_request(js_request));
+    }
+
+    MmError::err(SlurpError::Internal("Unknown WASM environment.".to_string()))
 }
 
 pub struct FetchRequest {
@@ -202,7 +218,6 @@ impl FetchRequest {
     }
 
     async fn fetch(request: Self) -> FetchResult<JsResponse> {
-        let window = web_sys::window().expect("!window");
         let uri = request.uri;
 
         let mut req_init = RequestInit::new();
@@ -222,7 +237,7 @@ impl FetchRequest {
                 .map_to_mm(|e| SlurpError::Internal(stringify_js_error(&e)))?;
         }
 
-        let request_promise = window.fetch_with_request(&js_request);
+        let request_promise = compatible_fetch_with_request(&js_request)?;
 
         let future = JsFuture::from(request_promise);
         let resp_value = future.await.map_to_mm(|e| SlurpError::Transport {
@@ -287,11 +302,7 @@ impl FetchRequest {
         let resp_array_fut = match js_response.array_buffer() {
             Ok(blob) => blob,
             Err(e) => {
-                let error = format!(
-                    "Expected blob, found {:?}: {}",
-                    js_response,
-                    common::stringify_js_error(&e)
-                );
+                let error = format!("Expected blob, found {:?}: {}", js_response, stringify_js_error(&e));
                 return MmError::err(SlurpError::ErrorDeserializing { uri, error });
             },
         };

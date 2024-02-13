@@ -201,6 +201,7 @@ pub enum SendOutputsErr {
     Rpc(UtxoRpcError),
     TxNotMined(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    InternalError(String),
 }
 
 impl From<PrivKeyPolicyNotAllowed> for SendOutputsErr {

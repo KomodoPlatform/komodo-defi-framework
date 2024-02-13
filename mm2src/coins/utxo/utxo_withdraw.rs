@@ -1,7 +1,8 @@
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
-use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
-                  UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
+use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, AddressBuilder, FeePolicy,
+                  GetUtxoListOps, PrivKeyPolicy, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails,
+                  UtxoTx, UTXO_LOCK};
 use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionDetails, WithdrawError,
             WithdrawFee, WithdrawFrom, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
@@ -12,7 +13,7 @@ use crypto::hw_rpc_task::HwRpcTaskAwaitingStatus;
 use crypto::trezor::trezor_rpc_task::{TrezorRequestStatuses, TrezorRpcTaskProcessor};
 use crypto::trezor::{TrezorError, TrezorProcessingError};
 use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, DerivationPath, HwError, HwProcessingError, HwRpcError};
-use keys::{AddressFormat, AddressHashEnum, KeyPair, Private, Public as PublicKey, Type as ScriptType};
+use keys::{AddressFormat, AddressHashEnum, KeyPair, Private, Public as PublicKey};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::ToTxHash;
@@ -87,6 +88,10 @@ impl From<RpcTaskError> for WithdrawError {
     }
 }
 
+impl From<keys::Error> for WithdrawError {
+    fn from(e: keys::Error) -> Self { WithdrawError::InternalError(e.to_string()) }
+}
+
 #[async_trait]
 pub trait UtxoWithdraw<Coin>
 where
@@ -102,16 +107,24 @@ where
     fn request(&self) -> &WithdrawRequest;
 
     fn signature_version(&self) -> SignatureVersion {
-        match self.sender_address().addr_format {
+        match self.sender_address().addr_format() {
             UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
-            _ => self.coin().as_ref().conf.signature_version,
+            UtxoAddressFormat::Standard | UtxoAddressFormat::CashAddress { .. } => {
+                self.coin().as_ref().conf.signature_version
+            },
         }
     }
 
-    fn prev_script(&self) -> Script {
-        match self.sender_address().addr_format {
-            UtxoAddressFormat::Segwit => Builder::build_p2witness(&self.sender_address().hash),
-            _ => Builder::build_p2pkh(&self.sender_address().hash),
+    #[allow(clippy::result_large_err)]
+    fn prev_script(&self) -> Result<Script, MmError<WithdrawError>> {
+        match self.sender_address().addr_format() {
+            UtxoAddressFormat::Segwit => match Builder::build_p2wpkh(self.sender_address().hash()) {
+                Ok(script) => Ok(script),
+                Err(e) => MmError::err(WithdrawError::InternalError(e.to_string())),
+            },
+            UtxoAddressFormat::Standard | UtxoAddressFormat::CashAddress { .. } => {
+                Ok(Builder::build_p2pkh(self.sender_address().hash()))
+            },
         }
     }
 
@@ -127,26 +140,14 @@ where
         let coin = self.coin();
         let ticker = coin.as_ref().conf.ticker.clone();
         let decimals = coin.as_ref().decimals;
-        let conf = &self.coin().as_ref().conf;
         let req = self.request();
 
         let to = coin.address_from_str(&req.to)?;
 
-        let is_p2pkh = to.prefix == conf.pub_addr_prefix && to.t_addr_prefix == conf.pub_t_addr_prefix;
-        let is_p2sh = to.prefix == conf.p2sh_addr_prefix && to.t_addr_prefix == conf.p2sh_t_addr_prefix;
-
-        let script_type = if is_p2pkh {
-            ScriptType::P2PKH
-        } else if is_p2sh {
-            ScriptType::P2SH
-        } else {
-            return MmError::err(WithdrawError::InvalidAddress("Expected either P2PKH or P2SH".into()));
-        };
-
         // Generate unsigned transaction.
         self.on_generating_transaction()?;
 
-        let script_pubkey = output_script(&to, script_type).to_bytes();
+        let script_pubkey = output_script(&to).map(|script| script.to_bytes())?;
 
         let _utxo_lock = UTXO_LOCK.lock().await;
         let (unspents, _) = coin.get_unspent_ordered_list(&self.sender_address()).await?;
@@ -288,7 +289,7 @@ where
             unsigned_tx
                 .inputs
                 .iter()
-                .map(|_input| match self.from_address.addr_format {
+                .map(|_input| match self.from_address.addr_format() {
                     AddressFormat::Segwit => SpendingInputInfo::P2WPKH {
                         address_derivation_path: self.from_derivation_path.clone(),
                         address_pubkey: self.from_pubkey,
@@ -310,7 +311,7 @@ where
                 sign_params.add_outputs_infos(once(SendingOutputInfo {
                     destination_address: OutputDestination::change(
                         self.from_derivation_path.clone(),
-                        self.from_address.addr_format.clone(),
+                        self.from_address.addr_format().clone(),
                     ),
                 }));
             },
@@ -432,7 +433,7 @@ where
         Ok(with_key_pair::sign_tx(
             unsigned_tx,
             &self.key_pair,
-            self.prev_script(),
+            self.prev_script()?,
             self.signature_version(),
             self.coin.as_ref().conf.fork_id,
         )?)
@@ -464,15 +465,18 @@ where
                     .derivation_method
                     .single_addr_or_err()?
                     .clone()
-                    .addr_format;
-                let my_address = Address {
-                    prefix: coin.as_ref().conf.pub_addr_prefix,
-                    t_addr_prefix: coin.as_ref().conf.pub_t_addr_prefix,
-                    hash: AddressHashEnum::AddressHash(key_pair.public().address_hash()),
-                    checksum_type: coin.as_ref().conf.checksum_type,
-                    hrp: coin.as_ref().conf.bech32_hrp.clone(),
+                    .addr_format()
+                    .clone();
+                let my_address = AddressBuilder::new(
                     addr_format,
-                };
+                    AddressHashEnum::AddressHash(key_pair.public().address_hash()),
+                    coin.as_ref().conf.checksum_type,
+                    coin.as_ref().conf.address_prefixes.clone(),
+                    coin.as_ref().conf.bech32_hrp.clone(),
+                )
+                .as_pkh()
+                .build()
+                .map_to_mm(WithdrawError::InternalError)?;
                 (key_pair, my_address)
             },
             Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {

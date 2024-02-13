@@ -181,7 +181,7 @@ async fn merge_utxo_loop<T>(
             let unspents: Vec<_> = unspents.into_iter().take(max_merge_at_once).collect();
             info!("Trying to merge {} UTXOs of coin {}", unspents.len(), ticker);
             let value = unspents.iter().fold(0, |sum, unspent| sum + unspent.value);
-            let script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
+            let script_pubkey = Builder::build_p2pkh(my_address.hash()).to_bytes();
             let output = TransactionOutput { value, script_pubkey };
             let merge_tx_fut = generate_and_send_tx(
                 &coin,

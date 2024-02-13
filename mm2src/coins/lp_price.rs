@@ -1,4 +1,4 @@
-use common::log::{debug, error};
+use common::log::{debug, error, info};
 use common::StatusCode;
 use mm2_err_handle::prelude::{MmError, OrMmError};
 use mm2_net::transport::SlurpError;
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 #[cfg(feature = "run-docker-tests")] use std::str::FromStr;
 use std::str::Utf8Error;
 
-const PRICE_ENDPOINTS: [&str; 3] = [
+pub const PRICE_ENDPOINTS: [&str; 3] = [
     "https://prices.komodian.info/api/v2/tickers",
     "https://prices.cipig.net:1717/api/v2/tickers",
     "https://defi-stats.komodo.earth/api/v3/prices/tickers_v2",
@@ -209,10 +209,26 @@ async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, M
     Ok(TickerInfosRegistry(model))
 }
 
-pub async fn fetch_price_tickers(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
-    let model = process_price_request(price_url).await?;
-    debug!("price registry size: {}", model.0.len());
-    Ok(model)
+pub async fn fetch_price_tickers(
+    price_urls: &mut [String],
+) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
+    for (i, url) in price_urls.to_owned().iter().enumerate() {
+        let model = match process_price_request(url).await {
+            Ok(model) => model,
+            Err(err) => {
+                error!("Error fetching price from: {}, error: {:?}", url, err);
+                continue;
+            },
+        };
+        price_urls.rotate_left(i);
+        debug!("price registry size: {}", model.0.len());
+        info!("price successfully fetched from {url}");
+        return Ok(model);
+    }
+
+    MmError::err(PriceServiceRequestError::HttpProcessError(
+        "couldn't fetch price".to_string(),
+    ))
 }
 
 /// CEXRates, structure for storing `base` coin and `rel` coin USD price

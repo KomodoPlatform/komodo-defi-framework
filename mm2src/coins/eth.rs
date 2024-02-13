@@ -37,7 +37,7 @@ use common::{now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy, StandardHDCoinAddress};
 use derive_more::Display;
-use enum_from::EnumFromStringify;
+use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
@@ -109,10 +109,11 @@ mod eth_balance_events;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
-use crate::nft::{find_wallet_nft_amount, WithdrawNftResult};
+use crate::nft::WithdrawNftResult;
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod nonce;
+use crate::nft::nft_errors::GetNftInfoError;
 use crate::{PrivKeyPolicy, TransactionResult, WithdrawFrom};
 use nonce::ParityNonce;
 
@@ -879,16 +880,12 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker()).await?;
     let (to_addr, token_addr, eth_coin) =
-        get_valid_nft_add_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address)?;
-    let my_address = eth_coin.my_address()?;
+        get_valid_nft_addr_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address)?;
+    let my_address_str = eth_coin.my_address()?;
 
-    let wallet_amount = find_wallet_nft_amount(
-        &ctx,
-        &withdraw_type.chain,
-        withdraw_type.token_address.to_lowercase(),
-        withdraw_type.token_id.clone(),
-    )
-    .await?;
+    let token_id_str = &withdraw_type.token_id.to_string();
+    let wallet_amount = eth_coin.erc1155_balance(token_addr, token_id_str).await?;
+
     let amount_dec = if withdraw_type.max {
         wallet_amount.clone()
     } else {
@@ -907,12 +904,10 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
-            let token_id_u256 = U256::from_dec_str(&withdraw_type.token_id.to_string())
-                .map_err(|e| format!("{:?}", e))
-                .map_to_mm(NumConversError::new)?;
-            let amount_u256 = U256::from_dec_str(&amount_dec.to_string())
-                .map_err(|e| format!("{:?}", e))
-                .map_to_mm(NumConversError::new)?;
+            let token_id_u256 =
+                U256::from_dec_str(token_id_str).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
+            let amount_u256 =
+                U256::from_dec_str(&amount_dec.to_string()).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
             let data = function.encode_input(&[
                 Token::Address(eth_coin.my_address),
                 Token::Address(to_addr),
@@ -961,7 +956,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash()),
-        from: vec![my_address],
+        from: vec![my_address_str],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc1155,
         token_address: withdraw_type.token_address,
@@ -981,17 +976,26 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
 pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker()).await?;
     let (to_addr, token_addr, eth_coin) =
-        get_valid_nft_add_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address)?;
-    let my_address = eth_coin.my_address()?;
+        get_valid_nft_addr_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address)?;
+    let my_address_str = eth_coin.my_address()?;
+
+    let token_id_str = &withdraw_type.token_id.to_string();
+    let token_owner = eth_coin.erc721_owner(token_addr, token_id_str).await?;
+    let my_address = eth_coin.my_address;
+    if token_owner != my_address {
+        return MmError::err(WithdrawError::MyAddressNotNftOwner {
+            my_address: eth_addr_to_hex(&my_address),
+            token_owner: eth_addr_to_hex(&token_owner),
+        });
+    }
 
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC721_CONTRACT.function("safeTransferFrom")?;
             let token_id_u256 = U256::from_dec_str(&withdraw_type.token_id.to_string())
-                .map_err(|e| format!("{:?}", e))
-                .map_to_mm(NumConversError::new)?;
+                .map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
             let data = function.encode_input(&[
-                Token::Address(eth_coin.my_address),
+                Token::Address(my_address),
                 Token::Address(to_addr),
                 Token::Uint(token_id_u256),
             ])?;
@@ -1013,7 +1017,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     )
     .await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
-    let (nonce, _) = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.clone())
+    let (nonce, _) = get_addr_nonce(my_address, eth_coin.web3_instances.clone())
         .compat()
         .timeout_secs(30.)
         .await?
@@ -1036,7 +1040,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash()),
-        from: vec![my_address],
+        from: vec![my_address_str],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc721,
         token_address: withdraw_type.token_address,
@@ -4013,6 +4017,59 @@ impl EthCoin {
         }
     }
 
+    async fn erc1155_balance(&self, token_addr: Address, token_id: &str) -> MmResult<BigDecimal, BalanceError> {
+        let wallet_amount_uint = match self.coin_type {
+            EthCoinType::Eth => {
+                let function = ERC1155_CONTRACT.function("balanceOf")?;
+                let token_id_u256 =
+                    U256::from_dec_str(token_id).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
+                let data = function.encode_input(&[Token::Address(self.my_address), Token::Uint(token_id_u256)])?;
+                let result = self.call_request(token_addr, None, Some(data.into())).await?;
+                let decoded = function.decode_output(&result.0)?;
+                match decoded[0] {
+                    Token::Uint(number) => number,
+                    _ => {
+                        let error = format!("Expected U256 as balanceOf result but got {:?}", decoded);
+                        return MmError::err(BalanceError::InvalidResponse(error));
+                    },
+                }
+            },
+            EthCoinType::Erc20 { .. } => {
+                return MmError::err(BalanceError::Internal(
+                    "Erc20 coin type doesnt support Erc1155 standard".to_owned(),
+                ))
+            },
+        };
+        let wallet_amount = u256_to_big_decimal(wallet_amount_uint, self.decimals)?;
+        Ok(wallet_amount)
+    }
+
+    async fn erc721_owner(&self, token_addr: Address, token_id: &str) -> MmResult<Address, GetNftInfoError> {
+        let owner_address = match self.coin_type {
+            EthCoinType::Eth => {
+                let function = ERC721_CONTRACT.function("ownerOf")?;
+                let token_id_u256 =
+                    U256::from_dec_str(token_id).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
+                let data = function.encode_input(&[Token::Uint(token_id_u256)])?;
+                let result = self.call_request(token_addr, None, Some(data.into())).await?;
+                let decoded = function.decode_output(&result.0)?;
+                match decoded[0] {
+                    Token::Address(owner) => owner,
+                    _ => {
+                        let error = format!("Expected Address as ownerOf result but got {:?}", decoded);
+                        return MmError::err(GetNftInfoError::InvalidResponse(error));
+                    },
+                }
+            },
+            EthCoinType::Erc20 { .. } => {
+                return MmError::err(GetNftInfoError::Internal(
+                    "Erc20 coin type doesnt support Erc721 standard".to_owned(),
+                ))
+            },
+        };
+        Ok(owner_address)
+    }
+
     fn estimate_gas(&self, req: CallRequest) -> Box<dyn Future<Item = U256, Error = web3::Error> + Send> {
         // always using None block number as old Geth version accept only single argument in this RPC
         Box::new(self.web3.eth().estimate_gas(req, None).compat())
@@ -5305,9 +5362,7 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
     } else {
         amount.insert_str(amount.len(), &"0".repeat(decimals));
     }
-    U256::from_dec_str(&amount)
-        .map_err(|e| format!("{:?}", e))
-        .map_to_mm(NumConversError::new)
+    U256::from_dec_str(&amount).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
 }
 
 impl Transaction for SignedEthTx {
@@ -5743,6 +5798,7 @@ fn increase_gas_price_by_stage(gas_price: U256, level: &FeeApproxStage) -> U256 
     }
 }
 
+/// Represents errors that can occur while retrieving an Ethereum address.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum GetEthAddressError {
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
@@ -5783,21 +5839,20 @@ pub async fn get_eth_address(
     })
 }
 
+/// Errors encountered while validating Ethereum addresses for NFT withdrawal.
 #[derive(Display)]
 pub enum GetValidEthWithdrawAddError {
-    #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
-    AddressMismatchError {
-        my_address: String,
-        from: String,
-    },
+    /// The specified coin does not support NFT withdrawal.
     #[display(fmt = "{} coin doesn't support NFT withdrawing", coin)]
-    CoinDoesntSupportNftWithdraw {
-        coin: String,
-    },
+    CoinDoesntSupportNftWithdraw { coin: String },
+    /// The provided address is invalid.
     InvalidAddress(String),
 }
 
-fn get_valid_nft_add_to_withdraw(
+/// Validates Ethereum addresses for NFT withdrawal.
+/// Returns a tuple of valid `to` address, `token` address, and `EthCoin` instance on success.
+/// Errors if the coin doesn't support NFT withdrawal or if the addresses are invalid.
+fn get_valid_nft_addr_to_withdraw(
     coin_enum: MmCoinEnum,
     to: &str,
     token_add: &str,

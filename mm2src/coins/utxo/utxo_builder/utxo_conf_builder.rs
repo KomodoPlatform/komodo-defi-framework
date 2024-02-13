@@ -5,12 +5,14 @@ use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
 use crypto::{Bip32Error, StandardHDPathToCoin};
 use derive_more::Display;
-pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
-               Type as ScriptType};
+use keys::NetworkAddressPrefixes;
+pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressScriptType, KeyPair, Private,
+               Public, Secret};
 use mm2_err_handle::prelude::*;
 use script::SignatureVersion;
 use serde_json::{self as json, Value as Json};
 use spv_validation::conf::SPVConf;
+use std::convert::TryInto;
 use std::num::NonZeroU64;
 use std::sync::atomic::AtomicBool;
 
@@ -51,10 +53,29 @@ impl<'a> UtxoConfBuilder<'a> {
 
     pub fn build(&self) -> UtxoConfResult<UtxoCoinConf> {
         let checksum_type = self.checksum_type();
+
         let pub_addr_prefix = self.pub_addr_prefix();
-        let p2sh_addr_prefix = self.p2sh_address_prefix();
         let pub_t_addr_prefix = self.pub_t_address_prefix();
+        let mut p2pkh_prefixes = vec![];
+        if pub_t_addr_prefix != 0 {
+            p2pkh_prefixes.push(pub_t_addr_prefix);
+        }
+        p2pkh_prefixes.push(pub_addr_prefix);
+        drop_mutability!(p2pkh_prefixes);
+
+        let p2sh_addr_prefix = self.p2sh_address_prefix();
         let p2sh_t_addr_prefix = self.p2sh_t_address_prefix();
+        let mut p2sh_prefixes = vec![];
+        if p2sh_t_addr_prefix != 0 {
+            p2sh_prefixes.push(p2sh_t_addr_prefix);
+        }
+        p2sh_prefixes.push(p2sh_addr_prefix);
+        drop_mutability!(p2sh_prefixes);
+
+        let address_prefixes = NetworkAddressPrefixes {
+            p2pkh: p2pkh_prefixes.as_slice().try_into().expect("prefixes valid"),
+            p2sh: p2sh_prefixes.as_slice().try_into().expect("prefixes valid"),
+        };
         let sign_message_prefix = self.sign_message_prefix();
 
         let wif_prefix = self.wif_prefix();
@@ -99,10 +120,7 @@ impl<'a> UtxoConfBuilder<'a> {
             is_posv,
             requires_notarization,
             overwintered,
-            pub_addr_prefix,
-            p2sh_addr_prefix,
-            pub_t_addr_prefix,
-            p2sh_t_addr_prefix,
+            address_prefixes,
             sign_message_prefix,
             bech32_hrp,
             segwit,

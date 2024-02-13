@@ -26,7 +26,8 @@ use crypto::Secp256k1Secret;
 use ethereum_types::H160 as H160Eth;
 use futures01::Future;
 use http::StatusCode;
-use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
+use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, NetworkAddressPrefixes,
+           NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::get_passphrase;
@@ -251,14 +252,16 @@ impl BchDockerOps {
         for _ in 0..18 {
             let key_pair = KeyPair::random_compressed();
             let address_hash = key_pair.public().address_hash();
-            let address = Address {
-                prefix: self.coin.as_ref().conf.pub_addr_prefix,
-                t_addr_prefix: self.coin.as_ref().conf.pub_t_addr_prefix,
-                hrp: None,
-                hash: address_hash.into(),
-                checksum_type: Default::default(),
-                addr_format: Default::default(),
-            };
+            let address = AddressBuilder::new(
+                Default::default(),
+                address_hash.into(),
+                Default::default(),
+                self.coin.as_ref().conf.address_prefixes.clone(),
+                None,
+            )
+            .as_pkh()
+            .build()
+            .expect("valid address props");
 
             self.native_client()
                 .import_address(&address.to_string(), &address.to_string(), false)
@@ -801,6 +804,8 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         qrc20_coin_conf_item("QORTY"),
         {"coin":"MYCOIN","asset":"MYCOIN","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MYCOIN1","asset":"MYCOIN1","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        // TODO: check if we should fix protocol "type":"UTXO" to "QTUM" for this and other QTUM coin tests.
+        // Maybe we should use a different coin for "UTXO" protocol and make new tests for "QTUM" protocol
         {"coin":"QTUM","asset":"QTUM","required_confirmations":0,"decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1,
         "mm2":1,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"},"bech32_hrp":"qcrt","address_format":{"format":"segwit"}},
         {"coin":"FORSLP","asset":"FORSLP","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}}},
@@ -990,14 +995,19 @@ pub fn get_balance(mm: &MarketMakerIt, coin: &str) -> BalanceResponse {
 }
 
 pub fn utxo_burn_address() -> Address {
-    Address {
-        prefix: 60,
-        hash: AddressHashEnum::default_address_hash(),
-        t_addr_prefix: 0,
-        checksum_type: ChecksumType::DSHA256,
-        hrp: None,
-        addr_format: UtxoAddressFormat::Standard,
-    }
+    AddressBuilder::new(
+        UtxoAddressFormat::Standard,
+        AddressHashEnum::default_address_hash(),
+        ChecksumType::DSHA256,
+        NetworkAddressPrefixes {
+            p2pkh: [60].into(),
+            p2sh: AddressPrefix::default(),
+        },
+        None,
+    )
+    .as_pkh()
+    .build()
+    .expect("valid address props")
 }
 
 pub fn withdraw_max_and_send_v1(mm: &MarketMakerIt, coin: &str, to: &str) -> TransactionDetails {

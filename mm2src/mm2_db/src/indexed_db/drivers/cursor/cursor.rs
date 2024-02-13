@@ -3,7 +3,7 @@ use crate::indexed_db::db_driver::{InternalItem, ItemId};
 use crate::indexed_db::BeBigUint;
 use common::wasm::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use derive_more::Display;
-use enum_from::EnumFromTrait;
+use enum_derives::EnumFromTrait;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use js_sys::Array;

@@ -421,6 +421,27 @@ impl NftListStorageOps for NftCacheIDBLocked<'_> {
         update_nft_phishing_for_index(&table, &chain_str, external_index, &domain, possible_phishing).await?;
         Ok(())
     }
+
+    async fn clear_nft_data(&self, chain: &Chain) -> MmResult<(), Self::Error> {
+        let db_transaction = self.get_inner().transaction().await?;
+        let nft_table = db_transaction.table::<NftListTable>().await?;
+        let last_scanned_block_table = db_transaction.table::<LastScannedBlockTable>().await?;
+
+        nft_table.delete_items_by_index("chain", chain.to_string()).await?;
+        last_scanned_block_table
+            .delete_item_by_unique_index("chain", chain.to_string())
+            .await?;
+        Ok(())
+    }
+
+    async fn clear_all_nft_data(&self) -> MmResult<(), Self::Error> {
+        let db_transaction = self.get_inner().transaction().await?;
+        let nft_table = db_transaction.table::<NftListTable>().await?;
+        let last_scanned_block_table = db_transaction.table::<LastScannedBlockTable>().await?;
+        nft_table.clear().await?;
+        last_scanned_block_table.clear().await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -720,6 +741,20 @@ impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
             .await?;
         update_transfer_phishing_for_index(&table, &chain_str, CHAIN_IMAGE_DOMAIN_INDEX, &domain, possible_phishing)
             .await?;
+        Ok(())
+    }
+
+    async fn clear_history_data(&self, chain: &Chain) -> MmResult<(), Self::Error> {
+        let db_transaction = self.get_inner().transaction().await?;
+        let table = db_transaction.table::<NftTransferHistoryTable>().await?;
+        table.delete_items_by_index("chain", chain.to_string()).await?;
+        Ok(())
+    }
+
+    async fn clear_all_history_data(&self) -> MmResult<(), Self::Error> {
+        let db_transaction = self.get_inner().transaction().await?;
+        let table = db_transaction.table::<NftTransferHistoryTable>().await?;
+        table.clear().await?;
         Ok(())
     }
 }

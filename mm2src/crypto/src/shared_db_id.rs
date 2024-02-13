@@ -1,6 +1,6 @@
 use crate::privkey::private_from_seed_hash;
 use derive_more::Display;
-use enum_from::EnumFromStringify;
+use enum_derives::EnumFromStringify;
 use keys::{Error as KeysError, KeyPair};
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;

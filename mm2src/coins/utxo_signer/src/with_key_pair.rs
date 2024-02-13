@@ -177,7 +177,7 @@ pub fn p2wpkh_spend(
     let unsigned_input = get_input(signer, input_index)?;
 
     let script_code = Builder::build_p2pkh(&key_pair.public().address_hash().into()); // this is the scriptCode by BIP-0143: for P2WPKH scriptCode is P2PKH
-    let script_pub_key = Builder::build_p2witness(&key_pair.public().address_hash().into());
+    let script_pub_key = Builder::build_p2wpkh(&key_pair.public().address_hash().into())?;
     if script_pub_key != prev_script {
         return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
             script_type: "P2WPKH".to_owned(),
