@@ -313,20 +313,20 @@ impl CursorDriver {
         let (id, val) = item.into_pair();
         // Checks if the given `where_` condition, represented by an optional closure (`cursor_condition`),
         // is satisfied for the provided `item`. If the condition is met, return the corresponding `(id, val)` or skip to the next item.
-        if let Some(cursor_condition) = where_ {
-            if cursor_condition(val.clone())? && matches!(item_action, CursorItemAction::Include) {
+
+        if matches!(item_action, CursorItemAction::Include) {
+            if let Some(cursor_condition) = where_ {
+                if cursor_condition(val.clone())? {
+                    return Ok(Some((id, val)));
+                }
+            } else {
+                self.continue_(&cursor, &cursor_action).await?;
                 return Ok(Some((id, val)));
-            }
-            self.continue_(&cursor, &cursor_action).await?;
-            return Ok(None);
+            };
         }
 
         self.continue_(&cursor, &cursor_action).await?;
-        let res = match item_action {
-            CursorItemAction::Include => Some((id, val)),
-            CursorItemAction::Skip => None,
-        };
-        Ok(res)
+        Ok(None)
     }
 }
 
