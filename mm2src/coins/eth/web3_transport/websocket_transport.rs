@@ -1,8 +1,8 @@
 //! This module offers a transport layer for managing request-response style communication
-//! with Ethereum nodes using websockets in a wait and lock-free manner. In comparison to
-//! HTTP transport, this approach proves to be much quicker (low-latency) and consumes less
-//! bandwidth. This efficiency is achieved by avoiding the handling of TCP
-//! handshakes (connection reusability) for each request.
+//! with Ethereum nodes using websockets in a wait and lock-free manner (with unsafe raw-pointers).
+//! In comparison to HTTP transport, this approach proves to be much quicker (low-latency) and consumes
+//! less bandwidth. This efficiency is achieved by avoiding the handling of TCP handshakes (connection reusability)
+//! for each request.
 
 use super::handle_gui_auth_payload;
 use super::http_transport::de_rpc_response;
