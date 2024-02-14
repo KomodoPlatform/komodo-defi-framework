@@ -428,7 +428,7 @@ pub struct EthCoinImpl {
     fallback_swap_contract: Option<Address>,
     contract_supports_watchers: bool,
     /// The separate web3 instances kept to get nonce, will replace the web3 completely soon
-    client: EthClient,
+    web3_instances: AsyncMutex<Vec<Web3Instance>>,
     decimals: u8,
     gas_station_url: Option<String>,
     gas_station_decimals: u8,
@@ -446,10 +446,6 @@ pub struct EthCoinImpl {
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
-}
-
-struct EthClient {
-    web3_instances: AsyncMutex<Vec<Web3Instance>>,
 }
 
 #[derive(Clone, Debug)]
@@ -706,7 +702,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {
             // Todo: nonce_lock is still global for all addresses but this needs to be per address
             let _nonce_lock = coin.nonce_lock.lock().await;
-            let (nonce, _) = get_addr_nonce(my_address, coin.client.web3_instances.lock().await.to_vec())
+            let (nonce, _) = get_addr_nonce(my_address, coin.web3_instances.lock().await.to_vec())
                 .compat()
                 .timeout_secs(30.)
                 .await?
@@ -866,14 +862,11 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     )
     .await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
-    let (nonce, _) = get_addr_nonce(
-        eth_coin.my_address,
-        eth_coin.client.web3_instances.lock().await.to_vec(),
-    )
-    .compat()
-    .timeout_secs(30.)
-    .await?
-    .map_to_mm(WithdrawError::Transport)?;
+    let (nonce, _) = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.lock().await.to_vec())
+        .compat()
+        .timeout_secs(30.)
+        .await?
+        .map_to_mm(WithdrawError::Transport)?;
 
     let tx = UnSignedEthTx {
         nonce,
@@ -944,14 +937,11 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     )
     .await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
-    let (nonce, _) = get_addr_nonce(
-        eth_coin.my_address,
-        eth_coin.client.web3_instances.lock().await.to_vec(),
-    )
-    .compat()
-    .timeout_secs(30.)
-    .await?
-    .map_to_mm(WithdrawError::Transport)?;
+    let (nonce, _) = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.lock().await.to_vec())
+        .compat()
+        .timeout_secs(30.)
+        .await?
+        .map_to_mm(WithdrawError::Transport)?;
 
     let tx = UnSignedEthTx {
         nonce,
@@ -2393,7 +2383,7 @@ async fn sign_transaction_with_keypair(
     let _nonce_lock = coin.nonce_lock.lock().await;
     status.status(tags!(), "get_addr_nonce…");
     let (nonce, web3_instances_with_latest_nonce) = try_tx_s!(
-        get_addr_nonce(coin.my_address, coin.client.web3_instances.lock().await.to_vec())
+        get_addr_nonce(coin.my_address, coin.web3_instances.lock().await.to_vec())
             .compat()
             .await
     );
@@ -2536,7 +2526,7 @@ impl RpcCommonOps for EthCoin {
     type Error = Web3RpcError;
 
     async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
-        let mut clients = self.client.web3_instances.lock().await;
+        let mut clients = self.web3_instances.lock().await;
 
         // try to find first live client
         for (i, client) in clients.clone().into_iter().enumerate() {
@@ -4831,7 +4821,7 @@ impl EthCoin {
     /// The function is endless, we just keep looping in case of a transport error hoping it will go away.
     async fn wait_for_addr_nonce_increase(&self, addr: Address, prev_nonce: U256) {
         repeatable!(async {
-            match get_addr_nonce(addr, self.client.web3_instances.lock().await.to_vec())
+            match get_addr_nonce(addr, self.web3_instances.lock().await.to_vec())
                 .compat()
                 .await
             {
@@ -5819,9 +5809,7 @@ pub async fn eth_coin_from_conf_and_request(
         gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
         gas_station_decimals: gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
         gas_station_policy,
-        client: EthClient {
-            web3_instances: AsyncMutex::new(web3_instances),
-        },
+        web3_instances: AsyncMutex::new(web3_instances),
         history_sync_state: Mutex::new(initial_history_state),
         ctx: ctx.weak(),
         required_confirmations,

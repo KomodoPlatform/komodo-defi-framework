@@ -146,9 +146,7 @@ fn eth_coin_from_keypair(
         fallback_swap_contract,
         contract_supports_watchers: false,
         ticker,
-        client: EthClient {
-            web3_instances: AsyncMutex::new(web3_instances),
-        },
+        web3_instances: AsyncMutex::new(web3_instances),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
@@ -332,9 +330,7 @@ fn send_and_refund_erc20_payment() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        client: EthClient {
-            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
-        },
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -422,9 +418,7 @@ fn send_and_refund_eth_payment() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        client: EthClient {
-            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
-        },
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -535,22 +529,20 @@ fn test_nonce_several_urls() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        client: EthClient {
-            web3_instances: AsyncMutex::new(vec![
-                Web3Instance {
-                    web3: web3_devnet,
-                    is_parity: false,
-                },
-                Web3Instance {
-                    web3: web3_sepolia,
-                    is_parity: false,
-                },
-                Web3Instance {
-                    web3: web3_failing,
-                    is_parity: false,
-                },
-            ]),
-        },
+        web3_instances: AsyncMutex::new(vec![
+            Web3Instance {
+                web3: web3_devnet,
+                is_parity: false,
+            },
+            Web3Instance {
+                web3: web3_sepolia,
+                is_parity: false,
+            },
+            Web3Instance {
+                web3: web3_failing,
+                is_parity: false,
+            },
+        ]),
         decimals: 18,
         gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -570,7 +562,7 @@ fn test_nonce_several_urls() {
     let payment = coin.send_to_address(coin.my_address, 200000000.into()).wait().unwrap();
 
     log!("{:?}", payment);
-    let new_nonce = get_addr_nonce(coin.my_address, block_on(coin.client.web3_instances.lock()).to_vec())
+    let new_nonce = get_addr_nonce(coin.my_address, block_on(coin.web3_instances.lock()).to_vec())
         .wait()
         .unwrap();
     log!("{:?}", new_nonce);
@@ -608,9 +600,7 @@ fn test_wait_for_payment_spend_timeout() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         ticker: "ETH".into(),
-        client: EthClient {
-            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
-        },
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
@@ -681,9 +671,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         ticker: "ETH".into(),
-        client: EthClient {
-            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
-        },
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
@@ -795,9 +783,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         ticker: "BAT".into(),
-        client: EthClient {
-            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
-        },
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
@@ -1476,9 +1462,7 @@ fn test_message_hash() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        client: EthClient {
-            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
-        },
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -1525,9 +1509,7 @@ fn test_sign_verify_message() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        client: EthClient {
-            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
-        },
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -1588,9 +1570,7 @@ fn test_eth_extract_secret() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         ticker: "ETH".into(),
-        client: EthClient {
-            web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: true }]),
-        },
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: true }]),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,

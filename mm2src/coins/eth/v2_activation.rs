@@ -170,7 +170,6 @@ impl EthCoin {
         };
 
         let web3_instances: Vec<Web3Instance> = self
-            .client
             .web3_instances
             .lock()
             .await
@@ -213,9 +212,7 @@ impl EthCoin {
             gas_station_url: self.gas_station_url.clone(),
             gas_station_decimals: self.gas_station_decimals,
             gas_station_policy: self.gas_station_policy.clone(),
-            client: EthClient {
-                web3_instances: AsyncMutex::new(web3_instances),
-            },
+            web3_instances: AsyncMutex::new(web3_instances),
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             ctx: self.ctx.clone(),
             required_confirmations,
@@ -323,9 +320,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         gas_station_url: req.gas_station_url,
         gas_station_decimals: req.gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
         gas_station_policy: req.gas_station_policy,
-        client: EthClient {
-            web3_instances: AsyncMutex::new(web3_instances),
-        },
+        web3_instances: AsyncMutex::new(web3_instances),
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         ctx: ctx.weak(),
         required_confirmations,
