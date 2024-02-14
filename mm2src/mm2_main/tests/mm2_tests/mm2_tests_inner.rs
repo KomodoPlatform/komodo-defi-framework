@@ -3277,7 +3277,7 @@ fn test_convert_segwit_address() {
         "!convertaddress success but should be error: {}",
         rc.1
     );
-    assert!(rc.1.contains("Expected a valid P2PKH or P2SH prefix for tBTC"));
+    assert!(rc.1.contains("invalid address prefix"));
 
     // test invalid tBTC segwit address
     let rc = block_on(mm.rpc(&json! ({
@@ -3742,7 +3742,7 @@ fn test_convert_qrc20_address() {
         rc.1
     );
     log!("{}", rc.1);
-    assert!(rc.1.contains("Address has invalid prefixes"));
+    assert!(rc.1.contains("invalid address prefix"));
 
     // test invalid address
     let rc = block_on(mm.rpc(&json! ({
@@ -3884,7 +3884,7 @@ fn test_validateaddress() {
     assert!(!result["is_valid"].as_bool().unwrap());
     let reason = result["reason"].as_str().unwrap();
     log!("{}", reason);
-    assert!(reason.contains("Expected a valid P2PKH or P2SH prefix"));
+    assert!(reason.contains("invalid address prefix"));
 
     // test invalid ETH address
 

@@ -22,7 +22,7 @@ use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::{tear_down_bot, 
                                                                  PRECISION_FOR_NOTIFICATION};
 use crate::mm2::lp_swap::MakerSwapStatusChanged;
 pub use simple_market_maker_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot,
-                                  StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
+                                  StartSimpleMakerBotRequest};
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "simple_market_maker_tests.rs"]
@@ -93,7 +93,7 @@ impl From<TradingBotStarted> for TradingBotEvent {
 pub struct RunningState {
     trading_bot_cfg: SimpleMakerBotRegistry,
     bot_refresh_rate: f64,
-    price_url: String,
+    price_urls: Vec<String>,
 }
 
 pub struct StoppingState {

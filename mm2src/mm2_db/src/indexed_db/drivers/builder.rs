@@ -1,4 +1,5 @@
 use super::{construct_event_closure, DbUpgrader, IdbDatabaseImpl, OnUpgradeError, OnUpgradeNeededCb, OPEN_DATABASES};
+use crate::indexed_db::get_idb_factory;
 use common::{log::info, stringify_js_error};
 use derive_more::Display;
 use futures::channel::mpsc;
@@ -73,12 +74,7 @@ impl IdbDatabaseBuilder {
         let (table_names, on_upgrade_needed_handlers) = Self::tables_into_parts(self.tables)?;
         info!("Open '{}' database with tables: {:?}", self.db_name, table_names);
 
-        let window = web_sys::window().expect("!window");
-        let indexed_db = match window.indexed_db() {
-            Ok(Some(db)) => db,
-            Ok(None) => return MmError::err(InitDbError::NotSupported("Unknown error".to_owned())),
-            Err(e) => return MmError::err(InitDbError::NotSupported(stringify_js_error(&e))),
-        };
+        let indexed_db = get_idb_factory()?;
 
         let db_request = match indexed_db.open_with_u32(&self.db_name, self.db_version) {
             Ok(r) => r,

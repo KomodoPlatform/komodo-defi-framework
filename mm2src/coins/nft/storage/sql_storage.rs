@@ -10,7 +10,7 @@ use db_common::sql_build::{SqlCondition, SqlQuery};
 use db_common::sqlite::rusqlite::types::{FromSqlError, Type};
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, Statement};
 use db_common::sqlite::sql_builder::SqlBuilder;
-use db_common::sqlite::{query_single_row, string_from_row, validate_table_name, CHECK_TABLE_EXISTS_SQL};
+use db_common::sqlite::{query_single_row, string_from_row, SafeTableName, CHECK_TABLE_EXISTS_SQL};
 use ethereum_types::Address;
 use futures::lock::MutexGuard as AsyncMutexGuard;
 use mm2_err_handle::prelude::*;
@@ -23,27 +23,27 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 
 impl Chain {
-    fn nft_list_table_name(&self) -> SqlResult<String> {
+    fn nft_list_table_name(&self) -> SqlResult<SafeTableName> {
         let name = self.to_ticker().to_owned() + "_nft_list";
-        validate_table_name(&name)?;
-        Ok(name)
+        let safe_name = SafeTableName::new(&name)?;
+        Ok(safe_name)
     }
 
-    fn transfer_history_table_name(&self) -> SqlResult<String> {
+    fn transfer_history_table_name(&self) -> SqlResult<SafeTableName> {
         let name = self.to_ticker().to_owned() + "_nft_transfer_history";
-        validate_table_name(&name)?;
-        Ok(name)
+        let safe_name = SafeTableName::new(&name)?;
+        Ok(safe_name)
     }
 }
 
-fn scanned_nft_blocks_table_name() -> SqlResult<String> {
+fn scanned_nft_blocks_table_name() -> SqlResult<SafeTableName> {
     let name = "scanned_nft_blocks".to_string();
-    validate_table_name(&name)?;
-    Ok(name)
+    let safe_name = SafeTableName::new(&name)?;
+    Ok(safe_name)
 }
 
 fn create_nft_list_table_sql(chain: &Chain) -> MmResult<String, SqlError> {
-    let table_name = chain.nft_list_table_name()?;
+    let safe_table_name = chain.nft_list_table_name()?;
     let sql = format!(
         "CREATE TABLE IF NOT EXISTS {} (
     token_address VARCHAR(256) NOT NULL,
@@ -75,13 +75,13 @@ fn create_nft_list_table_sql(chain: &Chain) -> MmResult<String, SqlError> {
     details_json TEXT,
     PRIMARY KEY (token_address, token_id)
         );",
-        table_name
+        safe_table_name.inner()
     );
     Ok(sql)
 }
 
 fn create_transfer_history_table_sql(chain: &Chain) -> Result<String, SqlError> {
-    let table_name = chain.transfer_history_table_name()?;
+    let safe_table_name = chain.transfer_history_table_name()?;
     let sql = format!(
         "CREATE TABLE IF NOT EXISTS {} (
     transaction_hash VARCHAR(256) NOT NULL,
@@ -105,19 +105,19 @@ fn create_transfer_history_table_sql(chain: &Chain) -> Result<String, SqlError> 
     details_json TEXT,
     PRIMARY KEY (transaction_hash, log_index)
         );",
-        table_name
+        safe_table_name.inner()
     );
     Ok(sql)
 }
 
 fn create_scanned_nft_blocks_sql() -> Result<String, SqlError> {
-    let table_name = scanned_nft_blocks_table_name()?;
+    let safe_table_name = scanned_nft_blocks_table_name()?;
     let sql = format!(
         "CREATE TABLE IF NOT EXISTS {} (
     chain TEXT PRIMARY KEY,
     last_scanned_block INTEGER DEFAULT 0
     );",
-        table_name
+        safe_table_name.inner()
     );
     Ok(sql)
 }
@@ -129,7 +129,7 @@ fn get_nft_list_builder_preimage(chains: Vec<Chain>, filters: Option<NftListFilt
         .iter()
         .map(|chain| {
             let table_name = chain.nft_list_table_name()?;
-            let sql_builder = nft_list_builder_preimage(table_name.as_str(), filters)?;
+            let sql_builder = nft_list_builder_preimage(table_name, filters)?;
             let sql_string = sql_builder
                 .sql()
                 .map_err(|e| SqlError::ToSqlConversionFailure(e.into()))?
@@ -145,8 +145,11 @@ fn get_nft_list_builder_preimage(chains: Vec<Chain>, filters: Option<NftListFilt
     Ok(final_sql_builder)
 }
 
-fn nft_list_builder_preimage(table_name: &str, filters: Option<NftListFilters>) -> Result<SqlBuilder, SqlError> {
-    let mut sql_builder = SqlBuilder::select_from(table_name);
+fn nft_list_builder_preimage(
+    safe_table_name: SafeTableName,
+    filters: Option<NftListFilters>,
+) -> Result<SqlBuilder, SqlError> {
+    let mut sql_builder = SqlBuilder::select_from(safe_table_name.inner());
     if let Some(filters) = filters {
         if filters.exclude_spam {
             sql_builder.and_where("possible_spam == 0");
@@ -167,7 +170,7 @@ fn get_nft_transfer_builder_preimage(
         .into_iter()
         .map(|chain| {
             let table_name = chain.transfer_history_table_name()?;
-            let sql_builder = nft_history_table_builder_preimage(table_name.as_str(), filters)?;
+            let sql_builder = nft_history_table_builder_preimage(table_name, filters)?;
             let sql_string = sql_builder
                 .sql()
                 .map_err(|e| SqlError::ToSqlConversionFailure(e.into()))?
@@ -184,10 +187,10 @@ fn get_nft_transfer_builder_preimage(
 }
 
 fn nft_history_table_builder_preimage(
-    table_name: &str,
+    safe_table_name: SafeTableName,
     filters: Option<NftTransferHistoryFilters>,
 ) -> Result<SqlBuilder, SqlError> {
-    let mut sql_builder = SqlBuilder::select_from(table_name);
+    let mut sql_builder = SqlBuilder::select_from(safe_table_name.inner());
     if let Some(filters) = filters {
         if filters.send && !filters.receive {
             sql_builder.and_where_eq("status", "'Send'");
@@ -388,7 +391,7 @@ fn token_address_id_from_row(row: &Row<'_>) -> Result<NftTokenAddrId, SqlError> 
 }
 
 fn insert_nft_in_list_sql(chain: &Chain) -> Result<String, SqlError> {
-    let table_name = chain.nft_list_table_name()?;
+    let safe_table_name = chain.nft_list_table_name()?;
     let sql = format!(
         "INSERT INTO {} (
             token_address, token_id, chain, amount, block_number, contract_type, possible_spam,
@@ -400,13 +403,13 @@ fn insert_nft_in_list_sql(chain: &Chain) -> Result<String, SqlError> {
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
             ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27
         );",
-        table_name
+        safe_table_name.inner()
     );
     Ok(sql)
 }
 
 fn insert_transfer_in_history_sql(chain: &Chain) -> Result<String, SqlError> {
-    let table_name = chain.transfer_history_table_name()?;
+    let safe_table_name = chain.transfer_history_table_name()?;
     let sql = format!(
         "INSERT INTO {} (
             transaction_hash, log_index, chain, block_number, block_timestamp, contract_type,
@@ -415,66 +418,69 @@ fn insert_transfer_in_history_sql(chain: &Chain) -> Result<String, SqlError> {
         ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19
         );",
-        table_name
+        safe_table_name.inner()
     );
     Ok(sql)
 }
 
 fn upsert_last_scanned_block_sql() -> Result<String, SqlError> {
-    let table_name = scanned_nft_blocks_table_name()?;
+    let safe_table_name = scanned_nft_blocks_table_name()?;
     let sql = format!(
         "INSERT OR REPLACE INTO {} (chain, last_scanned_block) VALUES (?1, ?2);",
-        table_name
+        safe_table_name.inner()
     );
     Ok(sql)
 }
 
 fn refresh_nft_metadata_sql(chain: &Chain) -> Result<String, SqlError> {
-    let table_name = chain.nft_list_table_name()?;
+    let safe_table_name = chain.nft_list_table_name()?;
     let sql = format!(
         "UPDATE {} SET possible_spam = ?1, possible_phishing = ?2, collection_name = ?3, symbol = ?4, token_uri = ?5, token_domain = ?6, metadata = ?7, \
         last_token_uri_sync = ?8, last_metadata_sync = ?9, raw_image_url = ?10, image_url = ?11, image_domain = ?12, token_name = ?13, description = ?14, \
         attributes = ?15, animation_url = ?16, animation_domain = ?17, external_url = ?18, external_domain = ?19, image_details = ?20 WHERE token_address = ?21 AND token_id = ?22;",
-        table_name
+        safe_table_name.inner()
     );
     Ok(sql)
 }
 
 fn update_transfers_meta_by_token_addr_id_sql(chain: &Chain) -> Result<String, SqlError> {
-    let table_name = chain.transfer_history_table_name()?;
+    let safe_table_name = chain.transfer_history_table_name()?;
     let sql = format!(
         "UPDATE {} SET token_uri = ?1, token_domain = ?2, collection_name = ?3, image_url = ?4, image_domain = ?5, \
         token_name = ?6 WHERE token_address = ?7 AND token_id = ?8;",
-        table_name
+        safe_table_name.inner()
     );
     Ok(sql)
 }
 
 fn update_transfer_spam_by_token_addr_id(chain: &Chain) -> Result<String, SqlError> {
-    let table_name = chain.transfer_history_table_name()?;
+    let safe_table_name = chain.transfer_history_table_name()?;
     let sql = format!(
         "UPDATE {} SET possible_spam = ?1 WHERE token_address = ?2 AND token_id = ?3;",
-        table_name
+        safe_table_name.inner()
     );
     Ok(sql)
 }
 
-fn select_last_block_number_sql(table_name: String) -> Result<String, SqlError> {
+fn select_last_block_number_sql(safe_table_name: SafeTableName) -> Result<String, SqlError> {
     let sql = format!(
         "SELECT block_number FROM {} ORDER BY block_number DESC LIMIT 1",
-        table_name
+        safe_table_name.inner()
     );
     Ok(sql)
 }
 
 fn select_last_scanned_block_sql() -> MmResult<String, SqlError> {
     let table_name = scanned_nft_blocks_table_name()?;
-    let sql = format!("SELECT last_scanned_block FROM {} WHERE chain=?1", table_name,);
+    let sql = format!("SELECT last_scanned_block FROM {} WHERE chain=?1", table_name.inner());
     Ok(sql)
 }
 
-fn delete_nft_sql(table_name: String) -> Result<String, SqlError> {
-    let sql = format!("DELETE FROM {} WHERE token_address=?1 AND token_id=?2", table_name);
+fn delete_nft_sql(safe_table_name: SafeTableName) -> Result<String, SqlError> {
+    let sql = format!(
+        "DELETE FROM {} WHERE token_address=?1 AND token_id=?2",
+        safe_table_name.inner()
+    );
     Ok(sql)
 }
 
@@ -482,38 +488,44 @@ fn block_number_from_row(row: &Row<'_>) -> Result<i64, SqlError> { row.get::<_, 
 
 fn nft_amount_from_row(row: &Row<'_>) -> Result<String, SqlError> { row.get(0) }
 
-fn get_nfts_by_token_address_statement(conn: &Connection, table_name: String) -> Result<Statement, SqlError> {
-    let sql_query = format!("SELECT * FROM {} WHERE token_address = ?", table_name);
+fn get_nfts_by_token_address_statement(
+    conn: &Connection,
+    safe_table_name: SafeTableName,
+) -> Result<Statement, SqlError> {
+    let sql_query = format!("SELECT * FROM {} WHERE token_address = ?", safe_table_name.inner());
     let stmt = conn.prepare(&sql_query)?;
     Ok(stmt)
 }
 
-fn get_token_addresses_statement(conn: &Connection, table_name: String) -> Result<Statement, SqlError> {
-    let sql_query = format!("SELECT DISTINCT token_address FROM {}", table_name);
+fn get_token_addresses_statement(conn: &Connection, safe_table_name: SafeTableName) -> Result<Statement, SqlError> {
+    let sql_query = format!("SELECT DISTINCT token_address FROM {}", safe_table_name.inner());
     let stmt = conn.prepare(&sql_query)?;
     Ok(stmt)
 }
 
 fn get_transfers_from_block_statement<'a>(conn: &'a Connection, chain: &'a Chain) -> Result<Statement<'a>, SqlError> {
-    let table_name = chain.transfer_history_table_name()?;
+    let safe_table_name = chain.transfer_history_table_name()?;
     let sql_query = format!(
         "SELECT * FROM {} WHERE block_number >= ? ORDER BY block_number ASC",
-        table_name
+        safe_table_name.inner()
     );
     let stmt = conn.prepare(&sql_query)?;
     Ok(stmt)
 }
 
 fn get_transfers_by_token_addr_id_statement(conn: &Connection, chain: Chain) -> Result<Statement, SqlError> {
-    let table_name = chain.transfer_history_table_name()?;
-    let sql_query = format!("SELECT * FROM {} WHERE token_address = ? AND token_id = ?", table_name);
+    let safe_table_name = chain.transfer_history_table_name()?;
+    let sql_query = format!(
+        "SELECT * FROM {} WHERE token_address = ? AND token_id = ?",
+        safe_table_name.inner()
+    );
     let stmt = conn.prepare(&sql_query)?;
     Ok(stmt)
 }
 
 fn get_transfers_with_empty_meta_builder<'a>(conn: &'a Connection, chain: &'a Chain) -> Result<SqlQuery<'a>, SqlError> {
-    let table_name = chain.transfer_history_table_name()?;
-    let mut sql_builder = SqlQuery::select_from(conn, table_name.as_str())?;
+    let safe_table_name = chain.transfer_history_table_name()?;
+    let mut sql_builder = SqlQuery::select_from(conn, safe_table_name.inner())?;
     sql_builder
         .sql_builder()
         .distinct()
@@ -526,6 +538,12 @@ fn get_transfers_with_empty_meta_builder<'a>(conn: &'a Connection, chain: &'a Ch
         .and_where("possible_spam == 0");
     drop_mutability!(sql_builder);
     Ok(sql_builder)
+}
+
+fn is_table_empty(conn: &Connection, safe_table_name: SafeTableName) -> Result<bool, SqlError> {
+    let query = format!("SELECT COUNT(*) FROM {}", safe_table_name.inner());
+    conn.query_row(&query, [], |row| row.get::<_, i64>(0))
+        .map(|count| count == 0)
 }
 
 #[async_trait]
@@ -546,11 +564,12 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     async fn is_initialized(&self, chain: &Chain) -> MmResult<bool, Self::Error> {
         let table_name = chain.nft_list_table_name()?;
         self.call(move |conn| {
-            let nft_list_initialized = query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [table_name], string_from_row)?;
+            let nft_list_initialized =
+                query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [table_name.inner()], string_from_row)?;
             let scanned_nft_blocks_initialized = query_single_row(
                 conn,
                 CHECK_TABLE_EXISTS_SQL,
-                [scanned_nft_blocks_table_name()?],
+                [scanned_nft_blocks_table_name()?.inner()],
                 string_from_row,
             )?;
             Ok(nft_list_initialized.is_some() && scanned_nft_blocks_initialized.is_some())
@@ -660,7 +679,10 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     ) -> MmResult<Option<Nft>, Self::Error> {
         let table_name = chain.nft_list_table_name()?;
         self.call(move |conn| {
-            let sql = format!("SELECT * FROM {} WHERE token_address=?1 AND token_id=?2", table_name);
+            let sql = format!(
+                "SELECT * FROM {} WHERE token_address=?1 AND token_id=?2",
+                table_name.inner()
+            );
             let params = [token_address, token_id.to_string()];
             let nft = query_single_row(conn, &sql, params, nft_from_row)?;
             Ok(nft)
@@ -706,7 +728,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         let table_name = chain.nft_list_table_name()?;
         let sql = format!(
             "SELECT amount FROM {} WHERE token_address=?1 AND token_id=?2",
-            table_name
+            table_name.inner()
         );
         let params = [token_address, token_id.to_string()];
         self.call(move |conn| {
@@ -783,7 +805,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         let table_name = chain.nft_list_table_name()?;
         let sql = format!(
             "UPDATE {} SET amount = ?1 WHERE token_address = ?2 AND token_id = ?3;",
-            table_name
+            table_name.inner()
         );
         let scanned_block_params = [chain.to_ticker().to_string(), scanned_block.to_string()];
         self.call(move |conn| {
@@ -806,7 +828,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         let table_name = chain.nft_list_table_name()?;
         let sql = format!(
             "UPDATE {} SET amount = ?1, block_number = ?2 WHERE token_address = ?3 AND token_id = ?4;",
-            table_name
+            table_name.inner()
         );
         let scanned_block_params = [chain.to_ticker().to_string(), nft.block_number.to_string()];
         self.call(move |conn| {
@@ -846,7 +868,10 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         possible_spam: bool,
     ) -> MmResult<(), Self::Error> {
         let table_name = chain.nft_list_table_name()?;
-        let sql = format!("UPDATE {} SET possible_spam = ?1 WHERE token_address = ?2;", table_name);
+        let sql = format!(
+            "UPDATE {} SET possible_spam = ?1 WHERE token_address = ?2;",
+            table_name.inner()
+        );
         self.call(move |conn| {
             let sql_transaction = conn.transaction()?;
             let params = [Some(i32::from(possible_spam).to_string()), Some(token_address.clone())];
@@ -859,8 +884,9 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     }
 
     async fn get_animation_external_domains(&self, chain: &Chain) -> MmResult<HashSet<String>, Self::Error> {
-        let table_name = chain.nft_list_table_name()?;
+        let safe_table_name = chain.nft_list_table_name()?;
         self.call(move |conn| {
+            let table_name = safe_table_name.inner();
             let sql_query = format!(
                 "SELECT DISTINCT animation_domain FROM {} UNION SELECT DISTINCT external_domain FROM {}",
                 table_name, table_name
@@ -886,12 +912,49 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         let sql = format!(
             "UPDATE {} SET possible_phishing = ?1 WHERE token_domain = ?2
             OR image_domain = ?2 OR animation_domain = ?2 OR external_domain = ?2;",
-            table_name
+            table_name.inner()
         );
         self.call(move |conn| {
             let sql_transaction = conn.transaction()?;
             let params = [Some(i32::from(possible_phishing).to_string()), Some(domain)];
             sql_transaction.execute(&sql, params)?;
+            sql_transaction.commit()?;
+            Ok(())
+        })
+        .await
+        .map_to_mm(AsyncConnError::from)
+    }
+
+    async fn clear_nft_data(&self, chain: &Chain) -> MmResult<(), Self::Error> {
+        let table_nft_name = chain.nft_list_table_name()?;
+        let sql_nft = format!("DROP TABLE IF EXISTS {};", table_nft_name.inner());
+        let table_scanned_blocks = scanned_nft_blocks_table_name()?;
+        let sql_scanned_block = format!("DELETE from {} where chain=?1", table_scanned_blocks.inner());
+        let scanned_block_param = [chain.to_ticker()];
+        self.call(move |conn| {
+            let sql_transaction = conn.transaction()?;
+            sql_transaction.execute(&sql_nft, [])?;
+            sql_transaction.execute(&sql_scanned_block, scanned_block_param)?;
+            sql_transaction.commit()?;
+            if is_table_empty(conn, table_scanned_blocks.clone())? {
+                conn.execute(&format!("DROP TABLE IF EXISTS {};", table_scanned_blocks.inner()), [])
+                    .map(|_| ())?;
+            }
+            Ok(())
+        })
+        .await
+        .map_to_mm(AsyncConnError::from)
+    }
+
+    async fn clear_all_nft_data(&self) -> MmResult<(), Self::Error> {
+        self.call(move |conn| {
+            let sql_transaction = conn.transaction()?;
+            for chain in Chain::variant_list().into_iter() {
+                let table_name = chain.nft_list_table_name()?;
+                sql_transaction.execute(&format!("DROP TABLE IF EXISTS {};", table_name.inner()), [])?;
+            }
+            let table_scanned_blocks = scanned_nft_blocks_table_name()?;
+            sql_transaction.execute(&format!("DROP TABLE IF EXISTS {};", table_scanned_blocks.inner()), [])?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -917,7 +980,8 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     async fn is_initialized(&self, chain: &Chain) -> MmResult<bool, Self::Error> {
         let table_name = chain.transfer_history_table_name()?;
         self.call(move |conn| {
-            let nft_list_initialized = query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [table_name], string_from_row)?;
+            let nft_list_initialized =
+                query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [table_name.inner()], string_from_row)?;
             Ok(nft_list_initialized.is_some())
         })
         .await
@@ -1066,7 +1130,7 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         let table_name = chain.transfer_history_table_name()?;
         let sql = format!(
             "SELECT * FROM {} WHERE transaction_hash=?1 AND log_index = ?2",
-            table_name
+            table_name.inner()
         );
         self.call(move |conn| {
             let transfer = query_single_row(
@@ -1151,7 +1215,10 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         possible_spam: bool,
     ) -> MmResult<(), Self::Error> {
         let table_name = chain.transfer_history_table_name()?;
-        let sql = format!("UPDATE {} SET possible_spam = ?1 WHERE token_address = ?2;", table_name);
+        let sql = format!(
+            "UPDATE {} SET possible_spam = ?1 WHERE token_address = ?2;",
+            table_name.inner()
+        );
         self.call(move |conn| {
             let sql_transaction = conn.transaction()?;
             let params = [Some(i32::from(possible_spam).to_string()), Some(token_address.clone())];
@@ -1177,8 +1244,9 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     }
 
     async fn get_domains(&self, chain: &Chain) -> MmResult<HashSet<String>, Self::Error> {
-        let table_name = chain.transfer_history_table_name()?;
+        let safe_table_name = chain.transfer_history_table_name()?;
         self.call(move |conn| {
+            let table_name = safe_table_name.inner();
             let sql_query = format!(
                 "SELECT DISTINCT token_domain FROM {} UNION SELECT DISTINCT image_domain FROM {}",
                 table_name, table_name
@@ -1200,15 +1268,41 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         domain: String,
         possible_phishing: bool,
     ) -> MmResult<(), Self::Error> {
-        let table_name = chain.transfer_history_table_name()?;
+        let safe_table_name = chain.transfer_history_table_name()?;
         let sql = format!(
             "UPDATE {} SET possible_phishing = ?1 WHERE token_domain = ?2 OR image_domain = ?2;",
-            table_name
+            safe_table_name.inner()
         );
         self.call(move |conn| {
             let sql_transaction = conn.transaction()?;
             let params = [Some(i32::from(possible_phishing).to_string()), Some(domain)];
             sql_transaction.execute(&sql, params)?;
+            sql_transaction.commit()?;
+            Ok(())
+        })
+        .await
+        .map_to_mm(AsyncConnError::from)
+    }
+
+    async fn clear_history_data(&self, chain: &Chain) -> MmResult<(), Self::Error> {
+        let table_name = chain.transfer_history_table_name()?;
+        self.call(move |conn| {
+            let sql_transaction = conn.transaction()?;
+            sql_transaction.execute(&format!("DROP TABLE IF EXISTS {};", table_name.inner()), [])?;
+            sql_transaction.commit()?;
+            Ok(())
+        })
+        .await
+        .map_to_mm(AsyncConnError::from)
+    }
+
+    async fn clear_all_history_data(&self) -> MmResult<(), Self::Error> {
+        self.call(move |conn| {
+            let sql_transaction = conn.transaction()?;
+            for chain in Chain::variant_list().into_iter() {
+                let table_name = chain.transfer_history_table_name()?;
+                sql_transaction.execute(&format!("DROP TABLE IF EXISTS {};", table_name.inner()), [])?;
+            }
             sql_transaction.commit()?;
             Ok(())
         })

@@ -4,7 +4,7 @@ use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::trezor::trezor_rpc_task::{TrezorRequestStatuses, TrezorRpcTaskProcessor, TryIntoUserAction};
 use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorProcessingError};
 use crypto::{CryptoCtx, CryptoCtxError, HardwareWalletArc, HwError, HwProcessingError};
-use enum_from::{EnumFromInner, EnumFromStringify};
+use enum_derives::{EnumFromInner, EnumFromStringify};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared};

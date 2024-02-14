@@ -1,5 +1,5 @@
 [package]
-name = "enum_from"
+name = "enum_derives"
 version = "0.1.0"
 edition = "2021"
 

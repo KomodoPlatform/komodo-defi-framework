@@ -42,7 +42,7 @@ crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
 ed25519-dalek = "1.0.1"
-enum_from = { path = "../derives/enum_from" }
+enum_derives = { path = "../derives/enum_derives" }
 ethabi = { version = "17.0.0" }
 ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }

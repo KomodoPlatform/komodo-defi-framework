@@ -1,7 +1,7 @@
 use super::IdbObjectStoreImpl;
 use common::wasm::stringify_js_error;
 use derive_more::Display;
-use enum_from::EnumFromTrait;
+use enum_derives::EnumFromTrait;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use std::collections::HashSet;

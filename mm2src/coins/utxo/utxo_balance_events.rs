@@ -45,7 +45,7 @@ impl EventBehaviour for UtxoStandardCoin {
 
             let mut scripthash_to_address_map: BTreeMap<String, Address> = BTreeMap::new();
             for address in addresses {
-                let scripthash = address_to_scripthash(&address);
+                let scripthash = address_to_scripthash(&address).map_err(|e| e.to_string())?;
 
                 scripthash_to_address_map.insert(scripthash.clone(), address);
 
@@ -142,7 +142,13 @@ impl EventBehaviour for UtxoStandardCoin {
                 None => try_or_continue!(self.my_addresses().await)
                     .into_iter()
                     .find_map(|addr| {
-                        let script = output_script(&addr, keys::Type::P2PKH);
+                        let script = match output_script(&addr) {
+                            Ok(script) => script,
+                            Err(e) => {
+                                log::error!("{e}");
+                                return None;
+                            },
+                        };
                         let script_hash = electrum_script_hash(&script);
                         let scripthash = hex::encode(script_hash);
 
