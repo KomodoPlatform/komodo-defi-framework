@@ -71,7 +71,9 @@ impl From<GetNftInfoError> for EthActivationV2Error {
                 "The contract type is required and should not be null.".to_string(),
             ),
             GetNftInfoError::Transport(err) => EthActivationV2Error::UnreachableNodes(err),
-            GetNftInfoError::Internal(err) | GetNftInfoError::DbError(err) => EthActivationV2Error::InternalError(err),
+            GetNftInfoError::Internal(err) | GetNftInfoError::DbError(err) | GetNftInfoError::NumConversError(err) => {
+                EthActivationV2Error::InternalError(err)
+            },
             GetNftInfoError::GetEthAddressError(err) => EthActivationV2Error::InternalError(err.to_string()),
             GetNftInfoError::ParseRfc3339Err(err) => EthActivationV2Error::InternalError(err.to_string()),
             GetNftInfoError::ProtectFromSpamError(err) => EthActivationV2Error::InternalError(err.to_string()),

@@ -4112,7 +4112,7 @@ impl EthCoin {
 
     async fn erc1155_balance(&self, token_addr: Address, token_id: &str) -> MmResult<BigDecimal, BalanceError> {
         let wallet_amount_uint = match self.coin_type {
-            EthCoinType::Eth => {
+            EthCoinType::Eth | EthCoinType::Nft { .. } => {
                 let function = ERC1155_CONTRACT.function("balanceOf")?;
                 let token_id_u256 =
                     U256::from_dec_str(token_id).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
@@ -4139,7 +4139,7 @@ impl EthCoin {
 
     async fn erc721_owner(&self, token_addr: Address, token_id: &str) -> MmResult<Address, GetNftInfoError> {
         let owner_address = match self.coin_type {
-            EthCoinType::Eth => {
+            EthCoinType::Eth | EthCoinType::Nft { .. } => {
                 let function = ERC721_CONTRACT.function("ownerOf")?;
                 let token_id_u256 =
                     U256::from_dec_str(token_id).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
