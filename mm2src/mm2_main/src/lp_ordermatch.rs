@@ -98,7 +98,7 @@ cfg_wasm32! {
 #[path = "lp_ordermatch/best_orders.rs"] mod best_orders;
 #[path = "lp_ordermatch/lp_bot.rs"] mod lp_bot;
 pub use lp_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest,
-                 TradingBotEvent, KMD_PRICE_ENDPOINT};
+                 TradingBotEvent};
 
 #[path = "lp_ordermatch/my_orders_storage.rs"]
 mod my_orders_storage;

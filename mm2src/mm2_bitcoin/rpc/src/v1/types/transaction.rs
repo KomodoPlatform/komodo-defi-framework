@@ -2,10 +2,7 @@ use super::bytes::Bytes;
 use super::hash::H256;
 use super::script::ScriptType;
 use keys::Address;
-use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
-use v1::types;
 
 /// Hex-encoded transaction
 pub type RawTransaction = Bytes;
@@ -35,22 +32,6 @@ pub struct TransactionOutputWithAddress {
 pub struct TransactionOutputWithScriptData {
     /// Serialized script data
     pub script_data: Bytes,
-}
-
-/// Transaction output
-#[derive(Debug, PartialEq)]
-pub enum TransactionOutput {
-    /// Of form address: amount
-    Address(TransactionOutputWithAddress),
-    /// Of form data: script_data_bytes
-    ScriptData(TransactionOutputWithScriptData),
-}
-
-/// Transaction outputs, which serializes/deserializes as KV-map
-#[derive(Debug, PartialEq)]
-pub struct TransactionOutputs {
-    /// Transaction outputs
-    pub outputs: Vec<TransactionOutput>,
 }
 
 /// Transaction input script
@@ -243,78 +224,6 @@ impl Serialize for GetRawTransactionResponse {
     }
 }
 
-impl TransactionOutputs {
-    pub fn len(&self) -> usize { self.outputs.len() }
-
-    pub fn is_empty(&self) -> bool { self.outputs.is_empty() }
-}
-
-impl Serialize for TransactionOutputs {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_map(Some(self.len()))?;
-        for output in &self.outputs {
-            match *output {
-                TransactionOutput::Address(ref address_output) => {
-                    state.serialize_entry(&address_output.address.to_string(), &address_output.amount)?;
-                },
-                TransactionOutput::ScriptData(ref script_output) => {
-                    state.serialize_entry("data", &script_output.script_data)?;
-                },
-            }
-        }
-        state.end()
-    }
-}
-
-impl<'a> Deserialize<'a> for TransactionOutputs {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        use serde::de::{MapAccess, Visitor};
-
-        struct TransactionOutputsVisitor;
-
-        impl<'b> Visitor<'b> for TransactionOutputsVisitor {
-            type Value = TransactionOutputs;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a transaction output object")
-            }
-
-            fn visit_map<V>(self, mut visitor: V) -> Result<TransactionOutputs, V::Error>
-            where
-                V: MapAccess<'b>,
-            {
-                let mut outputs: Vec<TransactionOutput> = Vec::with_capacity(visitor.size_hint().unwrap_or(0));
-
-                while let Some(key) = visitor.next_key::<String>()? {
-                    if &key == "data" {
-                        let value: Bytes = visitor.next_value()?;
-                        outputs.push(TransactionOutput::ScriptData(TransactionOutputWithScriptData {
-                            script_data: value,
-                        }));
-                    } else {
-                        let address = types::address::AddressVisitor::default().visit_str(&key)?;
-                        let amount: f64 = visitor.next_value()?;
-                        outputs.push(TransactionOutput::Address(TransactionOutputWithAddress {
-                            address,
-                            amount,
-                        }));
-                    }
-                }
-
-                Ok(TransactionOutputs { outputs })
-            }
-        }
-
-        deserializer.deserialize_identifier(TransactionOutputsVisitor)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::bytes::Bytes;
@@ -363,58 +272,6 @@ mod tests {
             .unwrap(),
             txinput
         );
-    }
-
-    #[test]
-    fn transaction_outputs_serialize() {
-        let txout = TransactionOutputs {
-            outputs: vec![
-                TransactionOutput::Address(TransactionOutputWithAddress {
-                    address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".into(),
-                    amount: 123.45,
-                }),
-                TransactionOutput::Address(TransactionOutputWithAddress {
-                    address: "1H5m1XzvHsjWX3wwU781ubctznEpNACrNC".into(),
-                    amount: 67.89,
-                }),
-                TransactionOutput::ScriptData(TransactionOutputWithScriptData {
-                    script_data: Bytes::new(vec![1, 2, 3, 4]),
-                }),
-                TransactionOutput::ScriptData(TransactionOutputWithScriptData {
-                    script_data: Bytes::new(vec![5, 6, 7, 8]),
-                }),
-            ],
-        };
-        assert_eq!(
-            serde_json::to_string(&txout).unwrap(),
-            r#"{"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa":123.45,"1H5m1XzvHsjWX3wwU781ubctznEpNACrNC":67.89,"data":"01020304","data":"05060708"}"#
-        );
-    }
-
-    #[ignore]
-    #[test]
-    fn transaction_outputs_deserialize() {
-        let txout = TransactionOutputs {
-            outputs: vec![
-                TransactionOutput::Address(TransactionOutputWithAddress {
-                    address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".into(),
-                    amount: 123.45,
-                }),
-                TransactionOutput::Address(TransactionOutputWithAddress {
-                    address: "1H5m1XzvHsjWX3wwU781ubctznEpNACrNC".into(),
-                    amount: 67.89,
-                }),
-                TransactionOutput::ScriptData(TransactionOutputWithScriptData {
-                    script_data: Bytes::new(vec![1, 2, 3, 4]),
-                }),
-                TransactionOutput::ScriptData(TransactionOutputWithScriptData {
-                    script_data: Bytes::new(vec![5, 6, 7, 8]),
-                }),
-            ],
-        };
-        assert_eq!(
-			serde_json::from_str::<TransactionOutputs>(r#"{"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa":123.45,"1H5m1XzvHsjWX3wwU781ubctznEpNACrNC":67.89,"data":"01020304","data":"05060708"}"#).unwrap(),
-			txout);
     }
 
     #[test]

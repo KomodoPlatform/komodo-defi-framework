@@ -28,7 +28,7 @@ use futures01::{Future, Sink, Stream};
 use http::Uri;
 use itertools::Itertools;
 use keys::hash::H256;
-use keys::{Address, Type as ScriptType};
+use keys::Address;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, BigInt, MmNumber};
 use mm2_rpc::data::legacy::ElectrumProtocol;
@@ -315,6 +315,10 @@ impl From<serialization::Error> for UtxoRpcError {
 
 impl From<NumConversError> for UtxoRpcError {
     fn from(e: NumConversError) -> Self { UtxoRpcError::Internal(e.to_string()) }
+}
+
+impl From<keys::Error> for UtxoRpcError {
+    fn from(e: keys::Error) -> Self { UtxoRpcError::Internal(e.to_string()) }
 }
 
 impl UtxoRpcError {
@@ -2216,7 +2220,7 @@ impl ElectrumClient {
 #[cfg_attr(test, mockable)]
 impl UtxoRpcClientOps for ElectrumClient {
     fn list_unspent(&self, address: &Address, _decimals: u8) -> UtxoRpcFut<Vec<UnspentInfo>> {
-        let script = output_script(address, ScriptType::P2PKH);
+        let script = try_f!(output_script(address));
         let script_hash = electrum_script_hash(&script);
         Box::new(
             self.scripthash_list_unspent(&hex::encode(script_hash))
@@ -2238,14 +2242,14 @@ impl UtxoRpcClientOps for ElectrumClient {
     }
 
     fn list_unspent_group(&self, addresses: Vec<Address>, _decimals: u8) -> UtxoRpcFut<UnspentMap> {
-        let script_hashes = addresses
+        let script_hashes = try_f!(addresses
             .iter()
             .map(|addr| {
-                let script = output_script(addr, ScriptType::P2PKH);
+                let script = output_script(addr)?;
                 let script_hash = electrum_script_hash(&script);
-                hex::encode(script_hash)
+                Ok(hex::encode(script_hash))
             })
-            .collect();
+            .collect::<Result<Vec<_>, keys::Error>>());
 
         let this = self.clone();
         let fut = async move {
@@ -2320,7 +2324,12 @@ impl UtxoRpcClientOps for ElectrumClient {
     }
 
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal> {
-        let hash = electrum_script_hash(&output_script(&address, ScriptType::P2PKH));
+        let output_script = try_f!(output_script(&address).map_err(|err| JsonRpcError::new(
+            UtxoJsonRpcClientInfo::client_info(self),
+            rpc_req!(self, "blockchain.scripthash.get_balance").into(),
+            JsonRpcErrorType::Internal(err.to_string())
+        )));
+        let hash = electrum_script_hash(&output_script);
         let hash_str = hex::encode(hash);
         Box::new(
             self.scripthash_get_balance(&hash_str)
@@ -2331,10 +2340,15 @@ impl UtxoRpcClientOps for ElectrumClient {
     fn display_balances(&self, addresses: Vec<Address>, decimals: u8) -> UtxoRpcFut<Vec<(Address, BigDecimal)>> {
         let this = self.clone();
         let fut = async move {
-            let hashes = addresses.iter().map(|address| {
-                let hash = electrum_script_hash(&output_script(address, ScriptType::P2PKH));
-                hex::encode(hash)
-            });
+            let hashes = addresses
+                .iter()
+                .map(|address| {
+                    let output_script = output_script(address)?;
+                    let hash = electrum_script_hash(&output_script);
+
+                    Ok(hex::encode(hash))
+                })
+                .collect::<Result<Vec<_>, keys::Error>>()?;
 
             let electrum_balances = this.scripthash_get_balances(hashes).compat().await?;
             let balances = electrum_balances

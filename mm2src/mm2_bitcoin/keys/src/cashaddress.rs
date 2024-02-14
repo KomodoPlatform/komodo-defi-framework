@@ -5,7 +5,7 @@ const DEFAULT_PREFIX: NetworkPrefix = NetworkPrefix::BitcoinCash;
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum AddressType {
+pub enum CashAddrType {
     /// Pay to PubKey Hash
     /// https://bitcoin.org/en/glossary/p2pkh-address
     P2PKH,
@@ -77,7 +77,7 @@ impl NetworkPrefix {
 pub struct CashAddress {
     pub prefix: NetworkPrefix,
     pub hash: Vec<u8>,
-    pub address_type: AddressType,
+    pub address_type: CashAddrType,
 }
 
 impl CashAddress {
@@ -159,7 +159,7 @@ impl CashAddress {
         Ok(format!("{}:{}", self.prefix, address))
     }
 
-    pub fn new(network_prefix: &str, hash: Vec<u8>, address_type: AddressType) -> Result<CashAddress, String> {
+    pub fn new(network_prefix: &str, hash: Vec<u8>, address_type: CashAddrType) -> Result<CashAddress, String> {
         match hash.len() {
             20 | 24 | 28 | 32 | 40 | 48 | 56 | 64 => (),
             _ => return Err(format!("Unexpected hash size {}", hash.len())),
@@ -176,8 +176,8 @@ impl CashAddress {
     /// Get version byte from
     fn version_byte(&self) -> Result<u8, String> {
         let en_address_type: u8 = match self.address_type {
-            AddressType::P2PKH => 0,
-            AddressType::P2SH => 1,
+            CashAddrType::P2PKH => 0,
+            CashAddrType::P2SH => 1,
         };
 
         let en_hash_size: u8 = match self.hash.len() {
@@ -242,15 +242,15 @@ fn hash_size_from_version(version: u8) -> usize {
 /// The version byte's most significant bit is reserved and must be 0.
 /// The 4 next bits indicate the type of address.
 /// See https://github.com/bitcoincashorg/bitcoincash.org/blob/master/spec/cashaddr.md#version-byte
-fn addr_type_from_version(version: u8) -> Result<AddressType, String> {
+fn addr_type_from_version(version: u8) -> Result<CashAddrType, String> {
     if (version & 0b10000000) != 0 {
         return Err("The version byte's most significant bit is reserved and must be 0".into());
     }
 
     // shift
     match version >> 3 {
-        0 => Ok(AddressType::P2PKH),
-        1 => Ok(AddressType::P2SH),
+        0 => Ok(CashAddrType::P2PKH),
+        1 => Ok(CashAddrType::P2SH),
         _ => Err("Unexpected address type".into()),
     }
 }
@@ -460,28 +460,28 @@ mod tests {
                 hash: vec![
                     42, 15, 196, 55, 215, 162, 115, 113, 138, 193, 48, 222, 50, 193, 229, 70, 215, 1, 25, 160,
                 ],
-                address_type: AddressType::P2SH,
+                address_type: CashAddrType::P2SH,
             },
             CashAddress {
                 prefix: "bitcoincash".into(),
                 hash: vec![
                     195, 247, 16, 222, 183, 50, 11, 14, 250, 110, 219, 20, 227, 235, 238, 185, 21, 95, 169, 13,
                 ],
-                address_type: AddressType::P2PKH,
+                address_type: CashAddrType::P2PKH,
             },
             CashAddress {
                 prefix: "bitcoincash".into(),
                 hash: vec![
                     195, 247, 16, 222, 183, 50, 11, 14, 250, 110, 219, 20, 227, 235, 238, 185, 21, 95, 169, 13,
                 ],
-                address_type: AddressType::P2PKH,
+                address_type: CashAddrType::P2PKH,
             },
             CashAddress {
                 prefix: "bchtest".into(),
                 hash: vec![
                     36, 63, 19, 148, 244, 69, 84, 244, 206, 63, 214, 134, 73, 193, 154, 220, 72, 60, 233, 36,
                 ],
-                address_type: AddressType::P2PKH,
+                address_type: CashAddrType::P2PKH,
             },
             CashAddress {
                 prefix: "bchtest".into(),
@@ -489,7 +489,7 @@ mod tests {
                     192, 113, 56, 50, 62, 0, 250, 79, 193, 34, 211, 184, 91, 150, 40, 234, 129, 11, 63, 56, 23, 6, 56,
                     94, 40, 155, 11, 37, 99, 17, 151, 209, 148, 181, 194, 56, 190, 177, 54, 251,
                 ],
-                address_type: AddressType::P2SH,
+                address_type: CashAddrType::P2SH,
             },
         ];
 

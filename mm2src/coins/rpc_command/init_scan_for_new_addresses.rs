@@ -1,5 +1,6 @@
 use crate::coin_balance::HDAddressBalance;
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
+use crate::utxo::utxo_common;
 use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
 use async_trait::async_trait;
 use common::{SerdeInfallible, SuccessResponse};
@@ -132,10 +133,8 @@ pub mod common_impl {
     use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
     use crate::utxo::UtxoCommonOps;
     use crate::CoinWithDerivationMethod;
-    use keys::Address;
     use std::collections::HashSet;
     use std::ops::DerefMut;
-    use std::str::FromStr;
 
     pub async fn scan_for_new_addresses_rpc<Coin>(
         coin: &Coin,
@@ -165,7 +164,9 @@ pub mod common_impl {
 
         let addresses: HashSet<_> = new_addresses
             .iter()
-            .map(|address_balance| Address::from_str(&address_balance.address).expect("Valid address"))
+            .map(|address_balance| {
+                utxo_common::address_from_str_unchecked(coin.as_ref(), &address_balance.address).expect("Valid address")
+            })
             .collect();
 
         coin.prepare_addresses_for_balance_stream_if_enabled(addresses.into())

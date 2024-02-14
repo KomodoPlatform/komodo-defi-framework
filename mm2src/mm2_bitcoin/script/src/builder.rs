@@ -1,7 +1,7 @@
 //! Script builder
 
 use bytes::Bytes;
-use keys::{AddressHashEnum, Public};
+use keys::{AddressHashEnum, Error, Public};
 use {Num, Opcode, Script};
 
 /// Script builder
@@ -39,12 +39,26 @@ impl Builder {
             .into_script()
     }
 
-    /// Builds p2wpkh or p2wsh script pubkey
-    pub fn build_p2witness(address: &AddressHashEnum) -> Script {
-        Builder::default()
-            .push_opcode(Opcode::OP_0)
-            .push_bytes(&address.to_vec())
-            .into_script()
+    /// Builds p2wpkh script pubkey
+    pub fn build_p2wpkh(address_hash: &AddressHashEnum) -> Result<Script, Error> {
+        match address_hash {
+            AddressHashEnum::AddressHash(wpkh_hash) => Ok(Builder::default()
+                .push_opcode(Opcode::OP_0)
+                .push_bytes(wpkh_hash.as_ref())
+                .into_script()),
+            AddressHashEnum::WitnessScriptHash(_) => Err(Error::WitnessHashMismatched),
+        }
+    }
+
+    /// Builds p2wsh script pubkey
+    pub fn build_p2wsh(address_hash: &AddressHashEnum) -> Result<Script, Error> {
+        match address_hash {
+            AddressHashEnum::WitnessScriptHash(wsh_hash) => Ok(Builder::default()
+                .push_opcode(Opcode::OP_0)
+                .push_bytes(wsh_hash.as_ref())
+                .into_script()),
+            AddressHashEnum::AddressHash(_) => Err(Error::WitnessHashMismatched),
+        }
     }
 
     /// Builds op_return script

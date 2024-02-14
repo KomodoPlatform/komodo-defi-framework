@@ -52,7 +52,7 @@ use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
 use crypto::{derive_secp256k1_secret, Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc,
              HwRpcError, KeyPairPolicy, Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin, WithHwRpcError};
 use derive_more::Display;
-use enum_from::{EnumFromStringify, EnumFromTrait};
+use enum_derives::{EnumFromStringify, EnumFromTrait};
 use ethereum_types::H256;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -657,6 +657,10 @@ impl TransactionErr {
             TransactionErr::NftProtocolNotSupported(err) => err.to_string(),
         }
     }
+}
+
+impl From<keys::Error> for TransactionErr {
+    fn from(e: keys::Error) -> Self { TransactionErr::Plain(e.to_string()) }
 }
 
 #[derive(Debug, PartialEq)]
@@ -2072,7 +2076,8 @@ impl NumConversError {
     pub fn description(&self) -> &str { &self.0 }
 }
 
-#[derive(Clone, Debug, Display, PartialEq, Serialize)]
+#[derive(Clone, Debug, Display, PartialEq, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum BalanceError {
     #[display(fmt = "Transport: {}", _0)]
     Transport(String),
@@ -2406,11 +2411,6 @@ pub enum WithdrawError {
     CoinDoesntSupportNftWithdraw {
         coin: String,
     },
-    #[display(fmt = "My address {} and from address {} mismatch", my_address, from)]
-    AddressMismatchError {
-        my_address: String,
-        from: String,
-    },
     #[display(fmt = "Contract type {} doesnt support 'withdraw_nft' yet", _0)]
     ContractTypeDoesntSupportNftWithdrawing(String),
     #[display(fmt = "Action not allowed for coin: {}", _0)]
@@ -2431,6 +2431,11 @@ pub enum WithdrawError {
     },
     #[display(fmt = "DB error {}", _0)]
     DbError(String),
+    #[display(fmt = "My address is {}, while current Nft owner is {}", my_address, token_owner)]
+    MyAddressNotNftOwner {
+        my_address: String,
+        token_owner: String,
+    },
     #[display(fmt = "Nft Protocol is not supported")]
     NftProtocolNotSupported,
 }
@@ -2455,10 +2460,10 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::UnsupportedError(_)
             | WithdrawError::ActionNotAllowed(_)
             | WithdrawError::GetNftInfoError(_)
-            | WithdrawError::AddressMismatchError { .. }
             | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_)
             | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
-            | WithdrawError::NotEnoughNftsAmount { .. } => StatusCode::BAD_REQUEST,
+            | WithdrawError::NotEnoughNftsAmount { .. }
+            | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
@@ -2503,9 +2508,6 @@ impl From<TimeoutError> for WithdrawError {
 impl From<GetValidEthWithdrawAddError> for WithdrawError {
     fn from(e: GetValidEthWithdrawAddError) -> Self {
         match e {
-            GetValidEthWithdrawAddError::AddressMismatchError { my_address, from } => {
-                WithdrawError::AddressMismatchError { my_address, from }
-            },
             GetValidEthWithdrawAddError::CoinDoesntSupportNftWithdraw { coin } => {
                 WithdrawError::CoinDoesntSupportNftWithdraw { coin }
             },
@@ -4293,7 +4295,7 @@ struct ConvertUtxoAddressReq {
 
 pub async fn convert_utxo_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: ConvertUtxoAddressReq = try_s!(json::from_value(req));
-    let mut addr: utxo::Address = try_s!(req.address.parse());
+    let mut addr: utxo::LegacyAddress = try_s!(req.address.parse()); // Only legacy addresses supported as source
     let coin = match lp_coinfind(&ctx, &req.to_coin).await {
         Ok(Some(c)) => c,
         _ => return ERR!("Coin {} is not activated", req.to_coin),
@@ -4302,8 +4304,7 @@ pub async fn convert_utxo_address(ctx: MmArc, req: Json) -> Result<Response<Vec<
         MmCoinEnum::UtxoCoin(utxo) => utxo,
         _ => return ERR!("Coin {} is not utxo", req.to_coin),
     };
-    addr.prefix = coin.as_ref().conf.pub_addr_prefix;
-    addr.t_addr_prefix = coin.as_ref().conf.pub_t_addr_prefix;
+    addr.prefix = coin.as_ref().conf.address_prefixes.p2pkh.clone();
     addr.checksum_type = coin.as_ref().conf.checksum_type;
 
     let response = try_s!(json::to_vec(&json!({

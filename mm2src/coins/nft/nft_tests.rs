@@ -395,6 +395,48 @@ cross_test!(test_exclude_nft_phishing_spam, {
     assert_eq!(nfts.len(), 2);
 });
 
+cross_test!(test_clear_nft, {
+    let chain = Chain::Bsc;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
+    let nft = nft();
+    storage.add_nfts_to_list(chain, vec![nft], 28056726).await.unwrap();
+
+    storage.clear_nft_data(&chain).await.unwrap();
+    test_clear_nft_target(&storage, &chain).await;
+});
+
+cross_test!(test_clear_all_nft, {
+    let chain = Chain::Bsc;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftListStorageOps::init(&storage, &chain).await.unwrap();
+    let nft = nft();
+    storage.add_nfts_to_list(chain, vec![nft], 28056726).await.unwrap();
+
+    storage.clear_all_nft_data().await.unwrap();
+    test_clear_nft_target(&storage, &chain).await;
+});
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn test_clear_nft_target<S: NftListStorageOps>(storage: &S, chain: &Chain) {
+    let is_initialized = NftListStorageOps::is_initialized(storage, chain).await.unwrap();
+    assert!(!is_initialized);
+
+    let is_err = storage.get_nft_list(vec![*chain], false, 10, None, None).await.is_err();
+    assert!(is_err);
+
+    let is_err = storage.get_last_scanned_block(chain).await.is_err();
+    assert!(is_err);
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn test_clear_nft_target<S: NftListStorageOps>(storage: &S, chain: &Chain) {
+    let nft_list = storage.get_nft_list(vec![*chain], true, 1, None, None).await.unwrap();
+    assert!(nft_list.nfts.is_empty());
+}
+
 cross_test!(test_add_get_transfers, {
     let chain = Chain::Bsc;
     let nft_ctx = get_nft_ctx(&chain).await;
@@ -693,3 +735,44 @@ cross_test!(test_exclude_transfer_phishing_spam, {
         .transfer_history;
     assert_eq!(transfers.len(), 1);
 });
+
+cross_test!(test_clear_history, {
+    let chain = Chain::Bsc;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
+    let transfers = nft_transfer_history();
+    storage.add_transfers_to_history(chain, transfers).await.unwrap();
+
+    storage.clear_history_data(&chain).await.unwrap();
+    test_clear_history_target(&storage, &chain).await;
+});
+
+cross_test!(test_clear_all_history, {
+    let chain = Chain::Bsc;
+    let nft_ctx = get_nft_ctx(&chain).await;
+    let storage = nft_ctx.lock_db().await.unwrap();
+    NftTransferHistoryStorageOps::init(&storage, &chain).await.unwrap();
+    let transfers = nft_transfer_history();
+    storage.add_transfers_to_history(chain, transfers).await.unwrap();
+
+    storage.clear_all_history_data().await.unwrap();
+    test_clear_history_target(&storage, &chain).await;
+});
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn test_clear_history_target<S: NftTransferHistoryStorageOps>(storage: &S, chain: &Chain) {
+    let is_init = NftTransferHistoryStorageOps::is_initialized(storage, chain)
+        .await
+        .unwrap();
+    assert!(!is_init);
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn test_clear_history_target<S: NftTransferHistoryStorageOps>(storage: &S, chain: &Chain) {
+    let transfer_list = storage
+        .get_transfer_history(vec![*chain], true, 1, None, None)
+        .await
+        .unwrap();
+    assert!(transfer_list.transfer_history.is_empty());
+}

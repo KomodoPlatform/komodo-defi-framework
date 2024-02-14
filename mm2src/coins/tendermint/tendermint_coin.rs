@@ -283,9 +283,10 @@ pub enum TendermintInitErrorKind {
     BalanceStreamInitError(String),
 }
 
-#[derive(Display, Debug)]
+#[derive(Display, Debug, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum TendermintCoinRpcError {
-    Prost(DecodeError),
+    Prost(String),
     InvalidResponse(String),
     PerformError(String),
     RpcClientError(String),
@@ -293,7 +294,7 @@ pub enum TendermintCoinRpcError {
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
-    fn from(err: DecodeError) -> Self { TendermintCoinRpcError::Prost(err) }
+    fn from(err: DecodeError) -> Self { TendermintCoinRpcError::Prost(err.to_string()) }
 }
 
 impl From<PrivKeyPolicyNotAllowed> for TendermintCoinRpcError {
@@ -308,7 +309,7 @@ impl From<TendermintCoinRpcError> for BalanceError {
     fn from(err: TendermintCoinRpcError) -> Self {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => BalanceError::InvalidResponse(e),
-            TendermintCoinRpcError::Prost(e) => BalanceError::InvalidResponse(e.to_string()),
+            TendermintCoinRpcError::Prost(e) => BalanceError::InvalidResponse(e),
             TendermintCoinRpcError::PerformError(e) => BalanceError::Transport(e),
             TendermintCoinRpcError::RpcClientError(e) => BalanceError::Transport(e),
             TendermintCoinRpcError::InternalError(e) => BalanceError::Internal(e),
@@ -320,7 +321,7 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
     fn from(err: TendermintCoinRpcError) -> Self {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => ValidatePaymentError::InvalidRpcResponse(e),
-            TendermintCoinRpcError::Prost(e) => ValidatePaymentError::InvalidRpcResponse(e.to_string()),
+            TendermintCoinRpcError::Prost(e) => ValidatePaymentError::InvalidRpcResponse(e),
             TendermintCoinRpcError::PerformError(e) => ValidatePaymentError::Transport(e),
             TendermintCoinRpcError::RpcClientError(e) => ValidatePaymentError::Transport(e),
             TendermintCoinRpcError::InternalError(e) => ValidatePaymentError::InternalError(e),
@@ -1078,10 +1079,10 @@ impl TendermintCoin {
 
                 ethermint_account
                     .base_account
-                    .or_mm_err(|| TendermintCoinRpcError::Prost(err))?
+                    .or_mm_err(|| TendermintCoinRpcError::Prost(err.to_string()))?
             },
             Err(err) => {
-                return MmError::err(TendermintCoinRpcError::Prost(err));
+                return MmError::err(TendermintCoinRpcError::Prost(err.to_string()));
             },
         };
 

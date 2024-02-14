@@ -3,21 +3,23 @@ use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::quote;
 use std::fmt;
 use syn::Meta::List;
-use syn::{parse_macro_input, Data, DeriveInput, Error, Field, Fields, ImplGenerics, Type, TypeGenerics, WhereClause};
+use syn::{parse_macro_input, Data, DataEnum, DeriveInput, Error, Field, Fields, ImplGenerics, Type, TypeGenerics,
+          WhereClause};
 use syn::{Attribute, NestedMeta, Variant};
 
 mod from_inner;
 mod from_stringify;
 mod from_trait;
 
-const MACRO_IDENT: &str = "EnumFromInner";
+const ENUM_FROM_INNER_IDENT: &str = "EnumFromInner";
+const ENUM_VARIANT_LIST_IDENT: &str = "EnumVariantList";
 
 /// Implements `From<Inner>` trait for the given enumeration.
 ///
 /// # Usage
 ///
 /// ```rust
-/// use enum_from::EnumFromInner;
+/// use enum_derives::EnumFromInner;
 ///
 /// #[derive(EnumFromInner)]
 /// enum FooBar {
@@ -50,7 +52,7 @@ pub fn enum_from_inner(input: TokenStream) -> TokenStream {
 /// # Usage
 ///
 /// ```rust
-/// use enum_from::EnumFromTrait;
+/// use enum_derives::EnumFromTrait;
 ///
 /// #[derive(EnumFromTrait)]
 /// enum FooBar {
@@ -92,7 +94,7 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 /// ### USAGE:
 ///
 /// ```rust
-/// use enum_from::EnumFromStringify;
+/// use enum_derives::EnumFromStringify;
 /// use std::fmt::{Display, Formatter};
 /// use std::io::{Error, ErrorKind};
 ///
@@ -124,6 +126,59 @@ pub fn derive(input: TokenStream) -> TokenStream {
     }
 }
 
+/// `EnumVariantList` is a procedural macro used to generate a method that returns a vector containing all variants of an enum.
+/// This macro is intended for use with simple enums (enums without associated data or complex structures).
+///
+/// ### USAGE:
+///
+/// ```rust
+/// use enum_derives::EnumVariantList;
+///
+/// #[derive(EnumVariantList)]
+/// enum Chain {
+///     Avalanche,
+///     Bsc,
+///     Eth,
+///     Fantom,
+///     Polygon,
+/// }
+///
+///#[test]
+///fn test_enum_variant_list() {
+///    let all_chains = Chain::variant_list();
+///    assert_eq!(all_chains, vec![
+///        Chain::Avalanche,
+///        Chain::Bsc,
+///        Chain::Eth,
+///        Chain::Fantom,
+///        Chain::Polygon
+///    ]);
+///}
+/// ```
+#[proc_macro_derive(EnumVariantList)]
+pub fn enum_variant_list(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident;
+
+    let variants = match input.data {
+        Data::Enum(DataEnum { variants, .. }) => variants,
+        Data::Struct(_) => return CompileError::expected_enum(ENUM_VARIANT_LIST_IDENT, "struct").into(),
+        Data::Union(_) => return CompileError::expected_enum(ENUM_VARIANT_LIST_IDENT, "union").into(),
+    };
+
+    let variant_list: Vec<_> = variants.iter().map(|v| &v.ident).collect();
+
+    let expanded = quote! {
+        impl #name {
+            pub fn variant_list() -> Vec<#name> {
+                vec![ #( #name::#variant_list ),* ]
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
 #[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy)]
 enum MacroAttr {
@@ -148,8 +203,8 @@ impl fmt::Display for MacroAttr {
 struct CompileError(String);
 
 impl CompileError {
-    fn expected_enum(found: &str) -> CompileError {
-        CompileError(format!("'{}' cannot be implement for a {}", MACRO_IDENT, found))
+    fn expected_enum(macro_ident: &str, found: &str) -> CompileError {
+        CompileError(format!("'{}' cannot be implement for a {}", macro_ident, found))
     }
 
     fn expected_unnamed_inner(attr: MacroAttr) -> CompileError {
@@ -229,8 +284,8 @@ impl<'a> UnnamedInnerField<'a> {
 fn derive_enum_from_macro(input: DeriveInput, attr: MacroAttr) -> Result<TokenStream, CompileError> {
     let enumeration = match input.data {
         Data::Enum(ref enumeration) => enumeration,
-        Data::Struct(_) => return Err(CompileError::expected_enum("struct")),
-        Data::Union(_) => return Err(CompileError::expected_enum("union")),
+        Data::Struct(_) => return Err(CompileError::expected_enum(ENUM_FROM_INNER_IDENT, "struct")),
+        Data::Union(_) => return Err(CompileError::expected_enum(ENUM_FROM_INNER_IDENT, "union")),
     };
 
     let ctx = IdentCtx::from(&input);

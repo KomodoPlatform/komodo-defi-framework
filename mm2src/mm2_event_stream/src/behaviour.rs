@@ -14,6 +14,9 @@ pub trait EventBehaviour {
     /// Unique name of the event.
     const EVENT_NAME: &'static str;
 
+    /// Name of the error event with default value "ERROR".
+    const ERROR_EVENT_NAME: &'static str = "ERROR";
+
     /// Event handler that is responsible for broadcasting event data to the streaming channels.
     async fn handle(self, interval: f64, tx: oneshot::Sender<EventInitStatus>);
 

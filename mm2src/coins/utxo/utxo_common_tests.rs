@@ -14,7 +14,9 @@ use common::jsonrpc_client::JsonRpcErrorType;
 use common::PagingOptionsEnum;
 use crypto::privkey::key_pair_from_seed;
 use itertools::Itertools;
+use keys::prefixes::*;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+use std::convert::TryFrom;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
@@ -61,23 +63,35 @@ pub(super) fn utxo_coin_fields_for_test(
         },
     };
     let key_pair = key_pair_from_seed(&seed).unwrap();
-    let my_address = Address {
-        prefix: 60,
-        hash: key_pair.public().address_hash().into(),
-        t_addr_prefix: 0,
-        checksum_type,
-        hrp: if is_segwit_coin {
-            Some(TEST_COIN_HRP.to_string())
-        } else {
-            None
-        },
-        addr_format: if is_segwit_coin {
-            UtxoAddressFormat::Segwit
-        } else {
-            UtxoAddressFormat::Standard
-        },
+    let prefixes = if is_segwit_coin {
+        NetworkAddressPrefixes::default()
+    } else {
+        NetworkAddressPrefixes {
+            p2pkh: [60].into(),
+            p2sh: AddressPrefix::default(),
+        }
     };
-    let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
+    let hrp = if is_segwit_coin {
+        Some(TEST_COIN_HRP.to_string())
+    } else {
+        None
+    };
+    let addr_format = if is_segwit_coin {
+        UtxoAddressFormat::Segwit
+    } else {
+        UtxoAddressFormat::Standard
+    };
+    let my_address = AddressBuilder::new(
+        addr_format,
+        key_pair.public().address_hash().into(),
+        checksum_type,
+        prefixes,
+        hrp,
+    )
+    .as_pkh()
+    .build()
+    .expect("valid address props");
+    let my_script_pubkey = Builder::build_p2pkh(my_address.hash()).to_bytes();
 
     let priv_key_policy = PrivKeyPolicy::Iguana(key_pair);
     let derivation_method = DerivationMethod::SingleAddress(my_address);
@@ -98,10 +112,10 @@ pub(super) fn utxo_coin_fields_for_test(
             tx_version: 4,
             default_address_format: UtxoAddressFormat::Standard,
             asset_chain: true,
-            p2sh_addr_prefix: 85,
-            p2sh_t_addr_prefix: 0,
-            pub_addr_prefix: 60,
-            pub_t_addr_prefix: 0,
+            address_prefixes: NetworkAddressPrefixes {
+                p2pkh: [60].into(),
+                p2sh: [85].into(),
+            },
             sign_message_prefix: Some(String::from("Komodo Signed Message:\n")),
             bech32_hrp,
             ticker: TEST_COIN_NAME.into(),
@@ -196,29 +210,29 @@ pub(super) fn get_morty_hd_transactions_ordered(tx_hashes: &[&str]) -> Vec<Trans
 
 pub(super) async fn test_electrum_display_balances(rpc_client: &ElectrumClient) {
     let addresses = vec![
-        "RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(),
-        "RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN".into(),
-        "RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(),
-        "RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(),
+        Address::from_legacyaddress("RG278CfeNPFtNztFZQir8cgdWexVhViYVy", &KMD_PREFIXES).unwrap(),
+        Address::from_legacyaddress("RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN", &KMD_PREFIXES).unwrap(),
+        Address::from_legacyaddress("RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi", &KMD_PREFIXES).unwrap(),
+        Address::from_legacyaddress("RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF", &KMD_PREFIXES).unwrap(),
     ];
     let actual = rpc_client.display_balances(addresses, 8).compat().await.unwrap();
 
     let expected: Vec<(Address, BigDecimal)> = vec![
         (
-            "RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(),
-            BigDecimal::from_str("5.77699").unwrap(),
+            Address::from_legacyaddress("RG278CfeNPFtNztFZQir8cgdWexVhViYVy", &KMD_PREFIXES).unwrap(),
+            BigDecimal::try_from(5.77699).unwrap(),
         ),
         (
-            "RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN".into(),
-            BigDecimal::from_str("3.33").unwrap(),
+            Address::from_legacyaddress("RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN", &KMD_PREFIXES).unwrap(),
+            BigDecimal::try_from(3.33).unwrap(),
         ),
         (
-            "RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(),
-            BigDecimal::from_str("0.77699").unwrap(),
+            Address::from_legacyaddress("RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi", &KMD_PREFIXES).unwrap(),
+            BigDecimal::try_from(0.77699).unwrap(),
         ),
         (
-            "RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(),
-            BigDecimal::from_str("16.55398").unwrap(),
+            Address::from_legacyaddress("RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF", &KMD_PREFIXES).unwrap(),
+            BigDecimal::try_from(16.55398).unwrap(),
         ),
     ];
     assert_eq!(actual, expected);
