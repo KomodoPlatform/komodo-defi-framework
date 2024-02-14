@@ -206,6 +206,8 @@ pub enum MmInitError {
     InvalidPassphrase(String),
     #[display(fmt = "NETWORK event initialization failed: {}", _0)]
     NetworkEventInitFailed(String),
+    #[display(fmt = "HEARTBEAT event initialization failed: {}", _0)]
+    HeartbeatEventInitFailed(String),
     #[from_trait(WithHwRpcError::hw_rpc_error)]
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
@@ -438,7 +440,7 @@ async fn init_event_streaming(ctx: &MmArc) -> MmInitResult<()> {
         }
 
         if let EventInitStatus::Failed(err) = HeartbeatEvent::new(ctx.clone()).spawn_if_active(config).await {
-            return MmError::err(MmInitError::NetworkEventInitFailed(err));
+            return MmError::err(MmInitError::HeartbeatEventInitFailed(err));
         }
     }
 
