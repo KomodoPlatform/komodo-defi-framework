@@ -73,12 +73,6 @@ pub struct EncryptedData {
 /// - It creates an HMAC tag for verifying the integrity of the encrypted data.
 /// - It constructs an [`EncryptedData`] instance containing all the necessary components for decryption.
 ///
-/// # Arguments
-/// * `data` - A byte slice reference to the data that needs to be encrypted.
-/// * `key_derivation_details` - A [`KeyDerivationDetails`] instance containing detailed information about the key derivation process.
-/// * `key_aes` - A byte array reference to the AES key used for encryption.
-/// * `key_hmac` - A byte array reference to the HMAC key used for creating the HMAC tag.
-///
 /// # Returns
 /// `MmResult<EncryptedData, EncryptionError>` - The result is either an [`EncryptedData`]
 /// struct containing all the necessary components for decryption, or an [`EncryptionError`] in case of failure.

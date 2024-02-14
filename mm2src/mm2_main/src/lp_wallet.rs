@@ -11,14 +11,14 @@ cfg_wasm32! {
     use crate::mm2::lp_wallet::mnemonics_wasm_db::{WalletsDb, WalletsDBError};
     use mm2_core::mm_ctx::from_ctx;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, InitDbResult};
-    use mnemonics_wasm_db::{read_encrypted_passphrase, save_encrypted_passphrase};
+    use mnemonics_wasm_db::{read_encrypted_passphrase_if_available, save_encrypted_passphrase};
     use std::sync::Arc;
 
     type WalletsDbLocked<'a> = DbLocked<'a, WalletsDb>;
 }
 
 cfg_native! {
-    use mnemonics_storage::{read_encrypted_passphrase, save_encrypted_passphrase, WalletsStorageError};
+    use mnemonics_storage::{read_encrypted_passphrase_if_available, save_encrypted_passphrase, WalletsStorageError};
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -119,25 +119,22 @@ async fn encrypt_and_save_passphrase(
         .mm_err(|e| WalletInitError::WalletsStorageError(e.to_string()))
 }
 
-/// Reads and decrypts the passphrase from a file associated with the given wallet name.
+/// Reads and decrypts the passphrase from a file associated with the given wallet name, if available.
 ///
-/// This function first reads the passphrase from the file. Since the passphrase is stored in an encrypted
-/// format, it decrypts it before returning.
-///
-/// # Arguments
-/// * `ctx` - The `MmArc` context containing the application state and configuration.
-/// * `wallet_name` - The name of the wallet for which the passphrase is to be retrieved.
+/// This function first checks if a passphrase is available. If a passphrase is found,
+/// since it is stored in an encrypted format, it decrypts it before returning. If no passphrase is found,
+/// it returns `None`.
 ///
 /// # Returns
 /// `MmInitResult<String>` - The decrypted passphrase or an error if any operation fails.
 ///
 /// # Errors
 /// Returns specific `MmInitError` variants for different failure scenarios.
-async fn read_and_decrypt_passphrase(
+async fn read_and_decrypt_passphrase_if_available(
     ctx: &MmArc,
     wallet_password: &str,
 ) -> MmResult<Option<String>, ReadPassphraseError> {
-    match read_encrypted_passphrase(ctx)
+    match read_encrypted_passphrase_if_available(ctx)
         .await
         .mm_err(|e| ReadPassphraseError::WalletsStorageError(e.to_string()))?
     {
@@ -172,7 +169,7 @@ async fn retrieve_or_create_passphrase(
     wallet_name: &str,
     wallet_password: &str,
 ) -> WalletInitResult<Option<String>> {
-    match read_and_decrypt_passphrase(ctx, wallet_password).await? {
+    match read_and_decrypt_passphrase_if_available(ctx, wallet_password).await? {
         Some(passphrase_from_file) => {
             // If an existing passphrase is found, return it
             Ok(Some(passphrase_from_file))
@@ -194,7 +191,7 @@ async fn confirm_or_encrypt_and_store_passphrase(
     passphrase: &str,
     wallet_password: &str,
 ) -> WalletInitResult<Option<String>> {
-    match read_and_decrypt_passphrase(ctx, wallet_password).await? {
+    match read_and_decrypt_passphrase_if_available(ctx, wallet_password).await? {
         Some(passphrase_from_file) if passphrase == passphrase_from_file => {
             // If an existing passphrase is found and it matches the provided passphrase, return it
             Ok(Some(passphrase_from_file))
@@ -221,7 +218,7 @@ async fn decrypt_validate_or_save_passphrase(
     // Decrypt the provided encrypted passphrase
     let decrypted_passphrase = decrypt_mnemonic(&encrypted_passphrase_data, wallet_password)?.to_string();
 
-    match read_and_decrypt_passphrase(ctx, wallet_password).await? {
+    match read_and_decrypt_passphrase_if_available(ctx, wallet_password).await? {
         Some(passphrase_from_file) if decrypted_passphrase == passphrase_from_file => {
             // If an existing passphrase is found and it matches the decrypted passphrase, return it
             Ok(Some(decrypted_passphrase))
@@ -300,9 +297,6 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 /// - If a passphrase is provided (with or without a wallet name), it uses the provided passphrase
 ///   and handles encryption and storage as needed.
 /// - Initializes the cryptographic context based on the `enable_hd` configuration.
-///
-/// # Arguments
-/// * `ctx` - The `MmArc` context containing the application state and configuration.
 ///
 /// # Returns
 /// `MmInitResult<()>` - Result indicating success or failure of the initialization process.
@@ -459,11 +453,6 @@ impl From<ReadPassphraseError> for GetMnemonicError {
 
 /// Retrieves the wallet mnemonic in the requested format.
 ///
-/// # Arguments
-///
-/// * `ctx` - The [`MmArc`] context containing the application state and configuration.
-/// * `req` - The [`GetMnemonicRequest`] containing the requested mnemonic format.
-///
 /// # Returns
 ///
 /// A `Result` type containing:
@@ -496,7 +485,7 @@ impl From<ReadPassphraseError> for GetMnemonicError {
 pub async fn get_mnemonic_rpc(ctx: MmArc, req: GetMnemonicRequest) -> MmResult<GetMnemonicResponse, GetMnemonicError> {
     match req.mnemonic_format {
         MnemonicFormat::Encrypted => {
-            let encrypted_mnemonic = read_encrypted_passphrase(&ctx)
+            let encrypted_mnemonic = read_encrypted_passphrase_if_available(&ctx)
                 .await?
                 .ok_or_else(|| GetMnemonicError::InvalidRequest("Wallet passphrase file not found".to_string()))?;
             Ok(GetMnemonicResponse {
@@ -504,7 +493,7 @@ pub async fn get_mnemonic_rpc(ctx: MmArc, req: GetMnemonicRequest) -> MmResult<G
             })
         },
         MnemonicFormat::PlainText(wallet_password) => {
-            let plaintext_mnemonic = read_and_decrypt_passphrase(&ctx, &wallet_password)
+            let plaintext_mnemonic = read_and_decrypt_passphrase_if_available(&ctx, &wallet_password)
                 .await?
                 .ok_or_else(|| GetMnemonicError::InvalidRequest("Wallet mnemonic file not found".to_string()))?;
             Ok(GetMnemonicResponse {

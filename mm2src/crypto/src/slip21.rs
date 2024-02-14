@@ -27,11 +27,6 @@ impl From<KeyDerivationError> for SLIP21Error {
 
 /// Encrypts data using SLIP-0021 derived keys.
 ///
-/// # Arguments
-/// * `data` - The data to be encrypted.
-/// * `master_secret` - The master private key used for key derivation.
-/// * `derivation_path` - The additional derivation path for key derivation.
-///
 /// # Returns
 /// `MmResult<EncryptedData, EncryptionError>` - The encrypted data along with metadata for decryption, or an error.
 #[allow(dead_code)]
@@ -58,10 +53,6 @@ pub fn encrypt_with_slip21(
 
 /// Decrypts data encrypted with SLIP-0021 derived keys.
 ///
-/// # Arguments
-/// * `encrypted_data` - The encrypted data.
-/// * `master_secret` - The master private key used for key derivation.
-///
 /// # Returns
 /// `MmResult<Vec<u8>, DecryptionError>` - The decrypted data, or an error.
 #[allow(dead_code)]
@@ -85,13 +76,18 @@ pub fn decrypt_with_slip21(encrypted_data: &EncryptedData, master_secret: &[u8; 
     decrypt_data(encrypted_data, &key_aes, &key_hmac).mm_err(|e| SLIP21Error::DecryptionFailed(e.to_string()))
 }
 
-#[cfg(test)]
+#[cfg(any(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
+    use common::cross_test;
     use std::convert::TryInto;
 
-    #[test]
-    fn test_encrypt_decrypt_with_slip21() {
+    common::cfg_wasm32! {
+        use wasm_bindgen_test::*;
+        wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+    }
+
+    cross_test!(test_encrypt_decrypt_with_slip21, {
         let data = b"Example data to encrypt and decrypt using SLIP-0021";
         let master_secret = hex::decode("c76c4ac4f4e4a00d6b274d5c39c700bb4a7ddc04fbc6f78e85ca75007b5b495f74a9043eeb77bdd53aa6fc3a0e31462270316fa04b8c19114c8798706cd02ac8").unwrap().try_into().unwrap();
         let derivation_path = "test/path";
@@ -108,5 +104,5 @@ mod tests {
 
         // Verify if decrypted data matches the original data
         assert_eq!(data.to_vec(), decrypted_data);
-    }
+    });
 }

@@ -98,11 +98,6 @@ pub enum KeyDerivationDetails {
 
 /// Derives AES and HMAC keys from a given password and salts for mnemonic encryption/decryption.
 ///
-/// # Arguments
-/// * `password` - The password used for key derivation.
-/// * `salt_aes` - The salt used for AES key derivation.
-/// * `salt_hmac` - The salt used for HMAC key derivation.
-///
 /// # Returns
 /// A tuple containing the AES key and HMAC key as byte arrays, or a `MnemonicError` in case of failure.
 #[allow(dead_code)]
@@ -158,11 +153,6 @@ fn derive_key_from_path(master_node: &[u8], path: &str) -> MmResult<[u8; 32], Ke
 }
 
 /// Derives encryption and authentication keys from the master private key using [SLIP-0021](https://github.com/satoshilabs/slips/blob/master/slip-0021.md).
-///
-/// # Arguments
-/// * `master_secret` - The master private key used for key derivation. Can be a BIP-39 seed if this is used to derive keys for wallet data/files encryption.
-/// * `encryption_path` - The derivation path used for encryption key derivation.
-/// * `authentication_path` - The derivation path used for authentication key derivation.
 ///
 /// # Returns
 /// A tuple containing the encryption and authentication keys as byte arrays, or a [`KeyDerivationError`] in case of failure.

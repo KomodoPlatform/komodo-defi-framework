@@ -30,11 +30,6 @@ impl From<base64::DecodeError> for DecryptionError {
 /// - It verifies the HMAC tag before decrypting to ensure the integrity of the data.
 /// - It creates an AES-256-CBC cipher instance and decrypts the ciphertext with the provided key and the decoded IV.
 ///
-/// # Arguments
-/// * `encrypted_data` - A reference to the [`EncryptedData`] containing the encrypted data and related metadata.
-/// * `key_aes` - A byte array reference to the AES key used for decryption.
-/// * `key_hmac` - A byte array reference to the HMAC key used for verifying the HMAC tag.
-///
 /// # Returns
 /// `MmResult<Vec<u8>, DecryptionError>` - The result is either a byte vector containing the decrypted data,
 /// or a [`DecryptionError`] in case of failure.

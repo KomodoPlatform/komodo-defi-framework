@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use crypto::EncryptedData;
 use mm2_core::mm_ctx::MmArc;
 use mm2_core::DbNamespaceId;
-use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
-                         OnUpgradeError, OnUpgradeResult, TableSignature};
+use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbTransactionError, DbUpgrader, IndexedDb, IndexedDbBuilder,
+                         InitDbError, InitDbResult, OnUpgradeError, OnUpgradeResult, TableSignature};
 use mm2_err_handle::prelude::*;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -26,6 +26,14 @@ pub enum WalletsDBError {
         error: String,
     },
     Internal(String),
+}
+
+impl From<InitDbError> for WalletsDBError {
+    fn from(e: InitDbError) -> Self { WalletsDBError::Internal(e.to_string()) }
+}
+
+impl From<DbTransactionError> for WalletsDBError {
+    fn from(e: DbTransactionError) -> Self { WalletsDBError::Internal(e.to_string()) }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -90,19 +98,10 @@ pub(super) async fn save_encrypted_passphrase(
     encrypted_passphrase_data: &EncryptedData,
 ) -> WalletsDBResult<()> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
-    let db = wallets_ctx
-        .wallets_db()
-        .await
-        .mm_err(|e| WalletsDBError::Internal(e.to_string()))?;
 
-    let transaction = db
-        .transaction()
-        .await
-        .mm_err(|e| WalletsDBError::Internal(e.to_string()))?;
-    let table = transaction
-        .table::<MnemonicsTable>()
-        .await
-        .mm_err(|e| WalletsDBError::Internal(e.to_string()))?;
+    let db = wallets_ctx.wallets_db().await?;
+    let transaction = db.transaction().await?;
+    let table = transaction.table::<MnemonicsTable>().await?;
 
     let mnemonics_table_item = MnemonicsTable {
         wallet_name: wallet_name.to_string(),
@@ -113,29 +112,17 @@ pub(super) async fn save_encrypted_passphrase(
             }
         })?,
     };
-    table
-        .add_item(&mnemonics_table_item)
-        .await
-        .mm_err(|e| WalletsDBError::Internal(e.to_string()))?;
+    table.add_item(&mnemonics_table_item).await?;
 
     Ok(())
 }
 
-pub(super) async fn read_encrypted_passphrase(ctx: &MmArc) -> WalletsDBResult<Option<EncryptedData>> {
+pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> WalletsDBResult<Option<EncryptedData>> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
-    let db = wallets_ctx
-        .wallets_db()
-        .await
-        .mm_err(|e| WalletsDBError::Internal(e.to_string()))?;
 
-    let transaction = db
-        .transaction()
-        .await
-        .mm_err(|e| WalletsDBError::Internal(e.to_string()))?;
-    let table = transaction
-        .table::<MnemonicsTable>()
-        .await
-        .mm_err(|e| WalletsDBError::Internal(e.to_string()))?;
+    let db = wallets_ctx.wallets_db().await?;
+    let transaction = db.transaction().await?;
+    let table = transaction.table::<MnemonicsTable>().await?;
 
     let wallet_name = ctx
         .wallet_name
@@ -144,16 +131,16 @@ pub(super) async fn read_encrypted_passphrase(ctx: &MmArc) -> WalletsDBResult<Op
         ))?
         .clone()
         .ok_or_else(|| WalletsDBError::Internal("`wallet_name` can't be None!".to_string()))?;
-    match table.get_item_by_unique_index("wallet_name", wallet_name).await {
-        Ok(Some((_item_id, wallet_table_item))) => serde_json::from_str(&wallet_table_item.encrypted_mnemonic)
-            .map_to_mm(|e| WalletsDBError::DeserializationError {
-                field: "encrypted_mnemonic".to_string(),
-                error: e.to_string(),
-            }),
-        Ok(None) => Ok(None),
-        Err(e) => MmError::err(WalletsDBError::Internal(format!(
-            "Error retrieving encrypted passphrase: {}",
-            e
-        ))),
-    }
+    table
+        .get_item_by_unique_index("wallet_name", wallet_name)
+        .await?
+        .map(|(_item_id, wallet_table_item)| {
+            serde_json::from_str(&wallet_table_item.encrypted_mnemonic).map_to_mm(|e| {
+                WalletsDBError::DeserializationError {
+                    field: "encrypted_mnemonic".to_string(),
+                    error: e.to_string(),
+                }
+            })
+        })
+        .transpose()
 }

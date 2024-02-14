@@ -42,9 +42,6 @@ impl From<KeyDerivationError> for MnemonicError {
 /// This function creates a new mnemonic passphrase using a specified word count and randomness source.
 /// The generated mnemonic is intended for use as a wallet mnemonic.
 ///
-/// # Arguments
-/// * `ctx` - The `MmArc` context containing the application configuration.
-///
 /// # Returns
 /// `MmInitResult<String>` - The generated mnemonic passphrase or an error if generation fails.
 ///
@@ -64,10 +61,6 @@ pub fn generate_mnemonic(ctx: &MmArc) -> MmResult<Mnemonic, MnemonicError> {
 /// - It derives the keys using the Argon2 algorithm.
 /// - It encrypts the mnemonic using AES-256-CBC.
 /// - It creates an HMAC tag for verifying the integrity and authenticity of the encrypted data.
-///
-/// # Arguments
-/// * `mnemonic` - A `&str` reference to the mnemonic that needs to be encrypted.
-/// * `password` - A `&str` reference to the password used for key derivation.
 ///
 /// # Returns
 /// `MmResult<EncryptedData, MnemonicError>` - The result is either an `EncryptedData`
@@ -105,10 +98,6 @@ pub fn encrypt_mnemonic(mnemonic: &str, password: &str) -> MmResult<EncryptedDat
 /// - Verifies the integrity and authenticity of the data using the HMAC tag.
 /// - Decrypts the mnemonic using AES-256-CBC.
 ///
-/// # Arguments
-/// * `encrypted_data` - A reference to the `EncryptedData` containing the encrypted mnemonic and related metadata.
-/// * `password` - A `&str` reference to the password used for key derivation.
-///
 /// # Returns
 /// `MmResult<Mnemonic, MnemonicError>` - The result is either a `Mnemonic` instance if decryption is successful,
 /// or a `MnemonicError` in case of failure.
@@ -141,12 +130,17 @@ pub fn decrypt_mnemonic(encrypted_data: &EncryptedData, password: &str) -> MmRes
     Ok(mnemonic)
 }
 
-#[cfg(test)]
+#[cfg(any(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
+    use common::cross_test;
 
-    #[test]
-    fn test_encrypt_decrypt_mnemonic() {
+    common::cfg_wasm32! {
+        use wasm_bindgen_test::*;
+        wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+    }
+
+    cross_test!(test_encrypt_decrypt_mnemonic, {
         let mnemonic = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
         let password = "password";
 
@@ -167,10 +161,9 @@ mod tests {
 
         // Verify if decrypted mnemonic matches the original
         assert_eq!(decrypted_mnemonic, parsed_mnemonic);
-    }
+    });
 
-    #[test]
-    fn test_mnemonic_with_last_byte_zero() {
+    cross_test!(test_mnemonic_with_last_byte_zero, {
         let mnemonic = "tank abandon bind salon remove wisdom net size aspect direct source fossil\0".to_string();
         let password = "password";
 
@@ -188,5 +181,5 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("mnemonic contains an unknown word (word 11)"));
-    }
+    });
 }

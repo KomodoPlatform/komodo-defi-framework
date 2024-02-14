@@ -48,10 +48,15 @@ trezor = { path = "../trezor" }
 zeroize = { version = "1.5", features = ["zeroize_derive"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+cfg-if = "1.0"
 mm2_eth = { path = "../mm2_eth" }
 mm2_metamask = { path = "../mm2_metamask" }
 wasm-bindgen-test = { version = "0.3.2" }
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.19.0", default-features = false }
+
+[dev-dependencies]
+cfg-if = "1.0"
+tokio = { version = "1.20", default-features = false }
 
 [features]
 trezor-udp = ["trezor/trezor-udp"]
