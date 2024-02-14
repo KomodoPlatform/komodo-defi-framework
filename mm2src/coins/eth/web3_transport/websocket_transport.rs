@@ -23,6 +23,7 @@ use mm2_net::transport::GuiAuthValidationGenerator;
 use std::collections::HashMap;
 use std::sync::{atomic::{AtomicUsize, Ordering},
                 Arc};
+use tokio_tungstenite_wasm::WebSocketStream;
 use web3::error::{Error, TransportError};
 use web3::helpers::to_string;
 use web3::{helpers::build_request, RequestId, Transport};
@@ -110,122 +111,144 @@ impl WebsocketTransport {
     pub(crate) async fn start_connection_loop(self) {
         let _guard = self.connection_guard.lock().await;
 
+        const MAX_ATTEMPTS: u32 = 3;
+        const SLEEP_DURATION: f64 = 1.;
+        const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
+        const KEEPALIVE_DURATION: Duration = Duration::from_secs(10);
+
+        async fn attempt_to_establish_socket_connection(
+            address: String,
+            max_attempts: u32,
+            sleep_duration_on_failure: f64,
+        ) -> tokio_tungstenite_wasm::Result<WebSocketStream> {
+            loop {
+                let mut attempts = 0;
+
+                match tokio_tungstenite_wasm::connect(address.clone()).await {
+                    Ok(ws) => return Ok(ws),
+                    Err(e) => {
+                        attempts += 1;
+                        if attempts > max_attempts {
+                            return Err(e);
+                        }
+
+                        Timer::sleep(sleep_duration_on_failure).await;
+                        continue;
+                    },
+                };
+            }
+        }
+
         // List of awaiting requests
         let mut response_notifiers: ExpirableMap<RequestId, oneshot::Sender<()>> = ExpirableMap::default();
 
-        loop {
-            let mut attempts = 0;
-            let mut wsocket = match tokio_tungstenite_wasm::connect(self.node.uri.to_string()).await {
+        let mut wsocket =
+            match attempt_to_establish_socket_connection(self.node.uri.to_string(), MAX_ATTEMPTS, SLEEP_DURATION).await
+            {
                 Ok(ws) => ws,
                 Err(e) => {
-                    attempts += 1;
-                    if attempts > 3 {
-                        log::error!("Connection could not established for {}. Error {e}", self.node.uri);
-                        break;
-                    }
-
-                    Timer::sleep(1.).await;
-                    continue;
+                    log::error!("Connection could not established for {}. Error {e}", self.node.uri);
+                    return;
                 },
             };
 
-            let mut keepalive_interval = Ticker::new(Duration::from_secs(10));
-            let mut req_rx = self.controller_channel.rx.lock().await;
+        let mut keepalive_interval = Ticker::new(KEEPALIVE_DURATION);
+        let mut req_rx = self.controller_channel.rx.lock().await;
 
-            loop {
-                futures_util::select! {
-                    _ = keepalive_interval.next().fuse() => {
-                        // Drop expired response notifier channels
-                        response_notifiers.clear_expired_entries();
+        loop {
+            futures_util::select! {
+                // KEEPALIVE HANDLING
+                _ = keepalive_interval.next().fuse() => {
+                    // Drop expired response notifier channels
+                    response_notifiers.clear_expired_entries();
 
-                        const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
-
-                        let mut should_continue = Default::default();
-                        for _ in 0..3 {
-                            match wsocket.send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string())).await {
-                                Ok(_) => {
-                                    should_continue = false;
-                                    break;
-                                },
-                                Err(e) => {
-                                    log::error!("{e}");
-                                    should_continue = true;
-                                }
-                            };
-
-                            Timer::sleep(1.).await;
-                        }
-
-                        if should_continue {
-                            continue;
-                        }
-                    }
-
-                    request = req_rx.next().fuse() => {
-                        match request {
-                            Some(ControllerMessage::Request(WsRequest { request_id, serialized_request, response_notifier })) => {
-                                response_notifiers.insert(request_id, response_notifier, Duration::from_secs(REQUEST_TIMEOUT_AS_SEC));
-
-                                let mut should_continue = Default::default();
-                                for _ in 0..3 {
-                                    match wsocket.send(tokio_tungstenite_wasm::Message::Text(serialized_request.clone())).await {
-                                        Ok(_) => {
-                                            should_continue = false;
-                                            break;
-                                        },
-                                        Err(e) => {
-                                            log::error!("{e}");
-                                            should_continue = true;
-                                        }
-                                    }
-
-                                    Timer::sleep(1.).await;
-                                }
-
-                                if should_continue {
-                                    let _ = response_notifiers.remove(&request_id);
-                                    continue;
-                                }
-                            },
-                            Some(ControllerMessage::Close) => {
+                    let mut should_continue = Default::default();
+                    for _ in 0..MAX_ATTEMPTS {
+                        match wsocket.send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string())).await {
+                            Ok(_) => {
+                                should_continue = false;
                                 break;
                             },
-                            _ => {},
-                        }
+                            Err(e) => {
+                                log::error!("{e}");
+                                should_continue = true;
+                            }
+                        };
+
+                        Timer::sleep(SLEEP_DURATION).await;
                     }
 
-                    message = wsocket.next().fuse() => {
-                        match message {
-                             Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
-                                 if let Ok(inc_event) = serde_json::from_str::<serde_json::Value>(&inc_event) {
-                                     if !inc_event.is_object() {
-                                         continue;
-                                     }
+                    if should_continue {
+                        continue;
+                    }
+                }
 
-                                     if let Some(id) = inc_event.get("id") {
-                                         let request_id = id.as_u64().unwrap_or_default() as usize;
+                // SEND REQUESTS
+                request = req_rx.next().fuse() => {
+                    match request {
+                        Some(ControllerMessage::Request(WsRequest { request_id, serialized_request, response_notifier })) => {
+                            response_notifiers.insert(request_id, response_notifier, Duration::from_secs(REQUEST_TIMEOUT_AS_SEC));
 
-                                         if let Some(notifier) = response_notifiers.remove(&request_id) {
-                                             let mut res_bytes: Vec<u8> = Vec::new();
-                                             if serde_json::to_writer(&mut res_bytes, &inc_event).is_ok() {
-                                                 let response_map = unsafe { &mut *self.responses.0 };
-                                                 let _ = response_map.insert(request_id, res_bytes);
+                            let mut should_continue = Default::default();
+                            for _ in 0..MAX_ATTEMPTS {
+                                match wsocket.send(tokio_tungstenite_wasm::Message::Text(serialized_request.clone())).await {
+                                    Ok(_) => {
+                                        should_continue = false;
+                                        break;
+                                    },
+                                    Err(e) => {
+                                        log::error!("{e}");
+                                        should_continue = true;
+                                    }
+                                }
 
-                                                 notifier.send(()).expect("receiver channel must be alive");
-                                             }
+                                Timer::sleep(SLEEP_DURATION).await;
+                            }
 
+                            if should_continue {
+                                let _ = response_notifiers.remove(&request_id);
+                                continue;
+                            }
+                        },
+                        Some(ControllerMessage::Close) => {
+                            break;
+                        },
+                        _ => {},
+                    }
+                }
+
+                // HANDLE RESPONSES SENT FROM USER
+                message = wsocket.next().fuse() => {
+                    match message {
+                         Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
+                             if let Ok(inc_event) = serde_json::from_str::<serde_json::Value>(&inc_event) {
+                                 if !inc_event.is_object() {
+                                     continue;
+                                 }
+
+                                 if let Some(id) = inc_event.get("id") {
+                                     let request_id = id.as_u64().unwrap_or_default() as usize;
+
+                                     if let Some(notifier) = response_notifiers.remove(&request_id) {
+                                         let mut res_bytes: Vec<u8> = Vec::new();
+                                         if serde_json::to_writer(&mut res_bytes, &inc_event).is_ok() {
+                                             let response_map = unsafe { &mut *self.responses.0 };
+                                             let _ = response_map.insert(request_id, res_bytes);
+
+                                             notifier.send(()).expect("receiver channel must be alive");
                                          }
+
                                      }
                                  }
-                             },
-                             Some(Ok(tokio_tungstenite_wasm::Message::Binary(_))) => continue,
-                             Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => break,
-                             Some(Err(e)) => {
-                                log::error!("{e}");
-                                return;
-                             },
-                             None => continue,
-                        }
+                             }
+                         },
+                         Some(Ok(tokio_tungstenite_wasm::Message::Binary(_))) => continue,
+                         Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => break,
+                         Some(Err(e)) => {
+                            log::error!("{e}");
+                            return;
+                         },
+                         None => continue,
                     }
                 }
             }
