@@ -3189,17 +3189,7 @@ impl CoinsContext {
     /// This method integrates a platform coin and its tokens (either regular or NFTs) into the CoinsContext.
     /// It handles the activation and registration of the platform coin and the tokens.
     /// For NFT tokens, existing data is overwritten; for regular tokens, data is added without overwriting.
-    ///
-    /// # Arguments
-    ///
-    /// * `platform`: The platform coin to be added.
-    /// * `tokens`: A vector of tokens (regular or NFTs) associated with the platform coin.
-    /// * `is_nfts`: A boolean flag indicating if the tokens are NFTs.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), MmError<PlatformIsAlreadyActivatedErr>>`: Result indicating success or an error
-    /// if the platform coin is already activated.
+    /// If the platform coin is already activated, there will be an error.
     pub async fn add_platform_with_tokens(
         &self,
         platform: MmCoinEnum,

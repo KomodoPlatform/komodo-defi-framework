@@ -104,19 +104,6 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 /// The function accesses the stored NFT data, based on provided token address,
 /// token ID, and chain, and returns comprehensive information about the NFT.
 /// It also checks and redacts potential spam if `protect_from_spam` in the request is set to true.
-///
-/// # Arguments
-///
-/// * `ctx`: Context required for handling internal operations.
-/// * `req`: A request containing details about the NFT to fetch.
-///
-/// # Returns
-///
-/// On success, returns the whole info about desired Nft.
-/// # Errors
-///
-/// Returns `GetNftInfoError` variants for issues like invalid requests, transport failures,
-/// database errors, and spam protection errors.
 pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> {
     let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(GetNftInfoError::Internal)?;
 
@@ -224,15 +211,6 @@ async fn process_transfers_confirmations(
 /// This function refreshes the NFT transfer history and NFT list cache based on new
 /// data fetched from the provided `url`. The function ensures the local cache is in
 /// sync with the latest data from the source, validates against spam contract addresses and phishing domains.
-///
-/// # Arguments
-///
-/// * `ctx`: Context required for handling internal operations.
-/// * `req`: A request containing details about the NFTs to be updated and the source URL.
-///
-/// # Returns
-///
-/// * `MmResult<(), UpdateNftError>`: A result indicating success or an error.
 pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNftError> {
     let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(GetNftInfoError::Internal)?;
 
@@ -326,17 +304,6 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
 ///
 /// This function uses the up to date NFT list for a given chain and updates the
 /// corresponding global NFT information in the coins context.
-///
-/// # Arguments
-///
-/// * `ctx`: Shared global context containing the coins context.
-/// * `storage`: Storage interface for NFT list operations.
-/// * `chain`: The blockchain to retrieve NFT information for.
-/// * `nft_global`: Currently the EthCoin object to update with the latest NFT information.
-///
-/// # Returns
-///
-/// * `MmResult<(), UpdateNftError>`: Result indicating the success or failure of the update operation.
 async fn update_nft_global_in_coins_ctx<T>(
     ctx: &MmArc,
     storage: &T,
@@ -484,15 +451,6 @@ fn prepare_uri_for_blocklist_endpoint(
 /// phishing domains using the provided `url_antispam`. If the fetched metadata or its domain
 /// is identified as spam or matches with any phishing domains, the NFT's `possible_spam` and/or
 /// `possible_phishing` flags are set to true.
-///
-/// # Arguments
-///
-/// * `ctx`: Context required for handling internal operations.
-/// * `req`: A request containing details about the NFT whose metadata needs to be refreshed.
-///
-/// # Returns
-///
-/// * `MmResult<(), UpdateNftError>`: A result indicating success or an error.
 pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResult<(), UpdateNftError> {
     let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(GetNftInfoError::Internal)?;
 

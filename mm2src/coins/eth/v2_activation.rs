@@ -284,21 +284,9 @@ impl EthCoin {
 
     /// Creates a global NFT instance from a platform coin, such as Ethereum.
     ///
-    /// This method initializes a new `EthCoin` instance specifically for handling global
-    /// non-fungible token based on a given platform coin. It sets up necessary configurations,
+    /// This method initializes a new `EthCoin` instance specifically for handling global non-fungible token
+    /// based on a given platform coin. It sets up necessary configurations,
     /// including required confirmations, web3 instances, and NFT information fetched from a provided URL.
-    ///
-    /// # Arguments
-    ///
-    /// * `ctx`: Shared application context.
-    /// * `chain`: Blockchain to which the NFTs belong.
-    /// * `conf`: Configuration parameters for the coin.
-    /// * `activation_request`: Activation request containing specific requirements.
-    /// * `url`: URL to fetch NFT data from.
-    ///
-    /// # Returns
-    ///
-    /// * `MmResult<EthCoin, EthActivationV2Error>`: Resulting `EthCoin` instance for global NFTs, or an error.
     pub async fn global_nft_from_platform_coin(
         &self,
         ctx: &MmArc,
