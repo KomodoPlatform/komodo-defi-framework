@@ -28,81 +28,69 @@ use std::collections::hash_map::{self,
 use std::collections::VecDeque;
 use std::time::Duration;
 
-#[derive(Debug)]
-pub struct ExpiringElement<Element> {
-    /// The element that expires
-    element: Element,
-    /// The expire time.
-    expires: Instant,
-}
-
-impl<Element> ExpiringElement<Element> {
-    pub fn get_element(&self) -> &Element { &self.element }
-
-    pub fn update_expiration(&mut self, expires: Instant) { self.expires = expires }
-}
+use crate::expirable_map::ExpirableEntry;
 
 #[derive(Debug)]
 pub struct TimeCache<Key, Value> {
     /// Mapping a key to its value together with its latest expire time (can be updated through
     /// reinserts).
-    map: FnvHashMap<Key, ExpiringElement<Value>>,
+    map: FnvHashMap<Key, ExpirableEntry<Value>>,
     /// An ordered list of keys by expires time.
-    list: VecDeque<ExpiringElement<Key>>,
+    list: VecDeque<ExpirableEntry<Key>>,
     /// The time elements remain in the cache.
     ttl: Duration,
 }
 
 pub struct OccupiedEntry<'a, K, V> {
     expiration: Instant,
-    entry: hash_map::OccupiedEntry<'a, K, ExpiringElement<V>>,
-    list: &'a mut VecDeque<ExpiringElement<K>>,
+    entry: hash_map::OccupiedEntry<'a, K, ExpirableEntry<V>>,
+    list: &'a mut VecDeque<ExpirableEntry<K>>,
 }
 
 impl<'a, K, V> OccupiedEntry<'a, K, V>
 where
     K: Eq + std::hash::Hash + Clone,
 {
-    pub fn into_mut(self) -> &'a mut V { &mut self.entry.into_mut().element }
+    pub fn into_mut(self) -> &'a mut V { &mut self.entry.into_mut().value }
 
     #[allow(dead_code)]
     pub fn insert_without_updating_expiration(&mut self, value: V) -> V {
         //keep old expiration, only replace value of element
-        ::std::mem::replace(&mut self.entry.get_mut().element, value)
+        ::std::mem::replace(&mut self.entry.get_mut().value, value)
     }
 
     #[allow(dead_code)]
     pub fn insert_and_update_expiration(&mut self, value: V) -> V {
         //We push back an additional element, the first reference in the list will be ignored
         // since we also updated the expires in the map, see below.
-        self.list.push_back(ExpiringElement {
-            element: self.entry.key().clone(),
-            expires: self.expiration,
+        self.list.push_back(ExpirableEntry {
+            value: self.entry.key().clone(),
+            expires_at: self.expiration,
         });
         self.entry
-            .insert(ExpiringElement {
-                element: value,
-                expires: self.expiration,
+            .insert(ExpirableEntry {
+                value,
+                expires_at: self.expiration,
             })
-            .element
+            .value
     }
 
     pub fn into_mut_with_update_expiration(mut self) -> &'a mut V {
         //We push back an additional element, the first reference in the list will be ignored
         // since we also updated the expires in the map, see below.
-        self.list.push_back(ExpiringElement {
-            element: self.entry.key().clone(),
-            expires: self.expiration,
+        self.list.push_back(ExpirableEntry {
+            value: self.entry.key().clone(),
+            expires_at: self.expiration,
         });
         self.entry.get_mut().update_expiration(self.expiration);
-        &mut self.entry.into_mut().element
+        &mut self.entry.into_mut().value
     }
 }
 
 pub struct VacantEntry<'a, K, V> {
     expiration: Instant,
-    entry: hash_map::VacantEntry<'a, K, ExpiringElement<V>>,
-    list: &'a mut VecDeque<ExpiringElement<K>>,
+    entry: hash_map::VacantEntry<'a, K, ExpirableEntry<V>>,
+    list: &'a mut VecDeque<ExpirableEntry<K>>,
 }
 
 impl<'a, K, V> VacantEntry<'a, K, V>
@@ -110,17 +98,17 @@ where
     K: Eq + std::hash::Hash + Clone,
 {
     pub fn insert(self, value: V) -> &'a mut V {
-        self.list.push_back(ExpiringElement {
-            element: self.entry.key().clone(),
-            expires: self.expiration,
+        self.list.push_back(ExpirableEntry {
+            value: self.entry.key().clone(),
+            expires_at: self.expiration,
         });
         &mut self
             .entry
-            .insert(ExpiringElement {
-                element: value,
-                expires: self.expiration,
+            .insert(ExpirableEntry {
+                value,
+                expires_at: self.expiration,
             })
-            .element
+            .value
     }
 }
 
@@ -163,12 +151,12 @@ where
 
     fn remove_expired_keys(&mut self, now: Instant) {
         while let Some(element) = self.list.pop_front() {
-            if element.expires > now {
+            if element.expires_at > now {
                 self.list.push_front(element);
                 break;
             }
-            if let Occupied(entry) = self.map.entry(element.element.clone()) {
-                if entry.get().expires <= now {
+            if let Occupied(entry) = self.map.entry(element.value.clone()) {
+                if entry.get().expires_at <= now {
                     entry.remove();
                 }
             }
@@ -207,7 +195,7 @@ where
 
     // Removes a certain key even if it didn't expire plus removing other expired keys
     pub fn remove(&mut self, key: Key) -> Option<Value> {
-        let result = self.map.remove(&key).map(|el| el.element);
+        let result = self.map.remove(&key).map(|el| el.value);
         self.remove_expired_keys(Instant::now());
         result
     }
@@ -221,7 +209,7 @@ where
 
     pub fn contains_key(&self, key: &Key) -> bool { self.map.contains_key(key) }
 
-    pub fn get(&self, key: &Key) -> Option<&Value> { self.map.get(key).map(|e| &e.element) }
+    pub fn get(&self, key: &Key) -> Option<&Value> { self.map.get(key).map(|e| &e.value) }
 
     pub fn len(&self) -> usize { self.map.len() }
 
@@ -229,9 +217,9 @@ where
 
     pub fn ttl(&self) -> Duration { self.ttl }
 
-    pub fn iter(&self) -> Iter<Key, ExpiringElement<Value>> { self.map.iter() }
+    pub fn iter(&self) -> Iter<Key, ExpirableEntry<Value>> { self.map.iter() }
 
-    pub fn keys(&self) -> Keys<Key, ExpiringElement<Value>> { self.map.keys() }
+    pub fn keys(&self) -> Keys<Key, ExpirableEntry<Value>> { self.map.keys() }
 }
 
 impl<Key, Value> TimeCache<Key, Value>
@@ -242,7 +230,7 @@ where
     pub fn as_hash_map(&self) -> std::collections::HashMap<Key, Value> {
         self.map
             .iter()
-            .map(|(key, expiring_el)| (key.clone(), expiring_el.element.clone()))
+            .map(|(key, expiring_el)| (key.clone(), expiring_el.value.clone()))
             .collect()
     }
 }

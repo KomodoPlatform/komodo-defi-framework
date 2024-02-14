@@ -3,17 +3,20 @@
 //! Designed for performance-oriented use-cases utilizing `FxHashMap` under the hood,
 //! and is not suitable for cryptographic purposes.
 
-use instant::Duration;
+use instant::{Duration, Instant};
 use rustc_hash::FxHashMap;
 use std::hash::Hash;
 
-use crate::get_local_duration_since_epoch;
-
 #[derive(Clone, Debug)]
-struct ExpirableEntry<V> {
-    exp: Duration,
-    created_at: Duration,
-    value: V,
+pub struct ExpirableEntry<V> {
+    pub(crate) value: V,
+    pub(crate) expires_at: Instant,
+}
+
+impl<V> ExpirableEntry<V> {
+    pub fn get_element(&self) -> &V { &self.value }
+
+    pub fn update_expiration(&mut self, expires_at: Instant) { self.expires_at = expires_at }
 }
 
 impl<K: Eq + Hash, V> Default for ExpirableMap<K, V> {
@@ -41,8 +44,7 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
     /// the old one will be returned.
     pub fn insert(&mut self, k: K, v: V, exp: Duration) -> Option<V> {
         let entry = ExpirableEntry {
-            exp,
-            created_at: get_local_duration_since_epoch().expect("Clock system is broken in the operating system."),
+            expires_at: Instant::now() + exp,
             value: v,
         };
 
@@ -50,12 +52,7 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
     }
 
     /// Removes expired entries from the map.
-    pub fn clear_expired_entries(&mut self) {
-        self.0.retain(|_k, v| {
-            let now = get_local_duration_since_epoch().expect("Clock system is broken in the operating system.");
-            (now - v.created_at) < v.exp
-        });
-    }
+    pub fn clear_expired_entries(&mut self) { self.0.retain(|_k, v| Instant::now() < v.expires_at); }
 
     // Removes a key-value pair from the map and returns the associated value if present.
     #[inline]
