@@ -126,7 +126,7 @@ fn eth_coin_from_keypair(
     let ticker = match coin_type {
         EthCoinType::Eth => "ETH".to_string(),
         EthCoinType::Erc20 { .. } => "JST".to_string(),
-        EthCoinType::Nft { .. } => unreachable!(),
+        EthCoinType::Nft { ref platform } => platform.to_string(),
     };
 
     let eth_coin = EthCoin(Arc::new(EthCoinImpl {
