@@ -337,13 +337,9 @@ where
     let activation_result = platform_coin.get_activation_result(&req.request, &nft_global).await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
-    if let Some(nft) = nft_global {
-        mm_tokens.push(nft);
-    }
-
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.clone().into(), mm_tokens, false)
+        .add_platform_with_tokens(platform_coin.clone().into(), mm_tokens, nft_global)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 
@@ -407,13 +403,9 @@ where
         platform_coin.handle_balance_streaming(config).await?;
     }
 
-    if let Some(nft_global) = nft_global {
-        mm_tokens.push(nft_global);
-    }
-
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.into(), mm_tokens, false)
+        .add_platform_with_tokens(platform_coin.into(), mm_tokens, nft_global)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 

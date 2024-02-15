@@ -3186,15 +3186,15 @@ impl CoinsContext {
 
     /// Adds a platform coin and its associated tokens to the CoinsContext.
     ///
-    /// This method integrates a platform coin and its tokens (either regular or NFTs) into the CoinsContext.
-    /// It handles the activation and registration of the platform coin and the tokens.
-    /// For NFT tokens, existing data is overwritten; for regular tokens, data is added without overwriting.
-    /// If the platform coin is already activated, there will be an error.
+    /// Registers a platform coin alongside its associated ERC-20 tokens and optionally a global NFT.
+    /// Regular tokens are added to the context without overwriting existing entries, preserving any previously activated tokens.
+    /// In contrast, the global NFT, if provided, replaces any previously stored NFT data for the platform, ensuring the NFT info is up-to-date.
+    /// An error is returned if the platform coin is already activated within the context, enforcing a single active instance for each platform.
     pub async fn add_platform_with_tokens(
         &self,
         platform: MmCoinEnum,
         tokens: Vec<MmCoinEnum>,
-        is_nfts: bool,
+        global_nft: Option<MmCoinEnum>,
     ) -> Result<(), MmError<PlatformIsAlreadyActivatedErr>> {
         let mut coins = self.coins.lock().await;
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
@@ -3219,17 +3219,16 @@ impl CoinsContext {
         // Handling for these case:
         // USDT was activated via enable RPC
         // We try to activate ETH coin and USDT token via enable_eth_with_tokens
-        for token in tokens.into_iter() {
-            let token_ticker = token.ticker().to_string();
-            token_tickers.insert(token_ticker.clone());
-
-            if is_nfts {
-                // For NFTs, overwrite existing data
-                coins.insert(token_ticker, MmCoinStruct::new(token));
-            } else {
-                // For regular tokens, use entry to avoid overwriting
-                coins.entry(token_ticker).or_insert_with(|| MmCoinStruct::new(token));
-            }
+        for token in tokens {
+            token_tickers.insert(token.ticker().to_string());
+            coins
+                .entry(token.ticker().into())
+                .or_insert_with(|| MmCoinStruct::new(token));
+        }
+        if let Some(nft) = global_nft {
+            token_tickers.insert(nft.ticker().to_string());
+            // For NFT overwrite existing data
+            coins.insert(nft.ticker().into(), MmCoinStruct::new(nft));
         }
 
         platform_coin_tokens
@@ -4653,7 +4652,7 @@ mod tests {
         let coin = MmCoinEnum::Test(TestCoin::new(RICK));
 
         // Add test coin to coins context
-        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![], false)).unwrap();
+        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![], None)).unwrap();
 
         // Try to find RICK from coins context that was added above
         let _found = common::block_on(lp_coinfind(&ctx, RICK)).unwrap();
@@ -4678,7 +4677,7 @@ mod tests {
         let coin = MmCoinEnum::Test(TestCoin::new(RICK));
 
         // Add test coin to coins context
-        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![], false)).unwrap();
+        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![], None)).unwrap();
 
         // Try to find RICK from coins context that was added above
         let _found = common::block_on(lp_coinfind_any(&ctx, RICK)).unwrap();
