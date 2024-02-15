@@ -242,7 +242,6 @@ impl PlatformWithTokensActivationOps for BchCoin {
     async fn enable_global_nft(
         &self,
         _ctx: &MmArc,
-        _platform_conf: &Json,
         _activation_request: &Self::ActivationRequest,
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
         todo!()

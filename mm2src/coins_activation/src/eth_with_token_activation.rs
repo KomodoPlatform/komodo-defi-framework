@@ -202,7 +202,6 @@ impl PlatformWithTokensActivationOps for EthCoin {
     async fn enable_global_nft(
         &self,
         ctx: &MmArc,
-        platform_conf: &Json,
         activation_request: &Self::ActivationRequest,
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
         let url = match &activation_request.nft_req {
@@ -210,9 +209,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
             None => return Ok(None),
         };
         let chain = Chain::from_ticker(self.ticker())?;
-        let nft_global = self
-            .global_nft_from_platform_coin(ctx, &chain, platform_conf, &activation_request.platform_request, url)
-            .await?;
+        let nft_global = self.global_nft_from_platform_coin(ctx, &chain, url).await?;
         Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 

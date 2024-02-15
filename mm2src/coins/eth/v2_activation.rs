@@ -9,6 +9,7 @@ use enum_derives::EnumFromTrait;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
+use std::sync::atomic::Ordering;
 use url::Url;
 
 #[derive(Clone, Debug, Deserialize, Display, EnumFromTrait, PartialEq, Serialize, SerializeErrorType)]
@@ -291,8 +292,6 @@ impl EthCoin {
         &self,
         ctx: &MmArc,
         chain: &Chain,
-        conf: &Json,
-        activation_request: &EthActivationV2Request,
         url: &Url,
     ) -> MmResult<EthCoin, EthActivationV2Error> {
         let ticker = chain.to_nft_ticker().to_string();
@@ -300,16 +299,6 @@ impl EthCoin {
         // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
         // all spawned futures related to global non fungible token will be aborted as well.
         let abortable_system = ctx.abortable_system.create_subsystem()?;
-
-        // param from request should override the config
-        let required_confirmations = activation_request
-            .required_confirmations
-            .unwrap_or_else(|| {
-                conf["required_confirmations"]
-                    .as_u64()
-                    .unwrap_or(DEFAULT_REQUIRED_CONFIRMATIONS as u64)
-            })
-            .into();
 
         let nft_infos = get_nfts_for_activation(chain, &self.my_address, url).await?;
 
@@ -331,7 +320,7 @@ impl EthCoin {
             gas_station_decimals: self.gas_station_decimals,
             gas_station_policy: self.gas_station_policy.clone(),
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
-            required_confirmations,
+            required_confirmations: AtomicU64::new(self.required_confirmations.load(Ordering::Relaxed)),
             ctx: self.ctx.clone(),
             chain_id: self.chain_id,
             logs_block_range: self.logs_block_range,

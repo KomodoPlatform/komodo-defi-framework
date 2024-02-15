@@ -149,7 +149,9 @@ impl TokenActivationOps for EthCoin {
                     "Mismatched protocol info for ERC-20".to_string(),
                 ))),
             },
-            EthTokenActivationParams::Nft(_nft_init_params) => todo!(),
+            EthTokenActivationParams::Nft(_nft_init_params) => {
+                todo!()
+            },
         }
     }
 }

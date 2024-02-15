@@ -2,7 +2,7 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{coin_conf, lp_coinfind_any, CoinProtocol, CoinsContext, MmCoin, MmCoinEnum, PrivKeyPolicyNotAllowed};
+use coins::{lp_coinfind_any, CoinProtocol, CoinsContext, MmCoin, MmCoinEnum, PrivKeyPolicyNotAllowed};
 use common::{log, HttpStatusCode, StatusCode};
 use crypto::CryptoCtxError;
 use derive_more::Display;
@@ -150,7 +150,6 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
     async fn enable_global_nft(
         &self,
         ctx: &MmArc,
-        conf: &Json,
         activation_request: &Self::ActivationRequest,
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>>;
 
@@ -326,13 +325,7 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let platform_conf = coin_conf(&ctx, &req.ticker);
-    if platform_conf.is_null() {
-        return MmError::err(CoinConfWithProtocolError::ConfigIsNotFound(req.ticker).into());
-    }
-    let nft_global = platform_coin
-        .enable_global_nft(&ctx, &platform_conf, &req.request)
-        .await?;
+    let nft_global = platform_coin.enable_global_nft(&ctx, &req.request).await?;
 
     let activation_result = platform_coin.get_activation_result(&req.request, &nft_global).await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
@@ -384,9 +377,7 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let nft_global = platform_coin
-        .enable_global_nft(&ctx, &platform_conf, &req.request)
-        .await?;
+    let nft_global = platform_coin.enable_global_nft(&ctx, &req.request).await?;
 
     let activation_result = platform_coin.get_activation_result(&req.request, &nft_global).await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
