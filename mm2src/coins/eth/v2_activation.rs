@@ -44,6 +44,7 @@ pub enum EthActivationV2Error {
     InternalError(String),
     #[display(fmt = "Unexpected coin type")]
     UnexpectedCoinType,
+    Transport(String),
 }
 
 impl From<MyAddressError> for EthActivationV2Error {
@@ -62,30 +63,13 @@ impl From<UnexpectedDerivationMethod> for EthActivationV2Error {
     fn from(e: UnexpectedDerivationMethod) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
 }
 
-impl From<GetNftInfoError> for EthActivationV2Error {
-    fn from(e: GetNftInfoError) -> Self {
+impl From<EthTokenActivationError> for EthActivationV2Error {
+    fn from(e: EthTokenActivationError) -> Self {
         match e {
-            GetNftInfoError::InvalidRequest(err) | GetNftInfoError::InvalidResponse(err) => {
-                EthActivationV2Error::InvalidPayload(err)
-            },
-            GetNftInfoError::ContractTypeIsNull => EthActivationV2Error::InvalidPayload(
-                "The contract type is required and should not be null.".to_string(),
-            ),
-            GetNftInfoError::Transport(err) => EthActivationV2Error::UnreachableNodes(err),
-            GetNftInfoError::Internal(err) | GetNftInfoError::DbError(err) | GetNftInfoError::NumConversError(err) => {
-                EthActivationV2Error::InternalError(err)
-            },
-            GetNftInfoError::GetEthAddressError(err) => EthActivationV2Error::InternalError(err.to_string()),
-            GetNftInfoError::ParseRfc3339Err(err) => EthActivationV2Error::InternalError(err.to_string()),
-            GetNftInfoError::ProtectFromSpamError(err) => EthActivationV2Error::InternalError(err.to_string()),
-            GetNftInfoError::TransferConfirmationsError(err) => EthActivationV2Error::InternalError(err.to_string()),
-            GetNftInfoError::TokenNotFoundInWallet {
-                token_address,
-                token_id,
-            } => EthActivationV2Error::InternalError(format!(
-                "Token not found in wallet: {}, {}",
-                token_address, token_id
-            )),
+            EthTokenActivationError::InternalError(err) => EthActivationV2Error::InternalError(err),
+            EthTokenActivationError::CouldNotFetchBalance(err) => EthActivationV2Error::CouldNotFetchBalance(err),
+            EthTokenActivationError::InvalidPayload(err) => EthActivationV2Error::InvalidPayload(err),
+            EthTokenActivationError::Transport(err) => EthActivationV2Error::Transport(err),
         }
     }
 }
@@ -156,6 +140,8 @@ pub struct EthNode {
 pub enum EthTokenActivationError {
     InternalError(String),
     CouldNotFetchBalance(String),
+    InvalidPayload(String),
+    Transport(String),
 }
 
 impl From<AbortedError> for EthTokenActivationError {
@@ -164,6 +150,34 @@ impl From<AbortedError> for EthTokenActivationError {
 
 impl From<MyAddressError> for EthTokenActivationError {
     fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<GetNftInfoError> for EthTokenActivationError {
+    fn from(e: GetNftInfoError) -> Self {
+        match e {
+            GetNftInfoError::InvalidRequest(err) | GetNftInfoError::InvalidResponse(err) => {
+                EthTokenActivationError::InvalidPayload(err)
+            },
+            GetNftInfoError::ContractTypeIsNull => EthTokenActivationError::InvalidPayload(
+                "The contract type is required and should not be null.".to_string(),
+            ),
+            GetNftInfoError::Transport(err) => EthTokenActivationError::Transport(err),
+            GetNftInfoError::Internal(err) | GetNftInfoError::DbError(err) | GetNftInfoError::NumConversError(err) => {
+                EthTokenActivationError::InternalError(err)
+            },
+            GetNftInfoError::GetEthAddressError(err) => EthTokenActivationError::InternalError(err.to_string()),
+            GetNftInfoError::ParseRfc3339Err(err) => EthTokenActivationError::InternalError(err.to_string()),
+            GetNftInfoError::ProtectFromSpamError(err) => EthTokenActivationError::InternalError(err.to_string()),
+            GetNftInfoError::TransferConfirmationsError(err) => EthTokenActivationError::InternalError(err.to_string()),
+            GetNftInfoError::TokenNotFoundInWallet {
+                token_address,
+                token_id,
+            } => EthTokenActivationError::InternalError(format!(
+                "Token not found in wallet: {}, {}",
+                token_address, token_id
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -293,7 +307,7 @@ impl EthCoin {
         ctx: &MmArc,
         chain: &Chain,
         url: &Url,
-    ) -> MmResult<EthCoin, EthActivationV2Error> {
+    ) -> MmResult<EthCoin, EthTokenActivationError> {
         let ticker = chain.to_nft_ticker().to_string();
 
         // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
@@ -331,6 +345,9 @@ impl EthCoin {
         };
         Ok(EthCoin(Arc::new(global_nft)))
     }
+
+    #[allow(dead_code)]
+    async fn enable_global_nft(&self, _url: Url) -> MmResult<EthCoin, EthTokenActivationError> { todo!() }
 }
 
 pub async fn eth_coin_from_conf_and_request_v2(

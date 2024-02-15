@@ -61,6 +61,7 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::UnexpectedCoinType => {
                 EnablePlatformCoinWithTokensError::Internal("Unexpected coin type".to_string())
             },
+            EthActivationV2Error::Transport(e) => EnablePlatformCoinWithTokensError::Transport(e),
         }
     }
 }
@@ -86,6 +87,8 @@ impl From<EthTokenActivationError> for InitTokensAsMmCoinsError {
         match error {
             EthTokenActivationError::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
             EthTokenActivationError::CouldNotFetchBalance(e) => InitTokensAsMmCoinsError::CouldNotFetchBalance(e),
+            EthTokenActivationError::InvalidPayload(e) => InitTokensAsMmCoinsError::Internal(e),
+            EthTokenActivationError::Transport(e) => InitTokensAsMmCoinsError::Internal(e),
         }
     }
 }
