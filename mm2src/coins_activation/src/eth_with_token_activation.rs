@@ -145,7 +145,11 @@ impl TokenOf for EthCoin {
 
 impl RegisterTokenInfo<EthCoin> for EthCoin {
     fn register_token_info(&self, token: &EthCoin) {
-        // TODO dont register if EthCoinType is NFT
+        // Dont register Nft in platform coin.
+        if matches!(token.coin_type, EthCoinType::Nft { .. }) {
+            return;
+        }
+
         self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
             token_address: token.erc20_token_address().unwrap(),
             decimals: token.decimals(),
