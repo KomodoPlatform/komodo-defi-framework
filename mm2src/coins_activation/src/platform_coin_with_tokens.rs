@@ -149,7 +149,6 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
 
     async fn enable_global_nft(
         &self,
-        ctx: &MmArc,
         activation_request: &Self::ActivationRequest,
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>>;
 
@@ -325,7 +324,7 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let nft_global = platform_coin.enable_global_nft(&ctx, &req.request).await?;
+    let nft_global = platform_coin.enable_global_nft(&req.request).await?;
 
     let activation_result = platform_coin.get_activation_result(&req.request, &nft_global).await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
@@ -377,7 +376,7 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let nft_global = platform_coin.enable_global_nft(&ctx, &req.request).await?;
+    let nft_global = platform_coin.enable_global_nft(&req.request).await?;
 
     let activation_result = platform_coin.get_activation_result(&req.request, &nft_global).await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());

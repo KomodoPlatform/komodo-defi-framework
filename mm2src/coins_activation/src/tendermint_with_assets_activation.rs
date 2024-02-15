@@ -201,7 +201,6 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
 
     async fn enable_global_nft(
         &self,
-        _ctx: &MmArc,
         _activation_request: &Self::ActivationRequest,
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
         todo!()

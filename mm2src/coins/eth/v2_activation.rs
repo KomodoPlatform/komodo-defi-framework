@@ -180,6 +180,10 @@ impl From<GetNftInfoError> for EthTokenActivationError {
     }
 }
 
+impl From<ParseChainTypeError> for EthTokenActivationError {
+    fn from(e: ParseChainTypeError) -> Self { EthTokenActivationError::InternalError(e.to_string()) }
+}
+
 #[derive(Clone, Deserialize)]
 pub enum EthTokenActivationParams {
     Erc20(Erc20TokenActivationRequest),
@@ -302,19 +306,15 @@ impl EthCoin {
     /// This method initializes a new `EthCoin` instance specifically for handling global non-fungible token
     /// based on a given platform coin. It sets up necessary configurations,
     /// including required confirmations, web3 instances, and NFT information fetched from a provided URL.
-    pub async fn global_nft_from_platform_coin(
-        &self,
-        ctx: &MmArc,
-        chain: &Chain,
-        url: &Url,
-    ) -> MmResult<EthCoin, EthTokenActivationError> {
+    pub async fn global_nft_from_platform_coin(&self, url: &Url) -> MmResult<EthCoin, EthTokenActivationError> {
+        let chain = Chain::from_ticker(self.ticker())?;
         let ticker = chain.to_nft_ticker().to_string();
 
-        // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
-        // all spawned futures related to global non fungible token will be aborted as well.
-        let abortable_system = ctx.abortable_system.create_subsystem()?;
+        // Create an abortable system linked to the `platform_coin` (which is self) so if the platform coin is disabled,
+        // all spawned futures related to global Non-Fungible Token will be aborted as well.
+        let abortable_system = self.abortable_system.create_subsystem()?;
 
-        let nft_infos = get_nfts_for_activation(chain, &self.my_address, url).await?;
+        let nft_infos = get_nfts_for_activation(&chain, &self.my_address, url).await?;
 
         let global_nft = EthCoinImpl {
             ticker,
@@ -345,9 +345,6 @@ impl EthCoin {
         };
         Ok(EthCoin(Arc::new(global_nft)))
     }
-
-    #[allow(dead_code)]
-    async fn enable_global_nft(&self, _url: Url) -> MmResult<EthCoin, EthTokenActivationError> { todo!() }
 }
 
 pub async fn eth_coin_from_conf_and_request_v2(

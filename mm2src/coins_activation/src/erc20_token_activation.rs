@@ -151,7 +151,10 @@ impl TokenActivationOps for EthCoin {
                     "Mismatched protocol info for ERC-20".to_string(),
                 ))),
             },
-            EthTokenActivationParams::Nft(_nft_init_params) => {
+            EthTokenActivationParams::Nft(nft_init_params) => {
+                let _nft_global = platform_coin
+                    .global_nft_from_platform_coin(&nft_init_params.url)
+                    .await?;
                 todo!()
             },
         }
