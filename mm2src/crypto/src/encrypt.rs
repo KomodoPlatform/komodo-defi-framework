@@ -24,7 +24,6 @@ pub enum EncryptionAlgorithm {
     /// AES-256-CBC algorithm.
     AES256CBC,
     // Placeholder for future algorithms.
-    // Future algorithms can be added here.
 }
 
 /// `EncryptedData` represents encrypted data for a wallet.

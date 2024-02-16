@@ -93,7 +93,6 @@ pub enum KeyDerivationDetails {
         authentication_path: String,
     },
     // Placeholder for future algorithms.
-    // Future algorithms can be added here.
 }
 
 /// Derives AES and HMAC keys from a given password and salts for mnemonic encryption/decryption.
@@ -162,11 +161,11 @@ pub(crate) fn derive_encryption_authentication_keys(
     encryption_path: &str,
     authentication_path: &str,
 ) -> MmResult<([u8; 32], [u8; 32]), KeyDerivationError> {
-    const SYMMETRIC_KEY_SEED: &[u8] = b"Symmetric key seed";
+    const MASTER_NODE_HMAC_KEY: &[u8] = b"Symmetric key seed";
 
     // Generate the master node `m` according to SLIP-0021.
     let mut mac =
-        HmacSha512::new_from_slice(SYMMETRIC_KEY_SEED).map_to_mm(|_| KeyDerivationError::HmacInitialization)?;
+        HmacSha512::new_from_slice(MASTER_NODE_HMAC_KEY).map_to_mm(|_| KeyDerivationError::HmacInitialization)?;
     mac.update(master_secret);
     drop_mutability!(mac);
     let master_key_material = mac.finalize().into_bytes();
@@ -180,14 +179,19 @@ pub(crate) fn derive_encryption_authentication_keys(
     Ok((encryption_key, authentication_key))
 }
 
-#[cfg(test)]
+#[cfg(any(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
     use crate::slip21::{AUTHENTICATION_PATH, ENCRYPTION_PATH};
+    use common::cross_test;
 
-    #[test]
+    common::cfg_wasm32! {
+        use wasm_bindgen_test::*;
+        wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+    }
+
     // https://github.com/satoshilabs/slips/blob/master/slip-0021.md#example
-    fn test_slip_0021_key_derivation() {
+    cross_test!(test_slip_0021_key_derivation, {
         let master_secret = hex::decode("c76c4ac4f4e4a00d6b274d5c39c700bb4a7ddc04fbc6f78e85ca75007b5b495f74a9043eeb77bdd53aa6fc3a0e31462270316fa04b8c19114c8798706cd02ac8").unwrap();
 
         let expected_encryption_key =
@@ -214,5 +218,5 @@ mod tests {
             expected_authentication_key.as_slice(),
             "Derived authentication key does not match expected value"
         );
-    }
+    });
 }

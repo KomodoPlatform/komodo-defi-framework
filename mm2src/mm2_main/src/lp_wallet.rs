@@ -51,7 +51,7 @@ pub enum WalletInitError {
     MnemonicError(String),
     #[display(fmt = "Error initializing crypto context: {}", _0)]
     CryptoInitError(String),
-    Internal(String),
+    InternalError(String),
 }
 
 impl From<MnemonicError> for WalletInitError {
@@ -95,6 +95,7 @@ impl WalletsContext {
             })
         })))
     }
+
     pub async fn wallets_db(&self) -> InitDbResult<WalletsDbLocked<'_>> { self.wallets_db.get_or_initialize().await }
 }
 
@@ -304,15 +305,15 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 /// # Errors
 /// Returns `MmInitError` if deserialization fails or if there are issues in passphrase handling.
 ///
-pub(crate) async fn initialize_wallet_passphrase(ctx: MmArc) -> WalletInitResult<()> {
-    let (wallet_name, passphrase) = deserialize_wallet_config(&ctx)?;
+pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
+    let (wallet_name, passphrase) = deserialize_wallet_config(ctx)?;
     ctx.wallet_name
         .pin(wallet_name.clone())
-        .map_to_mm(WalletInitError::Internal)?;
-    let passphrase = process_passphrase_logic(&ctx, wallet_name, passphrase).await?;
+        .map_to_mm(WalletInitError::InternalError)?;
+    let passphrase = process_passphrase_logic(ctx, wallet_name, passphrase).await?;
 
     if let Some(passphrase) = passphrase {
-        initialize_crypto_context(&ctx, &passphrase)?;
+        initialize_crypto_context(ctx, &passphrase)?;
     }
 
     Ok(())
@@ -487,7 +488,7 @@ pub async fn get_mnemonic_rpc(ctx: MmArc, req: GetMnemonicRequest) -> MmResult<G
         MnemonicFormat::Encrypted => {
             let encrypted_mnemonic = read_encrypted_passphrase_if_available(&ctx)
                 .await?
-                .ok_or_else(|| GetMnemonicError::InvalidRequest("Wallet passphrase file not found".to_string()))?;
+                .ok_or_else(|| GetMnemonicError::InvalidRequest("Wallet mnemonic file not found".to_string()))?;
             Ok(GetMnemonicResponse {
                 mnemonic: encrypted_mnemonic.into(),
             })

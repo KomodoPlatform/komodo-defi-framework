@@ -500,7 +500,7 @@ pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitRes
     }
 
     // This either initializes the cryptographic context or sets up the context for "no login mode".
-    initialize_wallet_passphrase(ctx.clone()).await?;
+    initialize_wallet_passphrase(&ctx).await?;
 
     lp_init_continue(ctx.clone()).await?;
 
