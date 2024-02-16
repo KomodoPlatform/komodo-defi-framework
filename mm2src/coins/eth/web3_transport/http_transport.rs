@@ -6,7 +6,7 @@ use jsonrpc_core::{Call, Response};
 use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
 use serde_json::Value as Json;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use web3::error::{Error, TransportError};
 use web3::helpers::{build_request, to_result_from_output, to_string};
@@ -43,6 +43,7 @@ where
 #[derive(Clone, Debug)]
 pub struct HttpTransport {
     id: Arc<AtomicUsize>,
+    pub(crate) last_request_failed: Arc<AtomicBool>,
     node: HttpTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
@@ -63,6 +64,7 @@ impl HttpTransport {
             node,
             event_handlers: Default::default(),
             gui_auth_validation_generator: None,
+            last_request_failed: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -73,6 +75,7 @@ impl HttpTransport {
             node,
             event_handlers,
             gui_auth_validation_generator: None,
+            last_request_failed: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -88,33 +91,14 @@ impl Transport for HttpTransport {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        Box::pin(send_request(
-            request,
-            self.node.clone(),
-            self.event_handlers.clone(),
-            self.gui_auth_validation_generator.clone(),
-        ))
-    }
+    fn send(&self, _id: RequestId, request: Call) -> Self::Out { Box::pin(send_request(request, self.clone())) }
 
     #[cfg(target_arch = "wasm32")]
-    fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        Box::pin(send_request(
-            request,
-            self.node.clone(),
-            self.event_handlers.clone(),
-            self.gui_auth_validation_generator.clone(),
-        ))
-    }
+    fn send(&self, _id: RequestId, request: Call) -> Self::Out { Box::pin(send_request(request, self.clone())) }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn send_request(
-    request: Call,
-    node: HttpTransportNode,
-    event_handlers: Vec<RpcTransportEventHandlerShared>,
-    gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
-) -> Result<Json, Error> {
+async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, Error> {
     use common::executor::Timer;
     use common::log::warn;
     use futures::future::{select, Either};
@@ -124,22 +108,27 @@ async fn send_request(
 
     const REQUEST_TIMEOUT_S: f64 = 20.;
 
+    transport.last_request_failed.store(false, Ordering::SeqCst);
+
     let mut serialized_request = to_string(&request);
 
-    if node.gui_auth {
-        match handle_gui_auth_payload(&gui_auth_validation_generator, &request) {
+    if transport.node.gui_auth {
+        match handle_gui_auth_payload(&transport.gui_auth_validation_generator, &request) {
             Ok(r) => serialized_request = r,
             Err(e) => {
+                transport.last_request_failed.store(true, Ordering::SeqCst);
                 return Err(request_failed_error(request, e));
             },
         };
     }
 
-    event_handlers.on_outgoing_request(serialized_request.as_bytes());
+    transport
+        .event_handlers
+        .on_outgoing_request(serialized_request.as_bytes());
 
     let mut req = http::Request::new(serialized_request.into_bytes());
     *req.method_mut() = http::Method::POST;
-    *req.uri_mut() = node.uri.clone();
+    *req.uri_mut() = transport.node.uri.clone();
     req.headers_mut()
         .insert(CONTENT_TYPE, HeaderValue::from_static(APPLICATION_JSON));
     let timeout = Timer::sleep(REQUEST_TIMEOUT_S);
@@ -153,9 +142,10 @@ async fn send_request(
                 Call::Notification(n) => (n.method.clone(), jsonrpc_core::Id::Null),
                 Call::Invalid { id } => ("Invalid call".to_string(), id.clone()),
             };
+            transport.last_request_failed.store(true, Ordering::SeqCst);
             let error = format!(
                 "Error requesting '{}': {}s timeout expired, method: '{}', id: {:?}",
-                node.uri, REQUEST_TIMEOUT_S, method, id
+                transport.node.uri, REQUEST_TIMEOUT_S, method, id
             );
             warn!("{}", error);
             return Err(request_failed_error(request, Web3RpcError::Transport(error)));
@@ -165,30 +155,33 @@ async fn send_request(
     let (status, _headers, body) = match res {
         Ok(r) => r,
         Err(err) => {
+            transport.last_request_failed.store(true, Ordering::SeqCst);
             return Err(request_failed_error(request, Web3RpcError::Transport(err.to_string())));
         },
     };
 
-    event_handlers.on_incoming_response(&body);
+    transport.event_handlers.on_incoming_response(&body);
 
     if !status.is_success() {
+        transport.last_request_failed.store(true, Ordering::SeqCst);
         return Err(request_failed_error(
             request,
             Web3RpcError::Transport(format!(
                 "Server: '{}', response !200: {}, {}",
-                node.uri,
+                transport.node.uri,
                 status,
                 binprint(&body, b'.')
             )),
         ));
     }
 
-    let res = match de_rpc_response(body, &node.uri.to_string()) {
+    let res = match de_rpc_response(body, &transport.node.uri.to_string()) {
         Ok(r) => r,
         Err(err) => {
+            transport.last_request_failed.store(true, Ordering::SeqCst);
             return Err(request_failed_error(
                 request,
-                Web3RpcError::InvalidResponse(format!("Server: '{}', error: {}", node.uri, err)),
+                Web3RpcError::InvalidResponse(format!("Server: '{}', error: {}", transport.node.uri, err)),
             ));
         },
     };
@@ -197,36 +190,40 @@ async fn send_request(
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn send_request(
-    request: Call,
-    node: HttpTransportNode,
-    event_handlers: Vec<RpcTransportEventHandlerShared>,
-    gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
-) -> Result<Json, Error> {
+async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, Error> {
+    transport.last_request_failed.store(false, Ordering::SeqCst);
+
     let mut serialized_request = to_string(&request);
 
-    if node.gui_auth {
-        match handle_gui_auth_payload(&gui_auth_validation_generator, &request) {
+    if transport.node.gui_auth {
+        match handle_gui_auth_payload(&transport.gui_auth_validation_generator, &request) {
             Ok(r) => serialized_request = r,
             Err(e) => {
+                transport.last_request_failed.store(true, Ordering::SeqCst);
                 return Err(request_failed_error(
                     request,
-                    Web3RpcError::Transport(format!("Server: '{}', error: {}", node.uri, e)),
+                    Web3RpcError::Transport(format!("Server: '{}', error: {}", transport.node.uri, e)),
                 ));
             },
         };
     }
 
-    match send_request_once(serialized_request, &node.uri, &event_handlers).await {
+    match send_request_once(serialized_request, &transport.node.uri, &transport.event_handlers).await {
         Ok(response_json) => Ok(response_json),
-        Err(Error::Transport(e)) => Err(request_failed_error(
-            request,
-            Web3RpcError::Transport(format!("Server: '{}', error: {}", node.uri, e)),
-        )),
-        Err(e) => Err(request_failed_error(
-            request,
-            Web3RpcError::InvalidResponse(format!("Server: '{}', error: {}", node.uri, e)),
-        )),
+        Err(Error::Transport(e)) => {
+            transport.last_request_failed.store(true, Ordering::SeqCst);
+            Err(request_failed_error(
+                request,
+                Web3RpcError::Transport(format!("Server: '{}', error: {}", transport.node.uri, e)),
+            ))
+        },
+        Err(e) => {
+            transport.last_request_failed.store(true, Ordering::SeqCst);
+            Err(request_failed_error(
+                request,
+                Web3RpcError::InvalidResponse(format!("Server: '{}', error: {}", transport.node.uri, e)),
+            ))
+        },
     }
 }
 

@@ -5,6 +5,7 @@ use jsonrpc_core::Call;
 use mm2_net::transport::GuiAuthValidationGenerator;
 use serde_json::Value as Json;
 use serde_json::Value;
+use std::sync::atomic::Ordering;
 use web3::api::Namespace;
 use web3::helpers::{self, to_string, CallFuture};
 use web3::types::BlockNumber;
@@ -42,6 +43,15 @@ impl Web3Transport {
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> MetamaskResult<Web3Transport> {
         Ok(metamask_transport::MetamaskTransport::detect(eth_config, event_handlers)?.into())
+    }
+
+    pub fn is_last_request_failed(&self) -> bool {
+        match self {
+            Web3Transport::Http(http) => http.last_request_failed.load(Ordering::SeqCst),
+            Web3Transport::Websocket(websocket) => websocket.last_request_failed.load(Ordering::SeqCst),
+            #[cfg(target_arch = "wasm32")]
+            Web3Transport::Metamask(metamask) => metamask.last_request_failed.load(Ordering::SeqCst),
+        }
     }
 
     #[cfg(any(test, target_arch = "wasm32"))]

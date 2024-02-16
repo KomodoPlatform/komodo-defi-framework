@@ -21,6 +21,7 @@ use instant::Duration;
 use jsonrpc_core::Call;
 use mm2_net::transport::GuiAuthValidationGenerator;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::{atomic::{AtomicUsize, Ordering},
                 Arc};
 use tokio_tungstenite_wasm::WebSocketStream;
@@ -39,6 +40,7 @@ pub(crate) struct WebsocketTransportNode {
 #[derive(Clone, Debug)]
 pub struct WebsocketTransport {
     request_id: Arc<AtomicUsize>,
+    pub(crate) last_request_failed: Arc<AtomicBool>,
     node: WebsocketTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
@@ -105,6 +107,7 @@ impl WebsocketTransport {
             .into(),
             connection_guard: Arc::new(AsyncMutex::new(())),
             gui_auth_validation_generator: None,
+            last_request_failed: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -281,12 +284,14 @@ async fn send_request(
     request_id: RequestId,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<serde_json::Value, Error> {
+    transport.last_request_failed.store(false, Ordering::SeqCst);
     let mut serialized_request = to_string(&request);
 
     if transport.node.gui_auth {
         match handle_gui_auth_payload(&transport.gui_auth_validation_generator, &request) {
             Ok(r) => serialized_request = r,
             Err(e) => {
+                transport.last_request_failed.store(true, Ordering::SeqCst);
                 return Err(Error::Transport(TransportError::Message(format!(
                     "Couldn't generate signed message payload for {:?}. Error: {e}",
                     request
@@ -317,6 +322,8 @@ async fn send_request(
             return de_rpc_response(response, &transport.node.uri.to_string());
         }
     };
+
+    transport.last_request_failed.store(true, Ordering::SeqCst);
 
     Err(Error::Transport(TransportError::Message(format!(
         "Sending {:?} failed.",

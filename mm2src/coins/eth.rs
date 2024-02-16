@@ -2538,6 +2538,12 @@ impl RpcCommonOps for EthCoin {
                 socket_transport.maybe_spawn_connection_loop(self.clone());
             };
 
+            if !client.web3.transport().is_last_request_failed() {
+                // Bring the live client to the front of rpc_clients
+                clients.rotate_left(i);
+                return Ok(client);
+            }
+
             match client
                 .web3
                 .web3()

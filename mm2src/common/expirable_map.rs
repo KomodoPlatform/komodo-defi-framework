@@ -63,6 +63,7 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
 mod tests {
     use super::*;
     use crate::cross_test;
+    use crate::executor::Timer;
 
     crate::cfg_wasm32! {
         use wasm_bindgen_test::*;
@@ -79,7 +80,7 @@ mod tests {
         expirable_map.insert("key2".to_string(), value.to_string(), exp);
 
         // Wait for entries to expire
-        std::thread::sleep(Duration::from_secs(2));
+        Timer::sleep(2.).await;
 
         // Clear expired entries
         expirable_map.clear_expired_entries();
@@ -95,7 +96,7 @@ mod tests {
         expirable_map.insert("key5".to_string(), value.to_string(), Duration::from_millis(3750));
 
         // Wait 2 seconds to expire some entries
-        std::thread::sleep(Duration::from_secs(2));
+        Timer::sleep(2.).await;
 
         // Clear expired entries
         expirable_map.clear_expired_entries();
