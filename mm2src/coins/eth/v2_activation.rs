@@ -155,13 +155,13 @@ impl From<MyAddressError> for EthTokenActivationError {
 impl From<GetNftInfoError> for EthTokenActivationError {
     fn from(e: GetNftInfoError) -> Self {
         match e {
-            GetNftInfoError::InvalidRequest(err) | GetNftInfoError::InvalidResponse(err) => {
-                EthTokenActivationError::InvalidPayload(err)
-            },
+            GetNftInfoError::InvalidRequest(err) => EthTokenActivationError::InvalidPayload(err),
             GetNftInfoError::ContractTypeIsNull => EthTokenActivationError::InvalidPayload(
                 "The contract type is required and should not be null.".to_string(),
             ),
-            GetNftInfoError::Transport(err) => EthTokenActivationError::Transport(err),
+            GetNftInfoError::Transport(err) | GetNftInfoError::InvalidResponse(err) => {
+                EthTokenActivationError::Transport(err)
+            },
             GetNftInfoError::Internal(err) | GetNftInfoError::DbError(err) | GetNftInfoError::NumConversError(err) => {
                 EthTokenActivationError::InternalError(err)
             },

@@ -2467,10 +2467,10 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
-            WithdrawError::Transport(_)
-            | WithdrawError::InternalError(_)
-            | WithdrawError::DbError(_)
-            | WithdrawError::NftProtocolNotSupported => StatusCode::INTERNAL_SERVER_ERROR,
+            WithdrawError::InternalError(_) | WithdrawError::DbError(_) | WithdrawError::NftProtocolNotSupported => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
+            WithdrawError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }
 }
