@@ -405,15 +405,6 @@ checksum = "6107fe1be6682a68940da878d9e9f5e90ca5745b3dec9fd1bb393c8777d4f581"
 
 [[package]]
 name = "base64"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b25d992356d2eb0ed82172f5248873db5560c4721f564b13cb5193bda5e668e"
-dependencies = [
- "byteorder",
-]
-
-[[package]]
-name = "base64"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
@@ -1057,7 +1048,7 @@ dependencies = [
  "async-std",
  "async-trait",
  "base58",
- "base64 0.10.1",
+ "base64 0.21.2",
  "bincode",
  "bip32",
  "bitcoin",
@@ -1560,7 +1551,7 @@ dependencies = [
  "argon2",
  "arrayref",
  "async-trait",
- "base64 0.11.0",
+ "base64 0.21.2",
  "bip32",
  "bip39",
  "bitcrypto",
@@ -4603,7 +4594,7 @@ dependencies = [
 name = "mm2_metrics"
 version = "0.1.0"
 dependencies = [
- "base64 0.10.1",
+ "base64 0.21.2",
  "common",
  "derive_more",
  "futures 0.3.28",

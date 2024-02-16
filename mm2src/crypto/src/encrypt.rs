@@ -1,6 +1,8 @@
 use crate::key_derivation::KeyDerivationDetails;
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
 use aes::Aes256;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use common::drop_mutability;
 use derive_more::Display;
 use hmac::{Hmac, Mac};
@@ -107,9 +109,9 @@ pub fn encrypt_data(
     let encrypted_data = EncryptedData {
         encryption_algorithm: EncryptionAlgorithm::AES256CBC,
         key_derivation_details,
-        iv: base64::encode(&iv),
-        ciphertext: base64::encode(&ciphertext),
-        tag: base64::encode(&tag),
+        iv: STANDARD.encode(iv),
+        ciphertext: STANDARD.encode(ciphertext),
+        tag: STANDARD.encode(tag),
     };
 
     Ok(encrypted_data)

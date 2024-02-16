@@ -11,7 +11,7 @@ aes = "0.8.3"
 argon2 = { version = "0.5.2", features = ["zeroize"] }
 arrayref = "0.3"
 async-trait = "0.1"
-base64 = "0.11.0"
+base64 = "0.21.2"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 bip39 = { version = "2.0.0", features = ["rand_core", "zeroize"], default-features = false }
 bitcrypto = { path = "../mm2_bitcoin/crypto" }

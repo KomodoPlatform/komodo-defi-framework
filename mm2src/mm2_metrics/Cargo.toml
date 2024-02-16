@@ -7,7 +7,7 @@ edition = "2021"
 doctest = false
 
 [dependencies]
-base64 = "0.10.0"
+base64 = "0.21.2"
 common = { path = "../common" }
 derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }

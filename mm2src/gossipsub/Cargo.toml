@@ -13,7 +13,7 @@ categories = ["network-programming", "asynchronous"]
 doctest = false
 
 [dependencies]
-base64 = "0.11.0"
+base64 = "0.21.2"
 bytes = "0.5.4"
 byteorder = "1.3.2"
 common = { path = "../common" }

@@ -1,6 +1,8 @@
 use crate::EncryptedData;
 use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 use aes::Aes256;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use derive_more::Display;
 use hmac::{Hmac, Mac};
 use mm2_err_handle::prelude::*;
@@ -42,9 +44,9 @@ pub fn decrypt_data(
     key_hmac: &[u8; 32],
 ) -> MmResult<Vec<u8>, DecryptionError> {
     // Decode the Base64-encoded values
-    let iv = base64::decode(&encrypted_data.iv)?;
-    let mut ciphertext = base64::decode(&encrypted_data.ciphertext)?;
-    let tag = base64::decode(&encrypted_data.tag)?;
+    let iv = STANDARD.decode(&encrypted_data.iv)?;
+    let mut ciphertext = STANDARD.decode(&encrypted_data.ciphertext)?;
+    let tag = STANDARD.decode(&encrypted_data.tag)?;
 
     // Verify HMAC tag before decrypting
     let mut mac = Hmac::<Sha256>::new_from_slice(key_hmac).map_to_mm(|e| DecryptionError::Internal(e.to_string()))?;
