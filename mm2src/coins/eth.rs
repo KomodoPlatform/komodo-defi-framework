@@ -429,7 +429,7 @@ pub struct EthCoinImpl {
     fallback_swap_contract: Option<Address>,
     contract_supports_watchers: bool,
     /// The separate web3 instances kept to get nonce, will replace the web3 completely soon
-    web3_instances: AsyncMutex<Vec<Web3Instance>>,
+    web3_instances: Arc<AsyncMutex<Vec<Web3Instance>>>,
     decimals: u8,
     gas_station_url: Option<String>,
     gas_station_decimals: u8,
@@ -5870,7 +5870,7 @@ pub async fn eth_coin_from_conf_and_request(
         gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
         gas_station_decimals: gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
         gas_station_policy,
-        web3_instances: AsyncMutex::new(web3_instances),
+        web3_instances: AsyncMutex::new(web3_instances).into(),
         history_sync_state: Mutex::new(initial_history_state),
         ctx: ctx.weak(),
         required_confirmations,
