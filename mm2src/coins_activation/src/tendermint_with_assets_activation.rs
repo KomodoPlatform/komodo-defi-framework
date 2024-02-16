@@ -281,14 +281,6 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         })
     }
 
-    async fn get_nft_activation_result(
-        &self,
-        _activation_request: &Self::ActivationRequest,
-        _nft_global: &MmCoinEnum,
-    ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
-        todo!()
-    }
-
     fn start_history_background_fetching(
         &self,
         ctx: MmArc,

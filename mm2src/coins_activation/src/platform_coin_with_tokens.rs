@@ -166,12 +166,6 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         nft_global: &Option<MmCoinEnum>,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>;
 
-    async fn get_nft_activation_result(
-        &self,
-        activation_request: &Self::ActivationRequest,
-        nft_global: &MmCoinEnum,
-    ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>;
-
     fn start_history_background_fetching(
         &self,
         ctx: MmArc,

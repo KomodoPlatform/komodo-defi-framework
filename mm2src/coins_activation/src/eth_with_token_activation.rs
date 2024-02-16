@@ -243,7 +243,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
         nft_global: &Option<MmCoinEnum>,
     ) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {
         let nfts_map = if let Some(MmCoinEnum::EthCoin(nft_global)) = nft_global {
-            nft_global.get_nfts_infos().await
+            nft_global.nfts_infos.lock().await.clone()
         } else {
             Default::default()
         };
@@ -304,62 +304,6 @@ impl PlatformWithTokensActivationOps for EthCoin {
             current_block,
             eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
             erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
-            nfts_infos: nfts_map,
-        })
-    }
-
-    /// Retrieves the activation result for a platform coin with its associated NFTs.
-    async fn get_nft_activation_result(
-        &self,
-        activation_request: &Self::ActivationRequest,
-        nft_global: &MmCoinEnum,
-    ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
-        let nft_global = match nft_global {
-            MmCoinEnum::EthCoin(nft) => nft,
-            _ => return MmError::err(EthActivationV2Error::UnexpectedCoinType),
-        };
-        let current_block = self
-            .current_block()
-            .compat()
-            .await
-            .map_err(EthActivationV2Error::InternalError)?;
-
-        let my_address = self.my_address()?;
-        let pubkey = self.get_public_key()?;
-
-        let mut eth_address_info = CoinAddressInfo {
-            derivation_method: DerivationMethod::Iguana,
-            pubkey,
-            balances: None,
-            tickers: None,
-        };
-
-        if !activation_request.get_balances {
-            drop_mutability!(eth_address_info);
-            let nfts_map = nft_global.get_nfts_infos().await;
-
-            return Ok(EthWithTokensActivationResult {
-                current_block,
-                eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
-                erc20_addresses_infos: Default::default(),
-                nfts_infos: nfts_map,
-            });
-        }
-
-        let eth_balance = self
-            .my_balance()
-            .compat()
-            .await
-            .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
-        eth_address_info.balances = Some(eth_balance);
-        drop_mutability!(eth_address_info);
-
-        let nfts_map = nft_global.get_nfts_infos().await;
-
-        Ok(EthWithTokensActivationResult {
-            current_block,
-            eth_addresses_infos: HashMap::from([(my_address, eth_address_info)]),
-            erc20_addresses_infos: Default::default(),
             nfts_infos: nfts_map,
         })
     }

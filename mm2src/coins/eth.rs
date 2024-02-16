@@ -704,14 +704,6 @@ impl EthCoinImpl {
         let guard = self.erc20_tokens_infos.lock().unwrap();
         (*guard).clone()
     }
-
-    /// # Warning
-    /// Be very careful using this function since it returns dereferenced clone
-    /// of value behind the MutexGuard and makes it non-thread-safe.
-    pub async fn get_nfts_infos(&self) -> HashMap<String, NftInfo> {
-        let guard = self.nfts_infos.lock().await;
-        (*guard).clone()
-    }
 }
 
 async fn get_raw_transaction_impl(coin: EthCoin, req: RawTransactionRequest) -> RawTransactionResult {
