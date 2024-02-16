@@ -461,7 +461,7 @@ pub struct EthCoinImpl {
     erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenInfo>>>,
     /// Stores NFT information where each value is uniquely identified by a string key composed of
     /// the token address and token ID, separated by a comma.
-    pub(crate) nfts_infos: Arc<AsyncMutex<HashMap<String, NftInfo>>>,
+    pub nfts_infos: Arc<AsyncMutex<HashMap<String, NftInfo>>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,

@@ -184,32 +184,40 @@ impl From<ParseChainTypeError> for EthTokenActivationError {
     fn from(e: ParseChainTypeError) -> Self { EthTokenActivationError::InternalError(e.to_string()) }
 }
 
+/// Represents the parameters required for activating either an ERC-20 token or an NFT on the Ethereum platform.
 #[derive(Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "UPPERCASE")]
 pub enum EthTokenActivationParams {
     Erc20(Erc20TokenActivationRequest),
     Nft(NftActivationRequest),
 }
 
+/// Parameters for activating an ERC-20 token.
 #[derive(Clone, Deserialize)]
 pub struct Erc20TokenActivationRequest {
     pub required_confirmations: Option<u64>,
 }
 
+/// Parameters for activating an NFT.
 #[derive(Clone, Deserialize)]
 pub struct NftActivationRequest {
+    /// This URL is used to fetch necessary NFT details for activation
     pub url: Url,
 }
 
+/// Represents the protocol type for an Ethereum-based token, distinguishing between ERC-20 tokens and NFTs.
 pub enum EthTokenProtocol {
     Erc20(Erc20Protocol),
     Nft(NftProtocol),
 }
 
+/// Details for an ERC-20 token protocol.
 pub struct Erc20Protocol {
     pub platform: String,
     pub token_addr: Address,
 }
 
+/// Details for an NFT protocol.
 pub struct NftProtocol {
     pub platform: String,
 }

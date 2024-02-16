@@ -152,10 +152,15 @@ impl TokenActivationOps for EthCoin {
                 ))),
             },
             EthTokenActivationParams::Nft(nft_init_params) => {
-                let _nft_global = platform_coin
+                let nft_global = platform_coin
                     .global_nft_from_platform_coin(&nft_init_params.url)
                     .await?;
-                todo!()
+                let nfts = nft_global.nfts_infos.lock().await.clone();
+                let init_result = EthTokenInitResult::Nft(NftInitResult {
+                    nfts,
+                    platform_coin: platform_coin.ticker().to_owned(),
+                });
+                Ok((nft_global, init_result))
             },
         }
     }
