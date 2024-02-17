@@ -20,6 +20,7 @@ mod multi_key_cursor;
 mod single_key_bound_cursor;
 mod single_key_cursor;
 
+use crate::indexed_db::indexed_cursor::CursorCondition;
 use empty_cursor::IdbEmptyCursor;
 use multi_key_bound_cursor::IdbMultiKeyBoundCursor;
 use multi_key_cursor::IdbMultiKeyCursor;
@@ -241,72 +242,91 @@ impl CursorDriver {
         })
     }
 
-    pub(crate) async fn next(&mut self) -> CursorResult<Option<(ItemId, Json)>> {
+    pub(crate) async fn next(&mut self, where_: Option<CursorCondition>) -> CursorResult<Option<(ItemId, Json)>> {
         loop {
-            // Check if we got `CursorAction::Stop` at the last iteration.
             if self.stopped {
                 return Ok(None);
             }
 
-            let event = match self.cursor_item_rx.next().await {
-                Some(event) => event,
-                None => {
-                    self.stopped = true;
-                    return Ok(None);
-                },
-            };
-
-            let _cursor_event = event.map_to_mm(|e| CursorError::ErrorOpeningCursor {
-                description: stringify_js_error(&e),
-            })?;
-
-            let cursor = match cursor_from_request(&self.cursor_request)? {
-                Some(cursor) => cursor,
-                // No more items.
-                None => {
-                    self.stopped = true;
-                    return Ok(None);
-                },
-            };
-
-            let (key, js_value) = match (cursor.key(), cursor.value()) {
-                (Ok(key), Ok(js_value)) => (key, js_value),
-                // No more items.
-                _ => {
-                    self.stopped = true;
-                    return Ok(None);
-                },
-            };
-
-            let item: InternalItem =
-                deserialize_from_js(js_value).map_to_mm(|e| CursorError::ErrorDeserializingItem(e.to_string()))?;
-
-            let (item_action, cursor_action) = self.inner.on_iteration(key)?;
-
-            match cursor_action {
-                CursorAction::Continue => cursor.continue_().map_to_mm(|e| CursorError::AdvanceError {
-                    description: stringify_js_error(&e),
-                })?,
-                CursorAction::ContinueWithValue(next_value) => {
-                    cursor
-                        .continue_with_key(&next_value)
-                        .map_to_mm(|e| CursorError::AdvanceError {
-                            description: stringify_js_error(&e),
-                        })?
-                },
-                // Don't advance the cursor.
-                // Here we set the `stopped` flag so we return `Ok(None)` at the next iteration immediately.
-                // This is required because `item_action` can be `CollectItemAction::Include`,
-                // and at this iteration we will return `Ok(Some)`.
-                CursorAction::Stop => self.stopped = true,
-            }
-
-            match item_action {
-                CursorItemAction::Include => return Ok(Some(item.into_pair())),
-                // Try to fetch the next item.
-                CursorItemAction::Skip => (),
+            match self.process_cursor_item(where_.as_ref()).await? {
+                Some(result) => return Ok(Some(result)),
+                None => continue,
             }
         }
+    }
+
+    async fn continue_(&mut self, cursor: &IdbCursorWithValue, cursor_action: &CursorAction) -> CursorResult<()> {
+        match cursor_action {
+            CursorAction::Continue => cursor.continue_().map_to_mm(|e| CursorError::AdvanceError {
+                description: stringify_js_error(&e),
+            })?,
+            CursorAction::ContinueWithValue(next_value) => {
+                cursor
+                    .continue_with_key(next_value)
+                    .map_to_mm(|e| CursorError::AdvanceError {
+                        description: stringify_js_error(&e),
+                    })?
+            },
+            // Don't advance the cursor.
+            // Here we set the `stopped` flag so we return `Ok(None)` at the next iteration immediately.
+            // This is required because `item_action` can be `CollectItemAction::Include`,
+            // and at this iteration we will return `Ok(Some)`.
+            CursorAction::Stop => self.stopped = true,
+        }
+
+        Ok(())
+    }
+
+    async fn process_cursor_item(&mut self, where_: Option<&CursorCondition>) -> CursorResult<Option<(ItemId, Json)>> {
+        let event = match self.cursor_item_rx.next().await {
+            Some(event) => event,
+            None => {
+                self.stopped = true;
+                return Ok(None);
+            },
+        };
+
+        let _cursor_event = event.map_to_mm(|e| CursorError::ErrorOpeningCursor {
+            description: stringify_js_error(&e),
+        })?;
+
+        let cursor = match cursor_from_request(&self.cursor_request)? {
+            Some(cursor) => cursor,
+            None => {
+                self.stopped = true;
+                return Ok(None);
+            },
+        };
+
+        let (key, js_value) = match (cursor.key(), cursor.value()) {
+            (Ok(key), Ok(js_value)) => (key, js_value),
+            _ => {
+                self.stopped = true;
+                return Ok(None);
+            },
+        };
+
+        let item: InternalItem =
+            deserialize_from_js(js_value).map_to_mm(|e| CursorError::ErrorDeserializingItem(e.to_string()))?;
+        let (item_action, cursor_action) = self.inner.on_iteration(key)?;
+
+        let (id, val) = item.into_pair();
+        // Checks if the given `where_` condition, represented by an optional closure (`cursor_condition`),
+        // is satisfied for the provided `item`. If the condition is met, return the corresponding `(id, val)` or skip to the next item.
+
+        if matches!(item_action, CursorItemAction::Include) {
+            if let Some(cursor_condition) = where_ {
+                if cursor_condition(val.clone())? {
+                    return Ok(Some((id, val)));
+                }
+            } else {
+                self.continue_(&cursor, &cursor_action).await?;
+                return Ok(Some((id, val)));
+            };
+        }
+
+        self.continue_(&cursor, &cursor_action).await?;
+        Ok(None)
     }
 }
 
