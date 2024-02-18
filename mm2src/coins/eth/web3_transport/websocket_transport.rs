@@ -284,14 +284,12 @@ async fn send_request(
     request_id: RequestId,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<serde_json::Value, Error> {
-    transport.last_request_failed.store(false, Ordering::SeqCst);
     let mut serialized_request = to_string(&request);
 
     if transport.node.gui_auth {
         match handle_gui_auth_payload(&transport.gui_auth_validation_generator, &request) {
             Ok(r) => serialized_request = r,
             Err(e) => {
-                transport.last_request_failed.store(true, Ordering::SeqCst);
                 return Err(Error::Transport(TransportError::Message(format!(
                     "Couldn't generate signed message payload for {:?}. Error: {e}",
                     request
@@ -322,8 +320,6 @@ async fn send_request(
             return de_rpc_response(response, &transport.node.uri.to_string());
         }
     };
-
-    transport.last_request_failed.store(true, Ordering::SeqCst);
 
     Err(Error::Transport(TransportError::Message(format!(
         "Sending {:?} failed.",

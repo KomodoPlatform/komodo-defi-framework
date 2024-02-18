@@ -4,7 +4,7 @@ use jsonrpc_core::Call;
 use mm2_metamask::{detect_metamask_provider, Eip1193Provider, MetamaskResult, MetamaskSession};
 use serde_json::Value as Json;
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use web3::{RequestId, Transport};
 
@@ -64,16 +64,11 @@ impl fmt::Debug for MetamaskTransport {
 
 impl MetamaskTransport {
     async fn send_impl(&self, id: RequestId, request: Call) -> Result<Json, web3::Error> {
-        self.last_request_failed.store(false, Ordering::SeqCst);
-
         // Hold the mutex guard until the request is finished.
         let _rpc_lock = self.request_preparation().await?;
         match self.inner.eip1193.send(id, request).await {
             Ok(t) => Ok(t),
-            Err(e) => {
-                self.last_request_failed.store(true, Ordering::SeqCst);
-                Err(e)
-            },
+            Err(e) => Err(e),
         }
     }
 

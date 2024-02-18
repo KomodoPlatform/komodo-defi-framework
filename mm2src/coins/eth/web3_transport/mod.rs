@@ -54,6 +54,15 @@ impl Web3Transport {
         }
     }
 
+    pub fn set_last_request_failed(&self, val: bool) {
+        match self {
+            Web3Transport::Http(http) => http.last_request_failed.store(val, Ordering::SeqCst),
+            Web3Transport::Websocket(websocket) => websocket.last_request_failed.store(val, Ordering::SeqCst),
+            #[cfg(target_arch = "wasm32")]
+            Web3Transport::Metamask(metamask) => metamask.last_request_failed.store(val, Ordering::SeqCst),
+        }
+    }
+
     #[cfg(any(test, target_arch = "wasm32"))]
     pub fn new_http(node: http_transport::HttpTransportNode) -> Web3Transport {
         http_transport::HttpTransport::new(node).into()
