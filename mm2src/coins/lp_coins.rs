@@ -367,9 +367,9 @@ pub enum RawTransactionError {
 impl HttpStatusCode for RawTransactionError {
     fn status_code(&self) -> StatusCode {
         match self {
-            RawTransactionError::Transport(_)
-            | RawTransactionError::InternalError(_)
-            | RawTransactionError::SigningError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            RawTransactionError::InternalError(_) | RawTransactionError::SigningError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
             RawTransactionError::NoSuchCoin { .. }
             | RawTransactionError::InvalidHashError(_)
             | RawTransactionError::HashNotExist(_)
@@ -378,6 +378,7 @@ impl HttpStatusCode for RawTransactionError {
             | RawTransactionError::NonExistentPrevOutputError(_)
             | RawTransactionError::TransactionError(_) => StatusCode::BAD_REQUEST,
             RawTransactionError::NotImplemented { .. } => StatusCode::NOT_IMPLEMENTED,
+            RawTransactionError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }
 }
@@ -2162,7 +2163,8 @@ impl HttpStatusCode for StakingInfosError {
             StakingInfosError::NoSuchCoin { .. }
             | StakingInfosError::CoinDoesntSupportStakingInfos { .. }
             | StakingInfosError::UnexpectedDerivationMethod(_) => StatusCode::BAD_REQUEST,
-            StakingInfosError::Transport(_) | StakingInfosError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            StakingInfosError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            StakingInfosError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }
 }
@@ -2282,7 +2284,8 @@ impl From<ScriptHashTypeNotSupported> for DelegationError {
 impl HttpStatusCode for DelegationError {
     fn status_code(&self) -> StatusCode {
         match self {
-            DelegationError::Transport(_) | DelegationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            DelegationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            DelegationError::Transport(_) => StatusCode::BAD_GATEWAY,
             _ => StatusCode::BAD_REQUEST,
         }
     }

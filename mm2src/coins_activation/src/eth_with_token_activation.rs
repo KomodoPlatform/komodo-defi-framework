@@ -88,7 +88,7 @@ impl From<EthTokenActivationError> for InitTokensAsMmCoinsError {
             EthTokenActivationError::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
             EthTokenActivationError::CouldNotFetchBalance(e) => InitTokensAsMmCoinsError::CouldNotFetchBalance(e),
             EthTokenActivationError::InvalidPayload(e) => InitTokensAsMmCoinsError::Internal(e),
-            EthTokenActivationError::Transport(e) => InitTokensAsMmCoinsError::Internal(e),
+            EthTokenActivationError::Transport(e) => InitTokensAsMmCoinsError::Transport(e),
         }
     }
 }

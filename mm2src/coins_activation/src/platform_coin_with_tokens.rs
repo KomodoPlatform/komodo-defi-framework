@@ -68,6 +68,7 @@ pub enum InitTokensAsMmCoinsError {
     Internal(String),
     TokenProtocolParseError { ticker: String, error: String },
     UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
+    Transport(String),
 }
 
 impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
@@ -263,7 +264,9 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
                 EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { ticker, protocol }
             },
             InitTokensAsMmCoinsError::Internal(e) => EnablePlatformCoinWithTokensError::Internal(e),
-            InitTokensAsMmCoinsError::CouldNotFetchBalance(e) => EnablePlatformCoinWithTokensError::Transport(e),
+            InitTokensAsMmCoinsError::CouldNotFetchBalance(e) | InitTokensAsMmCoinsError::Transport(e) => {
+                EnablePlatformCoinWithTokensError::Transport(e)
+            },
         }
     }
 }
@@ -288,7 +291,6 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::PlatformCoinCreationError { .. }
             | EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(_)
-            | EnablePlatformCoinWithTokensError::Transport(_)
             | EnablePlatformCoinWithTokensError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(_)
             | EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(_)
@@ -298,6 +300,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::AtLeastOneNodeRequired(_)
             | EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(_)
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
+            EnablePlatformCoinWithTokensError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }
 }

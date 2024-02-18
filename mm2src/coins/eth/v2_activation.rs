@@ -309,11 +309,14 @@ impl EthCoin {
         Ok(EthCoin(Arc::new(token)))
     }
 
-    /// Creates a global NFT instance from a platform coin, such as Ethereum.
+    /// Initializes a Global NFT instance for a specific blockchain platform (e.g., Ethereum, Polygon).
     ///
-    /// This method initializes a new `EthCoin` instance specifically for handling global non-fungible token
-    /// based on a given platform coin. It sets up necessary configurations,
-    /// including required confirmations, web3 instances, and NFT information fetched from a provided URL.
+    /// A "Global NFT" consolidates information about all NFTs owned by a user into a single `EthCoin` instance,
+    /// avoiding the need for separate instances for each NFT.
+    /// The function configures the necessary settings for the Global NFT, including web3 connections and confirmation requirements.
+    /// It fetches NFT details from a given URL to populate the `nfts_infos` field, which stores information about the user's NFTs.
+    ///
+    /// This setup allows the Global NFT to function like a coin, supporting swap operations and providing easy access to NFT details via `nfts_infos`.
     pub async fn global_nft_from_platform_coin(&self, url: &Url) -> MmResult<EthCoin, EthTokenActivationError> {
         let chain = Chain::from_ticker(self.ticker())?;
         let ticker = chain.to_nft_ticker().to_string();

@@ -35,9 +35,10 @@ impl From<EthTokenActivationError> for EnableTokenError {
     fn from(err: EthTokenActivationError) -> Self {
         match err {
             EthTokenActivationError::InternalError(e) => EnableTokenError::Internal(e),
-            EthTokenActivationError::CouldNotFetchBalance(e) => EnableTokenError::Transport(e),
+            EthTokenActivationError::CouldNotFetchBalance(e) | EthTokenActivationError::Transport(e) => {
+                EnableTokenError::Transport(e)
+            },
             EthTokenActivationError::InvalidPayload(e) => EnableTokenError::InvalidPayload(e),
-            EthTokenActivationError::Transport(e) => EnableTokenError::Transport(e),
         }
     }
 }
