@@ -184,6 +184,7 @@ impl<'a> WalletIndexedDb {
             .cursor_builder()
             .only("ticker", &self.ticker)?
             .bound("height", 0u32, u32::MAX)
+            .where_first()
             .open_cursor(WalletDbAccountsTable::TICKER_ACCOUNT_INDEX)
             .await?
             .next()
@@ -236,6 +237,7 @@ impl<'a> WalletIndexedDb {
             .cursor_builder()
             .only("ticker", &self.ticker)?
             .bound("height", 0u32, u32::MAX)
+            .where_first()
             .open_cursor(WalletDbBlocksTable::TICKER_HEIGHT_INDEX)
             .await?
             .next()
@@ -709,6 +711,7 @@ impl WalletIndexedDb {
             .only("ticker", &self.ticker)?
             .bound("height", 0u32, u32::MAX)
             .reverse()
+            .where_first()
             .open_cursor(WalletDbBlocksTable::TICKER_HEIGHT_INDEX)
             .await?
             .next()
@@ -810,6 +813,7 @@ impl WalletRead for WalletIndexedDb {
             .cursor_builder()
             .only("ticker", &self.ticker)?
             .bound("height", 0u32, u32::MAX)
+            .where_first()
             .open_cursor(WalletDbBlocksTable::TICKER_HEIGHT_INDEX)
             .await?
             .next()
@@ -821,6 +825,7 @@ impl WalletRead for WalletIndexedDb {
             .only("ticker", &self.ticker)?
             .bound("height", 0u32, u32::MAX)
             .reverse()
+            .where_first()
             .open_cursor(WalletDbBlocksTable::TICKER_HEIGHT_INDEX)
             .await?
             .next()

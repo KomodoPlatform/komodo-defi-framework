@@ -91,6 +91,7 @@ impl BlockDbImpl {
             .only("ticker", &ticker)?
             .bound("height", 0u32, u32::MAX)
             .reverse()
+            .where_first()
             .open_cursor(BlockDbTable::TICKER_HEIGHT_INDEX)
             .await?
             .next()
@@ -162,6 +163,7 @@ impl BlockDbImpl {
             .cursor_builder()
             .only("ticker", &self.ticker)?
             .bound("height", 0u32, u32::MAX)
+            .where_first()
             .open_cursor(BlockDbTable::TICKER_HEIGHT_INDEX)
             .await?
             .next()
