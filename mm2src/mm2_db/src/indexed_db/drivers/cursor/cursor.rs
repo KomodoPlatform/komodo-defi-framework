@@ -91,6 +91,12 @@ pub struct CursorFilters {
     pub(crate) reverse: bool,
 }
 
+#[derive(Default)]
+pub struct CursorFiltersExt {
+    pub(crate) where_: Option<CursorCondition>,
+    pub(crate) limit: Option<usize>,
+}
+
 impl From<u32> for CursorBoundValue {
     fn from(uint: u32) -> Self { CursorBoundValue::Uint(uint) }
 }
@@ -192,6 +198,7 @@ pub trait CursorDriverImpl: Sized {
 pub(crate) struct CursorDriver {
     /// An actual cursor implementation.
     inner: IdbCursorEnum,
+    filters_ext: CursorFiltersExt,
     cursor_request: IdbRequest,
     cursor_item_rx: mpsc::Receiver<Result<JsValue, JsValue>>,
     /// Whether we got `CursorAction::Stop` at the last iteration or not.
@@ -202,7 +209,11 @@ pub(crate) struct CursorDriver {
 }
 
 impl CursorDriver {
-    pub(crate) fn init_cursor(db_index: IdbIndex, filters: CursorFilters) -> CursorResult<CursorDriver> {
+    pub(crate) fn init_cursor(
+        db_index: IdbIndex,
+        filters: CursorFilters,
+        filters_ext: CursorFiltersExt,
+    ) -> CursorResult<CursorDriver> {
         let reverse = filters.reverse;
         let inner = IdbCursorEnum::new(filters)?;
 
@@ -234,6 +245,7 @@ impl CursorDriver {
 
         Ok(CursorDriver {
             inner,
+            filters_ext,
             cursor_request,
             cursor_item_rx,
             stopped: false,
@@ -242,19 +254,27 @@ impl CursorDriver {
         })
     }
 
-    pub(crate) async fn next(&mut self, where_: Option<CursorCondition>) -> CursorResult<Option<(ItemId, Json)>> {
+    /// Continuously processes cursor items until it retrieves a valid result or
+    /// the cursor is stopped. It returns a `CursorResult` containing either the next item
+    /// wrapped in `Some`, or `None` if the cursor is stopped.
+    pub(crate) async fn next(&mut self) -> CursorResult<Option<(ItemId, Json)>> {
         loop {
             if self.stopped {
                 return Ok(None);
             }
 
-            match self.process_cursor_item(where_.as_ref()).await? {
+            match self.process_cursor_item().await? {
                 Some(result) => return Ok(Some(result)),
                 None => continue,
             }
         }
     }
 
+    /// This method continues the cursor according to the provided `CursorAction`. If the action
+    /// is `CursorAction::Continue`, the cursor advances to the next item. If the action is
+    /// `CursorAction::ContinueWithValue`, the cursor advances to the specified value. If the
+    /// action is `CursorAction::Stop`, the cursor is stopped, and subsequent calls to `next`
+    /// will return `None`.
     async fn continue_(&mut self, cursor: &IdbCursorWithValue, cursor_action: &CursorAction) -> CursorResult<()> {
         match cursor_action {
             CursorAction::Continue => cursor.continue_().map_to_mm(|e| CursorError::AdvanceError {
@@ -277,7 +297,10 @@ impl CursorDriver {
         Ok(())
     }
 
-    async fn process_cursor_item(&mut self, where_: Option<&CursorCondition>) -> CursorResult<Option<(ItemId, Json)>> {
+    /// Processes the next item from the cursor, which includes fetching the cursor event,
+    /// opening the cursor, deserializing the item, and performing actions based on the item and cursor conditions.
+    /// It returns an `Option` containing the item ID and value if an item is processed successfully, otherwise `None`.
+    async fn process_cursor_item(&mut self) -> CursorResult<Option<(ItemId, Json)>> {
         let event = match self.cursor_item_rx.next().await {
             Some(event) => event,
             None => {
@@ -315,18 +338,47 @@ impl CursorDriver {
         // is satisfied for the provided `item`. If the condition is met, return the corresponding `(id, val)` or skip to the next item.
 
         if matches!(item_action, CursorItemAction::Include) {
-            if let Some(cursor_condition) = where_ {
+            if let Some(cursor_condition) = &self.filters_ext.where_ {
                 if cursor_condition(val.clone())? {
+                    // stop iteration.
+                    match self.filters_ext.limit {
+                        Some(_) => {
+                            self.update_cursor_limit_or_continue(&cursor, &cursor_action).await?;
+                        },
+                        None => self.stopped = true,
+                    };
                     return Ok(Some((id, val)));
                 }
             } else {
-                self.continue_(&cursor, &cursor_action).await?;
+                self.update_cursor_limit_or_continue(&cursor, &cursor_action).await?;
                 return Ok(Some((id, val)));
             };
         }
 
         self.continue_(&cursor, &cursor_action).await?;
         Ok(None)
+    }
+
+    /// Checks the current limit set for the cursor. If the limit is greater than 1,
+    /// it decrements the limit by 1. If the limit becomes 1 or less, it sets the `stopped` flag
+    /// to true, indicating that the cursor should stop.
+    async fn update_cursor_limit_or_continue(
+        &mut self,
+        cursor: &IdbCursorWithValue,
+        cursor_action: &CursorAction,
+    ) -> CursorResult<()> {
+        // check and update limit
+        if let Some(limit) = self.filters_ext.limit {
+            return if limit > 1 {
+                self.filters_ext.limit = Some(limit - 1);
+                self.continue_(&cursor, &cursor_action).await
+            } else {
+                self.stopped = true;
+                Ok(())
+            };
+        };
+
+        self.continue_(&cursor, &cursor_action).await
     }
 }
 

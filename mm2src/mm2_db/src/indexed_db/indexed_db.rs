@@ -51,8 +51,8 @@ pub use db_driver::{DbTransactionError, DbTransactionResult, DbUpgrader, InitDbE
 pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
 
 use db_driver::{IdbDatabaseBuilder, IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl, OnUpgradeNeededCb};
-use indexed_cursor::{cursor_event_loop, CursorBuilder, CursorDriver, CursorError, CursorFilters, CursorResult,
-                     DbCursorEventTx};
+use indexed_cursor::{cursor_event_loop, CursorBuilder, CursorDriver, CursorError, CursorFilters, CursorFiltersExt,
+                     CursorResult, DbCursorEventTx};
 
 type DbEventTx = mpsc::UnboundedSender<internal::DbEvent>;
 type DbTransactionEventTx = mpsc::UnboundedSender<internal::DbTransactionEvent>;
@@ -654,11 +654,17 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
 
     /// Opens a cursor by the specified `index`.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/openCursor
-    async fn open_cursor(&self, index: &str, filters: CursorFilters) -> CursorResult<DbCursorEventTx> {
+    async fn open_cursor(
+        &self,
+        index: &str,
+        filters: CursorFilters,
+        filters_ext: CursorFiltersExt,
+    ) -> CursorResult<DbCursorEventTx> {
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::OpenCursor {
             index: index.to_owned(),
             filters,
+            filters_ext,
             result_tx,
         };
         let cursor_event_tx = send_event_recv_response(&self.event_tx, event, result_rx)
@@ -741,9 +747,10 @@ async fn table_event_loop(mut rx: mpsc::UnboundedReceiver<internal::DbTableEvent
             internal::DbTableEvent::OpenCursor {
                 index,
                 filters,
+                filters_ext,
                 result_tx,
             } => {
-                open_cursor(&table, index, filters, result_tx);
+                open_cursor(&table, index, filters, filters_ext, result_tx);
             },
         }
     }
@@ -778,6 +785,7 @@ fn open_cursor(
     table: &IdbObjectStoreImpl,
     index: String,
     filters: CursorFilters,
+    filter_ext: CursorFiltersExt,
     result_tx: oneshot::Sender<CursorResult<DbCursorEventTx>>,
 ) {
     let db_index = match table.open_index(&index) {
@@ -790,7 +798,7 @@ fn open_cursor(
             return;
         },
     };
-    let cursor = match CursorDriver::init_cursor(db_index, filters) {
+    let cursor = match CursorDriver::init_cursor(db_index, filters, filter_ext) {
         Ok(cursor) => cursor,
         Err(e) => {
             result_tx.send(Err(e)).ok();
@@ -899,6 +907,7 @@ mod internal {
         OpenCursor {
             index: String,
             filters: CursorFilters,
+            filters_ext: CursorFiltersExt,
             result_tx: oneshot::Sender<CursorResult<DbCursorEventTx>>,
         },
     }
