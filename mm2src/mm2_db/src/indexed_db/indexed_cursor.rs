@@ -66,7 +66,6 @@ use std::marker::PhantomData;
 
 pub(super) type DbCursorEventTx = mpsc::UnboundedSender<DbCursorEvent>;
 pub(super) type DbCursorEventRx = mpsc::UnboundedReceiver<DbCursorEvent>;
-pub(super) type CursorCondition = Box<dyn Fn(Json) -> CursorResult<bool> + Send + 'static>;
 
 pub struct CursorBuilder<'transaction, 'reference, Table: TableSignature> {
     db_table: &'reference DbTable<'transaction, Table>,
@@ -433,8 +432,6 @@ mod tests {
         const DB_NAME: &str = "TEST_COLLECT_SINGLE_KEY_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 1, 700), // +
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -487,8 +484,6 @@ mod tests {
         const DB_NAME: &str = "TEST_COLLECT_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -539,8 +534,6 @@ mod tests {
     async fn test_collect_multi_key_cursor() {
         const DB_NAME: &str = "TEST_COLLECT_MULTI_KEY_CURSOR";
         const DB_VERSION: u32 = 1;
-
-        register_wasm_log();
 
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 12, 1, 700),
@@ -603,8 +596,6 @@ mod tests {
     async fn test_collect_multi_key_bound_cursor() {
         const DB_NAME: &str = "TEST_COLLECT_MULTI_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
-
-        register_wasm_log();
 
         let items = vec![
             swap_item!("uuid1", "MORTY", "RICK", 12, 10, 999),
@@ -682,8 +673,6 @@ mod tests {
         const DB_NAME: &str = "TEST_COLLECT_MULTI_KEY_BOUND_CURSOR_BIG_INT";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             TimestampTable::new(u64::MAX, 6, u128::MAX - 3),
             TimestampTable::new(u64::MAX - 1, 0, u128::MAX - 2), // +
@@ -739,8 +728,6 @@ mod tests {
         const DB_NAME: &str = "TEST_ITER_WITHOUT_CONSTRAINTS";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -794,8 +781,6 @@ mod tests {
         const DB_NAME: &str = "TEST_REV_ITER_WITHOUT_CONSTRAINTS";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
             .with_version(DB_VERSION)
             .with_table::<SwapTable>()
@@ -823,8 +808,6 @@ mod tests {
     async fn test_iter_single_key_bound_cursor() {
         const DB_NAME: &str = "TEST_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
-
-        register_wasm_log();
 
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
@@ -877,9 +860,6 @@ mod tests {
     async fn test_rev_iter_single_key_bound_cursor() {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
-
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -933,8 +913,6 @@ mod tests {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -983,8 +961,6 @@ mod tests {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -1027,8 +1003,6 @@ mod tests {
     async fn test_cursor_where_first_but_reversed_condition() {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
-
-        register_wasm_log();
 
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
@@ -1074,8 +1048,6 @@ mod tests {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -1118,8 +1090,6 @@ mod tests {
     async fn test_cursor_with_limit() {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
-
-        register_wasm_log();
 
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),

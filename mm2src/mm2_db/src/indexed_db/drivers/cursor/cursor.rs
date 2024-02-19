@@ -20,7 +20,6 @@ mod multi_key_cursor;
 mod single_key_bound_cursor;
 mod single_key_cursor;
 
-use crate::indexed_db::indexed_cursor::CursorCondition;
 use empty_cursor::IdbEmptyCursor;
 use multi_key_bound_cursor::IdbMultiKeyBoundCursor;
 use multi_key_cursor::IdbMultiKeyCursor;
@@ -28,6 +27,7 @@ use single_key_bound_cursor::IdbSingleKeyBoundCursor;
 use single_key_cursor::IdbSingleKeyCursor;
 
 pub type CursorResult<T> = Result<T, MmError<CursorError>>;
+type CursorCondition = Box<dyn Fn(Json) -> CursorResult<bool> + Send + 'static>;
 
 #[derive(Debug, Display, EnumFromTrait, PartialEq)]
 pub enum CursorError {
@@ -353,29 +353,28 @@ impl CursorDriver {
         if matches!(item_action, CursorItemAction::Include) {
             if let Some(cursor_condition) = &self.filters_ext.where_ {
                 if cursor_condition(val.clone())? {
-                    // stop iteration.
                     match self.filters_ext.limit {
                         Some(_) => {
-                            self.update_cursor_limit_or_continue(&cursor, &cursor_action).await?;
+                            self.update_limit_and_continue(&cursor, &cursor_action).await?;
                         },
                         None => self.stopped = true,
                     };
                     return Ok(Some((id, val)));
                 }
             } else {
-                self.update_cursor_limit_or_continue(&cursor, &cursor_action).await?;
+                self.update_limit_and_continue(&cursor, &cursor_action).await?;
                 return Ok(Some((id, val)));
             };
         }
 
-        self.continue_(&cursor, &cursor_action).await?;
+        self.update_limit_and_continue(&cursor, &cursor_action).await?;
         Ok(None)
     }
 
     /// Checks the current limit set for the cursor. If the limit is greater than 1,
     /// it decrements the limit by 1. If the limit becomes 1 or less, it sets the `stopped` flag
     /// to true, indicating that the cursor should stop.
-    async fn update_cursor_limit_or_continue(
+    async fn update_limit_and_continue(
         &mut self,
         cursor: &IdbCursorWithValue,
         cursor_action: &CursorAction,
