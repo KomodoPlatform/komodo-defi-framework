@@ -95,6 +95,7 @@ pub struct CursorFilters {
 pub struct CursorFiltersExt {
     pub(crate) where_: Option<CursorCondition>,
     pub(crate) limit: Option<usize>,
+    pub(crate) offset: Option<u32>,
 }
 
 impl From<u32> for CursorBoundValue {
@@ -270,7 +271,7 @@ impl CursorDriver {
         }
     }
 
-    /// This method continues the cursor according to the provided `CursorAction`. If the action
+    /// Continues the cursor according to the provided `CursorAction`. If the action
     /// is `CursorAction::Continue`, the cursor advances to the next item. If the action is
     /// `CursorAction::ContinueWithValue`, the cursor advances to the specified value. If the
     /// action is `CursorAction::Stop`, the cursor is stopped, and subsequent calls to `next`
@@ -321,6 +322,18 @@ impl CursorDriver {
             },
         };
 
+        // If an offset is specified in the filters, advance the cursor by the offset value and continue with the next iteration of the llop.
+        // NOTE: this will never run in the next loop iterations as we are taking out the value from offset and setting it to None.
+        if let Some(offset) = self.filters_ext.offset.take() {
+            // an error will be thrown if the cursor is currently being iterated or has iterated past its end.
+            // https://developer.mozilla.org/en-US/docs/Web/API/IDBCursor/advance
+            cursor.advance(offset).map_to_mm(|e| CursorError::AdvanceError {
+                description: stringify_js_error(&e),
+            })?;
+
+            return Ok(None);
+        }
+
         let (key, js_value) = match (cursor.key(), cursor.value()) {
             (Ok(key), Ok(js_value)) => (key, js_value),
             _ => {
@@ -367,18 +380,16 @@ impl CursorDriver {
         cursor: &IdbCursorWithValue,
         cursor_action: &CursorAction,
     ) -> CursorResult<()> {
-        // check and update limit
         if let Some(limit) = self.filters_ext.limit {
             return if limit > 1 {
                 self.filters_ext.limit = Some(limit - 1);
-                self.continue_(&cursor, &cursor_action).await
+                self.continue_(cursor, cursor_action).await
             } else {
                 self.stopped = true;
                 Ok(())
             };
         };
-
-        self.continue_(&cursor, &cursor_action).await
+        self.continue_(cursor, cursor_action).await
     }
 }
 
