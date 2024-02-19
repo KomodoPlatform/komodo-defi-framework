@@ -122,9 +122,11 @@ impl WebsocketTransport {
         async fn attempt_to_establish_socket_connection(
             address: String,
             max_attempts: u32,
-            sleep_duration_on_failure: f64,
+            mut sleep_duration_on_failure: f64,
         ) -> tokio_tungstenite_wasm::Result<WebSocketStream> {
+            const MAX_SLEEP_DURATION: f64 = 32.0;
             let mut attempts = 0;
+
             loop {
                 match tokio_tungstenite_wasm::connect(address.clone()).await {
                     Ok(ws) => return Ok(ws),
@@ -135,7 +137,7 @@ impl WebsocketTransport {
                         }
 
                         Timer::sleep(sleep_duration_on_failure).await;
-                        continue;
+                        sleep_duration_on_failure = (sleep_duration_on_failure * 2.0).min(MAX_SLEEP_DURATION);
                     },
                 };
             }
@@ -325,7 +327,7 @@ async fn send_request(
         response_notifier: notification_sender,
     }))
     .await
-    .expect("receiver channel must be alive");
+    .map_err(|e| Error::Transport(TransportError::Message(e.to_string())))?;
 
     if let Ok(_ping) = notification_receiver.await {
         let response_map = unsafe { &mut *transport.responses.0 };
