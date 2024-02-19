@@ -165,7 +165,7 @@ impl WebsocketTransport {
                 _ = keepalive_interval.next().fuse() => {
                     if let Some(expires_at) = expires_at {
                         if Instant::now() >= expires_at {
-                            log::info!("Dropping temporary connection for {:?}", self.node.uri.to_string());
+                            log::debug!("Dropping temporary connection for {:?}", self.node.uri.to_string());
                             break;
                         }
                     }
