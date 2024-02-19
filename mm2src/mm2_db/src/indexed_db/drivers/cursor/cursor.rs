@@ -322,8 +322,8 @@ impl CursorDriver {
             },
         };
 
-        // If an offset is specified in the filters, advance the cursor by the offset value and continue with the next iteration of the llop.
-        // NOTE: this will never run in the next loop iterations as we are taking out the value from offset and setting it to None.
+        // If an offset is specified in the filters, advance the cursor by the offset value and continue with the next iteration of the loop.
+        // NOTE: this will never run in the next loop iterations as the value is being taken out from offset and setting it to None.
         if let Some(offset) = self.filters_ext.offset.take() {
             // an error will be thrown if the cursor is currently being iterated or has iterated past its end.
             // https://developer.mozilla.org/en-US/docs/Web/API/IDBCursor/advance
