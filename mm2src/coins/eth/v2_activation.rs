@@ -3,6 +3,7 @@ use super::*;
 use common::executor::AbortedError;
 use crypto::{CryptoCtxError, StandardHDCoinAddress};
 use enum_derives::EnumFromTrait;
+use instant::Instant;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
@@ -411,6 +412,8 @@ async fn build_web3_instances(
 
         let transport = match uri.scheme_str() {
             Some("ws") | Some("wss") => {
+                const TMP_SOCKET_CONNECTION: Duration = Duration::from_secs(20);
+
                 let node = WebsocketTransportNode {
                     uri: uri.clone(),
                     gui_auth: eth_node.gui_auth,
@@ -429,7 +432,9 @@ async fn build_web3_instances(
                 // Temporarily start the connection loop (we close the connection once we have the client version below).
                 // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
                 // dropping websocket support on parity nodes.
-                let fut = websocket_transport.clone().start_connection_loop();
+                let fut = websocket_transport
+                    .clone()
+                    .start_connection_loop(Some(Instant::now() + TMP_SOCKET_CONNECTION));
                 let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", uri));
                 ctx.spawner().spawn_with_settings(fut, settings);
 
@@ -456,17 +461,8 @@ async fn build_web3_instances(
             Ok(v) => v,
             Err(e) => {
                 error!("Couldn't get client version for url {}: {}", eth_node.url, e);
-
-                if let Web3Transport::Websocket(socket_transport) = web3.transport() {
-                    socket_transport.stop_connection_loop().await;
-                };
-
                 continue;
             },
-        };
-
-        if let Web3Transport::Websocket(socket_transport) = web3.transport() {
-            socket_transport.stop_connection_loop().await;
         };
 
         web3_instances.push(Web3Instance {

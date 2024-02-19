@@ -50,6 +50,7 @@ use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
 use futures01::Future;
 use http::{StatusCode, Uri};
+use instant::Instant;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
@@ -703,7 +704,9 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {
             // Todo: nonce_lock is still global for all addresses but this needs to be per address
             let _nonce_lock = coin.nonce_lock.lock().await;
-            let (nonce, _) = get_addr_nonce(my_address, coin.web3_instances.lock().await.to_vec())
+            let (nonce, _) = coin
+                .clone()
+                .get_addr_nonce(my_address)
                 .compat()
                 .timeout_secs(30.)
                 .await?
@@ -857,7 +860,9 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     )
     .await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
-    let (nonce, _) = get_addr_nonce(eth_coin.my_address, eth_coin.web3_instances.lock().await.to_vec())
+    let (nonce, _) = eth_coin
+        .clone()
+        .get_addr_nonce(eth_coin.my_address)
         .compat()
         .timeout_secs(30.)
         .await?
@@ -941,7 +946,9 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     )
     .await?;
     let _nonce_lock = eth_coin.nonce_lock.lock().await;
-    let (nonce, _) = get_addr_nonce(my_address, eth_coin.web3_instances.lock().await.to_vec())
+    let (nonce, _) = eth_coin
+        .clone()
+        .get_addr_nonce(my_address)
         .compat()
         .timeout_secs(30.)
         .await?
@@ -2386,11 +2393,8 @@ async fn sign_transaction_with_keypair(
     }
     let _nonce_lock = coin.nonce_lock.lock().await;
     status.status(tags!(), "get_addr_nonce…");
-    let (nonce, web3_instances_with_latest_nonce) = try_tx_s!(
-        get_addr_nonce(coin.my_address, coin.web3_instances.lock().await.to_vec())
-            .compat()
-            .await
-    );
+    let (nonce, web3_instances_with_latest_nonce) =
+        try_tx_s!(coin.clone().get_addr_nonce(coin.my_address).compat().await);
     status.status(tags!(), "get_gas_price…");
     let gas_price = try_tx_s!(coin.get_gas_price().compat().await);
 
@@ -4889,10 +4893,7 @@ impl EthCoin {
     /// The function is endless, we just keep looping in case of a transport error hoping it will go away.
     async fn wait_for_addr_nonce_increase(&self, addr: Address, prev_nonce: U256) {
         repeatable!(async {
-            match get_addr_nonce(addr, self.web3_instances.lock().await.to_vec())
-                .compat()
-                .await
-            {
+            match self.clone().get_addr_nonce(addr).compat().await {
                 Ok((new_nonce, _)) if new_nonce > prev_nonce => Ready(()),
                 Ok((_nonce, _)) => Retry(()),
                 Err(e) => {
@@ -5028,6 +5029,75 @@ impl EthCoin {
         }
 
         Ok(())
+    }
+
+    /// Requests the nonce from all available nodes and returns the highest nonce available with the list of nodes that returned the highest nonce.
+    /// Transactions will be sent using the nodes that returned the highest nonce.
+    fn get_addr_nonce(self, addr: Address) -> Box<dyn Future<Item = (U256, Vec<Web3Instance>), Error = String> + Send> {
+        const TMP_SOCKET_DURATION: Duration = Duration::from_secs(300);
+
+        let fut = async move {
+            let mut errors: u32 = 0;
+            let web3_instances = self.web3_instances.lock().await.to_vec();
+            loop {
+                let (futures, web3_instances): (Vec<_>, Vec<_>) = web3_instances
+                    .iter()
+                    .map(|instance| {
+                        if let Web3Transport::Websocket(socket_transport) = instance.web3.transport() {
+                            socket_transport.maybe_spawn_temporary_connection_loop(
+                                self.clone(),
+                                Instant::now() + TMP_SOCKET_DURATION,
+                            );
+                        };
+
+                        if instance.is_parity {
+                            let parity: ParityNonce<_> = instance.web3.api();
+                            (Either::Left(parity.parity_next_nonce(addr)), instance.clone())
+                        } else {
+                            (
+                                Either::Right(instance.web3.eth().transaction_count(addr, Some(BlockNumber::Pending))),
+                                instance.clone(),
+                            )
+                        }
+                    })
+                    .unzip();
+
+                let nonces: Vec<_> = join_all(futures)
+                    .await
+                    .into_iter()
+                    .zip(web3_instances.into_iter())
+                    .filter_map(|(nonce_res, instance)| match nonce_res {
+                        Ok(n) => Some((n, instance)),
+                        Err(e) => {
+                            error!("Error getting nonce for addr {:?}: {}", addr, e);
+                            None
+                        },
+                    })
+                    .collect();
+                if nonces.is_empty() {
+                    // all requests errored
+                    errors += 1;
+                    if errors > 5 {
+                        return ERR!("Couldn't get nonce after 5 errored attempts, aborting");
+                    }
+                } else {
+                    let max = nonces
+                        .iter()
+                        .map(|(n, _)| *n)
+                        .max()
+                        .expect("nonces should not be empty!");
+                    break Ok((
+                        max,
+                        nonces
+                            .into_iter()
+                            .filter_map(|(n, instance)| if n == max { Some(instance) } else { None })
+                            .collect(),
+                    ));
+                }
+                Timer::sleep(1.).await
+            }
+        };
+        Box::new(Box::pin(fut).compat())
     }
 }
 
@@ -5747,6 +5817,8 @@ pub async fn eth_coin_from_conf_and_request(
 
         let transport = match uri.scheme_str() {
             Some("ws") | Some("wss") => {
+                const TMP_SOCKET_CONNECTION: Duration = Duration::from_secs(20);
+
                 let node = WebsocketTransportNode {
                     uri: uri.clone(),
                     gui_auth: false,
@@ -5756,7 +5828,9 @@ pub async fn eth_coin_from_conf_and_request(
                 // Temporarily start the connection loop (we close the connection once we have the client version below).
                 // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
                 // dropping websocket support on parity nodes.
-                let fut = websocket_transport.clone().start_connection_loop();
+                let fut = websocket_transport
+                    .clone()
+                    .start_connection_loop(Some(Instant::now() + TMP_SOCKET_CONNECTION));
                 let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", uri));
                 ctx.spawner().spawn_with_settings(fut, settings);
 
@@ -5775,16 +5849,8 @@ pub async fn eth_coin_from_conf_and_request(
             Err(e) => {
                 error!("Couldn't get client version for url {}: {}", url, e);
 
-                if let Web3Transport::Websocket(socket_transport) = web3.transport() {
-                    socket_transport.stop_connection_loop().await;
-                };
-
                 continue;
             },
-        };
-
-        if let Web3Transport::Websocket(socket_transport) = web3.transport() {
-            socket_transport.stop_connection_loop().await;
         };
 
         web3_instances.push(Web3Instance {
@@ -5930,69 +5996,6 @@ pub(crate) fn eth_addr_to_hex(address: &Address) -> String { format!("{:#02x}", 
 /// Checks that input is valid mixed-case checksum form address
 /// The input must be 0x prefixed hex string
 fn is_valid_checksum_addr(addr: &str) -> bool { addr == checksum_address(addr) }
-
-/// Requests the nonce from all available nodes and returns the highest nonce available with the list of nodes that returned the highest nonce.
-/// Transactions will be sent using the nodes that returned the highest nonce.
-#[cfg_attr(test, mockable)]
-fn get_addr_nonce(
-    addr: Address,
-    web3s: Vec<Web3Instance>,
-) -> Box<dyn Future<Item = (U256, Vec<Web3Instance>), Error = String> + Send> {
-    let fut = async move {
-        let mut errors: u32 = 0;
-        loop {
-            let (futures, web3s): (Vec<_>, Vec<_>) = web3s
-                .iter()
-                .map(|web3| {
-                    if web3.is_parity {
-                        let parity: ParityNonce<_> = web3.web3.api();
-                        (Either::Left(parity.parity_next_nonce(addr)), web3.clone())
-                    } else {
-                        (
-                            Either::Right(web3.web3.eth().transaction_count(addr, Some(BlockNumber::Pending))),
-                            web3.clone(),
-                        )
-                    }
-                })
-                .unzip();
-
-            let nonces: Vec<_> = join_all(futures)
-                .await
-                .into_iter()
-                .zip(web3s.into_iter())
-                .filter_map(|(nonce_res, web3)| match nonce_res {
-                    Ok(n) => Some((n, web3)),
-                    Err(e) => {
-                        error!("Error getting nonce for addr {:?}: {}", addr, e);
-                        None
-                    },
-                })
-                .collect();
-            if nonces.is_empty() {
-                // all requests errored
-                errors += 1;
-                if errors > 5 {
-                    return ERR!("Couldn't get nonce after 5 errored attempts, aborting");
-                }
-            } else {
-                let max = nonces
-                    .iter()
-                    .map(|(n, _)| *n)
-                    .max()
-                    .expect("nonces should not be empty!");
-                break Ok((
-                    max,
-                    nonces
-                        .into_iter()
-                        .filter_map(|(n, web3)| if n == max { Some(web3) } else { None })
-                        .collect(),
-                ));
-            }
-            Timer::sleep(1.).await
-        }
-    };
-    Box::new(Box::pin(fut).compat())
-}
 
 fn increase_by_percent_one_gwei(num: U256, percent: u64) -> U256 {
     let one_gwei = U256::from(10u64.pow(9));

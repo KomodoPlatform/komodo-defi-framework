@@ -17,7 +17,7 @@ use futures::channel::oneshot;
 use futures::lock::Mutex as AsyncMutex;
 use futures_ticker::Ticker;
 use futures_util::{FutureExt, SinkExt, StreamExt};
-use instant::Duration;
+use instant::{Duration, Instant};
 use jsonrpc_core::Call;
 use mm2_net::transport::GuiAuthValidationGenerator;
 use std::collections::HashMap;
@@ -111,7 +111,7 @@ impl WebsocketTransport {
         }
     }
 
-    pub(crate) async fn start_connection_loop(self) {
+    pub(crate) async fn start_connection_loop(self, expires_at: Option<Instant>) {
         let _guard = self.connection_guard.lock().await;
 
         const MAX_ATTEMPTS: u32 = 3;
@@ -124,9 +124,8 @@ impl WebsocketTransport {
             max_attempts: u32,
             sleep_duration_on_failure: f64,
         ) -> tokio_tungstenite_wasm::Result<WebSocketStream> {
+            let mut attempts = 0;
             loop {
-                let mut attempts = 0;
-
                 match tokio_tungstenite_wasm::connect(address.clone()).await {
                     Ok(ws) => return Ok(ws),
                     Err(e) => {
@@ -162,6 +161,13 @@ impl WebsocketTransport {
             futures_util::select! {
                 // KEEPALIVE HANDLING
                 _ = keepalive_interval.next().fuse() => {
+                    if let Some(expires_at) = expires_at {
+                        if Instant::now() >= expires_at {
+                            log::info!("Dropping temporary connection for {:?}", self.node.uri.to_string());
+                            break;
+                        }
+                    }
+
                     // Drop expired response notifier channels
                     response_notifiers.clear_expired_entries();
 
@@ -271,7 +277,16 @@ impl WebsocketTransport {
     pub(crate) fn maybe_spawn_connection_loop(&self, coin: EthCoin) {
         // if we can acquire the lock here, it means connection loop is not alive
         if self.connection_guard.try_lock().is_some() {
-            let fut = self.clone().start_connection_loop();
+            let fut = self.clone().start_connection_loop(None);
+            let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", self.node.uri));
+            coin.spawner().spawn_with_settings(fut, settings);
+        }
+    }
+
+    pub(crate) fn maybe_spawn_temporary_connection_loop(&self, coin: EthCoin, expires_at: Instant) {
+        // if we can acquire the lock here, it means connection loop is not alive
+        if self.connection_guard.try_lock().is_some() {
+            let fut = self.clone().start_connection_loop(Some(expires_at));
             let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", self.node.uri));
             coin.spawner().spawn_with_settings(fut, settings);
         }
