@@ -715,8 +715,7 @@ impl WalletIndexedDb {
             .open_cursor(WalletDbBlocksTable::TICKER_HEIGHT_INDEX)
             .await?
             .next()
-            .await?;
-        let maybe_height = maybe_height
+            .await?
             .map(|(_, item)| {
                 item.height
                     .to_u32()
@@ -943,19 +942,19 @@ impl WalletRead for WalletIndexedDb {
         let db_transaction = locked_db.get_inner().transaction().await?;
 
         let tx_table = db_transaction.table::<WalletDbTransactionsTable>().await?;
-        let mut maybe_txs = tx_table
+        // Retrieves a list of transaction IDs (txid) from the transactions table
+        // that match the provided account ID.
+        let txids = tx_table
             .cursor_builder()
             .only("ticker", &self.ticker)?
             .bound("block", 0u32, u32::from(anchor_height))
             .open_cursor(WalletDbTransactionsTable::TICKER_BLOCK_INDEX)
-            .await?;
-
-        // Retrieves a list of transaction IDs (txid) from the transactions table
-        // that match the provided account ID.
-        let mut txids = vec![];
-        while let Some((txid, _tx)) = maybe_txs.next().await? {
-            txids.push(txid)
-        }
+            .await?
+            .collect()
+            .await?
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
 
         let received_notes_table = db_transaction.table::<WalletDbReceivedNotesTable>().await?;
         let index_keys = MultiIndex::new(WalletDbReceivedNotesTable::TICKER_ACCOUNT_INDEX)
@@ -1146,16 +1145,17 @@ impl WalletRead for WalletIndexedDb {
 
         // Witnesses
         let witnesses_table = db_transaction.table::<WalletDbSaplingWitnessesTable>().await?;
-        let mut maybe_witnesses = witnesses_table
+        let witnesses = witnesses_table
             .cursor_builder()
             .only("ticker", &self.ticker)?
             .bound("block", 0u32, u32::from(anchor_height))
             .open_cursor("ticker")
-            .await?;
-        let mut witnesses = vec![];
-        while let Some((_, witness)) = maybe_witnesses.next().await? {
-            witnesses.push(witness)
-        }
+            .await?
+            .collect()
+            .await?
+            .into_iter()
+            .map(|(_, item)| item)
+            .collect::<Vec<_>>();
 
         let mut spendable_notes = vec![];
         for (id_note, note) in maybe_notes {
@@ -1214,16 +1214,14 @@ impl WalletRead for WalletIndexedDb {
         // Transactions
         let db_transaction = locked_db.get_inner().transaction().await?;
         let txs_table = db_transaction.table::<WalletDbTransactionsTable>().await?;
-        let mut maybe_txs = txs_table
+        let txs = txs_table
             .cursor_builder()
             .only("ticker", &self.ticker)?
             .bound("block", 0u32, u32::from(anchor_height))
             .open_cursor(WalletDbTransactionsTable::TICKER_BLOCK_INDEX)
+            .await?
+            .collect()
             .await?;
-        let mut txs = vec![];
-        while let Some((id, ts)) = maybe_txs.next().await? {
-            txs.push((id, ts))
-        }
 
         // Sapling Witness
         let db_transaction = locked_db.get_inner().transaction().await?;
