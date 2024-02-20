@@ -104,7 +104,6 @@ impl Transport for Web3Transport {
             if result.is_ok() {
                 selfi.set_last_request_failed(false);
             } else {
-                println!("BASARISIZ");
                 selfi.set_last_request_failed(true);
             }
 

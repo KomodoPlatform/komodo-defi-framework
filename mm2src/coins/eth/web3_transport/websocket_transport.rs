@@ -30,6 +30,9 @@ use web3::helpers::to_string;
 use web3::{helpers::build_request, RequestId, Transport};
 
 const REQUEST_TIMEOUT_AS_SEC: u64 = 10;
+const MAX_ATTEMPTS: u32 = 3;
+const SLEEP_DURATION: f64 = 1.;
+const KEEPALIVE_DURATION: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
 pub(crate) struct WebsocketTransportNode {
@@ -88,6 +91,13 @@ impl Drop for SafeMapPtr {
 unsafe impl Send for SafeMapPtr {}
 unsafe impl Sync for SafeMapPtr {}
 
+enum OuterAction {
+    None,
+    Continue,
+    Break,
+    Return,
+}
+
 impl WebsocketTransport {
     pub(crate) fn with_event_handlers(
         node: WebsocketTransportNode,
@@ -111,155 +121,212 @@ impl WebsocketTransport {
         }
     }
 
-    pub(crate) async fn start_connection_loop(self, expires_at: Option<Instant>) {
-        let _guard = self.connection_guard.lock().await;
-
-        const MAX_ATTEMPTS: u32 = 3;
-        const SLEEP_DURATION: f64 = 1.;
+    async fn handle_keepalive(
+        &self,
+        wsocket: &mut WebSocketStream,
+        response_notifiers: &mut ExpirableMap<usize, oneshot::Sender<()>>,
+        expires_at: Option<Instant>,
+    ) -> OuterAction {
         const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
-        const KEEPALIVE_DURATION: Duration = Duration::from_secs(10);
 
-        async fn attempt_to_establish_socket_connection(
-            address: String,
-            max_attempts: u32,
-            mut sleep_duration_on_failure: f64,
-        ) -> tokio_tungstenite_wasm::Result<WebSocketStream> {
-            const MAX_SLEEP_DURATION: f64 = 32.0;
-            let mut attempts = 0;
-
-            loop {
-                match tokio_tungstenite_wasm::connect(address.clone()).await {
-                    Ok(ws) => return Ok(ws),
-                    Err(e) => {
-                        attempts += 1;
-                        if attempts > max_attempts {
-                            return Err(e);
-                        }
-
-                        Timer::sleep(sleep_duration_on_failure).await;
-                        sleep_duration_on_failure = (sleep_duration_on_failure * 2.0).min(MAX_SLEEP_DURATION);
-                    },
-                };
+        if let Some(expires_at) = expires_at {
+            if Instant::now() >= expires_at {
+                log::debug!("Dropping temporary connection for {:?}", self.node.uri.to_string());
+                return OuterAction::Break;
             }
         }
+
+        // Drop expired response notifier channels
+        response_notifiers.clear_expired_entries();
+
+        let mut should_continue = Default::default();
+        for _ in 0..MAX_ATTEMPTS {
+            match wsocket
+                .send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string()))
+                .await
+            {
+                Ok(_) => {
+                    should_continue = false;
+                    break;
+                },
+                Err(e) => {
+                    log::error!("{e}");
+                    should_continue = true;
+                },
+            };
+
+            Timer::sleep(SLEEP_DURATION).await;
+        }
+
+        if should_continue {
+            return OuterAction::Continue;
+        }
+
+        OuterAction::None
+    }
+
+    async fn handle_send_request(
+        &self,
+        request: Option<ControllerMessage>,
+        wsocket: &mut WebSocketStream,
+        response_notifiers: &mut ExpirableMap<usize, oneshot::Sender<()>>,
+    ) -> OuterAction {
+        match request {
+            Some(ControllerMessage::Request(WsRequest {
+                request_id,
+                serialized_request,
+                response_notifier,
+            })) => {
+                response_notifiers.insert(
+                    request_id,
+                    response_notifier,
+                    Duration::from_secs(REQUEST_TIMEOUT_AS_SEC),
+                );
+
+                let mut should_continue = Default::default();
+                for _ in 0..MAX_ATTEMPTS {
+                    match wsocket
+                        .send(tokio_tungstenite_wasm::Message::Text(serialized_request.clone()))
+                        .await
+                    {
+                        Ok(_) => {
+                            should_continue = false;
+                            break;
+                        },
+                        Err(e) => {
+                            log::error!("{e}");
+                            should_continue = true;
+                        },
+                    }
+
+                    Timer::sleep(SLEEP_DURATION).await;
+                }
+
+                if should_continue {
+                    let _ = response_notifiers.remove(&request_id);
+                    return OuterAction::Continue;
+                }
+            },
+            Some(ControllerMessage::Close) => {
+                return OuterAction::Break;
+            },
+            _ => {},
+        }
+
+        OuterAction::None
+    }
+
+    async fn handle_response(
+        &self,
+        message: Option<Result<tokio_tungstenite_wasm::Message, tokio_tungstenite_wasm::Error>>,
+        response_notifiers: &mut ExpirableMap<usize, oneshot::Sender<()>>,
+    ) -> OuterAction {
+        match message {
+            Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
+                if let Ok(inc_event) = serde_json::from_str::<serde_json::Value>(&inc_event) {
+                    if !inc_event.is_object() {
+                        return OuterAction::Continue;
+                    }
+
+                    if let Some(id) = inc_event.get("id") {
+                        let request_id = id.as_u64().unwrap_or_default() as usize;
+
+                        if let Some(notifier) = response_notifiers.remove(&request_id) {
+                            let mut res_bytes: Vec<u8> = Vec::new();
+                            if serde_json::to_writer(&mut res_bytes, &inc_event).is_ok() {
+                                let response_map = unsafe { &mut *self.responses.0 };
+                                let _ = response_map.insert(request_id, res_bytes);
+
+                                notifier.send(()).expect("receiver channel must be alive");
+                            }
+                        }
+                    }
+                }
+            },
+            Some(Ok(tokio_tungstenite_wasm::Message::Binary(_))) => return OuterAction::Continue,
+            Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => return OuterAction::Break,
+            Some(Err(e)) => {
+                log::error!("{e}");
+                return OuterAction::Return;
+            },
+            None => return OuterAction::Continue,
+        };
+
+        OuterAction::None
+    }
+
+    async fn attempt_to_establish_socket_connection(
+        &self,
+        max_attempts: u32,
+        mut sleep_duration_on_failure: f64,
+    ) -> tokio_tungstenite_wasm::Result<WebSocketStream> {
+        const MAX_SLEEP_DURATION: f64 = 32.0;
+        let mut attempts = 0;
+
+        loop {
+            match tokio_tungstenite_wasm::connect(self.node.uri.to_string()).await {
+                Ok(ws) => return Ok(ws),
+                Err(e) => {
+                    attempts += 1;
+                    if attempts > max_attempts {
+                        return Err(e);
+                    }
+
+                    Timer::sleep(sleep_duration_on_failure).await;
+                    sleep_duration_on_failure = (sleep_duration_on_failure * 2.0).min(MAX_SLEEP_DURATION);
+                },
+            };
+        }
+    }
+
+    pub(crate) async fn start_connection_loop(self, expires_at: Option<Instant>) {
+        let _guard = self.connection_guard.lock().await;
 
         // List of awaiting requests
         let mut response_notifiers: ExpirableMap<RequestId, oneshot::Sender<()>> = ExpirableMap::default();
 
-        let mut wsocket =
-            match attempt_to_establish_socket_connection(self.node.uri.to_string(), MAX_ATTEMPTS, SLEEP_DURATION).await
-            {
-                Ok(ws) => ws,
-                Err(e) => {
-                    log::error!("Connection could not established for {}. Error {e}", self.node.uri);
-                    return;
-                },
-            };
+        let mut wsocket = match self
+            .attempt_to_establish_socket_connection(MAX_ATTEMPTS, SLEEP_DURATION)
+            .await
+        {
+            Ok(ws) => ws,
+            Err(e) => {
+                log::error!("Connection could not established for {}. Error {e}", self.node.uri);
+                return;
+            },
+        };
 
         let mut keepalive_interval = Ticker::new(KEEPALIVE_DURATION);
         let mut req_rx = self.controller_channel.rx.lock().await;
 
         loop {
             futures_util::select! {
-                // KEEPALIVE HANDLING
                 _ = keepalive_interval.next().fuse() => {
-                    if let Some(expires_at) = expires_at {
-                        if Instant::now() >= expires_at {
-                            log::debug!("Dropping temporary connection for {:?}", self.node.uri.to_string());
-                            break;
-                        }
-                    }
-
-                    // Drop expired response notifier channels
-                    response_notifiers.clear_expired_entries();
-
-                    let mut should_continue = Default::default();
-                    for _ in 0..MAX_ATTEMPTS {
-                        match wsocket.send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string())).await {
-                            Ok(_) => {
-                                should_continue = false;
-                                break;
-                            },
-                            Err(e) => {
-                                log::error!("{e}");
-                                should_continue = true;
-                            }
-                        };
-
-                        Timer::sleep(SLEEP_DURATION).await;
-                    }
-
-                    if should_continue {
-                        continue;
+                    match self.handle_keepalive(&mut wsocket, &mut response_notifiers, expires_at).await {
+                        OuterAction::None => {},
+                        OuterAction::Continue => continue,
+                        OuterAction::Break => break,
+                        OuterAction::Return => return,
                     }
                 }
 
                 // SEND REQUESTS
                 request = req_rx.next().fuse() => {
-                    match request {
-                        Some(ControllerMessage::Request(WsRequest { request_id, serialized_request, response_notifier })) => {
-                            response_notifiers.insert(request_id, response_notifier, Duration::from_secs(REQUEST_TIMEOUT_AS_SEC));
-
-                            let mut should_continue = Default::default();
-                            for _ in 0..MAX_ATTEMPTS {
-                                match wsocket.send(tokio_tungstenite_wasm::Message::Text(serialized_request.clone())).await {
-                                    Ok(_) => {
-                                        should_continue = false;
-                                        break;
-                                    },
-                                    Err(e) => {
-                                        log::error!("{e}");
-                                        should_continue = true;
-                                    }
-                                }
-
-                                Timer::sleep(SLEEP_DURATION).await;
-                            }
-
-                            if should_continue {
-                                let _ = response_notifiers.remove(&request_id);
-                                continue;
-                            }
-                        },
-                        Some(ControllerMessage::Close) => {
-                            break;
-                        },
-                        _ => {},
+                    match self.handle_send_request(request, &mut wsocket, &mut response_notifiers).await {
+                        OuterAction::None => {},
+                        OuterAction::Continue => continue,
+                        OuterAction::Break => break,
+                        OuterAction::Return => return,
                     }
                 }
 
                 // HANDLE RESPONSES SENT FROM USER
                 message = wsocket.next().fuse() => {
-                    match message {
-                         Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
-                             if let Ok(inc_event) = serde_json::from_str::<serde_json::Value>(&inc_event) {
-                                 if !inc_event.is_object() {
-                                     continue;
-                                 }
-
-                                 if let Some(id) = inc_event.get("id") {
-                                     let request_id = id.as_u64().unwrap_or_default() as usize;
-
-                                     if let Some(notifier) = response_notifiers.remove(&request_id) {
-                                         let mut res_bytes: Vec<u8> = Vec::new();
-                                         if serde_json::to_writer(&mut res_bytes, &inc_event).is_ok() {
-                                             let response_map = unsafe { &mut *self.responses.0 };
-                                             let _ = response_map.insert(request_id, res_bytes);
-
-                                             notifier.send(()).expect("receiver channel must be alive");
-                                         }
-
-                                     }
-                                 }
-                             }
-                         },
-                         Some(Ok(tokio_tungstenite_wasm::Message::Binary(_))) => continue,
-                         Some(Ok(tokio_tungstenite_wasm::Message::Close(_))) => break,
-                         Some(Err(e)) => {
-                            log::error!("{e}");
-                            return;
-                         },
-                         None => continue,
+                    match self.handle_response(message, &mut response_notifiers).await {
+                        OuterAction::None => {},
+                        OuterAction::Continue => continue,
+                        OuterAction::Break => break,
+                        OuterAction::Return => return,
                     }
                 }
             }
@@ -277,18 +344,17 @@ impl WebsocketTransport {
     }
 
     pub(crate) fn maybe_spawn_connection_loop(&self, coin: EthCoin) {
-        // if we can acquire the lock here, it means connection loop is not alive
-        if self.connection_guard.try_lock().is_some() {
-            let fut = self.clone().start_connection_loop(None);
-            let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", self.node.uri));
-            coin.spawner().spawn_with_settings(fut, settings);
-        }
+        self.maybe_spawn_connection_loop_inner(coin, None)
     }
 
     pub(crate) fn maybe_spawn_temporary_connection_loop(&self, coin: EthCoin, expires_at: Instant) {
+        self.maybe_spawn_connection_loop_inner(coin, Some(expires_at))
+    }
+
+    fn maybe_spawn_connection_loop_inner(&self, coin: EthCoin, expires_at: Option<Instant>) {
         // if we can acquire the lock here, it means connection loop is not alive
         if self.connection_guard.try_lock().is_some() {
-            let fut = self.clone().start_connection_loop(Some(expires_at));
+            let fut = self.clone().start_connection_loop(expires_at);
             let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", self.node.uri));
             coin.spawner().spawn_with_settings(fut, settings);
         }
