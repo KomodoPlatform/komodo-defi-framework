@@ -310,7 +310,6 @@ impl WebsocketTransport {
                     }
                 }
 
-                // SEND REQUESTS
                 request = req_rx.next().fuse() => {
                     match self.handle_send_request(request, &mut wsocket, &mut response_notifiers).await {
                         OuterAction::None => {},
@@ -320,7 +319,6 @@ impl WebsocketTransport {
                     }
                 }
 
-                // HANDLE RESPONSES SENT FROM USER
                 message = wsocket.next().fuse() => {
                     match self.handle_response(message, &mut response_notifiers).await {
                         OuterAction::None => {},
