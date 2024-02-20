@@ -2558,7 +2558,6 @@ impl RpcCommonOps for EthCoin {
                 Ok(Ok(_)) => {
                     // Bring the live client to the front of rpc_clients
                     clients.rotate_left(i);
-                    client.web3.transport().set_last_request_failed(false);
                     return Ok(client);
                 },
                 Ok(Err(rpc_error)) => {
@@ -2567,8 +2566,6 @@ impl RpcCommonOps for EthCoin {
                     if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
                         socket_transport.stop_connection_loop().await;
                     };
-
-                    client.web3.transport().set_last_request_failed(true);
                 },
                 Err(timeout_error) => {
                     debug!(
@@ -2579,8 +2576,6 @@ impl RpcCommonOps for EthCoin {
                     if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
                         socket_transport.stop_connection_loop().await;
                     };
-
-                    client.web3.transport().set_last_request_failed(true);
                 },
             };
         }

@@ -54,7 +54,7 @@ impl Web3Transport {
         }
     }
 
-    pub fn set_last_request_failed(&self, val: bool) {
+    fn set_last_request_failed(&self, val: bool) {
         match self {
             Web3Transport::Http(http) => http.last_request_failed.store(val, Ordering::SeqCst),
             Web3Transport::Websocket(websocket) => websocket.last_request_failed.store(val, Ordering::SeqCst),
@@ -91,12 +91,27 @@ impl Transport for Web3Transport {
     }
 
     fn send(&self, id: RequestId, request: Call) -> Self::Out {
-        match self {
-            Web3Transport::Http(http) => http.send(id, request),
-            Web3Transport::Websocket(websocket) => websocket.send(id, request),
-            #[cfg(target_arch = "wasm32")]
-            Web3Transport::Metamask(metamask) => metamask.send(id, request),
-        }
+        let selfi = self.clone();
+        let fut = async move {
+            let result = match &selfi {
+                Web3Transport::Http(http) => http.send(id, request),
+                Web3Transport::Websocket(websocket) => websocket.send(id, request),
+                #[cfg(target_arch = "wasm32")]
+                Web3Transport::Metamask(metamask) => metamask.send(id, request),
+            }
+            .await;
+
+            if result.is_ok() {
+                selfi.set_last_request_failed(false);
+            } else {
+                println!("BASARISIZ");
+                selfi.set_last_request_failed(true);
+            }
+
+            result
+        };
+
+        Box::pin(fut)
     }
 }
 
