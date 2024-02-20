@@ -109,6 +109,10 @@ async fn migration_10(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
     set_is_finished_for_legacy_swaps_statements(ctx).await
 }
 
+fn migration_11() -> Vec<(&'static str, Vec<String>)> {
+    db_common::sqlite::execute_batch(stats_swaps::ADD_MAKER_TAKER_GUI_AND_VERSION)
+}
+
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
         1 => Some(migration_1(ctx).await),
@@ -121,6 +125,7 @@ async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option
         8 => Some(migration_8()),
         9 => Some(migration_9()),
         10 => Some(migration_10(ctx).await),
+        11 => Some(migration_11()),
         _ => None,
     }
 }

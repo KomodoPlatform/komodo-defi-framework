@@ -29,7 +29,7 @@ use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
-use mm2_libp2p::behaviours::atomicdex::DEPRECATED_NETID_LIST;
+use mm2_libp2p::behaviours::atomicdex::{GossipsubConfig, DEPRECATED_NETID_LIST};
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SeedNodeInfo,
                  SwarmRuntime, WssCerts};
 use mm2_metrics::mm_gauge;
@@ -37,11 +37,12 @@ use mm2_net::network_event::NetworkEvent;
 use mm2_net::p2p::P2PContext;
 use rpc_task::RpcTaskError;
 use serde_json::{self as json};
-use std::fs;
+use std::convert::TryInto;
 use std::io;
 use std::path::PathBuf;
 use std::str;
 use std::time::Duration;
+use std::{fs, usize};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_sql_db;
@@ -587,7 +588,18 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
     };
 
     let spawner = SwarmRuntime::new(ctx.spawner());
-    let spawn_result = spawn_gossipsub(netid, force_p2p_key, spawner, seednodes, node_type, move |swarm| {
+    let max_num_streams: usize = ctx.conf["max_concurrent_connections"]
+        .as_u64()
+        .unwrap_or(512)
+        .try_into()
+        .unwrap_or(usize::MAX);
+
+    let mut gossipsub_config = GossipsubConfig::new(netid, spawner, node_type);
+    gossipsub_config.to_dial(seednodes);
+    gossipsub_config.force_key(force_p2p_key);
+    gossipsub_config.max_num_streams(max_num_streams);
+
+    let spawn_result = spawn_gossipsub(gossipsub_config, move |swarm| {
         let behaviour = swarm.behaviour();
         mm_gauge!(
             ctx_on_poll.metrics,
