@@ -302,7 +302,7 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
 
 /// Updates the global NFT information in the coins context.
 ///
-/// This function uses the up to date NFT list for a given chain and updates the
+/// This function uses the up-to-date NFT list for a given chain and updates the
 /// corresponding global NFT information in the coins context.
 async fn update_nft_global_in_coins_ctx<T>(
     ctx: &MmArc,
@@ -326,6 +326,17 @@ where
     Ok(())
 }
 
+/// Updates the global NFT information with the latest NFT list.
+///
+/// This function replaces the existing NFT information (`nfts_infos`) in the global NFT with the new data provided by `nft_list`.
+/// The `nft_list` must be current, accurately reflecting the NFTs presently owned by the user.
+/// This includes accounting for any changes such as NFTs that have been transferred away, so user is not owner anymore,
+/// or changes in the amounts of ERC1155 tokens.
+/// Ensuring the data's accuracy is vital for maintaining a correct representation of ownership in the global NFT.
+///
+/// # Warning
+/// Using an outdated `nft_list` for this operation may result in incorrect NFT information persisting in the global NFT,
+/// potentially leading to inconsistencies with the actual state of NFT ownership.
 async fn update_nft_infos(nft_global: &mut EthCoin, nft_list: Vec<Nft>) {
     let new_nft_infos: HashMap<String, NftInfo> = nft_list
         .into_iter()
@@ -343,6 +354,7 @@ async fn update_nft_infos(nft_global: &mut EthCoin, nft_list: Vec<Nft>) {
         .collect();
 
     let mut global_nft_infos = nft_global.nfts_infos.lock().await;
+    // we can do this as some `global_nft_infos` keys may not present in `new_nft_infos`, so we will have to remove them anyway
     *global_nft_infos = new_nft_infos;
 }
 
