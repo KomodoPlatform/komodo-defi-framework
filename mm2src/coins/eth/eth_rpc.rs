@@ -16,7 +16,6 @@ impl EthCoin {
     async fn try_rpc_send(&self, method: &str, params: Vec<jsonrpc_core::Value>) -> Result<Value, web3::Error> {
         let mut clients = self.web3_instances.lock().await;
 
-        // try to find first live client
         for (i, client) in clients.clone().into_iter().enumerate() {
             let execute_fut = match client.web3.transport() {
                 Web3Transport::Http(http) => http.execute(method, params.clone()),
@@ -35,17 +34,14 @@ impl EthCoin {
                     return Ok(r);
                 },
                 Ok(Err(rpc_error)) => {
-                    debug!("Could not get client version on: {:?}. Error: {}", &client, rpc_error);
+                    debug!("Request on '{method}' failed. Error: {rpc_error}");
 
                     if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
                         socket_transport.stop_connection_loop().await;
                     };
                 },
                 Err(timeout_error) => {
-                    debug!(
-                        "Client version timeout exceed on: {:?}. Error: {}",
-                        &client, timeout_error
-                    );
+                    debug!("Timeout exceed for '{method}' request. Error: {timeout_error}",);
 
                     if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
                         socket_transport.stop_connection_loop().await;
@@ -54,9 +50,9 @@ impl EthCoin {
             };
         }
 
-        Err(web3::Error::Transport(web3::error::TransportError::Message(
-            "All the current rpc nodes are unavailable.".to_string(),
-        )))
+        Err(web3::Error::Transport(web3::error::TransportError::Message(format!(
+            "Request '{method}' failed due to not being able to find a living RPC client"
+        ))))
     }
 }
 
@@ -260,7 +256,12 @@ impl EthCoin {
     }
 
     /// Get storage entry
-    pub(crate) async fn storage(&self, address: Address, idx: U256, block: Option<BlockNumber>) -> Result<H256, web3::Error> {
+    pub(crate) async fn storage(
+        &self,
+        address: Address,
+        idx: U256,
+        block: Option<BlockNumber>,
+    ) -> Result<H256, web3::Error> {
         let address = helpers::serialize(&address);
         let idx = helpers::serialize(&idx);
         let block = helpers::serialize(&block.unwrap_or(BlockNumber::Latest));
@@ -271,7 +272,11 @@ impl EthCoin {
     }
 
     /// Get nonce
-    pub(crate) async fn transaction_count(&self, address: Address, block: Option<BlockNumber>) -> Result<U256, web3::Error> {
+    pub(crate) async fn transaction_count(
+        &self,
+        address: Address,
+        block: Option<BlockNumber>,
+    ) -> Result<U256, web3::Error> {
         let address = helpers::serialize(&address);
         let block = helpers::serialize(&block.unwrap_or(BlockNumber::Latest));
 
