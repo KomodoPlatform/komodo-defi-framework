@@ -24,7 +24,7 @@ impl EthCoin {
                     socket.execute(method, params.clone())
                 },
                 #[cfg(target_arch = "wasm32")]
-                Web3Transport::Metamask(metamask) => metamask.execute(methods, params),
+                Web3Transport::Metamask(metamask) => metamask.execute(method, params.clone()),
             };
 
             match execute_fut.timeout(Duration::from_secs(15)).await {

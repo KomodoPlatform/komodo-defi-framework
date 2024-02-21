@@ -2460,7 +2460,7 @@ async fn sign_and_send_transaction_with_metamask(
 
     // Please note that this method may take a long time
     // due to `wallet_switchEthereumChain` and `eth_sendTransaction` requests.
-    let tx_hash = try_tx_s!(try_tx_s!(coin.send_transaction(tx_to_send).await));
+    let tx_hash = try_tx_s!(coin.send_transaction(tx_to_send).await);
 
     let maybe_signed_tx = try_tx_s!(
         coin.wait_for_tx_appears_on_rpc(tx_hash, wait_rpc_timeout, check_every)
