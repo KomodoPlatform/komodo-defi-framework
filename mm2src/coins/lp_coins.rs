@@ -1349,6 +1349,8 @@ pub enum TxGenError {
     TxFeeTooHigh(String),
     /// Previous tx is not valid
     PrevTxIsNotValid(String),
+    /// Other errors, can be used to return an error that can happen only in specific coin protocol implementation
+    Other(String),
 }
 
 impl From<UtxoRpcError> for TxGenError {

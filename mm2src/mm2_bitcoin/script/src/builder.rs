@@ -44,7 +44,7 @@ impl Builder {
         match address_hash {
             AddressHashEnum::AddressHash(wpkh_hash) => Ok(Builder::default()
                 .push_opcode(Opcode::OP_0)
-                .push_bytes(wpkh_hash.as_ref())
+                .push_data(wpkh_hash.as_ref())
                 .into_script()),
             AddressHashEnum::WitnessScriptHash(_) => Err(Error::WitnessHashMismatched),
         }
@@ -55,7 +55,7 @@ impl Builder {
         match address_hash {
             AddressHashEnum::WitnessScriptHash(wsh_hash) => Ok(Builder::default()
                 .push_opcode(Opcode::OP_0)
-                .push_bytes(wsh_hash.as_ref())
+                .push_data(wsh_hash.as_ref())
                 .into_script()),
             AddressHashEnum::AddressHash(_) => Err(Error::WitnessHashMismatched),
         }

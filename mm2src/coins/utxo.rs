@@ -1050,7 +1050,7 @@ impl ToBytes for Signature {
 
 impl<T: UtxoCommonOps> CoinAssocTypes for T {
     type Address = Address;
-    type AddressParseError = MmError<keys::Error>;
+    type AddressParseError = MmError<AddrFromStrError>;
     type Pubkey = Public;
     type PubkeyParseError = MmError<keys::Error>;
     type Tx = UtxoTx;
@@ -1068,7 +1068,7 @@ impl<T: UtxoCommonOps> CoinAssocTypes for T {
     }
 
     fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> {
-        Address::from_str(address).map_err(MmError::from)
+        self.address_from_str(address)
     }
 
     #[inline]

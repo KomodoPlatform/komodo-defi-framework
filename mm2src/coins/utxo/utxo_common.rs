@@ -46,8 +46,8 @@ use futures01::future::Either;
 use itertools::Itertools;
 use keys::bytes::Bytes;
 #[cfg(test)] use keys::prefixes::{KMD_PREFIXES, T_QTUM_PREFIXES};
-use keys::{Address, AddressBuilder, AddressBuilderOption, AddressFormat as UtxoAddressFormat, AddressHashEnum,
-           AddressScriptType, CompactSignature, Public, SegwitAddress};
+use keys::{Address, AddressBuilder, AddressBuilderOption, AddressFormat as UtxoAddressFormat, AddressFormat,
+           AddressHashEnum, AddressScriptType, CompactSignature, Public, SegwitAddress};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::bigdecimal_custom::CheckedDivision;
@@ -1570,9 +1570,14 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     )
     .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive dex_fee_address: {}", e)))?;
 
-    let mut outputs = generate_taker_fee_tx_outputs(coin.as_ref().decimals, &dex_fee_address.hash, args.dex_fee)?;
+    let mut outputs = generate_taker_fee_tx_outputs(coin.as_ref().decimals, dex_fee_address.hash(), args.dex_fee)?;
     if let DexFee::WithBurn { .. } = args.dex_fee {
-        let script = output_script(args.maker_address, ScriptType::P2PKH);
+        let script = output_script(args.maker_address).map_to_mm(|e| {
+            TxGenError::Other(format!(
+                "Couldn't generate output script for maker address {}, error {}",
+                args.maker_address, e
+            ))
+        })?;
         let tx_fee = coin
             .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
             .await?;
@@ -1728,7 +1733,7 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
         let maker_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err());
         let maker_output = TransactionOutput {
             value: payment_output.value - miner_fee - dex_fee_sat,
-            script_pubkey: output_script(maker_address, ScriptType::P2PKH).to_bytes(),
+            script_pubkey: try_tx_s!(output_script(maker_address)).to_bytes(),
         };
         signer.outputs.push(maker_output);
     }
@@ -1787,7 +1792,7 @@ where
 
     let outputs = try_tx_fus!(generate_taker_fee_tx_outputs(
         coin.as_ref().decimals,
-        &address.hash,
+        address.hash(),
         &dex_fee,
     ));
 
@@ -5314,14 +5319,17 @@ where
     }
 
     // import funding address in native mode to track funding tx spend
-    let funding_address = Address {
-        checksum_type: coin.as_ref().conf.checksum_type,
-        hash: dhash160(&redeem_script).into(),
-        prefix: coin.as_ref().conf.p2sh_addr_prefix,
-        t_addr_prefix: coin.as_ref().conf.p2sh_t_addr_prefix,
-        hrp: coin.as_ref().conf.bech32_hrp.clone(),
-        addr_format: UtxoAddressFormat::Standard,
-    };
+    let funding_address = AddressBuilder::new(
+        AddressFormat::Standard,
+        dhash160(&redeem_script).into(),
+        coin.as_ref().conf.checksum_type,
+        coin.as_ref().conf.address_prefixes.clone(),
+        coin.as_ref().conf.bech32_hrp.clone(),
+    )
+    .as_sh()
+    .build()
+    .map_to_mm(ValidateSwapV2TxError::Internal)?;
+
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
         let addr_string = funding_address
             .display_address()
@@ -5426,7 +5434,7 @@ pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
             payment_value
         );
     }
-    let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
+    let script_pubkey = try_tx_s!(output_script(&my_address)).to_bytes();
     let output = TransactionOutput {
         value: payment_value - fee,
         script_pubkey,
@@ -5487,7 +5495,7 @@ where
             payment_value
         );
     }
-    let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
+    let script_pubkey = try_tx_s!(output_script(&my_address)).to_bytes();
     let output = TransactionOutput {
         value: payment_value - fee,
         script_pubkey,

@@ -4338,7 +4338,7 @@ dependencies = [
  "ethabi",
  "ethkey",
  "hex",
- "indexmap",
+ "indexmap 1.9.3",
  "itertools",
  "mm2_err_handle",
  "secp256k1 0.20.3",
