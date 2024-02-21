@@ -771,6 +771,38 @@ pub fn eth_testnet_conf() -> Json {
     })
 }
 
+/// ETH configuration used for dockerized Geth dev node
+pub fn eth_dev_conf() -> Json {
+    json!({
+        "coin": "ETH",
+        "name": "ethereum",
+        "mm2": 1,
+        "chain_id": 1337,
+        "derivation_path": "m/44'/60'",
+        "protocol": {
+            "type": "ETH"
+        }
+    })
+}
+
+/// ERC20 token configuration used for dockerized Geth dev node
+pub fn erc20_dev_conf(contract_address: &str) -> Json {
+    json!({
+        "coin": "ERC20DEV",
+        "name": "erc20dev",
+        "chain_id": 1337,
+        "mm2": 1,
+        "derivation_path": "m/44'/60'",
+        "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+                "platform": "ETH",
+                "contract_address": contract_address,
+            }
+        }
+    })
+}
+
 pub fn eth_sepolia_conf() -> Json {
     json!({
         "coin": "ETH",
@@ -2133,7 +2165,7 @@ pub async fn wait_for_swap_status(mm: &MarketMakerIt, uuid: &str, wait_sec: i64)
             panic!("Timed out waiting for swap {} status", uuid);
         }
 
-        Timer::sleep(0.5).await;
+        Timer::sleep(1.).await;
     }
 }
 
@@ -3316,4 +3348,15 @@ pub async fn init_trezor_user_action_rpc(mm: &MarketMakerIt, task_id: u64, user_
         request.1
     );
     json::from_str(&request.1).unwrap()
+}
+
+pub async fn active_swaps(mm: &MarketMakerIt) -> ActiveSwapsResponse {
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "active_swaps",
+        "params": []
+    });
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "'active_swaps' failed: {}", response.1);
+    json::from_str(&response.1).unwrap()
 }

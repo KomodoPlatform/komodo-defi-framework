@@ -1,4 +1,4 @@
-use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::{self, u256_to_big_decimal, wei_from_big_decimal, TryToAddress};
 use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc20RpcOps, TopicFilter, TxReceipt,
                                 ViewContractCallType};
@@ -899,64 +899,55 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
-        let sender = try_f!(self
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        let payment_tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
+        let sender = self
             .contract_address_from_raw_pubkey(&input.other_pub)
-            .map_to_mm(ValidatePaymentError::InvalidParameter));
-        let swap_contract_address = try_f!(input
+            .map_to_mm(ValidatePaymentError::InvalidParameter)?;
+        let swap_contract_address = input
             .swap_contract_address
             .try_to_address()
-            .map_to_mm(ValidatePaymentError::InvalidParameter));
+            .map_to_mm(ValidatePaymentError::InvalidParameter)?;
 
-        let time_lock = try_f!(input
+        let time_lock = input
             .time_lock
             .try_into()
-            .map_to_mm(ValidatePaymentError::TimelockOverflow));
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .validate_payment(
-                    payment_tx,
-                    time_lock,
-                    sender,
-                    input.secret_hash,
-                    input.amount,
-                    swap_contract_address,
-                )
-                .await
-        };
-        Box::new(fut.boxed().compat())
+            .map_to_mm(ValidatePaymentError::TimelockOverflow)?;
+        self.validate_payment(
+            payment_tx,
+            time_lock,
+            sender,
+            input.secret_hash,
+            input.amount,
+            swap_contract_address,
+        )
+        .await
     }
 
     #[inline]
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let swap_contract_address = try_f!(input
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        let swap_contract_address = input
             .swap_contract_address
             .try_to_address()
-            .map_to_mm(ValidatePaymentError::InvalidParameter));
-        let payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
-        let sender = try_f!(self
+            .map_to_mm(ValidatePaymentError::InvalidParameter)?;
+        let payment_tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
+        let sender = self
             .contract_address_from_raw_pubkey(&input.other_pub)
-            .map_to_mm(ValidatePaymentError::InvalidParameter));
-        let time_lock = try_f!(input
+            .map_to_mm(ValidatePaymentError::InvalidParameter)?;
+        let time_lock = input
             .time_lock
             .try_into()
-            .map_to_mm(ValidatePaymentError::TimelockOverflow));
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .validate_payment(
-                    payment_tx,
-                    time_lock,
-                    sender,
-                    input.secret_hash,
-                    input.amount,
-                    swap_contract_address,
-                )
-                .await
-        };
-        Box::new(fut.boxed().compat())
+            .map_to_mm(ValidatePaymentError::TimelockOverflow)?;
+
+        self.validate_payment(
+            payment_tx,
+            time_lock,
+            sender,
+            input.secret_hash,
+            input.amount,
+            swap_contract_address,
+        )
+        .await
     }
 
     #[inline]

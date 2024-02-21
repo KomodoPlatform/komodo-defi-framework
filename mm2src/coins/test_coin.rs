@@ -1,21 +1,23 @@
 #![allow(clippy::all)]
 
-use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
-            TradeFee, TransactionEnum, TransactionFut};
+use super::{CoinBalance, FundingTxSpend, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
+            RawTransactionRequest, SearchForFundingSpendErr, SwapOps, TradeFee, TransactionEnum, TransactionFut,
+            WaitForTakerPaymentSpendError};
+use crate::coin_errors::ValidatePaymentResult;
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinAssocTypes,
             CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, GenPreimageResult,
             GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, MakerSwapTakerCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RawTransactionResult, RefundFundingSecretArgs, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
             SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionRequest,
-            SignatureResult, SpendPaymentArgs, SwapOpsV2, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, Transaction, TransactionErr, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateTakerFundingArgs, ValidateTakerFundingResult, ValidateTakerFundingSpendPreimageResult,
-            ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
+            SignatureResult, SpendPaymentArgs, TakerCoinSwapOpsV2, TakerSwapMakerCoin, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, Transaction, TransactionErr, TransactionResult, TxMarshalingErr,
+            TxPreimageWithSig, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
+            ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageResult, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use crate::{DexFee, ToBytes, ValidateWatcherSpendInput};
 use async_trait::async_trait;
 use common::executor::AbortedError;
@@ -139,9 +141,13 @@ impl SwapOps for TestCoin {
 
     fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
+    async fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        unimplemented!()
+    }
 
-    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
+    async fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        unimplemented!()
+    }
 
     fn check_if_my_payment_sent(
         &self,
@@ -420,6 +426,8 @@ impl ToBytes for TestSig {
 }
 
 impl CoinAssocTypes for TestCoin {
+    type Address = String;
+    type AddressParseError = String;
     type Pubkey = TestPubkey;
     type PubkeyParseError = String;
     type Tx = TestTx;
@@ -428,6 +436,10 @@ impl CoinAssocTypes for TestCoin {
     type PreimageParseError = String;
     type Sig = TestSig;
     type SigParseError = String;
+
+    fn my_addr(&self) -> &Self::Address { todo!() }
+
+    fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> { todo!() }
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> { unimplemented!() }
 
@@ -440,19 +452,30 @@ impl CoinAssocTypes for TestCoin {
 
 #[async_trait]
 #[mockable]
-impl SwapOpsV2 for TestCoin {
+impl TakerCoinSwapOpsV2 for TestCoin {
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr> { todo!() }
 
-    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateTakerFundingResult {
+    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateSwapV2TxResult {
         unimplemented!()
     }
 
-    async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> TransactionResult { todo!() }
+    async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr> {
+        todo!()
+    }
 
     async fn refund_taker_funding_secret(
         &self,
         args: RefundFundingSecretArgs<'_, Self>,
     ) -> Result<Self::Tx, TransactionErr> {
+        todo!()
+    }
+
+    async fn search_for_taker_funding_spend(
+        &self,
+        tx: &Self::Tx,
+        from_block: u64,
+        secret_hash: &[u8],
+    ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr> {
         todo!()
     }
 
@@ -481,7 +504,9 @@ impl SwapOpsV2 for TestCoin {
         todo!()
     }
 
-    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult { unimplemented!() }
+    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr> {
+        unimplemented!()
+    }
 
     async fn gen_taker_payment_spend_preimage(
         &self,
@@ -505,7 +530,16 @@ impl SwapOpsV2 for TestCoin {
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
         swap_unique_data: &[u8],
-    ) -> TransactionResult {
+    ) -> Result<Self::Tx, TransactionErr> {
+        unimplemented!()
+    }
+
+    async fn wait_for_taker_payment_spend(
+        &self,
+        taker_payment: &Self::Tx,
+        from_block: u64,
+        wait_until: u64,
+    ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError> {
         unimplemented!()
     }
 

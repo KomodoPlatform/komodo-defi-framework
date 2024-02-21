@@ -180,12 +180,10 @@ fn test_validate_maker_payment() {
         watcher_reward: None,
     };
 
-    coin.validate_maker_payment(input.clone()).wait().unwrap();
+    block_on(coin.validate_maker_payment(input.clone())).unwrap();
 
     input.other_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
-    let error = coin
-        .validate_maker_payment(input.clone())
-        .wait()
+    let error = block_on(coin.validate_maker_payment(input.clone()))
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
@@ -196,9 +194,7 @@ fn test_validate_maker_payment() {
     input.other_pub = correct_maker_pub;
 
     input.amount = BigDecimal::from_str("0.3").unwrap();
-    let error = coin
-        .validate_maker_payment(input.clone())
-        .wait()
+    let error = block_on(coin.validate_maker_payment(input.clone()))
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
@@ -214,9 +210,7 @@ fn test_validate_maker_payment() {
     input.amount = correct_amount;
 
     input.secret_hash = vec![2; 20];
-    let error = coin
-        .validate_maker_payment(input.clone())
-        .wait()
+    let error = block_on(coin.validate_maker_payment(input.clone()))
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
@@ -232,7 +226,7 @@ fn test_validate_maker_payment() {
     input.secret_hash = vec![1; 20];
 
     input.time_lock = 123;
-    let error = coin.validate_maker_payment(input).wait().unwrap_err().into_inner();
+    let error = block_on(coin.validate_maker_payment(input)).unwrap_err().into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::UnexpectedPaymentState(err) => {
@@ -1091,9 +1085,7 @@ fn test_validate_maker_payment_malicious() {
         unique_swap_data: Vec::new(),
         watcher_reward: None,
     };
-    let error = coin
-        .validate_maker_payment(input)
-        .wait()
+    let error = block_on(coin.validate_maker_payment(input))
         .expect_err("'erc20Payment' was called from another swap contract, expected an error")
         .into_inner();
     log!("error: {}", error);
