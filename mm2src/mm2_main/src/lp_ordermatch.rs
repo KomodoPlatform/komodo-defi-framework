@@ -42,7 +42,7 @@ use http::Response;
 use keys::{AddressFormat, KeyPair};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, TopicHash, TopicPrefix,
+use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, PublicKey, TopicHash, TopicPrefix,
                  TOPIC_SEPARATOR};
 use mm2_metrics::mm_gauge;
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
@@ -572,11 +572,11 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::TakerConnect(taker_connect) => {
-                    process_taker_connect(ctx, pubkey.unprefixed().into(), taker_connect.into()).await;
+                    process_taker_connect(ctx, pubkey, taker_connect.into()).await;
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerConnected(maker_connected) => {
-                    process_maker_connected(ctx, pubkey.unprefixed().into(), maker_connected.into()).await;
+                    process_maker_connected(ctx, pubkey, maker_connected.into()).await;
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerOrderCancelled(cancelled_msg) => {
@@ -2890,7 +2890,7 @@ impl MakerOrdersContext {
 }
 
 #[cfg_attr(test, mockable)]
-fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerOrder) {
+fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerOrder, taker_p2p_pubkey: PublicKey) {
     let spawner = ctx.spawner();
     let uuid = maker_match.request.uuid;
 
@@ -2990,8 +2990,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                         maker_volume: maker_amount,
                         secret,
                         taker_coin: t.clone(),
-                        dex_fee_amount: dex_fee_amount_from_taker_coin(&t, m.ticker(), &taker_amount)
-                            .total_spend_amount(),
+                        dex_fee: dex_fee_amount_from_taker_coin(&t, m.ticker(), &taker_amount),
                         taker_volume: taker_amount,
                         taker_premium: Default::default(),
                         conf_settings: my_conf_settings,
@@ -3000,6 +2999,9 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                         p2p_keypair: maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
                         secret_hash_algo,
                         lock_duration: lock_time,
+                        taker_p2p_pubkey: match taker_p2p_pubkey {
+                            PublicKey::Secp256k1(pubkey) => pubkey.into(),
+                        },
                     };
                     #[allow(clippy::box_default)]
                     maker_swap_state_machine
@@ -3045,7 +3047,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
     spawner.spawn_with_settings(fut, settings);
 }
 
-fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch) {
+fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch, maker_p2p_pubkey: PublicKey) {
     let spawner = ctx.spawner();
     let uuid = taker_match.reserved.taker_order_uuid;
 
@@ -3146,8 +3148,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                         maker_coin: m.clone(),
                         maker_volume: maker_amount,
                         taker_coin: t.clone(),
-                        dex_fee: dex_fee_amount_from_taker_coin(&t, maker_coin_ticker, &taker_amount)
-                            .total_spend_amount(),
+                        dex_fee: dex_fee_amount_from_taker_coin(&t, maker_coin_ticker, &taker_amount),
                         taker_volume: taker_amount,
                         taker_premium: Default::default(),
                         secret_hash_algo,
@@ -3156,6 +3157,10 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                         uuid,
                         p2p_keypair: taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
                         taker_secret,
+                        maker_p2p_pubkey: match maker_p2p_pubkey {
+                            PublicKey::Secp256k1(pubkey) => pubkey.into(),
+                        },
+                        require_maker_payment_confirm_before_funding_spend: true,
                     };
                     #[allow(clippy::box_default)]
                     taker_swap_state_machine
@@ -3573,7 +3578,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
     }
 }
 
-async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: MakerConnected) {
+async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: MakerConnected) {
     log::debug!("Processing MakerConnected {:?}", connected);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
@@ -3582,7 +3587,8 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
         Err(_) => return,
     };
 
-    if our_public_id.bytes == from_pubkey.0 {
+    let unprefixed_from = from_pubkey.unprefixed();
+    if our_public_id.bytes == unprefixed_from {
         log::warn!("Skip maker connected from our pubkey");
         return;
     }
@@ -3603,12 +3609,17 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
         },
     };
 
-    if order_match.reserved.sender_pubkey != from_pubkey {
+    if order_match.reserved.sender_pubkey != unprefixed_from.into() {
         error!("Connected message sender pubkey != reserved message sender pubkey");
         return;
     }
     // alice
-    lp_connected_alice(ctx.clone(), my_order_entry.get().clone(), order_match.clone());
+    lp_connected_alice(
+        ctx.clone(),
+        my_order_entry.get().clone(),
+        order_match.clone(),
+        from_pubkey,
+    );
     // remove the matched order immediately
     let order = my_order_entry.remove();
     delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Fulfilled)
@@ -3719,7 +3730,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
     }
 }
 
-async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg: TakerConnect) {
+async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg: TakerConnect) {
     log::debug!("Processing TakerConnect {:?}", connect_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
@@ -3728,7 +3739,8 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
         Err(_) => return,
     };
 
-    if our_public_id.bytes == sender_pubkey.0 {
+    let sender_unprefixed = sender_pubkey.unprefixed();
+    if our_public_id.bytes == sender_unprefixed {
         log::warn!("Skip taker connect from our pubkey");
         return;
     }
@@ -3755,7 +3767,7 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
             return;
         },
     };
-    if order_match.request.sender_pubkey != sender_pubkey {
+    if order_match.request.sender_pubkey != sender_unprefixed.into() {
         log::warn!("Connect message sender pubkey != request message sender pubkey");
         return;
     }
@@ -3772,7 +3784,7 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
         order_match.connected = Some(connected.clone());
         let order_match = order_match.clone();
         my_order.started_swaps.push(order_match.request.uuid);
-        lp_connect_start_bob(ctx.clone(), order_match, my_order.clone());
+        lp_connect_start_bob(ctx.clone(), order_match, my_order.clone(), sender_pubkey);
         let topic = my_order.orderbook_topic();
         broadcast_ordermatch_message(&ctx, topic.clone(), connected.into(), my_order.p2p_keypair());
 

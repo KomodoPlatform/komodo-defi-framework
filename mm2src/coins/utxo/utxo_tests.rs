@@ -428,7 +428,7 @@ fn test_wait_for_payment_spend_timeout_native() {
     let client = NativeClientImpl::default();
 
     static mut OUTPUT_SPEND_CALLED: bool = false;
-    NativeClient::find_output_spend.mock_safe(|_, _, _, _, _| {
+    NativeClient::find_output_spend.mock_safe(|_, _, _, _, _, _| {
         unsafe { OUTPUT_SPEND_CALLED = true };
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
@@ -459,7 +459,7 @@ fn test_wait_for_payment_spend_timeout_native() {
 fn test_wait_for_payment_spend_timeout_electrum() {
     static mut OUTPUT_SPEND_CALLED: bool = false;
 
-    ElectrumClient::find_output_spend.mock_safe(|_, _, _, _, _| {
+    ElectrumClient::find_output_spend.mock_safe(|_, _, _, _, _, _| {
         unsafe { OUTPUT_SPEND_CALLED = true };
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
@@ -2420,6 +2420,7 @@ fn test_find_output_spend_skips_conflicting_transactions() {
             &tx.outputs[vout].script_pubkey,
             vout,
             BlockHashOrHeight::Height(from_block),
+            TxHashAlgo::DSHA256,
         )
         .wait();
     assert_eq!(actual, Ok(None));
