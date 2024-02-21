@@ -1013,7 +1013,7 @@ fn get_erc20_sender_trade_preimage() {
         .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(unsafe { ALLOWANCE.into() }))));
 
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
-    EthCoin::estimate_gas.mock_safe(|_, _| {
+    EthCoin::estimate_gas_wrapper.mock_safe(|_, _| {
         unsafe { ESTIMATE_GAS_CALLED = true };
         MockResult::Return(Box::new(futures01::future::ok(APPROVE_GAS_LIMIT.into())))
     });
@@ -1111,7 +1111,7 @@ fn test_get_fee_to_send_taker_fee() {
     const TRANSFER_GAS_LIMIT: u64 = 40_000;
 
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
-    EthCoin::estimate_gas
+    EthCoin::estimate_gas_wrapper
         .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(TRANSFER_GAS_LIMIT.into()))));
 
     // fee to send taker fee is `TRANSFER_GAS_LIMIT * gas_price` always.

@@ -6,9 +6,7 @@ use mm2_net::transport::GuiAuthValidationGenerator;
 use serde_json::Value as Json;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
-use web3::api::Namespace;
-use web3::helpers::{self, to_string, CallFuture};
-use web3::types::BlockNumber;
+use web3::helpers::to_string;
 use web3::{Error, RequestId, Transport};
 
 use self::http_transport::AuthPayload;
@@ -19,7 +17,7 @@ pub(crate) mod http_transport;
 #[cfg(target_arch = "wasm32")] pub(crate) mod metamask_transport;
 pub(crate) mod websocket_transport;
 
-type Web3SendOut = BoxFuture<'static, Result<Json, Error>>;
+pub(crate) type Web3SendOut = BoxFuture<'static, Result<Json, Error>>;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Web3Transport {
@@ -123,45 +121,12 @@ impl From<metamask_transport::MetamaskTransport> for Web3Transport {
     fn from(metamask: metamask_transport::MetamaskTransport) -> Self { Web3Transport::Metamask(metamask) }
 }
 
-/// eth_feeHistory support is missing even in the latest rust-web3
-/// It's the custom namespace implementing it
-#[derive(Debug, Clone)]
-pub struct EthFeeHistoryNamespace<T> {
-    transport: T,
-}
-
-impl<T: Transport> Namespace<T> for EthFeeHistoryNamespace<T> {
-    fn new(transport: T) -> Self
-    where
-        Self: Sized,
-    {
-        Self { transport }
-    }
-
-    fn transport(&self) -> &T { &self.transport }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct FeeHistoryResult {
     #[serde(rename = "oldestBlock")]
     pub oldest_block: U256,
     #[serde(rename = "baseFeePerGas")]
     pub base_fee_per_gas: Vec<U256>,
-}
-
-impl<T: Transport> EthFeeHistoryNamespace<T> {
-    pub fn eth_fee_history(
-        &self,
-        count: U256,
-        block: BlockNumber,
-        reward_percentiles: &[f64],
-    ) -> CallFuture<FeeHistoryResult, T::Out> {
-        let count = helpers::serialize(&count);
-        let block = helpers::serialize(&block);
-        let reward_percentiles = helpers::serialize(&reward_percentiles);
-        let params = vec![count, block, reward_percentiles];
-        CallFuture::new(self.transport.execute("eth_feeHistory", params))
-    }
 }
 
 /// Generates a signed message and inserts it into the request payload.
