@@ -1,3 +1,7 @@
+//! This module serves as an abstraction layer for Ethereum RPCs.
+//! Unlike the built-in functions in web3, this module dynamically
+//! rotates through all transports in case of failures.
+
 use super::web3_transport::FeeHistoryResult;
 use super::{web3_transport::Web3Transport, EthCoin};
 use common::{custom_futures::timeout::FutureTimerExt, log::debug};
@@ -9,7 +13,7 @@ use web3::types::{Address, Block, BlockId, BlockNumber, Bytes, CallRequest, FeeH
 use web3::{helpers, Transport};
 
 impl EthCoin {
-    pub async fn try_rpc_send(&self, method: &str, params: Vec<jsonrpc_core::Value>) -> Result<Value, web3::Error> {
+    async fn try_rpc_send(&self, method: &str, params: Vec<jsonrpc_core::Value>) -> Result<Value, web3::Error> {
         let mut clients = self.web3_instances.lock().await;
 
         // try to find first live client
