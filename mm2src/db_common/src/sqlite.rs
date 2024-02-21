@@ -86,10 +86,31 @@ pub fn validate_ident(ident: &str) -> SqlResult<()> {
     validate_ident_impl(ident, |c| c.is_alphanumeric() || c == '_' || c == '.')
 }
 
+/// Validates a table name against SQL injection risks.
+///
+/// This function checks if the provided `table_name` is safe for use in SQL queries.
+/// It disallows any characters in the table name that may lead to SQL injection, only
+/// allowing alphanumeric characters and underscores.
 pub fn validate_table_name(table_name: &str) -> SqlResult<()> {
     // As per https://stackoverflow.com/a/3247553, tables can't be the target of parameter substitution.
     // So we have to use a plain concatenation disallowing any characters in the table name that may lead to SQL injection.
     validate_ident_impl(table_name, |c| c.is_alphanumeric() || c == '_')
+}
+
+/// Represents a SQL table name that has been validated for safety.
+#[derive(Clone, Debug)]
+pub struct SafeTableName(String);
+
+impl SafeTableName {
+    /// Creates a new SafeTableName, validating the provided table name.
+    pub fn new(table_name: &str) -> SqlResult<Self> {
+        validate_table_name(table_name)?;
+        Ok(SafeTableName(table_name.to_owned()))
+    }
+
+    /// Retrieves the table name.
+    #[inline(always)]
+    pub fn inner(&self) -> &str { &self.0 }
 }
 
 /// Calculates the offset to skip records by uuid.
@@ -317,6 +338,10 @@ impl StringError {
     pub fn into_boxed(self) -> Box<StringError> { Box::new(self) }
 }
 
+/// Internal function to validate identifiers such as table names.
+///
+/// This function is a general-purpose identifier validator. It uses a closure to determine
+/// the validity of each character in the provided identifier.
 fn validate_ident_impl<F>(ident: &str, is_valid: F) -> SqlResult<()>
 where
     F: Fn(char) -> bool,

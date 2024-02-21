@@ -1,16 +1,19 @@
-use keys::Address;
+use keys::LegacyAddress;
 use serde::de::{Unexpected, Visitor};
 use serde::{Deserializer, Serialize, Serializer};
 use std::fmt;
 
-pub fn serialize<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
+/// Standard serde serialize for LegacyAddress.
+pub fn serialize<S>(address: &LegacyAddress, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     address.to_string().serialize(serializer)
 }
 
-pub fn deserialize<'a, D>(deserializer: D) -> Result<Address, D::Error>
+/// Standard serde deserialize for LegacyAddress
+/// Note: we cannot have the same feature for Address as it must have coin prefixes when deserialized
+pub fn deserialize<'a, D>(deserializer: D) -> Result<LegacyAddress, D::Error>
 where
     D: Deserializer<'a>,
 {
@@ -21,7 +24,7 @@ where
 pub struct AddressVisitor;
 
 impl<'b> Visitor<'b> for AddressVisitor {
-    type Value = Address;
+    type Value = LegacyAddress;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result { formatter.write_str("an address") }
 
@@ -37,11 +40,11 @@ impl<'b> Visitor<'b> for AddressVisitor {
 
 pub mod vec {
     use super::AddressVisitor;
-    use keys::Address;
+    use keys::LegacyAddress;
     use serde::de::Visitor;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S>(addresses: &[Address], serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(addresses: &[LegacyAddress], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -52,7 +55,7 @@ pub mod vec {
             .serialize(serializer)
     }
 
-    pub fn deserialize<'a, D>(deserializer: D) -> Result<Vec<Address>, D::Error>
+    pub fn deserialize<'a, D>(deserializer: D) -> Result<Vec<LegacyAddress>, D::Error>
     where
         D: Deserializer<'a>,
     {
@@ -65,24 +68,24 @@ pub mod vec {
 
 #[cfg(test)]
 mod tests {
-    use keys::Address;
+    use keys::LegacyAddress;
     use serde_json;
     use v1::types;
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct TestStruct {
         #[serde(with = "types::address")]
-        address: Address,
+        address: LegacyAddress,
     }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct VecAddressTest {
         #[serde(with = "types::address::vec")]
-        pub addresses: Vec<Address>,
+        pub addresses: Vec<LegacyAddress>,
     }
 
     impl TestStruct {
-        fn new(address: Address) -> Self { TestStruct { address } }
+        fn new(address: LegacyAddress) -> Self { TestStruct { address } }
     }
 
     #[test]

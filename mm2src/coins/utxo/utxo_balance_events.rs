@@ -32,9 +32,8 @@ macro_rules! try_or_continue {
 #[async_trait]
 impl EventBehaviour for UtxoStandardCoin {
     const EVENT_NAME: &'static str = "COIN_BALANCE";
+    const ERROR_EVENT_NAME: &'static str = "COIN_BALANCE_ERROR";
 
-    // TODO: On certain errors, send an error event to clients (e.g., when not being able to read the
-    // balance or not being able to subscribe to scripthash/address.).
     async fn handle(self, _interval: f64, tx: oneshot::Sender<EventInitStatus>) {
         const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
 
@@ -46,7 +45,7 @@ impl EventBehaviour for UtxoStandardCoin {
 
             let mut scripthash_to_address_map: BTreeMap<String, Address> = BTreeMap::new();
             for address in addresses {
-                let scripthash = address_to_scripthash(&address);
+                let scripthash = address_to_scripthash(&address).map_err(|e| e.to_string())?;
 
                 scripthash_to_address_map.insert(scripthash.clone(), address);
 
@@ -106,6 +105,13 @@ impl EventBehaviour for UtxoStandardCoin {
                         Ok(map) => scripthash_to_address_map.extend(map),
                         Err(e) => {
                             log::error!("{e}");
+
+                            ctx.stream_channel_controller
+                                .broadcast(Event::new(
+                                    format!("{}:{}", Self::ERROR_EVENT_NAME, self.ticker()),
+                                    json!({ "error": e }).to_string(),
+                                ))
+                                .await;
                         },
                     };
 
@@ -117,6 +123,13 @@ impl EventBehaviour for UtxoStandardCoin {
                         Ok(map) => scripthash_to_address_map = map,
                         Err(e) => {
                             log::error!("{e}");
+
+                            ctx.stream_channel_controller
+                                .broadcast(Event::new(
+                                    format!("{}:{}", Self::ERROR_EVENT_NAME, self.ticker()),
+                                    json!({ "error": e }).to_string(),
+                                ))
+                                .await;
                         },
                     };
 
@@ -129,7 +142,13 @@ impl EventBehaviour for UtxoStandardCoin {
                 None => try_or_continue!(self.my_addresses().await)
                     .into_iter()
                     .find_map(|addr| {
-                        let script = output_script(&addr, keys::Type::P2PKH);
+                        let script = match output_script(&addr) {
+                            Ok(script) => script,
+                            Err(e) => {
+                                log::error!("{e}");
+                                return None;
+                            },
+                        };
                         let script_hash = electrum_script_hash(&script);
                         let scripthash = hex::encode(script_hash);
 
@@ -153,7 +172,23 @@ impl EventBehaviour for UtxoStandardCoin {
                 },
             };
 
-            let balance = try_or_continue!(address_balance(&self, &address).await);
+            let balance = match address_balance(&self, &address).await {
+                Ok(t) => t,
+                Err(e) => {
+                    let ticker = self.ticker();
+                    log::error!("Failed getting balance for '{ticker}'. Error: {e}");
+                    let e = serde_json::to_value(e).expect("Serialization should't fail.");
+
+                    ctx.stream_channel_controller
+                        .broadcast(Event::new(
+                            format!("{}:{}", Self::ERROR_EVENT_NAME, ticker),
+                            e.to_string(),
+                        ))
+                        .await;
+
+                    continue;
+                },
+            };
 
             let payload = json!({
                 "ticker": self.ticker(),

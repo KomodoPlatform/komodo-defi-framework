@@ -16,11 +16,11 @@ use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftLis
 
 use crate::eth::{eth_addr_to_hex, get_eth_address, withdraw_erc1155, withdraw_erc721, EthCoin, EthCoinType,
                  EthTxFeeDetails};
-use crate::nft::nft_errors::{MetaFromUrlError, ProtectFromSpamError, TransferConfirmationsError,
+use crate::nft::nft_errors::{ClearNftDbError, MetaFromUrlError, ProtectFromSpamError, TransferConfirmationsError,
                              UpdateSpamPhishingError};
-use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, NftCommon, NftCtx, NftTransferCommon,
-                              PhishingDomainReq, PhishingDomainRes, RefreshMetadataReq, SpamContractReq,
-                              SpamContractRes, TransferMeta, TransferStatus, UriMeta};
+use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, ClearNftDbReq, NftCommon, NftCtx,
+                              NftTransferCommon, PhishingDomainReq, PhishingDomainRes, RefreshMetadataReq,
+                              SpamContractReq, SpamContractRes, TransferMeta, TransferStatus, UriMeta};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
 use common::parse_rfc3339_to_timestamp;
 use crypto::StandardHDCoinAddress;
@@ -29,7 +29,7 @@ use futures::compat::Future01CompatExt;
 use futures::future::try_join_all;
 use mm2_err_handle::map_to_mm::MapToMmResult;
 use mm2_net::transport::send_post_request_to_uri;
-use mm2_number::{BigDecimal, BigUint};
+use mm2_number::BigUint;
 use regex::Regex;
 use serde_json::Value as Json;
 use std::cmp::Ordering;
@@ -1160,30 +1160,6 @@ async fn mark_as_spam_and_build_empty_meta<T: NftListStorageOps + NftTransferHis
     }))
 }
 
-/// `find_wallet_nft_amount` function returns NFT amount of cached NFT.
-/// Note: in db **token_address** is kept in **lowercase**, because Moralis returns all addresses in lowercase.
-pub(crate) async fn find_wallet_nft_amount(
-    ctx: &MmArc,
-    chain: &Chain,
-    token_address: String,
-    token_id: BigUint,
-) -> MmResult<BigDecimal, GetNftInfoError> {
-    let nft_ctx = NftCtx::from_ctx(ctx).map_to_mm(GetNftInfoError::Internal)?;
-
-    let storage = nft_ctx.lock_db().await?;
-    if !NftListStorageOps::is_initialized(&storage, chain).await? {
-        NftListStorageOps::init(&storage, chain).await?;
-    }
-    let nft_meta = storage
-        .get_nft(chain, token_address.to_lowercase(), token_id.clone())
-        .await?
-        .ok_or_else(|| GetNftInfoError::TokenNotFoundInWallet {
-            token_address,
-            token_id: token_id.to_string(),
-        })?;
-    Ok(nft_meta.common.amount)
-}
-
 async fn cache_nfts_from_moralis<T: NftListStorageOps + NftTransferHistoryStorageOps>(
     ctx: &MmArc,
     storage: &T,
@@ -1395,4 +1371,52 @@ async fn build_nft_from_moralis(
 pub(crate) fn get_domain_from_url(url: Option<&str>) -> Option<String> {
     url.and_then(|uri| Url::parse(uri).ok())
         .and_then(|url| url.domain().map(String::from))
+}
+
+/// Clears NFT data from the database for specified chains.
+pub async fn clear_nft_db(ctx: MmArc, req: ClearNftDbReq) -> MmResult<(), ClearNftDbError> {
+    if req.clear_all {
+        let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(ClearNftDbError::Internal)?;
+        let storage = nft_ctx.lock_db().await?;
+        storage.clear_all_nft_data().await?;
+        storage.clear_all_history_data().await?;
+        return Ok(());
+    }
+
+    if req.chains.is_empty() {
+        return MmError::err(ClearNftDbError::InvalidRequest(
+            "Nothing to clear was specified".to_string(),
+        ));
+    }
+
+    let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(ClearNftDbError::Internal)?;
+    let storage = nft_ctx.lock_db().await?;
+    let mut errors = Vec::new();
+    for chain in req.chains.iter() {
+        if let Err(e) = clear_data_for_chain(&storage, chain).await {
+            errors.push(e);
+        }
+    }
+    if !errors.is_empty() {
+        return MmError::err(ClearNftDbError::DbError(format!("{:?}", errors)));
+    }
+
+    Ok(())
+}
+
+async fn clear_data_for_chain<T>(storage: &T, chain: &Chain) -> MmResult<(), ClearNftDbError>
+where
+    T: NftListStorageOps + NftTransferHistoryStorageOps,
+{
+    let (is_nft_list_init, is_history_init) = (
+        NftListStorageOps::is_initialized(storage, chain).await?,
+        NftTransferHistoryStorageOps::is_initialized(storage, chain).await?,
+    );
+    if is_nft_list_init {
+        storage.clear_nft_data(chain).await?;
+    }
+    if is_history_init {
+        storage.clear_history_data(chain).await?;
+    }
+    Ok(())
 }

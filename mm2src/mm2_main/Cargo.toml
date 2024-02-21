@@ -41,7 +41,7 @@ db_common = { path = "../db_common" }
 derive_more = "0.99"
 either = "1.6"
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
-enum_from = { path = "../derives/enum_from" }
+enum_derives = { path = "../derives/enum_derives" }
 enum-primitive-derive = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }

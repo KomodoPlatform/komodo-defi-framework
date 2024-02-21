@@ -220,6 +220,8 @@ pub enum EnablePlatformCoinWithTokensError {
     Transport(String),
     AtLeastOneNodeRequired(String),
     InvalidPayload(String),
+    #[display(fmt = "Failed spawning balance events. Error: {_0}")]
+    FailedSpawningBalanceEvents(String),
     Internal(String),
 }
 
@@ -288,6 +290,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
             | EnablePlatformCoinWithTokensError::InvalidPayload { .. }
             | EnablePlatformCoinWithTokensError::AtLeastOneNodeRequired(_)
+            | EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(_)
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
         }
     }

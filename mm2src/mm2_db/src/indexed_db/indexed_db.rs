@@ -10,6 +10,7 @@
 use async_trait::async_trait;
 use common::executor::spawn_local;
 use common::log::debug;
+use common::stringify_js_error;
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
@@ -22,6 +23,8 @@ use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Mutex;
+use wasm_bindgen::JsCast;
+use web_sys::{Window, WorkerGlobalScope};
 
 macro_rules! try_serialize_index_value {
     ($exp:expr, $index:expr) => {{
@@ -803,6 +806,33 @@ fn open_cursor(
 
     // ignore if the receiver is closed
     result_tx.send(Ok(event_tx)).ok();
+}
+
+/// Detects the current execution environment (window or worker) and follows the appropriate way
+/// of getting `web_sys::IdbFactory` instance.
+pub(crate) fn get_idb_factory() -> Result<web_sys::IdbFactory, InitDbError> {
+    let global = js_sys::global();
+
+    let idb_factory = if let Some(window) = global.dyn_ref::<Window>() {
+        window.indexed_db()
+    } else if let Some(worker) = global.dyn_ref::<WorkerGlobalScope>() {
+        worker.indexed_db()
+    } else {
+        return Err(InitDbError::NotSupported("Unknown WASM environment.".to_string()));
+    };
+
+    match idb_factory {
+        Ok(Some(db)) => Ok(db),
+        Ok(None) => Err(InitDbError::NotSupported(
+            if global.dyn_ref::<Window>().is_some() {
+                "IndexedDB not supported in window context"
+            } else {
+                "IndexedDB not supported in worker context"
+            }
+            .to_string(),
+        )),
+        Err(e) => Err(InitDbError::NotSupported(stringify_js_error(&e))),
+    }
 }
 
 /// Internal events.

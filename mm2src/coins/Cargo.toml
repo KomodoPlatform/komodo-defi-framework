@@ -42,7 +42,7 @@ crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
 ed25519-dalek = "1.0.1"
-enum_from = { path = "../derives/enum_from" }
+enum_derives = { path = "../derives/enum_derives" }
 ethabi = { version = "17.0.0" }
 ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
@@ -121,6 +121,7 @@ spl-token = { version = "3", optional = true }
 spl-associated-token-account = { version = "1", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+instant = "0.1.12"
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
 mm2_metamask = { path = "../mm2_metamask" }
@@ -137,6 +138,7 @@ hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
+instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 lightning = "0.0.113"
 lightning-background-processor = "0.0.113"
 lightning-invoice = { version = "0.21.0", features = ["serde"] }
