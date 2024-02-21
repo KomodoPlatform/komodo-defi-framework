@@ -60,23 +60,24 @@ impl EthCoin {
     }
 }
 
+#[allow(dead_code)]
 impl EthCoin {
     /// Get list of available accounts.
-    pub async fn accounts(&self) -> Result<Vec<Address>, web3::Error> {
+    pub(crate) async fn accounts(&self) -> Result<Vec<Address>, web3::Error> {
         self.try_rpc_send("eth_accounts", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Get current block number
-    pub async fn block_number(&self) -> Result<U64, web3::Error> {
+    pub(crate) async fn block_number(&self) -> Result<U64, web3::Error> {
         self.try_rpc_send("eth_blockNumber", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Call a constant method of contract without changing the state of the blockchain.
-    pub async fn call(&self, req: CallRequest, block: Option<BlockId>) -> Result<Bytes, web3::Error> {
+    pub(crate) async fn call(&self, req: CallRequest, block: Option<BlockId>) -> Result<Bytes, web3::Error> {
         let req = helpers::serialize(&req);
         let block = helpers::serialize(&block.unwrap_or_else(|| BlockNumber::Latest.into()));
 
@@ -86,14 +87,14 @@ impl EthCoin {
     }
 
     /// Get coinbase address
-    pub async fn coinbase(&self) -> Result<Address, web3::Error> {
+    pub(crate) async fn coinbase(&self) -> Result<Address, web3::Error> {
         self.try_rpc_send("eth_coinbase", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Compile LLL
-    pub async fn compile_lll(&self, code: String) -> Result<Bytes, web3::Error> {
+    pub(crate) async fn compile_lll(&self, code: String) -> Result<Bytes, web3::Error> {
         let code = helpers::serialize(&code);
         self.try_rpc_send("eth_compileLLL", vec![code])
             .await
@@ -101,7 +102,7 @@ impl EthCoin {
     }
 
     /// Compile Solidity
-    pub async fn compile_solidity(&self, code: String) -> Result<Bytes, web3::Error> {
+    pub(crate) async fn compile_solidity(&self, code: String) -> Result<Bytes, web3::Error> {
         let code = helpers::serialize(&code);
         self.try_rpc_send("eth_compileSolidity", vec![code])
             .await
@@ -109,7 +110,7 @@ impl EthCoin {
     }
 
     /// Compile Serpent
-    pub async fn compile_serpent(&self, code: String) -> Result<Bytes, web3::Error> {
+    pub(crate) async fn compile_serpent(&self, code: String) -> Result<Bytes, web3::Error> {
         let code = helpers::serialize(&code);
         self.try_rpc_send("eth_compileSerpent", vec![code])
             .await
@@ -117,7 +118,7 @@ impl EthCoin {
     }
 
     /// Call a contract without changing the state of the blockchain to estimate gas usage.
-    pub async fn estimate_gas(&self, req: CallRequest, block: Option<BlockNumber>) -> Result<U256, web3::Error> {
+    pub(crate) async fn estimate_gas(&self, req: CallRequest, block: Option<BlockNumber>) -> Result<U256, web3::Error> {
         let req = helpers::serialize(&req);
 
         let args = match block {
@@ -131,7 +132,7 @@ impl EthCoin {
     }
 
     /// Get current recommended gas price
-    pub async fn gas_price(&self) -> Result<U256, web3::Error> {
+    pub(crate) async fn gas_price(&self) -> Result<U256, web3::Error> {
         self.try_rpc_send("eth_gasPrice", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
@@ -139,7 +140,7 @@ impl EthCoin {
 
     /// Returns a collection of historical gas information. This can be used for evaluating the max_fee_per_gas
     /// and max_priority_fee_per_gas to send the future transactions.
-    pub async fn fee_history(
+    pub(crate) async fn fee_history(
         &self,
         block_count: U256,
         newest_block: BlockNumber,
@@ -155,7 +156,7 @@ impl EthCoin {
     }
 
     /// Get balance of given address
-    pub async fn balance(&self, address: Address, block: Option<BlockNumber>) -> Result<U256, web3::Error> {
+    pub(crate) async fn balance(&self, address: Address, block: Option<BlockNumber>) -> Result<U256, web3::Error> {
         let address = helpers::serialize(&address);
         let block = helpers::serialize(&block.unwrap_or(BlockNumber::Latest));
 
@@ -165,7 +166,7 @@ impl EthCoin {
     }
 
     /// Get all logs matching a given filter object
-    pub async fn logs(&self, filter: Filter) -> Result<Vec<Log>, web3::Error> {
+    pub(crate) async fn logs(&self, filter: Filter) -> Result<Vec<Log>, web3::Error> {
         let filter = helpers::serialize(&filter);
         self.try_rpc_send("eth_getLogs", vec![filter])
             .await
@@ -173,7 +174,7 @@ impl EthCoin {
     }
 
     /// Get block details with transaction hashes.
-    pub async fn block(&self, block: BlockId) -> Result<Option<Block<H256>>, web3::Error> {
+    pub(crate) async fn block(&self, block: BlockId) -> Result<Option<Block<H256>>, web3::Error> {
         let include_txs = helpers::serialize(&false);
 
         let result = match block {
@@ -191,7 +192,7 @@ impl EthCoin {
     }
 
     /// Get block details with full transaction objects.
-    pub async fn block_with_txs(&self, block: BlockId) -> Result<Option<Block<Transaction>>, web3::Error> {
+    pub(crate) async fn block_with_txs(&self, block: BlockId) -> Result<Option<Block<Transaction>>, web3::Error> {
         let include_txs = helpers::serialize(&true);
 
         let result = match block {
@@ -209,7 +210,7 @@ impl EthCoin {
     }
 
     /// Get number of transactions in block
-    pub async fn block_transaction_count(&self, block: BlockId) -> Result<Option<U256>, web3::Error> {
+    pub(crate) async fn block_transaction_count(&self, block: BlockId) -> Result<Option<U256>, web3::Error> {
         let result = match block {
             BlockId::Hash(hash) => {
                 let hash = helpers::serialize(&hash);
@@ -226,7 +227,7 @@ impl EthCoin {
     }
 
     /// Get code under given address
-    pub async fn code(&self, address: Address, block: Option<BlockNumber>) -> Result<Bytes, web3::Error> {
+    pub(crate) async fn code(&self, address: Address, block: Option<BlockNumber>) -> Result<Bytes, web3::Error> {
         let address = helpers::serialize(&address);
         let block = helpers::serialize(&block.unwrap_or(BlockNumber::Latest));
 
@@ -236,14 +237,14 @@ impl EthCoin {
     }
 
     /// Get supported compilers
-    pub async fn compilers(&self) -> Result<Vec<String>, web3::Error> {
+    pub(crate) async fn compilers(&self) -> Result<Vec<String>, web3::Error> {
         self.try_rpc_send("eth_getCompilers", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Get chain id
-    pub async fn chain_id(&self) -> Result<U256, web3::Error> {
+    pub(crate) async fn chain_id(&self) -> Result<U256, web3::Error> {
         self.try_rpc_send("eth_chainId", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
@@ -252,14 +253,14 @@ impl EthCoin {
     /// Get available user accounts. This method is only available in the browser. With MetaMask,
     /// this will cause the popup that prompts the user to allow or deny access to their accounts
     /// to your app.
-    pub async fn request_accounts(&self) -> Result<Vec<Address>, web3::Error> {
+    pub(crate) async fn request_accounts(&self) -> Result<Vec<Address>, web3::Error> {
         self.try_rpc_send("eth_requestAccounts", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Get storage entry
-    pub async fn storage(&self, address: Address, idx: U256, block: Option<BlockNumber>) -> Result<H256, web3::Error> {
+    pub(crate) async fn storage(&self, address: Address, idx: U256, block: Option<BlockNumber>) -> Result<H256, web3::Error> {
         let address = helpers::serialize(&address);
         let idx = helpers::serialize(&idx);
         let block = helpers::serialize(&block.unwrap_or(BlockNumber::Latest));
@@ -270,7 +271,7 @@ impl EthCoin {
     }
 
     /// Get nonce
-    pub async fn transaction_count(&self, address: Address, block: Option<BlockNumber>) -> Result<U256, web3::Error> {
+    pub(crate) async fn transaction_count(&self, address: Address, block: Option<BlockNumber>) -> Result<U256, web3::Error> {
         let address = helpers::serialize(&address);
         let block = helpers::serialize(&block.unwrap_or(BlockNumber::Latest));
 
@@ -280,7 +281,7 @@ impl EthCoin {
     }
 
     /// Get transaction
-    pub async fn transaction(&self, id: TransactionId) -> Result<Option<Transaction>, web3::Error> {
+    pub(crate) async fn transaction(&self, id: TransactionId) -> Result<Option<Transaction>, web3::Error> {
         let result = match id {
             TransactionId::Hash(hash) => {
                 let hash = helpers::serialize(&hash);
@@ -302,7 +303,7 @@ impl EthCoin {
     }
 
     /// Get transaction receipt
-    pub async fn transaction_receipt(&self, hash: H256) -> Result<Option<TransactionReceipt>, web3::Error> {
+    pub(crate) async fn transaction_receipt(&self, hash: H256) -> Result<Option<TransactionReceipt>, web3::Error> {
         let hash = helpers::serialize(&hash);
 
         self.try_rpc_send("eth_getTransactionReceipt", vec![hash])
@@ -311,49 +312,49 @@ impl EthCoin {
     }
 
     /// Get work package
-    pub async fn work(&self) -> Result<Work, web3::Error> {
+    pub(crate) async fn work(&self) -> Result<Work, web3::Error> {
         self.try_rpc_send("eth_getWork", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Get hash rate
-    pub async fn hashrate(&self) -> Result<U256, web3::Error> {
+    pub(crate) async fn hashrate(&self) -> Result<U256, web3::Error> {
         self.try_rpc_send("eth_hashrate", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Get mining status
-    pub async fn mining(&self) -> Result<bool, web3::Error> {
+    pub(crate) async fn mining(&self) -> Result<bool, web3::Error> {
         self.try_rpc_send("eth_mining", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Start new block filter
-    pub async fn new_block_filter(&self) -> Result<U256, web3::Error> {
+    pub(crate) async fn new_block_filter(&self) -> Result<U256, web3::Error> {
         self.try_rpc_send("eth_newBlockFilter", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Start new pending transaction filter
-    pub async fn new_pending_transaction_filter(&self) -> Result<U256, web3::Error> {
+    pub(crate) async fn new_pending_transaction_filter(&self) -> Result<U256, web3::Error> {
         self.try_rpc_send("eth_newPendingTransactionFilter", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Start new pending transaction filter
-    pub async fn protocol_version(&self) -> Result<String, web3::Error> {
+    pub(crate) async fn protocol_version(&self) -> Result<String, web3::Error> {
         self.try_rpc_send("eth_protocolVersion", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Sends a rlp-encoded signed transaction
-    pub async fn send_raw_transaction(&self, rlp: Bytes) -> Result<H256, web3::Error> {
+    pub(crate) async fn send_raw_transaction(&self, rlp: Bytes) -> Result<H256, web3::Error> {
         let rlp = helpers::serialize(&rlp);
         self.try_rpc_send("eth_sendRawTransaction", vec![rlp])
             .await
@@ -361,7 +362,7 @@ impl EthCoin {
     }
 
     /// Sends a transaction transaction
-    pub async fn send_transaction(&self, tx: TransactionRequest) -> Result<H256, web3::Error> {
+    pub(crate) async fn send_transaction(&self, tx: TransactionRequest) -> Result<H256, web3::Error> {
         let tx = helpers::serialize(&tx);
         self.try_rpc_send("eth_sendTransaction", vec![tx])
             .await
@@ -369,7 +370,7 @@ impl EthCoin {
     }
 
     /// Signs a hash of given data
-    pub async fn sign(&self, address: Address, data: Bytes) -> Result<H520, web3::Error> {
+    pub(crate) async fn sign(&self, address: Address, data: Bytes) -> Result<H520, web3::Error> {
         let address = helpers::serialize(&address);
         let data = helpers::serialize(&data);
         self.try_rpc_send("eth_sign", vec![address, data])
@@ -378,7 +379,7 @@ impl EthCoin {
     }
 
     /// Submit hashrate of external miner
-    pub async fn submit_hashrate(&self, rate: U256, id: H256) -> Result<bool, web3::Error> {
+    pub(crate) async fn submit_hashrate(&self, rate: U256, id: H256) -> Result<bool, web3::Error> {
         let rate = helpers::serialize(&rate);
         let id = helpers::serialize(&id);
         self.try_rpc_send("eth_submitHashrate", vec![rate, id])
@@ -387,7 +388,7 @@ impl EthCoin {
     }
 
     /// Submit work of external miner
-    pub async fn submit_work(&self, nonce: H64, pow_hash: H256, mix_hash: H256) -> Result<bool, web3::Error> {
+    pub(crate) async fn submit_work(&self, nonce: H64, pow_hash: H256, mix_hash: H256) -> Result<bool, web3::Error> {
         let nonce = helpers::serialize(&nonce);
         let pow_hash = helpers::serialize(&pow_hash);
         let mix_hash = helpers::serialize(&mix_hash);
@@ -397,14 +398,14 @@ impl EthCoin {
     }
 
     /// Get syncing status
-    pub async fn syncing(&self) -> Result<SyncState, web3::Error> {
+    pub(crate) async fn syncing(&self) -> Result<SyncState, web3::Error> {
         self.try_rpc_send("eth_syncing", vec![])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
     /// Returns the account- and storage-values of the specified account including the Merkle-proof.
-    pub async fn proof(
+    pub(crate) async fn proof(
         &self,
         address: Address,
         keys: Vec<U256>,
@@ -418,7 +419,7 @@ impl EthCoin {
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
-    pub async fn eth_fee_history(
+    pub(crate) async fn eth_fee_history(
         &self,
         count: U256,
         block: BlockNumber,
@@ -437,7 +438,7 @@ impl EthCoin {
     /// Return traces matching the given filter
     ///
     /// See [TraceFilterBuilder](../types/struct.TraceFilterBuilder.html)
-    pub async fn trace_filter(&self, filter: TraceFilter) -> Result<Vec<Trace>, web3::Error> {
+    pub(crate) async fn trace_filter(&self, filter: TraceFilter) -> Result<Vec<Trace>, web3::Error> {
         let filter = helpers::serialize(&filter);
 
         self.try_rpc_send("trace_filter", vec![filter])
