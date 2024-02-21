@@ -101,11 +101,7 @@ impl Transport for Web3Transport {
             }
             .await;
 
-            if result.is_ok() {
-                selfi.set_last_request_failed(false);
-            } else {
-                selfi.set_last_request_failed(true);
-            }
+            selfi.set_last_request_failed(result.is_err());
 
             result
         };
