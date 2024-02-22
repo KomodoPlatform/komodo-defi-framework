@@ -157,6 +157,10 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
     }
 }
 
+/// Represents the result of activating an Ethereum-based coin along with its associated tokens (ERC20 and NFTs).
+///
+/// This structure provides a snapshot of the relevant activation data, including the current blockchain block,
+/// information about Ethereum addresses and their balances, ERC-20 token balances, and a summary of NFT ownership.
 #[derive(Serialize)]
 pub struct EthWithTokensActivationResult {
     current_block: u64,

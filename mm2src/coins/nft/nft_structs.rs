@@ -140,7 +140,7 @@ impl ConvertChain for Chain {
             "ETH" | "eth" => Ok(Chain::Eth),
             "FTM" | "ftm" => Ok(Chain::Fantom),
             "MATIC" | "matic" => Ok(Chain::Polygon),
-            _ => MmError::err(ParseChainTypeError::Coin),
+            _ => MmError::err(ParseChainTypeError::UnsupportedChainType),
         }
     }
 
@@ -164,7 +164,7 @@ impl ConvertChain for Chain {
             "NFT_ETH" => Ok(Chain::Eth),
             "NFT_FTM" => Ok(Chain::Fantom),
             "NFT_MATIC" => Ok(Chain::Polygon),
-            _ => MmError::err(ParseChainTypeError::Nft),
+            _ => MmError::err(ParseChainTypeError::UnsupportedChainType),
         }
     }
 }
@@ -194,7 +194,7 @@ impl FromStr for Chain {
             "ETH" | "eth" => Ok(Chain::Eth),
             "FANTOM" | "fantom" => Ok(Chain::Fantom),
             "POLYGON" | "polygon" => Ok(Chain::Polygon),
-            _ => Err(ParseChainTypeError::Chain),
+            _ => Err(ParseChainTypeError::UnsupportedChainType),
         }
     }
 }
@@ -813,7 +813,7 @@ pub struct ClearNftDbReq {
 }
 
 /// Represents detailed information about a Non-Fungible Token (NFT).
-/// This struct is used to keep info about NFTs owned by user in global Non Fungible Token.
+/// This struct is used to keep info about NFTs owned by user in global Non-Fungible Token.
 #[derive(Clone, Debug, Serialize)]
 pub struct NftInfo {
     /// The address of the NFT token.
