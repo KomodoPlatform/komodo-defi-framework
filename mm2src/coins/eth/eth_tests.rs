@@ -2,6 +2,7 @@ use super::*;
 use crate::{DexFee, IguanaPrivKey};
 use common::{block_on, now_sec};
 use crypto::privkey::key_pair_from_seed;
+#[cfg(not(target_arch = "wasm32"))]
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODE, ETH_DEV_NODES,
@@ -158,6 +159,7 @@ fn eth_coin_from_keypair(
     (ctx, eth_coin)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn fill_eth(to_addr: Address, amount: f64) {
     let wei_per_eth: u64 = 1_000_000_000_000_000_000;
     let amount_in_wei = (amount * wei_per_eth as f64) as u64;
@@ -465,6 +467,7 @@ fn test_gas_station() {
     assert_eq!(expected_eth_polygon, res_polygon);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_withdraw_impl_manual_fee() {
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None);

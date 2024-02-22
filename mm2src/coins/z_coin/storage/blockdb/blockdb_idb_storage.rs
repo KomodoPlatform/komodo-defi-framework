@@ -151,10 +151,7 @@ impl BlockDbImpl {
             }
         }
 
-        Ok(blocks
-            .last()
-            .map(|(_, block)| u32::from(block.height))
-            .unwrap_or_default() as usize)
+        Ok(blocks.last().map(|(_, block)| block.height).unwrap_or_default() as usize)
     }
 
     #[allow(unused)]
