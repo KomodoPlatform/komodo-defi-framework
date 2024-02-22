@@ -7,7 +7,7 @@ use instant::Instant;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
-use v2_activation::web3_transport::websocket_transport::WebsocketTransport;
+use web3_transport::websocket_transport::WebsocketTransport;
 
 #[derive(Clone, Debug, Deserialize, Display, EnumFromTrait, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -440,7 +440,7 @@ async fn build_web3_instances(
 
                 Web3Transport::Websocket(websocket_transport)
             },
-            _ => {
+            Some("http") | Some("https") => {
                 let node = HttpTransportNode {
                     uri,
                     gui_auth: eth_node.gui_auth,
@@ -453,6 +453,11 @@ async fn build_web3_instances(
                     node,
                     event_handlers.clone(),
                 )
+            },
+            _ => {
+                return MmError::err(EthActivationV2Error::InvalidPayload(format!(
+                    "Invalid node address '{uri}'. Only http(s) and ws(s) nodes are supported"
+                )));
             },
         };
 

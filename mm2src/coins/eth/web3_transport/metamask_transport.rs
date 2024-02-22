@@ -66,10 +66,7 @@ impl MetamaskTransport {
     async fn send_impl(&self, id: RequestId, request: Call) -> Result<Json, web3::Error> {
         // Hold the mutex guard until the request is finished.
         let _rpc_lock = self.request_preparation().await?;
-        match self.inner.eip1193.send(id, request).await {
-            Ok(t) => Ok(t),
-            Err(e) => Err(e),
-        }
+        self.inner.eip1193.send(id, request).await
     }
 
     /// Ensures that the MetaMask wallet is targeted to [`EthConfig::chain_id`].

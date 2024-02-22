@@ -12,6 +12,8 @@ use web3::types::{Address, Block, BlockId, BlockNumber, Bytes, CallRequest, FeeH
                   H520, H64, U256, U64};
 use web3::{helpers, Transport};
 
+pub(crate) const ETH_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
 impl EthCoin {
     async fn try_rpc_send(&self, method: &str, params: Vec<jsonrpc_core::Value>) -> Result<Value, web3::Error> {
         let mut clients = self.web3_instances.lock().await;
@@ -27,7 +29,7 @@ impl EthCoin {
                 Web3Transport::Metamask(metamask) => metamask.execute(method, params.clone()),
             };
 
-            match execute_fut.timeout(Duration::from_secs(15)).await {
+            match execute_fut.timeout(ETH_RPC_REQUEST_TIMEOUT).await {
                 Ok(Ok(r)) => {
                     // Bring the live client to the front of rpc_clients
                     clients.rotate_left(i);

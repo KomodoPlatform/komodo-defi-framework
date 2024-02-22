@@ -21,6 +21,7 @@
 //  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
 //
 use super::eth::Action::{Call, Create};
+use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_structs::{ContractType, ConvertChain, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
@@ -2535,7 +2536,7 @@ impl RpcCommonOps for EthCoin {
                 .web3
                 .web3()
                 .client_version()
-                .timeout(Duration::from_secs(15))
+                .timeout(ETH_RPC_REQUEST_TIMEOUT)
                 .await
             {
                 Ok(Ok(_)) => {
@@ -5738,10 +5739,16 @@ pub async fn eth_coin_from_conf_and_request(
 
                 Web3Transport::Websocket(websocket_transport)
             },
-            _ => {
+            Some("http") | Some("https") => {
                 let node = HttpTransportNode { uri, gui_auth: false };
 
                 Web3Transport::new_http_with_event_handlers(node, event_handlers.clone())
+            },
+            _ => {
+                return ERR!(
+                    "Invalid node address '{}'. Only http(s) and ws(s) nodes are supported",
+                    uri
+                );
             },
         };
 
