@@ -246,12 +246,6 @@ impl PlatformWithTokensActivationOps for EthCoin {
         activation_request: &Self::ActivationRequest,
         nft_global: &Option<MmCoinEnum>,
     ) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {
-        let nfts_map = if let Some(MmCoinEnum::EthCoin(nft_global)) = nft_global {
-            nft_global.nfts_infos.lock().await.clone()
-        } else {
-            Default::default()
-        };
-
         let current_block = self
             .current_block()
             .compat()
@@ -273,6 +267,12 @@ impl PlatformWithTokensActivationOps for EthCoin {
             pubkey,
             balances: None,
             tickers: None,
+        };
+
+        let nfts_map = if let Some(MmCoinEnum::EthCoin(nft_global)) = nft_global {
+            nft_global.nfts_infos.lock().await.clone()
+        } else {
+            Default::default()
         };
 
         if !activation_request.get_balances {
