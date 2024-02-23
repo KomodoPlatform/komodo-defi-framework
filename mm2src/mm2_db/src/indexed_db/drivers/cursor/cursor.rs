@@ -279,10 +279,10 @@ impl CursorDriver {
         }
     }
 
-    /// Continues the cursor according to the provided `CursorAction`. If the action
-    /// is `CursorAction::Continue`, the cursor advances to the next item. If the action is
-    /// `CursorAction::ContinueWithValue`, the cursor advances to the specified value. If the
-    /// action is `CursorAction::Stop`, the cursor is stopped, and subsequent calls to `next`
+    /// Continues the cursor according to the provided `CursorAction`.
+    /// If the action is `CursorAction::Continue`, the cursor advances to the next item.
+    /// If the action is `CursorAction::ContinueWithValue`, the cursor advances to the specified value.
+    /// If the action is `CursorAction::Stop`, the cursor is stopped, and subsequent calls to `next`
     /// will return `None`.
     async fn continue_(&mut self, cursor: &IdbCursorWithValue, cursor_action: &CursorAction) -> CursorResult<()> {
         match cursor_action {
