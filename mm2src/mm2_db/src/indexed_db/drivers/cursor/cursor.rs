@@ -84,17 +84,25 @@ pub enum CursorBoundValue {
     BigUint(BeBigUint),
 }
 
+/// Represents criteria for filtering and refining results when using database cursors.
 #[derive(Default)]
 pub struct CursorFilters {
+    /// Specifies key-value pairs to filter results by.
     pub(crate) only_keys: Vec<(String, Json)>,
+    /// Specifies range filters for keys..
     pub(crate) bound_keys: Vec<(String, CursorBoundValue, CursorBoundValue)>,
+    /// Indicates whether to sort results in reverse order.
     pub(crate) reverse: bool,
 }
 
+/// Provides extended filtering options for cursor-based queries.
 #[derive(Default)]
 pub struct CursorFiltersExt {
+    /// An optional filter expression.
     pub(crate) where_: Option<CursorCondition>,
+    /// The maximum number of results to return.
     pub(crate) limit: Option<usize>,
+    /// The number of results to skip before returning.
     pub(crate) offset: Option<u32>,
 }
 
