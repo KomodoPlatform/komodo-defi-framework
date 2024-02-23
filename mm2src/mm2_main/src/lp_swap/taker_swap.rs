@@ -19,8 +19,8 @@ use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
             FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee,
-            TradePreimageValue, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
+            RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash,
+            TradeFee, TradePreimageValue, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -1001,9 +1001,7 @@ impl TakerSwap {
             dex_fee_amount_from_taker_coin(self.taker_coin.deref(), self.maker_coin.ticker(), &self.taker_amount);
         let preimage_value = TradePreimageValue::Exact(self.taker_amount.to_decimal());
 
-        let fee_to_send_dex_fee_fut = self
-            .taker_coin
-            .get_fee_to_send_taker_fee(dex_fee.clone(), stage.clone());
+        let fee_to_send_dex_fee_fut = self.taker_coin.get_fee_to_send_taker_fee(dex_fee.clone(), stage);
         let fee_to_send_dex_fee = match fee_to_send_dex_fee_fut.await {
             Ok(fee) => fee,
             Err(e) => {
@@ -1012,7 +1010,7 @@ impl TakerSwap {
                 )]))
             },
         };
-        let get_sender_trade_fee_fut = self.taker_coin.get_sender_trade_fee(preimage_value, stage.clone());
+        let get_sender_trade_fee_fut = self.taker_coin.get_sender_trade_fee(preimage_value, stage);
         let taker_payment_trade_fee = match get_sender_trade_fee_fut.await {
             Ok(fee) => fee,
             Err(e) => {
@@ -1021,7 +1019,7 @@ impl TakerSwap {
                 )]))
             },
         };
-        let maker_payment_spend_trade_fee_fut = self.maker_coin.get_receiver_trade_fee(stage.clone());
+        let maker_payment_spend_trade_fee_fut = self.maker_coin.get_receiver_trade_fee(stage);
         let maker_payment_spend_trade_fee = match maker_payment_spend_trade_fee_fut.compat().await {
             Ok(fee) => fee,
             Err(e) => {
@@ -1439,7 +1437,7 @@ impl TakerSwap {
             unique_swap_data: self.unique_swap_data(),
             watcher_reward,
         };
-        let validated = self.maker_coin.validate_maker_payment(validate_input).compat().await;
+        let validated = self.maker_coin.validate_maker_payment(validate_input).await;
 
         if let Err(e) = validated {
             return Ok((Some(TakerSwapCommand::Finish), vec![
@@ -1888,7 +1886,9 @@ impl TakerSwap {
                 payment_tx: &taker_payment,
                 time_lock: locktime,
                 other_pubkey: other_taker_coin_htlc_pub.as_slice(),
-                secret_hash: &secret_hash,
+                tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                    maker_secret_hash: &secret_hash,
+                },
                 swap_contract_address: &swap_contract_address,
                 swap_unique_data: &self.unique_swap_data(),
                 watcher_reward,
@@ -2253,7 +2253,9 @@ impl TakerSwap {
                     payment_tx: &taker_payment,
                     time_lock: taker_payment_lock,
                     other_pubkey: other_taker_coin_htlc_pub.as_slice(),
-                    secret_hash: &secret_hash,
+                    tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                        maker_secret_hash: secret_hash.as_slice(),
+                    },
                     swap_contract_address: &taker_coin_swap_contract_address,
                     swap_unique_data: &unique_data,
                     watcher_reward,
@@ -2341,10 +2343,10 @@ impl AtomicSwap for TakerSwap {
 }
 
 pub struct TakerSwapPreparedParams {
-    dex_fee: MmNumber,
-    fee_to_send_dex_fee: TradeFee,
-    taker_payment_trade_fee: TradeFee,
-    maker_payment_spend_trade_fee: TradeFee,
+    pub(super) dex_fee: MmNumber,
+    pub(super) fee_to_send_dex_fee: TradeFee,
+    pub(super) taker_payment_trade_fee: TradeFee,
+    pub(super) maker_payment_spend_trade_fee: TradeFee,
 }
 
 pub async fn check_balance_for_taker_swap(
@@ -2361,12 +2363,12 @@ pub async fn check_balance_for_taker_swap(
         None => {
             let dex_fee = dex_fee_amount_from_taker_coin(my_coin, other_coin.ticker(), &volume);
             let fee_to_send_dex_fee = my_coin
-                .get_fee_to_send_taker_fee(dex_fee.clone(), stage.clone())
+                .get_fee_to_send_taker_fee(dex_fee.clone(), stage)
                 .await
                 .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
             let preimage_value = TradePreimageValue::Exact(volume.to_decimal());
             let taker_payment_trade_fee = my_coin
-                .get_sender_trade_fee(preimage_value, stage.clone())
+                .get_sender_trade_fee(preimage_value, stage)
                 .await
                 .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
             let maker_payment_spend_trade_fee = other_coin
@@ -2455,17 +2457,17 @@ pub async fn taker_swap_trade_preimage(
     };
 
     let fee_to_send_taker_fee = my_coin
-        .get_fee_to_send_taker_fee(dex_amount.clone(), stage.clone())
+        .get_fee_to_send_taker_fee(dex_amount.clone(), stage)
         .await
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, my_coin_ticker))?;
 
     let preimage_value = TradePreimageValue::Exact(my_coin_volume.to_decimal());
     let my_coin_trade_fee = my_coin
-        .get_sender_trade_fee(preimage_value, stage.clone())
+        .get_sender_trade_fee(preimage_value, stage)
         .await
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, my_coin_ticker))?;
     let other_coin_trade_fee = other_coin
-        .get_receiver_trade_fee(stage.clone())
+        .get_receiver_trade_fee(stage)
         .compat()
         .await
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, other_coin_ticker))?;
@@ -2586,7 +2588,7 @@ pub async fn calc_max_taker_vol(
     let max_possible = &balance - &locked;
     let preimage_value = TradePreimageValue::UpperBound(max_possible.to_decimal());
     let max_trade_fee = coin
-        .get_sender_trade_fee(preimage_value, stage.clone())
+        .get_sender_trade_fee(preimage_value, stage)
         .await
         .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin))?;
 

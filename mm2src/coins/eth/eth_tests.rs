@@ -1,12 +1,11 @@
 use super::*;
 use crate::{DexFee, IguanaPrivKey};
-use common::{block_on, now_sec, wait_until_sec};
+use common::{block_on, now_sec};
 use crypto::privkey::key_pair_from_seed;
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODE, ETH_DEV_NODES,
-                                   ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE,
-                                   ETH_MAINNET_SWAP_CONTRACT},
+                                   ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE},
                        get_passphrase};
 use mocktopus::mocking::*;
 
@@ -167,15 +166,6 @@ pub fn fill_eth(to_addr: Address, amount: f64) {
         .unwrap();
 }
 
-pub fn fill_jst(to_addr: Address, amount: f64) {
-    let wei_per_jst: u64 = 1_000_000_000_000_000_000;
-    let amount_in_wei = (amount * wei_per_jst as f64) as u64;
-    JST_DISTRIBUTOR
-        .send_to_address(to_addr, amount_in_wei.into())
-        .wait()
-        .unwrap();
-}
-
 #[test]
 /// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-55.md#test-cases
 fn test_check_sum_address() {
@@ -301,185 +291,6 @@ fn test_wei_from_big_decimal() {
     let wei = wei_from_big_decimal(&amount, 1).unwrap();
     let expected_wei: U256 = 12341u64.into();
     assert_eq!(expected_wei, wei);
-}
-
-#[test]
-fn send_and_refund_erc20_payment() {
-    let key_pair = Random.generate().unwrap();
-    fill_eth(key_pair.address(), 0.001);
-    fill_jst(key_pair.address(), 0.0001);
-
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
-    let web3 = Web3::new(transport);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = EthCoin(Arc::new(EthCoinImpl {
-        ticker: "ETH".into(),
-        coin_type: EthCoinType::Erc20 {
-            platform: "ETH".to_string(),
-            token_addr: Address::from_str(ETH_DEV_TOKEN_CONTRACT).unwrap(),
-        },
-        my_address: key_pair.address(),
-        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        priv_key_policy: key_pair.into(),
-        swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
-        fallback_swap_contract: None,
-        contract_supports_watchers: false,
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: false,
-        }],
-        web3,
-        decimals: 18,
-        gas_station_url: None,
-        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
-        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
-        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
-        ctx: ctx.weak(),
-        required_confirmations: 1.into(),
-        chain_id: None,
-        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        nonce_lock: new_nonce_lock(),
-        erc20_tokens_infos: Default::default(),
-        abortable_system: AbortableQueue::default(),
-    }));
-
-    let time_lock = now_sec() - 200;
-    let secret_hash = &[1; 20];
-    let maker_payment_args = SendPaymentArgs {
-        time_lock_duration: 0,
-        time_lock,
-        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
-        secret_hash,
-        amount: "0.0001".parse().unwrap(),
-        swap_contract_address: &coin.swap_contract_address(),
-        swap_unique_data: &[],
-        payment_instructions: &None,
-        watcher_reward: None,
-        wait_for_confirmation_until: wait_until_sec(15),
-    };
-    let payment = coin.send_maker_payment(maker_payment_args).wait().unwrap();
-    log!("{:?}", payment);
-
-    let swap_id = coin.etomic_swap_id(time_lock.try_into().unwrap(), secret_hash);
-    let status = block_on(
-        coin.payment_status(
-            Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
-            Token::FixedBytes(swap_id.clone()),
-        )
-        .compat(),
-    )
-    .unwrap();
-    assert_eq!(status, U256::from(PaymentState::Sent as u8));
-
-    let maker_refunds_payment_args = RefundPaymentArgs {
-        payment_tx: &payment.tx_hex(),
-        time_lock,
-        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
-        secret_hash,
-        swap_contract_address: &coin.swap_contract_address(),
-        swap_unique_data: &[],
-        watcher_reward: false,
-    };
-    let refund = block_on(coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
-    log!("{:?}", refund);
-
-    let status = block_on(
-        coin.payment_status(
-            Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
-            Token::FixedBytes(swap_id),
-        )
-        .compat(),
-    )
-    .unwrap();
-    assert_eq!(status, U256::from(PaymentState::Refunded as u8));
-}
-
-#[test]
-fn send_and_refund_eth_payment() {
-    let key_pair = Random.generate().unwrap();
-    fill_eth(key_pair.address(), 0.001);
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
-    let web3 = Web3::new(transport);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = EthCoin(Arc::new(EthCoinImpl {
-        ticker: "ETH".into(),
-        coin_type: EthCoinType::Eth,
-        my_address: key_pair.address(),
-        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        priv_key_policy: key_pair.into(),
-        swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
-        fallback_swap_contract: None,
-        contract_supports_watchers: false,
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: false,
-        }],
-        web3,
-        decimals: 18,
-        gas_station_url: None,
-        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
-        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
-        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
-        ctx: ctx.weak(),
-        required_confirmations: 1.into(),
-        chain_id: None,
-        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        nonce_lock: new_nonce_lock(),
-        erc20_tokens_infos: Default::default(),
-        abortable_system: AbortableQueue::default(),
-    }));
-
-    let time_lock = now_sec() - 200;
-    let secret_hash = &[1; 20];
-    let send_maker_payment_args = SendPaymentArgs {
-        time_lock_duration: 0,
-        time_lock,
-        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
-        secret_hash,
-        amount: "0.0001".parse().unwrap(),
-        swap_contract_address: &coin.swap_contract_address(),
-        swap_unique_data: &[],
-        payment_instructions: &None,
-        watcher_reward: None,
-        wait_for_confirmation_until: 0,
-    };
-    let payment = coin.send_maker_payment(send_maker_payment_args).wait().unwrap();
-
-    log!("{:?}", payment);
-
-    let swap_id = coin.etomic_swap_id(time_lock.try_into().unwrap(), secret_hash);
-    let status = block_on(
-        coin.payment_status(
-            Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
-            Token::FixedBytes(swap_id.clone()),
-        )
-        .compat(),
-    )
-    .unwrap();
-    assert_eq!(status, U256::from(PaymentState::Sent as u8));
-
-    let maker_refunds_payment_args = RefundPaymentArgs {
-        payment_tx: &payment.tx_hex(),
-        time_lock,
-        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
-        secret_hash,
-        swap_contract_address: &coin.swap_contract_address(),
-        swap_unique_data: &[],
-        watcher_reward: false,
-    };
-    let refund = block_on(coin.send_maker_refunds_payment(maker_refunds_payment_args)).unwrap();
-
-    log!("{:?}", refund);
-
-    let status = block_on(
-        coin.payment_status(
-            Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
-            Token::FixedBytes(swap_id),
-        )
-        .compat(),
-    )
-    .unwrap();
-    assert_eq!(status, U256::from(PaymentState::Refunded as u8));
 }
 
 #[test]
@@ -621,81 +432,6 @@ fn test_wait_for_payment_spend_timeout() {
 }
 
 #[test]
-fn test_search_for_swap_tx_spend_was_spent() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
-    )
-    .unwrap();
-    let transport = Web3Transport::single_node(ETH_MAINNET_NODE, false);
-    let web3 = Web3::new(transport);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-
-    let swap_contract_address = Address::from_str(ETH_MAINNET_SWAP_CONTRACT).unwrap();
-    let coin = EthCoin(Arc::new(EthCoinImpl {
-        coin_type: EthCoinType::Eth,
-        decimals: 18,
-        gas_station_url: None,
-        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
-        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
-        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        my_address: key_pair.address(),
-        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        priv_key_policy: key_pair.into(),
-        swap_contract_address,
-        fallback_swap_contract: None,
-        contract_supports_watchers: false,
-        ticker: "ETH".into(),
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: false,
-        }],
-        web3,
-        ctx: ctx.weak(),
-        required_confirmations: 1.into(),
-        chain_id: None,
-        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        nonce_lock: new_nonce_lock(),
-        erc20_tokens_infos: Default::default(),
-        abortable_system: AbortableQueue::default(),
-    }));
-
-    // raw transaction bytes of https://etherscan.io/tx/0x2814718945e90fe4301e2a74eaaa46b4fdbdba1536e1d94e3b0bd665b2dd091d
-    let payment_tx = [
-        248, 241, 1, 133, 8, 158, 68, 19, 192, 131, 2, 73, 240, 148, 36, 171, 228, 199, 31, 198, 88, 201, 19, 19, 182,
-        85, 44, 212, 12, 216, 8, 179, 234, 128, 135, 29, 133, 195, 185, 99, 4, 0, 184, 132, 21, 44, 243, 175, 130, 126,
-        209, 71, 198, 107, 13, 87, 207, 36, 150, 22, 77, 57, 198, 35, 248, 38, 203, 5, 242, 55, 219, 79, 252, 124, 162,
-        67, 251, 160, 210, 247, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 229, 230, 210, 113, 0, 71, 77, 52, 204, 15, 135,
-        238, 56, 119, 86, 57, 80, 25, 1, 156, 70, 83, 37, 132, 127, 196, 109, 164, 129, 132, 149, 187, 70, 120, 38, 83,
-        173, 7, 235, 127, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 99, 54, 210, 77, 38, 160, 254, 78, 202, 143, 121, 136, 202, 110, 251, 121, 110, 25,
-        124, 62, 205, 40, 168, 154, 212, 180, 118, 59, 28, 135, 255, 44, 20, 62, 49, 109, 170, 215, 160, 72, 251, 237,
-        69, 215, 60, 8, 59, 204, 150, 18, 163, 242, 159, 79, 115, 146, 19, 78, 61, 142, 91, 221, 195, 178, 80, 197,
-        162, 242, 179, 182, 235,
-    ];
-
-    // raw transaction bytes of https://etherscan.io/tx/0xe9c2c8126e8b947eb3bbc6008ef9e3880e7c54f5bc5ccdc34ad412c4d271c76b
-    let spend_tx = [
-        249, 1, 10, 4, 133, 8, 154, 252, 216, 0, 131, 2, 73, 240, 148, 36, 171, 228, 199, 31, 198, 88, 201, 19, 19,
-        182, 85, 44, 212, 12, 216, 8, 179, 234, 128, 128, 184, 164, 2, 237, 41, 43, 130, 126, 209, 71, 198, 107, 13,
-        87, 207, 36, 150, 22, 77, 57, 198, 35, 248, 38, 203, 5, 242, 55, 219, 79, 252, 124, 162, 67, 251, 160, 210,
-        247, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 29, 133, 195, 185, 99, 4, 0,
-        50, 250, 104, 200, 70, 202, 119, 58, 239, 14, 250, 118, 21, 252, 240, 40, 50, 95, 151, 187, 141, 226, 240, 198,
-        32, 99, 37, 100, 241, 251, 122, 89, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 82, 6, 91, 85, 191, 21, 5, 181, 176, 40, 104, 25,
-        86, 135, 213, 121, 230, 186, 218, 38, 160, 19, 239, 26, 4, 109, 84, 68, 160, 43, 178, 4, 249, 52, 209, 146, 13,
-        53, 179, 63, 117, 17, 184, 115, 83, 75, 59, 89, 18, 198, 47, 37, 101, 160, 85, 163, 23, 247, 219, 101, 69, 138,
-        8, 152, 81, 205, 76, 253, 225, 123, 167, 12, 147, 151, 215, 248, 198, 91, 254, 47, 99, 203, 102, 5, 212, 217,
-    ];
-    let spend_tx = FoundSwapTxSpend::Spent(signed_eth_tx_from_bytes(&spend_tx).unwrap().into());
-
-    let found_tx =
-        block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, &[0; 20], 15643279, false))
-            .unwrap()
-            .unwrap();
-    assert_eq!(spend_tx, found_tx);
-}
-
-#[test]
 fn test_gas_station() {
     make_gas_station_request.mock_safe(|_| {
         let data = GasStationData {
@@ -726,87 +462,6 @@ fn test_gas_station() {
 
     let expected_eth_polygon = U256::from(500) * one_gwei;
     assert_eq!(expected_eth_polygon, res_polygon);
-}
-
-#[test]
-fn test_search_for_swap_tx_spend_was_refunded() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
-    )
-    .unwrap();
-    let transport = Web3Transport::single_node(ETH_MAINNET_NODE, false);
-    let web3 = Web3::new(transport);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-
-    let swap_contract_address = Address::from_str(ETH_MAINNET_SWAP_CONTRACT).unwrap();
-    let coin = EthCoin(Arc::new(EthCoinImpl {
-        coin_type: EthCoinType::Erc20 {
-            platform: "ETH".to_string(),
-            token_addr: Address::from_str("0x0D8775F648430679A709E98d2b0Cb6250d2887EF").unwrap(),
-        },
-        decimals: 18,
-        gas_station_url: None,
-        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
-        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
-        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        my_address: key_pair.address(),
-        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        priv_key_policy: key_pair.into(),
-        swap_contract_address,
-        fallback_swap_contract: None,
-        contract_supports_watchers: false,
-        ticker: "BAT".into(),
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: false,
-        }],
-        web3,
-        ctx: ctx.weak(),
-        required_confirmations: 1.into(),
-        chain_id: None,
-        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        nonce_lock: new_nonce_lock(),
-        erc20_tokens_infos: Default::default(),
-        abortable_system: AbortableQueue::default(),
-    }));
-
-    // raw transaction bytes of https://etherscan.io/tx/0x02c261dcb1c8615c029b9abc712712b80ef8c1ef20d2cbcdd9bde859e7913476
-    let payment_tx = [
-        249, 1, 42, 25, 133, 26, 13, 225, 144, 65, 131, 2, 73, 240, 148, 36, 171, 228, 199, 31, 198, 88, 201, 19, 19,
-        182, 85, 44, 212, 12, 216, 8, 179, 234, 128, 128, 184, 196, 155, 65, 91, 42, 22, 125, 52, 19, 176, 17, 106,
-        187, 142, 153, 244, 194, 212, 205, 57, 166, 77, 249, 188, 153, 80, 0, 108, 74, 232, 132, 82, 114, 88, 36, 125,
-        193, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 240, 91, 89, 211, 178, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 135, 117, 246, 72, 67, 6, 121, 167, 9, 233, 141, 43, 12, 182, 37, 13, 40,
-        135, 239, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 18, 103, 159, 197, 230, 51, 138, 82, 9, 138, 176, 149, 190,
-        225, 233, 161, 91, 198, 48, 186, 149, 40, 18, 123, 207, 245, 36, 103, 114, 54, 243, 115, 156, 239, 1, 51, 17,
-        244, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 97, 150, 38, 250, 37, 160, 177, 67, 137, 53, 80, 200, 208, 22, 66, 120, 249, 77, 95, 165, 27,
-        167, 30, 61, 254, 250, 17, 46, 111, 83, 165, 117, 188, 180, 148, 99, 58, 7, 160, 12, 198, 11, 101, 228, 74,
-        229, 5, 50, 87, 185, 28, 16, 35, 182, 55, 163, 141, 135, 255, 195, 44, 130, 37, 145, 39, 90, 98, 131, 205, 110,
-        197,
-    ];
-
-    // raw transaction bytes of https://etherscan.io/tx/0x3ce6a40d7ad41bd24055cf4cdd564d42d2f36095ec8b6180717b4f0a922a97f4
-    let refund_tx = [
-        249, 1, 10, 26, 133, 25, 252, 245, 23, 130, 131, 2, 73, 240, 148, 36, 171, 228, 199, 31, 198, 88, 201, 19, 19,
-        182, 85, 44, 212, 12, 216, 8, 179, 234, 128, 128, 184, 164, 70, 252, 2, 148, 22, 125, 52, 19, 176, 17, 106,
-        187, 142, 153, 244, 194, 212, 205, 57, 166, 77, 249, 188, 153, 80, 0, 108, 74, 232, 132, 82, 114, 88, 36, 125,
-        193, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 240, 91, 89, 211, 178, 0, 0,
-        186, 149, 40, 18, 123, 207, 245, 36, 103, 114, 54, 243, 115, 156, 239, 1, 51, 17, 244, 32, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 135, 117, 246, 72, 67, 6, 121, 167, 9, 233, 141, 43, 12,
-        182, 37, 13, 40, 135, 239, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 18, 103, 159, 197, 230, 51, 138, 82, 9, 138,
-        176, 149, 190, 225, 233, 161, 91, 198, 48, 37, 160, 175, 56, 178, 83, 9, 93, 241, 61, 203, 189, 163, 249, 203,
-        143, 126, 176, 116, 113, 203, 21, 88, 19, 135, 218, 207, 185, 178, 234, 185, 244, 250, 183, 160, 17, 135, 205,
-        189, 131, 59, 111, 198, 16, 171, 98, 33, 59, 51, 31, 161, 162, 89, 71, 50, 160, 165, 114, 149, 47, 219, 82, 29,
-        183, 80, 80, 157,
-    ];
-    let refund_tx = FoundSwapTxSpend::Refunded(signed_eth_tx_from_bytes(&refund_tx).unwrap().into());
-
-    let found_tx =
-        block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, &[0; 20], 13638713, false))
-            .unwrap()
-            .unwrap();
-    assert_eq!(refund_tx, found_tx);
 }
 
 #[test]

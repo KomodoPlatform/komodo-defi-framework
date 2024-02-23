@@ -3,7 +3,7 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
-use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
+use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentResult};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
@@ -19,14 +19,14 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, C
             PaymentInstructionsErr, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest,
             RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
             SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult,
-            SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest};
+            SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TakerSwapMakerCoin, TradeFee, TradePreimageError,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionErr, TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -501,20 +501,22 @@ impl SlpToken {
             .time_lock
             .try_into()
             .map_to_mm(ValidatePaymentError::TimelockOverflow)?;
-        let validate_fut = utxo_common::validate_payment(
+        utxo_common::validate_payment(
             self.platform_coin.clone(),
-            tx,
+            &tx,
             SLP_SWAP_VOUT,
             first_pub,
             htlc_keypair.public(),
-            &input.secret_hash,
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                maker_secret_hash: &input.secret_hash,
+            },
             self.platform_dust_dec(),
             None,
             time_lock,
             wait_until_sec(60),
             input.confirmations,
-        );
-        validate_fut.compat().await
+        )
+        .await
     }
 
     pub async fn refund_htlc(
@@ -1176,7 +1178,7 @@ impl MarketCoinOps for SlpToken {
 
     fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
         utxo_common::wait_for_output_spend(
-            self.platform_coin.as_ref(),
+            self.clone(),
             args.tx_bytes,
             SLP_SWAP_VOUT,
             args.from_block,
@@ -1300,7 +1302,10 @@ impl SwapOps for SlpToken {
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
         let tx = taker_refunds_payment_args.payment_tx.to_owned();
         let maker_pub = try_tx_s!(Public::from_slice(taker_refunds_payment_args.other_pubkey));
-        let secret_hash = taker_refunds_payment_args.secret_hash.to_owned();
+        let secret_hash = match taker_refunds_payment_args.tx_type_with_secret_hash {
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => maker_secret_hash.to_owned(),
+            unsupported => return Err(TransactionErr::Plain(ERRL!("SLP doesn't support {:?}", unsupported))),
+        };
         let htlc_keypair = self.derive_htlc_key_pair(taker_refunds_payment_args.swap_unique_data);
         let time_lock = try_tx_s!(taker_refunds_payment_args.time_lock.try_into());
 
@@ -1314,7 +1319,10 @@ impl SwapOps for SlpToken {
     async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
         let tx = maker_refunds_payment_args.payment_tx.to_owned();
         let taker_pub = try_tx_s!(Public::from_slice(maker_refunds_payment_args.other_pubkey));
-        let secret_hash = maker_refunds_payment_args.secret_hash.to_owned();
+        let secret_hash = match maker_refunds_payment_args.tx_type_with_secret_hash {
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => maker_secret_hash.to_owned(),
+            unsupported => return Err(TransactionErr::Plain(ERRL!("SLP doesn't support {:?}", unsupported))),
+        };
         let htlc_keypair = self.derive_htlc_key_pair(maker_refunds_payment_args.swap_unique_data);
         let time_lock = try_tx_s!(maker_refunds_payment_args.time_lock.try_into());
 
@@ -1345,22 +1353,12 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let coin = self.clone();
-        let fut = async move {
-            coin.validate_htlc(input).await?;
-            Ok(())
-        };
-        Box::new(fut.boxed().compat())
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        self.validate_htlc(input).await
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let coin = self.clone();
-        let fut = async move {
-            coin.validate_htlc(input).await?;
-            Ok(())
-        };
-        Box::new(fut.boxed().compat())
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        self.validate_htlc(input).await
     }
 
     #[inline]
@@ -2243,20 +2241,21 @@ mod slp_tests {
         let my_pub = bch.my_public_key().unwrap();
 
         // standard BCH validation should pass as the output itself is correct
-        utxo_common::validate_payment(
+        block_on(utxo_common::validate_payment(
             bch.clone(),
-            deserialize(payment_tx.as_slice()).unwrap(),
+            &deserialize(payment_tx.as_slice()).unwrap(),
             SLP_SWAP_VOUT,
             my_pub,
             &other_pub,
-            &secret_hash,
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                maker_secret_hash: &secret_hash,
+            },
             fusd.platform_dust_dec(),
             None,
             lock_time,
             wait_until_sec(60),
             1,
-        )
-        .wait()
+        ))
         .unwrap();
 
         let input = ValidatePaymentInput {

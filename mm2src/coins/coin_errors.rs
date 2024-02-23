@@ -7,6 +7,8 @@ use std::num::TryFromIntError;
 
 /// Helper type used as result for swap payment validation function(s)
 pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<ValidatePaymentError>> + Send>;
+/// Helper type used as result for swap payment validation function(s)
+pub type ValidatePaymentResult<T> = Result<T, MmError<ValidatePaymentError>>;
 
 /// Enum covering possible error cases of swap payment validation
 #[derive(Debug, Display)]

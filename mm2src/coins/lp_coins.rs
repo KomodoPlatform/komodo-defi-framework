@@ -60,7 +60,7 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
 use http::{Response, StatusCode};
-use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
+use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix, Public};
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsWeak;
@@ -76,7 +76,7 @@ use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::collections::HashSet;
 use std::fmt;
 use std::future::Future as Future03;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, Deref};
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
@@ -290,8 +290,12 @@ use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 pub mod nft;
 use nft::nft_errors::GetNftInfoError;
+use script::Script;
 
 pub mod z_coin;
+use crate::coin_errors::ValidatePaymentResult;
+use crate::utxo::swap_proto_v2_scripts;
+use crate::utxo::utxo_common::{payment_script, WaitForOutputSpendErr};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -317,8 +321,8 @@ pub type RawTransactionFut<'a> =
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
 /// Helper type used for swap transactions' spend preimage generation result
 pub type GenPreimageResult<Coin> = MmResult<TxPreimageWithSig<Coin>, TxGenError>;
-/// Helper type used for taker funding's validation result
-pub type ValidateTakerFundingResult = MmResult<(), ValidateTakerFundingError>;
+/// Helper type used for swap v2 tx validation result
+pub type ValidateSwapV2TxResult = MmResult<(), ValidateSwapV2TxError>;
 /// Helper type used for taker funding's spend preimage validation result
 pub type ValidateTakerFundingSpendPreimageResult = MmResult<(), ValidateTakerFundingSpendPreimageError>;
 /// Helper type used for taker payment's spend preimage validation result
@@ -822,6 +826,60 @@ pub struct WatcherReward {
     pub send_contract_reward_on_spend: bool,
 }
 
+/// Enum representing possible variants of swap transaction including secret hash(es)
+#[derive(Debug)]
+pub enum SwapTxTypeWithSecretHash<'a> {
+    /// Legacy protocol transaction
+    TakerOrMakerPayment { maker_secret_hash: &'a [u8] },
+    /// Taker funding transaction
+    TakerFunding { taker_secret_hash: &'a [u8] },
+    /// Maker payment v2 (with immediate refund path)
+    MakerPaymentV2 {
+        maker_secret_hash: &'a [u8],
+        taker_secret_hash: &'a [u8],
+    },
+    /// Taker payment v2
+    TakerPaymentV2 { maker_secret_hash: &'a [u8] },
+}
+
+impl<'a> SwapTxTypeWithSecretHash<'a> {
+    pub fn redeem_script(&self, time_lock: u32, my_public: &Public, other_public: &Public) -> Script {
+        match self {
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => {
+                payment_script(time_lock, maker_secret_hash, my_public, other_public)
+            },
+            SwapTxTypeWithSecretHash::TakerFunding { taker_secret_hash } => {
+                swap_proto_v2_scripts::taker_funding_script(time_lock, taker_secret_hash, my_public, other_public)
+            },
+            SwapTxTypeWithSecretHash::MakerPaymentV2 {
+                maker_secret_hash,
+                taker_secret_hash,
+            } => swap_proto_v2_scripts::maker_payment_script(
+                time_lock,
+                maker_secret_hash,
+                taker_secret_hash,
+                my_public,
+                other_public,
+            ),
+            SwapTxTypeWithSecretHash::TakerPaymentV2 { maker_secret_hash } => {
+                swap_proto_v2_scripts::taker_payment_script(time_lock, maker_secret_hash, my_public, other_public)
+            },
+        }
+    }
+
+    pub fn op_return_data(&self) -> Vec<u8> {
+        match self {
+            SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => maker_secret_hash.to_vec(),
+            SwapTxTypeWithSecretHash::TakerFunding { taker_secret_hash } => taker_secret_hash.to_vec(),
+            SwapTxTypeWithSecretHash::MakerPaymentV2 {
+                maker_secret_hash,
+                taker_secret_hash,
+            } => [*maker_secret_hash, *taker_secret_hash].concat(),
+            SwapTxTypeWithSecretHash::TakerPaymentV2 { maker_secret_hash } => maker_secret_hash.to_vec(),
+        }
+    }
+}
+
 /// Helper struct wrapping arguments for [SwapOps::send_taker_payment] and [SwapOps::send_maker_payment].
 #[derive(Clone, Debug)]
 pub struct SendPaymentArgs<'a> {
@@ -867,7 +925,7 @@ pub struct SpendPaymentArgs<'a> {
     pub watcher_reward: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RefundPaymentArgs<'a> {
     pub payment_tx: &'a [u8],
     pub time_lock: u64,
@@ -875,7 +933,7 @@ pub struct RefundPaymentArgs<'a> {
     /// * Taker's pubkey if this structure is used in [`SwapOps::send_maker_refunds_payment`].
     /// * Maker's pubkey if this structure is used in [`SwapOps::send_taker_refunds_payment`].
     pub other_pubkey: &'a [u8],
-    pub secret_hash: &'a [u8],
+    pub tx_type_with_secret_hash: SwapTxTypeWithSecretHash<'a>,
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
     pub watcher_reward: bool,
@@ -1006,9 +1064,9 @@ pub trait SwapOps {
 
     fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()>;
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()>;
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()>;
 
     fn check_if_my_payment_sent(
         &self,
@@ -1170,7 +1228,7 @@ pub trait WatcherOps {
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
 }
 
-/// Helper struct wrapping arguments for [SwapOpsV2::send_taker_funding]
+/// Helper struct wrapping arguments for [TakerCoinSwapOpsV2::send_taker_funding]
 pub struct SendTakerFundingArgs<'a> {
     /// Taker will be able to refund the payment after this timestamp
     pub time_lock: u64,
@@ -1178,8 +1236,8 @@ pub struct SendTakerFundingArgs<'a> {
     pub taker_secret_hash: &'a [u8],
     /// Maker's pubkey
     pub maker_pub: &'a [u8],
-    /// DEX fee amount
-    pub dex_fee_amount: BigDecimal,
+    /// DEX fee
+    pub dex_fee: &'a DexFee,
     /// Additional reward for maker (premium)
     pub premium_amount: BigDecimal,
     /// Actual volume of taker's payment
@@ -1188,7 +1246,7 @@ pub struct SendTakerFundingArgs<'a> {
     pub swap_unique_data: &'a [u8],
 }
 
-/// Helper struct wrapping arguments for [SwapOpsV2::refund_taker_funding_secret]
+/// Helper struct wrapping arguments for [TakerCoinSwapOpsV2::refund_taker_funding_secret]
 pub struct RefundFundingSecretArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub funding_tx: &'a Coin::Tx,
     pub time_lock: u64,
@@ -1200,7 +1258,7 @@ pub struct RefundFundingSecretArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub watcher_reward: bool,
 }
 
-/// Helper struct wrapping arguments for [SwapOpsV2::gen_taker_funding_spend_preimage]
+/// Helper struct wrapping arguments for [TakerCoinSwapOpsV2::gen_taker_funding_spend_preimage]
 pub struct GenTakerFundingSpendArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     /// Taker payment transaction serialized to raw bytes
     pub funding_tx: &'a Coin::Tx,
@@ -1218,7 +1276,7 @@ pub struct GenTakerFundingSpendArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub maker_secret_hash: &'a [u8],
 }
 
-/// Helper struct wrapping arguments for [SwapOpsV2::validate_taker_funding]
+/// Helper struct wrapping arguments for [TakerCoinSwapOpsV2::validate_taker_funding]
 pub struct ValidateTakerFundingArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     /// Taker funding transaction
     pub funding_tx: &'a Coin::Tx,
@@ -1229,7 +1287,7 @@ pub struct ValidateTakerFundingArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     /// Taker's pubkey
     pub other_pub: &'a Coin::Pubkey,
     /// DEX fee amount
-    pub dex_fee_amount: BigDecimal,
+    pub dex_fee: &'a DexFee,
     /// Additional reward for maker (premium)
     pub premium_amount: BigDecimal,
     /// Actual volume of taker's payment
@@ -1239,23 +1297,25 @@ pub struct ValidateTakerFundingArgs<'a, Coin: CoinAssocTypes + ?Sized> {
 }
 
 /// Helper struct wrapping arguments for taker payment's spend generation, used in
-/// [SwapOpsV2::gen_taker_payment_spend_preimage], [SwapOpsV2::validate_taker_payment_spend_preimage] and
-/// [SwapOpsV2::sign_and_broadcast_taker_payment_spend]
+/// [TakerCoinSwapOpsV2::gen_taker_payment_spend_preimage], [TakerCoinSwapOpsV2::validate_taker_payment_spend_preimage] and
+/// [TakerCoinSwapOpsV2::sign_and_broadcast_taker_payment_spend]
 pub struct GenTakerPaymentSpendArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     /// Taker payment transaction serialized to raw bytes
     pub taker_tx: &'a Coin::Tx,
     /// Taker will be able to refund the payment after this timestamp
     pub time_lock: u64,
     /// The hash of the secret generated by maker
-    pub secret_hash: &'a [u8],
+    pub maker_secret_hash: &'a [u8],
     /// Maker's pubkey
     pub maker_pub: &'a Coin::Pubkey,
+    /// Maker's address
+    pub maker_address: &'a Coin::Address,
     /// Taker's pubkey
     pub taker_pub: &'a Coin::Pubkey,
     /// Pubkey of address, receiving DEX fees
     pub dex_fee_pub: &'a [u8],
-    /// DEX fee amount
-    pub dex_fee_amount: BigDecimal,
+    /// DEX fee
+    pub dex_fee: &'a DexFee,
     /// Additional reward for maker (premium)
     pub premium_amount: BigDecimal,
     /// Actual volume of taker's payment
@@ -1289,6 +1349,8 @@ pub enum TxGenError {
     TxFeeTooHigh(String),
     /// Previous tx is not valid
     PrevTxIsNotValid(String),
+    /// Other errors, can be used to return an error that can happen only in specific coin protocol implementation
+    Other(String),
 }
 
 impl From<UtxoRpcError> for TxGenError {
@@ -1303,9 +1365,9 @@ impl From<UtxoSignWithKeyPairError> for TxGenError {
     fn from(err: UtxoSignWithKeyPairError) -> Self { TxGenError::Signing(err.to_string()) }
 }
 
-/// Enum covering error cases that can happen during taker funding validation.
+/// Enum covering error cases that can happen during swap v2 transaction validation.
 #[derive(Debug, Display)]
-pub enum ValidateTakerFundingError {
+pub enum ValidateSwapV2TxError {
     /// Payment sent to wrong address or has invalid amount.
     InvalidDestinationOrAmount(String),
     /// Error during conversion of BigDecimal amount to coin's specific monetary units (satoshis, wei, etc.).
@@ -1319,14 +1381,16 @@ pub enum ValidateTakerFundingError {
     TxLacksOfOutputs,
     /// Input payment timelock overflows the type used by specific coin.
     LocktimeOverflow(String),
+    /// Internal error
+    Internal(String),
 }
 
-impl From<NumConversError> for ValidateTakerFundingError {
-    fn from(err: NumConversError) -> Self { ValidateTakerFundingError::NumConversion(err.to_string()) }
+impl From<NumConversError> for ValidateSwapV2TxError {
+    fn from(err: NumConversError) -> Self { ValidateSwapV2TxError::NumConversion(err.to_string()) }
 }
 
-impl From<UtxoRpcError> for ValidateTakerFundingError {
-    fn from(err: UtxoRpcError) -> Self { ValidateTakerFundingError::Rpc(err.to_string()) }
+impl From<UtxoRpcError> for ValidateSwapV2TxError {
+    fn from(err: UtxoRpcError) -> Self { ValidateSwapV2TxError::Rpc(err.to_string()) }
 }
 
 /// Enum covering error cases that can happen during taker funding spend preimage validation.
@@ -1396,6 +1460,8 @@ pub trait ToBytes {
 
 /// Defines associated types specific to each coin (Pubkey, Address, etc.)
 pub trait CoinAssocTypes {
+    type Address: Send + Sync + fmt::Display;
+    type AddressParseError: fmt::Debug + Send + fmt::Display;
     type Pubkey: ToBytes + Send + Sync;
     type PubkeyParseError: fmt::Debug + Send + fmt::Display;
     type Tx: Transaction + Send + Sync;
@@ -1404,6 +1470,10 @@ pub trait CoinAssocTypes {
     type PreimageParseError: fmt::Debug + Send + fmt::Display;
     type Sig: ToBytes + Send + Sync;
     type SigParseError: fmt::Debug + Send + fmt::Display;
+
+    fn my_addr(&self) -> &Self::Address;
+
+    fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError>;
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError>;
 
@@ -1414,24 +1484,200 @@ pub trait CoinAssocTypes {
     fn parse_signature(&self, sig: &[u8]) -> Result<Self::Sig, Self::SigParseError>;
 }
 
-/// Operations specific to the [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
+pub struct SendMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
+    /// Maker will be able to refund the payment after this timestamp
+    pub time_lock: u64,
+    /// The hash of the secret generated by taker, this is used for immediate refund
+    pub taker_secret_hash: &'a [u8],
+    /// The hash of the secret generated by maker, taker needs it to spend the payment
+    pub maker_secret_hash: &'a [u8],
+    /// Payment amount
+    pub amount: BigDecimal,
+    /// Taker's HTLC pubkey
+    pub taker_pub: &'a Coin::Pubkey,
+    /// Unique data of specific swap
+    pub swap_unique_data: &'a [u8],
+}
+
+pub struct ValidateMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
+    /// Maker payment tx
+    pub maker_payment_tx: &'a Coin::Tx,
+    /// Maker will be able to refund the payment after this timestamp
+    pub time_lock: u64,
+    /// The hash of the secret generated by taker, this is used for immediate refund
+    pub taker_secret_hash: &'a [u8],
+    /// The hash of the secret generated by maker, taker needs it to spend the payment
+    pub maker_secret_hash: &'a [u8],
+    /// Payment amount
+    pub amount: BigDecimal,
+    /// Maker's HTLC pubkey
+    pub maker_pub: &'a Coin::Pubkey,
+    /// Unique data of specific swap
+    pub swap_unique_data: &'a [u8],
+}
+
+pub struct RefundMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
+    /// Maker payment tx
+    pub maker_payment_tx: &'a Coin::Tx,
+    /// Maker will be able to refund the payment after this timestamp
+    pub time_lock: u64,
+    /// The hash of the secret generated by taker, this is used for immediate refund
+    pub taker_secret_hash: &'a [u8],
+    /// The hash of the secret generated by maker, taker needs it to spend the payment
+    pub maker_secret_hash: &'a [u8],
+    /// Taker's secret
+    pub taker_secret: &'a [u8],
+    /// Taker's HTLC pubkey
+    pub taker_pub: &'a Coin::Pubkey,
+    /// Unique data of specific swap
+    pub swap_unique_data: &'a [u8],
+}
+
+pub struct SpendMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
+    /// Maker payment tx
+    pub maker_payment_tx: &'a Coin::Tx,
+    /// Maker will be able to refund the payment after this timestamp
+    pub time_lock: u64,
+    /// The hash of the secret generated by taker, this is used for immediate refund
+    pub taker_secret_hash: &'a [u8],
+    /// The hash of the secret generated by maker, taker needs it to spend the payment
+    pub maker_secret_hash: &'a [u8],
+    /// The secret generated by maker, revealed when maker spends taker's payment
+    pub maker_secret: &'a [u8],
+    /// Maker's HTLC pubkey
+    pub maker_pub: &'a Coin::Pubkey,
+    /// Unique data of specific swap
+    pub swap_unique_data: &'a [u8],
+}
+
+/// Operations specific to maker coin in [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
 #[async_trait]
-pub trait SwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
+pub trait MakerCoinSwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
+    /// Generate and broadcast maker payment transaction
+    async fn send_maker_payment_v2(&self, args: SendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr>;
+
+    /// Validate maker payment transaction
+    async fn validate_maker_payment_v2(&self, args: ValidateMakerPaymentArgs<'_, Self>) -> ValidatePaymentResult<()>;
+
+    /// Refund maker payment transaction using timelock path
+    async fn refund_maker_payment_v2_timelock(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr>;
+
+    /// Refund maker payment transaction using immediate refund path
+    async fn refund_maker_payment_v2_secret(
+        &self,
+        args: RefundMakerPaymentArgs<'_, Self>,
+    ) -> Result<Self::Tx, TransactionErr>;
+
+    /// Spend maker payment transaction
+    async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr>;
+}
+
+/// Enum representing errors that can occur while waiting for taker payment spend.
+#[derive(Display)]
+pub enum WaitForTakerPaymentSpendError {
+    /// Timeout error variant, indicating that the wait for taker payment spend has timed out.
+    #[display(
+        fmt = "Timed out waiting for taker payment spend, wait_until {}, now {}",
+        wait_until,
+        now
+    )]
+    Timeout {
+        /// The timestamp until which the wait was expected to complete.
+        wait_until: u64,
+        /// The current timestamp when the timeout occurred.
+        now: u64,
+    },
+
+    /// Invalid input transaction error variant, containing additional information about the error.
+    InvalidInputTx(String),
+}
+
+impl From<WaitForOutputSpendErr> for WaitForTakerPaymentSpendError {
+    fn from(err: WaitForOutputSpendErr) -> Self {
+        match err {
+            WaitForOutputSpendErr::Timeout { wait_until, now } => {
+                WaitForTakerPaymentSpendError::Timeout { wait_until, now }
+            },
+            WaitForOutputSpendErr::NoOutputWithIndex(index) => {
+                WaitForTakerPaymentSpendError::InvalidInputTx(format!("Tx doesn't have output with index {}", index))
+            },
+        }
+    }
+}
+
+/// Enum representing different ways a funding transaction can be spent.
+///
+/// This enum is generic over types that implement the `CoinAssocTypes` trait.
+pub enum FundingTxSpend<T: CoinAssocTypes + ?Sized> {
+    /// Variant indicating that the funding transaction has been spent through a timelock path.
+    RefundedTimelock(T::Tx),
+    /// Variant indicating that the funding transaction has been spent by revealing a taker's secret (immediate refund path).
+    RefundedSecret {
+        /// The spending transaction.
+        tx: T::Tx,
+        /// The taker's secret value revealed in the spending transaction.
+        secret: [u8; 32],
+    },
+    /// Variant indicating that the funds from the funding transaction have been transferred
+    /// to the taker's payment transaction.
+    TransferredToTakerPayment(T::Tx),
+}
+
+impl<T: CoinAssocTypes + ?Sized> fmt::Debug for FundingTxSpend<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FundingTxSpend::RefundedTimelock(tx) => {
+                write!(f, "RefundedTimelock({:?})", tx)
+            },
+            FundingTxSpend::RefundedSecret { tx, secret: _ } => {
+                write!(f, "RefundedSecret {{ tx: {:?} }}", tx)
+            },
+            FundingTxSpend::TransferredToTakerPayment(tx) => {
+                write!(f, "TransferredToTakerPayment({:?})", tx)
+            },
+        }
+    }
+}
+
+/// Enum representing errors that can occur during the search for funding spend.
+#[derive(Debug)]
+pub enum SearchForFundingSpendErr {
+    /// Variant indicating an invalid input transaction error with additional information.
+    InvalidInputTx(String),
+    /// Variant indicating a failure to process the spending transaction with additional details.
+    FailedToProcessSpendTx(String),
+    /// Variant indicating a coin's RPC error with additional information.
+    Rpc(String),
+    /// Variant indicating an error during conversion of the `from_block` argument with associated `TryFromIntError`.
+    FromBlockConversionErr(TryFromIntError),
+}
+
+/// Operations specific to taker coin in [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
+#[async_trait]
+pub trait TakerCoinSwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
     /// Generate and broadcast taker funding transaction that includes dex fee, maker premium and actual trading volume.
     /// Funding tx can be reclaimed immediately if maker back-outs (doesn't send maker payment)
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr>;
 
     /// Validates taker funding transaction.
-    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateTakerFundingResult;
+    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateSwapV2TxResult;
 
     /// Refunds taker funding transaction using time-locked path without secret reveal.
-    async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> TransactionResult;
+    async fn refund_taker_funding_timelock(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr>;
 
     /// Reclaims taker funding transaction using immediate refund path with secret reveal.
     async fn refund_taker_funding_secret(
         &self,
         args: RefundFundingSecretArgs<'_, Self>,
     ) -> Result<Self::Tx, TransactionErr>;
+
+    /// Looks for taker funding transaction spend and detects path used
+    async fn search_for_taker_funding_spend(
+        &self,
+        tx: &Self::Tx,
+        from_block: u64,
+        secret_hash: &[u8],
+    ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr>;
 
     /// Generates and signs a preimage spending funding tx to the combined taker payment
     async fn gen_taker_funding_spend_preimage(
@@ -1456,7 +1702,7 @@ pub trait SwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
     ) -> Result<Self::Tx, TransactionErr>;
 
     /// Refunds taker payment transaction.
-    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> TransactionResult;
+    async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr>;
 
     /// Generates and signs taker payment spend preimage. The preimage and signature should be
     /// shared with maker to proceed with protocol execution.
@@ -1480,7 +1726,15 @@ pub trait SwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
         swap_unique_data: &[u8],
-    ) -> TransactionResult;
+    ) -> Result<Self::Tx, TransactionErr>;
+
+    /// Wait until taker payment spend is found on-chain
+    async fn wait_for_taker_payment_spend(
+        &self,
+        taker_payment: &Self::Tx,
+        from_block: u64,
+        wait_until: u64,
+    ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError>;
 
     /// Derives an HTLC key-pair and returns a public key corresponding to that key.
     fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey;
@@ -1942,7 +2196,7 @@ impl Add for CoinBalance {
 }
 
 /// The approximation is needed to cover the dynamic miner fee changing during a swap.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum FeeApproxStage {
     /// Do not increase the trade fee.
     WithoutApprox,
