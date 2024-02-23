@@ -1129,7 +1129,7 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_cursor_with_offset() {
+    async fn test_cursor_with_offset_and_limit() {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
 
@@ -1159,6 +1159,7 @@ mod tests {
             .only("base_coin", "RICK")
             .expect("!CursorBuilder::only")
             .offset(1)
+            .limit(1)
             .open_cursor("base_coin")
             .await
             .expect("!CursorBuilder::open_cursor")
@@ -1169,13 +1170,10 @@ mod tests {
             .map(|(_, swap)| swap)
             .collect::<Vec<_>>();
 
-        // maybe_swaps should return only swaps with uuid2 and uuid3
-        assert_eq!(maybe_swaps.len(), 2);
+        // maybe_swaps should return only swaps with uuid2
+        assert_eq!(maybe_swaps.len(), 1);
 
-        let expected_swaps = vec![
-            swap_item!("uuid2", "RICK", "MORTY", 8, 6, 92),
-            swap_item!("uuid3", "RICK", "FTM", 12, 3124, 214),
-        ];
+        let expected_swaps = vec![swap_item!("uuid2", "RICK", "MORTY", 8, 6, 92)];
 
         assert_eq!(expected_swaps, maybe_swaps)
     }

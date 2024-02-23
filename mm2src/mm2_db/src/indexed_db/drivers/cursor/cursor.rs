@@ -263,22 +263,6 @@ impl CursorDriver {
         })
     }
 
-    /// Continuously processes cursor items until it retrieves a valid result or
-    /// the cursor is stopped. It returns a `CursorResult` containing either the next item
-    /// wrapped in `Some`, or `None` if the cursor is stopped.
-    pub(crate) async fn next(&mut self) -> CursorResult<Option<(ItemId, Json)>> {
-        loop {
-            if self.stopped {
-                return Ok(None);
-            }
-
-            match self.process_cursor_item().await? {
-                Some(result) => return Ok(Some(result)),
-                None => continue,
-            }
-        }
-    }
-
     /// Continues the cursor according to the provided `CursorAction`.
     /// If the action is `CursorAction::Continue`, the cursor advances to the next item.
     /// If the action is `CursorAction::ContinueWithValue`, the cursor advances to the specified value.
@@ -306,10 +290,29 @@ impl CursorDriver {
         Ok(())
     }
 
-    /// Processes the next item from the cursor, which includes fetching the cursor event,
-    /// opening the cursor, deserializing the item, and performing actions based on the item and cursor conditions.
-    /// It returns an `Option` containing the item ID and value if an item is processed successfully, otherwise `None`.
-    async fn process_cursor_item(&mut self) -> CursorResult<Option<(ItemId, Json)>> {
+    /// Advances the cursor by the offset specified in the `filters_ext.offset` field.
+    /// This operation is typically performed once at the beginning of cursor-based iteration.
+    /// After the offset is applied, the value in `filters_ext.offset` is cleared.
+    /// An error will be thrown if the cursor is currently being iterated or has iterated past its end.
+    //  https://developer.mozilla.org/en-US/docs/Web/API/IDBCursor/advance
+    async fn advance_by_offset(&mut self) -> CursorResult<()> {
+        if let Some(offset) = self.filters_ext.offset.take() {
+            if let Some(cursor) = self.get_cursor_or_stop().await? {
+                cursor.advance(offset).map_to_mm(|e| CursorError::AdvanceError {
+                    description: stringify_js_error(&e),
+                })?;
+            } else {
+                self.stopped = true;
+                return Ok(());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Helper function to retrieve a cursor or indicate the processing should stop.
+    /// Handles potential errors related to opening the cursor and receiving events.
+    async fn get_cursor_or_stop(&mut self) -> CursorResult<Option<IdbCursorWithValue>> {
         let event = match self.cursor_item_rx.next().await {
             Some(event) => event,
             None => {
@@ -322,26 +325,39 @@ impl CursorDriver {
             description: stringify_js_error(&e),
         })?;
 
-        let cursor = match cursor_from_request(&self.cursor_request)? {
+        cursor_from_request(&self.cursor_request)
+    }
+
+    /// Continuously processes cursor items until it retrieves a valid result or
+    /// the cursor is stopped. It returns a `CursorResult` containing either the next item
+    /// wrapped in `Some`, or `None` if the cursor is stopped.
+    pub(crate) async fn next(&mut self) -> CursorResult<Option<(ItemId, Json)>> {
+        // Handle offset on first iteration if there's any.
+        self.advance_by_offset().await?;
+
+        loop {
+            if self.stopped {
+                return Ok(None);
+            }
+
+            match self.process_cursor_item().await? {
+                Some(result) => return Ok(Some(result)),
+                None => continue,
+            }
+        }
+    }
+
+    /// Processes the next item from the cursor, which includes fetching the cursor event,
+    /// opening the cursor, deserializing the item, and performing actions based on the item and cursor conditions.
+    /// It returns an `Option` containing the item ID and value if an item is processed successfully, otherwise `None`.
+    async fn process_cursor_item(&mut self) -> CursorResult<Option<(ItemId, Json)>> {
+        let cursor = match self.get_cursor_or_stop().await? {
             Some(cursor) => cursor,
             None => {
                 self.stopped = true;
                 return Ok(None);
             },
         };
-
-        // If an offset is specified in the filters, advance the cursor by the offset value and continue with the next iteration of the loop.
-        // NOTE: this will never run in the next loop iterations as the value is being taken out from offset and setting it to None.
-        if let Some(offset) = self.filters_ext.offset.take() {
-            // an error will be thrown if the cursor is currently being iterated or has iterated past its end.
-            // https://developer.mozilla.org/en-US/docs/Web/API/IDBCursor/advance
-            cursor.advance(offset).map_to_mm(|e| CursorError::AdvanceError {
-                description: stringify_js_error(&e),
-            })?;
-
-            return Ok(None);
-        }
-
         let (key, js_value) = match (cursor.key(), cursor.value()) {
             (Ok(key), Ok(js_value)) => (key, js_value),
             _ => {
@@ -355,17 +371,17 @@ impl CursorDriver {
         let (item_action, cursor_action) = self.inner.on_iteration(key)?;
 
         let (id, val) = item.into_pair();
+
         // Checks if the given `where_` condition, represented by an optional closure (`cursor_condition`),
         // is satisfied for the provided `item`. If the condition is met, return the corresponding `(id, val)` or skip to the next item.
-
         if matches!(item_action, CursorItemAction::Include) {
             if let Some(cursor_condition) = &self.filters_ext.where_ {
                 if cursor_condition(val.clone())? {
-                    match self.filters_ext.limit {
-                        Some(_) => {
-                            self.update_limit_and_continue(&cursor, &cursor_action).await?;
-                        },
-                        None => self.stopped = true,
+                    // Update limit (if applicable) and return
+                    if self.filters_ext.limit.is_some() {
+                        self.update_limit_and_continue(&cursor, &cursor_action).await?;
+                    } else {
+                        self.stopped = true;
                     };
                     return Ok(Some((id, val)));
                 }
@@ -375,7 +391,7 @@ impl CursorDriver {
             };
         }
 
-        self.update_limit_and_continue(&cursor, &cursor_action).await?;
+        self.continue_(&cursor, &cursor_action).await?;
         Ok(None)
     }
 
@@ -388,14 +404,17 @@ impl CursorDriver {
         cursor_action: &CursorAction,
     ) -> CursorResult<()> {
         if let Some(limit) = self.filters_ext.limit {
-            return if limit > 1 {
-                self.filters_ext.limit = Some(limit - 1);
-                self.continue_(cursor, cursor_action).await
-            } else {
+            // Early return if limit is reached
+            if limit <= 1 {
                 self.stopped = true;
-                Ok(())
-            };
+                return Ok(());
+            }
+
+            // Decrement limit and continue
+            self.filters_ext.limit = Some(limit - 1);
+            return self.continue_(cursor, cursor_action).await;
         };
+
         self.continue_(cursor, cursor_action).await
     }
 }
