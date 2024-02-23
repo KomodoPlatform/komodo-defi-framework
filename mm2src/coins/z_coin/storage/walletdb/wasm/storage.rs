@@ -1128,28 +1128,27 @@ impl WalletRead for WalletIndexedDb {
             .with_value(&self.ticker)?
             .with_value(account.0.to_bigint())?;
         let maybe_notes = received_notes_table.get_items_by_multi_index(index_keys).await?;
-        let maybe_notes = maybe_notes.iter().filter(|(_, note)| note.spent.is_none());
 
         // Transactions
         let txs_table = db_transaction.table::<WalletDbTransactionsTable>().await?;
-        let mut maybe_txs = txs_table
+        let txs = txs_table
             .cursor_builder()
             .only("ticker", &self.ticker)?
-            .bound("block", 0u32, u32::from(anchor_height))
+            .bound("block", 0u32, u32::from(anchor_height + 1))
             .open_cursor(WalletDbTransactionsTable::TICKER_BLOCK_INDEX)
-            .await?;
-        let mut txs = vec![];
-        while let Some((id, ts)) = maybe_txs.next().await? {
-            txs.push((id, ts))
-        }
-
+            .await?
+            .collect()
+            .await?
+            .into_iter()
+            .map(|(i, item)| (i, item))
+            .collect::<Vec<_>>();
         // Witnesses
         let witnesses_table = db_transaction.table::<WalletDbSaplingWitnessesTable>().await?;
         let witnesses = witnesses_table
             .cursor_builder()
             .only("ticker", &self.ticker)?
-            .bound("block", 0u32, u32::from(anchor_height))
-            .open_cursor("ticker")
+            .bound("block", 0u32, u32::from(anchor_height + 1))
+            .open_cursor(WalletDbSaplingWitnessesTable::TICKER_BLOCK_INDEX)
             .await?
             .collect()
             .await?
@@ -1164,13 +1163,15 @@ impl WalletRead for WalletIndexedDb {
             let tx = txs.iter().find(|(id, _tx)| *id == note.tx);
 
             if let (Some(witness), Some(_)) = (witness, tx) {
-                let spend = SpendableNoteConstructor {
-                    diversifier: note.diversifier.clone(),
-                    value: note.value.clone(),
-                    rcm: note.rcm.to_owned(),
-                    witness: witness.witness.clone(),
-                };
-                spendable_notes.push(to_spendable_note(spend)?);
+                if note.spent.is_none() {
+                    let spend = SpendableNoteConstructor {
+                        diversifier: note.diversifier.clone(),
+                        value: note.value.clone(),
+                        rcm: note.rcm.to_owned(),
+                        witness: witness.witness.clone(),
+                    };
+                    spendable_notes.push(to_spendable_note(spend)?);
+                }
             }
         }
 
