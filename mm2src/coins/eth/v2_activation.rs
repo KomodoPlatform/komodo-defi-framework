@@ -186,10 +186,10 @@ impl From<ParseChainTypeError> for EthTokenActivationError {
 
 /// Represents the parameters required for activating either an ERC-20 token or an NFT on the Ethereum platform.
 #[derive(Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "UPPERCASE")]
+#[serde(untagged)]
 pub enum EthTokenActivationParams {
-    Erc20(Erc20TokenActivationRequest),
     Nft(NftActivationRequest),
+    Erc20(Erc20TokenActivationRequest),
 }
 
 /// Parameters for activating an ERC-20 token.
@@ -218,6 +218,7 @@ pub struct Erc20Protocol {
 }
 
 /// Details for an NFT protocol.
+#[derive(Debug)]
 pub struct NftProtocol {
     pub platform: String,
 }
