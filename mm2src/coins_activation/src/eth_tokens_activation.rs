@@ -12,6 +12,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 #[derive(Debug, Serialize)]
+#[serde(untagged)]
 pub enum EthTokenInitResult {
     Erc20(Erc20InitResult),
     Nft(NftInitResult),
@@ -152,16 +153,26 @@ impl TokenActivationOps for EthCoin {
                     "Mismatched protocol info for ERC-20".to_string(),
                 ))),
             },
-            EthTokenActivationParams::Nft(nft_init_params) => {
-                let nft_global = platform_coin
-                    .global_nft_from_platform_coin(&nft_init_params.url)
-                    .await?;
-                let nfts = nft_global.nfts_infos.lock().await.clone();
-                let init_result = EthTokenInitResult::Nft(NftInitResult {
-                    nfts,
-                    platform_coin: platform_coin.ticker().to_owned(),
-                });
-                Ok((nft_global, init_result))
+            EthTokenActivationParams::Nft(nft_init_params) => match protocol_conf {
+                EthTokenProtocol::Nft(nft_protocol) => {
+                    if nft_protocol.platform != platform_coin.ticker {
+                        return MmError::err(EthTokenActivationError::InternalError(
+                            "NFT platform coin ticker does not match the expected platform".to_string(),
+                        ));
+                    }
+                    let nft_global = platform_coin
+                        .global_nft_from_platform_coin(&nft_init_params.url)
+                        .await?;
+                    let nfts = nft_global.nfts_infos.lock().await.clone();
+                    let init_result = EthTokenInitResult::Nft(NftInitResult {
+                        nfts,
+                        platform_coin: platform_coin.ticker().to_owned(),
+                    });
+                    Ok((nft_global, init_result))
+                },
+                _ => Err(MmError::new(EthTokenActivationError::InternalError(
+                    "Mismatched protocol info for NFT".to_string(),
+                ))),
             },
         }
     }
