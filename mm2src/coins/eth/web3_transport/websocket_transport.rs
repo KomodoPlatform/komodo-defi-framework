@@ -158,7 +158,7 @@ impl WebsocketTransport {
                     request_id,
                     response_notifier,
                     // Since request will be cancelled when timeout occurs, we are free to drop its state.
-                    ETH_RPC_REQUEST_TIMEOUT + Duration::from_secs(3),
+                    ETH_RPC_REQUEST_TIMEOUT,
                 );
 
                 let mut should_continue = Default::default();
@@ -207,6 +207,9 @@ impl WebsocketTransport {
                     }
 
                     if let Some(id) = inc_event.get("id") {
+                        // just to ensure we don't have outdated entries
+                        response_notifiers.clear_expired_entries();
+
                         let request_id = id.as_u64().unwrap_or_default() as usize;
 
                         if let Some(notifier) = response_notifiers.remove(&request_id) {
