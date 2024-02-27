@@ -158,14 +158,14 @@ impl SwapOps for TestCoin {
 
     async fn search_for_swap_tx_spend_my(
         &self,
-        _: SearchForSwapTxSpendInput<'_>,
+        _input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
-        _: SearchForSwapTxSpendInput<'_>,
+        _input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }

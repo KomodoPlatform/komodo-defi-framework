@@ -43,7 +43,7 @@ use web3::types::TransactionId;
 use mm2_net::native_http::send_request_to_uri;
 
 #[cfg(target_arch = "wasm32")]
-use mm2_net::wasm_http::send_request_to_uri;
+use mm2_net::wasm::http::send_request_to_uri;
 
 const MORALIS_API_ENDPOINT: &str = "api/v2";
 /// query parameters for moralis request: The format of the token ID
@@ -811,7 +811,7 @@ async fn process_transfer_list(
 // TODO: get fee details from non fungible token instead of eth coin?
 async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<EthTxFeeDetails> {
     let hash = H256::from_str(transaction_hash).ok()?;
-    let receipt = eth_coin.web3.eth().transaction_receipt(hash).await.ok()?;
+    let receipt = eth_coin.web3().await.ok()?.eth().transaction_receipt(hash).await.ok()?;
     let fee_coin = match eth_coin.coin_type {
         EthCoinType::Eth => eth_coin.ticker(),
         EthCoinType::Erc20 { .. } | EthCoinType::Nft { .. } => return None,
@@ -824,7 +824,9 @@ async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<E
                 Some(gas_price) => EthTxFeeDetails::new(gas_used, gas_price, fee_coin).ok(),
                 None => {
                     let web3_tx = eth_coin
-                        .web3
+                        .web3()
+                        .await
+                        .ok()?
                         .eth()
                         .transaction(TransactionId::Hash(hash))
                         .await

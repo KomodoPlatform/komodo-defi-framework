@@ -770,16 +770,16 @@ pub trait UtxoCoinBuilderCommonOps {
             .ok_or_else(|| format!("avg_blocktime not specified in {} coin config", self.ticker()))
             .map_to_mm(UtxoCoinBuildError::ErrorCalculatingStartingHeight)?;
         let blocks_per_day = DAY_IN_SECONDS / avg_blocktime;
-        let current_time_s = now_sec();
+        let current_time_sec = now_sec();
 
-        if current_time_s < date_s {
+        if current_time_sec < date_s {
             return MmError::err(UtxoCoinBuildError::ErrorCalculatingStartingHeight(format!(
                 "{} sync date must be earlier then current date",
                 self.ticker()
             )));
         };
 
-        let secs_since_date = current_time_s - date_s;
+        let secs_since_date = current_time_sec - date_s;
         let days_since_date = (secs_since_date / DAY_IN_SECONDS) - 1;
         let blocks_to_sync = (days_since_date * blocks_per_day) + blocks_per_day;
 

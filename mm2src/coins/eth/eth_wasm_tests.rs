@@ -21,7 +21,11 @@ async fn test_send() {
     let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
     let keypair = key_pair_from_seed(&seed).unwrap();
     let key_pair = KeyPair::from_secret_slice(keypair.private_ref()).unwrap();
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+    let transport = Web3Transport::new_http(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -33,11 +37,7 @@ async fn test_send() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: false,
-        }],
-        web3,
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,

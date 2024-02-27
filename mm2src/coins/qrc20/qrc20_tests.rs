@@ -1,17 +1,21 @@
 use super::*;
-use crate::utxo::rpc_clients::UnspentInfo;
 use crate::{DexFee, TxFeeDetails, WaitForHTLCTxSpendArgs};
-use chain::OutPoint;
 use common::{block_on, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use itertools::Itertools;
 use keys::{Address, AddressBuilder};
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::Zero;
-use mocktopus::mocking::{MockResult, Mockable};
 use rpc::v1::types::ToTxHash;
 use std::convert::TryFrom;
 use std::mem::discriminant;
+
+cfg_native!(
+    use crate::utxo::rpc_clients::UnspentInfo;
+
+    use mocktopus::mocking::{MockResult, Mockable};
+    use chain::OutPoint;
+);
 
 const EXPECTED_TX_FEE: i64 = 1000;
 const CONTRACT_CALL_GAS_FEE: i64 = (QRC20_GAS_LIMIT_DEFAULT * QRC20_GAS_PRICE_DEFAULT) as i64;
@@ -58,6 +62,7 @@ fn check_tx_fee(coin: &Qrc20Coin, expected_tx_fee: ActualTxFee) {
     assert_eq!(actual_tx_fee, expected_tx_fee);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_withdraw_to_p2sh_address_should_fail() {
     let priv_key = [
@@ -91,6 +96,7 @@ fn test_withdraw_to_p2sh_address_should_fail() {
     assert_eq!(err, expect);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_withdraw_impl_fee_details() {
     Qrc20Coin::get_unspent_ordered_list.mock_safe(|coin, _| {

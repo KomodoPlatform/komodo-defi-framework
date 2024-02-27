@@ -2,6 +2,7 @@ use super::*;
 use crate::{DexFee, IguanaPrivKey};
 use common::{block_on, now_sec};
 use crypto::privkey::key_pair_from_seed;
+#[cfg(not(target_arch = "wasm32"))]
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODE, ETH_DEV_NODES,
@@ -88,6 +89,7 @@ fn eth_coin_for_test(
     eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn random_eth_coin_for_test(
     coin_type: EthCoinType,
     urls: &[&str],
@@ -104,17 +106,21 @@ fn eth_coin_from_keypair(
     fallback_swap_contract: Option<Address>,
     key_pair: KeyPair,
 ) -> (MmArc, EthCoin) {
-    let mut nodes = vec![];
+    let mut web3_instances = vec![];
     for url in urls.iter() {
-        nodes.push(HttpTransportNode {
+        let node = HttpTransportNode {
             uri: url.parse().unwrap(),
             gui_auth: false,
-        });
-    }
-    drop_mutability!(nodes);
+        };
 
-    let transport = Web3Transport::with_nodes(nodes);
-    let web3 = Web3::new(transport);
+        let transport = Web3Transport::new_http(node);
+        let web3 = Web3::new(transport);
+
+        web3_instances.push(Web3Instance { web3, is_parity: false });
+    }
+
+    drop_mutability!(web3_instances);
+
     let conf = json!({
         "coins":[
             eth_testnet_conf(),
@@ -142,11 +148,7 @@ fn eth_coin_from_keypair(
         fallback_swap_contract,
         contract_supports_watchers: false,
         ticker,
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: false,
-        }],
-        web3,
+        web3_instances: AsyncMutex::new(web3_instances),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
@@ -159,6 +161,7 @@ fn eth_coin_from_keypair(
     (ctx, eth_coin)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn fill_eth(to_addr: Address, amount: f64) {
     let wei_per_eth: u64 = 1_000_000_000_000_000_000;
     let amount_in_wei = (amount * wei_per_eth as f64) as u64;
@@ -302,10 +305,27 @@ fn test_nonce_several_urls() {
     )
     .unwrap();
 
-    let devnet_transport = Web3Transport::single_node(ETH_DEV_NODE, false);
-    let sepolia_transport = Web3Transport::single_node("https://rpc2.sepolia.org", false);
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let devnet_transport = Web3Transport::new_http(node);
+
+    let node = HttpTransportNode {
+        uri: "https://rpc2.sepolia.org".parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let sepolia_transport = Web3Transport::new_http(node);
+
+    let node = HttpTransportNode {
+        uri: "http://195.201.0.6:8989".parse().unwrap(),
+        gui_auth: false,
+    };
+
     // get nonce must succeed if some nodes are down at the moment for some reason
-    let failing_transport = Web3Transport::single_node("http://195.201.0.6:8989", false);
+    let failing_transport = Web3Transport::new_http(node);
 
     let web3_devnet = Web3::new(devnet_transport);
     let web3_sepolia = Web3::new(sepolia_transport);
@@ -321,9 +341,9 @@ fn test_nonce_several_urls() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        web3_instances: vec![
+        web3_instances: AsyncMutex::new(vec![
             Web3Instance {
-                web3: web3_devnet.clone(),
+                web3: web3_devnet,
                 is_parity: false,
             },
             Web3Instance {
@@ -334,8 +354,7 @@ fn test_nonce_several_urls() {
                 web3: web3_failing,
                 is_parity: false,
             },
-        ],
-        web3: web3_devnet,
+        ]),
         decimals: 18,
         gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -356,9 +375,7 @@ fn test_nonce_several_urls() {
     let payment = coin.send_to_address(coin.my_address, 200000000.into()).wait().unwrap();
 
     log!("{:?}", payment);
-    let new_nonce = get_addr_nonce(coin.my_address, coin.web3_instances.clone())
-        .wait()
-        .unwrap();
+    let new_nonce = coin.clone().get_addr_nonce(coin.my_address).wait().unwrap();
     log!("{:?}", new_nonce);
 }
 
@@ -371,7 +388,12 @@ fn test_wait_for_payment_spend_timeout() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::new_http(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -389,11 +411,7 @@ fn test_wait_for_payment_spend_timeout() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         ticker: "ETH".into(),
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: false,
-        }],
-        web3,
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,
@@ -468,6 +486,7 @@ fn test_gas_station() {
     assert_eq!(expected_eth_polygon, res_polygon);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_withdraw_impl_manual_fee() {
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None);
@@ -476,7 +495,7 @@ fn test_withdraw_impl_manual_fee() {
         let balance = wei_from_big_decimal(&1000000000.into(), 18).unwrap();
         MockResult::Return(Box::new(futures01::future::ok(balance)))
     });
-    get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok((0.into(), vec![])))));
+    EthCoin::get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok((0.into(), vec![])))));
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
@@ -505,6 +524,7 @@ fn test_withdraw_impl_manual_fee() {
     assert_eq!(expected, tx_details.fee_details);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_withdraw_impl_fee_details() {
     let (_ctx, coin) = eth_coin_for_test(
@@ -520,7 +540,7 @@ fn test_withdraw_impl_fee_details() {
         let balance = wei_from_big_decimal(&1000000000.into(), 18).unwrap();
         MockResult::Return(Box::new(futures01::future::ok(balance)))
     });
-    get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok((0.into(), vec![])))));
+    EthCoin::get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok((0.into(), vec![])))));
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
@@ -651,7 +671,7 @@ fn get_erc20_sender_trade_preimage() {
         .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(unsafe { ALLOWANCE.into() }))));
 
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
-    EthCoin::estimate_gas.mock_safe(|_, _| {
+    EthCoin::estimate_gas_wrapper.mock_safe(|_, _| {
         unsafe { ESTIMATE_GAS_CALLED = true };
         MockResult::Return(Box::new(futures01::future::ok(APPROVE_GAS_LIMIT.into())))
     });
@@ -749,7 +769,7 @@ fn test_get_fee_to_send_taker_fee() {
     const TRANSFER_GAS_LIMIT: u64 = 40_000;
 
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
-    EthCoin::estimate_gas
+    EthCoin::estimate_gas_wrapper
         .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(TRANSFER_GAS_LIMIT.into()))));
 
     // fee to send taker fee is `TRANSFER_GAS_LIMIT * gas_price` always.
@@ -825,7 +845,7 @@ fn validate_dex_fee_invalid_sender_eth() {
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None);
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
-    let tx = block_on(coin.web3.eth().transaction(TransactionId::Hash(
+    let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
         H256::from_str("0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f").unwrap(),
     )))
     .unwrap()
@@ -859,7 +879,7 @@ fn validate_dex_fee_invalid_sender_erc() {
     );
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0xd6403b41c79f9c9e9c83c03d920ee1735e7854d85d94cef48d95dfeca95cd600
-    let tx = block_on(coin.web3.eth().transaction(TransactionId::Hash(
+    let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
         H256::from_str("0xd6403b41c79f9c9e9c83c03d920ee1735e7854d85d94cef48d95dfeca95cd600").unwrap(),
     )))
     .unwrap()
@@ -895,7 +915,7 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None);
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
-    let tx = block_on(coin.web3.eth().transaction(TransactionId::Hash(
+    let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
         H256::from_str("0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f").unwrap(),
     )))
     .unwrap()
@@ -931,7 +951,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
     );
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0xd6403b41c79f9c9e9c83c03d920ee1735e7854d85d94cef48d95dfeca95cd600
-    let tx = block_on(coin.web3.eth().transaction(TransactionId::Hash(
+    let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
         H256::from_str("0xd6403b41c79f9c9e9c83c03d920ee1735e7854d85d94cef48d95dfeca95cd600").unwrap(),
     )))
     .unwrap()
@@ -1081,7 +1101,12 @@ fn test_message_hash() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::new_http(node);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -1093,11 +1118,7 @@ fn test_message_hash() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: false,
-        }],
-        web3,
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -1126,7 +1147,13 @@ fn test_sign_verify_message() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node(ETH_DEV_NODE, false);
+
+    let node = HttpTransportNode {
+        uri: ETH_DEV_NODE.parse().unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::new_http(node);
 
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1139,11 +1166,7 @@ fn test_sign_verify_message() {
         swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract: None,
         contract_supports_watchers: false,
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: false,
-        }],
-        web3,
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
@@ -1175,7 +1198,15 @@ fn test_eth_extract_secret() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::single_node("https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b", false);
+    let node = HttpTransportNode {
+        uri: "https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"
+            .parse()
+            .unwrap(),
+        gui_auth: false,
+    };
+
+    let transport = Web3Transport::new_http(node);
+
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -1197,11 +1228,7 @@ fn test_eth_extract_secret() {
         fallback_swap_contract: None,
         contract_supports_watchers: false,
         ticker: "ETH".into(),
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: true,
-        }],
-        web3,
+        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: true }]),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,

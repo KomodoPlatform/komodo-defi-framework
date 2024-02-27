@@ -46,6 +46,7 @@ use std::{fs, usize};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_sql_db;
+use crate::mm2::heartbeat_event::HeartbeatEvent;
 use crate::mm2::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::mm2::lp_network::{lp_network_ports, p2p_event_process_loop, NetIdError};
 use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
@@ -206,6 +207,8 @@ pub enum MmInitError {
     InvalidPassphrase(String),
     #[display(fmt = "NETWORK event initialization failed: {}", _0)]
     NetworkEventInitFailed(String),
+    #[display(fmt = "HEARTBEAT event initialization failed: {}", _0)]
+    HeartbeatEventInitFailed(String),
     #[from_trait(WithHwRpcError::hw_rpc_error)]
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
@@ -435,6 +438,10 @@ async fn init_event_streaming(ctx: &MmArc) -> MmInitResult<()> {
     if let Some(config) = &ctx.event_stream_configuration {
         if let EventInitStatus::Failed(err) = NetworkEvent::new(ctx.clone()).spawn_if_active(config).await {
             return MmError::err(MmInitError::NetworkEventInitFailed(err));
+        }
+
+        if let EventInitStatus::Failed(err) = HeartbeatEvent::new(ctx.clone()).spawn_if_active(config).await {
+            return MmError::err(MmInitError::HeartbeatEventInitFailed(err));
         }
     }
 
