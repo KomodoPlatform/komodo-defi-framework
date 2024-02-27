@@ -206,7 +206,7 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         &self,
         _activation_request: &Self::ActivationRequest,
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
-        todo!()
+        Ok(None)
     }
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>

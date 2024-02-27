@@ -155,7 +155,7 @@ impl TokenActivationOps for EthCoin {
             },
             EthTokenActivationParams::Nft(nft_init_params) => match protocol_conf {
                 EthTokenProtocol::Nft(nft_protocol) => {
-                    if nft_protocol.platform != platform_coin.ticker {
+                    if nft_protocol.platform != platform_coin.ticker() {
                         return MmError::err(EthTokenActivationError::InternalError(
                             "NFT platform coin ticker does not match the expected platform".to_string(),
                         ));

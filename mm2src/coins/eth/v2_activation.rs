@@ -42,8 +42,6 @@ pub enum EthActivationV2Error {
     #[from_trait(WithInternal::internal)]
     #[display(fmt = "Internal: {}", _0)]
     InternalError(String),
-    #[display(fmt = "Unexpected coin type")]
-    UnexpectedCoinType,
     Transport(String),
 }
 

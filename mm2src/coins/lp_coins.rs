@@ -2238,7 +2238,7 @@ pub enum TradePreimageError {
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
-    #[display(fmt = "Nft Protocol is not supported")]
+    #[display(fmt = "Nft Protocol is not supported yet!")]
     NftProtocolNotSupported,
 }
 
@@ -2693,7 +2693,7 @@ pub enum WithdrawError {
         my_address: String,
         token_owner: String,
     },
-    #[display(fmt = "Nft Protocol is not supported")]
+    #[display(fmt = "Nft Protocol is not supported yet!")]
     NftProtocolNotSupported,
 }
 

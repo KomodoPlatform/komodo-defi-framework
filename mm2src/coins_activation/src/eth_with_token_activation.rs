@@ -58,9 +58,6 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
                 EnablePlatformCoinWithTokensError::Transport(metamask.to_string())
             },
             EthActivationV2Error::InternalError(e) => EnablePlatformCoinWithTokensError::Internal(e),
-            EthActivationV2Error::UnexpectedCoinType => {
-                EnablePlatformCoinWithTokensError::Internal("Unexpected coin type".to_string())
-            },
             EthActivationV2Error::Transport(e) => EnablePlatformCoinWithTokensError::Transport(e),
         }
     }

@@ -35,7 +35,7 @@ pub enum ValidatePaymentError {
     WatcherRewardError(String),
     /// Input payment timelock overflows the type used by specific coin.
     TimelockOverflow(TryFromIntError),
-    #[display(fmt = "Nft Protocol is not supported")]
+    #[display(fmt = "Nft Protocol is not supported yet!")]
     NftProtocolNotSupported,
 }
 

@@ -234,15 +234,6 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
                 })
             },
         };
-        let coin_enum = lp_coinfind_or_err(&ctx, chain.to_nft_ticker()).await?;
-        let nft_global = match coin_enum {
-            MmCoinEnum::EthCoin(eth_coin) => eth_coin,
-            _ => {
-                return MmError::err(UpdateNftError::GlobalNftTypeMismatch {
-                    token: coin_enum.ticker().to_owned(),
-                })
-            },
-        };
         let nft_transfers = get_moralis_nft_transfers(&ctx, chain, from_block, &req.url, eth_coin).await?;
         storage.add_transfers_to_history(*chain, nft_transfers).await?;
 
@@ -292,7 +283,7 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
             &req.url_antispam,
         )
         .await?;
-        update_nft_global_in_coins_ctx(&ctx, &storage, *chain, nft_global).await?;
+        update_nft_global_in_coins_ctx(&ctx, &storage, *chain).await?;
         update_transfers_with_empty_meta(&storage, chain, &req.url, &req.url_antispam).await?;
         update_spam(&storage, *chain, &req.url_antispam).await?;
         update_phishing(&storage, chain, &req.url_antispam).await?;
@@ -304,25 +295,24 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
 ///
 /// This function uses the up-to-date NFT list for a given chain and updates the
 /// corresponding global NFT information in the coins context.
-async fn update_nft_global_in_coins_ctx<T>(
-    ctx: &MmArc,
-    storage: &T,
-    chain: Chain,
-    mut nft_global: EthCoin,
-) -> MmResult<(), UpdateNftError>
+async fn update_nft_global_in_coins_ctx<T>(ctx: &MmArc, storage: &T, chain: Chain) -> MmResult<(), UpdateNftError>
 where
     T: NftListStorageOps + NftTransferHistoryStorageOps,
 {
-    let nft_list = storage.get_nft_list(vec![chain], true, 1, None, None).await?;
     let coins_ctx = CoinsContext::from_ctx(ctx).map_to_mm(UpdateNftError::Internal)?;
     let mut coins = coins_ctx.coins.lock().await;
+    let ticker = chain.to_nft_ticker();
 
-    update_nft_infos(&mut nft_global, nft_list.nfts).await;
-
-    coins.insert(
-        nft_global.ticker.to_string(),
-        MmCoinStruct::new(MmCoinEnum::EthCoin(nft_global)),
-    );
+    if let Some(MmCoinStruct {
+        inner: MmCoinEnum::EthCoin(nft_global),
+        ..
+    }) = coins.get_mut(ticker)
+    {
+        let nft_list = storage.get_nft_list(vec![chain], true, 1, None, None).await?;
+        update_nft_infos(nft_global, nft_list.nfts).await;
+        return Ok(());
+    }
+    // if global NFT is None in CoinsContext, then it's just not activated
     Ok(())
 }
 
