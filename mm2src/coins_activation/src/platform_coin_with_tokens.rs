@@ -69,6 +69,7 @@ pub enum InitTokensAsMmCoinsError {
     TokenProtocolParseError { ticker: String, error: String },
     UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
     Transport(String),
+    InvalidPayload(String),
 }
 
 impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
@@ -267,6 +268,7 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
             InitTokensAsMmCoinsError::CouldNotFetchBalance(e) | InitTokensAsMmCoinsError::Transport(e) => {
                 EnablePlatformCoinWithTokensError::Transport(e)
             },
+            InitTokensAsMmCoinsError::InvalidPayload(e) => EnablePlatformCoinWithTokensError::InvalidPayload(e),
         }
     }
 }

@@ -83,9 +83,10 @@ impl From<EthTokenActivationError> for InitTokensAsMmCoinsError {
     fn from(error: EthTokenActivationError) -> Self {
         match error {
             EthTokenActivationError::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
-            EthTokenActivationError::CouldNotFetchBalance(e)
-            | Erc20TokenActivationError::ClientConnectionFailed(e) => InitTokensAsMmCoinsError::CouldNotFetchBalance(e),
-            EthTokenActivationError::InvalidPayload(e) => InitTokensAsMmCoinsError::Internal(e),
+            EthTokenActivationError::CouldNotFetchBalance(e) | EthTokenActivationError::ClientConnectionFailed(e) => {
+                InitTokensAsMmCoinsError::CouldNotFetchBalance(e)
+            },
+            EthTokenActivationError::InvalidPayload(e) => InitTokensAsMmCoinsError::InvalidPayload(e),
             EthTokenActivationError::Transport(e) => InitTokensAsMmCoinsError::Transport(e),
         }
     }

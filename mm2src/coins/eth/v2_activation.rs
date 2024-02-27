@@ -69,7 +69,9 @@ impl From<EthTokenActivationError> for EthActivationV2Error {
             EthTokenActivationError::InternalError(err) => EthActivationV2Error::InternalError(err),
             EthTokenActivationError::CouldNotFetchBalance(err) => EthActivationV2Error::CouldNotFetchBalance(err),
             EthTokenActivationError::InvalidPayload(err) => EthActivationV2Error::InvalidPayload(err),
-            EthTokenActivationError::Transport(err) => EthActivationV2Error::Transport(err),
+            EthTokenActivationError::Transport(err) | EthTokenActivationError::ClientConnectionFailed(err) => {
+                EthActivationV2Error::Transport(err)
+            },
         }
     }
 }
@@ -341,8 +343,7 @@ impl EthCoin {
             swap_contract_address: self.swap_contract_address,
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
-            web3: self.web3.clone(),
-            web3_instances: self.web3_instances.clone(),
+            web3_instances: self.web3_instances.lock().await.clone().into(),
             decimals: self.decimals,
             gas_station_url: self.gas_station_url.clone(),
             gas_station_decimals: self.gas_station_decimals,
