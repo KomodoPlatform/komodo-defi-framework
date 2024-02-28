@@ -12,6 +12,7 @@ env:
   BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
   MANUAL_MM_VERSION: true
   JEMALLOC_SYS_WITH_MALLOC_CONF: "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,metadata_thp:auto"
+  FILE_SERVER_AVAILABLE: ${{ secrets.FILE_SERVER_KEY != '' }}
 
 jobs:
   linux-x86-64:
@@ -51,9 +52,7 @@ jobs:
           cargo build --bin mm2 --release
 
       - name: Compress build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
+        if: env.FILE_SERVER_AVAILABLE
         run: |
           NAME="mm2_$COMMIT_HASH-linux-x86-64.zip"
           zip $NAME target/release/mm2 -j
@@ -61,9 +60,7 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
+        if: env.FILE_SERVER_AVAILABLE
         uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}

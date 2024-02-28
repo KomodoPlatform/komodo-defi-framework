@@ -1,5 +1,8 @@
 name: Test
-on: [push]
+on:
+  push:
+    branches-ignore:
+      - main
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -121,27 +124,28 @@ jobs:
           wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
           cargo test --test 'mm2_tests_main' --no-fail-fast
 
-  # https://docs.github.com/en/actions/learn-github-actions/usage-limits-billing-and-administration#usage-limits
-  # https://github.com/KomodoPlatform/atomicDEX-API/actions/runs/4419618128/jobs/7748266141#step:4:1790
-  # mac-x86-64-mm2-integration:
-  #   timeout-minutes: 90
-  #   runs-on: macos-latest
-  #   env:
-  #     BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_MACOS }}
-  #     BOB_USERPASS: ${{ secrets.BOB_USERPASS_MACOS }}
-  #     ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_MACOS }}
-  #     ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_MACOS }}
-  #     TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-  #   steps:
-  #   - uses: actions/checkout@v3
-  #   - name: Install toolchain
-  #     run: |
-  #       rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
-  #       rustup default nightly-2022-10-29
-  #       rustup target add x86_64-apple-darwin
+  mac-x86-64-mm2-integration:
+    timeout-minutes: 90
+    runs-on: macos-latest
+    env:
+      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_MACOS }}
+      BOB_USERPASS: ${{ secrets.BOB_USERPASS_MACOS }}
+      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_MACOS }}
+      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_MACOS }}
+      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install toolchain
+      run: |
+        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+        rustup default nightly-2022-10-29
+        rustup target add x86_64-apple-darwin
 
-  #   - name: Test
-  #     run: cargo test --test 'mm2_tests_main' --target x86_64-apple-darwin
+    - name: Cargo cache
+      uses: ./.github/actions/cargo-cache
+
+    - name: Test
+      run: cargo test --test 'mm2_tests_main' --no-fail-fast --target x86_64-apple-darwin
 
   win-x86-64-mm2-integration:
     timeout-minutes: 90
