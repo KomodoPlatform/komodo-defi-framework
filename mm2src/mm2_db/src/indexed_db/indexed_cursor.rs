@@ -253,7 +253,7 @@ mod tests {
     }
 
     impl TableSignature for SwapTable {
-        fn table_name() -> &'static str { "swap_test_table" }
+        const TABLE_NAME: &'static str = "swap_test_table";
 
         fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
             if old_version > 0 {
@@ -327,7 +327,7 @@ mod tests {
     }
 
     impl TableSignature for TimestampTable {
-        fn table_name() -> &'static str { "timestamp_table" }
+        const TABLE_NAME: &'static str = "timestamp_table";
 
         fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
             if old_version > 0 {

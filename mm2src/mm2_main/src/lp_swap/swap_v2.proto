@@ -16,6 +16,7 @@ message MakerNegotiation {
   bytes taker_coin_htlc_pub = 5;
   optional bytes maker_coin_swap_contract = 6;
   optional bytes taker_coin_swap_contract = 7;
+  string taker_coin_address = 8;
 }
 
 message Abort {
@@ -78,4 +79,5 @@ message SwapMessage {
     TakerPaymentInfo taker_payment_info = 6;
     TakerPaymentSpendPreimage taker_payment_spend_preimage = 7;
   }
+  bytes swap_uuid = 10;
 }

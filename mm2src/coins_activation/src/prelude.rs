@@ -1,5 +1,4 @@
 use coins::utxo::UtxoActivationParams;
-#[cfg(not(target_arch = "wasm32"))]
 use coins::z_coin::ZcoinActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, MmCoinEnum};
 use mm2_core::mm_ctx::MmArc;
@@ -21,7 +20,6 @@ impl TxHistory for UtxoActivationParams {
     fn tx_history(&self) -> bool { self.tx_history }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl TxHistory for ZcoinActivationParams {
     fn tx_history(&self) -> bool { false }
 }

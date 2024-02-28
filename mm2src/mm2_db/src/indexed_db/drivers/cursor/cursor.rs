@@ -317,6 +317,8 @@ impl CursorDriver {
         if matches!(item_action, CursorItemAction::Include) {
             if let Some(cursor_condition) = where_ {
                 if cursor_condition(val.clone())? {
+                    // stop iteration and return value.
+                    self.stopped = true;
                     return Ok(Some((id, val)));
                 }
             } else {

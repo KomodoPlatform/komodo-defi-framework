@@ -1114,3 +1114,10 @@ pub struct DisableCoinOrders {
 pub struct CoinsNeededForKickstartResponse {
     pub result: Vec<String>,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ActiveSwapsResponse {
+    pub uuids: Vec<Uuid>,
+    pub statuses: Option<HashMap<Uuid, Json>>,
+}

@@ -16,7 +16,7 @@ custom-swap-locktime = [] # only for testing purposes, should never be activated
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
-run-docker-tests = []
+run-docker-tests = ["coins/run-docker-tests"]
 # TODO
 enable-solana = []
 default = []
@@ -123,7 +123,8 @@ winapi = "0.3"
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 mocktopus = "0.8.0"
-testcontainers = { git = "https://github.com/KomodoPlatform/mm2-testcontainers-rs.git" }
+testcontainers = "0.15.0"
+web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.19.0", default-features = false, features = ["http"] }
 
 [build-dependencies]
 chrono = "0.4"

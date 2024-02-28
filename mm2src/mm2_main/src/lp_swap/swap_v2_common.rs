@@ -3,16 +3,14 @@ use crate::mm2::lp_swap::swap_lock::{SwapLock, SwapLockError, SwapLockOps};
 use crate::mm2::lp_swap::{swap_v2_topic, SwapsContext};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::{lp_coinfind, MmCoinEnum};
-use common::bits256;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{SpawnFuture, Timer};
 use common::log::{error, info, warn};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_state_machine::prelude::*;
-use mm2_state_machine::storable_state_machine::{RestoredMachine, StateMachineDbRepr, StateMachineStorage,
-                                                StorableStateMachine};
+use mm2_state_machine::storable_state_machine::{StateMachineDbRepr, StateMachineStorage, StorableStateMachine};
 use rpc::v1::types::Bytes as BytesJson;
+use secp256k1::PublicKey;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Error;
@@ -35,6 +33,7 @@ pub struct ActiveSwapV2Info {
     pub uuid: Uuid,
     pub maker_coin: String,
     pub taker_coin: String,
+    pub swap_type: u8,
 }
 
 /// DB representation of tx preimage with signature
@@ -229,10 +228,10 @@ pub(super) async fn mark_swap_as_finished(ctx: MmArc, id: Uuid) -> MmResult<(), 
     Ok(())
 }
 
-pub(super) fn init_additional_context_impl(ctx: &MmArc, swap_info: ActiveSwapV2Info) {
+pub(super) fn init_additional_context_impl(ctx: &MmArc, swap_info: ActiveSwapV2Info, other_p2p_pubkey: PublicKey) {
     subscribe_to_topic(ctx, swap_v2_topic(&swap_info.uuid));
     let swap_ctx = SwapsContext::from_ctx(ctx).expect("SwapsContext::from_ctx should not fail");
-    swap_ctx.init_msg_v2_store(swap_info.uuid, bits256::default());
+    swap_ctx.init_msg_v2_store(swap_info.uuid, other_p2p_pubkey);
     swap_ctx
         .active_swaps_v2_infos
         .lock()
@@ -240,11 +239,20 @@ pub(super) fn init_additional_context_impl(ctx: &MmArc, swap_info: ActiveSwapV2I
         .insert(swap_info.uuid, swap_info);
 }
 
-pub(super) fn clean_up_context_impl(ctx: &MmArc, uuid: &Uuid) {
+pub(super) fn clean_up_context_impl(ctx: &MmArc, uuid: &Uuid, maker_coin: &str, taker_coin: &str) {
     unsubscribe_from_topic(ctx, swap_v2_topic(uuid));
     let swap_ctx = SwapsContext::from_ctx(ctx).expect("SwapsContext::from_ctx should not fail");
     swap_ctx.remove_msg_v2_store(uuid);
     swap_ctx.active_swaps_v2_infos.lock().unwrap().remove(uuid);
+
+    let mut locked_amounts = swap_ctx.locked_amounts.lock().unwrap();
+    if let Some(maker_coin_locked) = locked_amounts.get_mut(maker_coin) {
+        maker_coin_locked.retain(|locked| locked.swap_uuid != *uuid);
+    }
+
+    if let Some(taker_coin_locked) = locked_amounts.get_mut(taker_coin) {
+        taker_coin_locked.retain(|locked| locked.swap_uuid != *uuid);
+    }
 }
 
 pub(super) async fn acquire_reentrancy_lock_impl(ctx: &MmArc, uuid: Uuid) -> MmResult<SwapLock, SwapStateMachineError> {
@@ -309,7 +317,7 @@ pub(super) async fn swap_kickstart_handler<
                     "Can't kickstart the swap {} until the coin {} is activated",
                     uuid, taker_coin_ticker,
                 );
-                Timer::sleep(5.).await;
+                Timer::sleep(1.).await;
             },
             Err(e) => {
                 error!("Error {} on {} find attempt", e, taker_coin_ticker);
@@ -328,7 +336,7 @@ pub(super) async fn swap_kickstart_handler<
                     "Can't kickstart the swap {} until the coin {} is activated",
                     uuid, maker_coin_ticker,
                 );
-                Timer::sleep(5.).await;
+                Timer::sleep(1.).await;
             },
             Err(e) => {
                 error!("Error {} on {} find attempt", e, maker_coin_ticker);
@@ -351,14 +359,14 @@ pub(super) async fn swap_kickstart_handler<
     let recreate_context = SwapRecreateCtx { maker_coin, taker_coin };
 
     let (mut state_machine, state) = match T::recreate_machine(uuid, storage, swap_repr, recreate_context).await {
-        Ok(RestoredMachine { machine, current_state }) => (machine, current_state),
+        Ok((machine, from_state)) => (machine, from_state),
         Err(e) => {
             error!("Error {} on trying to recreate the swap {}", e, uuid);
             return;
         },
     };
 
-    if let Err(e) = state_machine.run(state).await {
+    if let Err(e) = state_machine.kickstart(state).await {
         error!("Error {} on trying to run the swap {}", e, uuid);
     }
 }
