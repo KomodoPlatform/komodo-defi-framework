@@ -86,10 +86,7 @@ pub use z_rpc::{FirstSyncBlock, SyncStatus};
 
 cfg_native!(
     use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat};
-    use common::{async_blocking, sha256_digest, calc_total_pages, PagingOptionsEnum};
-    use db_common::sqlite::offset_by_id;
-    use db_common::sqlite::rusqlite::{Error as SqlError, Row};
-    use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
+    use common::{async_blocking, sha256_digest, calc_total_pages};
     use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
     use zcash_client_sqlite::wallet::get_balance;
     use zcash_proofs::default_params_folder;
@@ -106,12 +103,14 @@ cfg_wasm32!(
 
 #[allow(unused)] mod z_coin_errors;
 use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
+use crate::z_coin::z_tx_history::{fetch_tx_history_from_db, ZCoinTxHistoryItem};
 pub use z_coin_errors::*;
 
 pub mod storage;
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
 mod z_coin_native_tests;
 #[cfg(target_arch = "wasm32")] mod z_params;
+mod z_tx_history;
 
 /// `ZP2SHSpendError` compatible `TransactionErr` handling macro.
 macro_rules! try_ztx_s {
@@ -138,7 +137,6 @@ cfg_native!(
     const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
     const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
     const BLOCKS_TABLE: &str = "blocks";
-    const TRANSACTIONS_TABLE: &str = "transactions";
     const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
     const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
 );
@@ -238,39 +236,6 @@ pub struct ZOutput {
     pub amount: Amount,
     pub viewing_key: Option<OutgoingViewingKey>,
     pub memo: Option<MemoBytes>,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-struct ZCoinSqlTxHistoryItem {
-    tx_hash: Vec<u8>,
-    internal_id: i64,
-    height: i64,
-    timestamp: i64,
-    received_amount: i64,
-    spent_amount: i64,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl ZCoinSqlTxHistoryItem {
-    fn try_from_sql_row(row: &Row<'_>) -> Result<Self, SqlError> {
-        let mut tx_hash: Vec<u8> = row.get(0)?;
-        tx_hash.reverse();
-        Ok(ZCoinSqlTxHistoryItem {
-            tx_hash,
-            internal_id: row.get(1)?,
-            height: row.get(2)?,
-            timestamp: row.get(3)?,
-            received_amount: row.get(4)?,
-            spent_amount: row.get(5)?,
-        })
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-struct SqlTxHistoryRes {
-    transactions: Vec<ZCoinSqlTxHistoryItem>,
-    total_tx_count: u32,
-    skipped: usize,
 }
 
 #[derive(Serialize)]
@@ -532,72 +497,6 @@ impl ZCoin {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn tx_history_from_sql(
-        &self,
-        limit: usize,
-        paging_options: PagingOptionsEnum<i64>,
-    ) -> Result<SqlTxHistoryRes, MmError<SqlTxHistoryError>> {
-        let wallet_db = self.z_fields.light_wallet_db.clone();
-        async_blocking(move || {
-            let db_guard = wallet_db.db.inner();
-            let db_guard = db_guard.lock().unwrap();
-            let conn = db_guard.sql_conn();
-
-            let total_sql = SqlBuilder::select_from(TRANSACTIONS_TABLE)
-                .field("COUNT(id_tx)")
-                .sql()
-                .expect("valid SQL");
-            let total_tx_count = conn.query_row(&total_sql, [], |row| row.get(0))?;
-
-            let mut sql_builder = SqlBuilder::select_from(name!(TRANSACTIONS_TABLE; "txes"));
-            sql_builder
-                .field("txes.txid")
-                .field("txes.id_tx as internal_id")
-                .field("txes.block as block");
-
-            let offset = match paging_options {
-                PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
-                PagingOptionsEnum::FromId(id) => {
-                    offset_by_id(conn, &sql_builder, [id], "id_tx", "block DESC, id_tx ASC", "id_tx = ?1")?
-                        .ok_or(SqlTxHistoryError::FromIdDoesNotExist(id))?
-                },
-            };
-
-            let sql = sql_builder
-                .field("blocks.time")
-                .field("COALESCE(rn.received_amount, 0)")
-                .field("COALESCE(sn.sent_amount, 0)")
-                .left()
-                .join("(SELECT tx, SUM(value) as received_amount FROM received_notes GROUP BY tx) as rn")
-                .on("txes.id_tx = rn.tx")
-                // detecting spent amount by "spent" field in received_notes table
-                .join("(SELECT spent, SUM(value) as sent_amount FROM received_notes GROUP BY spent) as sn")
-                .on("txes.id_tx = sn.spent")
-                .join(BLOCKS_TABLE)
-                .on("txes.block = blocks.height")
-                .group_by("internal_id")
-                .order_by("block", true)
-                .order_by("internal_id", false)
-                .offset(offset)
-                .limit(limit)
-                .sql()
-                .expect("valid query");
-
-            let sql_items = conn
-                .prepare(&sql)?
-                .query_map([], ZCoinSqlTxHistoryItem::try_from_sql_row)?
-                .collect::<Result<Vec<_>, _>>()?;
-
-            Ok(SqlTxHistoryRes {
-                transactions: sql_items,
-                total_tx_count,
-                skipped: offset,
-            })
-        })
-        .await
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
     async fn z_transactions_from_cache_or_rpc(
         &self,
         hashes: HashSet<H256Json>,
@@ -616,7 +515,7 @@ impl ZCoin {
     #[cfg(not(target_arch = "wasm32"))]
     fn tx_details_from_sql_item(
         &self,
-        sql_item: ZCoinSqlTxHistoryItem,
+        sql_item: ZCoinTxHistoryItem,
         transactions: &mut HashMap<H256Json, ZTransaction>,
         prev_transactions: &HashMap<H256Json, ZTransaction>,
         current_block: u64,
@@ -715,11 +614,9 @@ impl ZCoin {
         request: MyTxHistoryRequestV2<i64>,
     ) -> Result<MyTxHistoryResponseV2<ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
         let current_block = self.utxo_rpc_client().get_block_count().compat().await?;
-        let sql_result = self
-            .tx_history_from_sql(request.limit, request.paging_options.clone())
-            .await?;
+        let req_result = fetch_tx_history_from_db(self, request.limit, request.paging_options.clone()).await?;
 
-        let hashes_for_verbose = sql_result
+        let hashes_for_verbose = req_result
             .transactions
             .iter()
             .map(|item| H256Json::from(item.tx_hash.as_slice()))
@@ -738,7 +635,7 @@ impl ZCoin {
             .collect();
         let prev_transactions = self.z_transactions_from_cache_or_rpc(prev_tx_hashes).await?;
 
-        let transactions = sql_result
+        let transactions = req_result
             .transactions
             .into_iter()
             .map(|sql_item| {
@@ -754,9 +651,9 @@ impl ZCoin {
             // Zcoin is activated only after the state is synced
             sync_status: HistorySyncState::Finished,
             limit: request.limit,
-            skipped: sql_result.skipped,
-            total: sql_result.total_tx_count as usize,
-            total_pages: calc_total_pages(sql_result.total_tx_count as usize, request.limit),
+            skipped: req_result.skipped,
+            total: req_result.total_tx_count as usize,
+            total_pages: calc_total_pages(req_result.total_tx_count as usize, request.limit),
             paging_options: request.paging_options,
         })
     }

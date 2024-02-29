@@ -146,7 +146,7 @@ impl<'a> WalletIndexedDb {
         Ok(db)
     }
 
-    async fn lock_db(&self) -> ZcoinStorageRes<WalletDbInnerLocked<'_>> {
+    pub(crate) async fn lock_db(&self) -> ZcoinStorageRes<WalletDbInnerLocked<'_>> {
         self.db
             .get_or_initialize()
             .await
