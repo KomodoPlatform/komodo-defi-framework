@@ -110,7 +110,6 @@ pub(crate) async fn fetch_tx_history_from_db(
         .cursor_builder()
         .only("ticker", &z.ticker())?
         .bound("height", 0u32, u32::MAX)
-        .where_first()
         .open_cursor(WalletDbAccountsTable::TICKER_ACCOUNT_INDEX)
         .await?
         .collect()
@@ -121,7 +120,6 @@ pub(crate) async fn fetch_tx_history_from_db(
         .cursor_builder()
         .only("ticker", &z.ticker())?
         .bound("height", 0u32, u32::MAX)
-        .where_first()
         .open_cursor(WalletDbReceivedNotesTable::TICKER_ACCOUNT_INDEX)
         .await?
         .collect()
@@ -132,7 +130,6 @@ pub(crate) async fn fetch_tx_history_from_db(
     let blocks = blocks_table
         .cursor_builder()
         .only("ticker", &z.ticker())?
-        .where_first()
         .open_cursor("ticker")
         .await?
         .collect()
