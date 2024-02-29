@@ -147,15 +147,15 @@ pub(crate) async fn fetch_tx_history_from_db(
             let mut spent_amount = 0;
 
             for (_, note) in received_notes {
-                if let Some(_) = txs.iter().find(|(id_tx, tx)| *internal_id == note.tx) {
+                if *internal_id == note.tx {
                     *received_amount += &note.value;
-                };
+                }
 
                 // detecting spent amount by "spent" field in received_notes table
                 if let Some(spent) = &note.spent {
-                    if let Some(_) = txs.iter().find(|(id_tx, tx)| &BigInt::from(internal_id) == spent) {
+                    if &BigInt::from(internal_id) == spent {
                         *spent_amount += &note.value;
-                    };
+                    }
                 }
             }
 
