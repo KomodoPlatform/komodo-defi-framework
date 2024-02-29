@@ -195,17 +195,23 @@ pub enum EthTokenActivationParams {
     Erc20(Erc20TokenActivationRequest),
 }
 
-/// Parameters for activating an ERC-20 token.
+/// Holds ERC-20 token-specific activation parameters, including optional confirmation requirements.
 #[derive(Clone, Deserialize)]
 pub struct Erc20TokenActivationRequest {
     pub required_confirmations: Option<u64>,
 }
 
-/// Parameters for activating an NFT.
+/// Encapsulates the request parameters for NFT activation, specifying the provider to be used.
 #[derive(Clone, Deserialize)]
 pub struct NftActivationRequest {
-    /// This URL is used to fetch necessary NFT details for activation
-    pub url: Url,
+    pub provider: NftProviderEnum,
+}
+
+/// Defines available NFT providers and their configuration.
+#[derive(Clone, Deserialize)]
+#[serde(tag = "type", content = "info")]
+pub enum NftProviderEnum {
+    Moralis { url: Url },
 }
 
 /// Represents the protocol type for an Ethereum-based token, distinguishing between ERC-20 tokens and NFTs.

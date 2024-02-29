@@ -1,7 +1,7 @@
 use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
             token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
 use async_trait::async_trait;
-use coins::eth::v2_activation::{EthTokenActivationParams, EthTokenProtocol, NftProtocol};
+use coins::eth::v2_activation::{EthTokenActivationParams, EthTokenProtocol, NftProtocol, NftProviderEnum};
 use coins::nft::nft_structs::NftInfo;
 use coins::{eth::{v2_activation::{Erc20Protocol, EthTokenActivationError},
                   valid_addr_from_str, EthCoin},
@@ -160,9 +160,9 @@ impl TokenActivationOps for EthCoin {
                             "NFT platform coin ticker does not match the expected platform".to_string(),
                         ));
                     }
-                    let nft_global = platform_coin
-                        .global_nft_from_platform_coin(&nft_init_params.url)
-                        .await?;
+                    let nft_global = match &nft_init_params.provider {
+                        NftProviderEnum::Moralis { url } => platform_coin.global_nft_from_platform_coin(url).await?,
+                    };
                     let nfts = nft_global.nfts_infos.lock().await.clone();
                     let init_result = EthTokenInitResult::Nft(NftInitResult {
                         nfts,

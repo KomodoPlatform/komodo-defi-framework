@@ -4,7 +4,7 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
                                         TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
-use coins::eth::v2_activation::NftActivationRequest;
+use coins::eth::v2_activation::{NftActivationRequest, NftProviderEnum};
 use coins::eth::EthPrivKeyBuildPolicy;
 use coins::nft::nft_structs::NftInfo;
 use coins::{eth::v2_activation::EthPrivKeyActivationPolicy, MmCoinEnum};
@@ -215,7 +215,9 @@ impl PlatformWithTokensActivationOps for EthCoin {
         activation_request: &Self::ActivationRequest,
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
         let url = match &activation_request.nft_req {
-            Some(nft_req) => &nft_req.url,
+            Some(nft_req) => match &nft_req.provider {
+                NftProviderEnum::Moralis { url } => url,
+            },
             None => return Ok(None),
         };
         let nft_global = self.global_nft_from_platform_coin(url).await?;
