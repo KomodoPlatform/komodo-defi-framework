@@ -1,5 +1,4 @@
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
-#[cfg(not(target_arch = "wasm32"))]
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
@@ -7,6 +6,7 @@ use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnu
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::utxo::utxo_builder::{UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaSecretBuilder};
+use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat};
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address,
                   BroadcastTxErr, FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
@@ -35,6 +35,7 @@ use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::executor::{AbortableSystem, AbortedError};
+use common::{calc_total_pages, sha256_digest};
 use common::{log, one_thousand_u32};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
@@ -85,12 +86,11 @@ use z_rpc::init_light_client;
 pub use z_rpc::{FirstSyncBlock, SyncStatus};
 
 cfg_native!(
-    use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat};
-    use common::{async_blocking, sha256_digest, calc_total_pages};
+    use common::async_blocking;
     use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
     use zcash_client_sqlite::wallet::get_balance;
     use zcash_proofs::default_params_folder;
-    use z_rpc::{init_native_client};
+    use z_rpc::init_native_client;
 );
 
 cfg_wasm32!(
@@ -496,7 +496,6 @@ impl ZCoin {
         Ok(tx)
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     async fn z_transactions_from_cache_or_rpc(
         &self,
         hashes: HashSet<H256Json>,
@@ -512,23 +511,22 @@ impl ZCoin {
             .map_to_mm(|e| UtxoRpcError::InvalidResponse(e.to_string()))
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    fn tx_details_from_sql_item(
+    fn tx_details_from_db_item(
         &self,
-        sql_item: ZCoinTxHistoryItem,
+        tx_item: ZCoinTxHistoryItem,
         transactions: &mut HashMap<H256Json, ZTransaction>,
         prev_transactions: &HashMap<H256Json, ZTransaction>,
         current_block: u64,
     ) -> Result<ZcoinTxDetails, MmError<NoInfoAboutTx>> {
         let mut from = HashSet::new();
 
-        let mut confirmations = current_block as i64 - sql_item.height + 1;
+        let mut confirmations = current_block as i64 - tx_item.height + 1;
         if confirmations < 0 {
             confirmations = 0;
         }
 
         let mut transparent_input_amount = Amount::zero();
-        let hash = H256Json::from(sql_item.tx_hash.as_slice());
+        let hash = H256Json::from(tx_item.tx_hash.as_slice());
         let z_tx = transactions.remove(&hash).or_mm_err(|| NoInfoAboutTx(hash))?;
         for input in z_tx.vin.iter() {
             let mut hash = H256Json::from(*input.prevout.hash());
@@ -556,11 +554,11 @@ impl ZCoin {
         }
 
         let fee_amount = z_tx.value_balance + transparent_input_amount - transparent_output_amount;
-        if sql_item.spent_amount > 0 {
+        if tx_item.spent_amount > 0 {
             from.insert(self.my_z_address_encoded());
         }
 
-        if sql_item.received_amount > 0 {
+        if tx_item.received_amount > 0 {
             to.insert(self.my_z_address_encoded());
         }
 
@@ -590,25 +588,24 @@ impl ZCoin {
             }
         }
 
-        let spent_by_me = big_decimal_from_sat(sql_item.spent_amount, self.decimals());
-        let received_by_me = big_decimal_from_sat(sql_item.received_amount, self.decimals());
+        let spent_by_me = big_decimal_from_sat(tx_item.spent_amount, self.decimals());
+        let received_by_me = big_decimal_from_sat(tx_item.received_amount, self.decimals());
         Ok(ZcoinTxDetails {
-            tx_hash: hex::encode(sql_item.tx_hash),
+            tx_hash: hex::encode(tx_item.tx_hash),
             from,
             to,
             my_balance_change: &received_by_me - &spent_by_me,
             spent_by_me,
             received_by_me,
-            block_height: sql_item.height,
+            block_height: tx_item.height,
             confirmations,
-            timestamp: sql_item.timestamp,
+            timestamp: tx_item.timestamp,
             transaction_fee: big_decimal_from_sat(fee_amount.into(), self.decimals()),
             coin: self.ticker().into(),
-            internal_id: sql_item.internal_id,
+            internal_id: tx_item.internal_id,
         })
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn tx_history(
         &self,
         request: MyTxHistoryRequestV2<i64>,
@@ -639,7 +636,7 @@ impl ZCoin {
             .transactions
             .into_iter()
             .map(|sql_item| {
-                self.tx_details_from_sql_item(sql_item, &mut transactions, &prev_transactions, current_block)
+                self.tx_details_from_db_item(sql_item, &mut transactions, &prev_transactions, current_block)
             })
             .collect::<Result<_, _>>()?;
 

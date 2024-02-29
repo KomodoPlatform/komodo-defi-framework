@@ -1,6 +1,6 @@
 use crate::my_tx_history_v2::MyTxHistoryErrorV2;
 use crate::z_coin::storage::wasm::tables::{WalletDbAccountsTable, WalletDbBlocksTable, WalletDbReceivedNotesTable,
-                                           WalletDbSentNotesTable, WalletDbTransactionsTable};
+                                           WalletDbTransactionsTable};
 use crate::z_coin::ZCoin;
 use crate::MarketCoinOps;
 use common::PagingOptionsEnum;
@@ -8,7 +8,7 @@ use mm2_db::indexed_db::cursor_prelude::CursorError;
 use mm2_db::indexed_db::DbTransactionError;
 use mm2_err_handle::prelude::MmError;
 use mm2_number::BigInt;
-use std::collections::HashMap;
+use num_traits::ToPrimitive;
 
 cfg_native!(
     use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
@@ -27,6 +27,7 @@ pub(crate) enum ZTxHistoryError {
     Sql(SqliteError),
     #[cfg(target_arch = "wasm32")]
     IndexedDbError(String),
+    #[cfg(not(target_arch = "wasm32"))]
     FromIdDoesNotExist(i64),
 }
 
@@ -56,7 +57,7 @@ impl From<DbTransactionError> for ZTxHistoryError {
 
 #[cfg(target_arch = "wasm32")]
 impl From<CursorError> for ZTxHistoryError {
-    fn from(err: DbTransactionError) -> Self { ZTxHistoryError::IndexedDbError(err.to_string()) }
+    fn from(err: CursorError) -> Self { ZTxHistoryError::IndexedDbError(err.to_string()) }
 }
 
 pub(crate) struct ZCoinTxHistoryItem {
@@ -100,10 +101,10 @@ pub(crate) async fn fetch_tx_history_from_db(
     let wallet_db = wallet_db.db.lock_db().await.unwrap();
     let db_transaction = wallet_db.get_inner().transaction().await?;
     let tx_table = db_transaction.table::<WalletDbTransactionsTable>().await?;
-    let tx_count = tx_table.count_all().await?;
+    let total_tx_count = tx_table.count_all().await? as u32;
     let offset = match paging_options {
         PagingOptionsEnum::FromId(from_address_id) => from_address_id + 1,
-        PagingOptionsEnum::PageNumber(page_number) => ((page_number.get() - 1) * limit) as u32,
+        PagingOptionsEnum::PageNumber(page_number) => ((page_number.get() - 1) * limit) as i64,
     };
 
     let txs = tx_table
@@ -146,15 +147,19 @@ pub(crate) async fn fetch_tx_history_from_db(
             let mut received_amount = 0;
             let mut spent_amount = 0;
 
-            for (_, note) in received_notes {
-                if *internal_id == note.tx {
-                    *received_amount += &note.value;
+            for (_, note) in &received_notes {
+                if internal_id == note.tx {
+                    received_amount += (*&note.value.to_u64().ok_or_else(|| {
+                        ZTxHistoryError::IndexedDbError("Number is too large to fit in a u64".to_string())
+                    })?) as i64;
                 }
 
                 // detecting spent amount by "spent" field in received_notes table
                 if let Some(spent) = &note.spent {
                     if &BigInt::from(internal_id) == spent {
-                        *spent_amount += &note.value;
+                        spent_amount += (*&note.value.to_u64().ok_or_else(|| {
+                            ZTxHistoryError::IndexedDbError("Number is too large to fit in a u64".to_string())
+                        })?) as i64;
                     }
                 }
             }
