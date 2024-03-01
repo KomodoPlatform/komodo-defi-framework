@@ -118,6 +118,18 @@ fn sha256(input: impl AsRef<[u8]>) -> [u8; 32] { Sha256::new().chain(input).fina
 #[derive(Debug, Eq, PartialEq)]
 pub struct Secp256k1PubkeySerialize(Secp256k1Pubkey);
 
+impl From<Secp256k1PubkeySerialize> for Secp256k1Pubkey {
+    fn from(pubkey: Secp256k1PubkeySerialize) -> Secp256k1Pubkey { pubkey.0 }
+}
+
+impl From<Secp256k1Pubkey> for Secp256k1PubkeySerialize {
+    fn from(pubkey: Secp256k1Pubkey) -> Self { Secp256k1PubkeySerialize(pubkey) }
+}
+
+impl Secp256k1PubkeySerialize {
+    pub fn to_bytes(&self) -> [u8; 33] { self.0.serialize() }
+}
+
 impl Serialize for Secp256k1PubkeySerialize {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_bytes(&self.0.serialize())
@@ -129,9 +141,9 @@ impl<'de> de::Deserialize<'de> for Secp256k1PubkeySerialize {
     where
         D: de::Deserializer<'de>,
     {
-        let slice: &[u8] = de::Deserialize::deserialize(deserializer)?;
-        let pubkey =
-            Secp256k1Pubkey::from_slice(slice).map_err(|e| de::Error::custom(format!("Error {} parsing pubkey", e)))?;
+        let bytes: serde_bytes::ByteBuf = de::Deserialize::deserialize(deserializer)?;
+        let pubkey = Secp256k1Pubkey::from_slice(bytes.as_ref())
+            .map_err(|e| de::Error::custom(format!("Error {} parsing pubkey", e)))?;
 
         Ok(Secp256k1PubkeySerialize(pubkey))
     }

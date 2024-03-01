@@ -5,7 +5,7 @@
 // taker payment spend - https://zombie.explorer.lordofthechains.com/tx/af6bb0f99f9a5a070a0c1f53d69e4189b0e9b68f9d66e69f201a6b6d9f93897e
 // maker payment spend - https://rick.explorer.dexstats.info/tx/6a2dcc866ad75cebecb780a02320073a88bcf5e57ddccbe2657494e7747d591e
 
-use super::ZCoin;
+use super::{GenTxError, ZCoin};
 use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use crate::utxo::utxo_common::payment_script;
 use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
@@ -21,18 +21,18 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use script::Script;
 use script::{Builder as ScriptBuilder, Opcode};
+use secp256k1::SecretKey;
+use zcash_primitives::consensus;
 use zcash_primitives::legacy::Script as ZCashScript;
 use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
+use zcash_primitives::transaction::components::OutPoint as ZCashOutpoint;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
 
 cfg_native!(
     use common::async_blocking;
-    use secp256k1::SecretKey;
-    use zcash_primitives::consensus;
-    use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
-    use zcash_primitives::transaction::components::OutPoint as ZCashOutpoint;
 );
 
 /// Sends HTLC output from the coin's my_z_addr
@@ -106,6 +106,7 @@ pub async fn z_send_dex_fee(
 #[allow(clippy::large_enum_variant, clippy::upper_case_acronyms, unused)]
 pub enum ZP2SHSpendError {
     ZTxBuilderError(ZTxBuilderError),
+    GenTxError(GenTxError),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     Rpc(UtxoRpcError),
     #[display(fmt = "{:?} {}", _0, _1)]
@@ -140,7 +141,6 @@ impl ZP2SHSpendError {
 }
 
 /// Spends P2SH output 0 to the coin's my_z_addr
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn z_p2sh_spend(
     coin: &ZCoin,
     p2sh_tx: ZTransaction,
@@ -176,11 +176,17 @@ pub async fn z_p2sh_spend(
         None,
     )?;
 
-    let (zcash_tx, _) = async_blocking({
-        let prover = coin.z_fields.z_tx_prover.clone();
-        move || tx_builder.build(consensus::BranchId::Sapling, prover.as_ref())
-    })
-    .await?;
+    let prover = coin.z_fields.z_tx_prover.clone();
+    #[cfg(not(target_arch = "wasm32"))]
+    let (zcash_tx, _) = async_blocking(move || tx_builder.build(consensus::BranchId::Sapling, prover.as_ref())).await?;
+
+    #[cfg(target_arch = "wasm32")]
+    let (zcash_tx, _) =
+        crate::z_coin::TxBuilderSpawner::request_tx_result(tx_builder, consensus::BranchId::Sapling, prover.clone())
+            .await
+            .mm_err(ZP2SHSpendError::GenTxError)?
+            .tx_result
+            .mm_err(ZP2SHSpendError::GenTxError)?;
 
     let mut tx_buffer = Vec::with_capacity(1024);
     zcash_tx.write(&mut tx_buffer)?;
@@ -191,17 +197,4 @@ pub async fn z_p2sh_spend(
         .await
         .map(|_| zcash_tx.clone())
         .mm_err(|e| ZP2SHSpendError::TxRecoverable(zcash_tx.into(), e.to_string()))
-}
-
-#[cfg(target_arch = "wasm32")]
-pub async fn z_p2sh_spend(
-    _coin: &ZCoin,
-    _p2sh_tx: ZTransaction,
-    _tx_locktime: u32,
-    _input_sequence: u32,
-    _redeem_script: Script,
-    _script_data: Script,
-    _htlc_keypair: &KeyPair,
-) -> Result<ZTransaction, MmError<ZP2SHSpendError>> {
-    todo!()
 }

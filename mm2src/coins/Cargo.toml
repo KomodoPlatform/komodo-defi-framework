@@ -49,9 +49,9 @@ ethereum-types = { version = "0.13", default-features = false, features = ["std"
 ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
 # Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
 #enum_dispatch = "0.1"
-tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", features = ["rustls-tls-native-roots"]}
 futures01 = { version = "0.1", package = "futures" }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+futures-ticker = "0.0.3"
 # using select macro requires the crate to be named futures, compilation failed with futures03 name
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
 group = "0.8.0"
@@ -100,6 +100,7 @@ sha3 = "0.9"
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
 tendermint-rpc = { version = "=0.23.7", default-features = false }
+tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", features = ["rustls-tls-native-roots"]}
 tiny-bip39 = "0.8.0"
 url = { version = "2.2.2", features = ["serde"] }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
@@ -107,9 +108,9 @@ uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.19.0", default-features = false }
 zbase32 = "0.1.2"
-zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.3.0" }
-zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.3.0" }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.3.0" }
+zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0" }
+zcash_extras = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0" }
+zcash_primitives =  {features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0" }
 
 [target.'cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
 bincode = { version = "1.3.3", default-features = false, optional = true }
@@ -121,15 +122,23 @@ spl-token = { version = "3", optional = true }
 spl-associated-token-account = { version = "1", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+blake2b_simd = "0.5"
+ff = "0.8"
+futures-util = "0.3"
 instant = "0.1.12"
+jubjub = "0.5.1"
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
 mm2_metamask = { path = "../mm2_metamask" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
+time = { version = "0.3.20", features = ["wasm-bindgen"] }
+tonic = { version = "0.7", default-features = false, features = ["prost", "codegen", "compression"] }
+tower-service = "0.3"
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.2" }
 web-sys = { version = "0.3.55", features = ["console", "Headers", "Request", "RequestInit", "RequestMode", "Response", "Window"] }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0", default-features = false, features = ["local-prover"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
@@ -151,7 +160,8 @@ tokio = { version = "1.20" }
 tokio-rustls = { version = "0.23" }
 tonic = { version = "0.7", features = ["tls", "tls-webpki-roots", "compression"] }
 webpki-roots = { version = "0.22" }
-zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.3.0" }
+zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0" }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0", default-features =false, features = ["local-prover", "multicore"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"
@@ -159,6 +169,9 @@ winapi = "0.3"
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wagyu-zcash-parameters = { version = "0.2" }
+
 [build-dependencies]
 prost-build = { version = "0.10.4", default-features = false }
-tonic-build = { version = "0.7", features = ["prost", "compression"] }
+tonic-build = { version = "0.7", default-features = false, features = ["prost", "compression"] }

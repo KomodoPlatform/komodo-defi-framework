@@ -5,9 +5,11 @@ use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountAddressId, HDAcco
 use common::executor::AbortedError;
 use crypto::CryptoCtxError;
 use enum_derives::EnumFromTrait;
+use instant::Instant;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
+use web3_transport::websocket_transport::WebsocketTransport;
 
 #[derive(Clone, Debug, Deserialize, Display, EnumFromTrait, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -82,13 +84,13 @@ impl Default for EthPrivKeyActivationPolicy {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum EthRpcMode {
-    Http,
+    Default,
     #[cfg(target_arch = "wasm32")]
     Metamask,
 }
 
 impl Default for EthRpcMode {
-    fn default() -> Self { EthRpcMode::Http }
+    fn default() -> Self { EthRpcMode::Default }
 }
 
 #[derive(Clone, Deserialize)]
@@ -127,6 +129,7 @@ pub struct EthNode {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum Erc20TokenActivationError {
     InternalError(String),
+    ClientConnectionFailed(String),
     CouldNotFetchBalance(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
@@ -171,14 +174,22 @@ impl EthCoin {
         let conf = coin_conf(&ctx, &ticker);
 
         let decimals = match conf["decimals"].as_u64() {
-            None | Some(0) => get_token_decimals(&self.web3, protocol.token_addr)
-                .await
-                .map_err(Erc20TokenActivationError::InternalError)?,
+            None | Some(0) => get_token_decimals(
+                &self
+                    .web3()
+                    .await
+                    .map_err(|e| Erc20TokenActivationError::ClientConnectionFailed(e.to_string()))?,
+                protocol.token_addr,
+            )
+            .await
+            .map_err(Erc20TokenActivationError::InternalError)?,
             Some(d) => d as u8,
         };
 
         let web3_instances: Vec<Web3Instance> = self
             .web3_instances
+            .lock()
+            .await
             .iter()
             .map(|node| {
                 let mut transport = node.web3.transport().clone();
@@ -192,12 +203,6 @@ impl EthCoin {
                 }
             })
             .collect();
-
-        let mut transport = self.web3.transport().clone();
-        if let Some(auth) = transport.gui_auth_validation_generator_as_mut() {
-            auth.coin_ticker = ticker.clone();
-        }
-        let web3 = Web3::new(transport);
 
         let required_confirmations = activation_params
             .required_confirmations
@@ -229,8 +234,7 @@ impl EthCoin {
             gas_station_url: self.gas_station_url.clone(),
             gas_station_decimals: self.gas_station_decimals,
             gas_station_policy: self.gas_station_policy.clone(),
-            web3,
-            web3_instances,
+            web3_instances: AsyncMutex::new(web3_instances),
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             ctx: self.ctx.clone(),
             required_confirmations,
@@ -280,16 +284,25 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let chain_id = conf["chain_id"].as_u64();
 
-    let (web3, web3_instances) = match (req.rpc_mode, &priv_key_policy) {
+    let web3_instances = match (req.rpc_mode, &priv_key_policy) {
         (
-            EthRpcMode::Http,
+            EthRpcMode::Default,
             EthPrivKeyPolicy::Iguana(key_pair)
             | EthPrivKeyPolicy::HDWallet {
                 activated_key: key_pair,
                 ..
             },
-        ) => build_http_transport(ctx, ticker.to_string(), enabled_address_str, key_pair, &req.nodes).await?,
-        (EthRpcMode::Http, EthPrivKeyPolicy::Trezor) => {
+        ) => {
+            build_web3_instances(
+                ctx,
+                ticker.to_string(),
+                enabled_address_str,
+                key_pair,
+                req.nodes.clone(),
+            )
+            .await?
+        },
+        (EthRpcMode::Default, EthPrivKeyPolicy::Trezor) => {
             return MmError::err(EthActivationV2Error::PrivKeyPolicyNotAllowed(
                 PrivKeyPolicyNotAllowed::HardwareWalletNotSupported,
             ));
@@ -302,7 +315,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
             build_metamask_transport(ctx, ticker.to_string(), chain_id).await?
         },
         #[cfg(target_arch = "wasm32")]
-        (EthRpcMode::Http, EthPrivKeyPolicy::Metamask(_)) | (EthRpcMode::Metamask, _) => {
+        (EthRpcMode::Default, EthPrivKeyPolicy::Metamask(_)) | (EthRpcMode::Metamask, _) => {
             let error = r#"priv_key_policy="Metamask" and rpc_mode="Metamask" should be used both"#.to_string();
             return MmError::err(EthActivationV2Error::ActivationFailed {
                 ticker: ticker.to_string(),
@@ -347,8 +360,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         gas_station_url: req.gas_station_url,
         gas_station_decimals: req.gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
         gas_station_policy: req.gas_station_policy,
-        web3,
-        web3_instances,
+        web3_instances: AsyncMutex::new(web3_instances),
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         ctx: ctx.weak(),
         required_confirmations,
@@ -443,58 +455,94 @@ pub(crate) async fn build_address_and_priv_key_policy(
     }
 }
 
-async fn build_http_transport(
+async fn build_web3_instances(
     ctx: &MmArc,
     coin_ticker: String,
     address: String,
     key_pair: &KeyPair,
-    eth_nodes: &[EthNode],
-) -> MmResult<(Web3<Web3Transport>, Vec<Web3Instance>), EthActivationV2Error> {
+    mut eth_nodes: Vec<EthNode>,
+) -> MmResult<Vec<Web3Instance>, EthActivationV2Error> {
     if eth_nodes.is_empty() {
         return MmError::err(EthActivationV2Error::AtLeastOneNodeRequired);
     }
 
-    let mut http_nodes = vec![];
-    for node in eth_nodes {
-        let uri = node
+    let mut rng = small_rng();
+    eth_nodes.as_mut_slice().shuffle(&mut rng);
+    drop_mutability!(eth_nodes);
+
+    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
+
+    let mut web3_instances = Vec::with_capacity(eth_nodes.len());
+    for eth_node in eth_nodes {
+        let uri: Uri = eth_node
             .url
             .parse()
-            .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed.", node.url)))?;
+            .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed.", eth_node.url)))?;
 
-        http_nodes.push(HttpTransportNode {
-            uri,
-            gui_auth: node.gui_auth,
-        });
-    }
+        let transport = match uri.scheme_str() {
+            Some("ws") | Some("wss") => {
+                const TMP_SOCKET_CONNECTION: Duration = Duration::from_secs(20);
 
-    let mut rng = small_rng();
-    http_nodes.as_mut_slice().shuffle(&mut rng);
+                let node = WebsocketTransportNode {
+                    uri: uri.clone(),
+                    gui_auth: eth_node.gui_auth,
+                };
 
-    drop_mutability!(http_nodes);
+                let mut websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
 
-    let mut web3_instances = Vec::with_capacity(http_nodes.len());
-    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
-    for node in http_nodes.iter() {
-        let transport = build_single_http_transport(
-            coin_ticker.clone(),
-            address.clone(),
-            key_pair,
-            vec![node.clone()],
-            event_handlers.clone(),
-        );
+                if eth_node.gui_auth {
+                    websocket_transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+                        coin_ticker: coin_ticker.clone(),
+                        secret: key_pair.secret().clone(),
+                        address: address.clone(),
+                    });
+                }
+
+                // Temporarily start the connection loop (we close the connection once we have the client version below).
+                // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
+                // dropping websocket support on parity nodes.
+                let fut = websocket_transport
+                    .clone()
+                    .start_connection_loop(Some(Instant::now() + TMP_SOCKET_CONNECTION));
+                let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", uri));
+                ctx.spawner().spawn_with_settings(fut, settings);
+
+                Web3Transport::Websocket(websocket_transport)
+            },
+            Some("http") | Some("https") => {
+                let node = HttpTransportNode {
+                    uri,
+                    gui_auth: eth_node.gui_auth,
+                };
+
+                build_http_transport(
+                    coin_ticker.clone(),
+                    address.clone(),
+                    key_pair,
+                    node,
+                    event_handlers.clone(),
+                )
+            },
+            _ => {
+                return MmError::err(EthActivationV2Error::InvalidPayload(format!(
+                    "Invalid node address '{uri}'. Only http(s) and ws(s) nodes are supported"
+                )));
+            },
+        };
 
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().await {
             Ok(v) => v,
             Err(e) => {
-                error!("Couldn't get client version for url {}: {}", node.uri, e);
+                error!("Couldn't get client version for url {}: {}", eth_node.url, e);
                 continue;
             },
         };
+
         web3_instances.push(Web3Instance {
             web3,
             is_parity: version.contains("Parity") || version.contains("parity"),
-        })
+        });
     }
 
     if web3_instances.is_empty() {
@@ -503,27 +551,28 @@ async fn build_http_transport(
         );
     }
 
-    let transport = build_single_http_transport(coin_ticker, address, key_pair, http_nodes, event_handlers);
-    let web3 = Web3::new(transport);
-
-    Ok((web3, web3_instances))
+    Ok(web3_instances)
 }
 
-fn build_single_http_transport(
+fn build_http_transport(
     coin_ticker: String,
     address: String,
     key_pair: &KeyPair,
-    nodes: Vec<HttpTransportNode>,
+    node: HttpTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Web3Transport {
     use crate::eth::web3_transport::http_transport::HttpTransport;
 
-    let mut http_transport = HttpTransport::with_event_handlers(nodes, event_handlers);
-    http_transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
-        coin_ticker,
-        secret: key_pair.secret().clone(),
-        address,
-    });
+    let gui_auth = node.gui_auth;
+    let mut http_transport = HttpTransport::with_event_handlers(node, event_handlers);
+
+    if gui_auth {
+        http_transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+            coin_ticker,
+            secret: key_pair.secret().clone(),
+            address,
+        });
+    }
     Web3Transport::from(http_transport)
 }
 
@@ -532,11 +581,14 @@ async fn build_metamask_transport(
     ctx: &MmArc,
     coin_ticker: String,
     chain_id: u64,
-) -> MmResult<(Web3<Web3Transport>, Vec<Web3Instance>), EthActivationV2Error> {
+) -> MmResult<Vec<Web3Instance>, EthActivationV2Error> {
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
 
     let eth_config = web3_transport::metamask_transport::MetamaskEthConfig { chain_id };
-    let web3 = Web3::new(Web3Transport::new_metamask(eth_config, event_handlers)?);
+    let web3 = Web3::new(Web3Transport::new_metamask_with_event_handlers(
+        eth_config,
+        event_handlers,
+    )?);
 
     // Check if MetaMask supports the given `chain_id`.
     // Please note that this request may take a long time.
@@ -544,12 +596,9 @@ async fn build_metamask_transport(
 
     // MetaMask doesn't use Parity nodes. So `MetamaskTransport` doesn't support `parity_nextNonce` RPC.
     // An example of the `web3_clientVersion` RPC - `MetaMask/v10.22.1`.
-    let web3_instances = vec![Web3Instance {
-        web3: web3.clone(),
-        is_parity: false,
-    }];
+    let web3_instances = vec![Web3Instance { web3, is_parity: false }];
 
-    Ok((web3, web3_instances))
+    Ok(web3_instances)
 }
 
 /// This method is based on the fact that `MetamaskTransport` tries to switch the `ChainId`
@@ -568,7 +617,7 @@ async fn check_metamask_supports_chain_id(
 
     match web3.eth().chain_id().await {
         Ok(chain_id) if chain_id == U256::from(expected_chain_id) => Ok(()),
-        // The RPC client should have returned ChainId with which it has been created on [`Web3Transport::new_metamask`].
+        // The RPC client should have returned ChainId with which it has been created on [`Web3Transport::new_metamask_with_event_handlers`].
         Ok(unexpected_chain_id) => {
             let error = format!("Expected '{expected_chain_id}' ChainId, found '{unexpected_chain_id}'");
             MmError::err(EthActivationV2Error::InternalError(error))

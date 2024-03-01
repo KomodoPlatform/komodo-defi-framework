@@ -38,7 +38,7 @@ pub(crate) fn p2pk_spend_with_signature(
 
     TransactionInput {
         previous_output: unsigned_input.previous_output,
-        script_sig: Builder::default().push_bytes(&script_sig).into_bytes(),
+        script_sig: Builder::default().push_data(&script_sig).into_bytes(),
         sequence: unsigned_input.sequence,
         script_witness: vec![],
     }

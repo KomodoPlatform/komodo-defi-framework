@@ -1,10 +1,13 @@
 use crate::transport::{GetInfoFromUriError, SlurpError, SlurpResult};
+use crate::wasm::body_stream::ResponseBody;
 use common::executor::spawn_local;
-use common::{stringify_js_error, APPLICATION_JSON};
+use common::{drop_mutability, stringify_js_error, APPLICATION_JSON};
 use futures::channel::oneshot;
 use gstuff::ERRL;
 use http::header::{ACCEPT, CONTENT_TYPE};
-use http::{HeaderMap, StatusCode};
+use http::response::Builder;
+use http::{HeaderMap, Response, StatusCode};
+use js_sys::Array;
 use js_sys::Uint8Array;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
@@ -12,7 +15,7 @@ use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Request, RequestInit, RequestMode, Response as JsResponse, Window, WorkerGlobalScope};
+use web_sys::{Request as JsRequest, RequestInit, RequestMode, Response as JsResponse, Window, WorkerGlobalScope};
 
 /// The result containing either a pair of (HTTP status code, body) or a stringified error.
 pub type FetchResult<T> = Result<(StatusCode, T), MmError<SlurpError>>;
@@ -46,6 +49,40 @@ pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult {
         .request_str()
         .await
         .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
+}
+
+/// Sets the response headers and extracts the content type.
+///
+/// This function takes a `Builder` for a response and a `JsResponse` from which it extracts
+/// the headers and the content type.
+fn set_response_headers_and_content_type(
+    mut result: Builder,
+    response: &JsResponse,
+) -> Result<(Builder, String), MmError<SlurpError>> {
+    let headers = match js_sys::try_iter(response.headers().as_ref()) {
+        Ok(Some(headers)) => headers,
+        Ok(None) => return MmError::err(SlurpError::InvalidRequest("MissingHeaders".to_string())),
+        Err(err) => return MmError::err(SlurpError::InvalidRequest(format!("{err:?}"))),
+    };
+
+    let mut content_type = None;
+    for header in headers {
+        let pair: Array = header
+            .map_to_mm(|err| SlurpError::InvalidRequest(format!("{err:?}")))?
+            .into();
+        if let (Some(header_name), Some(header_value)) = (pair.get(0).as_string(), pair.get(1).as_string()) {
+            if header_name == CONTENT_TYPE.as_str() {
+                content_type = Some(header_value.clone());
+            }
+            result = result.header(header_name, header_value);
+        }
+    }
+    drop_mutability!(content_type);
+
+    match content_type {
+        Some(content_type) => Ok((result, content_type)),
+        None => MmError::err(SlurpError::InvalidRequest("MissingContentType".to_string())),
+    }
 }
 
 /// This function is a wrapper around the `fetch_with_request`, providing compatibility across
@@ -140,6 +177,13 @@ impl FetchRequest {
         }
     }
 
+    pub async fn fetch_stream_response(self) -> FetchResult<Response<ResponseBody>> {
+        let (tx, rx) = oneshot::channel();
+        Self::spawn_fetch_stream_response(self, tx);
+        rx.await
+            .map_to_mm(|_| SlurpError::Internal("Spawned future has been canceled".to_owned()))?
+    }
+
     fn spawn_fetch_str(request: Self, tx: oneshot::Sender<FetchResult<String>>) {
         let fut = async move {
             let result = Self::fetch_str(request).await;
@@ -162,6 +206,17 @@ impl FetchRequest {
         spawn_local(fut);
     }
 
+    fn spawn_fetch_stream_response(request: Self, tx: oneshot::Sender<FetchResult<Response<ResponseBody>>>) {
+        let fut = async move {
+            let result = Self::fetch_and_stream_response(request).await;
+            tx.send(result).ok();
+        };
+
+        // The spawned future doesn't capture shared pointers,
+        // so we can use `spawn_local` here.
+        spawn_local(fut);
+    }
+
     async fn fetch(request: Self) -> FetchResult<JsResponse> {
         let uri = request.uri;
 
@@ -173,7 +228,7 @@ impl FetchRequest {
             req_init.mode(mode);
         }
 
-        let js_request = Request::new_with_str_and_init(&uri, &req_init)
+        let js_request = JsRequest::new_with_str_and_init(&uri, &req_init)
             .map_to_mm(|e| SlurpError::Internal(stringify_js_error(&e)))?;
         for (hkey, hval) in request.headers {
             js_request
@@ -247,11 +302,7 @@ impl FetchRequest {
         let resp_array_fut = match js_response.array_buffer() {
             Ok(blob) => blob,
             Err(e) => {
-                let error = format!(
-                    "Expected blob, found {:?}: {}",
-                    js_response,
-                    common::stringify_js_error(&e)
-                );
+                let error = format!("Expected blob, found {:?}: {}", js_response, stringify_js_error(&e));
                 return MmError::err(SlurpError::ErrorDeserializing { uri, error });
             },
         };
@@ -265,6 +316,35 @@ impl FetchRequest {
         let array = Uint8Array::new(&resp_array);
 
         Ok((status_code, array.to_vec()))
+    }
+
+    /// The private non-Send method that is called in a spawned future.
+    async fn fetch_and_stream_response(request: Self) -> FetchResult<Response<ResponseBody>> {
+        let uri = request.uri.clone();
+        let (status_code, js_response) = Self::fetch(request).await?;
+
+        let resp_stream = match js_response.body() {
+            Some(txt) => txt,
+            None => {
+                return MmError::err(SlurpError::ErrorDeserializing {
+                    uri,
+                    error: format!("Expected readable stream, found {:?}:", js_response),
+                });
+            },
+        };
+
+        let builder = Response::builder().status(status_code);
+        let (builder, content_type) = set_response_headers_and_content_type(builder, &js_response)?;
+        let body = ResponseBody::new(resp_stream, &content_type)
+            .await
+            .map_to_mm(|err| SlurpError::InvalidRequest(format!("{err:?}")))?;
+
+        Ok((
+            status_code,
+            builder
+                .body(body)
+                .map_to_mm(|err| SlurpError::InvalidRequest(err.to_string()))?,
+        ))
     }
 }
 
