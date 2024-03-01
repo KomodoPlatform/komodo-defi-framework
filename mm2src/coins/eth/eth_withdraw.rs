@@ -1,6 +1,6 @@
-use super::{checksum_address, get_addr_nonce, get_eth_gas_details, u256_to_big_decimal, wei_from_big_decimal,
-            EthCoinType, EthDerivationMethod, EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest,
-            WithdrawResult, ERC20_CONTRACT, H160, H256};
+use super::{checksum_address, get_eth_gas_details, u256_to_big_decimal, wei_from_big_decimal, EthCoinType,
+            EthDerivationMethod, EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult,
+            ERC20_CONTRACT, H160, H256};
 use crate::eth::{Action, Address, EthTxFeeDetails, KeyPair, SignedEthTx, UnSignedEthTx};
 use crate::hd_wallet::{HDCoinWithdrawOps, HDWalletOps, WithdrawFrom, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
@@ -154,7 +154,7 @@ where
 
                 // Please note that this method may take a long time
                 // due to `wallet_switchEthereumChain` and `eth_sendTransaction` requests.
-                let tx_hash = coin.web3.eth().send_transaction(tx_to_send).await?;
+                let tx_hash = coin.send_transaction(tx_to_send).await?;
 
                 let signed_tx = coin
                     .wait_for_tx_appears_on_rpc(tx_hash, wait_rpc_timeout, check_every)
@@ -236,7 +236,9 @@ where
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
                 // Todo: nonce_lock is still global for all addresses but this needs to be per address
                 let _nonce_lock = coin.nonce_lock.lock().await;
-                let (nonce, _) = get_addr_nonce(my_address, coin.web3_instances.clone())
+                let (nonce, _) = coin
+                    .clone()
+                    .get_addr_nonce(my_address)
                     .compat()
                     .timeout_secs(30.)
                     .await?

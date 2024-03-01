@@ -5,8 +5,8 @@ use crate::mm2::lp_network::{P2PRequestError, P2PRequestResult};
 use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
-            SendMakerPaymentSpendPreimageInput, WaitForHTLCTxSpendArgs, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
+            SendMakerPaymentSpendPreimageInput, SwapTxTypeWithSecretHash, WaitForHTLCTxSpendArgs,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::{now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -132,7 +132,7 @@ impl SpendMakerPayment {
 }
 
 struct Stopped {
-    _stop_reason: StopReason,
+    stop_reason: StopReason,
 }
 
 #[derive(Debug)]
@@ -161,11 +161,7 @@ enum WatcherError {
 }
 
 impl Stopped {
-    fn from_reason(stop_reason: StopReason) -> Stopped {
-        Stopped {
-            _stop_reason: stop_reason,
-        }
-    }
+    fn from_reason(stop_reason: StopReason) -> Stopped { Stopped { stop_reason } }
 }
 
 impl TransitionFrom<ValidateTakerFee> for ValidateTakerPayment {}
@@ -467,7 +463,9 @@ impl State for RefundTakerPayment {
             .send_taker_payment_refund_preimage(RefundPaymentArgs {
                 payment_tx: &watcher_ctx.data.taker_payment_refund_preimage,
                 swap_contract_address: &None,
-                secret_hash: &watcher_ctx.data.secret_hash,
+                tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                    maker_secret_hash: &watcher_ctx.data.secret_hash,
+                },
                 other_pubkey: &watcher_ctx.verified_pub,
                 time_lock: watcher_ctx.taker_locktime(),
                 swap_unique_data: &[],
@@ -513,7 +511,12 @@ impl State for RefundTakerPayment {
 impl LastState for Stopped {
     type StateMachine = WatcherStateMachine;
 
-    async fn on_changed(self: Box<Self>, _watcher_ctx: &mut WatcherStateMachine) -> () {}
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherStateMachine) -> () {
+        info!(
+            "Watcher loop for swap {} stopped with reason {:?}",
+            watcher_ctx.data.uuid, self.stop_reason
+        )
+    }
 }
 
 pub fn process_watcher_msg(ctx: MmArc, msg: &[u8]) -> P2PRequestResult<()> {

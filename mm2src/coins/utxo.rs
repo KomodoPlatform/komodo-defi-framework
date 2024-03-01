@@ -1040,6 +1040,8 @@ impl ToBytes for Signature {
 }
 
 impl<T: UtxoCommonOps> CoinAssocTypes for T {
+    type Address = Address;
+    type AddressParseError = MmError<AddrFromStrError>;
     type Pubkey = Public;
     type PubkeyParseError = MmError<keys::Error>;
     type Tx = UtxoTx;
@@ -1049,9 +1051,21 @@ impl<T: UtxoCommonOps> CoinAssocTypes for T {
     type Sig = Signature;
     type SigParseError = MmError<secp256k1::Error>;
 
+    fn my_addr(&self) -> &Self::Address {
+        match &self.as_ref().derivation_method {
+            DerivationMethod::SingleAddress(addr) => addr,
+            // Todo: implement for HD wallet enabled address
+            DerivationMethod::HDWallet(_) => todo!(),
+        }
+    }
+
+    fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> {
+        self.address_from_str(address)
+    }
+
     #[inline]
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> {
-        Ok(Public::from_slice(pubkey)?)
+        Public::from_slice(pubkey).map_err(MmError::from)
     }
 
     #[inline]

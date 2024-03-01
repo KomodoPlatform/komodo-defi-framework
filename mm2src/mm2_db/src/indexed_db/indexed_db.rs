@@ -63,7 +63,7 @@ pub mod cursor_prelude {
 }
 
 pub trait TableSignature: DeserializeOwned + Serialize + 'static {
-    fn table_name() -> &'static str;
+    const TABLE_NAME: &'static str;
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()>;
 }
@@ -134,7 +134,7 @@ impl IndexedDbBuilder {
 
     pub fn with_table<Table: TableSignature>(mut self) -> IndexedDbBuilder {
         let on_upgrade_needed_cb = Box::new(Table::on_upgrade_needed);
-        self.tables.insert(Table::table_name().to_owned(), on_upgrade_needed_cb);
+        self.tables.insert(Table::TABLE_NAME.to_owned(), on_upgrade_needed_cb);
         self
     }
 
@@ -248,7 +248,7 @@ impl DbTransaction<'_> {
     pub async fn table<Table: TableSignature>(&self) -> DbTransactionResult<DbTable<'_, Table>> {
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTransactionEvent::OpenTable {
-            table_name: Table::table_name().to_owned(),
+            table_name: Table::TABLE_NAME.to_owned(),
             result_tx,
         };
         let transaction_event_tx = send_event_recv_response(&self.event_tx, event, result_rx).await?;
@@ -314,12 +314,19 @@ pub enum AddOrIgnoreResult {
     ExistAlready(ItemId),
 }
 
+impl AddOrIgnoreResult {
+    pub fn get_id(&self) -> ItemId {
+        match self {
+            AddOrIgnoreResult::Added(id) => *id,
+            AddOrIgnoreResult::ExistAlready(id) => *id,
+        }
+    }
+}
 impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
     /// Adds the given item to the table.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/add
     pub async fn add_item(&self, item: &Table) -> DbTransactionResult<ItemId> {
         let item = json::to_value(item).map_to_mm(|e| DbTransactionError::ErrorSerializingItem(e.to_string()))?;
-
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::AddItem { item, result_tx };
         send_event_recv_response(&self.event_tx, event, result_rx).await
@@ -499,7 +506,7 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
         send_event_recv_response(&self.event_tx, event, result_rx).await
     }
 
-    /// Adds the given `item` of replace the previous one.
+    /// Adds the given `item` or replace the previous one.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/put
     pub async fn replace_item(&self, item_id: ItemId, item: &Table) -> DbTransactionResult<ItemId> {
         let item = json::to_value(item).map_to_mm(|e| DbTransactionError::ErrorSerializingItem(e.to_string()))?;
@@ -922,7 +929,7 @@ mod tests {
     }
 
     impl TableSignature for TxTable {
-        fn table_name() -> &'static str { "tx_table" }
+        const TABLE_NAME: &'static str = "tx_table";
 
         fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
             if old_version > 0 {
@@ -1296,7 +1303,7 @@ mod tests {
         struct UpgradableTable;
 
         impl TableSignature for UpgradableTable {
-            fn table_name() -> &'static str { "upgradable_table" }
+            const TABLE_NAME: &'static str = "upgradable_table";
 
             fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
                 let mut versions = LAST_VERSIONS.lock().expect("!old_new_versions.lock()");
@@ -1429,7 +1436,7 @@ mod tests {
         }
 
         impl TableSignature for SwapTable {
-            fn table_name() -> &'static str { "swap_table" }
+            const TABLE_NAME: &'static str = "swap_table";
 
             fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
                 if old_version > 0 {

@@ -22,7 +22,8 @@ impl From<Erc20TokenActivationError> for EnableTokenError {
     fn from(err: Erc20TokenActivationError) -> Self {
         match err {
             Erc20TokenActivationError::InternalError(e) => EnableTokenError::Internal(e),
-            Erc20TokenActivationError::CouldNotFetchBalance(e) => EnableTokenError::Transport(e),
+            Erc20TokenActivationError::CouldNotFetchBalance(e)
+            | Erc20TokenActivationError::ClientConnectionFailed(e) => EnableTokenError::Transport(e),
             Erc20TokenActivationError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
         }
     }

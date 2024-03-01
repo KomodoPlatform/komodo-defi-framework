@@ -895,11 +895,11 @@ impl NftListTable {
 }
 
 impl TableSignature for NftListTable {
-    fn table_name() -> &'static str { "nft_list_cache_table" }
+    const TABLE_NAME: &'static str = "nft_list_cache_table";
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if is_initial_upgrade(old_version, new_version) {
-            let table = upgrader.create_table(Self::table_name())?;
+            let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(
                 CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
                 &["chain", "token_address", "token_id"],
@@ -976,11 +976,11 @@ impl NftTransferHistoryTable {
 }
 
 impl TableSignature for NftTransferHistoryTable {
-    fn table_name() -> &'static str { "nft_transfer_history_cache_table" }
+    const TABLE_NAME: &'static str = "nft_transfer_history_cache_table";
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if is_initial_upgrade(old_version, new_version) {
-            let table = upgrader.create_table(Self::table_name())?;
+            let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(
                 CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
                 &["chain", "token_address", "token_id"],
@@ -1009,11 +1009,11 @@ pub(crate) struct LastScannedBlockTable {
 }
 
 impl TableSignature for LastScannedBlockTable {
-    fn table_name() -> &'static str { "last_scanned_block_table" }
+    const TABLE_NAME: &'static str = "last_scanned_block_table";
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if is_initial_upgrade(old_version, new_version) {
-            let table = upgrader.create_table(Self::table_name())?;
+            let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_index("chain", true)?;
         }
         Ok(())

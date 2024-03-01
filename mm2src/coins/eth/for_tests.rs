@@ -1,6 +1,7 @@
 use super::*;
 use common::block_on;
 use crypto::privkey::key_pair_from_seed;
+#[cfg(not(target_arch = "wasm32"))]
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT,
@@ -70,7 +71,7 @@ pub(crate) fn eth_coin_for_test(
     eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair)
 }
 
-#[allow(dead_code)]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn random_eth_coin_for_test(
     coin_type: EthCoinType,
     urls: &[&str],
@@ -87,17 +88,18 @@ fn eth_coin_from_keypair(
     fallback_swap_contract: Option<Address>,
     key_pair: KeyPair,
 ) -> (MmArc, EthCoin) {
-    let mut nodes = vec![];
+    let mut web3_instances = vec![];
     for url in urls.iter() {
-        nodes.push(HttpTransportNode {
+        let node = HttpTransportNode {
             uri: url.parse().unwrap(),
             gui_auth: false,
-        });
+        };
+        let transport = Web3Transport::new_http(node);
+        let web3 = Web3::new(transport);
+        web3_instances.push(Web3Instance { web3, is_parity: false });
     }
-    drop_mutability!(nodes);
+    drop_mutability!(web3_instances);
 
-    let transport = Web3Transport::with_nodes(nodes);
-    let web3 = Web3::new(transport);
     let conf = json!({
         "coins":[
             eth_testnet_conf(),
@@ -125,11 +127,7 @@ fn eth_coin_from_keypair(
         fallback_swap_contract,
         contract_supports_watchers: false,
         ticker,
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: false,
-        }],
-        web3,
+        web3_instances: AsyncMutex::new(web3_instances),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         chain_id: None,

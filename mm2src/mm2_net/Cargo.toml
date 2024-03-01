@@ -30,15 +30,27 @@ prost = "0.10"
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+thiserror = "1.0.30"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+base64 = "0.21.7"
+futures-util = "0.3"
 gstuff = { version = "0.7", features = ["nightly"] }
 mm2_state_machine = { path = "../mm2_state_machine"}
+http-body = "0.4"
+httparse = "1.8.0"
+js-sys = "0.3.27"
+pin-project = "1.1.2"
+tonic = { version = "0.7", default-features = false, features = ["prost", "codegen"] }
+tower-service = "0.3"
 wasm-bindgen = "0.2.86"
 wasm-bindgen-test = { version = "0.3.2" }
 wasm-bindgen-futures = "0.4.21"
-web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase", "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "MessageEvent", "WebSocket", "Worker"] }
-js-sys = "0.3.27"
+web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase",
+    "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore",
+    "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode",
+    "IdbVersionChangeEvent", "MessageEvent", "ReadableStreamDefaultReader", "ReadableStream", "WebSocket", "Worker"] }
+
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures-util = { version = "0.3" }
