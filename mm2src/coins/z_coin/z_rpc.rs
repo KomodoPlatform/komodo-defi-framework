@@ -1,5 +1,5 @@
-use super::{z_coin_errors::*, BlockDbImpl, CheckPointBlockInfo, WalletDbShared, ZBalanceChangeSender, ZCoinBuilder,
-            ZcoinConsensusParams};
+use super::{z_coin_errors::*, BlockDbImpl, CheckPointBlockInfo, WalletDbShared, ZBalanceChangeEvent,
+            ZBalanceChangeSender, ZCoinBuilder, ZcoinConsensusParams};
 use crate::utxo::rpc_clients::NO_TX_ERROR_CODE;
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, DAY_IN_SECONDS};
 use crate::z_coin::storage::{BlockProcessingMode, DataConnStmtCacheWrapper};
@@ -16,6 +16,7 @@ use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::StreamExt;
+use futures_util::SinkExt;
 use hex::{FromHex, FromHexError};
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
@@ -784,6 +785,8 @@ impl SaplingSyncLoopHandle {
         let wallet_db = self.wallet_db.clone().db;
         let mut wallet_ops = wallet_db.get_update_ops().expect("get_update_ops always returns Ok");
 
+        let wallet_extrema = wallet_ops.block_height_extrema().await?;
+
         if let Err(e) = blocks_db
             .process_blocks_with_mode(
                 self.consensus_params.clone(),
@@ -810,8 +813,7 @@ impl SaplingSyncLoopHandle {
             }
         }
 
-        let latest_block_height = blocks_db.get_latest_block().await?;
-        let current_block = BlockHeight::from_u32(latest_block_height);
+        let current_block = BlockHeight::from_u32(blocks_db.get_latest_block().await?);
         loop {
             match wallet_ops.block_height_extrema().await? {
                 Some((_, max_in_wallet)) => {
@@ -838,6 +840,18 @@ impl SaplingSyncLoopHandle {
                 Timer::sleep_ms(self.scan_interval_ms).await;
             }
         }
+
+        if let Some((_, max)) = wallet_extrema {
+            if current_block > max {
+                if let Some(mut sender) = self.z_balance_change_sender.clone() {
+                    info!("TRIGGERED");
+                    sender
+                        .send(ZBalanceChangeEvent::Triggered)
+                        .await
+                        .expect("No receiver is available");
+                };
+            };
+        };
 
         Ok(())
     }

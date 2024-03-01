@@ -4,6 +4,7 @@ use crate::{MarketCoinOps, MmCoin};
 use async_trait::async_trait;
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::log;
+use common::log::info;
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
 use futures_util::StreamExt;
@@ -39,9 +40,11 @@ impl EventBehaviour for ZCoin {
             },
         };
 
+        let mut prev_balance = None;
         while let Some(event) = z_balance_change_handler.lock().await.next().await {
             match event {
                 ZBalanceChangeEvent::Triggered => {
+                    info!("RECEIVED");
                     let balance = match self.my_balance().compat().await {
                         Ok(b) => b,
                         Err(err) => {
@@ -59,6 +62,12 @@ impl EventBehaviour for ZCoin {
                         },
                     };
 
+                    if let Some(prev) = &prev_balance {
+                        if prev == &balance {
+                            continue;
+                        }
+                    }
+
                     let payload = json!({
                         "ticker": self.ticker(),
                         "address": self.my_z_address_encoded(),
@@ -71,6 +80,8 @@ impl EventBehaviour for ZCoin {
                             json!(vec![payload]).to_string(),
                         ))
                         .await;
+
+                    prev_balance = Some(balance);
                 },
             }
         }
@@ -80,10 +91,10 @@ impl EventBehaviour for ZCoin {
     async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {
         if let Some(event) = config.get_event(Self::EVENT_NAME) {
             log::info!(
-                "{} event is activated for {} addr: {}. `stream_interval_seconds`({}) has no effect on this.",
+                "{} event is activated for {} address {}. `stream_interval_seconds`({}) has no effect on this.",
                 Self::EVENT_NAME,
-                self.my_z_address_encoded(),
                 self.ticker(),
+                self.my_z_address_encoded(),
                 event.stream_interval_seconds
             );
 
