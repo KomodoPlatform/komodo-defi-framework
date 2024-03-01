@@ -1,4 +1,5 @@
-use super::{z_coin_errors::*, BlockDbImpl, CheckPointBlockInfo, WalletDbShared, ZCoinBuilder, ZcoinConsensusParams};
+use super::{z_coin_errors::*, BlockDbImpl, CheckPointBlockInfo, WalletDbShared, ZBalanceChangeSender, ZCoinBuilder,
+            ZcoinConsensusParams};
 use crate::utxo::rpc_clients::NO_TX_ERROR_CODE;
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, DAY_IN_SECONDS};
 use crate::z_coin::storage::{BlockProcessingMode, DataConnStmtCacheWrapper};
@@ -507,6 +508,7 @@ pub(super) async fn init_light_client<'a>(
     sync_params: &Option<SyncStartPoint>,
     skip_sync_params: bool,
     z_spending_key: &ExtendedSpendingKey,
+    z_balance_change_sender: Option<ZBalanceChangeSender>,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -566,6 +568,7 @@ pub(super) async fn init_light_client<'a>(
             is_pre_sapling: sync_height < sapling_activation_height,
             actual: sync_height.max(sapling_activation_height),
         },
+        z_balance_change_sender,
     };
 
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(light_rpc_clients)));
@@ -582,6 +585,7 @@ pub(super) async fn init_native_client<'a>(
     native_client: NativeClient,
     blocks_db: BlockDbImpl,
     z_spending_key: &ExtendedSpendingKey,
+    z_balance_change_sender: Option<ZBalanceChangeSender>,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -610,6 +614,7 @@ pub(super) async fn init_native_client<'a>(
         scan_blocks_per_iteration: builder.z_coin_params.scan_blocks_per_iteration,
         scan_interval_ms: builder.z_coin_params.scan_interval_ms,
         first_sync_block,
+        z_balance_change_sender,
     };
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(native_client)));
 
@@ -708,6 +713,7 @@ pub struct SaplingSyncLoopHandle {
     scan_blocks_per_iteration: u32,
     scan_interval_ms: u64,
     first_sync_block: FirstSyncBlock,
+    z_balance_change_sender: Option<ZBalanceChangeSender>,
 }
 
 impl SaplingSyncLoopHandle {

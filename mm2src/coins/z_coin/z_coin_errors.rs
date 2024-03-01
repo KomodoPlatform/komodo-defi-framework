@@ -249,6 +249,7 @@ pub enum ZCoinBuildError {
     ZCashParamsError(String),
     ZDerivationPathNotSet,
     SaplingParamsInvalidChecksum,
+    FailedSpawningBalanceEvents(String),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
