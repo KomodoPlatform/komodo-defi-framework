@@ -416,16 +416,12 @@ impl EthPrivKeyBuildPolicy {
     }
 }
 
-impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
-    type Error = PrivKeyPolicyNotAllowed;
-
-    /// Converts `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy`
-    /// taking into account that  ETH doesn't support `Trezor` yet.
-    fn try_from(policy: PrivKeyBuildPolicy) -> Result<Self, Self::Error> {
+impl From<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
+    fn from(policy: PrivKeyBuildPolicy) -> Self {
         match policy {
-            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(iguana)),
-            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd)),
-            PrivKeyBuildPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
+            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => EthPrivKeyBuildPolicy::IguanaPrivKey(iguana),
+            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd),
+            PrivKeyBuildPolicy::Trezor => EthPrivKeyBuildPolicy::Trezor,
         }
     }
 }
@@ -5880,14 +5876,9 @@ fn increase_gas_price_by_stage(gas_price: U256, level: &FeeApproxStage) -> U256 
 /// Represents errors that can occur while retrieving an Ethereum address.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum GetEthAddressError {
-    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     EthActivationV2Error(EthActivationV2Error),
     Internal(String),
-}
-
-impl From<PrivKeyPolicyNotAllowed> for GetEthAddressError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { GetEthAddressError::PrivKeyPolicyNotAllowed(e) }
 }
 
 impl From<UnexpectedDerivationMethod> for GetEthAddressError {
@@ -5915,9 +5906,8 @@ pub async fn get_eth_address(
         PrivKeyBuildPolicy::Trezor
     } else {
         PrivKeyBuildPolicy::detect_priv_key_policy(ctx)?
-    };
-    // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
-    let priv_key_policy = EthPrivKeyBuildPolicy::try_from(priv_key_policy)?;
+    }
+    .into();
 
     // Todo: This creates an HD wallet different from the ETH one for NFT, we should combine them in the future when implementing NFT HD wallet
     let (_, derivation_method) =
