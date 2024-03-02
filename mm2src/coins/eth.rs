@@ -5902,6 +5902,7 @@ pub async fn get_eth_address(
     path_to_address: &HDAccountAddressId,
 ) -> MmResult<MyWalletAddress, GetEthAddressError> {
     let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+    // Todo: this should be refactored to be inside detect_priv_key_policy where key_pair_policy uses trezor as well
     let priv_key_policy = if crypto_ctx.hw_ctx().is_some() {
         PrivKeyBuildPolicy::Trezor
     } else {
