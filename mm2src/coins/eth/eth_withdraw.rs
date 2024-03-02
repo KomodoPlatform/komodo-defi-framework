@@ -176,12 +176,13 @@ where
         let ticker = coin.deref().ticker.clone();
         let req = self.request().clone();
 
-        self.on_generating_transaction()?;
-
         let to_addr = coin
             .address_from_str(&req.to)
             .map_to_mm(WithdrawError::InvalidAddress)?;
         let my_address = self.get_from_address(&req).await?;
+
+        self.on_generating_transaction()?;
+
         let my_balance = coin.address_balance(my_address).compat().await?;
         let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals)?;
 
@@ -231,6 +232,8 @@ where
             eth_value -= total_fee;
             wei_amount -= total_fee;
         };
+        drop_mutability!(eth_value);
+        drop_mutability!(wei_amount);
 
         let (tx_hash, tx_hex) = match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
