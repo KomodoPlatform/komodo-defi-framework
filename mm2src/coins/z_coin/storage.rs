@@ -201,5 +201,6 @@ pub async fn scan_cached_block(
 
     *last_height = current_height;
 
+    // If there are any transactions in the block, return the transaction count
     Ok(txs.len())
 }

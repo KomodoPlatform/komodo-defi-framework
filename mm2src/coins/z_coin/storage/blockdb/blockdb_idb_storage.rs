@@ -254,7 +254,7 @@ impl BlockDbImpl {
                 },
                 BlockProcessingMode::Scan(data, z_balance_change_sender) => {
                     let tx_size = scan_cached_block(data, &params, &block, &mut from_height).await?;
-                    // If the current block represents the latest scanned block and there are transactions present,
+                    // If there is/are transactions present in the current scanned block(s),
                     // we trigger a `Triggered` event to update the balance change.
                     if tx_size > 0 {
                         if let Some(mut sender) = z_balance_change_sender.clone() {
