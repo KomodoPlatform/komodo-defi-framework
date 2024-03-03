@@ -1,5 +1,5 @@
-use super::{z_coin_errors::*, BlockDbImpl, CheckPointBlockInfo, WalletDbShared, ZBalanceChangeEvent,
-            ZBalanceChangeSender, ZCoinBuilder, ZcoinConsensusParams};
+use super::{z_coin_errors::*, BlockDbImpl, CheckPointBlockInfo, WalletDbShared, ZBalanceEventSender, ZCoinBuilder,
+            ZcoinConsensusParams};
 use crate::utxo::rpc_clients::NO_TX_ERROR_CODE;
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, DAY_IN_SECONDS};
 use crate::z_coin::storage::{BlockProcessingMode, DataConnStmtCacheWrapper};
@@ -16,7 +16,6 @@ use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::StreamExt;
-use futures_util::SinkExt;
 use hex::{FromHex, FromHexError};
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
@@ -509,7 +508,7 @@ pub(super) async fn init_light_client<'a>(
     sync_params: &Option<SyncStartPoint>,
     skip_sync_params: bool,
     z_spending_key: &ExtendedSpendingKey,
-    z_balance_change_sender: Option<ZBalanceChangeSender>,
+    z_balance_event_sender: Option<ZBalanceEventSender>,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -546,7 +545,7 @@ pub(super) async fn init_light_client<'a>(
         WalletDbShared::new(builder, maybe_checkpoint_block, z_spending_key, continue_from_prev_sync).await?;
     // Check min_height in blocks_db and rewind blocks_db to 0 if sync_height != min_height
     if !continue_from_prev_sync && (sync_height != min_height) {
-        // let user know we're clearing cache and resyncing from new provided height.
+        // let user know we're clearing cache and re-syncing from new provided height.
         if min_height > 0 {
             info!("Older/Newer sync height detected!, rewinding blocks_db to new height: {sync_height:?}");
         }
@@ -569,7 +568,7 @@ pub(super) async fn init_light_client<'a>(
             is_pre_sapling: sync_height < sapling_activation_height,
             actual: sync_height.max(sapling_activation_height),
         },
-        z_balance_change_sender,
+        z_balance_event_sender,
     };
 
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(light_rpc_clients)));
@@ -586,7 +585,7 @@ pub(super) async fn init_native_client<'a>(
     native_client: NativeClient,
     blocks_db: BlockDbImpl,
     z_spending_key: &ExtendedSpendingKey,
-    z_balance_change_sender: Option<ZBalanceChangeSender>,
+    z_balance_event_sender: Option<ZBalanceEventSender>,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -615,7 +614,7 @@ pub(super) async fn init_native_client<'a>(
         scan_blocks_per_iteration: builder.z_coin_params.scan_blocks_per_iteration,
         scan_interval_ms: builder.z_coin_params.scan_interval_ms,
         first_sync_block,
-        z_balance_change_sender,
+        z_balance_event_sender,
     };
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(native_client)));
 
@@ -714,7 +713,7 @@ pub struct SaplingSyncLoopHandle {
     scan_blocks_per_iteration: u32,
     scan_interval_ms: u64,
     first_sync_block: FirstSyncBlock,
-    z_balance_change_sender: Option<ZBalanceChangeSender>,
+    z_balance_event_sender: Option<ZBalanceEventSender>,
 }
 
 impl SaplingSyncLoopHandle {
@@ -785,8 +784,6 @@ impl SaplingSyncLoopHandle {
         let wallet_db = self.wallet_db.clone().db;
         let mut wallet_ops = wallet_db.get_update_ops().expect("get_update_ops always returns Ok");
 
-        let wallet_extrema = wallet_ops.block_height_extrema().await?;
-
         if let Err(e) = blocks_db
             .process_blocks_with_mode(
                 self.consensus_params.clone(),
@@ -830,7 +827,7 @@ impl SaplingSyncLoopHandle {
             blocks_db
                 .process_blocks_with_mode(
                     self.consensus_params.clone(),
-                    BlockProcessingMode::Scan(scan),
+                    BlockProcessingMode::Scan(scan, self.z_balance_event_sender.clone()),
                     None,
                     Some(self.scan_blocks_per_iteration),
                 )
@@ -840,18 +837,6 @@ impl SaplingSyncLoopHandle {
                 Timer::sleep_ms(self.scan_interval_ms).await;
             }
         }
-
-        if let Some((_, max)) = wallet_extrema {
-            if current_block > max {
-                if let Some(mut sender) = self.z_balance_change_sender.clone() {
-                    info!("TRIGGERED");
-                    sender
-                        .send(ZBalanceChangeEvent::Triggered)
-                        .await
-                        .expect("No receiver is available");
-                };
-            };
-        };
 
         Ok(())
     }

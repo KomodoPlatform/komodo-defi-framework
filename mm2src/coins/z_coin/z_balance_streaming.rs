@@ -1,5 +1,5 @@
 use crate::common::Future01CompatExt;
-use crate::z_coin::{ZBalanceChangeEvent, ZCoin};
+use crate::z_coin::{ZBalanceEvent, ZCoin};
 use crate::{MarketCoinOps, MmCoin};
 use async_trait::async_trait;
 use common::executor::{AbortSettings, SpawnAbortable};
@@ -30,7 +30,7 @@ impl EventBehaviour for ZCoin {
             },
         };
 
-        let z_balance_change_handler = match self.z_fields.z_balance_change_handler.as_ref() {
+        let z_balance_change_handler = match self.z_fields.z_balance_event_handler.as_ref() {
             Some(t) => t,
             None => {
                 let e = "Z balance change receiver can not be empty.";
@@ -40,57 +40,49 @@ impl EventBehaviour for ZCoin {
             },
         };
 
-        let mut prev_balance = None;
-        while let Some(event) = z_balance_change_handler.lock().await.next().await {
+        tx.send(EventInitStatus::Success).expect(RECEIVER_DROPPED_MSG);
+
+        // Locks the balance change handler, iterates through received events, and updates balance changes accordingly.
+        let mut bal = z_balance_change_handler.lock().await;
+        while let Some(event) = bal.next().await {
             match event {
-                ZBalanceChangeEvent::Triggered => {
-                    info!("RECEIVED");
-                    let balance = match self.my_balance().compat().await {
-                        Ok(b) => b,
+                ZBalanceEvent::Triggered => {
+                    match self.my_balance().compat().await {
+                        Ok(balance) => {
+                            let payload = json!({
+                                "ticker": self.ticker(),
+                                "address": self.my_z_address_encoded(),
+                                "balance": { "spendable": balance.spendable, "unspendable": balance.unspendable }
+                            });
+
+                            ctx.stream_channel_controller
+                                .broadcast(Event::new(
+                                    Self::EVENT_NAME.to_string(),
+                                    json!(vec![payload]).to_string(),
+                                ))
+                                .await;
+                        },
                         Err(err) => {
                             let ticker = self.ticker();
                             log::error!("Failed getting balance for '{ticker}'. Error: {err}");
                             let e = serde_json::to_value(err).expect("Serialization should't fail.");
-                            ctx.stream_channel_controller
+                            return ctx
+                                .stream_channel_controller
                                 .broadcast(Event::new(
                                     format!("{}:{}", Self::ERROR_EVENT_NAME, ticker),
                                     e.to_string(),
                                 ))
                                 .await;
-
-                            continue;
                         },
                     };
-
-                    if let Some(prev) = &prev_balance {
-                        if prev == &balance {
-                            continue;
-                        }
-                    }
-
-                    let payload = json!({
-                        "ticker": self.ticker(),
-                        "address": self.my_z_address_encoded(),
-                        "balance": { "spendable": balance.spendable, "unspendable": balance.unspendable }
-                    });
-
-                    ctx.stream_channel_controller
-                        .broadcast(Event::new(
-                            Self::EVENT_NAME.to_string(),
-                            json!(vec![payload]).to_string(),
-                        ))
-                        .await;
-
-                    prev_balance = Some(balance);
                 },
             }
         }
-        tx.send(EventInitStatus::Success).expect(RECEIVER_DROPPED_MSG);
     }
 
     async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {
         if let Some(event) = config.get_event(Self::EVENT_NAME) {
-            log::info!(
+            info!(
                 "{} event is activated for {} address {}. `stream_interval_seconds`({}) has no effect on this.",
                 Self::EVENT_NAME,
                 self.ticker(),

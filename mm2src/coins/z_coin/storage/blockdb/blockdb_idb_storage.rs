@@ -2,7 +2,9 @@ use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, Blo
                              ZcoinConsensusParams, ZcoinStorageRes};
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
 
+use crate::z_coin::ZBalanceEvent;
 use async_trait::async_trait;
+use futures_util::SinkExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::{BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb,
                          IndexedDbBuilder, InitDbResult, MultiIndex, OnUpgradeResult, TableSignature};
@@ -224,7 +226,7 @@ impl BlockDbImpl {
             BlockProcessingMode::Validate => validate_from
                 .map(|(height, _)| height)
                 .unwrap_or(BlockHeight::from_u32(params.sapling_activation_height) - 1),
-            BlockProcessingMode::Scan(data) => data.inner().block_height_extrema().await.map(|opt| {
+            BlockProcessingMode::Scan(data, _) => data.inner().block_height_extrema().await.map(|opt| {
                 opt.map(|(_, max)| max)
                     .unwrap_or(BlockHeight::from_u32(params.sapling_activation_height) - 1)
             })?,
@@ -250,8 +252,18 @@ impl BlockDbImpl {
                 BlockProcessingMode::Validate => {
                     validate_chain(block, &mut prev_height, &mut prev_hash).await?;
                 },
-                BlockProcessingMode::Scan(data) => {
-                    scan_cached_block(data, &params, &block, &mut from_height).await?;
+                BlockProcessingMode::Scan(data, z_balance_change_sender) => {
+                    let tx_size = scan_cached_block(data, &params, &block, &mut from_height).await?;
+                    // If the current block represents the latest scanned block and there are transactions present,
+                    // we trigger a `Triggered` event to update the balance change.
+                    if tx_size > 0 {
+                        if let Some(mut sender) = z_balance_change_sender.clone() {
+                            sender
+                                .send(ZBalanceEvent::Triggered)
+                                .await
+                                .expect("No receiver is available/dropped");
+                        };
+                    };
                 },
             }
         }
