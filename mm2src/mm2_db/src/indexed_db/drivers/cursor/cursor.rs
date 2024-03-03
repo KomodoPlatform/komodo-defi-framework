@@ -303,7 +303,6 @@ impl CursorDriver {
                 })?;
             } else {
                 self.stopped = true;
-                return Ok(());
             }
         }
 

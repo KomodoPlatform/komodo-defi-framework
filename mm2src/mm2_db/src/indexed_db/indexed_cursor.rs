@@ -1080,10 +1080,13 @@ mod tests {
             .expect("!CursorBuilder::open_cursor")
             .collect()
             .await
-            .expect("!CursorBuilder::open_cursor");
+            .expect("!CursorBuilder::open_cursor")
+            .into_iter()
+            .map(|(_, swap)| swap)
+            .collect::<Vec<_>>();
 
-        // maybe_swaps should contain only 1 elements
-        assert_eq!(maybe_swaps.len(), 1);
+        let expected_swaps = vec![swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92)];
+        assert_eq!(expected_swaps, maybe_swaps)
     }
 
     #[wasm_bindgen_test]
@@ -1122,10 +1125,16 @@ mod tests {
             .expect("!CursorBuilder::open_cursor")
             .collect()
             .await
-            .expect("!CursorBuilder::collect");
+            .expect("!CursorBuilder::collect")
+            .into_iter()
+            .map(|(_, swap)| swap)
+            .collect::<Vec<_>>();
 
-        // maybe_swaps should contain only two elements
-        assert_eq!(maybe_swaps.len(), 2);
+        let expected_swaps = vec![
+            swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92),
+            swap_item!("uuid6", "KMD", "MORTY", 12, 3124, 214),
+        ];
+        assert_eq!(expected_swaps, maybe_swaps)
     }
 
     #[wasm_bindgen_test]
@@ -1170,11 +1179,7 @@ mod tests {
             .map(|(_, swap)| swap)
             .collect::<Vec<_>>();
 
-        // maybe_swaps should return only swaps with uuid2
-        assert_eq!(maybe_swaps.len(), 1);
-
         let expected_swaps = vec![swap_item!("uuid2", "RICK", "MORTY", 8, 6, 92)];
-
         assert_eq!(expected_swaps, maybe_swaps)
     }
 }
