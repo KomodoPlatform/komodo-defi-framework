@@ -4,13 +4,11 @@ use crypto::privkey::key_pair_from_seed;
 #[cfg(not(target_arch = "wasm32"))]
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT,
-                                   ETH_DEV_TOKEN_CONTRACT},
+use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT},
                        get_passphrase};
 
 lazy_static! {
     static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
-    static ref JST_DISTRIBUTOR: EthCoin = jst_distributor();
     static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
 }
 
@@ -30,30 +28,6 @@ pub fn eth_distributor() -> EthCoin {
         &eth_testnet_conf(),
         &req,
         CoinProtocol::ETH,
-        priv_key_policy,
-    ))
-    .unwrap()
-}
-
-pub fn jst_distributor() -> EthCoin {
-    let req = json!({
-        "method": "enable",
-        "coin": "ETH",
-        "urls": ETH_DEV_NODES,
-        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
-    });
-    let seed = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
-    let keypair = key_pair_from_seed(&seed).unwrap();
-    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
-    block_on(eth_coin_from_conf_and_request(
-        &MM_CTX,
-        "ETH",
-        &eth_testnet_conf(),
-        &req,
-        CoinProtocol::ERC20 {
-            platform: "ETH".to_string(),
-            contract_address: ETH_DEV_TOKEN_CONTRACT.to_string(),
-        },
         priv_key_policy,
     ))
     .unwrap()
@@ -145,16 +119,6 @@ pub(crate) fn fill_eth(to_addr: Address, amount: f64) {
     let wei_per_eth: u64 = 1_000_000_000_000_000_000;
     let amount_in_wei = (amount * wei_per_eth as f64) as u64;
     ETH_DISTRIBUTOR
-        .send_to_address(to_addr, amount_in_wei.into())
-        .wait()
-        .unwrap();
-}
-
-#[allow(dead_code)]
-pub(crate) fn fill_jst(to_addr: Address, amount: f64) {
-    let wei_per_jst: u64 = 1_000_000_000_000_000_000;
-    let amount_in_wei = (amount * wei_per_jst as f64) as u64;
-    JST_DISTRIBUTOR
         .send_to_address(to_addr, amount_in_wei.into())
         .wait()
         .unwrap();
