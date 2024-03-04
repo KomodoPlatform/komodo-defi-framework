@@ -216,9 +216,9 @@ impl PlatformCoinWithTokensActivationOps for BchCoin {
     type ActivationResult = BchWithTokensActivationResult;
     type ActivationError = BchWithTokensActivationError;
 
-    type InProgressStatus = InitPlatformCoinWithTokensStandardInProgressStatus;
-    type AwaitingStatus = InitPlatformCoinWithTokensStandardAwaitingStatus;
-    type UserAction = InitPlatformCoinWithTokensStandardUserAction;
+    type InProgressStatus = InitPlatformCoinWithTokensInProgressStatus;
+    type AwaitingStatus = InitPlatformCoinWithTokensAwaitingStatus;
+    type UserAction = InitPlatformCoinWithTokensUserAction;
 
     async fn enable_platform_coin(
         ctx: MmArc,

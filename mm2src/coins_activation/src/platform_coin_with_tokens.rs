@@ -27,8 +27,8 @@ pub type InitPlatformCoinWithTokensStatusError = RpcTaskStatusError;
 pub type InitPlatformCoinWithTokensUserActionError = RpcTaskUserActionError;
 pub type CancelInitPlatformCoinWithTokensError = CancelRpcTaskError;
 
-pub type InitPlatformCoinWithTokensStandardAwaitingStatus = HwRpcTaskAwaitingStatus;
-pub type InitPlatformCoinWithTokensStandardUserAction = HwRpcTaskUserAction;
+pub type InitPlatformCoinWithTokensAwaitingStatus = HwRpcTaskAwaitingStatus;
+pub type InitPlatformCoinWithTokensUserAction = HwRpcTaskUserAction;
 pub type EnablePlatformCoinWithTokensResponse = InitRpcTaskResponse;
 pub type EnablePlatformCoinWithTokensStatusRequest = RpcTaskStatusRequest;
 pub type InitPlatformCoinWithTokensUserActionRequest<UserAction> = RpcTaskUserActionRequest<UserAction>;
@@ -506,7 +506,7 @@ pub trait InitPlatformCoinWithTokensInitialStatus {
 }
 
 #[derive(Clone, Serialize)]
-pub enum InitPlatformCoinWithTokensStandardInProgressStatus {
+pub enum InitPlatformCoinWithTokensInProgressStatus {
     ActivatingCoin,
     SyncingBlockHeaders {
         current_scanned_block: u64,
@@ -521,8 +521,8 @@ pub enum InitPlatformCoinWithTokensStandardInProgressStatus {
     FollowHwDeviceInstructions,
 }
 
-impl InitPlatformCoinWithTokensInitialStatus for InitPlatformCoinWithTokensStandardInProgressStatus {
-    fn initial_status() -> Self { InitPlatformCoinWithTokensStandardInProgressStatus::ActivatingCoin }
+impl InitPlatformCoinWithTokensInitialStatus for InitPlatformCoinWithTokensInProgressStatus {
+    fn initial_status() -> Self { InitPlatformCoinWithTokensInProgressStatus::ActivatingCoin }
 }
 
 pub async fn init_platform_coin_with_tokens<Platform>(

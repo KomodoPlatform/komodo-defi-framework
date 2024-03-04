@@ -1,9 +1,9 @@
 use crate::context::CoinsActivationContext;
 use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       InitPlatformCoinWithTokensStandardAwaitingStatus,
-                                       InitPlatformCoinWithTokensStandardInProgressStatus,
-                                       InitPlatformCoinWithTokensStandardUserAction,
-                                       InitPlatformCoinWithTokensTaskManagerShared, InitTokensAsMmCoinsError,
+                                       InitPlatformCoinWithTokensAwaitingStatus,
+                                       InitPlatformCoinWithTokensInProgressStatus,
+                                       InitPlatformCoinWithTokensTaskManagerShared,
+                                       InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
                                        PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
                                        TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf};
 use crate::prelude::*;
@@ -204,9 +204,9 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
     type ActivationResult = EthWithTokensActivationResult;
     type ActivationError = EthActivationV2Error;
 
-    type InProgressStatus = InitPlatformCoinWithTokensStandardInProgressStatus;
-    type AwaitingStatus = InitPlatformCoinWithTokensStandardAwaitingStatus;
-    type UserAction = InitPlatformCoinWithTokensStandardUserAction;
+    type InProgressStatus = InitPlatformCoinWithTokensInProgressStatus;
+    type AwaitingStatus = InitPlatformCoinWithTokensAwaitingStatus;
+    type UserAction = InitPlatformCoinWithTokensUserAction;
 
     async fn enable_platform_coin(
         ctx: MmArc,
@@ -384,17 +384,15 @@ fn eth_priv_key_build_policy(
 
 pub type EthTaskManagerShared = InitPlatformCoinWithTokensTaskManagerShared<EthCoin>;
 
-pub(crate) fn eth_xpub_extractor_rpc_statuses() -> HwConnectStatuses<
-    InitPlatformCoinWithTokensStandardInProgressStatus,
-    InitPlatformCoinWithTokensStandardAwaitingStatus,
-> {
+pub(crate) fn eth_xpub_extractor_rpc_statuses(
+) -> HwConnectStatuses<InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensAwaitingStatus> {
     HwConnectStatuses {
-        on_connect: InitPlatformCoinWithTokensStandardInProgressStatus::WaitingForTrezorToConnect,
-        on_connected: InitPlatformCoinWithTokensStandardInProgressStatus::ActivatingCoin,
-        on_connection_failed: InitPlatformCoinWithTokensStandardInProgressStatus::Finishing,
-        on_button_request: InitPlatformCoinWithTokensStandardInProgressStatus::FollowHwDeviceInstructions,
-        on_pin_request: InitPlatformCoinWithTokensStandardAwaitingStatus::EnterTrezorPin,
-        on_passphrase_request: InitPlatformCoinWithTokensStandardAwaitingStatus::EnterTrezorPassphrase,
-        on_ready: InitPlatformCoinWithTokensStandardInProgressStatus::ActivatingCoin,
+        on_connect: InitPlatformCoinWithTokensInProgressStatus::WaitingForTrezorToConnect,
+        on_connected: InitPlatformCoinWithTokensInProgressStatus::ActivatingCoin,
+        on_connection_failed: InitPlatformCoinWithTokensInProgressStatus::Finishing,
+        on_button_request: InitPlatformCoinWithTokensInProgressStatus::FollowHwDeviceInstructions,
+        on_pin_request: InitPlatformCoinWithTokensAwaitingStatus::EnterTrezorPin,
+        on_passphrase_request: InitPlatformCoinWithTokensAwaitingStatus::EnterTrezorPassphrase,
+        on_ready: InitPlatformCoinWithTokensInProgressStatus::ActivatingCoin,
     }
 }

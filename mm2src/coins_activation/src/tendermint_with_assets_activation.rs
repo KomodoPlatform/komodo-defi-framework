@@ -1,9 +1,9 @@
 use crate::context::CoinsActivationContext;
 use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       InitPlatformCoinWithTokensStandardAwaitingStatus,
-                                       InitPlatformCoinWithTokensStandardInProgressStatus,
-                                       InitPlatformCoinWithTokensStandardUserAction, InitPlatformCoinWithTokensTask,
-                                       InitPlatformCoinWithTokensTaskManagerShared, InitTokensAsMmCoinsError,
+                                       InitPlatformCoinWithTokensAwaitingStatus,
+                                       InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensTask,
+                                       InitPlatformCoinWithTokensTaskManagerShared,
+                                       InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
                                        PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
                                        TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf};
 use crate::prelude::*;
@@ -174,9 +174,9 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
     type ActivationResult = TendermintActivationResult;
     type ActivationError = TendermintInitError;
 
-    type InProgressStatus = InitPlatformCoinWithTokensStandardInProgressStatus;
-    type AwaitingStatus = InitPlatformCoinWithTokensStandardAwaitingStatus;
-    type UserAction = InitPlatformCoinWithTokensStandardUserAction;
+    type InProgressStatus = InitPlatformCoinWithTokensInProgressStatus;
+    type AwaitingStatus = InitPlatformCoinWithTokensAwaitingStatus;
+    type UserAction = InitPlatformCoinWithTokensUserAction;
 
     async fn enable_platform_coin(
         ctx: MmArc,

@@ -59,7 +59,7 @@ pub async fn withdraw_status(
         .or_mm_err(|| WithdrawStatusError::NoSuchTask(req.task_id))
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Serialize)]
 pub enum WithdrawInProgressStatus {
     Preparing,
     GeneratingTransaction,
