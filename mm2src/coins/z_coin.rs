@@ -99,7 +99,7 @@ cfg_native!(
 );
 
 cfg_wasm32!(
-    use crate::z_coin::z_params::ZcashParamsWasmImpl;
+    use crate::z_coin::storage::ZcashParamsWasmImpl;
     use common::executor::AbortOnDropHandle;
     use futures::channel::oneshot;
     use rand::rngs::OsRng;
@@ -114,7 +114,6 @@ pub mod storage;
 mod z_balance_streaming;
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
 mod z_coin_native_tests;
-#[cfg(target_arch = "wasm32")] mod z_params;
 
 /// `ZP2SHSpendError` compatible `TransactionErr` handling macro.
 macro_rules! try_ztx_s {

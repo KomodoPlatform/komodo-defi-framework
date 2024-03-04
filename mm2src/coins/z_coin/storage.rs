@@ -4,6 +4,10 @@ pub mod blockdb;
 pub use blockdb::*;
 
 pub mod walletdb;
+#[cfg(target_arch = "wasm32")] mod z_params;
+#[cfg(target_arch = "wasm32")]
+pub(crate) use z_params::ZcashParamsWasmImpl;
+
 pub use walletdb::*;
 
 use mm2_err_handle::mm_error::MmResult;

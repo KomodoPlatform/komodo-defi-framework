@@ -3,8 +3,7 @@ use crate::z_coin::{ZBalanceEvent, ZCoin};
 use crate::{MarketCoinOps, MmCoin};
 use async_trait::async_trait;
 use common::executor::{AbortSettings, SpawnAbortable};
-use common::log;
-use common::log::info;
+use common::log::{error, info};
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
 use futures_util::StreamExt;
@@ -20,25 +19,30 @@ impl EventBehaviour for ZCoin {
     async fn handle(self, _interval: f64, tx: Sender<EventInitStatus>) {
         const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
 
-        let ctx = match MmArc::from_weak(&self.as_ref().ctx) {
-            Some(ctx) => ctx,
-            None => {
-                let msg = "MM context must have been initialized already.";
-                tx.send(EventInitStatus::Failed(msg.to_owned()))
-                    .expect(RECEIVER_DROPPED_MSG);
-                panic!("{}", msg);
-            },
-        };
+        macro_rules! send_status_on_err {
+            ($match: expr, $sender: tt, $msg: literal) => {
+                match $match {
+                    Some(t) => t,
+                    None => {
+                        $sender
+                            .send(EventInitStatus::Failed($msg.to_owned()))
+                            .expect(RECEIVER_DROPPED_MSG);
+                        panic!("{}", $msg);
+                    },
+                }
+            };
+        }
 
-        let z_balance_change_handler = match self.z_fields.z_balance_event_handler.as_ref() {
-            Some(t) => t,
-            None => {
-                let e = "Z balance change receiver can not be empty.";
-                tx.send(EventInitStatus::Failed(e.to_string()))
-                    .expect(RECEIVER_DROPPED_MSG);
-                panic!("{}", e);
-            },
-        };
+        let ctx = send_status_on_err!(
+            MmArc::from_weak(&self.as_ref().ctx),
+            tx,
+            "MM context must have been initialized already."
+        );
+        let z_balance_change_handler = send_status_on_err!(
+            self.z_fields.z_balance_event_handler.as_ref(),
+            tx,
+            "Z balance change receiver can not be empty."
+        );
 
         tx.send(EventInitStatus::Success).expect(RECEIVER_DROPPED_MSG);
 
@@ -56,15 +60,12 @@ impl EventBehaviour for ZCoin {
                             });
 
                             ctx.stream_channel_controller
-                                .broadcast(Event::new(
-                                    Self::EVENT_NAME.to_string(),
-                                    json!(vec![payload]).to_string(),
-                                ))
+                                .broadcast(Event::new(Self::EVENT_NAME.to_string(), payload.to_string()))
                                 .await;
                         },
                         Err(err) => {
                             let ticker = self.ticker();
-                            log::error!("Failed getting balance for '{ticker}'. Error: {err}");
+                            error!("Failed getting balance for '{ticker}'. Error: {err}");
                             let e = serde_json::to_value(err).expect("Serialization should't fail.");
                             return ctx
                                 .stream_channel_controller
