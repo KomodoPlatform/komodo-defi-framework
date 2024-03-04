@@ -87,7 +87,7 @@ pub mod common_impl {
             PagingOptionsEnum::PageNumber(page_number) => ((page_number.get() - 1) * params.limit) as u32,
         };
         let to_address_id = std::cmp::min(from_address_id + params.limit as u32, total_addresses_number);
-        let addresses: Vec<HDAddressBalance> = coin
+        let addresses = coin
             .known_addresses_balances_with_ids(&hd_account, params.chain, from_address_id..to_address_id)
             .await?;
         let page_balance = addresses.iter().fold(CoinBalance::default(), |total, addr_balance| {

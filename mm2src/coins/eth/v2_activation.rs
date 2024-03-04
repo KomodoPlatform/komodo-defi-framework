@@ -105,9 +105,9 @@ impl From<MetamaskError> for EthActivationV2Error {
 #[derive(Clone, Deserialize)]
 pub enum EthPrivKeyActivationPolicy {
     ContextPrivKey,
+    Trezor,
     #[cfg(target_arch = "wasm32")]
     Metamask,
-    Trezor,
 }
 
 impl Default for EthPrivKeyActivationPolicy {
@@ -338,7 +338,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         (EthRpcMode::Default, EthPrivKeyPolicy::Trezor) => {
             let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
             let secp256k1_key_pair = crypto_ctx.mm2_internal_key_pair();
-            let auth_key_pair = KeyPair::from_secret_slice(&secp256k1_key_pair.private_bytes())
+            let auth_key_pair = KeyPair::from_secret_slice(secp256k1_key_pair.private_ref())
                 .map_to_mm(|_| EthActivationV2Error::InternalError("could not get internal keypair".to_string()))?;
             let auth_address = auth_key_pair.address();
             let auth_address_str = display_eth_address(&auth_address);
