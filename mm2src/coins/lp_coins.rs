@@ -2062,7 +2062,7 @@ pub struct TransactionDetails {
     /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction_bytes` RPC to broadcast the transaction
     pub tx_hex: BytesJson,
     /// Transaction hash in hexadecimal format
-    pub tx_hash: String,
+    tx_hash: String,
     /// Coins are sent from these addresses
     from: Vec<String>,
     /// Coins are sent to these addresses
@@ -2676,8 +2676,6 @@ pub enum WithdrawError {
     DbError(String),
     #[display(fmt = "chain id not set: {}", _0)]
     ChainIdRequired(String),
-    #[display(fmt = "Must use hierarchical deterministic wallet")]
-    UnexpectedDerivationMethod,
     #[display(fmt = "My address is {}, while current Nft owner is {}", my_address, token_owner)]
     MyAddressNotNftOwner {
         my_address: String,
@@ -2713,10 +2711,9 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
-            WithdrawError::Transport(_)
-            | WithdrawError::InternalError(_)
-            | WithdrawError::DbError(_)
-            | WithdrawError::UnexpectedDerivationMethod => StatusCode::INTERNAL_SERVER_ERROR,
+            WithdrawError::Transport(_) | WithdrawError::InternalError(_) | WithdrawError::DbError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
         }
     }
 }

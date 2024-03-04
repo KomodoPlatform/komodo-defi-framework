@@ -96,8 +96,7 @@ where
                 let default_hd_address = &coin
                     .deref()
                     .derivation_method
-                    .hd_wallet()
-                    .ok_or(WithdrawError::UnexpectedDerivationMethod)?
+                    .hd_wallet_or_err()?
                     .get_enabled_address()
                     .await
                     .ok_or_else(|| WithdrawError::InternalError("no enabled address".to_owned()))?;
