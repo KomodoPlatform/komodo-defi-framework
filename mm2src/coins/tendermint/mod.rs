@@ -4,6 +4,7 @@
 
 mod ibc;
 mod iris;
+mod nucleus;
 mod rpc;
 mod tendermint_balance_events;
 mod tendermint_coin;
@@ -26,9 +27,6 @@ pub enum CustomTendermintMsgType {
 pub(crate) const TENDERMINT_COIN_PROTOCOL_TYPE: &str = "TENDERMINT";
 pub(crate) const TENDERMINT_ASSET_PROTOCOL_TYPE: &str = "TENDERMINTTOKEN";
 
-pub(crate) mod type_urls {
-    pub(crate) const IBC_TRANSFER_TYPE_URL: &str = "/ibc.applications.transfer.v1.MsgTransfer";
-
-    pub(crate) const CREATE_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgCreateHTLC";
-    pub(crate) const CLAIM_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgClaimHTLC";
-}
+pub const HTLC_STATE_OPEN: i32 = 0;
+pub const HTLC_STATE_COMPLETED: i32 = 1;
+pub const HTLC_STATE_REFUNDED: i32 = 2;

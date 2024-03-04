@@ -1,8 +1,7 @@
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::iris::ethermint_account::EthermintAccount;
-use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN,
-                        HTLC_STATE_REFUNDED};
+use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc};
 use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
 use super::rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
@@ -12,6 +11,7 @@ use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistr
                                      IBCTransferChannelsResult, IBCWithdrawRequest, CHAIN_REGISTRY_BRANCH,
                                      CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
 use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
+use crate::tendermint::{HTLC_STATE_COMPLETED, HTLC_STATE_OPEN, HTLC_STATE_REFUNDED};
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
