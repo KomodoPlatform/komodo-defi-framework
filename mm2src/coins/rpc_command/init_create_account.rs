@@ -441,7 +441,7 @@ pub(crate) mod common_impl {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "for-tests", not(target_arch = "wasm32")))]
 pub mod for_tests {
     use super::{init_create_new_account, init_create_new_account_status, CreateAccountRpcError};
     use crate::coin_balance::HDAccountBalance;
