@@ -34,8 +34,8 @@ use async_trait::async_trait;
 use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
+use common::calc_total_pages;
 use common::executor::{AbortableSystem, AbortedError};
-use common::{calc_total_pages, sha256_digest};
 use common::{log, one_thousand_u32};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
@@ -86,7 +86,7 @@ use z_rpc::init_light_client;
 pub use z_rpc::{FirstSyncBlock, SyncStatus};
 
 cfg_native!(
-    use common::async_blocking;
+    use common::{async_blocking, sha256_digest};
     use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
     use zcash_client_sqlite::wallet::get_balance;
     use zcash_proofs::default_params_folder;

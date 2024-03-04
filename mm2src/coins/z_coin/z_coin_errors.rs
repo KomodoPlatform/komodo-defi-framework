@@ -272,27 +272,43 @@ impl From<ZcoinClientInitError> for ZCoinBuildError {
     fn from(err: ZcoinClientInitError) -> Self { ZCoinBuildError::RpcClientInitErr(err) }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub(super) enum SqlTxHistoryError {
+pub(crate) enum ZTxHistoryError {
+    #[cfg(not(target_arch = "wasm32"))]
     Sql(SqliteError),
+    #[cfg(target_arch = "wasm32")]
+    IndexedDbError(String),
+    #[cfg(not(target_arch = "wasm32"))]
     FromIdDoesNotExist(i64),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-impl From<SqliteError> for SqlTxHistoryError {
-    fn from(err: SqliteError) -> Self { SqlTxHistoryError::Sql(err) }
+impl From<ZTxHistoryError> for MyTxHistoryErrorV2 {
+    fn from(err: ZTxHistoryError) -> Self {
+        match err {
+            #[cfg(not(target_arch = "wasm32"))]
+            ZTxHistoryError::Sql(sql) => MyTxHistoryErrorV2::StorageError(sql.to_string()),
+            #[cfg(not(target_arch = "wasm32"))]
+            ZTxHistoryError::FromIdDoesNotExist(id) => {
+                MyTxHistoryErrorV2::StorageError(format!("from_id {} does not exist", id))
+            },
+            #[cfg(target_arch = "wasm32")]
+            ZTxHistoryError::IndexedDbError(err) => MyTxHistoryErrorV2::StorageError(err),
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<SqlTxHistoryError> for MyTxHistoryErrorV2 {
-    fn from(err: SqlTxHistoryError) -> Self {
-        match err {
-            SqlTxHistoryError::Sql(sql) => MyTxHistoryErrorV2::StorageError(sql.to_string()),
-            SqlTxHistoryError::FromIdDoesNotExist(id) => {
-                MyTxHistoryErrorV2::StorageError(format!("from_id {} does not exist", id))
-            },
-        }
-    }
+impl From<SqliteError> for ZTxHistoryError {
+    fn from(err: SqliteError) -> Self { ZTxHistoryError::Sql(err) }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl From<DbTransactionError> for ZTxHistoryError {
+    fn from(err: DbTransactionError) -> Self { ZTxHistoryError::IndexedDbError(err.to_string()) }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl From<CursorError> for ZTxHistoryError {
+    fn from(err: CursorError) -> Self { ZTxHistoryError::IndexedDbError(err.to_string()) }
 }
 
 pub(super) struct NoInfoAboutTx(pub(super) H256Json);
