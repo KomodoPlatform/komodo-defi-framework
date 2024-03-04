@@ -29,15 +29,6 @@ use std::convert::TryFrom;
 pub(crate) const IRIS_CREATE_HTLC_TYPE_URL: &str = "/iris.htlc.MsgCreateHTLC";
 pub(crate) const IRIS_CLAIM_HTLC_TYPE_URL: &str = "/iris.htlc.MsgClaimHTLC";
 
-#[allow(dead_code)]
-pub(crate) struct IrisHtlc {
-    /// Generated HTLC's ID.
-    pub(crate) id: String,
-
-    /// Message payload to be sent
-    pub(crate) msg_payload: cosmrs::Any,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MsgCreateHtlc {
     /// Sender's address.

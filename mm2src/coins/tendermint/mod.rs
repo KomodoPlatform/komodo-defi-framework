@@ -2,9 +2,8 @@
 // Useful resources
 // https://docs.cosmos.network/
 
+mod htlc;
 mod ibc;
-mod iris;
-mod nucleus;
 mod rpc;
 mod tendermint_balance_events;
 mod tendermint_coin;

@@ -1,8 +1,8 @@
+use super::htlc::iris::ethermint_account::EthermintAccount;
+use super::htlc::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc};
+use super::htlc::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
-use super::iris::ethermint_account::EthermintAccount;
-use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc};
-use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
 use super::rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
@@ -10,6 +10,7 @@ use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistr
                                      IBCTransferChannelsRequestError, IBCTransferChannelsResponse,
                                      IBCTransferChannelsResult, IBCWithdrawRequest, CHAIN_REGISTRY_BRANCH,
                                      CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
+use crate::tendermint::htlc::iris::htlc_proto::ClaimHtlcProtoRep;
 use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
 use crate::tendermint::{HTLC_STATE_COMPLETED, HTLC_STATE_OPEN, HTLC_STATE_REFUNDED};
 use crate::utxo::sat_from_big_decimal;
@@ -2633,8 +2634,7 @@ impl SwapOps for TendermintCoin {
     ) -> Result<Vec<u8>, String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
-        let htlc_proto: super::iris::htlc_proto::ClaimHtlcProtoRep =
-            try_s!(prost::Message::decode(msg.value.as_slice()));
+        let htlc_proto: ClaimHtlcProtoRep = try_s!(prost::Message::decode(msg.value.as_slice()));
         let htlc = try_s!(MsgClaimHtlc::try_from(htlc_proto));
 
         Ok(try_s!(hex::decode(htlc.secret)))
@@ -3081,8 +3081,7 @@ pub mod tendermint_coin_tests {
         let first_msg = tx.body.as_ref().unwrap().messages.first().unwrap();
         println!("{:?}", first_msg);
 
-        let claim_htlc =
-            crate::tendermint::iris::htlc_proto::ClaimHtlcProtoRep::decode(first_msg.value.as_slice()).unwrap();
+        let claim_htlc = ClaimHtlcProtoRep::decode(first_msg.value.as_slice()).unwrap();
         let expected_secret = [1; 32];
         let actual_secret = hex::decode(claim_htlc.secret).unwrap();
 
