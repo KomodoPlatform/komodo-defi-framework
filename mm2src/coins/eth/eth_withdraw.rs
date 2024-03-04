@@ -20,7 +20,6 @@ use mm2_err_handle::mm_error::MmResult;
 use mm2_err_handle::prelude::{MapToMmResult, MmError, OrMmError};
 use std::ops::Deref;
 use std::sync::Arc;
-
 #[cfg(target_arch = "wasm32")]
 use web3::types::TransactionRequest;
 
@@ -107,7 +106,6 @@ where
         }
     }
 
-    #[allow(unused_variables)]
     async fn sign_withdraw_tx(
         &self,
         req: &WithdrawRequest,

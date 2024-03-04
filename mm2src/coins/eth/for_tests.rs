@@ -114,7 +114,7 @@ fn eth_coin_from_keypair(
     (ctx, eth_coin)
 }
 
-#[allow(dead_code)]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn fill_eth(to_addr: Address, amount: f64) {
     let wei_per_eth: u64 = 1_000_000_000_000_000_000;
     let amount_in_wei = (amount * wei_per_eth as f64) as u64;
