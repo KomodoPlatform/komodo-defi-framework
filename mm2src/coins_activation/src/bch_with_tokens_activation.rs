@@ -285,14 +285,14 @@ impl PlatformCoinWithTokensActivationOps for BchCoin {
         let pubkey = self.my_public_key()?.to_string();
 
         let mut bch_address_info = CoinAddressInfo {
-            derivation_method: self.as_ref().derivation_method.to_response().await,
+            derivation_method: self.as_ref().derivation_method.to_response().await?,
             pubkey: pubkey.clone(),
             balances: None,
             tickers: None,
         };
 
         let mut slp_address_info = CoinAddressInfo {
-            derivation_method: self.as_ref().derivation_method.to_response().await,
+            derivation_method: self.as_ref().derivation_method.to_response().await?,
             pubkey: pubkey.clone(),
             balances: None,
             tickers: None,

@@ -293,14 +293,14 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         let pubkey = self.get_public_key().await?;
 
         let mut eth_address_info = CoinAddressInfo {
-            derivation_method: self.derivation_method().to_response().await,
+            derivation_method: self.derivation_method().to_response().await?,
             pubkey: pubkey.clone(),
             balances: None,
             tickers: None,
         };
 
         let mut erc20_address_info = CoinAddressInfo {
-            derivation_method: self.derivation_method().to_response().await,
+            derivation_method: self.derivation_method().to_response().await?,
             pubkey,
             balances: None,
             tickers: None,

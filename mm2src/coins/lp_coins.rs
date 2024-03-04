@@ -3758,7 +3758,6 @@ pub enum DerivationMethodResponse {
     /// Legacy iguana's privkey derivation, used by default
     Iguana,
     /// HD wallet derivation path, String is temporary here
-    #[allow(dead_code)]
     HDWallet(String),
 }
 
@@ -3821,12 +3820,17 @@ where
     /// Panic if the address mode is [`DerivationMethod::HDWallet`].
     pub async fn unwrap_single_addr(&self) -> Address { self.single_addr_or_err().await.unwrap() }
 
-    pub async fn to_response(&self) -> DerivationMethodResponse {
+    pub async fn to_response(&self) -> MmResult<DerivationMethodResponse, UnexpectedDerivationMethod> {
         match self {
-            DerivationMethod::SingleAddress(_) => DerivationMethodResponse::Iguana,
+            DerivationMethod::SingleAddress(_) => Ok(DerivationMethodResponse::Iguana),
             DerivationMethod::HDWallet(hd_wallet) => {
-                let enabled_address = hd_wallet.get_enabled_address().await.unwrap();
-                DerivationMethodResponse::HDWallet(enabled_address.derivation_path().to_string())
+                let enabled_address = hd_wallet
+                    .get_enabled_address()
+                    .await
+                    .or_mm_err(|| UnexpectedDerivationMethod::ExpectedHDWallet)?;
+                Ok(DerivationMethodResponse::HDWallet(
+                    enabled_address.derivation_path().to_string(),
+                ))
             },
         }
     }
