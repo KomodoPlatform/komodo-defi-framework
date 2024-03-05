@@ -20,7 +20,7 @@ pub async fn handle_worker_stream(ctx: MmArc) {
         });
 
         let worker_path = config.worker_path.as_deref().unwrap_or(DEFAULT_WORKER_PATH);
-        let worker = web_sys::Worker::new(worker_path).expect("Missing worker.js");
+        let worker = web_sys::Worker::new(worker_path).expect(&format!("Missing {}", worker_path));
         let message_js = wasm_bindgen::JsValue::from_str(&data.to_string());
 
         worker.post_message(&message_js)
