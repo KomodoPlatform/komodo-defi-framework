@@ -11,7 +11,7 @@ use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-const TEST_COIN_NAME: &str = "RICK";
+const TEST_COIN_NAME: &str = "DOC";
 
 pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     let ctx = MmCtxBuilder::default().into_mm_arc();
@@ -73,6 +73,6 @@ async fn test_electrum_display_balances() {
 
 #[wasm_bindgen_test]
 async fn test_hd_utxo_tx_history() {
-    let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:30018", "electrum2.cipig.net:30018"]).await;
+    let rpc_client = electrum_client_for_test(DOC_ELECTRUM_ADDRS).await;
     utxo_common_tests::test_hd_utxo_tx_history_impl(rpc_client).await;
 }
