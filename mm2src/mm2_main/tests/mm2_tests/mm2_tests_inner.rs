@@ -8255,7 +8255,7 @@ mod trezor_tests {
             ctx.clone(),
             serde_json::from_value(json!({
                 "ticker": ticker_coin,
-                "rpc_mode": "Http",
+                "rpc_mode": "Default",
                 "nodes": [
                     {"url": "https://rpc2.sepolia.org"},
                     {"url": "https://rpc.sepolia.org/"}
@@ -8350,7 +8350,7 @@ mod trezor_tests {
             ctx.clone(),
             serde_json::from_value(json!({
                 "ticker": ticker_coin,
-                "rpc_mode": "Http",
+                "rpc_mode": "Default",
                 "nodes": [
                     {"url": ETH_DEV_NODE} // btw sepolia nodes do not support trace_filter used in create_new_account
                 ],
