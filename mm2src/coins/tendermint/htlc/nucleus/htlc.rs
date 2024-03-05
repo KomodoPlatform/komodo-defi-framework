@@ -3,7 +3,7 @@
 // This module includes HTLC creating & claiming representation structstures
 // and their trait implementations.
 
-use super::htlc_proto::{ClaimHtlcProtoRep, CreateHtlcProtoRep};
+use super::htlc_proto::{NucleusClaimHtlcProto, NucleusCreateHtlcProto};
 
 use cosmrs::{tx::{Msg, MsgProto},
              AccountId, Coin, ErrorReport};
@@ -34,19 +34,19 @@ pub(crate) struct MsgCreateHtlc {
 }
 
 impl Msg for MsgCreateHtlc {
-    type Proto = CreateHtlcProtoRep;
+    type Proto = NucleusCreateHtlcProto;
 }
 
-impl TryFrom<CreateHtlcProtoRep> for MsgCreateHtlc {
+impl TryFrom<NucleusCreateHtlcProto> for MsgCreateHtlc {
     type Error = ErrorReport;
 
-    fn try_from(proto: CreateHtlcProtoRep) -> Result<MsgCreateHtlc, Self::Error> { MsgCreateHtlc::try_from(&proto) }
+    fn try_from(proto: NucleusCreateHtlcProto) -> Result<MsgCreateHtlc, Self::Error> { MsgCreateHtlc::try_from(&proto) }
 }
 
-impl TryFrom<&CreateHtlcProtoRep> for MsgCreateHtlc {
+impl TryFrom<&NucleusCreateHtlcProto> for MsgCreateHtlc {
     type Error = ErrorReport;
 
-    fn try_from(proto: &CreateHtlcProtoRep) -> Result<MsgCreateHtlc, Self::Error> {
+    fn try_from(proto: &NucleusCreateHtlcProto) -> Result<MsgCreateHtlc, Self::Error> {
         Ok(MsgCreateHtlc {
             sender: proto.sender.parse()?,
             to: proto.to.parse()?,
@@ -58,13 +58,13 @@ impl TryFrom<&CreateHtlcProtoRep> for MsgCreateHtlc {
     }
 }
 
-impl From<MsgCreateHtlc> for CreateHtlcProtoRep {
-    fn from(coin: MsgCreateHtlc) -> CreateHtlcProtoRep { CreateHtlcProtoRep::from(&coin) }
+impl From<MsgCreateHtlc> for NucleusCreateHtlcProto {
+    fn from(coin: MsgCreateHtlc) -> NucleusCreateHtlcProto { NucleusCreateHtlcProto::from(&coin) }
 }
 
-impl From<&MsgCreateHtlc> for CreateHtlcProtoRep {
-    fn from(msg: &MsgCreateHtlc) -> CreateHtlcProtoRep {
-        CreateHtlcProtoRep {
+impl From<&MsgCreateHtlc> for NucleusCreateHtlcProto {
+    fn from(msg: &MsgCreateHtlc) -> NucleusCreateHtlcProto {
+        NucleusCreateHtlcProto {
             sender: msg.sender.to_string(),
             to: msg.to.to_string(),
             amount: msg.amount.iter().map(Into::into).collect(),
@@ -75,7 +75,7 @@ impl From<&MsgCreateHtlc> for CreateHtlcProtoRep {
     }
 }
 
-impl MsgProto for CreateHtlcProtoRep {
+impl MsgProto for NucleusCreateHtlcProto {
     const TYPE_URL: &'static str = NUCLEUS_CREATE_HTLC_TYPE_URL;
 }
 
@@ -92,19 +92,19 @@ pub(crate) struct MsgClaimHtlc {
 }
 
 impl Msg for MsgClaimHtlc {
-    type Proto = ClaimHtlcProtoRep;
+    type Proto = NucleusClaimHtlcProto;
 }
 
-impl TryFrom<ClaimHtlcProtoRep> for MsgClaimHtlc {
+impl TryFrom<NucleusClaimHtlcProto> for MsgClaimHtlc {
     type Error = ErrorReport;
 
-    fn try_from(proto: ClaimHtlcProtoRep) -> Result<MsgClaimHtlc, Self::Error> { MsgClaimHtlc::try_from(&proto) }
+    fn try_from(proto: NucleusClaimHtlcProto) -> Result<MsgClaimHtlc, Self::Error> { MsgClaimHtlc::try_from(&proto) }
 }
 
-impl TryFrom<&ClaimHtlcProtoRep> for MsgClaimHtlc {
+impl TryFrom<&NucleusClaimHtlcProto> for MsgClaimHtlc {
     type Error = ErrorReport;
 
-    fn try_from(proto: &ClaimHtlcProtoRep) -> Result<MsgClaimHtlc, Self::Error> {
+    fn try_from(proto: &NucleusClaimHtlcProto) -> Result<MsgClaimHtlc, Self::Error> {
         Ok(MsgClaimHtlc {
             sender: proto.sender.parse()?,
             id: proto.id.clone(),
@@ -113,13 +113,13 @@ impl TryFrom<&ClaimHtlcProtoRep> for MsgClaimHtlc {
     }
 }
 
-impl From<MsgClaimHtlc> for ClaimHtlcProtoRep {
-    fn from(coin: MsgClaimHtlc) -> ClaimHtlcProtoRep { ClaimHtlcProtoRep::from(&coin) }
+impl From<MsgClaimHtlc> for NucleusClaimHtlcProto {
+    fn from(coin: MsgClaimHtlc) -> NucleusClaimHtlcProto { NucleusClaimHtlcProto::from(&coin) }
 }
 
-impl From<&MsgClaimHtlc> for ClaimHtlcProtoRep {
-    fn from(msg: &MsgClaimHtlc) -> ClaimHtlcProtoRep {
-        ClaimHtlcProtoRep {
+impl From<&MsgClaimHtlc> for NucleusClaimHtlcProto {
+    fn from(msg: &MsgClaimHtlc) -> NucleusClaimHtlcProto {
+        NucleusClaimHtlcProto {
             sender: msg.sender.to_string(),
             id: msg.id.clone(),
             secret: msg.secret.clone(),
@@ -127,6 +127,6 @@ impl From<&MsgClaimHtlc> for ClaimHtlcProtoRep {
     }
 }
 
-impl MsgProto for ClaimHtlcProtoRep {
+impl MsgProto for NucleusClaimHtlcProto {
     const TYPE_URL: &'static str = NUCLEUS_CLAIM_HTLC_TYPE_URL;
 }

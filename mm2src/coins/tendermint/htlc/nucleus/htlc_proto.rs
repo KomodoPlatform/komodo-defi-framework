@@ -1,7 +1,7 @@
 use crate::tendermint::htlc::HtlcState;
 
 #[derive(prost::Message)]
-pub(crate) struct CreateHtlcProtoRep {
+pub(crate) struct NucleusCreateHtlcProto {
     #[prost(string, tag = "1")]
     pub(crate) sender: prost::alloc::string::String,
     #[prost(string, tag = "2")]
@@ -17,19 +17,13 @@ pub(crate) struct CreateHtlcProtoRep {
 }
 
 #[derive(prost::Message)]
-pub(crate) struct ClaimHtlcProtoRep {
+pub(crate) struct NucleusClaimHtlcProto {
     #[prost(string, tag = "1")]
     pub(crate) sender: prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub(crate) id: prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub(crate) secret: prost::alloc::string::String,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct QueryHtlcRequestProto {
-    #[prost(string, tag = "1")]
-    pub(crate) id: prost::alloc::string::String,
 }
 
 #[derive(prost::Message)]

@@ -23,4 +23,10 @@ pub(crate) mod commons {
         Completed = 1,
         Refunded = 2,
     }
+
+    #[derive(prost::Message)]
+    pub(crate) struct QueryHtlcRequestProto {
+        #[prost(string, tag = "1")]
+        pub(crate) id: prost::alloc::string::String,
+    }
 }

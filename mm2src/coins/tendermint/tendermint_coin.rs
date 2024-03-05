@@ -1,6 +1,7 @@
 use super::htlc::iris::ethermint_account::EthermintAccount;
-use super::htlc::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc};
+use super::htlc::iris::htlc::{MsgClaimHtlc, MsgCreateHtlc};
 use super::htlc::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
+use super::htlc::TendermintHtlc;
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::rpc::*;
@@ -1124,7 +1125,7 @@ impl TendermintCoin {
         amount: cosmrs::Decimal,
         secret_hash: &[u8],
         time_lock: u64,
-    ) -> MmResult<IrisHtlc, TxMarshalingErr> {
+    ) -> MmResult<TendermintHtlc, TxMarshalingErr> {
         let amount = vec![Coin { denom, amount }];
         let timestamp = 0_u64;
         let msg_payload = MsgCreateHtlc {
@@ -1141,7 +1142,7 @@ impl TendermintCoin {
 
         let htlc_id = self.calculate_htlc_id(&self.account_id, to, amount, secret_hash);
 
-        Ok(IrisHtlc {
+        Ok(TendermintHtlc {
             id: htlc_id,
             msg_payload: msg_payload
                 .to_any()
@@ -1149,14 +1150,14 @@ impl TendermintCoin {
         })
     }
 
-    fn gen_claim_htlc_tx(&self, htlc_id: String, secret: &[u8]) -> MmResult<IrisHtlc, TxMarshalingErr> {
+    fn gen_claim_htlc_tx(&self, htlc_id: String, secret: &[u8]) -> MmResult<TendermintHtlc, TxMarshalingErr> {
         let msg_payload = MsgClaimHtlc {
             id: htlc_id.clone(),
             sender: self.account_id.clone(),
             secret: hex::encode(secret),
         };
 
-        Ok(IrisHtlc {
+        Ok(TendermintHtlc {
             id: htlc_id,
             msg_payload: msg_payload
                 .to_any()

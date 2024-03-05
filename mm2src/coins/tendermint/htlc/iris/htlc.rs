@@ -20,7 +20,7 @@
 // If the sender address doesn't have enough nyan tokens to complete unit tests,
 // check this page https://www.irisnet.org/docs/get-started/testnet.html#faucet
 
-use super::htlc_proto::{ClaimHtlcProtoRep, CreateHtlcProtoRep};
+use super::htlc_proto::{IrisClaimHtlcProto, IrisCreateHtlcProto};
 
 use cosmrs::{tx::{Msg, MsgProto},
              AccountId, Coin, ErrorReport};
@@ -30,7 +30,7 @@ pub(crate) const IRIS_CREATE_HTLC_TYPE_URL: &str = "/iris.htlc.MsgCreateHTLC";
 pub(crate) const IRIS_CLAIM_HTLC_TYPE_URL: &str = "/iris.htlc.MsgClaimHTLC";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct MsgCreateHtlc {
+pub(crate) struct IrisCreateHtlcMsg {
     /// Sender's address.
     pub(crate) to: AccountId,
 
@@ -59,21 +59,23 @@ pub(crate) struct MsgCreateHtlc {
     pub(crate) transfer: bool,
 }
 
-impl Msg for MsgCreateHtlc {
-    type Proto = CreateHtlcProtoRep;
+impl Msg for IrisCreateHtlcMsg {
+    type Proto = IrisCreateHtlcProto;
 }
 
-impl TryFrom<CreateHtlcProtoRep> for MsgCreateHtlc {
+impl TryFrom<IrisCreateHtlcProto> for IrisCreateHtlcMsg {
     type Error = ErrorReport;
 
-    fn try_from(proto: CreateHtlcProtoRep) -> Result<MsgCreateHtlc, Self::Error> { MsgCreateHtlc::try_from(&proto) }
+    fn try_from(proto: IrisCreateHtlcProto) -> Result<IrisCreateHtlcMsg, Self::Error> {
+        IrisCreateHtlcMsg::try_from(&proto)
+    }
 }
 
-impl TryFrom<&CreateHtlcProtoRep> for MsgCreateHtlc {
+impl TryFrom<&IrisCreateHtlcProto> for IrisCreateHtlcMsg {
     type Error = ErrorReport;
 
-    fn try_from(proto: &CreateHtlcProtoRep) -> Result<MsgCreateHtlc, Self::Error> {
-        Ok(MsgCreateHtlc {
+    fn try_from(proto: &IrisCreateHtlcProto) -> Result<IrisCreateHtlcMsg, Self::Error> {
+        Ok(IrisCreateHtlcMsg {
             sender: proto.sender.parse()?,
             to: proto.to.parse()?,
             amount: proto.amount.iter().map(TryFrom::try_from).collect::<Result<_, _>>()?,
@@ -87,13 +89,13 @@ impl TryFrom<&CreateHtlcProtoRep> for MsgCreateHtlc {
     }
 }
 
-impl From<MsgCreateHtlc> for CreateHtlcProtoRep {
-    fn from(coin: MsgCreateHtlc) -> CreateHtlcProtoRep { CreateHtlcProtoRep::from(&coin) }
+impl From<IrisCreateHtlcMsg> for IrisCreateHtlcProto {
+    fn from(t: IrisCreateHtlcMsg) -> IrisCreateHtlcProto { IrisCreateHtlcProto::from(&t) }
 }
 
-impl From<&MsgCreateHtlc> for CreateHtlcProtoRep {
-    fn from(msg: &MsgCreateHtlc) -> CreateHtlcProtoRep {
-        CreateHtlcProtoRep {
+impl From<&IrisCreateHtlcMsg> for IrisCreateHtlcProto {
+    fn from(msg: &IrisCreateHtlcMsg) -> IrisCreateHtlcProto {
+        IrisCreateHtlcProto {
             sender: msg.sender.to_string(),
             to: msg.to.to_string(),
             amount: msg.amount.iter().map(Into::into).collect(),
@@ -107,7 +109,7 @@ impl From<&MsgCreateHtlc> for CreateHtlcProtoRep {
     }
 }
 
-impl MsgProto for CreateHtlcProtoRep {
+impl MsgProto for IrisCreateHtlcProto {
     const TYPE_URL: &'static str = IRIS_CREATE_HTLC_TYPE_URL;
 }
 
@@ -124,19 +126,19 @@ pub(crate) struct MsgClaimHtlc {
 }
 
 impl Msg for MsgClaimHtlc {
-    type Proto = ClaimHtlcProtoRep;
+    type Proto = IrisClaimHtlcProto;
 }
 
-impl TryFrom<ClaimHtlcProtoRep> for MsgClaimHtlc {
+impl TryFrom<IrisClaimHtlcProto> for MsgClaimHtlc {
     type Error = ErrorReport;
 
-    fn try_from(proto: ClaimHtlcProtoRep) -> Result<MsgClaimHtlc, Self::Error> { MsgClaimHtlc::try_from(&proto) }
+    fn try_from(proto: IrisClaimHtlcProto) -> Result<MsgClaimHtlc, Self::Error> { MsgClaimHtlc::try_from(&proto) }
 }
 
-impl TryFrom<&ClaimHtlcProtoRep> for MsgClaimHtlc {
+impl TryFrom<&IrisClaimHtlcProto> for MsgClaimHtlc {
     type Error = ErrorReport;
 
-    fn try_from(proto: &ClaimHtlcProtoRep) -> Result<MsgClaimHtlc, Self::Error> {
+    fn try_from(proto: &IrisClaimHtlcProto) -> Result<MsgClaimHtlc, Self::Error> {
         Ok(MsgClaimHtlc {
             sender: proto.sender.parse()?,
             id: proto.id.clone(),
@@ -145,13 +147,13 @@ impl TryFrom<&ClaimHtlcProtoRep> for MsgClaimHtlc {
     }
 }
 
-impl From<MsgClaimHtlc> for ClaimHtlcProtoRep {
-    fn from(coin: MsgClaimHtlc) -> ClaimHtlcProtoRep { ClaimHtlcProtoRep::from(&coin) }
+impl From<MsgClaimHtlc> for IrisClaimHtlcProto {
+    fn from(coin: MsgClaimHtlc) -> IrisClaimHtlcProto { IrisClaimHtlcProto::from(&coin) }
 }
 
-impl From<&MsgClaimHtlc> for ClaimHtlcProtoRep {
-    fn from(msg: &MsgClaimHtlc) -> ClaimHtlcProtoRep {
-        ClaimHtlcProtoRep {
+impl From<&MsgClaimHtlc> for IrisClaimHtlcProto {
+    fn from(msg: &MsgClaimHtlc) -> IrisClaimHtlcProto {
+        IrisClaimHtlcProto {
             sender: msg.sender.to_string(),
             id: msg.id.clone(),
             secret: msg.secret.clone(),
@@ -159,6 +161,6 @@ impl From<&MsgClaimHtlc> for ClaimHtlcProtoRep {
     }
 }
 
-impl MsgProto for ClaimHtlcProtoRep {
+impl MsgProto for IrisClaimHtlcProto {
     const TYPE_URL: &'static str = IRIS_CLAIM_HTLC_TYPE_URL;
 }
