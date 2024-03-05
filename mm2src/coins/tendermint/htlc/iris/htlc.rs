@@ -114,7 +114,7 @@ impl MsgProto for IrisCreateHtlcProto {
 }
 
 #[derive(Clone)]
-pub(crate) struct MsgClaimHtlc {
+pub(crate) struct IrisClaimHtlcMsg {
     /// Sender's address.
     pub(crate) sender: AccountId,
 
@@ -125,21 +125,23 @@ pub(crate) struct MsgClaimHtlc {
     pub(crate) secret: String,
 }
 
-impl Msg for MsgClaimHtlc {
+impl Msg for IrisClaimHtlcMsg {
     type Proto = IrisClaimHtlcProto;
 }
 
-impl TryFrom<IrisClaimHtlcProto> for MsgClaimHtlc {
+impl TryFrom<IrisClaimHtlcProto> for IrisClaimHtlcMsg {
     type Error = ErrorReport;
 
-    fn try_from(proto: IrisClaimHtlcProto) -> Result<MsgClaimHtlc, Self::Error> { MsgClaimHtlc::try_from(&proto) }
+    fn try_from(proto: IrisClaimHtlcProto) -> Result<IrisClaimHtlcMsg, Self::Error> {
+        IrisClaimHtlcMsg::try_from(&proto)
+    }
 }
 
-impl TryFrom<&IrisClaimHtlcProto> for MsgClaimHtlc {
+impl TryFrom<&IrisClaimHtlcProto> for IrisClaimHtlcMsg {
     type Error = ErrorReport;
 
-    fn try_from(proto: &IrisClaimHtlcProto) -> Result<MsgClaimHtlc, Self::Error> {
-        Ok(MsgClaimHtlc {
+    fn try_from(proto: &IrisClaimHtlcProto) -> Result<IrisClaimHtlcMsg, Self::Error> {
+        Ok(IrisClaimHtlcMsg {
             sender: proto.sender.parse()?,
             id: proto.id.clone(),
             secret: proto.secret.clone(),
@@ -147,12 +149,12 @@ impl TryFrom<&IrisClaimHtlcProto> for MsgClaimHtlc {
     }
 }
 
-impl From<MsgClaimHtlc> for IrisClaimHtlcProto {
-    fn from(coin: MsgClaimHtlc) -> IrisClaimHtlcProto { IrisClaimHtlcProto::from(&coin) }
+impl From<IrisClaimHtlcMsg> for IrisClaimHtlcProto {
+    fn from(coin: IrisClaimHtlcMsg) -> IrisClaimHtlcProto { IrisClaimHtlcProto::from(&coin) }
 }
 
-impl From<&MsgClaimHtlc> for IrisClaimHtlcProto {
-    fn from(msg: &MsgClaimHtlc) -> IrisClaimHtlcProto {
+impl From<&IrisClaimHtlcMsg> for IrisClaimHtlcProto {
+    fn from(msg: &IrisClaimHtlcMsg) -> IrisClaimHtlcProto {
         IrisClaimHtlcProto {
             sender: msg.sender.to_string(),
             id: msg.id.clone(),

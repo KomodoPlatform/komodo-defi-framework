@@ -61,3 +61,9 @@ pub struct IrisHtlcProto {
     #[prost(bool, tag = "13")]
     pub(crate) transfer: bool,
 }
+
+#[derive(prost::Message)]
+pub(crate) struct IrisQueryHtlcResponseProto {
+    #[prost(message, tag = "1")]
+    pub(crate) htlc: Option<IrisHtlcProto>,
+}

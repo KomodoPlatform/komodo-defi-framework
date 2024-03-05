@@ -242,8 +242,9 @@ use rpc_command::{get_new_address::{GetNewAddressTaskManager, GetNewAddressTaskM
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{CosmosTransaction, CustomTendermintMsgType, TendermintCoin, TendermintFeeDetails,
-                 TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo};
+use tendermint::htlc::CustomTendermintMsgType;
+use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
+                 TendermintTokenProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]

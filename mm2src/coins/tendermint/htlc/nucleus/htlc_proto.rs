@@ -27,7 +27,7 @@ pub(crate) struct NucleusClaimHtlcProto {
 }
 
 #[derive(prost::Message)]
-pub struct HtlcProto {
+pub struct NucleusHtlcProto {
     #[prost(string, tag = "1")]
     pub(crate) id: prost::alloc::string::String,
     #[prost(string, tag = "2")]
@@ -51,7 +51,7 @@ pub struct HtlcProto {
 }
 
 #[derive(prost::Message)]
-pub(crate) struct QueryHtlcResponseProto {
+pub(crate) struct NucleusQueryHtlcResponseProto {
     #[prost(message, tag = "1")]
-    pub(crate) htlc: Option<HtlcProto>,
+    pub(crate) htlc: Option<NucleusHtlcProto>,
 }

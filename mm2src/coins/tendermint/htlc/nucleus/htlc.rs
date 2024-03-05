@@ -13,7 +13,7 @@ pub(crate) const NUCLEUS_CREATE_HTLC_TYPE_URL: &str = "/nucleus.htlc.MsgCreateHT
 pub(crate) const NUCLEUS_CLAIM_HTLC_TYPE_URL: &str = "/nucleus.htlc.MsgClaimHTLC";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct MsgCreateHtlc {
+pub(crate) struct NucleusCreateHtlcMsg {
     /// Sender's address.
     pub(crate) to: AccountId,
 
@@ -33,21 +33,23 @@ pub(crate) struct MsgCreateHtlc {
     pub(crate) timestamp: u64,
 }
 
-impl Msg for MsgCreateHtlc {
+impl Msg for NucleusCreateHtlcMsg {
     type Proto = NucleusCreateHtlcProto;
 }
 
-impl TryFrom<NucleusCreateHtlcProto> for MsgCreateHtlc {
+impl TryFrom<NucleusCreateHtlcProto> for NucleusCreateHtlcMsg {
     type Error = ErrorReport;
 
-    fn try_from(proto: NucleusCreateHtlcProto) -> Result<MsgCreateHtlc, Self::Error> { MsgCreateHtlc::try_from(&proto) }
+    fn try_from(proto: NucleusCreateHtlcProto) -> Result<NucleusCreateHtlcMsg, Self::Error> {
+        NucleusCreateHtlcMsg::try_from(&proto)
+    }
 }
 
-impl TryFrom<&NucleusCreateHtlcProto> for MsgCreateHtlc {
+impl TryFrom<&NucleusCreateHtlcProto> for NucleusCreateHtlcMsg {
     type Error = ErrorReport;
 
-    fn try_from(proto: &NucleusCreateHtlcProto) -> Result<MsgCreateHtlc, Self::Error> {
-        Ok(MsgCreateHtlc {
+    fn try_from(proto: &NucleusCreateHtlcProto) -> Result<NucleusCreateHtlcMsg, Self::Error> {
+        Ok(NucleusCreateHtlcMsg {
             sender: proto.sender.parse()?,
             to: proto.to.parse()?,
             amount: proto.amount.iter().map(TryFrom::try_from).collect::<Result<_, _>>()?,
@@ -58,12 +60,12 @@ impl TryFrom<&NucleusCreateHtlcProto> for MsgCreateHtlc {
     }
 }
 
-impl From<MsgCreateHtlc> for NucleusCreateHtlcProto {
-    fn from(coin: MsgCreateHtlc) -> NucleusCreateHtlcProto { NucleusCreateHtlcProto::from(&coin) }
+impl From<NucleusCreateHtlcMsg> for NucleusCreateHtlcProto {
+    fn from(coin: NucleusCreateHtlcMsg) -> NucleusCreateHtlcProto { NucleusCreateHtlcProto::from(&coin) }
 }
 
-impl From<&MsgCreateHtlc> for NucleusCreateHtlcProto {
-    fn from(msg: &MsgCreateHtlc) -> NucleusCreateHtlcProto {
+impl From<&NucleusCreateHtlcMsg> for NucleusCreateHtlcProto {
+    fn from(msg: &NucleusCreateHtlcMsg) -> NucleusCreateHtlcProto {
         NucleusCreateHtlcProto {
             sender: msg.sender.to_string(),
             to: msg.to.to_string(),
@@ -80,7 +82,7 @@ impl MsgProto for NucleusCreateHtlcProto {
 }
 
 #[derive(Clone)]
-pub(crate) struct MsgClaimHtlc {
+pub(crate) struct NucleusClaimHtlcMsg {
     /// Sender's address.
     pub(crate) sender: AccountId,
 
@@ -91,21 +93,23 @@ pub(crate) struct MsgClaimHtlc {
     pub(crate) secret: String,
 }
 
-impl Msg for MsgClaimHtlc {
+impl Msg for NucleusClaimHtlcMsg {
     type Proto = NucleusClaimHtlcProto;
 }
 
-impl TryFrom<NucleusClaimHtlcProto> for MsgClaimHtlc {
+impl TryFrom<NucleusClaimHtlcProto> for NucleusClaimHtlcMsg {
     type Error = ErrorReport;
 
-    fn try_from(proto: NucleusClaimHtlcProto) -> Result<MsgClaimHtlc, Self::Error> { MsgClaimHtlc::try_from(&proto) }
+    fn try_from(proto: NucleusClaimHtlcProto) -> Result<NucleusClaimHtlcMsg, Self::Error> {
+        NucleusClaimHtlcMsg::try_from(&proto)
+    }
 }
 
-impl TryFrom<&NucleusClaimHtlcProto> for MsgClaimHtlc {
+impl TryFrom<&NucleusClaimHtlcProto> for NucleusClaimHtlcMsg {
     type Error = ErrorReport;
 
-    fn try_from(proto: &NucleusClaimHtlcProto) -> Result<MsgClaimHtlc, Self::Error> {
-        Ok(MsgClaimHtlc {
+    fn try_from(proto: &NucleusClaimHtlcProto) -> Result<NucleusClaimHtlcMsg, Self::Error> {
+        Ok(NucleusClaimHtlcMsg {
             sender: proto.sender.parse()?,
             id: proto.id.clone(),
             secret: proto.secret.clone(),
@@ -113,12 +117,12 @@ impl TryFrom<&NucleusClaimHtlcProto> for MsgClaimHtlc {
     }
 }
 
-impl From<MsgClaimHtlc> for NucleusClaimHtlcProto {
-    fn from(coin: MsgClaimHtlc) -> NucleusClaimHtlcProto { NucleusClaimHtlcProto::from(&coin) }
+impl From<NucleusClaimHtlcMsg> for NucleusClaimHtlcProto {
+    fn from(coin: NucleusClaimHtlcMsg) -> NucleusClaimHtlcProto { NucleusClaimHtlcProto::from(&coin) }
 }
 
-impl From<&MsgClaimHtlc> for NucleusClaimHtlcProto {
-    fn from(msg: &MsgClaimHtlc) -> NucleusClaimHtlcProto {
+impl From<&NucleusClaimHtlcMsg> for NucleusClaimHtlcProto {
+    fn from(msg: &NucleusClaimHtlcMsg) -> NucleusClaimHtlcProto {
         NucleusClaimHtlcProto {
             sender: msg.sender.to_string(),
             id: msg.id.clone(),
