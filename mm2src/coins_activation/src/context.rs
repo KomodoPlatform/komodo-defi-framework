@@ -11,9 +11,9 @@ pub struct CoinsActivationContext {
     pub(crate) init_utxo_standard_task_manager: UtxoStandardTaskManagerShared,
     pub(crate) init_qtum_task_manager: QtumTaskManagerShared,
     pub(crate) init_z_coin_task_manager: ZcoinTaskManagerShared,
+    pub(crate) init_eth_task_manager: EthTaskManagerShared,
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) init_lightning_task_manager: LightningTaskManagerShared,
-    pub(crate) init_eth_task_manager: EthTaskManagerShared,
 }
 
 impl CoinsActivationContext {
@@ -24,9 +24,9 @@ impl CoinsActivationContext {
                 init_utxo_standard_task_manager: RpcTaskManager::new_shared(),
                 init_qtum_task_manager: RpcTaskManager::new_shared(),
                 init_z_coin_task_manager: RpcTaskManager::new_shared(),
+                init_eth_task_manager: RpcTaskManager::new_shared(),
                 #[cfg(not(target_arch = "wasm32"))]
                 init_lightning_task_manager: RpcTaskManager::new_shared(),
-                init_eth_task_manager: RpcTaskManager::new_shared(),
             })
         })
     }

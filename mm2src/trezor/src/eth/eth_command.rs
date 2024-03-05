@@ -23,14 +23,14 @@ lazy_static! {
 
     // External eth network definitions
     static ref ETH_NETWORK_DEFS: BTreeMap<ChainId, StaticDefinitionBytes> = [
-        (SEPOLIA_ID, SEPOLIA_NETORK_DEF.as_ref())
+        (SEPOLIA_ID, SEPOLIA_NETWORK_DEF.as_ref())
     ].iter().cloned().collect();
 
     // External eth token definitions
     static ref ETH_TOKEN_DEFS: BTreeMap<StaticAddressBytes, (ChainId, StaticDefinitionBytes)> = [
     ].iter().cloned().collect();
 
-    static ref SEPOLIA_NETORK_DEF: Vec<u8> = include_bytes!("definitions/sepolia.dat").to_vec();
+    static ref SEPOLIA_NETWORK_DEF: Vec<u8> = include_bytes!("definitions/sepolia.dat").to_vec();
     // add more files with external network or token definitions
 }
 
