@@ -17,7 +17,8 @@ pub async fn handle_worker_stream(ctx: MmArc) {
             "message": event.message(),
         });
 
-        let worker = web_sys::Worker::new("worker.js").expect("Missing worker.js");
+        let script_url = ctx.conf["worker"].as_str().unwrap_or_else(|| "worker.js");
+        let worker = web_sys::Worker::new(script_url).expect("Missing worker.js");
         let message_js = wasm_bindgen::JsValue::from_str(&data.to_string());
 
         worker.post_message(&message_js)
