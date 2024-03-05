@@ -3,7 +3,7 @@ use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")] use std::path::PathBuf;
 
 #[cfg(target_arch = "wasm32")]
-const DEFAULT_WORKER_PATH: &str = "worker.js";
+const DEFAULT_WORKER_PATH: &str = "event_streaming_worker.js";
 
 /// Multi-purpose/generic event type that can easily be used over the event streaming
 pub struct Event {
