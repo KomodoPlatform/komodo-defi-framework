@@ -38,6 +38,7 @@ pub struct EventStreamConfiguration {
     pub access_control_allow_origin: String,
     #[serde(default)]
     active_events: HashMap<String, EventConfig>,
+    /// The path to the worker script for event streaming.
     #[cfg(target_arch = "wasm32")]
     pub worker_path: PathBuf,
 }
