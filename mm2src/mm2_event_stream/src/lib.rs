@@ -34,6 +34,7 @@ pub struct EventStreamConfiguration {
     pub access_control_allow_origin: String,
     #[serde(default)]
     active_events: HashMap<String, EventConfig>,
+    pub worker_path: Option<String>,
 }
 
 /// Represents the configuration for a specific event within the event stream.
@@ -51,6 +52,7 @@ impl Default for EventStreamConfiguration {
         Self {
             access_control_allow_origin: String::from("*"),
             active_events: Default::default(),
+            worker_path: None,
         }
     }
 }
