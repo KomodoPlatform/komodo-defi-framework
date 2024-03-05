@@ -7,7 +7,7 @@ pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, 
                                       ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 
-use crate::docker_tests::eth_docker_tests::fill_eth;
+use crate::docker_tests::eth_docker_tests::{erc721_contract, fill_eth};
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
 use coins::eth::{addr_from_raw_pubkey, eth_coin_from_conf_and_request, EthCoin};
@@ -24,6 +24,7 @@ use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path,
 use coins::{CoinProtocol, ConfirmPaymentInput, MarketCoinOps, PrivKeyBuildPolicy, Transaction};
 use crypto::privkey::key_pair_from_seed;
 use crypto::Secp256k1Secret;
+use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
 use futures01::Future;
 use http::StatusCode;
@@ -47,6 +48,7 @@ use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::core::WaitFor;
 use testcontainers::{Container, GenericImage, RunnableImage};
+use web3::contract::Contract;
 use web3::transports::Http;
 use web3::types::TransactionRequest;
 use web3::Web3;
@@ -1160,13 +1162,18 @@ pub fn init_geth_node() {
             thread::sleep(Duration::from_millis(100));
         }
 
+        let name = Token::String("MyNFT".into());
+        let symbol = Token::String("MNFT".into());
+        let params = ethabi::encode(&[name, symbol]);
+        let erc721_data = format!("{}{}", ERC721_TEST_TOKEN_BYTES, hex::encode(params));
+
         let tx_request_deploy_erc721 = TransactionRequest {
             from: GETH_ACCOUNT,
             to: None,
             gas: None,
             gas_price: None,
             value: None,
-            data: Some(hex::decode(ERC721_TEST_TOKEN_BYTES).unwrap().into()),
+            data: Some(hex::decode(erc721_data).unwrap().into()),
             nonce: None,
             condition: None,
             transaction_type: None,
@@ -1194,13 +1201,17 @@ pub fn init_geth_node() {
             thread::sleep(Duration::from_millis(100));
         }
 
+        let uri = Token::String("MyNFTUri".into());
+        let params = ethabi::encode(&[uri]);
+        let erc1155_data = format!("{}{}", ERC1155_TEST_TOKEN_BYTES, hex::encode(params));
+
         let tx_request_deploy_erc1155 = TransactionRequest {
             from: GETH_ACCOUNT,
             to: None,
             gas: None,
             gas_price: None,
             value: None,
-            data: Some(hex::decode(ERC1155_TEST_TOKEN_BYTES).unwrap().into()),
+            data: Some(hex::decode(erc1155_data).unwrap().into()),
             nonce: None,
             condition: None,
             transaction_type: None,

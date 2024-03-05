@@ -125,6 +125,7 @@ mm2_test_helpers = { path = "../mm2_test_helpers" }
 mocktopus = "0.8.0"
 testcontainers = "0.15.0"
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.19.0", default-features = false, features = ["http"] }
+ethabi = { version = "17.0.0" }
 
 [build-dependencies]
 chrono = "0.4"

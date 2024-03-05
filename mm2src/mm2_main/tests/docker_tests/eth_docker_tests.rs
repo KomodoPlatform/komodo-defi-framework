@@ -378,7 +378,7 @@ fn send_and_spend_eth_maker_payment() {
 
 #[test]
 fn send_and_refund_erc2721_maker_payment() {
-    let global_nft = global_nft_with_random_privkey(nft_swap_contract());
+    let _global_nft = global_nft_with_random_privkey(nft_swap_contract());
 
     let time_lock = now_sec() - 100;
     let other_pubkey = &[
