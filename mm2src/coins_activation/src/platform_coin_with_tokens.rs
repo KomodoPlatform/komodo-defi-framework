@@ -365,6 +365,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
 pub async fn re_enable_passive_platform_coin_with_tokens<Platform>(
     ctx: MmArc,
     platform_coin: Platform,
+    task_handle: Option<RpcTaskHandleShared<InitPlatformCoinWithTokensTask<Platform>>>,
     req: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
 ) -> Result<Platform::ActivationResult, MmError<EnablePlatformCoinWithTokensError>>
 where
@@ -378,7 +379,7 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let activation_result = platform_coin.get_activation_result(None, &req.request).await?;
+    let activation_result = platform_coin.get_activation_result(task_handle, &req.request).await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -418,7 +419,7 @@ where
     if let Ok(Some(coin)) = lp_coinfind_any(&ctx, &req.ticker).await {
         if !coin.is_available() {
             if let Some(platform_coin) = Platform::try_from_mm_coin(coin.inner) {
-                return re_enable_passive_platform_coin_with_tokens(ctx, platform_coin, req).await;
+                return re_enable_passive_platform_coin_with_tokens(ctx, platform_coin, task_handle, req).await;
             }
         }
 
