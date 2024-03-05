@@ -3,7 +3,7 @@ mod nucleus;
 
 use std::{convert::TryFrom, str::FromStr};
 
-use cosmrs::ErrorReport;
+use cosmrs::{AccountId, Coin, ErrorReport};
 use iris::htlc::{IrisClaimHtlcMsg, IrisCreateHtlcMsg};
 use nucleus::htlc::{NucleusClaimHtlcMsg, NucleusCreateHtlcMsg};
 
@@ -27,7 +27,7 @@ impl FromStr for HtlcType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "iaa" => Ok(HtlcType::Iris),
-            "nucl" => Ok(HtlcType::Nucleus),
+            "nuc" => Ok(HtlcType::Nucleus),
             unsupported => Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 format!("Account type '{unsupported}' is not supported for HTLCs"),
@@ -74,7 +74,39 @@ pub enum CreateHtlcMsg {
     Iris(IrisCreateHtlcMsg),
 }
 
-impl CreateHtlcMsg {}
+impl TryFrom<CreateHtlcProto> for CreateHtlcMsg {
+    type Error = ErrorReport;
+
+    fn try_from(value: CreateHtlcProto) -> Result<Self, Self::Error> {
+        match value {
+            CreateHtlcProto::Nucleus(inner) => Ok(CreateHtlcMsg::Nucleus(NucleusCreateHtlcMsg::try_from(inner)?)),
+            CreateHtlcProto::Iris(inner) => Ok(CreateHtlcMsg::Iris(IrisCreateHtlcMsg::try_from(inner)?)),
+        }
+    }
+}
+
+impl CreateHtlcMsg {
+    pub fn sender(&self) -> &AccountId {
+        match self {
+            CreateHtlcMsg::Iris(inner) => &inner.sender,
+            CreateHtlcMsg::Nucleus(inner) => &inner.sender,
+        }
+    }
+
+    pub fn to(&self) -> &AccountId {
+        match self {
+            CreateHtlcMsg::Iris(inner) => &inner.to,
+            CreateHtlcMsg::Nucleus(inner) => &inner.to,
+        }
+    }
+
+    pub fn amount(&self) -> &[Coin] {
+        match self {
+            CreateHtlcMsg::Iris(inner) => &inner.amount,
+            CreateHtlcMsg::Nucleus(inner) => &inner.amount,
+        }
+    }
+}
 
 pub enum ClaimHtlcMsg {
     Nucleus(NucleusClaimHtlcMsg),
@@ -106,7 +138,14 @@ pub enum CreateHtlcProto {
     Iris(IrisCreateHtlcProto),
 }
 
-impl CreateHtlcProto {}
+impl CreateHtlcProto {
+    pub fn decode(htlc_type: HtlcType, bytes: &[u8]) -> Result<Self, DecodeError> {
+        match htlc_type {
+            HtlcType::Nucleus => Ok(Self::Nucleus(NucleusCreateHtlcProto::decode(bytes)?)),
+            HtlcType::Iris => Ok(Self::Iris(IrisCreateHtlcProto::decode(bytes)?)),
+        }
+    }
+}
 
 pub enum ClaimHtlcProto {
     Nucleus(NucleusClaimHtlcProto),
@@ -116,15 +155,15 @@ pub enum ClaimHtlcProto {
 impl ClaimHtlcProto {
     pub fn decode(htlc_type: HtlcType, bytes: &[u8]) -> Result<Self, DecodeError> {
         match htlc_type {
-            HtlcType::Nucleus => Ok(ClaimHtlcProto::Nucleus(NucleusClaimHtlcProto::decode(bytes)?)),
-            HtlcType::Iris => Ok(ClaimHtlcProto::Iris(IrisClaimHtlcProto::decode(bytes)?)),
+            HtlcType::Nucleus => Ok(Self::Nucleus(NucleusClaimHtlcProto::decode(bytes)?)),
+            HtlcType::Iris => Ok(Self::Iris(IrisClaimHtlcProto::decode(bytes)?)),
         }
     }
 
     pub fn secret(&self) -> &str {
         match self {
-            ClaimHtlcProto::Iris(inner) => &inner.secret,
-            ClaimHtlcProto::Nucleus(inner) => &inner.secret,
+            Self::Iris(inner) => &inner.secret,
+            Self::Nucleus(inner) => &inner.secret,
         }
     }
 }
@@ -134,4 +173,18 @@ pub enum QueryHtlcResponse {
     Iris(IrisQueryHtlcResponseProto),
 }
 
-impl QueryHtlcResponse {}
+impl QueryHtlcResponse {
+    pub fn decode(htlc_type: HtlcType, bytes: &[u8]) -> Result<Self, DecodeError> {
+        match htlc_type {
+            HtlcType::Nucleus => Ok(Self::Nucleus(NucleusQueryHtlcResponseProto::decode(bytes)?)),
+            HtlcType::Iris => Ok(Self::Iris(IrisQueryHtlcResponseProto::decode(bytes)?)),
+        }
+    }
+
+    pub fn htlc_state(&self) -> Option<i32> {
+        match self {
+            Self::Iris(inner) => Some(inner.htlc?.state),
+            Self::Nucleus(inner) => Some(inner.htlc?.state),
+        }
+    }
+}

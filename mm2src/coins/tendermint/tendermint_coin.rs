@@ -290,6 +290,10 @@ pub enum TendermintCoinRpcError {
     PerformError(String),
     RpcClientError(String),
     InternalError(String),
+    #[display(fmt = "Account type '{}' is not supported for HTLCs", prefix)]
+    UnexpectedAccountType {
+        prefix: String,
+    },
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
@@ -312,6 +316,9 @@ impl From<TendermintCoinRpcError> for BalanceError {
             TendermintCoinRpcError::PerformError(e) => BalanceError::Transport(e),
             TendermintCoinRpcError::RpcClientError(e) => BalanceError::Transport(e),
             TendermintCoinRpcError::InternalError(e) => BalanceError::Internal(e),
+            TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
+                BalanceError::Internal(format!("Account type '{prefix}' is not supported for HTLCs"))
+            },
         }
     }
 }
@@ -324,6 +331,9 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
             TendermintCoinRpcError::PerformError(e) => ValidatePaymentError::Transport(e),
             TendermintCoinRpcError::RpcClientError(e) => ValidatePaymentError::Transport(e),
             TendermintCoinRpcError::InternalError(e) => ValidatePaymentError::InternalError(e),
+            TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
+                ValidatePaymentError::InvalidParameter(format!("Account type '{prefix}' is not supported for HTLCs"))
+            },
         }
     }
 }
@@ -404,6 +414,10 @@ enum SearchForSwapTxSpendErr {
     TxMessagesEmpty,
     ClaimHtlcTxNotFound,
     UnexpectedHtlcState(i32),
+    #[display(fmt = "Account type '{}' is not supported for HTLCs", prefix)]
+    UnexpectedAccountType {
+        prefix: String,
+    },
     Proto(DecodeError),
 }
 
@@ -867,7 +881,7 @@ impl TendermintCoin {
         &self,
         from_address: &AccountId,
         to_address: &AccountId,
-        amount: Vec<Coin>,
+        amount: &[Coin],
         secret_hash: &[u8],
     ) -> String {
         // Needs to be sorted if contains multiple coins
@@ -1137,7 +1151,7 @@ impl TendermintCoin {
             transfer: false,
         };
 
-        let htlc_id = self.calculate_htlc_id(&self.account_id, to, amount, secret_hash);
+        let htlc_id = self.calculate_htlc_id(&self.account_id, to, &amount, secret_hash);
 
         Ok(TendermintHtlc {
             id: htlc_id,
@@ -1207,7 +1221,7 @@ impl TendermintCoin {
         let pubkey_hash = dhash160(other_pub);
         let to_address = try_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
 
-        let htlc_id = self.calculate_htlc_id(&self.account_id, &to_address, amount, secret_hash);
+        let htlc_id = self.calculate_htlc_id(&self.account_id, &to_address, &amount, secret_hash);
 
         let coin = self.clone();
         let fut = async move {
@@ -1248,7 +1262,10 @@ impl TendermintCoin {
 
                 let deserialized_tx = try_s!(cosmrs::Tx::from_bytes(tx.tx.as_bytes()));
                 let msg = try_s!(deserialized_tx.body.messages.first().ok_or("Tx body couldn't be read."));
-                let htlc = try_s!(CreateHtlcProto::decode(msg.value.as_slice()));
+                let htlc = try_s!(CreateHtlcProto::decode(
+                    try_s!(HtlcType::from_str(&coin.account_prefix)),
+                    msg.value.as_slice()
+                ));
 
                 if htlc.hash_lock.to_uppercase() == htlc_data.hash_lock.to_uppercase() {
                     let htlc = TransactionEnum::CosmosTransaction(CosmosTransaction {
@@ -1529,14 +1546,14 @@ impl TendermintCoin {
             ));
         }
 
-        let htlc_id = self.calculate_htlc_id(&sender, &self.account_id, amount, &input.secret_hash);
+        let htlc_id = self.calculate_htlc_id(&sender, &self.account_id, &amount, &input.secret_hash);
 
         let htlc_response = self.query_htlc(htlc_id.clone()).await?;
-        let htlc_data = htlc_response
-            .htlc
+        let htlc_state = htlc_response
+            .htlc_state()
             .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {}", htlc_id)))?;
 
-        match htlc_data.state {
+        match htlc_state {
             HTLC_STATE_OPEN => Ok(()),
             unexpected_state => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                 "{}",
@@ -1733,7 +1750,12 @@ impl TendermintCoin {
             )
             .await?;
 
-        Ok(QueryHtlcResponse::decode(response.value.as_slice())?)
+        let htlc_type =
+            HtlcType::from_str(&self.account_prefix).map_err(|e| TendermintCoinRpcError::UnexpectedAccountType {
+                prefix: self.account_prefix.clone(),
+            })?;
+
+        Ok(QueryHtlcResponse::decode(htlc_type, response.value.as_slice())?)
     }
 
     #[inline]
@@ -1752,17 +1774,24 @@ impl TendermintCoin {
             .messages
             .first()
             .or_mm_err(|| SearchForSwapTxSpendErr::TxMessagesEmpty)?;
-        let htlc_proto = CreateHtlcProto::decode(first_message.value.as_slice())?;
+
+        let htlc_type =
+            HtlcType::from_str(&self.account_prefix).map_err(|e| SearchForSwapTxSpendErr::UnexpectedAccountType {
+                prefix: self.account_prefix.clone(),
+            })?;
+
+        let htlc_proto = CreateHtlcProto::decode(htlc_type, first_message.value.as_slice())?;
         let htlc = CreateHtlcMsg::try_from(htlc_proto)?;
-        let htlc_id = self.calculate_htlc_id(&htlc.sender, &htlc.to, htlc.amount, input.secret_hash);
+        let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), input.secret_hash);
 
         let htlc_response = self.query_htlc(htlc_id.clone()).await?;
-        let htlc_data = match htlc_response.htlc {
-            Some(htlc) => htlc,
+
+        let htlc_state = match htlc_response.htlc_state() {
+            Some(htlc_state) => htlc_state,
             None => return Ok(None),
         };
 
-        match htlc_data.state {
+        match htlc_state {
             HTLC_STATE_OPEN => Ok(None),
             HTLC_STATE_COMPLETED => {
                 let events_string = format!("claim_htlc.id='{}'", htlc_id);
@@ -2346,9 +2375,12 @@ impl MarketCoinOps for TendermintCoin {
     fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(args.tx_bytes));
         let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
-        let htlc_proto = try_tx_fus!(CreateHtlcProto::decode(first_message.value.as_slice()));
+        let htlc_proto = try_tx_fus!(CreateHtlcProto::decode(
+            try_tx_fus!(HtlcType::from_str(&self.account_prefix)),
+            first_message.value.as_slice()
+        ));
         let htlc = try_tx_fus!(CreateHtlcMsg::try_from(htlc_proto));
-        let htlc_id = self.calculate_htlc_id(&htlc.sender, &htlc.to, htlc.amount, args.secret_hash);
+        let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), args.secret_hash);
 
         let events_string = format!("claim_htlc.id='{}'", htlc_id);
         let request = GetTxsEventRequest {
@@ -2460,10 +2492,13 @@ impl SwapOps for TendermintCoin {
     fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(maker_spends_payment_args.other_payment_tx));
         let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
-        let htlc_proto: CreateHtlcProto = try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
+        let htlc_proto = try_tx_fus!(CreateHtlcProto::decode(
+            try_tx_fus!(HtlcType::from_str(&self.account_prefix)),
+            msg.value.as_slice()
+        ));
         let htlc = try_tx_fus!(CreateHtlcMsg::try_from(htlc_proto));
 
-        let mut amount = htlc.amount.clone();
+        let mut amount = htlc.amount().to_vec();
         amount.sort();
         drop_mutability!(amount);
 
@@ -2473,7 +2508,12 @@ impl SwapOps for TendermintCoin {
             .collect::<Vec<String>>()
             .join(",");
 
-        let htlc_id = self.calculate_htlc_id(&htlc.sender, &htlc.to, amount, maker_spends_payment_args.secret_hash);
+        let htlc_id = self.calculate_htlc_id(
+            &htlc.sender(),
+            &htlc.to(),
+            &amount,
+            maker_spends_payment_args.secret_hash,
+        );
 
         let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(htlc_id, maker_spends_payment_args.secret));
         let coin = self.clone();
@@ -2513,10 +2553,13 @@ impl SwapOps for TendermintCoin {
     fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(taker_spends_payment_args.other_payment_tx));
         let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
-        let htlc_proto: CreateHtlcProto = try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
+        let htlc_proto = try_tx_fus!(CreateHtlcProto::decode(
+            try_tx_fus!(HtlcType::from_str(&self.account_prefix)),
+            msg.value.as_slice()
+        ));
         let htlc = try_tx_fus!(CreateHtlcMsg::try_from(htlc_proto));
 
-        let mut amount = htlc.amount.clone();
+        let mut amount = htlc.amount().to_vec();
         amount.sort();
         drop_mutability!(amount);
 
@@ -2526,7 +2569,7 @@ impl SwapOps for TendermintCoin {
             .collect::<Vec<String>>()
             .join(",");
 
-        let htlc_id = self.calculate_htlc_id(&htlc.sender, &htlc.to, amount, taker_spends_payment_args.secret_hash);
+        let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), &amount, taker_spends_payment_args.secret_hash);
 
         let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(htlc_id, taker_spends_payment_args.secret));
         let coin = self.clone();
