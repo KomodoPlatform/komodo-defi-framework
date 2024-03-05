@@ -1,5 +1,9 @@
 use serde::Deserialize;
 use std::collections::HashMap;
+#[cfg(target_arch = "wasm32")] use std::path::PathBuf;
+
+#[cfg(target_arch = "wasm32")]
+const DEFAULT_WORKER_PATH: &str = "worker.js";
 
 /// Multi-purpose/generic event type that can easily be used over the event streaming
 pub struct Event {
@@ -34,7 +38,8 @@ pub struct EventStreamConfiguration {
     pub access_control_allow_origin: String,
     #[serde(default)]
     active_events: HashMap<String, EventConfig>,
-    pub worker_path: Option<String>,
+    #[cfg(target_arch = "wasm32")]
+    pub worker_path: PathBuf,
 }
 
 /// Represents the configuration for a specific event within the event stream.
@@ -52,7 +57,8 @@ impl Default for EventStreamConfiguration {
         Self {
             access_control_allow_origin: String::from("*"),
             active_events: Default::default(),
-            worker_path: None,
+            #[cfg(target_arch = "wasm32")]
+            worker_path: PathBuf::from(DEFAULT_WORKER_PATH),
         }
     }
 }
