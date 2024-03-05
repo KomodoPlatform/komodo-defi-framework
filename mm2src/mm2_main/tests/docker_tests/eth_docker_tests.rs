@@ -1,7 +1,8 @@
 use crate::docker_tests::docker_tests_common::{random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI,
-                                               GETH_ACCOUNT, GETH_ERC1155_CONTRACT, GETH_ERC20_CONTRACT,
-                                               GETH_ERC721_CONTRACT, GETH_NFT_SWAP_CONTRACT, GETH_NONCE_LOCK,
-                                               GETH_SWAP_CONTRACT, GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX};
+                                               GETH_ACCOUNT, GETH_DEX_FEE_ADDRESS, GETH_ERC1155_CONTRACT,
+                                               GETH_ERC20_CONTRACT, GETH_ERC721_CONTRACT, GETH_NFT_SWAP_CONTRACT,
+                                               GETH_NONCE_LOCK, GETH_SWAP_CONTRACT, GETH_WATCHERS_SWAP_CONTRACT,
+                                               GETH_WEB3, MM_CTX};
 use bitcrypto::dhash160;
 use coins::eth::{checksum_address, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
 use coins::{CoinProtocol, ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, PrivKeyBuildPolicy, RefundPaymentArgs,
@@ -30,6 +31,11 @@ pub fn swap_contract() -> Address { unsafe { GETH_SWAP_CONTRACT } }
 ///
 /// GETH_NFT_SWAP_CONTRACT is set once during initialization before tests start
 pub fn nft_swap_contract() -> Address { unsafe { GETH_NFT_SWAP_CONTRACT } }
+
+/// # Safety
+///
+/// GETH_DEX_FEE_ADDRESS is set once during initialization before tests start
+pub fn dex_fee_address() -> Address { unsafe { GETH_DEX_FEE_ADDRESS } }
 
 /// # Safety
 ///
