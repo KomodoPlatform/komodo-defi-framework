@@ -7,7 +7,7 @@ pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, 
                                       ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 
-use crate::docker_tests::eth_docker_tests::{dex_fee_address, fill_eth};
+use crate::docker_tests::eth_docker_tests::{fill_eth, geth_account};
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
 use coins::eth::{addr_from_raw_pubkey, eth_coin_from_conf_and_request, EthCoin};
@@ -87,8 +87,6 @@ pub static mut GETH_ERC721_CONTRACT: H160Eth = H160Eth::zero();
 pub static mut GETH_ERC1155_CONTRACT: H160Eth = H160Eth::zero();
 /// Nft Swap contract address on Geth dev node
 pub static mut GETH_NFT_SWAP_CONTRACT: H160Eth = H160Eth::zero();
-/// Dex fee address on Geth dev node
-pub static mut GETH_DEX_FEE_ADDRESS: H160Eth = H160Eth::zero();
 pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain";
@@ -1051,9 +1049,6 @@ pub fn init_geth_node() {
         GETH_ACCOUNT = accounts[0];
         log!("GETH ACCOUNT {:?}", GETH_ACCOUNT);
 
-        GETH_DEX_FEE_ADDRESS = accounts[1];
-        log!("GETH_DEX_FEE_ADDRESS {:?}", GETH_DEX_FEE_ADDRESS);
-
         let tx_request_deploy_erc20 = TransactionRequest {
             from: GETH_ACCOUNT,
             to: None,
@@ -1244,7 +1239,7 @@ pub fn init_geth_node() {
             thread::sleep(Duration::from_millis(100));
         }
 
-        let dex_fee_address = Token::Address(dex_fee_address());
+        let dex_fee_address = Token::Address(geth_account());
         let params = ethabi::encode(&[dex_fee_address]);
         let nft_swap_data = format!("{}{}", NFT_SWAP_CONTRACT_BYTES, hex::encode(params));
 
