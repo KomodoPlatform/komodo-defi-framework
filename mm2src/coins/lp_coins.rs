@@ -1575,6 +1575,45 @@ pub trait MakerCoinSwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
     async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr>;
 }
 
+#[async_trait]
+pub trait MakerNftSwapOpsV2: CoinAssocTypes + Send + Sync + 'static {
+    /// Spend ERC721 maker payment transaction
+    async fn spend_erc721_maker_payment_v2(
+        &self,
+        args: SpendMakerPaymentArgs<'_, Self>,
+    ) -> Result<Self::Tx, TransactionErr>;
+
+    /// Spend ERC1155 maker payment transaction
+    async fn spend_erc1155_maker_payment_v2(
+        &self,
+        args: SpendMakerPaymentArgs<'_, Self>,
+    ) -> Result<Self::Tx, TransactionErr>;
+
+    /// Refund ERC721 maker payment transaction using timelock path
+    async fn refund_erc721_maker_payment_v2_timelock(
+        &self,
+        args: RefundPaymentArgs<'_>,
+    ) -> Result<Self::Tx, TransactionErr>;
+
+    /// Refund ERC1155 maker payment transaction using timelock path
+    async fn refund_erc1155_maker_payment_v2_timelock(
+        &self,
+        args: RefundPaymentArgs<'_>,
+    ) -> Result<Self::Tx, TransactionErr>;
+
+    /// Refund ERC721 maker payment transaction using immediate refund path
+    async fn refund_erc721_maker_payment_v2_secret(
+        &self,
+        args: RefundMakerPaymentArgs<'_, Self>,
+    ) -> Result<Self::Tx, TransactionErr>;
+
+    /// Refund ERC1155 maker payment transaction using immediate refund path
+    async fn refund_erc1155_maker_payment_v2_secret(
+        &self,
+        args: RefundMakerPaymentArgs<'_, Self>,
+    ) -> Result<Self::Tx, TransactionErr>;
+}
+
 /// Enum representing errors that can occur while waiting for taker payment spend.
 #[derive(Display)]
 pub enum WaitForTakerPaymentSpendError {
@@ -3769,7 +3808,7 @@ pub enum CoinProtocol {
         decimals: u8,
     },
     ZHTLC(ZcoinProtocolInfo),
-    Nft {
+    NFT {
         platform: String,
     },
 }
@@ -4024,7 +4063,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::TENDERMINT { .. } => return ERR!("TENDERMINT protocol is not supported by lp_coininit"),
         CoinProtocol::TENDERMINTTOKEN(_) => return ERR!("TENDERMINTTOKEN protocol is not supported by lp_coininit"),
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
-        CoinProtocol::Nft { .. } => return ERR!("NFT protocol is not supported by lp_coininit"),
+        CoinProtocol::NFT { .. } => return ERR!("NFT protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
@@ -4568,7 +4607,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
 ) -> Result<String, String> {
     let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
     match protocol {
-        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::Nft { .. } => eth::addr_from_pubkey_str(pubkey),
+        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::NFT { .. } => eth::addr_from_pubkey_str(pubkey),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },

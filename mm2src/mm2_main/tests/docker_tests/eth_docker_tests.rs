@@ -1,6 +1,7 @@
-use crate::docker_tests::docker_tests_common::{random_secp256k1_secret, GETH_ACCOUNT, GETH_ERC20_CONTRACT,
-                                               GETH_NONCE_LOCK, GETH_SWAP_CONTRACT, GETH_WATCHERS_SWAP_CONTRACT,
-                                               GETH_WEB3, MM_CTX};
+use crate::docker_tests::docker_tests_common::{random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI,
+                                               GETH_ACCOUNT, GETH_ERC1155_CONTRACT, GETH_ERC20_CONTRACT,
+                                               GETH_ERC721_CONTRACT, GETH_NFT_SWAP_CONTRACT, GETH_NONCE_LOCK,
+                                               GETH_SWAP_CONTRACT, GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX};
 use bitcrypto::dhash160;
 use coins::eth::{checksum_address, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
 use coins::{CoinProtocol, ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, PrivKeyBuildPolicy, RefundPaymentArgs,
@@ -8,7 +9,7 @@ use coins::{CoinProtocol, ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, 
 use common::{block_on, now_sec};
 use ethereum_types::U256;
 use futures01::Future;
-use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf};
+use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf, nft_dev_conf};
 use std::thread;
 use std::time::Duration;
 use web3::contract::{Contract, Options};
@@ -27,6 +28,11 @@ pub fn swap_contract() -> Address { unsafe { GETH_SWAP_CONTRACT } }
 
 /// # Safety
 ///
+/// GETH_NFT_SWAP_CONTRACT is set once during initialization before tests start
+pub fn nft_swap_contract() -> Address { unsafe { GETH_NFT_SWAP_CONTRACT } }
+
+/// # Safety
+///
 /// GETH_WATCHERS_SWAP_CONTRACT is set once during initialization before tests start
 pub fn watchers_swap_contract() -> Address { unsafe { GETH_WATCHERS_SWAP_CONTRACT } }
 
@@ -37,6 +43,16 @@ pub fn erc20_contract() -> Address { unsafe { GETH_ERC20_CONTRACT } }
 
 /// Return ERC20 dev token contract address in checksum format
 pub fn erc20_contract_checksum() -> String { checksum_address(&format!("{:02x}", erc20_contract())) }
+
+/// # Safety
+///
+/// GETH_ERC721_CONTRACT is set once during initialization before tests start
+pub fn erc721_contract() -> Address { unsafe { GETH_ERC721_CONTRACT } }
+
+/// # Safety
+///
+/// GETH_ERC1155_CONTRACT is set once during initialization before tests start
+pub fn erc1155_contract() -> Address { unsafe { GETH_ERC1155_CONTRACT } }
 
 fn wait_for_confirmation(tx_hash: H256) {
     loop {
@@ -142,6 +158,70 @@ pub fn erc20_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
     fill_erc20(erc20_coin.my_address, U256::from(10000000000u64));
 
     erc20_coin
+}
+
+fn fill_erc721(to_addr: Address, token_id: U256) {
+    let _guard = GETH_NONCE_LOCK.lock().unwrap();
+    let erc721_contract = Contract::from_json(GETH_WEB3.eth(), erc721_contract(), ERC721_TEST_ABI.as_bytes()).unwrap();
+
+    let tx_hash = block_on(erc721_contract.call(
+        "mint",
+        (Token::Address(to_addr), Token::Uint(token_id)),
+        geth_account(),
+        Options::default(),
+    ))
+    .unwrap();
+    wait_for_confirmation(tx_hash);
+}
+
+fn fill_erc1155(to_addr: Address, token_id: U256, amount: U256) {
+    let _guard = GETH_NONCE_LOCK.lock().unwrap();
+    let erc1155_contract =
+        Contract::from_json(GETH_WEB3.eth(), erc1155_contract(), ERC1155_TEST_ABI.as_bytes()).unwrap();
+
+    let tx_hash = block_on(erc1155_contract.call(
+        "mint",
+        (
+            Token::Address(to_addr),
+            Token::Uint(token_id),
+            Token::Uint(amount),
+            Token::Bytes("".into()),
+        ),
+        geth_account(),
+        Options::default(),
+    ))
+    .unwrap();
+    wait_for_confirmation(tx_hash);
+}
+
+/// Creates global NFT supplied with one ERC721 and 3 ERC1155 tokens owned by user in nfts_infos field
+pub fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
+    let nft_conf = nft_dev_conf();
+    let req = json!({
+        "method": "enable",
+        "coin": "NFT_ETH",
+        "urls": ["http://127.0.0.1:8545"],
+        "swap_contract_address": swap_contract,
+    });
+
+    let global_nft = block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "NFT_ETH",
+        &nft_conf,
+        &req,
+        CoinProtocol::NFT {
+            platform: "ETH".to_string(),
+        },
+        PrivKeyBuildPolicy::IguanaPrivKey(random_secp256k1_secret()),
+    ))
+    .unwrap();
+
+    fill_erc721(global_nft.my_address, U256::from(1));
+    fill_erc1155(global_nft.my_address, U256::from(1), U256::from(3));
+
+    // todo add minted nfts into nfts_infos field in global_nft
+
+    global_nft
 }
 
 #[test]
@@ -294,6 +374,32 @@ fn send_and_spend_eth_maker_payment() {
 
     let expected = FoundSwapTxSpend::Spent(payment_spend);
     assert_eq!(expected, search_tx);
+}
+
+#[test]
+fn send_and_refund_erc2721_maker_payment() {
+    let global_nft = global_nft_with_random_privkey(nft_swap_contract());
+
+    let time_lock = now_sec() - 100;
+    let other_pubkey = &[
+        0x02, 0xc6, 0x6e, 0x7d, 0x89, 0x66, 0xb5, 0xc5, 0x55, 0xaf, 0x58, 0x05, 0x98, 0x9d, 0xa9, 0xfb, 0xf8, 0xdb,
+        0x95, 0xe1, 0x56, 0x31, 0xce, 0x35, 0x8c, 0x3a, 0x17, 0x10, 0xc9, 0x62, 0x67, 0x90, 0x63,
+    ];
+    let secret_hash = &[1; 20];
+
+    // todo provide new SendMakerNftPaymentArgs type
+    let _send_payment_args = SendPaymentArgs {
+        time_lock_duration: 100,
+        time_lock,
+        other_pubkey,
+        secret_hash,
+        amount: 1.into(),
+        swap_contract_address: &Some(nft_swap_contract().as_bytes().into()),
+        swap_unique_data: &[],
+        payment_instructions: &None,
+        watcher_reward: None,
+        wait_for_confirmation_until: now_sec() + 60,
+    };
 }
 
 #[test]

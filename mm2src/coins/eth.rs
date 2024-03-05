@@ -5874,7 +5874,7 @@ pub async fn eth_coin_from_conf_and_request(
     }
 
     let (coin_type, decimals) = match protocol {
-        CoinProtocol::ETH => (EthCoinType::Eth, ETH_DECIMALS),
+        CoinProtocol::ETH | CoinProtocol::NFT { .. } => (EthCoinType::Eth, ETH_DECIMALS),
         CoinProtocol::ERC20 {
             platform,
             contract_address,
@@ -5895,7 +5895,7 @@ pub async fn eth_coin_from_conf_and_request(
             };
             (EthCoinType::Erc20 { platform, token_addr }, decimals)
         },
-        _ => return ERR!("Expect ETH or ERC20 protocol"),
+        _ => return ERR!("Expect ETH, ERC20 or NFT protocol"),
     };
 
     // param from request should override the config
@@ -5926,8 +5926,7 @@ pub async fn eth_coin_from_conf_and_request(
 
     let key_lock = match &coin_type {
         EthCoinType::Eth => String::from(ticker),
-        EthCoinType::Erc20 { ref platform, .. } => String::from(platform),
-        EthCoinType::Nft { .. } => return ERR!("Does not support NFT protocol"),
+        EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform } => String::from(platform),
     };
 
     let nonce_lock = {
