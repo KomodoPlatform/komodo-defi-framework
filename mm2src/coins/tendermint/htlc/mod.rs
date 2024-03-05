@@ -1,15 +1,40 @@
 mod iris;
 mod nucleus;
 
+use std::{convert::TryFrom, str::FromStr};
+
+use cosmrs::ErrorReport;
 use iris::htlc::{IrisClaimHtlcMsg, IrisCreateHtlcMsg};
 use nucleus::htlc::{NucleusClaimHtlcMsg, NucleusCreateHtlcMsg};
 
 use iris::htlc_proto::{IrisClaimHtlcProto, IrisCreateHtlcProto, IrisQueryHtlcResponseProto};
 use nucleus::htlc_proto::{NucleusClaimHtlcProto, NucleusCreateHtlcProto, NucleusQueryHtlcResponseProto};
+use prost::{DecodeError, Message};
+use std::io;
 
 pub(crate) const HTLC_STATE_OPEN: i32 = 0;
 pub(crate) const HTLC_STATE_COMPLETED: i32 = 1;
 pub(crate) const HTLC_STATE_REFUNDED: i32 = 2;
+
+pub enum HtlcType {
+    Nucleus,
+    Iris,
+}
+
+impl FromStr for HtlcType {
+    type Err = io::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "iaa" => Ok(HtlcType::Iris),
+            "nucl" => Ok(HtlcType::Nucleus),
+            unsupported => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("Account type '{unsupported}' is not supported for HTLCs"),
+            )),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CustomTendermintMsgType {
@@ -45,36 +70,68 @@ pub(crate) struct QueryHtlcRequestProto {
 }
 
 pub enum CreateHtlcMsg {
-    Iris(IrisCreateHtlcMsg),
     Nucleus(NucleusCreateHtlcMsg),
+    Iris(IrisCreateHtlcMsg),
 }
 
 impl CreateHtlcMsg {}
 
 pub enum ClaimHtlcMsg {
-    Iris(IrisClaimHtlcMsg),
     Nucleus(NucleusClaimHtlcMsg),
+    Iris(IrisClaimHtlcMsg),
 }
 
-impl ClaimHtlcMsg {}
+impl ClaimHtlcMsg {
+    pub fn secret(&self) -> &str {
+        match self {
+            ClaimHtlcMsg::Iris(inner) => &inner.secret,
+            ClaimHtlcMsg::Nucleus(inner) => &inner.secret,
+        }
+    }
+}
+
+impl TryFrom<ClaimHtlcProto> for ClaimHtlcMsg {
+    type Error = ErrorReport;
+
+    fn try_from(value: ClaimHtlcProto) -> Result<Self, Self::Error> {
+        match value {
+            ClaimHtlcProto::Nucleus(inner) => Ok(ClaimHtlcMsg::Nucleus(NucleusClaimHtlcMsg::try_from(inner)?)),
+            ClaimHtlcProto::Iris(inner) => Ok(ClaimHtlcMsg::Iris(IrisClaimHtlcMsg::try_from(inner)?)),
+        }
+    }
+}
 
 pub enum CreateHtlcProto {
-    Iris(IrisCreateHtlcProto),
     Nucleus(NucleusCreateHtlcProto),
+    Iris(IrisCreateHtlcProto),
 }
 
 impl CreateHtlcProto {}
 
 pub enum ClaimHtlcProto {
-    Iris(IrisClaimHtlcProto),
     Nucleus(NucleusClaimHtlcProto),
+    Iris(IrisClaimHtlcProto),
 }
 
-impl ClaimHtlcProto {}
+impl ClaimHtlcProto {
+    pub fn decode(htlc_type: HtlcType, bytes: &[u8]) -> Result<Self, DecodeError> {
+        match htlc_type {
+            HtlcType::Nucleus => Ok(ClaimHtlcProto::Nucleus(NucleusClaimHtlcProto::decode(bytes)?)),
+            HtlcType::Iris => Ok(ClaimHtlcProto::Iris(IrisClaimHtlcProto::decode(bytes)?)),
+        }
+    }
+
+    pub fn secret(&self) -> &str {
+        match self {
+            ClaimHtlcProto::Iris(inner) => &inner.secret,
+            ClaimHtlcProto::Nucleus(inner) => &inner.secret,
+        }
+    }
+}
 
 pub enum QueryHtlcResponse {
-    Iris(IrisQueryHtlcResponseProto),
     Nucleus(NucleusQueryHtlcResponseProto),
+    Iris(IrisQueryHtlcResponseProto),
 }
 
 impl QueryHtlcResponse {}

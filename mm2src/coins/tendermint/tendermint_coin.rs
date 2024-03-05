@@ -1,5 +1,5 @@
 use super::ethermint_account::EthermintAccount;
-use super::htlc::{ClaimHtlcMsg, ClaimHtlcProto, CreateHtlcMsg, CreateHtlcProto, QueryHtlcRequestProto,
+use super::htlc::{ClaimHtlcMsg, ClaimHtlcProto, CreateHtlcMsg, CreateHtlcProto, HtlcType, QueryHtlcRequestProto,
                   QueryHtlcResponse, TendermintHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN, HTLC_STATE_REFUNDED};
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
@@ -2632,10 +2632,14 @@ impl SwapOps for TendermintCoin {
     ) -> Result<Vec<u8>, String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
-        let htlc_proto: ClaimHtlcProto = try_s!(prost::Message::decode(msg.value.as_slice()));
+
+        let htlc_proto = try_s!(ClaimHtlcProto::decode(
+            try_s!(HtlcType::from_str(&self.account_prefix)),
+            msg.value.as_slice()
+        ));
         let htlc = try_s!(ClaimHtlcMsg::try_from(htlc_proto));
 
-        Ok(try_s!(hex::decode(htlc.secret)))
+        Ok(try_s!(hex::decode(htlc.secret())))
     }
 
     fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
@@ -3079,9 +3083,9 @@ pub mod tendermint_coin_tests {
         let first_msg = tx.body.as_ref().unwrap().messages.first().unwrap();
         println!("{:?}", first_msg);
 
-        let claim_htlc = ClaimHtlcProto::decode(first_msg.value.as_slice()).unwrap();
+        let claim_htlc = ClaimHtlcProto::decode(HtlcType::Nucleus, first_msg.value.as_slice()).unwrap();
         let expected_secret = [1; 32];
-        let actual_secret = hex::decode(claim_htlc.secret).unwrap();
+        let actual_secret = hex::decode(claim_htlc.secret()).unwrap();
 
         assert_eq!(actual_secret, expected_secret);
     }
