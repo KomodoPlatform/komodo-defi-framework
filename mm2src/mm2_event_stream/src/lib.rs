@@ -40,8 +40,13 @@ pub struct EventStreamConfiguration {
     active_events: HashMap<String, EventConfig>,
     /// The path to the worker script for event streaming.
     #[cfg(target_arch = "wasm32")]
+    #[serde(default = "default_worker_path")]
     pub worker_path: PathBuf,
 }
+
+#[cfg(target_arch = "wasm32")]
+#[inline]
+fn default_worker_path() -> PathBuf { PathBuf::from(DEFAULT_WORKER_PATH) }
 
 /// Represents the configuration for a specific event within the event stream.
 #[derive(Clone, Default, Deserialize)]
@@ -59,7 +64,7 @@ impl Default for EventStreamConfiguration {
             access_control_allow_origin: String::from("*"),
             active_events: Default::default(),
             #[cfg(target_arch = "wasm32")]
-            worker_path: PathBuf::from(DEFAULT_WORKER_PATH),
+            worker_path: default_worker_path(),
         }
     }
 }
