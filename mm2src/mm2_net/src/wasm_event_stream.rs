@@ -38,6 +38,6 @@ pub async fn handle_worker_stream(ctx: MmArc) {
         let message_js = wasm_bindgen::JsValue::from_str(&data.to_string());
 
         port.0.post_message(&message_js)
-            .expect("Incompatible browser!\nSee https://developer.mozilla.org/en-US/docs/Web/API/Worker/postMessage#browser_compatibility for details.");
+            .expect("Incompatible browser!\nSee https://developer.mozilla.org/en-US/docs/Web/API/MessagePort/postMessage#browser_compatibility for details.");
     }
 }
