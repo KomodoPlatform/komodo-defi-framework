@@ -24,8 +24,16 @@ pub async fn handle_worker_stream(ctx: MmArc) {
         .worker_path
         .to_str()
         .expect("worker_path contains invalid UTF-8 characters");
-    let worker =
-        SendableSharedWorker(SharedWorker::new(worker_path).unwrap_or_else(|_| panic!("Missing {}", worker_path)));
+    let worker = SendableSharedWorker(
+        SharedWorker::new(worker_path).unwrap_or_else(|_| {
+            panic!(
+                "Failed to create a new SharedWorker with path '{}'.\n\
+                This could be due to the file missing or the browser being incompatible.\n\
+                For more details, please refer to https://developer.mozilla.org/en-US/docs/Web/API/SharedWorker#browser_compatibility",
+                worker_path
+            )
+        }),
+    );
 
     let port = SendableMessagePort(worker.0.port());
     port.0.start();
@@ -38,6 +46,8 @@ pub async fn handle_worker_stream(ctx: MmArc) {
         let message_js = wasm_bindgen::JsValue::from_str(&data.to_string());
 
         port.0.post_message(&message_js)
-            .expect("Incompatible browser!\nSee https://developer.mozilla.org/en-US/docs/Web/API/MessagePort/postMessage#browser_compatibility for details.");
+            .expect("Failed to post a message to the SharedWorker.\n\
+            This could be due to the browser being incompatible.\n\
+            For more details, please refer to https://developer.mozilla.org/en-US/docs/Web/API/MessagePort/postMessage#browser_compatibility");
     }
 }
