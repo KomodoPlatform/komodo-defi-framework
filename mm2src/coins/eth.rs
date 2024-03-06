@@ -26,7 +26,7 @@ use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, Websoc
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_structs::{ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
                               WithdrawErc721};
-use crate::{DexFee, RpcCommonOps, ValidateWatcherSpendInput, WatcherSpendType};
+use crate::{CoinAssocTypes, DexFee, RpcCommonOps, ToBytes, ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
@@ -46,8 +46,7 @@ use ethabi::{Contract, Function, Token};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
 use ethereum_types::{Address, H160, H256, U256};
-use ethkey::{public_to_address, KeyPair, Public, Signature};
-use ethkey::{sign, verify_address};
+use ethkey::{public_to_address, sign, verify_address, KeyPair, Public, Signature};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
 use futures01::Future;
@@ -108,6 +107,7 @@ use super::{coin_conf, lp_coinfind_or_err, AsyncMutex, BalanceError, BalanceFut,
             EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
             INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
 pub use rlp;
+use rlp::{DecoderError, Encodable, RlpStream};
 
 mod eth_balance_events;
 mod eth_rpc;
@@ -6176,5 +6176,77 @@ async fn get_eth_gas_details(
             let gas_limit = eth_coin.estimate_gas_wrapper(estimate_gas_req).compat().await?;
             Ok((gas_limit, gas_price))
         },
+    }
+}
+
+impl ToBytes for Signature {
+    fn to_bytes(&self) -> Vec<u8> { self.to_vec() }
+}
+
+impl ToBytes for SignedEthTx {
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut stream = RlpStream::new();
+        self.rlp_append(&mut stream);
+        // there is minimal but risk that stream.out() may panic
+        debug_assert!(stream.is_finished(), "RlpStream must be finished before calling out");
+        Vec::from(stream.out())
+    }
+}
+
+impl ToBytes for Public {
+    fn to_bytes(&self) -> Vec<u8> { self.0.to_vec() }
+}
+
+#[derive(Debug, Display)]
+pub enum CoinAssocTypesError {
+    InvalidHexString(String),
+    TxParseError(String),
+    SignatureParseError(String),
+    ParseSignatureError(String),
+}
+
+impl From<DecoderError> for CoinAssocTypesError {
+    fn from(e: DecoderError) -> Self { CoinAssocTypesError::TxParseError(e.to_string()) }
+}
+
+impl CoinAssocTypes for EthCoin {
+    type Address = Address;
+    type AddressParseError = CoinAssocTypesError;
+    type Pubkey = Public;
+    type PubkeyParseError = CoinAssocTypesError;
+    type Tx = SignedEthTx;
+    type TxParseError = CoinAssocTypesError;
+    type Preimage = SignedEthTx;
+    type PreimageParseError = CoinAssocTypesError;
+    type Sig = Signature;
+    type SigParseError = CoinAssocTypesError;
+
+    fn my_addr(&self) -> &Self::Address { &self.my_address }
+
+    fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> {
+        Address::from_str(address).map_err(|e| CoinAssocTypesError::InvalidHexString(e.to_string()))
+    }
+
+    fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> {
+        Ok(Public::from_slice(pubkey))
+    }
+
+    fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> {
+        let unverified: UnverifiedTransaction = rlp::decode(tx).map_err(CoinAssocTypesError::from)?;
+        SignedEthTx::new(unverified).map_err(|e| CoinAssocTypesError::TxParseError(e.to_string()))
+    }
+
+    fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Preimage, Self::PreimageParseError> { self.parse_tx(tx) }
+
+    fn parse_signature(&self, sig: &[u8]) -> Result<Self::Sig, Self::SigParseError> {
+        if sig.len() == 65 {
+            let mut arr = [0; 65];
+            arr.copy_from_slice(sig);
+            Ok(Signature::from(arr)) // Assuming `Signature::from([u8; 65])` exists
+        } else {
+            Err(CoinAssocTypesError::ParseSignatureError(
+                "Signature slice is not 65 bytes long".to_string(),
+            ))
+        }
     }
 }
