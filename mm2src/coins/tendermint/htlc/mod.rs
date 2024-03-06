@@ -3,7 +3,7 @@ mod nucleus;
 
 use std::{convert::TryFrom, str::FromStr};
 
-use cosmrs::{AccountId, Coin, ErrorReport};
+use cosmrs::{tx::Msg, AccountId, Any, Coin, ErrorReport};
 use iris::htlc::{IrisClaimHtlcMsg, IrisCreateHtlcMsg};
 use nucleus::htlc::{NucleusClaimHtlcMsg, NucleusCreateHtlcMsg};
 
@@ -16,6 +16,7 @@ pub(crate) const HTLC_STATE_OPEN: i32 = 0;
 pub(crate) const HTLC_STATE_COMPLETED: i32 = 1;
 pub(crate) const HTLC_STATE_REFUNDED: i32 = 2;
 
+#[derive(Copy, Clone)]
 pub enum HtlcType {
     Nucleus,
     Iris,
@@ -69,7 +70,8 @@ pub(crate) struct QueryHtlcRequestProto {
     pub(crate) id: prost::alloc::string::String,
 }
 
-pub enum CreateHtlcMsg {
+#[derive(Debug, PartialEq)]
+pub(crate) enum CreateHtlcMsg {
     Nucleus(NucleusCreateHtlcMsg),
     Iris(IrisCreateHtlcMsg),
 }
@@ -86,38 +88,91 @@ impl TryFrom<CreateHtlcProto> for CreateHtlcMsg {
 }
 
 impl CreateHtlcMsg {
+    pub fn new(
+        htlc_type: HtlcType,
+        sender: AccountId,
+        to: AccountId,
+        amount: Vec<Coin>,
+        hash_lock: String,
+        timestamp: u64,
+        time_lock: u64,
+    ) -> Self {
+        match htlc_type {
+            HtlcType::Iris => CreateHtlcMsg::Iris(IrisCreateHtlcMsg {
+                to,
+                sender,
+                receiver_on_other_chain: String::default(),
+                sender_on_other_chain: String::default(),
+                amount,
+                hash_lock,
+                time_lock,
+                timestamp,
+                transfer: false,
+            }),
+            HtlcType::Nucleus => CreateHtlcMsg::Nucleus(NucleusCreateHtlcMsg {
+                to,
+                sender,
+                amount,
+                hash_lock,
+                time_lock,
+                timestamp,
+            }),
+        }
+    }
+
     pub fn sender(&self) -> &AccountId {
         match self {
-            CreateHtlcMsg::Iris(inner) => &inner.sender,
-            CreateHtlcMsg::Nucleus(inner) => &inner.sender,
+            Self::Iris(inner) => &inner.sender,
+            Self::Nucleus(inner) => &inner.sender,
         }
     }
 
     pub fn to(&self) -> &AccountId {
         match self {
-            CreateHtlcMsg::Iris(inner) => &inner.to,
-            CreateHtlcMsg::Nucleus(inner) => &inner.to,
+            Self::Iris(inner) => &inner.to,
+            Self::Nucleus(inner) => &inner.to,
         }
     }
 
     pub fn amount(&self) -> &[Coin] {
         match self {
-            CreateHtlcMsg::Iris(inner) => &inner.amount,
-            CreateHtlcMsg::Nucleus(inner) => &inner.amount,
+            Self::Iris(inner) => &inner.amount,
+            Self::Nucleus(inner) => &inner.amount,
+        }
+    }
+
+    pub fn to_any(&self) -> Result<Any, ErrorReport> {
+        match self {
+            Self::Iris(inner) => inner.to_any(),
+            Self::Nucleus(inner) => inner.to_any(),
         }
     }
 }
 
-pub enum ClaimHtlcMsg {
+pub(crate) enum ClaimHtlcMsg {
     Nucleus(NucleusClaimHtlcMsg),
     Iris(IrisClaimHtlcMsg),
 }
 
 impl ClaimHtlcMsg {
+    pub fn new(htlc_type: HtlcType, id: String, sender: AccountId, secret: String) -> Self {
+        match htlc_type {
+            HtlcType::Iris => ClaimHtlcMsg::Iris(IrisClaimHtlcMsg { sender, id, secret }),
+            HtlcType::Nucleus => ClaimHtlcMsg::Nucleus(NucleusClaimHtlcMsg { sender, id, secret }),
+        }
+    }
+
     pub fn secret(&self) -> &str {
         match self {
-            ClaimHtlcMsg::Iris(inner) => &inner.secret,
-            ClaimHtlcMsg::Nucleus(inner) => &inner.secret,
+            Self::Iris(inner) => &inner.secret,
+            Self::Nucleus(inner) => &inner.secret,
+        }
+    }
+
+    pub fn to_any(&self) -> Result<Any, ErrorReport> {
+        match self {
+            Self::Iris(inner) => inner.to_any(),
+            Self::Nucleus(inner) => inner.to_any(),
         }
     }
 }
@@ -133,7 +188,7 @@ impl TryFrom<ClaimHtlcProto> for ClaimHtlcMsg {
     }
 }
 
-pub enum CreateHtlcProto {
+pub(crate) enum CreateHtlcProto {
     Nucleus(NucleusCreateHtlcProto),
     Iris(IrisCreateHtlcProto),
 }
@@ -145,9 +200,16 @@ impl CreateHtlcProto {
             HtlcType::Iris => Ok(Self::Iris(IrisCreateHtlcProto::decode(bytes)?)),
         }
     }
+
+    pub fn hash_lock(&self) -> &str {
+        match self {
+            Self::Iris(inner) => &inner.hash_lock,
+            Self::Nucleus(inner) => &inner.hash_lock,
+        }
+    }
 }
 
-pub enum ClaimHtlcProto {
+pub(crate) enum ClaimHtlcProto {
     Nucleus(NucleusClaimHtlcProto),
     Iris(IrisClaimHtlcProto),
 }
@@ -160,6 +222,7 @@ impl ClaimHtlcProto {
         }
     }
 
+    #[allow(dead_code)]
     pub fn secret(&self) -> &str {
         match self {
             Self::Iris(inner) => &inner.secret,
@@ -168,7 +231,7 @@ impl ClaimHtlcProto {
     }
 }
 
-pub enum QueryHtlcResponse {
+pub(crate) enum QueryHtlcResponse {
     Nucleus(NucleusQueryHtlcResponseProto),
     Iris(IrisQueryHtlcResponseProto),
 }
@@ -183,8 +246,15 @@ impl QueryHtlcResponse {
 
     pub fn htlc_state(&self) -> Option<i32> {
         match self {
-            Self::Iris(inner) => Some(inner.htlc?.state),
-            Self::Nucleus(inner) => Some(inner.htlc?.state),
+            Self::Iris(inner) => Some(inner.htlc.as_ref()?.state),
+            Self::Nucleus(inner) => Some(inner.htlc.as_ref()?.state),
+        }
+    }
+
+    pub fn hash_lock(&self) -> Option<&str> {
+        match self {
+            Self::Iris(inner) => Some(&inner.htlc.as_ref()?.hash_lock),
+            Self::Nucleus(inner) => Some(&inner.htlc.as_ref()?.hash_lock),
         }
     }
 }
