@@ -49,7 +49,7 @@ wasm-bindgen-futures = "0.4.21"
 web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase",
     "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore",
     "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode",
-    "IdbVersionChangeEvent", "MessageEvent", "ReadableStreamDefaultReader", "ReadableStream", "WebSocket", "Worker"] }
+    "IdbVersionChangeEvent", "MessageEvent", "MessagePort", "ReadableStreamDefaultReader", "ReadableStream", "SharedWorker", "WebSocket"] }
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
