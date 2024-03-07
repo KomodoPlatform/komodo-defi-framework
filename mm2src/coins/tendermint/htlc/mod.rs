@@ -37,6 +37,18 @@ impl FromStr for HtlcType {
     }
 }
 
+impl HtlcType {
+    pub(crate) fn get_htlc_abci_query_path(&self) -> &str {
+        const NUCLEUS_PATH: &str = "/nucleus.htlc.Query/HTLC";
+        const IRIS_PATH: &str = "/iris.htlc.Query/HTLC";
+
+        match self {
+            Self::Nucleus => NUCLEUS_PATH,
+            Self::Iris => IRIS_PATH,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CustomTendermintMsgType {
     /// Create HTLC as sender

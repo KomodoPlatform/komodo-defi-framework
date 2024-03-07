@@ -83,7 +83,6 @@ const ABCI_SIMULATE_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/Simulate";
 const ABCI_QUERY_ACCOUNT_PATH: &str = "/cosmos.auth.v1beta1.Query/Account";
 const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
-const ABCI_QUERY_HTLC_PATH: &str = "/irismod.htlc.Query/HTLC";
 const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
@@ -1514,7 +1513,6 @@ impl TendermintCoin {
                 "Payment tx must have exactly one message".into(),
             ));
         }
-
         let htlc_type = HtlcType::from_str(&self.account_prefix).map_err(|_| {
             ValidatePaymentError::InvalidParameter(format!(
                 "Account type '{}' is not supported for HTLCs",
@@ -1755,7 +1753,12 @@ impl TendermintCoin {
     }
 
     pub(crate) async fn query_htlc(&self, id: String) -> MmResult<QueryHtlcResponse, TendermintCoinRpcError> {
-        let path = AbciPath::from_str(ABCI_QUERY_HTLC_PATH).expect("valid path");
+        let htlc_type =
+            HtlcType::from_str(&self.account_prefix).map_err(|_| TendermintCoinRpcError::UnexpectedAccountType {
+                prefix: self.account_prefix.clone(),
+            })?;
+
+        let path = AbciPath::from_str(htlc_type.get_htlc_abci_query_path()).expect("valid path");
         let request = QueryHtlcRequestProto { id };
         let response = self
             .rpc_client()
@@ -1767,11 +1770,6 @@ impl TendermintCoin {
                 ABCI_REQUEST_PROVE,
             )
             .await?;
-
-        let htlc_type =
-            HtlcType::from_str(&self.account_prefix).map_err(|_| TendermintCoinRpcError::UnexpectedAccountType {
-                prefix: self.account_prefix.clone(),
-            })?;
 
         Ok(QueryHtlcResponse::decode(htlc_type, response.value.as_slice())?)
     }
@@ -2916,13 +2914,22 @@ pub mod tendermint_coin_tests {
     // const IRIS_TESTNET_HTLC_PAIR1_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
 
     // const IRIS_TESTNET_HTLC_PAIR2_SEED: &str = "iris test2 seed";
-    const IRIS_TESTNET_HTLC_PAIR2_PUB_KEY: &[u8] = &[
-        2, 90, 55, 151, 92, 7, 154, 117, 67, 96, 63, 202, 178, 78, 37, 101, 164, 173, 238, 60, 249, 175, 137, 52, 105,
-        14, 16, 50, 130, 250, 64, 37, 17,
-    ];
-    const IRIS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv";
+    // const IRIS_TESTNET_HTLC_PAIR2_PUB_KEY: &[u8] = &[
+    //     2, 90, 55, 151, 92, 7, 154, 117, 67, 96, 63, 202, 178, 78, 37, 101, 164, 173, 238, 60, 249, 175, 137, 52, 105,
+    //     14, 16, 50, 130, 250, 64, 37, 17,
+    // ];
+    // const IRIS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv";
 
     pub const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
+
+    pub const NUCLEUS_TESTNET_HTLC_PAIR2_SEED: &str = "nucleus test2 seed";
+    const NUCLEUS_TESTNET_HTLC_PAIR2_PUB_KEY: &[u8] = &[
+        2, 170, 183, 1, 130, 59, 124, 61, 223, 128, 213, 8, 27, 180, 20, 130, 206, 82, 76, 127, 149, 97, 167, 113, 37,
+        104, 18, 101, 125, 66, 183, 247, 19,
+    ];
+    const NUCLEUS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "nuc1erfnkjsmalkwtvj44qnfr2drfzdt4n9ledw63y";
+
+    pub const NUCLEUS_TESTNET_RPC_URL: &str = "http://5.161.55.53:26657";
 
     const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
     const AVG_BLOCKTIME: u8 = 5;
@@ -2967,6 +2974,17 @@ pub mod tendermint_coin_tests {
         }
     }
 
+    fn get_nucleus_protocol() -> TendermintProtocolInfo {
+        TendermintProtocolInfo {
+            decimals: 6,
+            denom: String::from("unucl"),
+            account_prefix: String::from("nuc"),
+            chain_id: String::from("nucleus-3"),
+            gas_price: None,
+            chain_registry_name: None,
+        }
+    }
+
     #[test]
     fn test_tx_hash_str_from_bytes() {
         let tx_hex = "0a97010a8f010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e64126f0a2d636f736d6f7331737661773061716334353834783832356a753775613033673578747877643061686c3836687a122d636f736d6f7331737661773061716334353834783832356a753775613033673578747877643061686c3836687a1a0f0a057561746f6d120631303030303018d998bf0512670a500a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2102000eef4ab169e7b26a4a16c47420c4176ab702119ba57a8820fb3e53c8e7506212040a020801180312130a0d0a057561746f6d12043130303010a08d061a4093e5aec96f7d311d129f5ec8714b21ad06a75e483ba32afab86354400b2ac8350bfc98731bbb05934bf138282750d71aadbe08ceb6bb195f2b55e1bbfdddaaad";
@@ -2979,9 +2997,9 @@ pub mod tendermint_coin_tests {
 
     #[test]
     fn test_htlc_create_and_claim() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+        let rpc_urls = vec![NUCLEUS_TESTNET_RPC_URL.to_string()];
 
-        let protocol_conf = get_iris_protocol();
+        let protocol_conf = get_nucleus_protocol();
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
 
@@ -2995,7 +3013,7 @@ pub mod tendermint_coin_tests {
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
-            "IRIS".to_string(),
+            "NUCLEUS".to_string(),
             conf,
             protocol_conf,
             rpc_urls,
@@ -3005,7 +3023,7 @@ pub mod tendermint_coin_tests {
         .unwrap();
 
         // << BEGIN HTLC CREATION
-        let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
+        let to: AccountId = NUCLEUS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
         const UAMOUNT: u64 = 1;
         let amount: cosmrs::Decimal = UAMOUNT.into();
         let amount_dec = big_decimal_from_sat_unsigned(UAMOUNT, coin.decimals);
@@ -3049,7 +3067,7 @@ pub mod tendermint_coin_tests {
         let htlc_spent = block_on(
             coin.check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
                 time_lock: 0,
-                other_pub: IRIS_TESTNET_HTLC_PAIR2_PUB_KEY,
+                other_pub: NUCLEUS_TESTNET_HTLC_PAIR2_PUB_KEY,
                 secret_hash: sha256(&sec).as_slice(),
                 search_from_block: current_block,
                 swap_contract_address: &None,
