@@ -505,10 +505,10 @@ pub fn pirate_conf() -> Json {
     })
 }
 
-pub fn rick_conf() -> Json {
+pub fn doc_conf() -> Json {
     json!({
-        "coin":"RICK",
-        "asset":"RICK",
+        "coin":"DOC",
+        "asset":"DOC",
         "required_confirmations":0,
         "txversion":4,
         "overwintered":1,
@@ -867,6 +867,23 @@ pub fn iris_testnet_conf() -> Json {
                 "denom": "unyan",
                 "account_prefix": "iaa",
                 "chain_id": "nyancat-9",
+            },
+        }
+    })
+}
+
+pub fn nucleus_testnet_conf() -> Json {
+    json!({
+        "coin": "NUCLEUS-TEST",
+        "avg_blocktime": 5,
+        "derivation_path": "m/44'/566'",
+        "protocol":{
+            "type":"TENDERMINT",
+            "protocol_data": {
+                "decimals": 6,
+                "denom": "unucl",
+                "account_prefix": "nuc",
+                "chain_id": "nucleus-3",
             },
         }
     })
