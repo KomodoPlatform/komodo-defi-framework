@@ -2922,10 +2922,9 @@ pub mod tendermint_coin_tests {
 
     pub const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
 
-    pub const NUCLEUS_TESTNET_HTLC_PAIR2_SEED: &str = "nucleus test2 seed";
     const NUCLEUS_TESTNET_HTLC_PAIR2_PUB_KEY: &[u8] = &[
-        2, 170, 183, 1, 130, 59, 124, 61, 223, 128, 213, 8, 27, 180, 20, 130, 206, 82, 76, 127, 149, 97, 167, 113, 37,
-        104, 18, 101, 125, 66, 183, 247, 19,
+        2, 90, 55, 151, 92, 7, 154, 117, 67, 96, 63, 202, 178, 78, 37, 101, 164, 173, 238, 60, 249, 175, 137, 52, 105,
+        14, 16, 50, 130, 250, 64, 37, 17,
     ];
     const NUCLEUS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "nuc1erfnkjsmalkwtvj44qnfr2drfzdt4n9ledw63y";
 
