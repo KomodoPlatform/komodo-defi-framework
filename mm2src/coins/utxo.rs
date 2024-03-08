@@ -1054,7 +1054,7 @@ impl<T: UtxoCommonOps> CoinAssocTypes for T {
     fn my_addr(&self) -> &Self::Address {
         match &self.as_ref().derivation_method {
             DerivationMethod::SingleAddress(addr) => addr,
-            // Todo: implement for HD wallet enabled address
+            // Todo: implement for HD wallet enabled address, this is required for trade_v2_test_rick_and_morty
             DerivationMethod::HDWallet(_) => todo!(),
         }
     }
