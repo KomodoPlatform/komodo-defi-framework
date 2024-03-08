@@ -389,7 +389,7 @@ where
 
         // updates sender and receiver addresses if tx is htlc, and if not leaves as it is.
         fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &&Event) {
-            match msg_event.type_str.as_str() {
+            match msg_event.kind.as_str() {
                 CREATE_HTLC_EVENT => {
                     transfer_details.from = some_or_return!(msg_event
                         .attributes
@@ -425,7 +425,7 @@ where
             let mut transfer_details_list: Vec<TransferDetails> = vec![];
 
             for (index, event) in tx_events.iter().enumerate() {
-                if event.type_str.as_str() == TRANSFER_EVENT {
+                if event.kind.as_str() == TRANSFER_EVENT {
                     let amount_with_denoms = some_or_continue!(event
                         .attributes
                         .iter()
@@ -467,7 +467,7 @@ where
                             // If previous message is htlc related, that means current transfer
                             // addresses will be wrong.
                             if let Some(prev_event) = tx_events.get(index - 1) {
-                                if [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&prev_event.type_str.as_str()) {
+                                if [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&prev_event.kind.as_str()) {
                                     read_real_htlc_addresses(&mut tx_details, prev_event);
                                 }
                             };
@@ -496,7 +496,7 @@ where
             // Filter out irrelevant events
             let mut events: Vec<&Event> = tx_events
                 .iter()
-                .filter(|event| ACCEPTED_EVENTS.contains(&event.type_str.as_str()))
+                .filter(|event| ACCEPTED_EVENTS.contains(&event.kind.as_str()))
                 .collect();
 
             events.reverse();
@@ -504,7 +504,7 @@ where
             if events.len() > DEFAULT_TRANSFER_EVENT_COUNT {
                 // Retain fee related events
                 events.retain(|event| {
-                    if event.type_str == TRANSFER_EVENT {
+                    if event.kind == TRANSFER_EVENT {
                         let amount_with_denom = event
                             .attributes
                             .iter()

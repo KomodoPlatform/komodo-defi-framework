@@ -45,6 +45,7 @@ use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, 
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
+use cosmrs::proto::prost::{DecodeError, Message};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -66,7 +67,6 @@ use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, G
 use mm2_number::MmNumber;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
-use prost::{DecodeError, Message};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
@@ -803,11 +803,9 @@ impl TendermintCoin {
 
     #[allow(unused)]
     async fn get_latest_block(&self) -> MmResult<GetLatestBlockResponse, TendermintCoinRpcError> {
-        let path = AbciPath::from_str(ABCI_GET_LATEST_BLOCK_PATH).expect("valid path");
-
         let request = GetLatestBlockRequest {};
         let request = AbciRequest::new(
-            Some(path),
+            Some(ABCI_GET_LATEST_BLOCK_PATH.to_string()),
             request.encode_to_vec(),
             ABCI_REQUEST_HEIGHT,
             ABCI_REQUEST_PROVE,
@@ -820,11 +818,9 @@ impl TendermintCoin {
 
     #[allow(unused)]
     async fn get_block_by_height(&self, height: i64) -> MmResult<GetBlockByHeightResponse, TendermintCoinRpcError> {
-        let path = AbciPath::from_str(ABCI_GET_BLOCK_BY_HEIGHT_PATH).expect("valid path");
-
         let request = GetBlockByHeightRequest { height };
         let request = AbciRequest::new(
-            Some(path),
+            Some(ABCI_GET_BLOCK_BY_HEIGHT_PATH.to_string()),
             request.encode_to_vec(),
             ABCI_REQUEST_HEIGHT,
             ABCI_REQUEST_PROVE,
@@ -930,8 +926,6 @@ impl TendermintCoin {
         memo: String,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<Fee, TendermintCoinRpcError> {
-        let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
-
         let (response, raw_response) = loop {
             let account_info = self.account_info(&self.account_id).await?;
             let activated_priv_key = self.priv_key_policy.activated_key_or_err()?;
@@ -946,7 +940,7 @@ impl TendermintCoin {
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
-                Some(path.clone()),
+                Some(ABCI_SIMULATE_TX_PATH.to_string()),
                 SimulateRequest { tx_bytes, tx: None }.encode_to_vec(),
                 ABCI_REQUEST_HEIGHT,
                 ABCI_REQUEST_PROVE,
@@ -1004,8 +998,6 @@ impl TendermintCoin {
         memo: String,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<u64, TendermintCoinRpcError> {
-        let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
-
         let (response, raw_response) = loop {
             let account_info = self.account_info(account_id).await?;
             let tx_bytes = self
@@ -1013,7 +1005,7 @@ impl TendermintCoin {
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
-                Some(path.clone()),
+                Some(ABCI_SIMULATE_TX_PATH.to_string()),
                 SimulateRequest { tx_bytes, tx: None }.encode_to_vec(),
                 ABCI_REQUEST_HEIGHT,
                 ABCI_REQUEST_PROVE,
@@ -1055,12 +1047,11 @@ impl TendermintCoin {
     }
 
     pub(super) async fn account_info(&self, account_id: &AccountId) -> MmResult<BaseAccount, TendermintCoinRpcError> {
-        let path = AbciPath::from_str(ABCI_QUERY_ACCOUNT_PATH).expect("valid path");
         let request = QueryAccountRequest {
             address: account_id.to_string(),
         };
         let request = AbciRequest::new(
-            Some(path),
+            Some(ABCI_QUERY_ACCOUNT_PATH.to_string()),
             request.encode_to_vec(),
             ABCI_REQUEST_HEIGHT,
             ABCI_REQUEST_PROVE,
@@ -1094,13 +1085,12 @@ impl TendermintCoin {
         account_id: &AccountId,
         denom: String,
     ) -> MmResult<u64, TendermintCoinRpcError> {
-        let path = AbciPath::from_str(ABCI_QUERY_BALANCE_PATH).expect("valid path");
         let request = QueryBalanceRequest {
             address: account_id.to_string(),
             denom,
         };
         let request = AbciRequest::new(
-            Some(path),
+            Some(ABCI_QUERY_BALANCE_PATH.to_string()),
             request.encode_to_vec(),
             ABCI_REQUEST_HEIGHT,
             ABCI_REQUEST_PROVE,
@@ -1120,7 +1110,7 @@ impl TendermintCoin {
         &self,
         denom: Denom,
         to: &AccountId,
-        amount: cosmrs::Decimal,
+        amount: cosmrs::Amount,
         secret_hash: &[u8],
         time_lock: u64,
     ) -> MmResult<IrisHtlc, TxMarshalingErr> {
@@ -1278,7 +1268,7 @@ impl TendermintCoin {
         let to = try_tx_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
 
         let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
-        let amount = cosmrs::Decimal::from(amount_as_u64);
+        let amount = cosmrs::Amount::from(amount_as_u64);
 
         let secret_hash = secret_hash.to_vec();
         let coin = self.clone();
@@ -1332,7 +1322,7 @@ impl TendermintCoin {
         let to_address = try_tx_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
 
         let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
-        let amount = cosmrs::Decimal::from(amount_as_u64);
+        let amount = cosmrs::Amount::from(amount_as_u64);
 
         let amount = vec![Coin { denom, amount }];
 
@@ -1669,13 +1659,12 @@ impl TendermintCoin {
     }
 
     async fn request_tx(&self, hash: String) -> MmResult<Tx, TendermintCoinRpcError> {
-        let path = AbciPath::from_str(ABCI_GET_TX_PATH).expect("valid path");
         let request = GetTxRequest { hash };
         let response = self
             .rpc_client()
             .await?
             .abci_query(
-                Some(path),
+                Some(ABCI_GET_TX_PATH.to_string()),
                 request.encode_to_vec(),
                 ABCI_REQUEST_HEIGHT,
                 ABCI_REQUEST_PROVE,
@@ -1694,13 +1683,12 @@ impl TendermintCoin {
         &self,
         hash: String,
     ) -> MmResult<Option<cosmrs::tendermint::abci::Code>, TendermintCoinRpcError> {
-        let path = AbciPath::from_str(ABCI_GET_TX_PATH).expect("valid path");
         let request = GetTxRequest { hash };
         let response = self
             .rpc_client()
             .await?
             .abci_query(
-                Some(path),
+                Some(ABCI_GET_TX_PATH.to_string()),
                 request.encode_to_vec(),
                 ABCI_REQUEST_HEIGHT,
                 ABCI_REQUEST_PROVE,
@@ -1721,13 +1709,12 @@ impl TendermintCoin {
     }
 
     pub(crate) async fn query_htlc(&self, id: String) -> MmResult<QueryHtlcResponseProto, TendermintCoinRpcError> {
-        let path = AbciPath::from_str(ABCI_QUERY_HTLC_PATH).expect("valid path");
         let request = QueryHtlcRequestProto { id };
         let response = self
             .rpc_client()
             .await?
             .abci_query(
-                Some(path),
+                Some(ABCI_QUERY_HTLC_PATH.to_string()),
                 request.encode_to_vec(),
                 ABCI_REQUEST_HEIGHT,
                 ABCI_REQUEST_PROVE,
@@ -1774,12 +1761,11 @@ impl TendermintCoin {
                 };
                 let encoded_request = request.encode_to_vec();
 
-                let path = AbciPath::from_str(ABCI_GET_TXS_EVENT_PATH).expect("valid path");
                 let response = self
                     .rpc_client()
                     .await?
                     .abci_query(
-                        Some(path),
+                        Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
                         encoded_request.as_slice(),
                         ABCI_REQUEST_HEIGHT,
                         ABCI_REQUEST_PROVE,
@@ -2354,20 +2340,18 @@ impl MarketCoinOps for TendermintCoin {
         let events_string = format!("claim_htlc.id='{}'", htlc_id);
         let request = GetTxsEventRequest {
             events: vec![events_string],
-            pagination: None,
             order_by: TendermintResultOrder::Ascending as i32,
         };
         let encoded_request = request.encode_to_vec();
 
         let coin = self.clone();
-        let path = try_tx_fus!(AbciPath::from_str(ABCI_GET_TXS_EVENT_PATH));
         let wait_until = args.wait_until;
         let fut = async move {
             loop {
                 let response = try_tx_s!(
                     try_tx_s!(coin.rpc_client().await)
                         .abci_query(
-                            Some(path.clone()),
+                            Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
                             encoded_request.as_slice(),
                             ABCI_REQUEST_HEIGHT,
                             ABCI_REQUEST_PROVE
@@ -2403,7 +2387,7 @@ impl MarketCoinOps for TendermintCoin {
         let coin = self.clone();
         let fut = async move {
             let info = try_s!(try_s!(coin.rpc_client().await).abci_info().await);
-            Ok(info.last_block_height.into())
+            Ok(info.response.last_block_height.into())
         };
         Box::new(fut.boxed().compat())
     }
@@ -2461,7 +2445,7 @@ impl SwapOps for TendermintCoin {
     fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(maker_spends_payment_args.other_payment_tx));
         let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
-        let htlc_proto: CreateHtlcProtoRep = try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
+        let htlc_proto: CreateHtlcProtoRep = try_tx_fus!(Message::decode(msg.value.as_slice()));
         let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
 
         let mut amount = htlc.amount.clone();
@@ -2514,7 +2498,7 @@ impl SwapOps for TendermintCoin {
     fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(taker_spends_payment_args.other_payment_tx));
         let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
-        let htlc_proto: CreateHtlcProtoRep = try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
+        let htlc_proto: CreateHtlcProtoRep = try_tx_fus!(Message::decode(msg.value.as_slice()));
         let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
 
         let mut amount = htlc.amount.clone();
@@ -2633,8 +2617,7 @@ impl SwapOps for TendermintCoin {
     ) -> Result<Vec<u8>, String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
-        let htlc_proto: super::iris::htlc_proto::ClaimHtlcProtoRep =
-            try_s!(prost::Message::decode(msg.value.as_slice()));
+        let htlc_proto: super::iris::htlc_proto::ClaimHtlcProtoRep = try_s!(Message::decode(msg.value.as_slice()));
         let htlc = try_s!(MsgClaimHtlc::try_from(htlc_proto));
 
         Ok(try_s!(hex::decode(htlc.secret)))
@@ -3064,9 +3047,8 @@ pub mod tendermint_coin_tests {
             pagination: None,
             order_by: TendermintResultOrder::Ascending as i32,
         };
-        let path = AbciPath::from_str(ABCI_GET_TXS_EVENT_PATH).unwrap();
         let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
-            Some(path),
+            Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
             request.encode_to_vec(),
             ABCI_REQUEST_HEIGHT,
             ABCI_REQUEST_PROVE,
@@ -3123,9 +3105,8 @@ pub mod tendermint_coin_tests {
             hash: create_tx_hash.into(),
         };
 
-        let path = AbciPath::from_str(ABCI_GET_TX_PATH).unwrap();
         let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
-            Some(path),
+            Some(ABCI_GET_TX_PATH.to_string()),
             request.encode_to_vec(),
             ABCI_REQUEST_HEIGHT,
             ABCI_REQUEST_PROVE,
@@ -3469,9 +3450,8 @@ pub mod tendermint_coin_tests {
             hash: create_tx_hash.into(),
         };
 
-        let path = AbciPath::from_str(ABCI_GET_TX_PATH).unwrap();
         let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
-            Some(path),
+            Some(ABCI_GET_TX_PATH.to_string()),
             request.encode_to_vec(),
             ABCI_REQUEST_HEIGHT,
             ABCI_REQUEST_PROVE,
@@ -3543,9 +3523,8 @@ pub mod tendermint_coin_tests {
             hash: create_tx_hash.into(),
         };
 
-        let path = AbciPath::from_str(ABCI_GET_TX_PATH).unwrap();
         let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
-            Some(path),
+            Some(ABCI_GET_TX_PATH.to_string()),
             request.encode_to_vec(),
             ABCI_REQUEST_HEIGHT,
             ABCI_REQUEST_PROVE,

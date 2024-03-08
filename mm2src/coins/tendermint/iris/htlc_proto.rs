@@ -1,3 +1,5 @@
+use cosmrs::proto::prost;
+
 #[derive(prost::Message)]
 pub(crate) struct CreateHtlcProtoRep {
     #[prost(string, tag = "1")]
@@ -20,6 +22,36 @@ pub(crate) struct CreateHtlcProtoRep {
     pub(crate) transfer: bool,
 }
 
+// impl prost::Message for CreateHtlcProtoRep {
+//     fn encode_raw<B>(&self, buf: &mut B)
+//         where
+//             B: prost::bytes::BufMut,
+//             Self: Sized {
+//         ::prost::Message::encode_raw(self, buf)
+//     }
+
+//     fn merge_field<B>(
+//             &mut self,
+//             tag: u32,
+//             wire_type: prost::encoding::WireType,
+//             buf: &mut B,
+//             ctx: prost::encoding::DecodeContext,
+//         ) -> Result<(), prost::DecodeError>
+//         where
+//             B: hyper::body::Buf,
+//             Self: Sized {
+//         ::prost::Message::merge_field(self, tag, wire_type, buf, ctx)
+//     }
+
+//     fn encoded_len(&self) -> usize {
+//         ::prost::Message::encoded_len(self)
+//     }
+
+//     fn clear(&mut self) {
+//         ::prost::Message::clear(self)
+//     }
+// }
+
 #[derive(prost::Message)]
 pub(crate) struct ClaimHtlcProtoRep {
     #[prost(string, tag = "1")]
@@ -29,6 +61,36 @@ pub(crate) struct ClaimHtlcProtoRep {
     #[prost(string, tag = "3")]
     pub(crate) secret: prost::alloc::string::String,
 }
+
+// impl prost::Message for ClaimHtlcProtoRep {
+//     fn encode_raw<B>(&self, buf: &mut B)
+//         where
+//             B: prost::bytes::BufMut,
+//             Self: Sized {
+//         ::prost::Message::encode_raw(self, buf)
+//     }
+
+//     fn merge_field<B>(
+//             &mut self,
+//             tag: u32,
+//             wire_type: prost::encoding::WireType,
+//             buf: &mut B,
+//             ctx: prost::encoding::DecodeContext,
+//         ) -> Result<(), prost::DecodeError>
+//         where
+//             B: hyper::body::Buf,
+//             Self: Sized {
+//         ::prost::Message::merge_field(self, tag, wire_type, buf, ctx)
+//     }
+
+//     fn encoded_len(&self) -> usize {
+//         ::prost::Message::encoded_len(self)
+//     }
+
+//     fn clear(&mut self) {
+//         ::prost::Message::clear(self)
+//     }
+// }
 
 #[derive(prost::Message)]
 pub(crate) struct QueryHtlcRequestProto {
