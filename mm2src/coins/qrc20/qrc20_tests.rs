@@ -3,7 +3,7 @@ use crate::{DexFee, TxFeeDetails, WaitForHTLCTxSpendArgs};
 use common::{block_on, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use itertools::Itertools;
-use keys::{Address, AddressBuilder};
+use keys::Address;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::Zero;
 use rpc::v1::types::ToTxHash;
@@ -13,8 +13,9 @@ use std::mem::discriminant;
 cfg_native!(
     use crate::utxo::rpc_clients::UnspentInfo;
 
-    use mocktopus::mocking::{MockResult, Mockable};
     use chain::OutPoint;
+    use keys::AddressBuilder;
+    use mocktopus::mocking::{MockResult, Mockable};
 );
 
 const EXPECTED_TX_FEE: i64 = 1000;

@@ -49,6 +49,7 @@ async fn test_send() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        nfts_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
     let maker_payment_args = SendPaymentArgs {
