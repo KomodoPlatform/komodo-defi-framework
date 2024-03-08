@@ -904,6 +904,20 @@ pub fn iris_nimda_testnet_conf() -> Json {
     })
 }
 
+pub fn iris_ibc_nucleus_testnet_conf() -> Json {
+    json!({
+        "coin":"IRIS-IBC-NUCLEUS-TEST",
+        "protocol":{
+            "type":"TENDERMINTTOKEN",
+            "protocol_data": {
+                "platform": "NUCLEUS-TEST",
+                "decimals": 6,
+                "denom": "ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C",
+            },
+        }
+    })
+}
+
 pub fn usdc_ibc_iris_testnet_conf() -> Json {
     json!({
         "coin":"USDC-IBC-IRIS",

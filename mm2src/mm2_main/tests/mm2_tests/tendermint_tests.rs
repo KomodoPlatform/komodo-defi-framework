@@ -648,8 +648,8 @@ mod swap {
     use instant::Duration;
     use mm2_rpc::data::legacy::OrderbookResponse;
     use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, doc_conf,
-                                      enable_eth_coin, nucleus_testnet_conf, tbnb_conf, usdc_ibc_iris_testnet_conf,
-                                      DOC_ELECTRUM_ADDRS};
+                                      enable_eth_coin, iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf, tbnb_conf,
+                                      usdc_ibc_iris_testnet_conf, DOC_ELECTRUM_ADDRS};
     use std::convert::TryFrom;
     use std::{env, thread};
 
@@ -915,6 +915,186 @@ mod swap {
             mm_alice,
             "DOC",
             "NUCLEUS-TEST",
+            1,
+            2,
+            0.008,
+        ));
+    }
+
+    #[test]
+    fn swap_iris_ibc_nucleus_with_doc() {
+        let bob_passphrase = String::from(BOB_PASSPHRASE);
+        let alice_passphrase = String::from(ALICE_PASSPHRASE);
+
+        let coins = json!([nucleus_testnet_conf(), iris_ibc_nucleus_testnet_conf(), doc_conf()]);
+
+        let mm_bob = MarketMakerIt::start(
+            json!({
+                "gui": "nogui",
+                "netid": 8999,
+                "dht": "on",
+                "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+                "rpcip": env::var("BOB_TRADE_IP") .ok(),
+                "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+                "passphrase": bob_passphrase,
+                "coins": coins,
+                "rpc_password": "password",
+                "i_am_seed": true,
+            }),
+            "password".into(),
+            None,
+        )
+        .unwrap();
+
+        thread::sleep(Duration::from_secs(1));
+
+        let mm_alice = MarketMakerIt::start(
+            json!({
+                "gui": "nogui",
+                "netid": 8999,
+                "dht": "on",
+                "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
+                "rpcip": env::var("ALICE_TRADE_IP") .ok(),
+                "passphrase": alice_passphrase,
+                "coins": coins,
+                "seednodes": [mm_bob.my_seed_addr()],
+                "rpc_password": "password",
+                "skip_startup_checks": true,
+            }),
+            "password".into(),
+            None,
+        )
+        .unwrap();
+
+        thread::sleep(Duration::from_secs(1));
+
+        dbg!(block_on(enable_tendermint(
+            &mm_bob,
+            "NUCLEUS-TEST",
+            &["IRIS-IBC-NUCLEUS-TEST"],
+            &["http://5.161.55.53:26657"],
+            false
+        )));
+
+        dbg!(block_on(enable_tendermint(
+            &mm_alice,
+            "NUCLEUS-TEST",
+            &["IRIS-IBC-NUCLEUS-TEST"],
+            &["http://5.161.55.53:26657"],
+            false
+        )));
+
+        dbg!(block_on(enable_electrum(
+            &mm_bob,
+            "DOC",
+            false,
+            DOC_ELECTRUM_ADDRS,
+            None
+        )));
+
+        dbg!(block_on(enable_electrum(
+            &mm_alice,
+            "DOC",
+            false,
+            DOC_ELECTRUM_ADDRS,
+            None
+        )));
+
+        block_on(trade_base_rel_tendermint(
+            mm_bob,
+            mm_alice,
+            "IRIS-IBC-NUCLEUS-TEST",
+            "DOC",
+            1,
+            2,
+            0.008,
+        ));
+    }
+
+    #[test]
+    fn swap_doc_with_iris_ibc_nucleus() {
+        let bob_passphrase = String::from(BOB_PASSPHRASE);
+        let alice_passphrase = String::from(ALICE_PASSPHRASE);
+
+        let coins = json!([nucleus_testnet_conf(), iris_ibc_nucleus_testnet_conf(), doc_conf()]);
+
+        let mm_bob = MarketMakerIt::start(
+            json!({
+                "gui": "nogui",
+                "netid": 8999,
+                "dht": "on",
+                "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+                "rpcip": env::var("BOB_TRADE_IP") .ok(),
+                "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+                "passphrase": bob_passphrase,
+                "coins": coins,
+                "rpc_password": "password",
+                "i_am_seed": true,
+            }),
+            "password".into(),
+            None,
+        )
+        .unwrap();
+
+        thread::sleep(Duration::from_secs(1));
+
+        let mm_alice = MarketMakerIt::start(
+            json!({
+                "gui": "nogui",
+                "netid": 8999,
+                "dht": "on",
+                "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
+                "rpcip": env::var("ALICE_TRADE_IP") .ok(),
+                "passphrase": alice_passphrase,
+                "coins": coins,
+                "seednodes": [mm_bob.my_seed_addr()],
+                "rpc_password": "password",
+                "skip_startup_checks": true,
+            }),
+            "password".into(),
+            None,
+        )
+        .unwrap();
+
+        thread::sleep(Duration::from_secs(1));
+
+        dbg!(block_on(enable_tendermint(
+            &mm_bob,
+            "NUCLEUS-TEST",
+            &["IRIS-IBC-NUCLEUS-TEST"],
+            &["http://5.161.55.53:26657"],
+            false
+        )));
+
+        dbg!(block_on(enable_tendermint(
+            &mm_alice,
+            "NUCLEUS-TEST",
+            &["IRIS-IBC-NUCLEUS-TEST"],
+            &["http://5.161.55.53:26657"],
+            false
+        )));
+
+        dbg!(block_on(enable_electrum(
+            &mm_bob,
+            "DOC",
+            false,
+            DOC_ELECTRUM_ADDRS,
+            None
+        )));
+
+        dbg!(block_on(enable_electrum(
+            &mm_alice,
+            "DOC",
+            false,
+            DOC_ELECTRUM_ADDRS,
+            None
+        )));
+
+        block_on(trade_base_rel_tendermint(
+            mm_bob,
+            mm_alice,
+            "DOC",
+            "IRIS-IBC-NUCLEUS-TEST",
             1,
             2,
             0.008,
