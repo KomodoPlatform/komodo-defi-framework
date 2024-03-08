@@ -93,6 +93,8 @@ pub enum InitTokensAsMmCoinsError {
     Internal(String),
     TokenProtocolParseError { ticker: String, error: String },
     UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
+    Transport(String),
+    InvalidPayload(String),
 }
 
 impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
@@ -177,10 +179,15 @@ pub trait PlatformCoinWithTokensActivationOps: Into<MmCoinEnum> + Clone + Send +
     async fn enable_platform_coin(
         ctx: MmArc,
         ticker: String,
-        coin_conf: Json,
+        coin_conf: &Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>>;
+
+    async fn enable_global_nft(
+        &self,
+        activation_request: &Self::ActivationRequest,
+    ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>>;
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
     where
@@ -194,6 +201,7 @@ pub trait PlatformCoinWithTokensActivationOps: Into<MmCoinEnum> + Clone + Send +
         &self,
         task_handle: Option<RpcTaskHandleShared<InitPlatformCoinWithTokensTask<Self>>>,
         activation_request: &Self::ActivationRequest,
+        nft_global: &Option<MmCoinEnum>,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>
     where
         EnablePlatformCoinWithTokensError: From<Self::ActivationError>;
@@ -307,7 +315,10 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
                 EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { ticker, protocol }
             },
             InitTokensAsMmCoinsError::Internal(e) => EnablePlatformCoinWithTokensError::Internal(e),
-            InitTokensAsMmCoinsError::CouldNotFetchBalance(e) => EnablePlatformCoinWithTokensError::Transport(e),
+            InitTokensAsMmCoinsError::CouldNotFetchBalance(e) | InitTokensAsMmCoinsError::Transport(e) => {
+                EnablePlatformCoinWithTokensError::Transport(e)
+            },
+            InitTokensAsMmCoinsError::InvalidPayload(e) => EnablePlatformCoinWithTokensError::InvalidPayload(e),
             InitTokensAsMmCoinsError::UnexpectedDerivationMethod(e) => {
                 EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(e.to_string())
             },
@@ -345,7 +356,6 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::PlatformCoinCreationError { .. }
             | EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(_)
-            | EnablePlatformCoinWithTokensError::Transport(_)
             | EnablePlatformCoinWithTokensError::Internal(_)
             | EnablePlatformCoinWithTokensError::TaskTimedOut { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(_)
@@ -358,6 +368,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::UnexpectedDeviceActivationPolicy
             | EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(_)
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
+            EnablePlatformCoinWithTokensError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }
 }
@@ -379,12 +390,16 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let activation_result = platform_coin.get_activation_result(task_handle, &req.request).await?;
+    let nft_global = platform_coin.enable_global_nft(&req.request).await?;
+
+    let activation_result = platform_coin
+        .get_activation_result(task_handle, &req.request, &nft_global)
+        .await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.clone().into(), mm_tokens)
+        .add_platform_with_tokens(platform_coin.clone().into(), mm_tokens, nft_global)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 
@@ -433,7 +448,7 @@ where
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),
         req.ticker.clone(),
-        platform_conf,
+        &platform_conf,
         req.request.clone(),
         platform_protocol,
     )
@@ -445,7 +460,11 @@ where
         mm_tokens.extend(tokens);
     }
 
-    let activation_result = platform_coin.get_activation_result(task_handle, &req.request).await?;
+    let nft_global = platform_coin.enable_global_nft(&req.request).await?;
+
+    let activation_result = platform_coin
+        .get_activation_result(task_handle, &req.request, &nft_global)
+        .await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     if req.request.tx_history() {
@@ -462,7 +481,7 @@ where
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.into(), mm_tokens)
+        .add_platform_with_tokens(platform_coin.into(), mm_tokens, nft_global)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 

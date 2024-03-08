@@ -1,6 +1,9 @@
 use super::*;
 use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountAddressId, HDAccountsMutex, HDWalletCoinStorage,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
+use crate::nft::get_nfts_for_activation;
+use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError};
+use crate::nft::nft_structs::Chain;
 #[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
 use common::executor::AbortedError;
 use crypto::{trezor::TrezorError, Bip32Error, CryptoCtxError, HwError};
@@ -10,6 +13,8 @@ use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
 use rpc_task::RpcTaskError;
+use std::sync::atomic::Ordering;
+use url::Url;
 use web3_transport::websocket_transport::WebsocketTransport;
 
 #[derive(Clone, Debug, Deserialize, Display, EnumFromTrait, PartialEq, Serialize, SerializeErrorType)]
@@ -44,6 +49,8 @@ pub enum EthActivationV2Error {
     #[from_trait(WithInternal::internal)]
     #[display(fmt = "Internal: {}", _0)]
     InternalError(String),
+    Transport(String),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     CoinDoesntSupportTrezor,
     HwContextNotInitialized,
     #[display(fmt = "Initialization task has timed out {:?}", duration)]
@@ -69,6 +76,22 @@ impl From<CryptoCtxError> for EthActivationV2Error {
 
 impl From<UnexpectedDerivationMethod> for EthActivationV2Error {
     fn from(e: UnexpectedDerivationMethod) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+}
+
+impl From<EthTokenActivationError> for EthActivationV2Error {
+    fn from(e: EthTokenActivationError) -> Self {
+        match e {
+            EthTokenActivationError::InternalError(err) => EthActivationV2Error::InternalError(err),
+            EthTokenActivationError::CouldNotFetchBalance(err) => EthActivationV2Error::CouldNotFetchBalance(err),
+            EthTokenActivationError::InvalidPayload(err) => EthActivationV2Error::InvalidPayload(err),
+            EthTokenActivationError::Transport(err) | EthTokenActivationError::ClientConnectionFailed(err) => {
+                EthActivationV2Error::Transport(err)
+            },
+            EthTokenActivationError::UnexpectedDerivationMethod(err) => {
+                EthActivationV2Error::UnexpectedDerivationMethod(err)
+            },
+        }
+    }
 }
 
 impl From<HDWalletStorageError> for EthActivationV2Error {
@@ -99,6 +122,10 @@ impl From<RpcTaskError> for EthActivationV2Error {
 #[cfg(target_arch = "wasm32")]
 impl From<MetamaskError> for EthActivationV2Error {
     fn from(e: MetamaskError) -> Self { from_metamask_error(e) }
+}
+
+impl From<ParseChainTypeError> for EthActivationV2Error {
+    fn from(e: ParseChainTypeError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
 }
 
 /// An alternative to `crate::PrivKeyActivationPolicy`, typical only for ETH coin.
@@ -163,33 +190,102 @@ pub struct EthNode {
 
 #[derive(Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
-pub enum Erc20TokenActivationError {
+pub enum EthTokenActivationError {
     InternalError(String),
     ClientConnectionFailed(String),
     CouldNotFetchBalance(String),
+    InvalidPayload(String),
+    Transport(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
 
-impl From<AbortedError> for Erc20TokenActivationError {
-    fn from(e: AbortedError) -> Self { Erc20TokenActivationError::InternalError(e.to_string()) }
+impl From<AbortedError> for EthTokenActivationError {
+    fn from(e: AbortedError) -> Self { EthTokenActivationError::InternalError(e.to_string()) }
 }
 
-impl From<MyAddressError> for Erc20TokenActivationError {
+impl From<MyAddressError> for EthTokenActivationError {
     fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
 }
 
-impl From<UnexpectedDerivationMethod> for Erc20TokenActivationError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { Erc20TokenActivationError::UnexpectedDerivationMethod(e) }
+impl From<UnexpectedDerivationMethod> for EthTokenActivationError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { EthTokenActivationError::UnexpectedDerivationMethod(e) }
 }
 
+impl From<GetNftInfoError> for EthTokenActivationError {
+    fn from(e: GetNftInfoError) -> Self {
+        match e {
+            GetNftInfoError::InvalidRequest(err) => EthTokenActivationError::InvalidPayload(err),
+            GetNftInfoError::ContractTypeIsNull => EthTokenActivationError::InvalidPayload(
+                "The contract type is required and should not be null.".to_string(),
+            ),
+            GetNftInfoError::Transport(err) | GetNftInfoError::InvalidResponse(err) => {
+                EthTokenActivationError::Transport(err)
+            },
+            GetNftInfoError::Internal(err) | GetNftInfoError::DbError(err) | GetNftInfoError::NumConversError(err) => {
+                EthTokenActivationError::InternalError(err)
+            },
+            GetNftInfoError::GetEthAddressError(err) => EthTokenActivationError::InternalError(err.to_string()),
+            GetNftInfoError::ParseRfc3339Err(err) => EthTokenActivationError::InternalError(err.to_string()),
+            GetNftInfoError::ProtectFromSpamError(err) => EthTokenActivationError::InternalError(err.to_string()),
+            GetNftInfoError::TransferConfirmationsError(err) => EthTokenActivationError::InternalError(err.to_string()),
+            GetNftInfoError::TokenNotFoundInWallet {
+                token_address,
+                token_id,
+            } => EthTokenActivationError::InternalError(format!(
+                "Token not found in wallet: {}, {}",
+                token_address, token_id
+            )),
+        }
+    }
+}
+
+impl From<ParseChainTypeError> for EthTokenActivationError {
+    fn from(e: ParseChainTypeError) -> Self { EthTokenActivationError::InternalError(e.to_string()) }
+}
+
+/// Represents the parameters required for activating either an ERC-20 token or an NFT on the Ethereum platform.
+#[derive(Clone, Deserialize)]
+#[serde(untagged)]
+pub enum EthTokenActivationParams {
+    Nft(NftActivationRequest),
+    Erc20(Erc20TokenActivationRequest),
+}
+
+/// Holds ERC-20 token-specific activation parameters, including optional confirmation requirements.
 #[derive(Clone, Deserialize)]
 pub struct Erc20TokenActivationRequest {
     pub required_confirmations: Option<u64>,
 }
 
+/// Encapsulates the request parameters for NFT activation, specifying the provider to be used.
+#[derive(Clone, Deserialize)]
+pub struct NftActivationRequest {
+    pub provider: NftProviderEnum,
+}
+
+/// Defines available NFT providers and their configuration.
+#[derive(Clone, Deserialize)]
+#[serde(tag = "type", content = "info")]
+pub enum NftProviderEnum {
+    Moralis { url: Url },
+}
+
+/// Represents the protocol type for an Ethereum-based token, distinguishing between ERC-20 tokens and NFTs.
+pub enum EthTokenProtocol {
+    Erc20(Erc20Protocol),
+    Nft(NftProtocol),
+}
+
+/// Details for an ERC-20 token protocol.
 pub struct Erc20Protocol {
     pub platform: String,
     pub token_addr: Address,
+}
+
+/// Details for an NFT protocol.
+#[derive(Debug)]
+pub struct NftProtocol {
+    pub platform: String,
 }
 
 #[cfg_attr(test, mockable)]
@@ -199,13 +295,13 @@ impl EthCoin {
         activation_params: Erc20TokenActivationRequest,
         protocol: Erc20Protocol,
         ticker: String,
-    ) -> MmResult<EthCoin, Erc20TokenActivationError> {
+    ) -> MmResult<EthCoin, EthTokenActivationError> {
         // TODO
         // Check if ctx is required.
         // Remove it to avoid circular references if possible
         let ctx = MmArc::from_weak(&self.ctx)
             .ok_or_else(|| String::from("No context"))
-            .map_err(Erc20TokenActivationError::InternalError)?;
+            .map_err(EthTokenActivationError::InternalError)?;
 
         let conf = coin_conf(&ctx, &ticker);
 
@@ -214,11 +310,11 @@ impl EthCoin {
                 &self
                     .web3()
                     .await
-                    .map_err(|e| Erc20TokenActivationError::ClientConnectionFailed(e.to_string()))?,
+                    .map_err(|e| EthTokenActivationError::ClientConnectionFailed(e.to_string()))?,
                 protocol.token_addr,
             )
             .await
-            .map_err(Erc20TokenActivationError::InternalError)?,
+            .map_err(EthTokenActivationError::InternalError)?,
             Some(d) => d as u8,
         };
 
@@ -279,10 +375,61 @@ impl EthCoin {
             logs_block_range: self.logs_block_range,
             nonce_lock: self.nonce_lock.clone(),
             erc20_tokens_infos: Default::default(),
+            nfts_infos: Default::default(),
             abortable_system,
         };
 
         Ok(EthCoin(Arc::new(token)))
+    }
+
+    /// Initializes a Global NFT instance for a specific blockchain platform (e.g., Ethereum, Polygon).
+    ///
+    /// A "Global NFT" consolidates information about all NFTs owned by a user into a single `EthCoin` instance,
+    /// avoiding the need for separate instances for each NFT.
+    /// The function configures the necessary settings for the Global NFT, including web3 connections and confirmation requirements.
+    /// It fetches NFT details from a given URL to populate the `nfts_infos` field, which stores information about the user's NFTs.
+    ///
+    /// This setup allows the Global NFT to function like a coin, supporting swap operations and providing easy access to NFT details via `nfts_infos`.
+    pub async fn global_nft_from_platform_coin(&self, url: &Url) -> MmResult<EthCoin, EthTokenActivationError> {
+        let chain = Chain::from_ticker(self.ticker())?;
+        let ticker = chain.to_nft_ticker().to_string();
+
+        // Create an abortable system linked to the `platform_coin` (which is self) so if the platform coin is disabled,
+        // all spawned futures related to global Non-Fungible Token will be aborted as well.
+        let abortable_system = self.abortable_system.create_subsystem()?;
+
+        // Todo: support HD wallet for NFTs
+        let my_address = self.derivation_method.single_addr_or_err().await?;
+        let nft_infos = get_nfts_for_activation(&chain, &my_address, url).await?;
+
+        let global_nft = EthCoinImpl {
+            ticker,
+            coin_type: EthCoinType::Nft {
+                platform: self.ticker.clone(),
+            },
+            priv_key_policy: self.priv_key_policy.clone(),
+            derivation_method: self.derivation_method.clone(),
+            sign_message_prefix: self.sign_message_prefix.clone(),
+            swap_contract_address: self.swap_contract_address,
+            fallback_swap_contract: self.fallback_swap_contract,
+            contract_supports_watchers: self.contract_supports_watchers,
+            web3_instances: self.web3_instances.lock().await.clone().into(),
+            decimals: self.decimals,
+            gas_station_url: self.gas_station_url.clone(),
+            gas_station_decimals: self.gas_station_decimals,
+            gas_station_policy: self.gas_station_policy.clone(),
+            history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
+            required_confirmations: AtomicU64::new(self.required_confirmations.load(Ordering::Relaxed)),
+            ctx: self.ctx.clone(),
+            chain_id: self.chain_id,
+            trezor_coin: self.trezor_coin.clone(),
+            logs_block_range: self.logs_block_range,
+            nonce_lock: self.nonce_lock.clone(),
+            erc20_tokens_infos: Default::default(),
+            nfts_infos: Arc::new(AsyncMutex::new(nft_infos)),
+            abortable_system,
+        };
+        Ok(EthCoin(Arc::new(global_nft)))
     }
 }
 
@@ -413,6 +560,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
         erc20_tokens_infos: Default::default(),
+        nfts_infos: Default::default(),
         abortable_system,
     };
 

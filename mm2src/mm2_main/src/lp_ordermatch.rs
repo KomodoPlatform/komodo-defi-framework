@@ -5802,9 +5802,11 @@ fn orderbook_address(
 ) -> Result<OrderbookAddress, MmError<OrderbookAddrErr>> {
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
     match protocol {
-        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH => coins::eth::addr_from_pubkey_str(pubkey)
-            .map(OrderbookAddress::Transparent)
-            .map_to_mm(OrderbookAddrErr::AddrFromPubkeyError),
+        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::Nft { .. } => {
+            coins::eth::addr_from_pubkey_str(pubkey)
+                .map(OrderbookAddress::Transparent)
+                .map_to_mm(OrderbookAddrErr::AddrFromPubkeyError)
+        },
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             coins::utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
                 .map(OrderbookAddress::Transparent)

@@ -17,7 +17,7 @@ use url::Url;
 
 use crate::eth::EthTxFeeDetails;
 use crate::nft::eth_addr_to_hex;
-use crate::nft::nft_errors::{LockDBError, ParseChainTypeError};
+use crate::nft::nft_errors::{LockDBError, ParseChainTypeError, ParseContractTypeError};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
 use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 
@@ -112,11 +112,15 @@ pub enum Chain {
     Polygon,
 }
 
-pub(crate) trait ConvertChain {
+pub trait ConvertChain {
     fn to_ticker(&self) -> &'static str;
+    fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError>;
+    fn to_nft_ticker(&self) -> &'static str;
+    fn from_nft_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError>;
 }
 
 impl ConvertChain for Chain {
+    #[inline(always)]
     fn to_ticker(&self) -> &'static str {
         match self {
             Chain::Avalanche => "AVAX",
@@ -124,6 +128,43 @@ impl ConvertChain for Chain {
             Chain::Eth => "ETH",
             Chain::Fantom => "FTM",
             Chain::Polygon => "MATIC",
+        }
+    }
+
+    /// Converts a coin ticker string to a `Chain` enum.
+    #[inline(always)]
+    fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
+        match s {
+            "AVAX" | "avax" => Ok(Chain::Avalanche),
+            "BNB" | "bnb" => Ok(Chain::Bsc),
+            "ETH" | "eth" => Ok(Chain::Eth),
+            "FTM" | "ftm" => Ok(Chain::Fantom),
+            "MATIC" | "matic" => Ok(Chain::Polygon),
+            _ => MmError::err(ParseChainTypeError::UnsupportedChainType),
+        }
+    }
+
+    #[inline(always)]
+    fn to_nft_ticker(&self) -> &'static str {
+        match self {
+            Chain::Avalanche => "NFT_AVAX",
+            Chain::Bsc => "NFT_BNB",
+            Chain::Eth => "NFT_ETH",
+            Chain::Fantom => "NFT_FTM",
+            Chain::Polygon => "NFT_MATIC",
+        }
+    }
+
+    /// Converts a NFT ticker string to a `Chain` enum.
+    #[inline(always)]
+    fn from_nft_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
+        match s.to_uppercase().as_str() {
+            "NFT_AVAX" => Ok(Chain::Avalanche),
+            "NFT_BNB" => Ok(Chain::Bsc),
+            "NFT_ETH" => Ok(Chain::Eth),
+            "NFT_FTM" => Ok(Chain::Fantom),
+            "NFT_MATIC" => Ok(Chain::Polygon),
+            _ => MmError::err(ParseChainTypeError::UnsupportedChainType),
         }
     }
 }
@@ -143,19 +184,16 @@ impl fmt::Display for Chain {
 impl FromStr for Chain {
     type Err = ParseChainTypeError;
 
-    #[inline]
+    /// Converts a string slice to a `Chain` enum.
+    /// This implementation is primarily used in the context of deserialization with Serde.
+    #[inline(always)]
     fn from_str(s: &str) -> Result<Chain, ParseChainTypeError> {
         match s {
-            "AVALANCHE" => Ok(Chain::Avalanche),
-            "avalanche" => Ok(Chain::Avalanche),
-            "BSC" => Ok(Chain::Bsc),
-            "bsc" => Ok(Chain::Bsc),
-            "ETH" => Ok(Chain::Eth),
-            "eth" => Ok(Chain::Eth),
-            "FANTOM" => Ok(Chain::Fantom),
-            "fantom" => Ok(Chain::Fantom),
-            "POLYGON" => Ok(Chain::Polygon),
-            "polygon" => Ok(Chain::Polygon),
+            "AVALANCHE" | "avalanche" => Ok(Chain::Avalanche),
+            "BSC" | "bsc" => Ok(Chain::Bsc),
+            "ETH" | "eth" => Ok(Chain::Eth),
+            "FANTOM" | "fantom" => Ok(Chain::Fantom),
+            "POLYGON" | "polygon" => Ok(Chain::Polygon),
             _ => Err(ParseChainTypeError::UnsupportedChainType),
         }
     }
@@ -172,15 +210,16 @@ impl<'de> Deserialize<'de> for Chain {
     }
 }
 
-#[derive(Debug, Display)]
-pub(crate) enum ParseContractTypeError {
-    UnsupportedContractType,
-}
-
+/// Represents the type of smart contract used for NFTs.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
-pub(crate) enum ContractType {
+pub enum ContractType {
+    /// Represents an ERC-1155 contract, which allows a single contract to manage
+    /// multiple types of NFTs. This means ERC-1155 represents both fungible and non-fungible assets within a single contract.
+    /// ERC-1155 provides a way for each token ID to represent multiple assets.
     Erc1155,
+    /// Represents an ERC-721 contract, a standard for non-fungible tokens on EVM based chains,
+    /// where each token is unique and owned individually.
     Erc721,
 }
 
@@ -771,4 +810,22 @@ pub struct ClearNftDbReq {
     /// If `true`, clears NFT data for all chains, ignoring the `chains` field. Defaults to `false`.
     #[serde(default)]
     pub(crate) clear_all: bool,
+}
+
+/// Represents detailed information about a Non-Fungible Token (NFT).
+/// This struct is used to keep info about NFTs owned by user in global Non-Fungible Token.
+#[derive(Clone, Debug, Serialize)]
+pub struct NftInfo {
+    /// The address of the NFT token.
+    pub(crate) token_address: Address,
+    /// The ID of the NFT token.
+    #[serde(serialize_with = "serialize_token_id")]
+    pub(crate) token_id: BigUint,
+    /// The blockchain where the NFT exists.
+    pub(crate) chain: Chain,
+    /// The type of smart contract that governs this NFT.
+    pub(crate) contract_type: ContractType,
+    /// The quantity of this type of NFT owned. Particularly relevant for ERC-1155 tokens,
+    /// where a single token ID can represent multiple assets.
+    pub(crate) amount: BigDecimal,
 }

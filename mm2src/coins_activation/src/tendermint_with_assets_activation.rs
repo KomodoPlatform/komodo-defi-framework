@@ -181,11 +181,11 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
     async fn enable_platform_coin(
         ctx: MmArc,
         ticker: String,
-        coin_conf: Json,
+        coin_conf: &Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let conf = TendermintConf::try_from_json(&ticker, &coin_conf)?;
+        let conf = TendermintConf::try_from_json(&ticker, coin_conf)?;
 
         let priv_key_build_policy =
             PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).mm_err(|e| TendermintInitError {
@@ -212,6 +212,13 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
         .await
     }
 
+    async fn enable_global_nft(
+        &self,
+        _activation_request: &Self::ActivationRequest,
+    ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
+        Ok(None)
+    }
+
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
     where
         Self: Sized,
@@ -234,6 +241,7 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
         &self,
         _task_handle: Option<RpcTaskHandleShared<InitPlatformCoinWithTokensTask<TendermintCoin>>>,
         activation_request: &Self::ActivationRequest,
+        _nft_global: &Option<MmCoinEnum>,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
         let current_block = self.current_block().compat().await.map_to_mm(|e| TendermintInitError {
             ticker: self.ticker().to_owned(),
