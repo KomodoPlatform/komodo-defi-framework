@@ -131,6 +131,7 @@ fn eth_coin_from_keypair(
     let ticker = match coin_type {
         EthCoinType::Eth => "ETH".to_string(),
         EthCoinType::Erc20 { .. } => "JST".to_string(),
+        EthCoinType::Nft { ref platform } => platform.to_string(),
     };
     let my_address = key_pair.address();
 
@@ -156,6 +157,7 @@ fn eth_coin_from_keypair(
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        nfts_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
     (ctx, eth_coin)
@@ -368,6 +370,7 @@ fn test_nonce_several_urls() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        nfts_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 
@@ -421,6 +424,7 @@ fn test_wait_for_payment_spend_timeout() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        nfts_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     };
 
@@ -1130,6 +1134,7 @@ fn test_message_hash() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        nfts_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 
@@ -1179,6 +1184,7 @@ fn test_sign_verify_message() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        nfts_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 
@@ -1237,6 +1243,7 @@ fn test_eth_extract_secret() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        nfts_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
 

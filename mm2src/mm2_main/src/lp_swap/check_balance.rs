@@ -270,6 +270,9 @@ impl CheckBalanceError {
             },
             TradePreimageError::Transport(transport) => CheckBalanceError::Transport(transport),
             TradePreimageError::InternalError(internal) => CheckBalanceError::InternalError(internal),
+            TradePreimageError::NftProtocolNotSupported => {
+                CheckBalanceError::InternalError("Nft Protocol is not supported yet!".to_string())
+            },
         }
     }
 

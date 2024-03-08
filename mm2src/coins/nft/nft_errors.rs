@@ -217,6 +217,10 @@ pub enum UpdateNftError {
     CoinDoesntSupportNft {
         coin: String,
     },
+    #[display(fmt = "Global NFT type mismatch for token '{}'", token)]
+    GlobalNftTypeMismatch {
+        token: String,
+    },
 }
 
 impl From<GetNftInfoError> for UpdateNftError {
@@ -273,7 +277,8 @@ impl HttpStatusCode for UpdateNftError {
             | UpdateNftError::SerdeError(_)
             | UpdateNftError::ProtectFromSpamError(_)
             | UpdateNftError::NoSuchCoin { .. }
-            | UpdateNftError::CoinDoesntSupportNft { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | UpdateNftError::CoinDoesntSupportNft { .. }
+            | UpdateNftError::GlobalNftTypeMismatch { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -333,7 +338,7 @@ impl<T: NftStorageError> From<T> for UpdateSpamPhishingError {
 /// Errors encountered when parsing a `Chain` from a string.
 #[derive(Debug, Display)]
 pub enum ParseChainTypeError {
-    /// The provided string does not correspond to any of the supported blockchain types.
+    #[display(fmt = "The provided string does not correspond to any of the supported blockchain types.")]
     UnsupportedChainType,
 }
 
@@ -422,4 +427,11 @@ impl HttpStatusCode for ClearNftDbError {
             ClearNftDbError::DbError(_) | ClearNftDbError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
+}
+
+/// An error type for issues encountered while parsing contract type.
+#[derive(Debug, Display)]
+pub enum ParseContractTypeError {
+    /// Indicates that the contract type being parsed is not supported or recognized.
+    UnsupportedContractType,
 }

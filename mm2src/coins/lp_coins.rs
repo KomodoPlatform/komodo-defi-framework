@@ -368,9 +368,9 @@ pub enum RawTransactionError {
 impl HttpStatusCode for RawTransactionError {
     fn status_code(&self) -> StatusCode {
         match self {
-            RawTransactionError::Transport(_)
-            | RawTransactionError::InternalError(_)
-            | RawTransactionError::SigningError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            RawTransactionError::InternalError(_) | RawTransactionError::SigningError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
             RawTransactionError::NoSuchCoin { .. }
             | RawTransactionError::InvalidHashError(_)
             | RawTransactionError::HashNotExist(_)
@@ -379,6 +379,7 @@ impl HttpStatusCode for RawTransactionError {
             | RawTransactionError::NonExistentPrevOutputError(_)
             | RawTransactionError::TransactionError(_) => StatusCode::BAD_REQUEST,
             RawTransactionError::NotImplemented { .. } => StatusCode::NOT_IMPLEMENTED,
+            RawTransactionError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }
 }
@@ -629,13 +630,14 @@ pub enum TxMarshalingErr {
     Internal(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum TransactionErr {
     /// Keeps transactions while throwing errors.
     TxRecoverable(TransactionEnum, String),
     /// Simply for plain error messages.
     Plain(String),
+    NftProtocolNotSupported(String),
 }
 
 impl TransactionErr {
@@ -654,6 +656,7 @@ impl TransactionErr {
         match self {
             TransactionErr::TxRecoverable(_, err) => err.to_string(),
             TransactionErr::Plain(err) => err.to_string(),
+            TransactionErr::NftProtocolNotSupported(err) => err.to_string(),
         }
     }
 }
@@ -2211,6 +2214,8 @@ pub enum TradePreimageError {
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "Nft Protocol is not supported yet!")]
+    NftProtocolNotSupported,
 }
 
 impl From<NumConversError> for TradePreimageError {
@@ -2405,7 +2410,8 @@ impl HttpStatusCode for StakingInfosError {
             StakingInfosError::NoSuchCoin { .. }
             | StakingInfosError::CoinDoesntSupportStakingInfos { .. }
             | StakingInfosError::UnexpectedDerivationMethod(_) => StatusCode::BAD_REQUEST,
-            StakingInfosError::Transport(_) | StakingInfosError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            StakingInfosError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            StakingInfosError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }
 }
@@ -2525,7 +2531,8 @@ impl From<ScriptHashTypeNotSupported> for DelegationError {
 impl HttpStatusCode for DelegationError {
     fn status_code(&self) -> StatusCode {
         match self {
-            DelegationError::Transport(_) | DelegationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            DelegationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            DelegationError::Transport(_) => StatusCode::BAD_GATEWAY,
             _ => StatusCode::BAD_REQUEST,
         }
     }
@@ -2679,6 +2686,8 @@ pub enum WithdrawError {
         my_address: String,
         token_owner: String,
     },
+    #[display(fmt = "Nft Protocol is not supported yet!")]
+    NftProtocolNotSupported,
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -2708,9 +2717,10 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
-            WithdrawError::Transport(_) | WithdrawError::InternalError(_) | WithdrawError::DbError(_) => {
+            WithdrawError::InternalError(_) | WithdrawError::DbError(_) | WithdrawError::NftProtocolNotSupported => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
+            WithdrawError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }
 }
@@ -2784,6 +2794,7 @@ impl From<EthGasDetailsErr> for WithdrawError {
             EthGasDetailsErr::InvalidFeePolicy(e) => WithdrawError::InvalidFeePolicy(e),
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
+            EthGasDetailsErr::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,
         }
     }
 }
@@ -3445,10 +3456,17 @@ impl CoinsContext {
         self.add_token(coin).await
     }
 
+    /// Adds a platform coin and its associated tokens to the CoinsContext.
+    ///
+    /// Registers a platform coin alongside its associated ERC-20 tokens and optionally a global NFT.
+    /// Regular tokens are added to the context without overwriting existing entries, preserving any previously activated tokens.
+    /// In contrast, the global NFT, if provided, replaces any previously stored NFT data for the platform, ensuring the NFT info is up-to-date.
+    /// An error is returned if the platform coin is already activated within the context, enforcing a single active instance for each platform.
     pub async fn add_platform_with_tokens(
         &self,
         platform: MmCoinEnum,
         tokens: Vec<MmCoinEnum>,
+        global_nft: Option<MmCoinEnum>,
     ) -> Result<(), MmError<PlatformIsAlreadyActivatedErr>> {
         let mut coins = self.coins.lock().await;
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
@@ -3478,6 +3496,11 @@ impl CoinsContext {
             coins
                 .entry(token.ticker().into())
                 .or_insert_with(|| MmCoinStruct::new(token));
+        }
+        if let Some(nft) = global_nft {
+            token_tickers.insert(nft.ticker().to_string());
+            // For NFT overwrite existing data
+            coins.insert(nft.ticker().into(), MmCoinStruct::new(nft));
         }
 
         platform_coin_tokens
@@ -3877,6 +3900,9 @@ pub enum CoinProtocol {
         decimals: u8,
     },
     ZHTLC(ZcoinProtocolInfo),
+    Nft {
+        platform: String,
+    },
 }
 
 pub type RpcTransportEventHandlerShared = Arc<dyn RpcTransportEventHandler + Send + Sync + 'static>;
@@ -4129,6 +4155,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::TENDERMINT { .. } => return ERR!("TENDERMINT protocol is not supported by lp_coininit"),
         CoinProtocol::TENDERMINTTOKEN(_) => return ERR!("TENDERMINTTOKEN protocol is not supported by lp_coininit"),
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
+        CoinProtocol::Nft { .. } => return ERR!("NFT protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
@@ -4672,7 +4699,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
 ) -> Result<String, String> {
     let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
     match protocol {
-        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH => eth::addr_from_pubkey_str(pubkey),
+        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::Nft { .. } => eth::addr_from_pubkey_str(pubkey),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
@@ -5090,7 +5117,7 @@ mod tests {
         let coin = MmCoinEnum::Test(TestCoin::new(RICK));
 
         // Add test coin to coins context
-        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![])).unwrap();
+        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![], None)).unwrap();
 
         // Try to find RICK from coins context that was added above
         let _found = common::block_on(lp_coinfind(&ctx, RICK)).unwrap();
@@ -5115,7 +5142,7 @@ mod tests {
         let coin = MmCoinEnum::Test(TestCoin::new(RICK));
 
         // Add test coin to coins context
-        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![])).unwrap();
+        common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![], None)).unwrap();
 
         // Try to find RICK from coins context that was added above
         let _found = common::block_on(lp_coinfind_any(&ctx, RICK)).unwrap();

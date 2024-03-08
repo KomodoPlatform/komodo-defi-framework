@@ -5,12 +5,13 @@ use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPla
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::coin_balance::{EnableCoinBalanceOps, EnableCoinScanPolicy};
-use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
-                                Erc20TokenActivationRequest, EthActivationV2Error, EthActivationV2Request,
-                                EthPrivKeyActivationPolicy};
+use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
+                                EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy};
+use coins::eth::v2_activation::{EthTokenActivationError, NftActivationRequest, NftProviderEnum};
 use coins::eth::{display_eth_address, Erc20TokenInfo, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
+use coins::nft::nft_structs::NftInfo;
 use coins::{CoinBalance, CoinProtocol, CoinWithDerivationMethod, MarketCoinOps, MmCoin, MmCoinEnum};
 use common::Future01CompatExt;
 use common::{drop_mutability, true_f};
@@ -61,6 +62,10 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
                 EnablePlatformCoinWithTokensError::Transport(metamask.to_string())
             },
             EthActivationV2Error::InternalError(e) => EnablePlatformCoinWithTokensError::Internal(e),
+            EthActivationV2Error::Transport(e) => EnablePlatformCoinWithTokensError::Transport(e),
+            EthActivationV2Error::UnexpectedDerivationMethod(e) => {
+                EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(e.to_string())
+            },
         }
     }
 }
@@ -81,13 +86,16 @@ pub struct Erc20Initializer {
     platform_coin: EthCoin,
 }
 
-impl From<Erc20TokenActivationError> for InitTokensAsMmCoinsError {
-    fn from(error: Erc20TokenActivationError) -> Self {
+impl From<EthTokenActivationError> for InitTokensAsMmCoinsError {
+    fn from(error: EthTokenActivationError) -> Self {
         match error {
-            Erc20TokenActivationError::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
-            Erc20TokenActivationError::CouldNotFetchBalance(e)
-            | Erc20TokenActivationError::ClientConnectionFailed(e) => InitTokensAsMmCoinsError::CouldNotFetchBalance(e),
-            Erc20TokenActivationError::UnexpectedDerivationMethod(e) => {
+            EthTokenActivationError::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
+            EthTokenActivationError::CouldNotFetchBalance(e) | EthTokenActivationError::ClientConnectionFailed(e) => {
+                InitTokensAsMmCoinsError::CouldNotFetchBalance(e)
+            },
+            EthTokenActivationError::InvalidPayload(e) => InitTokensAsMmCoinsError::InvalidPayload(e),
+            EthTokenActivationError::Transport(e) => InitTokensAsMmCoinsError::Transport(e),
+            EthTokenActivationError::UnexpectedDerivationMethod(e) => {
                 InitTokensAsMmCoinsError::UnexpectedDerivationMethod(e)
             },
         }
@@ -99,7 +107,7 @@ impl TokenInitializer for Erc20Initializer {
     type Token = EthCoin;
     type TokenActivationRequest = Erc20TokenActivationRequest;
     type TokenProtocol = Erc20Protocol;
-    type InitTokensError = Erc20TokenActivationError;
+    type InitTokensError = EthTokenActivationError;
 
     fn tokens_requests_from_platform_request(
         platform_params: &EthWithTokensActivationRequest,
@@ -110,7 +118,7 @@ impl TokenInitializer for Erc20Initializer {
     async fn enable_tokens(
         &self,
         activation_params: Vec<TokenActivationParams<Erc20TokenActivationRequest, Erc20Protocol>>,
-    ) -> Result<Vec<EthCoin>, MmError<Erc20TokenActivationError>> {
+    ) -> Result<Vec<EthCoin>, MmError<EthTokenActivationError>> {
         let mut tokens = vec![];
         for param in activation_params {
             let token: EthCoin = self
@@ -133,6 +141,7 @@ pub struct EthWithTokensActivationRequest {
     erc20_tokens_requests: Vec<TokenActivationRequest<Erc20TokenActivationRequest>>,
     #[serde(default = "true_f")]
     pub get_balances: bool,
+    nft_req: Option<NftActivationRequest>,
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
@@ -145,6 +154,11 @@ impl TokenOf for EthCoin {
 
 impl RegisterTokenInfo<EthCoin> for EthCoin {
     fn register_token_info(&self, token: &EthCoin) {
+        // Dont register Nft in platform coin.
+        if matches!(token.coin_type, EthCoinType::Nft { .. }) {
+            return;
+        }
+
         self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
             token_address: token.erc20_token_address().unwrap(),
             decimals: token.decimals(),
@@ -152,11 +166,16 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
     }
 }
 
+/// Represents the result of activating an Ethereum-based coin along with its associated tokens (ERC20 and NFTs).
+///
+/// This structure provides a snapshot of the relevant activation data, including the current blockchain block,
+/// information about Ethereum addresses and their balances, ERC-20 token balances, and a summary of NFT ownership.
 #[derive(Serialize)]
 pub struct EthWithTokensActivationResult {
     current_block: u64,
     eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
     erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    nfts_infos: HashMap<String, NftInfo>,
 }
 
 impl GetPlatformBalance for EthWithTokensActivationResult {
@@ -183,7 +202,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
     async fn enable_platform_coin(
         ctx: MmArc,
         ticker: String,
-        platform_conf: Json,
+        platform_conf: &Json,
         activation_request: Self::ActivationRequest,
         _protocol: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
@@ -192,13 +211,27 @@ impl PlatformWithTokensActivationOps for EthCoin {
         let platform_coin = eth_coin_from_conf_and_request_v2(
             &ctx,
             &ticker,
-            &platform_conf,
+            platform_conf,
             activation_request.platform_request,
             priv_key_policy,
         )
         .await?;
 
         Ok(platform_coin)
+    }
+
+    async fn enable_global_nft(
+        &self,
+        activation_request: &Self::ActivationRequest,
+    ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
+        let url = match &activation_request.nft_req {
+            Some(nft_req) => match &nft_req.provider {
+                NftProviderEnum::Moralis { url } => url,
+            },
+            None => return Ok(None),
+        };
+        let nft_global = self.global_nft_from_platform_coin(url).await?;
+        Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
@@ -222,6 +255,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
     async fn get_activation_result(
         &self,
         activation_request: &Self::ActivationRequest,
+        nft_global: &Option<MmCoinEnum>,
     ) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {
         let current_block = self
             .current_block()
@@ -262,6 +296,12 @@ impl PlatformWithTokensActivationOps for EthCoin {
             tickers: None,
         };
 
+        let nfts_map = if let Some(MmCoinEnum::EthCoin(nft_global)) = nft_global {
+            nft_global.nfts_infos.lock().await.clone()
+        } else {
+            Default::default()
+        };
+
         if !activation_request.get_balances {
             drop_mutability!(eth_address_info);
             let tickers: HashSet<_> = self.get_erc_tokens_infos().into_keys().collect();
@@ -272,6 +312,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
                 current_block,
                 eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
                 erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
+                nfts_infos: nfts_map,
             });
         }
 
@@ -296,6 +337,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
             current_block,
             eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
             erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
+            nfts_infos: nfts_map,
         })
     }
 

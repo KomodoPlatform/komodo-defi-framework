@@ -19,6 +19,9 @@ pub enum WasmNftCacheError {
     NotSupported(String),
     InternalError(String),
     GetLastNftBlockError(String),
+    GetItemError(String),
+    CursorBuilderError(String),
+    OpenCursorError(String),
 }
 
 impl From<InitDbError> for WasmNftCacheError {
