@@ -41,6 +41,7 @@ use crate::rpc_command::init_create_account::{CreateAccountRpcError, CreateAccou
                                               InitCreateAccountRpcOps};
 use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, ScanAddressesParams,
                                                       ScanAddressesResponse};
+use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShared};
 use crate::rpc_command::{account_balance, get_new_address, init_account_balance, init_create_account,
                          init_scan_for_new_addresses};
 use crate::{coin_balance, scan_for_new_addresses_impl, BalanceResult, CoinWithDerivationMethod, DerivationMethod,
@@ -62,8 +63,7 @@ use ethabi::{Contract, Function, Token};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
 use ethereum_types::{Address, H160, H256, U256};
-use ethkey::{public_to_address, KeyPair, Public, Signature};
-use ethkey::{sign, verify_address};
+use ethkey::{public_to_address, sign, verify_address, KeyPair, Public, Signature};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
 use futures01::Future;
@@ -93,7 +93,6 @@ use std::time::Duration;
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId, U64};
 use web3::{self, Web3};
-use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
 
 cfg_wasm32! {
     use common::{now_ms, wait_until_ms};
@@ -111,13 +110,18 @@ mod eth_balance_events;
 mod eth_rpc;
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
+#[cfg(any(test, target_arch = "wasm32"))] mod for_tests;
 mod web3_transport;
+use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
 
 pub mod eth_hd_wallet;
 use eth_hd_wallet::EthHDWallet;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
+
+mod eth_withdraw;
+use eth_withdraw::{EthWithdraw, InitEthWithdraw, StandardEthWithdraw};
 
 mod nonce;
 use crate::nft::WithdrawNftResult;
@@ -166,7 +170,7 @@ const GAS_PRICE_APPROXIMATION_PERCENT_ON_ORDER_ISSUE: u64 = 5;
 /// - it may increase by 3% during the swap.
 const GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE: u64 = 7;
 
-const ETH_GAS: u64 = 150_000;
+pub const ETH_GAS: u64 = 150_000;
 
 /// Lifetime of generated signed message for gui-auth requests
 const GUI_AUTH_SIGNED_MESSAGE_LIFETIME_SEC: i64 = 90;
@@ -410,6 +414,7 @@ pub enum EthPrivKeyBuildPolicy {
     GlobalHDAccount(GlobalHDAccountArc),
     #[cfg(target_arch = "wasm32")]
     Metamask(MetamaskArc),
+    Trezor,
 }
 
 impl EthPrivKeyBuildPolicy {
@@ -428,16 +433,12 @@ impl EthPrivKeyBuildPolicy {
     }
 }
 
-impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
-    type Error = PrivKeyPolicyNotAllowed;
-
-    /// Converts `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy`
-    /// taking into account that  ETH doesn't support `Trezor` yet.
-    fn try_from(policy: PrivKeyBuildPolicy) -> Result<Self, Self::Error> {
+impl From<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
+    fn from(policy: PrivKeyBuildPolicy) -> Self {
         match policy {
-            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(iguana)),
-            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd)),
-            PrivKeyBuildPolicy::Trezor => Err(PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
+            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => EthPrivKeyBuildPolicy::IguanaPrivKey(iguana),
+            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd),
+            PrivKeyBuildPolicy::Trezor => EthPrivKeyBuildPolicy::Trezor,
         }
     }
 }
@@ -662,180 +663,20 @@ async fn get_tx_hex_by_hash_impl(coin: EthCoin, tx_hash: H256) -> RawTransaction
     })
 }
 
-// Todo: use builder pattern for this function similar to StandardUtxoWithdraw/InitUtxoWithdraw, this will be needed for Trezor implementation
 async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
-    let to_addr = coin
-        .address_from_str(&req.to)
-        .map_to_mm(WithdrawError::InvalidAddress)?;
-    let (my_balance, my_address, key_pair) = match req.from {
-        Some(from) => {
-            let path_to_coin = coin.priv_key_policy.path_to_coin_or_err()?;
-            let path_to_address = from.to_address_path(path_to_coin.coin_type())?;
-            let raw_priv_key = coin
-                .priv_key_policy
-                .hd_wallet_derived_priv_key_or_err(&path_to_address.to_derivation_path(path_to_coin)?)?;
-            let key_pair = KeyPair::from_secret_slice(raw_priv_key.as_slice())
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-            let address = key_pair.address();
-            let balance = coin.address_balance(address).compat().await?;
-            (balance, address, key_pair)
-        },
-        None => (
-            coin.my_balance().compat().await?,
-            coin.derivation_method.single_addr_or_err().await?,
-            coin.priv_key_policy.activated_key_or_err()?.clone(),
-        ),
-    };
-    let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals)?;
+    StandardEthWithdraw::new(coin.clone(), req)?.build().await
+}
 
-    let (mut wei_amount, dec_amount) = if req.max {
-        (my_balance, my_balance_dec.clone())
-    } else {
-        let wei_amount = wei_from_big_decimal(&req.amount, coin.decimals)?;
-        (wei_amount, req.amount.clone())
-    };
-    if wei_amount > my_balance {
-        return MmError::err(WithdrawError::NotSufficientBalance {
-            coin: coin.ticker.clone(),
-            available: my_balance_dec.clone(),
-            required: dec_amount,
-        });
-    };
-    let (mut eth_value, data, call_addr, fee_coin) = match &coin.coin_type {
-        EthCoinType::Eth => (wei_amount, vec![], to_addr, coin.ticker()),
-        EthCoinType::Erc20 { platform, token_addr } => {
-            let function = ERC20_CONTRACT.function("transfer")?;
-            let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])?;
-            (0.into(), data, *token_addr, platform.as_str())
-        },
-        EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
-    };
-    let eth_value_dec = u256_to_big_decimal(eth_value, coin.decimals)?;
-
-    let (gas, gas_price) = get_eth_gas_details(
-        &coin,
-        req.fee,
-        eth_value,
-        data.clone().into(),
-        my_address,
-        call_addr,
-        req.max,
-    )
-    .await?;
-    let total_fee = gas * gas_price;
-    let total_fee_dec = u256_to_big_decimal(total_fee, coin.decimals)?;
-
-    if req.max && coin.coin_type == EthCoinType::Eth {
-        if eth_value < total_fee || wei_amount < total_fee {
-            return MmError::err(WithdrawError::AmountTooLow {
-                amount: eth_value_dec,
-                threshold: total_fee_dec,
-            });
-        }
-        eth_value -= total_fee;
-        wei_amount -= total_fee;
-    };
-
-    let (tx_hash, tx_hex) = match coin.priv_key_policy {
-        EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {
-            // Todo: nonce_lock is still global for all addresses but this needs to be per address
-            let _nonce_lock = coin.nonce_lock.lock().await;
-            let (nonce, _) = coin
-                .clone()
-                .get_addr_nonce(my_address)
-                .compat()
-                .timeout_secs(30.)
-                .await?
-                .map_to_mm(WithdrawError::Transport)?;
-
-            let tx = UnSignedEthTx {
-                nonce,
-                value: eth_value,
-                action: Call(call_addr),
-                data,
-                gas,
-                gas_price,
-            };
-
-            let signed = tx.sign(key_pair.secret(), coin.chain_id);
-            let bytes = rlp::encode(&signed);
-
-            (signed.hash, BytesJson::from(bytes.to_vec()))
-        },
-        EthPrivKeyPolicy::Trezor => {
-            return MmError::err(WithdrawError::UnsupportedError(
-                "Trezor is not supported for EVM yet!".to_string(),
-            ))
-        },
-        #[cfg(target_arch = "wasm32")]
-        EthPrivKeyPolicy::Metamask(_) => {
-            if !req.broadcast {
-                let error = "Set 'broadcast' to generate, sign and broadcast a transaction with MetaMask".to_string();
-                return MmError::err(WithdrawError::BroadcastExpected(error));
-            }
-
-            let tx_to_send = TransactionRequest {
-                from: my_address,
-                to: Some(to_addr),
-                gas: Some(gas),
-                gas_price: Some(gas_price),
-                value: Some(eth_value),
-                data: Some(data.clone().into()),
-                nonce: None,
-                ..TransactionRequest::default()
-            };
-
-            // Wait for 10 seconds for the transaction to appear on the RPC node.
-            let wait_rpc_timeout = 10_000;
-            let check_every = 1.;
-
-            // Please note that this method may take a long time
-            // due to `wallet_switchEthereumChain` and `eth_sendTransaction` requests.
-            let tx_hash = coin.send_transaction(tx_to_send).await?;
-
-            let signed_tx = coin
-                .wait_for_tx_appears_on_rpc(tx_hash, wait_rpc_timeout, check_every)
-                .await?;
-            let tx_hex = signed_tx
-                .map(|tx| BytesJson::from(rlp::encode(&tx).to_vec()))
-                // Return an empty `tx_hex` if the transaction is still not appeared on the RPC node.
-                .unwrap_or_default();
-            (tx_hash, tx_hex)
-        },
-    };
-
-    let tx_hash_bytes = BytesJson::from(tx_hash.0.to_vec());
-    let tx_hash_str = format!("{:02x}", tx_hash_bytes);
-
-    let amount_decimal = u256_to_big_decimal(wei_amount, coin.decimals)?;
-    let mut spent_by_me = amount_decimal.clone();
-    let received_by_me = if to_addr == my_address {
-        amount_decimal.clone()
-    } else {
-        0.into()
-    };
-    let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
-    if coin.coin_type == EthCoinType::Eth {
-        spent_by_me += &fee_details.total_fee;
+#[async_trait]
+impl InitWithdrawCoin for EthCoin {
+    async fn init_withdraw(
+        &self,
+        ctx: MmArc,
+        req: WithdrawRequest,
+        task_handle: WithdrawTaskHandleShared,
+    ) -> Result<TransactionDetails, MmError<WithdrawError>> {
+        InitEthWithdraw::new(ctx, self.clone(), req, task_handle)?.build().await
     }
-    Ok(TransactionDetails {
-        to: vec![display_eth_address(&to_addr)],
-        from: vec![display_eth_address(&my_address)],
-        total_amount: amount_decimal,
-        my_balance_change: &received_by_me - &spent_by_me,
-        spent_by_me,
-        received_by_me,
-        tx_hex,
-        tx_hash: tx_hash_str,
-        block_height: 0,
-        fee_details: Some(fee_details.into()),
-        coin: coin.ticker.clone(),
-        internal_id: vec![].into(),
-        timestamp: now_sec(),
-        kmd_rewards: None,
-        transaction_type: Default::default(),
-        memo: None,
-    })
 }
 
 /// `withdraw_erc1155` function returns details of `ERC-1155` transaction including tx hex,
@@ -2046,6 +1887,7 @@ impl WatcherOps for EthCoin {
 
 #[async_trait]
 #[cfg_attr(test, mockable)]
+#[async_trait]
 impl MarketCoinOps for EthCoin {
     fn ticker(&self) -> &str { &self.ticker[..] }
 
@@ -2058,7 +1900,7 @@ impl MarketCoinOps for EthCoin {
         }
     }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         match self.priv_key_policy {
             EthPrivKeyPolicy::Iguana(ref key_pair)
             | EthPrivKeyPolicy::HDWallet {
@@ -2068,7 +1910,19 @@ impl MarketCoinOps for EthCoin {
                 let uncompressed_without_prefix = hex::encode(key_pair.public());
                 Ok(format!("04{}", uncompressed_without_prefix))
             },
-            EthPrivKeyPolicy::Trezor => MmError::err(UnexpectedDerivationMethod::Trezor),
+            EthPrivKeyPolicy::Trezor => {
+                let public_key = self
+                    .deref()
+                    .derivation_method
+                    .hd_wallet()
+                    .ok_or(UnexpectedDerivationMethod::ExpectedHDWallet)?
+                    .get_enabled_address()
+                    .await
+                    .ok_or_else(|| UnexpectedDerivationMethod::InternalError("no enabled address".to_owned()))?
+                    .pubkey();
+                let uncompressed_without_prefix = hex::encode(public_key);
+                Ok(format!("04{}", uncompressed_without_prefix))
+            },
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(ref metamask_policy) => {
                 Ok(format!("{:02x}", metamask_policy.public_key_uncompressed))
@@ -2392,9 +2246,9 @@ impl MarketCoinOps for EthCoin {
                 activated_key: ref key_pair,
                 ..
             } => Ok(format!("{:#02x}", key_pair.secret())),
-            EthPrivKeyPolicy::Trezor => ERR!("'display_priv_key' doesn't support Trezor yet!"),
+            EthPrivKeyPolicy::Trezor => ERR!("'display_priv_key' is not supported for Hardware Wallets"),
             #[cfg(target_arch = "wasm32")]
-            EthPrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' doesn't support MetaMask"),
+            EthPrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' is not supported for MetaMask"),
         }
     }
 
@@ -3476,7 +3330,7 @@ impl EthCoin {
                     sign_and_send_transaction_with_keypair(ctx, &coin, key_pair, address, value, action, data, gas)
                         .await
                 },
-                EthPrivKeyPolicy::Trezor => Err(TransactionErr::Plain(ERRL!("Trezor is not supported for EVM yet!"))),
+                EthPrivKeyPolicy::Trezor => Err(TransactionErr::Plain(ERRL!("Trezor is not supported for swaps yet!"))),
                 #[cfg(target_arch = "wasm32")]
                 EthPrivKeyPolicy::Metamask(_) => {
                     sign_and_send_transaction_with_metamask(coin, value, action, data, gas).await
@@ -5853,6 +5707,7 @@ fn rpc_event_handlers_for_eth_transport(ctx: &MmArc, ticker: String) -> Vec<RpcT
 #[inline]
 fn new_nonce_lock() -> Arc<AsyncMutex<()>> { Arc::new(AsyncMutex::new(())) }
 
+/// Activate eth coin or erc20 token from coin config and private key build policy
 pub async fn eth_coin_from_conf_and_request(
     ctx: &MmArc,
     ticker: &str,
@@ -6123,14 +5978,9 @@ fn increase_gas_price_by_stage(gas_price: U256, level: &FeeApproxStage) -> U256 
 /// Represents errors that can occur while retrieving an Ethereum address.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum GetEthAddressError {
-    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     EthActivationV2Error(EthActivationV2Error),
     Internal(String),
-}
-
-impl From<PrivKeyPolicyNotAllowed> for GetEthAddressError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { GetEthAddressError::PrivKeyPolicyNotAllowed(e) }
 }
 
 impl From<UnexpectedDerivationMethod> for GetEthAddressError {
@@ -6153,9 +6003,14 @@ pub async fn get_eth_address(
     ticker: &str,
     path_to_address: &HDAccountAddressId,
 ) -> MmResult<MyWalletAddress, GetEthAddressError> {
-    let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(ctx)?;
-    // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
-    let priv_key_policy = EthPrivKeyBuildPolicy::try_from(priv_key_policy)?;
+    let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+    // Todo: this should be refactored to be inside detect_priv_key_policy where key_pair_policy uses trezor as well
+    let priv_key_policy = if crypto_ctx.hw_ctx().is_some() {
+        PrivKeyBuildPolicy::Trezor
+    } else {
+        PrivKeyBuildPolicy::detect_priv_key_policy(ctx)?
+    }
+    .into();
 
     // Todo: This creates an HD wallet different from the ETH one for NFT, we should combine them in the future when implementing NFT HD wallet
     let (_, derivation_method) =
@@ -6165,7 +6020,7 @@ pub async fn get_eth_address(
         EthDerivationMethod::HDWallet(_) => {
             return Err(MmError::new(GetEthAddressError::UnexpectedDerivationMethod(
                 UnexpectedDerivationMethod::UnsupportedError("HDWallet is not supported for NFT yet!".to_owned()),
-            )))
+            )));
         },
     };
 
@@ -6356,4 +6211,11 @@ impl InitCreateAccountRpcOps for EthCoin {
     async fn revert_creating_account(&self, account_id: u32) {
         init_create_account::common_impl::revert_creating_account(self, account_id).await
     }
+}
+
+pub fn pubkey_from_extended(extended_pubkey: &Secp256k1ExtendedPublicKey) -> Public {
+    let serialized = extended_pubkey.public_key().serialize_uncompressed();
+    let mut pubkey_uncompressed = Public::default();
+    pubkey_uncompressed.as_mut().copy_from_slice(&serialized[1..]);
+    pubkey_uncompressed
 }

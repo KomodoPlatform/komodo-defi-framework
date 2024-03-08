@@ -241,7 +241,7 @@ pub const ETH_DEV_SWAP_CONTRACT: &str = "0x83965c539899cc0f918552e5a26915de40ee8
 pub const ETH_DEV_FALLBACK_CONTRACT: &str = "0xEA6CFe3D0f6B8814A88027b9cA865b82816409a4";
 pub const ETH_DEV_TOKEN_CONTRACT: &str = "0x6c2858f6aFaC835c43ffDa248aFA167e1a58436C";
 
-pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc2.sepolia.org"];
+pub const ETH_SEPOLIA_NODES: &[&str] = &["https://rpc2.sepolia.org"];
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C88293F19";
 
@@ -783,6 +783,19 @@ pub fn eth_testnet_conf() -> Json {
     })
 }
 
+pub fn eth_testnet_conf_trezor() -> Json {
+    json!({
+        "coin": "ETH",
+        "name": "ethereum",
+        "mm2": 1,
+        "derivation_path": "m/44'/1'", // Trezor uses coin type 1 for testnet
+        "protocol": {
+            "type": "ETH"
+        },
+        "trezor_coin": "Ethereum"
+    })
+}
+
 /// ETH configuration used for dockerized Geth dev node
 pub fn eth_dev_conf() -> Json {
     json!({
@@ -819,10 +832,25 @@ pub fn eth_sepolia_conf() -> Json {
     json!({
         "coin": "ETH",
         "name": "ethereum",
+        "derivation_path": "m/44'/60'",
         "chain_id": 11155111,
         "protocol": {
             "type": "ETH"
-        }
+        },
+        "trezor_coin": "Ethereum"
+    })
+}
+
+pub fn eth_sepolia_trezor_firmware_compat_conf() -> Json {
+    json!({
+        "coin": "tETH",
+        "name": "ethereum",
+        "derivation_path": "m/44'/1'", // Note: trezor uses coin type 1' for eth for testnet (SLIP44_TESTNET)
+        "chain_id": 11155111,
+        "protocol": {
+            "type": "ETH"
+        },
+        "trezor_coin": "tETH"
     })
 }
 
@@ -846,6 +874,24 @@ pub fn jst_sepolia_conf() -> Json {
         "coin": "JST",
         "name": "jst",
         "chain_id": 11155111,
+        "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+                "platform": "ETH",
+                "chain_id": 11155111,
+                "contract_address": ETH_SEPOLIA_TOKEN_CONTRACT
+            }
+        }
+    })
+}
+
+pub fn jst_sepolia_trezor_conf() -> Json {
+    json!({
+        "coin": "tJST",
+        "name": "tjst",
+        "chain_id": 11155111,
+        "derivation_path": "m/44'/1'", // Note: Trezor uses 1' coin type for all testnets
+        "trezor_coin": "tETH",
         "protocol": {
             "type": "ERC20",
             "protocol_data": {
@@ -2938,8 +2984,8 @@ pub async fn init_utxo_electrum(
     mm: &MarketMakerIt,
     coin: &str,
     servers: Vec<Json>,
-    priv_key_policy: Option<&str>,
     path_to_address: Option<HDAccountAddressId>,
+    priv_key_policy: Option<&str>,
 ) -> Json {
     let mut activation_params = json!({
         "mode": {
@@ -2999,11 +3045,11 @@ pub async fn enable_utxo_v2_electrum(
     mm: &MarketMakerIt,
     coin: &str,
     servers: Vec<Json>,
-    priv_key_policy: Option<&str>,
     path_to_address: Option<HDAccountAddressId>,
     timeout: u64,
+    priv_key_policy: Option<&str>,
 ) -> UtxoStandardActivationResult {
-    let init = init_utxo_electrum(mm, coin, servers, priv_key_policy, path_to_address).await;
+    let init = init_utxo_electrum(mm, coin, servers, path_to_address, priv_key_policy).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);
 

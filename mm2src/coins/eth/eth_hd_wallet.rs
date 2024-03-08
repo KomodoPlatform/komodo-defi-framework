@@ -36,13 +36,8 @@ impl HDWalletCoinOps for EthCoin {
         extended_pubkey: &Secp256k1ExtendedPublicKey,
         derivation_path: DerivationPath,
     ) -> HDCoinHDAddress<Self> {
-        let serialized = extended_pubkey.public_key().serialize_uncompressed();
-        let mut pubkey = Public::default();
-        pubkey.as_mut().copy_from_slice(&serialized[1..65]);
-        drop_mutability!(pubkey);
-
+        let pubkey = pubkey_from_extended(extended_pubkey);
         let address = public_to_address(&pubkey);
-
         EthHDAddress {
             address,
             pubkey,

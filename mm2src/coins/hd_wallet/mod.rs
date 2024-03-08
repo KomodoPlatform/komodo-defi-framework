@@ -344,21 +344,17 @@ where
         }
     }
 
-    async fn get_enabled_address(&self) -> Option<HDWalletAddress<Self>> {
+    async fn get_enabled_address(&self) -> Option<<Self::HDAccount as HDAccountOps>::HDAddress> {
         let enabled_address = self.enabled_address?;
         let account = self.get_account(enabled_address.account_id).await?;
         let hd_address_id = HDAddressId {
             chain: enabled_address.chain,
             address_id: enabled_address.address_id,
         };
-        let address = account
-            .derived_addresses()
-            .lock()
-            .await
-            .get(&hd_address_id)
-            .map(|addr| addr.address());
+        let derived = account.derived_addresses().lock().await;
 
-        address
+        let address = derived.get(&hd_address_id);
+        address.cloned()
     }
 }
 

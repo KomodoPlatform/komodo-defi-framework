@@ -1,7 +1,7 @@
 use crate::coin_balance::HDAccountBalance;
 use crate::hd_wallet::{HDExtractPubkeyError, HDXPubExtractor, NewAccountCreationError, RpcTaskXPubExtractor};
-use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinFindError, CoinWithDerivationMethod, CoinsContext,
-            MarketCoinOps, MmCoinEnum, UnexpectedDerivationMethod};
+use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinFindError, CoinProtocol, CoinWithDerivationMethod,
+            CoinsContext, MarketCoinOps, MmCoinEnum, UnexpectedDerivationMethod};
 use async_trait::async_trait;
 use common::{true_f, HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
@@ -251,6 +251,7 @@ impl RpcTask for InitCreateAccountTask {
             state: CreateAccountState,
             task_handle: CreateAccountTaskHandleShared,
             is_trezor: bool,
+            coin_protocol: CoinProtocol,
         ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
         where
             Coin: InitCreateAccountRpcOps + Send + Sync,
@@ -265,7 +266,12 @@ impl RpcTask for InitCreateAccountTask {
                     on_passphrase_request: CreateAccountAwaitingStatus::EnterTrezorPassphrase,
                     on_ready: CreateAccountInProgressStatus::RequestingAccountBalance,
                 };
-                Some(CreateAccountXPubExtractor::new(ctx, task_handle, hw_statuses)?)
+                Some(CreateAccountXPubExtractor::new_trezor_extractor(
+                    ctx,
+                    task_handle,
+                    hw_statuses,
+                    coin_protocol,
+                )?)
             } else {
                 None
             };
@@ -281,6 +287,7 @@ impl RpcTask for InitCreateAccountTask {
                     self.task_state.clone(),
                     task_handle,
                     utxo.is_trezor(),
+                    CoinProtocol::UTXO,
                 )
                 .await
             },
@@ -292,6 +299,7 @@ impl RpcTask for InitCreateAccountTask {
                     self.task_state.clone(),
                     task_handle,
                     qtum.is_trezor(),
+                    CoinProtocol::QTUM,
                 )
                 .await
             },
@@ -302,7 +310,8 @@ impl RpcTask for InitCreateAccountTask {
                     self.req.params.clone(),
                     self.task_state.clone(),
                     task_handle,
-                    false,
+                    eth.is_trezor(),
+                    CoinProtocol::ETH,
                 )
                 .await
             },
@@ -428,6 +437,55 @@ pub(crate) mod common_impl {
     {
         if let Some(hd_wallet) = coin.derivation_method().hd_wallet() {
             hd_wallet.remove_account_if_last(account_id).await;
+        }
+    }
+}
+
+#[cfg(all(feature = "for-tests", not(target_arch = "wasm32")))]
+pub mod for_tests {
+    use super::{init_create_new_account, init_create_new_account_status, CreateAccountRpcError};
+    use crate::coin_balance::HDAccountBalance;
+    use common::executor::Timer;
+    use common::{now_ms, wait_until_ms};
+    use mm2_core::mm_ctx::MmArc;
+    use mm2_err_handle::prelude::MmResult;
+    use rpc_task::rpc_common::RpcTaskStatusRequest;
+    use rpc_task::RpcTaskStatus;
+    use serde_json::{self, json};
+
+    /// Helper to call init_create_new_account fn and wait for completion
+    pub async fn test_create_new_account_init_loop(
+        ctx: MmArc,
+        ticker: &str,
+        account_id: Option<u32>,
+    ) -> MmResult<HDAccountBalance, CreateAccountRpcError> {
+        let req = serde_json::from_value(json!({
+            "coin": ticker,
+            "params": {
+                "account_id": account_id
+            }
+        }))
+        .unwrap();
+        let init = init_create_new_account(ctx.clone(), req).await.unwrap();
+        let timeout = wait_until_ms(150000);
+        loop {
+            if now_ms() > timeout {
+                panic!("{} init_withdraw timed out", ticker);
+            }
+            let status = init_create_new_account_status(ctx.clone(), RpcTaskStatusRequest {
+                task_id: init.task_id,
+                forget_if_finished: true,
+            })
+            .await;
+            if let Ok(status) = status {
+                match status {
+                    RpcTaskStatus::Ok(account_balance) => break Ok(account_balance),
+                    RpcTaskStatus::Error(e) => break Err(e),
+                    _ => Timer::sleep(1.).await,
+                }
+            } else {
+                panic!("{} could not get withdraw_status", ticker)
+            }
         }
     }
 }

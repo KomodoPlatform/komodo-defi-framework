@@ -1,5 +1,6 @@
-use crate::hd_wallet::{HDAccount, HDAccountMut, HDAccountsMap, HDAccountsMut, HDAccountsMutex, HDAddress, HDWallet,
-                       HDWalletAddress, HDWalletCoinStorage, HDWalletOps, HDWalletStorageOps, WithdrawSenderAddress};
+use crate::hd_wallet::{HDAccount, HDAccountMut, HDAccountOps, HDAccountsMap, HDAccountsMut, HDAccountsMutex,
+                       HDAddress, HDWallet, HDWalletCoinStorage, HDWalletOps, HDWalletStorageOps,
+                       WithdrawSenderAddress};
 use async_trait::async_trait;
 use crypto::{Bip44Chain, StandardHDPathToCoin};
 use keys::{Address, AddressFormat as UtxoAddressFormat, Public};
@@ -51,5 +52,7 @@ impl HDWalletOps for UtxoHDWallet {
         self.inner.remove_account_if_last(account_id).await
     }
 
-    async fn get_enabled_address(&self) -> Option<HDWalletAddress<Self>> { self.inner.get_enabled_address().await }
+    async fn get_enabled_address(&self) -> Option<<Self::HDAccount as HDAccountOps>::HDAddress> {
+        self.inner.get_enabled_address().await
+    }
 }

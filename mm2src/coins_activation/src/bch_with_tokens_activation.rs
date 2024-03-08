@@ -1,3 +1,5 @@
+use crate::context::CoinsActivationContext;
+use crate::platform_coin_with_tokens::InitPlatformCoinWithTokensTask;
 use crate::platform_coin_with_tokens::*;
 use crate::prelude::*;
 use crate::slp_token_activation::SlpActivationRequest;
@@ -19,6 +21,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::EventStreamConfiguration;
 use mm2_number::BigDecimal;
+use rpc_task::RpcTaskHandleShared;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -130,6 +133,10 @@ impl TxHistory for BchWithTokensActivationRequest {
     fn tx_history(&self) -> bool { self.platform_request.utxo_params.tx_history }
 }
 
+impl ActivationRequestInfo for BchWithTokensActivationRequest {
+    fn is_hw_policy(&self) -> bool { self.platform_request.utxo_params.is_hw_policy() }
+}
+
 pub struct BchProtocolInfo {
     slp_prefix: String,
 }
@@ -146,7 +153,7 @@ impl TryFromCoinProtocol for BchProtocolInfo {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct BchWithTokensActivationResult {
     current_block: u64,
     bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
@@ -167,7 +174,7 @@ impl CurrentBlock for BchWithTokensActivationResult {
     fn current_block(&self) -> u64 { self.current_block }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BchWithTokensActivationError {
     PlatformCoinCreationError {
         ticker: String,
@@ -203,11 +210,15 @@ impl From<CryptoCtxError> for BchWithTokensActivationError {
 }
 
 #[async_trait]
-impl PlatformWithTokensActivationOps for BchCoin {
+impl PlatformCoinWithTokensActivationOps for BchCoin {
     type ActivationRequest = BchWithTokensActivationRequest;
     type PlatformProtocolInfo = BchProtocolInfo;
     type ActivationResult = BchWithTokensActivationResult;
     type ActivationError = BchWithTokensActivationError;
+
+    type InProgressStatus = InitPlatformCoinWithTokensInProgressStatus;
+    type AwaitingStatus = InitPlatformCoinWithTokensAwaitingStatus;
+    type UserAction = InitPlatformCoinWithTokensUserAction;
 
     async fn enable_platform_coin(
         ctx: MmArc,
@@ -266,6 +277,7 @@ impl PlatformWithTokensActivationOps for BchCoin {
 
     async fn get_activation_result(
         &self,
+        _task_handle: Option<RpcTaskHandleShared<InitPlatformCoinWithTokensTask<BchCoin>>>,
         activation_request: &Self::ActivationRequest,
         _nft_global: &Option<MmCoinEnum>,
     ) -> Result<BchWithTokensActivationResult, MmError<BchWithTokensActivationError>> {
@@ -281,14 +293,14 @@ impl PlatformWithTokensActivationOps for BchCoin {
         let pubkey = self.my_public_key()?.to_string();
 
         let mut bch_address_info = CoinAddressInfo {
-            derivation_method: DerivationMethod::Iguana,
+            derivation_method: self.as_ref().derivation_method.to_response().await?,
             pubkey: pubkey.clone(),
             balances: None,
             tickers: None,
         };
 
         let mut slp_address_info = CoinAddressInfo {
-            derivation_method: DerivationMethod::Iguana,
+            derivation_method: self.as_ref().derivation_method.to_response().await?,
             pubkey: pubkey.clone(),
             balances: None,
             tickers: None,
@@ -346,5 +358,11 @@ impl PlatformWithTokensActivationOps for BchCoin {
         _config: &EventStreamConfiguration,
     ) -> Result<(), MmError<Self::ActivationError>> {
         Ok(())
+    }
+
+    fn rpc_task_manager(
+        _activation_ctx: &CoinsActivationContext,
+    ) -> &InitPlatformCoinWithTokensTaskManagerShared<BchCoin> {
+        unimplemented!()
     }
 }

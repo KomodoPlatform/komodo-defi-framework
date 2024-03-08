@@ -1,4 +1,4 @@
-use super::{HDAccountMut, HDAccountOps, HDAccountsMap, HDAccountsMut, HDAccountsMutex, HDWalletAddress};
+use super::{HDAccountMut, HDAccountOps, HDAccountsMap, HDAccountsMut, HDAccountsMutex};
 use async_trait::async_trait;
 use crypto::{Bip44Chain, StandardHDPathToCoin};
 
@@ -109,5 +109,5 @@ pub trait HDWalletOps {
     /// # Returns
     ///
     /// An `Option` containing the enabled address if available.
-    async fn get_enabled_address(&self) -> Option<HDWalletAddress<Self>>;
+    async fn get_enabled_address(&self) -> Option<<Self::HDAccount as HDAccountOps>::HDAddress>;
 }

@@ -1,9 +1,11 @@
 use super::*;
+use crate::eth::for_tests::eth_coin_for_test;
 use crate::lp_coininit;
 use crypto::privkey::key_pair_from_seed;
 use crypto::CryptoCtx;
+use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_test_helpers::for_tests::{ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT};
+use mm2_test_helpers::for_tests::{ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT, ETH_SEPOLIA_NODES};
 use mm2_test_helpers::get_passphrase;
 use wasm_bindgen_test::*;
 use web_sys::console;
@@ -119,6 +121,29 @@ async fn wasm_test_sign_eth_tx() {
     }))
     .unwrap();
     let res = coin.sign_raw_tx(&sign_req).await;
+    console::log_1(&format!("res={:?}", res).into());
+    assert!(res.is_ok());
+}
+
+#[wasm_bindgen_test]
+async fn wasm_test_withdraw_eth() {
+    // we need to hold ref to _ctx until the end of the test (because of the weak ref to MmCtx in EthCoinImpl)
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, ETH_SEPOLIA_NODES, None); // use sepolia as usualy some amount exists there
+
+    let withdraw_req = WithdrawRequest {
+        amount: "0.00001".parse().unwrap(),
+        from: None,
+        to: "0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94".to_string(),
+        coin: "ETH".to_string(),
+        max: false,
+        fee: Some(WithdrawFee::EthGas {
+            gas: ETH_GAS,
+            gas_price: 1.into(),
+        }),
+        memo: None,
+        broadcast: false,
+    };
+    let res = coin.withdraw(withdraw_req).compat().await;
     console::log_1(&format!("res={:?}", res).into());
     assert!(res.is_ok());
 }

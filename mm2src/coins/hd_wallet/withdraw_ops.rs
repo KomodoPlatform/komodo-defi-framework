@@ -30,7 +30,7 @@ impl WithdrawFrom {
                 let coin_type = derivation_path.coin_type();
                 if coin_type != expected_coin_type {
                     let error = format!(
-                        "Derivation path '{}' must has '{}' coin type",
+                        "Derivation path '{}' must have '{}' coin type",
                         derivation_path, expected_coin_type
                     );
                     return MmError::err(HDWithdrawError::UnexpectedFromAddress(error));

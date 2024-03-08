@@ -2979,7 +2979,7 @@ pub fn display_priv_key(coin: &UtxoCoinFields) -> Result<String, String> {
             activated_key: ref activated_key_pair,
             ..
         } => Ok(activated_key_pair.private().to_string()),
-        PrivKeyPolicy::Trezor => ERR!("'display_priv_key' doesn't support Hardware Wallets"),
+        PrivKeyPolicy::Trezor => ERR!("'display_priv_key' is not supported for Hardware Wallets"),
         #[cfg(target_arch = "wasm32")]
         PrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' doesn't support Metamask"),
     }
