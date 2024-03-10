@@ -54,6 +54,7 @@ use futures::future::{join_all, select_ok, try_join_all, Either, FutureExt, TryF
 use futures01::Future;
 use http::{StatusCode, Uri};
 use instant::Instant;
+use keys::Public as HtlcPubKey;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
@@ -6196,19 +6197,20 @@ impl ToBytes for SignedEthTx {
     }
 }
 
-impl ToBytes for Public {
-    fn to_bytes(&self) -> Vec<u8> { self.0.to_vec() }
-}
-
 #[derive(Debug, Display)]
 pub enum CoinAssocTypesError {
     InvalidHexString(String),
     TxParseError(String),
     ParseSignatureError(String),
+    KeysError(keys::Error),
 }
 
 impl From<DecoderError> for CoinAssocTypesError {
     fn from(e: DecoderError) -> Self { CoinAssocTypesError::TxParseError(e.to_string()) }
+}
+
+impl From<keys::Error> for CoinAssocTypesError {
+    fn from(e: keys::Error) -> Self { CoinAssocTypesError::KeysError(e) }
 }
 
 #[derive(Debug, Display)]
@@ -6228,29 +6230,29 @@ impl From<ParseContractTypeError> for NftAssocTypesError {
 
 impl CoinAssocTypes for EthCoin {
     type Address = Address;
-    type AddressParseError = CoinAssocTypesError;
-    type Pubkey = Public;
-    type PubkeyParseError = CoinAssocTypesError;
+    type AddressParseError = MmError<CoinAssocTypesError>;
+    type Pubkey = HtlcPubKey;
+    type PubkeyParseError = MmError<CoinAssocTypesError>;
     type Tx = SignedEthTx;
-    type TxParseError = CoinAssocTypesError;
+    type TxParseError = MmError<CoinAssocTypesError>;
     type Preimage = SignedEthTx;
-    type PreimageParseError = CoinAssocTypesError;
+    type PreimageParseError = MmError<CoinAssocTypesError>;
     type Sig = Signature;
-    type SigParseError = CoinAssocTypesError;
+    type SigParseError = MmError<CoinAssocTypesError>;
 
     fn my_addr(&self) -> &Self::Address { &self.my_address }
 
     fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> {
-        Address::from_str(address).map_err(|e| CoinAssocTypesError::InvalidHexString(e.to_string()))
+        Address::from_str(address).map_to_mm(|e| CoinAssocTypesError::InvalidHexString(e.to_string()))
     }
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> {
-        Ok(Public::from_slice(pubkey))
+        HtlcPubKey::from_slice(pubkey).map_to_mm(CoinAssocTypesError::from)
     }
 
     fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> {
         let unverified: UnverifiedTransaction = rlp::decode(tx).map_err(CoinAssocTypesError::from)?;
-        SignedEthTx::new(unverified).map_err(|e| CoinAssocTypesError::TxParseError(e.to_string()))
+        SignedEthTx::new(unverified).map_to_mm(|e| CoinAssocTypesError::TxParseError(e.to_string()))
     }
 
     fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Preimage, Self::PreimageParseError> { self.parse_tx(tx) }
@@ -6261,7 +6263,7 @@ impl CoinAssocTypes for EthCoin {
             arr.copy_from_slice(sig);
             Ok(Signature::from(arr)) // Assuming `Signature::from([u8; 65])` exists
         } else {
-            Err(CoinAssocTypesError::ParseSignatureError(
+            MmError::err(CoinAssocTypesError::ParseSignatureError(
                 "Signature slice is not 65 bytes long".to_string(),
             ))
         }
