@@ -24,9 +24,11 @@ use super::eth::Action::{Call, Create};
 use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
 use crate::lp_price::get_base_price_in_rel;
-use crate::nft::nft_structs::{ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
+use crate::nft::nft_structs::{Chain, ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
                               WithdrawErc721};
-use crate::{CoinAssocTypes, DexFee, RpcCommonOps, ToBytes, ValidateWatcherSpendInput, WatcherSpendType};
+use crate::{CoinAssocTypes, DexFee, MakerNftSwapOpsV2, NftAssocTypes, RefundMakerPaymentArgs, RpcCommonOps,
+            SendNftMakerPaymentArgs, SpendMakerPaymentArgs, ToBytes, ValidateMakerPaymentArgs,
+            ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
@@ -57,7 +59,7 @@ use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::bigdecimal_custom::CheckedDivision;
-use mm2_number::{BigDecimal, MmNumber};
+use mm2_number::{BigDecimal, BigUint, MmNumber};
 use mm2_rpc::data::legacy::GasStationPricePolicy;
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
@@ -70,6 +72,7 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
+use std::str::from_utf8;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
@@ -121,7 +124,7 @@ use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod nonce;
 use crate::coin_errors::ValidatePaymentResult;
-use crate::nft::nft_errors::GetNftInfoError;
+use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError, ParseContractTypeError};
 use crate::{PrivKeyPolicy, TransactionResult, WithdrawFrom};
 use nonce::ParityNonce;
 
@@ -6002,7 +6005,7 @@ pub fn checksum_address(addr: &str) -> String {
 
 /// `eth_addr_to_hex` converts Address to hex format.
 /// Note: the result will be in lowercase.
-pub(crate) fn eth_addr_to_hex(address: &Address) -> String { format!("{:#02x}", address) }
+pub fn eth_addr_to_hex(address: &Address) -> String { format!("{:#02x}", address) }
 
 /// Checks that input is valid mixed-case checksum form address
 /// The input must be 0x prefixed hex string
@@ -6201,12 +6204,26 @@ impl ToBytes for Public {
 pub enum CoinAssocTypesError {
     InvalidHexString(String),
     TxParseError(String),
-    SignatureParseError(String),
     ParseSignatureError(String),
 }
 
 impl From<DecoderError> for CoinAssocTypesError {
     fn from(e: DecoderError) -> Self { CoinAssocTypesError::TxParseError(e.to_string()) }
+}
+
+#[derive(Debug, Display)]
+pub enum NftAssocTypesError {
+    Utf8Error(String),
+    ParseChainError(ParseChainTypeError),
+    ParseContractError(ParseContractTypeError),
+}
+
+impl From<ParseChainTypeError> for NftAssocTypesError {
+    fn from(e: ParseChainTypeError) -> Self { NftAssocTypesError::ParseChainError(e) }
+}
+
+impl From<ParseContractTypeError> for NftAssocTypesError {
+    fn from(e: ParseContractTypeError) -> Self { NftAssocTypesError::ParseContractError(e) }
 }
 
 impl CoinAssocTypes for EthCoin {
@@ -6248,5 +6265,100 @@ impl CoinAssocTypes for EthCoin {
                 "Signature slice is not 65 bytes long".to_string(),
             ))
         }
+    }
+}
+
+impl ToBytes for Address {
+    fn to_bytes(&self) -> Vec<u8> { self.0.to_vec() }
+}
+
+impl ToBytes for BigUint {
+    fn to_bytes(&self) -> Vec<u8> { self.to_bytes_be() }
+}
+
+impl ToBytes for Chain {
+    fn to_bytes(&self) -> Vec<u8> { self.to_ticker().as_bytes().to_vec() }
+}
+
+impl ToBytes for ContractType {
+    fn to_bytes(&self) -> Vec<u8> { self.to_string().into_bytes() }
+}
+
+impl NftAssocTypes for EthCoin {
+    type TokenAddress = Address;
+    type TokenContractAddressParseError = NftAssocTypesError;
+    type TokenId = BigUint;
+    type TokenIdParseError = NftAssocTypesError;
+    type Chain = Chain;
+    type ChainParseError = NftAssocTypesError;
+    type Contract = ContractType;
+    type ContractParseError = NftAssocTypesError;
+
+    fn parse_token_contract_address(
+        &self,
+        token_address: &[u8],
+    ) -> Result<Self::TokenAddress, Self::TokenContractAddressParseError> {
+        Ok(Address::from_slice(token_address))
+    }
+
+    fn parse_token_id(&self, token_id: &[u8]) -> Result<Self::TokenId, Self::TokenIdParseError> {
+        Ok(BigUint::from_bytes_be(token_id))
+    }
+
+    fn parse_chain(&self, chain: &[u8]) -> Result<Self::Chain, Self::ChainParseError> {
+        let chain_str = from_utf8(chain).map_err(|e| NftAssocTypesError::Utf8Error(e.to_string()))?;
+        Chain::from_ticker(chain_str).map_err(NftAssocTypesError::from)
+    }
+
+    fn parse_contract(&self, contract: &[u8]) -> Result<Self::Contract, Self::ContractParseError> {
+        let contract_str = from_utf8(contract).map_err(|e| NftAssocTypesError::Utf8Error(e.to_string()))?;
+        ContractType::from_str(contract_str).map_err(NftAssocTypesError::from)
+    }
+}
+
+#[async_trait]
+impl MakerNftSwapOpsV2 for EthCoin {
+    async fn send_nft_maker_payment_v2(
+        &self,
+        args: SendNftMakerPaymentArgs<'_, Self>,
+    ) -> Result<Self::Tx, TransactionErr> {
+        self.send_nft_maker_payment_v2_impl(args).await
+    }
+
+    async fn validate_nft_maker_payment_v2(
+        &self,
+        _args: ValidateMakerPaymentArgs<'_, Self>,
+    ) -> ValidatePaymentResult<()> {
+        todo!()
+    }
+
+    async fn spend_nft_maker_payment_v2(
+        &self,
+        _args: SpendMakerPaymentArgs<'_, Self>,
+    ) -> Result<Self::Tx, TransactionErr> {
+        todo!()
+    }
+
+    async fn refund_nft_maker_payment_v2_timelock(
+        &self,
+        _args: RefundPaymentArgs<'_>,
+    ) -> Result<Self::Tx, TransactionErr> {
+        todo!()
+    }
+
+    async fn refund_nft_maker_payment_v2_secret(
+        &self,
+        _args: RefundMakerPaymentArgs<'_, Self>,
+    ) -> Result<Self::Tx, TransactionErr> {
+        todo!()
+    }
+}
+
+impl EthCoin {
+    async fn send_nft_maker_payment_v2_impl(
+        &self,
+        _args: SendNftMakerPaymentArgs<'_, Self>,
+    ) -> Result<SignedEthTx, TransactionErr> {
+        todo!()
     }
 }
