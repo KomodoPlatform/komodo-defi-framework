@@ -224,7 +224,7 @@ pub fn erc20_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
 }
 
 /// Creates global NFT supplied with one ERC721 and 3 ERC1155 tokens owned by user in nfts_infos field
-pub async fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
+pub fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
     let nft_conf = nft_dev_conf();
     let req = json!({
         "method": "enable",
@@ -247,7 +247,7 @@ pub async fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
 
     fill_erc721(global_nft.my_address, U256::from(1));
     fill_erc1155(global_nft.my_address, U256::from(1), U256::from(3));
-    fill_nfts_info(&global_nft).await;
+    block_on(fill_nfts_info(&global_nft));
 
     global_nft
 }

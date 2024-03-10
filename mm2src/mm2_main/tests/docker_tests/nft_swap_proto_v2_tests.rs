@@ -2,13 +2,13 @@ use super::eth_docker_tests::{eth_coin_with_random_privkey, global_nft_with_rand
 use coins::eth::EthCoin;
 use coins::nft::nft_structs::{Chain, ContractType};
 use coins::{CoinAssocTypes, SendNftMakerPaymentArgs, SwapOps, ToBytes};
-use common::{block_on, now_sec};
+use common::now_sec;
 use mm2_number::BigUint;
 
 #[test]
 fn send_and_spend_erc721_maker_payment() {
     // TODO generate pair of utxo & eth coins from same random secret for maker / taker
-    let _maker_global_nft = block_on(global_nft_with_random_privkey(nft_swap_contract()));
+    let _maker_global_nft = global_nft_with_random_privkey(nft_swap_contract());
     // in prod we will need to enable global NFT for taker or add new field (for nft swap address) in EthCoin,
     // as EtomicSwapNft will have its own contract address, due to EIP-170 contract size limitations.
     // TODO need to add NFT conf in coin conf and refactor enable nft a bit
