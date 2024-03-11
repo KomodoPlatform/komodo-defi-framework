@@ -256,7 +256,7 @@ pub trait Client {
     }
 
     /// Perform a request against the RPC endpoint
-    async fn perform<R>(&self, request: R) -> Result<R::Response, Error>
+    async fn perform<R>(&self, request: R) -> Result<R::Output, Error>
     where
         R: SimpleRequest;
 }
@@ -315,11 +315,11 @@ impl HttpClient {
 
 #[async_trait]
 impl Client for HttpClient {
-    async fn perform<R>(&self, request: R) -> Result<R::Response, Error>
+    async fn perform<R>(&self, request: R) -> Result<R::Output, Error>
     where
         R: SimpleRequest,
     {
-        self.inner.perform(request).await
+        self.inner.perform(request).await.map(R::Output::from)
     }
 }
 

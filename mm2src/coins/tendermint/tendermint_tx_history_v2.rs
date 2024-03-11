@@ -366,7 +366,7 @@ where
                 coin: coin.platform_ticker().to_string(),
                 amount: big_decimal_from_sat_unsigned(fee_uamount, coin.decimals()),
                 uamount: fee_uamount,
-                gas_limit: fee.gas_limit.value(),
+                gas_limit: fee.gas_limit,
             })
         }
 
@@ -619,7 +619,7 @@ where
                     highest_height = cmp::max(highest_height, tx.height.into());
 
                     let deserialized_tx = try_or_continue!(
-                        cosmrs::Tx::from_bytes(tx.tx.as_bytes()),
+                        cosmrs::Tx::from_bytes(&tx.tx),
                         "Could not deserialize transaction"
                     );
 

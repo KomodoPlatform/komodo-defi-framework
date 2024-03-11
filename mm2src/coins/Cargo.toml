@@ -77,7 +77,7 @@ mocktopus = "0.8.0"
 num-traits = "0.2"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
-prost = "0.10"
+prost = "0.11"
 protobuf = "2.20"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 regex = "1"
@@ -131,7 +131,7 @@ mm2_db = { path = "../mm2_db" }
 mm2_metamask = { path = "../mm2_metamask" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 time = { version = "0.3.20", features = ["wasm-bindgen"] }
-tonic = { version = "0.7", default-features = false, features = ["prost", "codegen", "compression"] }
+tonic = { version = "0.9", default-features = false, features = ["prost", "codegen", "gzip"] }
 tower-service = "0.3"
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }
@@ -156,7 +156,7 @@ rustls = { version = "0.20", features = ["dangerous_configuration"] }
 secp256k1v24 = { version = "0.24", package = "secp256k1" }
 tokio = { version = "1.20" }
 tokio-rustls = { version = "0.23" }
-tonic = { version = "0.7", features = ["tls", "tls-webpki-roots", "compression"] }
+tonic = { version = "0.9", features = ["tls", "tls-webpki-roots", "gzip"] }
 webpki-roots = { version = "0.22" }
 zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
 zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1", default-features = false, features = ["local-prover", "multicore"] }
@@ -171,5 +171,5 @@ mm2_test_helpers = { path = "../mm2_test_helpers" }
 wagyu-zcash-parameters = { version = "0.2" }
 
 [build-dependencies]
-prost-build = { version = "0.10.4", default-features = false }
-tonic-build = { version = "0.7", default-features = false, features = ["prost", "compression"] }
+prost-build = { version = "0.11", default-features = false }
+tonic-build = { version = "0.9", default-features = false, features = ["prost"] }

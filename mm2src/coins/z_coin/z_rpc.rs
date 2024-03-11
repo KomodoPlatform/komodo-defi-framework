@@ -23,6 +23,7 @@ use rpc::v1::types::{Bytes, H256 as H256Json};
 use std::convert::TryFrom;
 use std::str::FromStr;
 use std::sync::Arc;
+use tonic::codec::CompressionEncoding;
 use z_coin_grpc::{BlockId, BlockRange, TreeState, TxFilter};
 use zcash_extras::{WalletRead, WalletWrite};
 use zcash_primitives::consensus::BlockHeight;
@@ -133,7 +134,7 @@ impl LightRpcClient {
             };
             #[cfg(not(target_arch = "wasm32"))]
             let client = match Self::connect_endpoint(endpoint).await {
-                Ok(tonic_channel) => tonic_channel.accept_gzip(),
+                Ok(tonic_channel) => tonic_channel.accept_compressed(CompressionEncoding::Gzip),
                 Err(err) => {
                     errors.push(UrlIterError::ConnectionFailure(err));
                     continue;

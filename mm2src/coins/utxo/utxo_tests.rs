@@ -179,10 +179,11 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
     let tx_err = coin
         .send_maker_spends_taker_payment(maker_spends_payment_args)
         .wait()
+        // FIXME: Document why we `unwrap_err` here.
         .unwrap_err();
 
     let tx: UtxoTx = deserialize(tx_hex.as_slice()).unwrap();
-
+    panic!();
     // The error variant should equal to `TxRecoverable`
     assert_eq!(
         discriminant(&tx_err),

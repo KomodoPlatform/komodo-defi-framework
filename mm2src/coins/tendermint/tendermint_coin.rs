@@ -71,6 +71,7 @@ use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -364,7 +365,7 @@ impl crate::Transaction for CosmosTransaction {
 
 pub(crate) fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {
     let signing_key =
-        SigningKey::from_bytes(priv_key).map_to_mm(|e| TendermintInitErrorKind::InvalidPrivKey(e.to_string()))?;
+        SigningKey::from_slice(priv_key).map_to_mm(|e| TendermintInitErrorKind::InvalidPrivKey(e.to_string()))?;
 
     signing_key
         .public_key()
@@ -849,7 +850,7 @@ impl TendermintCoin {
 
         let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
 
-        let signkey = SigningKey::from_bytes(priv_key.as_slice())?;
+        let signkey = SigningKey::from_slice(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
@@ -1162,7 +1163,7 @@ impl TendermintCoin {
         timeout_height: u64,
         memo: String,
     ) -> cosmrs::Result<Raw> {
-        let signkey = SigningKey::from_bytes(priv_key.as_slice())?;
+        let signkey = SigningKey::from_slice(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
@@ -1237,13 +1238,13 @@ impl TendermintCoin {
                     ));
                 }
 
-                let deserialized_tx = try_s!(cosmrs::Tx::from_bytes(tx.tx.as_bytes()));
+                let deserialized_tx = try_s!(cosmrs::Tx::from_bytes(&tx.tx));
                 let msg = try_s!(deserialized_tx.body.messages.first().ok_or("Tx body couldn't be read."));
                 let htlc = try_s!(CreateHtlcProtoRep::decode(msg.value.as_slice()));
 
                 if htlc.hash_lock.to_uppercase() == htlc_data.hash_lock.to_uppercase() {
                     let htlc = TransactionEnum::CosmosTransaction(CosmosTransaction {
-                        data: try_s!(TxRaw::decode(tx.tx.as_bytes())),
+                        data: try_s!(TxRaw::decode(&tx.tx[..])),
                     });
                     return Ok(Some(htlc));
                 }
@@ -1701,7 +1702,9 @@ impl TendermintCoin {
             // non-zero values are error.
             match tx_response.code {
                 TX_SUCCESS_CODE => Ok(Some(cosmrs::tendermint::abci::Code::Ok)),
-                err_code => Ok(Some(cosmrs::tendermint::abci::Code::Err(err_code))),
+                err_code => Ok(Some(cosmrs::tendermint::abci::Code::Err(
+                    NonZeroU32::new(err_code).unwrap(),
+                ))),
             }
         } else {
             Ok(None)
@@ -1756,8 +1759,11 @@ impl TendermintCoin {
                 let events_string = format!("claim_htlc.id='{}'", htlc_id);
                 let request = GetTxsEventRequest {
                     events: vec![events_string],
-                    pagination: None,
                     order_by: TendermintResultOrder::Ascending as i32,
+                    pagination: None,
+                    // FIXME: Put correct data here
+                    limit: 0,
+                    page: 0,
                 };
                 let encoded_request = request.encode_to_vec();
 
@@ -2204,7 +2210,7 @@ impl MarketCoinOps for TendermintCoin {
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        let key = SigningKey::from_bytes(self.priv_key_policy.activated_key_or_err()?.as_slice())
+        let key = SigningKey::from_slice(self.priv_key_policy.activated_key_or_err()?.as_slice())
             .expect("privkey validity is checked on coin creation");
         Ok(key.public_key().to_string())
     }
@@ -2341,6 +2347,10 @@ impl MarketCoinOps for TendermintCoin {
         let request = GetTxsEventRequest {
             events: vec![events_string],
             order_by: TendermintResultOrder::Ascending as i32,
+            pagination: None,
+            // FIXME: Put correct data here
+            limit: 0,
+            page: 0,
         };
         let encoded_request = request.encode_to_vec();
 
@@ -2931,9 +2941,8 @@ pub mod tendermint_coin_tests {
 
         // << BEGIN HTLC CREATION
         let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
-        const UAMOUNT: u64 = 1;
-        let amount: cosmrs::Decimal = UAMOUNT.into();
-        let amount_dec = big_decimal_from_sat_unsigned(UAMOUNT, coin.decimals);
+        let amount = 1;
+        let amount_dec = big_decimal_from_sat_unsigned(amount, coin.decimals);
 
         let mut sec = [0u8; 32];
         common::os_rng(&mut sec).unwrap();
@@ -2942,7 +2951,13 @@ pub mod tendermint_coin_tests {
         let time_lock = 1000;
 
         let create_htlc_tx = coin
-            .gen_create_htlc_tx(coin.denom.clone(), &to, amount, sha256(&sec).as_slice(), time_lock)
+            .gen_create_htlc_tx(
+                coin.denom.clone(),
+                &to,
+                amount.into(),
+                sha256(&sec).as_slice(),
+                time_lock,
+            )
             .unwrap();
 
         let current_block_fut = coin.current_block().compat();
@@ -3044,8 +3059,10 @@ pub mod tendermint_coin_tests {
         let events = "claim_htlc.id='2B925FC83A106CC81590B3DB108AC2AE496FFA912F368FE5E29BC1ED2B754F2C'";
         let request = GetTxsEventRequest {
             events: vec![events.into()],
-            pagination: None,
             order_by: TendermintResultOrder::Ascending as i32,
+            pagination: None,
+            page: 0,
+            limit: 0,
         };
         let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
             Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
@@ -3600,7 +3617,7 @@ pub mod tendermint_coin_tests {
 
             assert_eq!(
                 discriminant(&status_code),
-                discriminant(&cosmrs::tendermint::abci::Code::Err(61))
+                discriminant(&cosmrs::tendermint::abci::Code::Err(NonZeroU32::new(61).unwrap()))
             );
         }
 
