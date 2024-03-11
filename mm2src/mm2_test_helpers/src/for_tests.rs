@@ -816,8 +816,8 @@ pub fn erc20_dev_conf(contract_address: &str) -> Json {
 /// global NFT configuration used for dockerized Geth dev node
 pub fn nft_dev_conf() -> Json {
     json!({
-        "coin": "ERC20DEV",
-        "name": "erc20dev",
+        "coin": "NFT_ETH",
+        "name": "nftdev",
         "chain_id": 1337,
         "mm2": 1,
         "derivation_path": "m/44'/60'",

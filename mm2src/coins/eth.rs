@@ -6398,6 +6398,6 @@ impl EthCoin {
     }
 }
 
-/// Utility function example to check if BigDecimal is a positive integer
+/// function to check if BigDecimal is a positive integer
 #[inline(always)]
 fn is_positive_integer(amount: &BigDecimal) -> bool { amount == &amount.with_scale(0) && amount > &BigDecimal::from(0) }
