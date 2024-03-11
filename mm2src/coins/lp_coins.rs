@@ -294,6 +294,7 @@ use script::Script;
 
 pub mod z_coin;
 use crate::coin_errors::ValidatePaymentResult;
+use crate::eth::NftAssocTypesError;
 use crate::utxo::swap_proto_v2_scripts;
 use crate::utxo::utxo_common::{payment_script, WaitForOutputSpendErr};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
@@ -641,6 +642,7 @@ pub enum TransactionErr {
     /// Simply for plain error messages.
     Plain(String),
     NftProtocolNotSupported(String),
+    NftAssocTypesError(String),
 }
 
 impl TransactionErr {
@@ -658,14 +660,19 @@ impl TransactionErr {
     pub fn get_plain_text_format(&self) -> String {
         match self {
             TransactionErr::TxRecoverable(_, err) => err.to_string(),
-            TransactionErr::Plain(err) => err.to_string(),
-            TransactionErr::NftProtocolNotSupported(err) => err.to_string(),
+            TransactionErr::Plain(err)
+            | TransactionErr::NftProtocolNotSupported(err)
+            | TransactionErr::NftAssocTypesError(err) => err.to_string(),
         }
     }
 }
 
 impl From<keys::Error> for TransactionErr {
     fn from(e: keys::Error) -> Self { TransactionErr::Plain(e.to_string()) }
+}
+
+impl From<NftAssocTypesError> for TransactionErr {
+    fn from(e: NftAssocTypesError) -> Self { TransactionErr::NftAssocTypesError(e.to_string()) }
 }
 
 #[derive(Debug, PartialEq)]
@@ -1489,8 +1496,8 @@ pub trait CoinAssocTypes {
 
 /// Defines associated types specific to each coin (Pubkey, Address, etc.)
 pub trait NftAssocTypes {
-    type TokenAddress: Send + Sync + fmt::Display;
-    type TokenContractAddressParseError: fmt::Debug + Send + fmt::Display;
+    type TokenContractAddr: Send + Sync + fmt::Display;
+    type TokenContractAddrParseError: fmt::Debug + Send + fmt::Display;
     type TokenId: ToBytes + Send + Sync;
     type TokenIdParseError: fmt::Debug + Send + fmt::Display;
     type Chain: ToBytes + Send + Sync;
@@ -1500,8 +1507,8 @@ pub trait NftAssocTypes {
 
     fn parse_token_contract_address(
         &self,
-        token_address: &[u8],
-    ) -> Result<Self::TokenAddress, Self::TokenContractAddressParseError>;
+        token_contract_addr: &[u8],
+    ) -> Result<Self::TokenContractAddr, Self::TokenContractAddrParseError>;
 
     fn parse_token_id(&self, token_id: &[u8]) -> Result<Self::TokenId, Self::TokenIdParseError>;
 

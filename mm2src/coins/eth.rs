@@ -6217,7 +6217,8 @@ impl From<keys::Error> for CoinAssocTypesError {
 pub enum NftAssocTypesError {
     Utf8Error(String),
     ParseChainError(ParseChainTypeError),
-    ParseContractError(ParseContractTypeError),
+    ParseContractTypeError(ParseContractTypeError),
+    ParseTokenContractError(String),
 }
 
 impl From<ParseChainTypeError> for NftAssocTypesError {
@@ -6225,7 +6226,7 @@ impl From<ParseChainTypeError> for NftAssocTypesError {
 }
 
 impl From<ParseContractTypeError> for NftAssocTypesError {
-    fn from(e: ParseContractTypeError) -> Self { NftAssocTypesError::ParseContractError(e) }
+    fn from(e: ParseContractTypeError) -> Self { NftAssocTypesError::ParseContractTypeError(e) }
 }
 
 impl CoinAssocTypes for EthCoin {
@@ -6287,8 +6288,8 @@ impl ToBytes for ContractType {
 }
 
 impl NftAssocTypes for EthCoin {
-    type TokenAddress = Address;
-    type TokenContractAddressParseError = NftAssocTypesError;
+    type TokenContractAddr = Address;
+    type TokenContractAddrParseError = NftAssocTypesError;
     type TokenId = BigUint;
     type TokenIdParseError = NftAssocTypesError;
     type Chain = Chain;
@@ -6298,9 +6299,11 @@ impl NftAssocTypes for EthCoin {
 
     fn parse_token_contract_address(
         &self,
-        token_address: &[u8],
-    ) -> Result<Self::TokenAddress, Self::TokenContractAddressParseError> {
-        Ok(Address::from_slice(token_address))
+        token_contract_addr: &[u8],
+    ) -> Result<Self::TokenContractAddr, Self::TokenContractAddrParseError> {
+        token_contract_addr
+            .try_to_address()
+            .map_err(NftAssocTypesError::ParseTokenContractError)
     }
 
     fn parse_token_id(&self, token_id: &[u8]) -> Result<Self::TokenId, Self::TokenIdParseError> {
@@ -6359,8 +6362,10 @@ impl MakerNftSwapOpsV2 for EthCoin {
 impl EthCoin {
     async fn send_nft_maker_payment_v2_impl(
         &self,
-        _args: SendNftMakerPaymentArgs<'_, Self>,
+        args: SendNftMakerPaymentArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
+        let _taker_address = addr_from_raw_pubkey(args.taker_pub).map_err(TransactionErr::Plain)?;
+        let _swap_contract_address = self.parse_token_contract_address(args.swap_contract_address)?;
         todo!()
     }
 }
