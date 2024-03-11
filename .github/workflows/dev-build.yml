@@ -34,6 +34,11 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
 
+      - name: Install build deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y protobuf-compiler
+
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV

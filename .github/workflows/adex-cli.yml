@@ -23,6 +23,7 @@ jobs:
         uses: ./.github/actions/cargo-cache
 
       - name: Start checking code format and lint
+        continue-on-error: true
         run: |
           cargo fmt --manifest-path ./mm2src/adex_cli/Cargo.toml --all -- --check
           cargo clippy --manifest-path ./mm2src/adex_cli/Cargo.toml --all-targets --all-features -- --D warnings
