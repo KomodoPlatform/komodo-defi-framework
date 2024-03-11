@@ -81,9 +81,9 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
         run: |
           CONTAINER_TAG="dev-$COMMIT_HASH"
-          docker build -t komodoofficial/atomicdexapi:"$CONTAINER_TAG" -t komodoofficial/atomicdexapi:dev-latest -f .docker/Dockerfile.dev-release .
-          docker push komodoofficial/atomicdexapi:"$CONTAINER_TAG"
-          docker push komodoofficial/atomicdexapi:dev-latest
+          docker build -t komodoofficial/komodo-defi-framework:"$CONTAINER_TAG" -t komodoofficial/komodo-defi-framework:dev-latest -f .docker/Dockerfile.dev-release .
+          docker push komodoofficial/komodo-defi-framework:"$CONTAINER_TAG"
+          docker push komodoofficial/komodo-defi-framework:dev-latest
 
   mac-x86-64:
     timeout-minutes: 60
