@@ -391,29 +391,23 @@ where
         fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &&Event) {
             match msg_event.kind.as_str() {
                 CREATE_HTLC_EVENT => {
-                    transfer_details.from = some_or_return!(msg_event
-                        .attributes
-                        .iter()
-                        .find(|tag| tag.key.to_string() == SENDER_TAG_KEY))
-                    .value
-                    .to_string();
+                    transfer_details.from =
+                        some_or_return!(msg_event.attributes.iter().find(|tag| tag.key == SENDER_TAG_KEY))
+                            .value
+                            .to_string();
 
-                    transfer_details.to = some_or_return!(msg_event
-                        .attributes
-                        .iter()
-                        .find(|tag| tag.key.to_string() == RECEIVER_TAG_KEY))
-                    .value
-                    .to_string();
+                    transfer_details.to =
+                        some_or_return!(msg_event.attributes.iter().find(|tag| tag.key == RECEIVER_TAG_KEY))
+                            .value
+                            .to_string();
 
                     transfer_details.transfer_event_type = TransferEventType::CreateHtlc;
                 },
                 CLAIM_HTLC_EVENT => {
-                    transfer_details.from = some_or_return!(msg_event
-                        .attributes
-                        .iter()
-                        .find(|tag| tag.key.to_string() == SENDER_TAG_KEY))
-                    .value
-                    .to_string();
+                    transfer_details.from =
+                        some_or_return!(msg_event.attributes.iter().find(|tag| tag.key == SENDER_TAG_KEY))
+                            .value
+                            .to_string();
 
                     transfer_details.transfer_event_type = TransferEventType::ClaimHtlc;
                 },
@@ -426,12 +420,10 @@ where
 
             for (index, event) in tx_events.iter().enumerate() {
                 if event.kind.as_str() == TRANSFER_EVENT {
-                    let amount_with_denoms = some_or_continue!(event
-                        .attributes
-                        .iter()
-                        .find(|tag| tag.key.to_string() == AMOUNT_TAG_KEY))
-                    .value
-                    .to_string();
+                    let amount_with_denoms =
+                        some_or_continue!(event.attributes.iter().find(|tag| tag.key == AMOUNT_TAG_KEY))
+                            .value
+                            .to_string();
                     let amount_with_denoms = amount_with_denoms.split(',');
 
                     for amount_with_denom in amount_with_denoms {
@@ -440,19 +432,13 @@ where
                         let denom = &amount_with_denom[extracted_amount.len()..];
                         let amount = some_or_continue!(extracted_amount.parse().ok());
 
-                        let from = some_or_continue!(event
-                            .attributes
-                            .iter()
-                            .find(|tag| tag.key.to_string() == SENDER_TAG_KEY))
-                        .value
-                        .to_string();
+                        let from = some_or_continue!(event.attributes.iter().find(|tag| tag.key == SENDER_TAG_KEY))
+                            .value
+                            .to_string();
 
-                        let to = some_or_continue!(event
-                            .attributes
-                            .iter()
-                            .find(|tag| tag.key.to_string() == RECIPIENT_TAG_KEY))
-                        .value
-                        .to_string();
+                        let to = some_or_continue!(event.attributes.iter().find(|tag| tag.key == RECIPIENT_TAG_KEY))
+                            .value
+                            .to_string();
 
                         let mut tx_details = TransferDetails {
                             from,
@@ -508,7 +494,7 @@ where
                         let amount_with_denom = event
                             .attributes
                             .iter()
-                            .find(|tag| tag.key.to_string() == AMOUNT_TAG_KEY)
+                            .find(|tag| tag.key == AMOUNT_TAG_KEY)
                             .map(|t| t.value.to_string());
 
                         amount_with_denom != Some(fee_amount_with_denom.clone())
@@ -618,10 +604,8 @@ where
 
                     highest_height = cmp::max(highest_height, tx.height.into());
 
-                    let deserialized_tx = try_or_continue!(
-                        cosmrs::Tx::from_bytes(&tx.tx),
-                        "Could not deserialize transaction"
-                    );
+                    let deserialized_tx =
+                        try_or_continue!(cosmrs::Tx::from_bytes(&tx.tx), "Could not deserialize transaction");
 
                     let msg = try_or_continue!(
                         deserialized_tx.body.messages.first().ok_or("Tx body couldn't be read."),

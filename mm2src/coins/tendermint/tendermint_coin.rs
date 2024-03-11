@@ -2264,14 +2264,10 @@ impl MarketCoinOps for TendermintCoin {
         let coin = self.clone();
         let tx_bytes = tx.to_owned();
         let fut = async move {
-            let broadcast_res = try_s!(
-                try_s!(coin.rpc_client().await)
-                    .broadcast_tx_commit(tx_bytes.into())
-                    .await
-            );
+            let broadcast_res = try_s!(try_s!(coin.rpc_client().await).broadcast_tx_commit(tx_bytes).await);
 
-            if broadcast_res.check_tx.log.to_string().contains(ACCOUNT_SEQUENCE_ERR)
-                || broadcast_res.deliver_tx.log.to_string().contains(ACCOUNT_SEQUENCE_ERR)
+            if broadcast_res.check_tx.log.contains(ACCOUNT_SEQUENCE_ERR)
+                || broadcast_res.deliver_tx.log.contains(ACCOUNT_SEQUENCE_ERR)
             {
                 return ERR!(
                     "{}. check_tx log: {}, deliver_tx log: {}",

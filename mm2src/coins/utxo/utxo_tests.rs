@@ -183,7 +183,7 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
         .unwrap_err();
 
     let tx: UtxoTx = deserialize(tx_hex.as_slice()).unwrap();
-    panic!();
+
     // The error variant should equal to `TxRecoverable`
     assert_eq!(
         discriminant(&tx_err),
