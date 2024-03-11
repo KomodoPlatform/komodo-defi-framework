@@ -71,6 +71,7 @@ use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
+use std::num::TryFromIntError;
 use std::ops::Deref;
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::from_utf8;
@@ -6294,8 +6295,8 @@ impl NftAssocTypes for EthCoin {
     type TokenIdParseError = NftAssocTypesError;
     type Chain = Chain;
     type ChainParseError = NftAssocTypesError;
-    type Contract = ContractType;
-    type ContractParseError = NftAssocTypesError;
+    type ContractType = ContractType;
+    type ContractTypeParseError = NftAssocTypesError;
 
     fn parse_token_contract_address(
         &self,
@@ -6315,8 +6316,8 @@ impl NftAssocTypes for EthCoin {
         Chain::from_ticker(chain_str).map_err(NftAssocTypesError::from)
     }
 
-    fn parse_contract(&self, contract: &[u8]) -> Result<Self::Contract, Self::ContractParseError> {
-        let contract_str = from_utf8(contract).map_err(|e| NftAssocTypesError::Utf8Error(e.to_string()))?;
+    fn parse_contract_type(&self, contract_type: &[u8]) -> Result<Self::ContractType, Self::ContractTypeParseError> {
+        let contract_str = from_utf8(contract_type).map_err(|e| NftAssocTypesError::Utf8Error(e.to_string()))?;
         ContractType::from_str(contract_str).map_err(NftAssocTypesError::from)
     }
 }
@@ -6364,8 +6365,39 @@ impl EthCoin {
         &self,
         args: SendNftMakerPaymentArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
+        let contract_type = self.parse_contract_type(args.contract_type)?;
+        match contract_type {
+            ContractType::Erc721 => {
+                if args.amount != BigDecimal::from(1) {
+                    return Err(TransactionErr::Plain("ERC-721 amount must be 1".to_string()));
+                }
+            },
+            ContractType::Erc1155 => {
+                if !is_positive_integer(&args.amount) {
+                    return Err(TransactionErr::Plain(
+                        "ERC-1155 amount must be a positive integer".to_string(),
+                    ));
+                }
+            },
+        }
         let _taker_address = addr_from_raw_pubkey(args.taker_pub).map_err(TransactionErr::Plain)?;
         let _swap_contract_address = self.parse_token_contract_address(args.swap_contract_address)?;
+        let time_lock_u32 = args
+            .time_lock
+            .try_into()
+            .map_err(|e: TryFromIntError| TransactionErr::Plain(e.to_string()))?;
+        let _id = self.etomic_swap_id(time_lock_u32, args.maker_secret_hash);
+
+        let _time_lock_u256 = U256::from(args.time_lock);
+        let _gas = U256::from(ETH_GAS);
+        let _token_id = self.parse_token_id(args.token_id)?;
+
+        // todo re-check do we need changes in sign_and_send_transaction method for nft broadcast
+
         todo!()
     }
 }
+
+/// Utility function example to check if BigDecimal is a positive integer
+#[inline(always)]
+fn is_positive_integer(amount: &BigDecimal) -> bool { amount == &amount.with_scale(0) && amount > &BigDecimal::from(0) }

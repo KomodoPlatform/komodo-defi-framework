@@ -1502,8 +1502,8 @@ pub trait NftAssocTypes {
     type TokenIdParseError: fmt::Debug + Send + fmt::Display;
     type Chain: ToBytes + Send + Sync;
     type ChainParseError: fmt::Debug + Send + fmt::Display;
-    type Contract: ToBytes + Send + Sync;
-    type ContractParseError: fmt::Debug + Send + fmt::Display;
+    type ContractType: ToBytes + Send + Sync;
+    type ContractTypeParseError: fmt::Debug + Send + fmt::Display;
 
     fn parse_token_contract_address(
         &self,
@@ -1514,7 +1514,7 @@ pub trait NftAssocTypes {
 
     fn parse_chain(&self, chain: &[u8]) -> Result<Self::Chain, Self::ChainParseError>;
 
-    fn parse_contract(&self, contract: &[u8]) -> Result<Self::Contract, Self::ContractParseError>;
+    fn parse_contract_type(&self, contract_type: &[u8]) -> Result<Self::ContractType, Self::ContractTypeParseError>;
 }
 
 pub struct SendMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
