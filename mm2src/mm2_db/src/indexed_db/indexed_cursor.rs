@@ -54,7 +54,7 @@
 
 use crate::indexed_db::db_driver::cursor::CursorBoundValue;
 pub(crate) use crate::indexed_db::db_driver::cursor::{CursorDriver, CursorFilters};
-pub use crate::indexed_db::db_driver::cursor::{CursorError, CursorResult};
+pub use crate::indexed_db::db_driver::cursor::{CursorError, CursorFiltersExt, CursorResult};
 use crate::indexed_db::{DbTable, ItemId, TableSignature};
 use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt, StreamExt};
@@ -66,20 +66,19 @@ use std::marker::PhantomData;
 
 pub(super) type DbCursorEventTx = mpsc::UnboundedSender<DbCursorEvent>;
 pub(super) type DbCursorEventRx = mpsc::UnboundedReceiver<DbCursorEvent>;
-pub(super) type CursorCondition = Box<dyn Fn(Json) -> CursorResult<bool> + Send + 'static>;
 
 pub struct CursorBuilder<'transaction, 'reference, Table: TableSignature> {
     db_table: &'reference DbTable<'transaction, Table>,
     filters: CursorFilters,
-    where_: Option<CursorCondition>,
+    filters_ext: CursorFiltersExt,
 }
 
 impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction, 'reference, Table> {
     pub(crate) fn new(db_table: &'reference DbTable<'transaction, Table>) -> Self {
         CursorBuilder {
             db_table,
-            where_: None,
             filters: CursorFilters::default(),
+            filters_ext: CursorFiltersExt::default(),
         }
     }
 
@@ -134,7 +133,7 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
     where
         F: Fn(Json) -> CursorResult<bool> + Send + 'static,
     {
-        self.where_ = Some(Box::new(f));
+        self.filters_ext.where_ = Some(Box::new(f));
         self
     }
 
@@ -145,19 +144,28 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
     /// ```
     pub fn where_first(self) -> CursorBuilder<'transaction, 'reference, Table> { self.where_(|_| Ok(true)) }
 
+    pub fn limit(mut self, limit: usize) -> CursorBuilder<'transaction, 'reference, Table> {
+        self.filters_ext.limit = Some(limit);
+        self
+    }
+
+    pub fn offset(mut self, offset: u32) -> CursorBuilder<'transaction, 'reference, Table> {
+        self.filters_ext.offset = Some(offset);
+        self
+    }
+
     /// Opens a cursor by the specified `index`.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/openCursor
     pub async fn open_cursor(self, index: &str) -> CursorResult<CursorIter<'transaction, Table>> {
-        let event_tx =
-            self.db_table
-                .open_cursor(index, self.filters)
-                .await
-                .mm_err(|e| CursorError::ErrorOpeningCursor {
-                    description: e.to_string(),
-                })?;
+        let event_tx = self
+            .db_table
+            .open_cursor(index, self.filters, self.filters_ext)
+            .await
+            .mm_err(|e| CursorError::ErrorOpeningCursor {
+                description: e.to_string(),
+            })?;
         Ok(CursorIter {
             event_tx,
-            where_: self.where_,
             phantom: PhantomData::default(),
         })
     }
@@ -165,7 +173,6 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
 
 pub struct CursorIter<'transaction, Table> {
     event_tx: DbCursorEventTx,
-    where_: Option<CursorCondition>,
     phantom: PhantomData<&'transaction Table>,
 }
 
@@ -175,10 +182,7 @@ impl<'transaction, Table: TableSignature> CursorIter<'transaction, Table> {
     pub async fn next(&mut self) -> CursorResult<Option<(ItemId, Table)>> {
         let (result_tx, result_rx) = oneshot::channel();
         self.event_tx
-            .send(DbCursorEvent::NextItem {
-                result_tx,
-                where_: self.where_.take(),
-            })
+            .send(DbCursorEvent::NextItem { result_tx })
             .await
             .map_to_mm(|e| CursorError::UnexpectedState(format!("Error sending cursor event: {e}")))?;
         let maybe_item = result_rx
@@ -204,15 +208,14 @@ impl<'transaction, Table: TableSignature> CursorIter<'transaction, Table> {
 pub enum DbCursorEvent {
     NextItem {
         result_tx: oneshot::Sender<CursorResult<Option<(ItemId, Json)>>>,
-        where_: Option<CursorCondition>,
     },
 }
 
 pub(crate) async fn cursor_event_loop(mut rx: DbCursorEventRx, mut cursor: CursorDriver) {
     while let Some(event) = rx.next().await {
         match event {
-            DbCursorEvent::NextItem { result_tx, where_ } => {
-                result_tx.send(cursor.next(where_).await).ok();
+            DbCursorEvent::NextItem { result_tx } => {
+                result_tx.send(cursor.next().await).ok();
             },
         }
     }
@@ -282,13 +285,13 @@ mod tests {
         }
     }
 
-    async fn fill_table<Table>(table: &DbTable<'_, Table>, items: Vec<Table>)
+    async fn fill_table<Table>(table: &DbTable<'_, Table>, items: &Vec<Table>)
     where
         Table: TableSignature + std::fmt::Debug,
     {
         for item in items {
             table
-                .add_item(&item)
+                .add_item(item)
                 .await
                 .unwrap_or_else(|_| panic!("Error adding {:?} item", item));
         }
@@ -388,7 +391,7 @@ mod tests {
             .table::<TimestampTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         // Test the cursor index for each combination of numbers (lower, upper).
         for num_x in numbers.iter() {
@@ -429,8 +432,6 @@ mod tests {
         const DB_NAME: &str = "TEST_COLLECT_SINGLE_KEY_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 1, 700), // +
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -451,7 +452,7 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         let mut actual_items = table
             .cursor_builder()
@@ -483,8 +484,6 @@ mod tests {
         const DB_NAME: &str = "TEST_COLLECT_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -505,7 +504,7 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         let mut actual_items = table
             .cursor_builder()
@@ -536,8 +535,6 @@ mod tests {
         const DB_NAME: &str = "TEST_COLLECT_MULTI_KEY_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 12, 1, 700),
             swap_item!("uuid2", "RICK", "KMD", 95000, 6, 721),
@@ -564,7 +561,7 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         let mut actual_items = table
             .cursor_builder()
@@ -599,8 +596,6 @@ mod tests {
     async fn test_collect_multi_key_bound_cursor() {
         const DB_NAME: &str = "TEST_COLLECT_MULTI_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
-
-        register_wasm_log();
 
         let items = vec![
             swap_item!("uuid1", "MORTY", "RICK", 12, 10, 999),
@@ -641,7 +636,7 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         let actual_items = table
             .cursor_builder()
@@ -678,8 +673,6 @@ mod tests {
         const DB_NAME: &str = "TEST_COLLECT_MULTI_KEY_BOUND_CURSOR_BIG_INT";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             TimestampTable::new(u64::MAX, 6, u128::MAX - 3),
             TimestampTable::new(u64::MAX - 1, 0, u128::MAX - 2), // +
@@ -702,7 +695,7 @@ mod tests {
             .table::<TimestampTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         let actual_items = table
             .cursor_builder()
@@ -735,8 +728,6 @@ mod tests {
         const DB_NAME: &str = "TEST_ITER_WITHOUT_CONSTRAINTS";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -755,7 +746,7 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         let mut cursor_iter = table
             .cursor_builder()
@@ -790,8 +781,6 @@ mod tests {
         const DB_NAME: &str = "TEST_REV_ITER_WITHOUT_CONSTRAINTS";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
             .with_version(DB_VERSION)
             .with_table::<SwapTable>()
@@ -820,8 +809,6 @@ mod tests {
         const DB_NAME: &str = "TEST_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -842,7 +829,7 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         let mut cursor_iter = table
             .cursor_builder()
@@ -873,9 +860,6 @@ mod tests {
     async fn test_rev_iter_single_key_bound_cursor() {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
-
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -896,7 +880,7 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         let mut cursor_iter = table
             .cursor_builder()
@@ -929,8 +913,6 @@ mod tests {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -951,7 +933,7 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         // check for first swap where started_at is 1281.
         let condition = move |swap| {
@@ -979,8 +961,6 @@ mod tests {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -1001,7 +981,7 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         let maybe_swap = table
             .cursor_builder()
@@ -1024,8 +1004,6 @@ mod tests {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
 
-        register_wasm_log();
-
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
             swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
@@ -1046,7 +1024,7 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
         let maybe_swap = table
             .cursor_builder()
@@ -1066,11 +1044,9 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_cursor_where_first_condition_with_limit() {
+    async fn test_cursor_where_condition_with_limit() {
         const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
         const DB_VERSION: u32 = 1;
-
-        register_wasm_log();
 
         let items = vec![
             swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
@@ -1092,21 +1068,118 @@ mod tests {
             .table::<SwapTable>()
             .await
             .expect("!DbTransaction::open_table");
-        fill_table(&table, items).await;
+        fill_table(&table, &items).await;
 
-        let maybe_swap = table
+        let maybe_swaps = table
             .cursor_builder()
             .bound("rel_coin_value", 5u32, u32::MAX)
-            .where_first()
+            .where_(|_| Ok(true))
+            .limit(1)
             .open_cursor("rel_coin_value")
             .await
             .expect("!CursorBuilder::open_cursor")
-            .next()
+            .collect()
             .await
-            .expect("!Cursor next result")
-            .map(|(_, swap)| swap);
+            .expect("!CursorBuilder::open_cursor")
+            .into_iter()
+            .map(|(_, swap)| swap)
+            .collect::<Vec<_>>();
 
-        // maybe_swap should return swap with uuid4 since it's the item with the lowest rel_coin_value in the store.
-        assert_eq!(maybe_swap, Some(swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92)));
+        let expected_swaps = vec![swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92)];
+        assert_eq!(expected_swaps, maybe_swaps)
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_cursor_with_limit() {
+        const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
+        const DB_VERSION: u32 = 1;
+
+        let items = vec![
+            swap_item!("uuid1", "RICK", "MORTY", 10, 3, 700),
+            swap_item!("uuid2", "MORTY", "KMD", 95000, 1, 721),
+            swap_item!("uuid3", "RICK", "XYZ", 7, u32::MAX, 1281), // +
+            swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92),        // +
+            swap_item!("uuid5", "QRC20", "RICK", 2, 4, 721),
+            swap_item!("uuid6", "KMD", "MORTY", 12, 3124, 214), // +
+        ];
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<SwapTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<SwapTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+        fill_table(&table, &items).await;
+
+        let maybe_swaps = table
+            .cursor_builder()
+            .bound("rel_coin_value", 5u32, u32::MAX)
+            .limit(2)
+            .open_cursor("rel_coin_value")
+            .await
+            .expect("!CursorBuilder::open_cursor")
+            .collect()
+            .await
+            .expect("!CursorBuilder::collect")
+            .into_iter()
+            .map(|(_, swap)| swap)
+            .collect::<Vec<_>>();
+
+        let expected_swaps = vec![
+            swap_item!("uuid4", "RICK", "MORTY", 8, 6, 92),
+            swap_item!("uuid6", "KMD", "MORTY", 12, 3124, 214),
+        ];
+        assert_eq!(expected_swaps, maybe_swaps)
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_cursor_with_offset_and_limit() {
+        const DB_NAME: &str = "TEST_REV_ITER_SINGLE_KEY_BOUND_CURSOR";
+        const DB_VERSION: u32 = 1;
+
+        register_wasm_log();
+
+        let items = vec![
+            swap_item!("uuid1", "RICK", "XYZ", 7, u32::MAX, 1281),
+            swap_item!("uuid2", "RICK", "MORTY", 8, 6, 92),
+            swap_item!("uuid3", "RICK", "FTM", 12, 3124, 214),
+        ];
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<SwapTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<SwapTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+        fill_table(&table, &items).await;
+
+        let maybe_swaps = table
+            .cursor_builder()
+            .only("base_coin", "RICK")
+            .expect("!CursorBuilder::only")
+            .offset(1)
+            .limit(1)
+            .open_cursor("base_coin")
+            .await
+            .expect("!CursorBuilder::open_cursor")
+            .collect()
+            .await
+            .expect("!CursorBuilder::open_cursor")
+            .into_iter()
+            .map(|(_, swap)| swap)
+            .collect::<Vec<_>>();
+
+        let expected_swaps = vec![swap_item!("uuid2", "RICK", "MORTY", 8, 6, 92)];
+        assert_eq!(expected_swaps, maybe_swaps)
     }
 }

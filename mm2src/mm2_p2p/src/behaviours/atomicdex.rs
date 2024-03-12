@@ -8,12 +8,12 @@ use futures_rustls::rustls;
 use futures_ticker::Ticker;
 use instant::Duration;
 use libp2p::core::transport::Boxed as BoxedTransport;
-use libp2p::core::ConnectedPoint;
+use libp2p::core::{ConnectedPoint, Endpoint};
 use libp2p::floodsub::{Floodsub, FloodsubEvent, Topic as FloodsubTopic};
 use libp2p::gossipsub::{PublishError, SubscriptionError, ValidationMode};
 use libp2p::multiaddr::Protocol;
 use libp2p::request_response::ResponseChannel;
-use libp2p::swarm::{NetworkBehaviour, SwarmEvent, ToSwarm};
+use libp2p::swarm::{ConnectionDenied, ConnectionId, NetworkBehaviour, SwarmEvent, ToSwarm};
 use libp2p::{identity, noise, PeerId, Swarm};
 use libp2p::{Multiaddr, Transport};
 use log::{debug, error, info};
@@ -992,6 +992,51 @@ impl NetworkBehaviour for AtomicDexBehaviour {
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         self.core
             .handle_established_outbound_connection(connection_id, peer, addr, role_override)
+    }
+
+    fn handle_pending_outbound_connection(
+        &mut self,
+        connection_id: ConnectionId,
+        maybe_peer: Option<PeerId>,
+        addresses: &[Multiaddr],
+        effective_role: Endpoint,
+    ) -> Result<Vec<Multiaddr>, ConnectionDenied> {
+        let mut found_addresses = self.core.request_response.handle_pending_outbound_connection(
+            connection_id,
+            maybe_peer,
+            addresses,
+            effective_role,
+        )?;
+
+        found_addresses.extend(self.core.peers_exchange.handle_pending_outbound_connection(
+            connection_id,
+            maybe_peer,
+            addresses,
+            effective_role,
+        )?);
+
+        found_addresses.extend(self.core.gossipsub.handle_pending_outbound_connection(
+            connection_id,
+            maybe_peer,
+            addresses,
+            effective_role,
+        )?);
+
+        found_addresses.extend(self.core.floodsub.handle_pending_outbound_connection(
+            connection_id,
+            maybe_peer,
+            addresses,
+            effective_role,
+        )?);
+
+        found_addresses.extend(self.core.ping.handle_pending_outbound_connection(
+            connection_id,
+            maybe_peer,
+            addresses,
+            effective_role,
+        )?);
+
+        Ok(found_addresses)
     }
 
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {
