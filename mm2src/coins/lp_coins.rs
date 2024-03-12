@@ -641,8 +641,10 @@ pub enum TransactionErr {
     TxRecoverable(TransactionEnum, String),
     /// Simply for plain error messages.
     Plain(String),
-    NftProtocolNotSupported(String),
+    ProtocolNotSupported(String),
     NftAssocTypesError(String),
+    NumConversError(NumConversError),
+    AbiError(String),
 }
 
 impl TransactionErr {
@@ -661,8 +663,10 @@ impl TransactionErr {
         match self {
             TransactionErr::TxRecoverable(_, err) => err.to_string(),
             TransactionErr::Plain(err)
-            | TransactionErr::NftProtocolNotSupported(err)
-            | TransactionErr::NftAssocTypesError(err) => err.to_string(),
+            | TransactionErr::ProtocolNotSupported(err)
+            | TransactionErr::NftAssocTypesError(err)
+            | TransactionErr::AbiError(err) => err.to_string(),
+            TransactionErr::NumConversError(err) => err.to_string(),
         }
     }
 }
@@ -673,6 +677,14 @@ impl From<keys::Error> for TransactionErr {
 
 impl From<NftAssocTypesError> for TransactionErr {
     fn from(e: NftAssocTypesError) -> Self { TransactionErr::NftAssocTypesError(e.to_string()) }
+}
+
+impl From<NumConversError> for TransactionErr {
+    fn from(e: NumConversError) -> Self { TransactionErr::NumConversError(e) }
+}
+
+impl From<ethabi::Error> for TransactionErr {
+    fn from(e: ethabi::Error) -> Self { TransactionErr::AbiError(e.to_string()) }
 }
 
 #[derive(Debug, PartialEq)]
@@ -2405,7 +2417,7 @@ impl TradePreimageError {
 }
 
 /// The reason of unsuccessful conversion of two internal numbers, e.g. `u64` from `BigNumber`.
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display)]
 pub struct NumConversError(String);
 
 impl From<ParseBigDecimalError> for NumConversError {

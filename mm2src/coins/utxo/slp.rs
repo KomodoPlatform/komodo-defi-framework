@@ -2172,8 +2172,10 @@ mod slp_tests {
         let err = match tx_err.clone() {
             TransactionErr::TxRecoverable(_tx, err) => err,
             TransactionErr::Plain(err)
-            | TransactionErr::NftProtocolNotSupported(err)
-            | TransactionErr::NftAssocTypesError(err) => err,
+            | TransactionErr::ProtocolNotSupported(err)
+            | TransactionErr::NftAssocTypesError(err)
+            | TransactionErr::AbiError(err) => err,
+            TransactionErr::NumConversError(err) => err.to_string(),
         };
 
         println!("{:?}", err);
