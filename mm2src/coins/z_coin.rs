@@ -13,6 +13,7 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
                   UtxoCommonOps, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom};
 use crate::utxo::{UnsupportedAddr, UtxoFeeDetails};
+use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
 use crate::TxFeeDetails;
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput,
             DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
@@ -39,7 +40,6 @@ use common::{log, one_thousand_u32};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
 use crypto::{StandardHDCoinAddress, StandardHDPathToCoin};
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -107,7 +107,7 @@ cfg_wasm32!(
 );
 
 #[allow(unused)] mod z_coin_errors;
-use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
+use crate::z_coin::z_balance_streaming::{get_z_balance_event_handlers, ZBalanceEventHandler};
 pub use z_coin_errors::*;
 
 pub mod storage;
@@ -202,22 +202,6 @@ impl Parameters for ZcoinConsensusParams {
     fn b58_script_address_prefix(&self) -> [u8; 2] { self.b58_script_address_prefix }
 }
 
-pub enum ZBalanceEvent {
-    Triggered,
-}
-pub type ZBalanceEventSender = UnboundedSender<ZBalanceEvent>;
-pub type ZBalanceEventHandler = Arc<AsyncMutex<UnboundedReceiver<ZBalanceEvent>>>;
-
-#[allow(clippy::type_complexity)]
-fn get_z_balance_event_handlers(ctx: &MmArc) -> Option<(ZBalanceEventSender, ZBalanceEventHandler)> {
-    if ctx.event_stream_configuration.is_some() {
-        let (sender, receiver): (UnboundedSender<ZBalanceEvent>, UnboundedReceiver<ZBalanceEvent>) =
-            futures::channel::mpsc::unbounded();
-        Some((sender, Arc::new(AsyncMutex::new(receiver))))
-    } else {
-        None
-    }
-}
 #[allow(unused)]
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,

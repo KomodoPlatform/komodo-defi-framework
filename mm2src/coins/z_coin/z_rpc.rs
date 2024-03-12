@@ -1,5 +1,4 @@
-use super::{z_coin_errors::*, BlockDbImpl, CheckPointBlockInfo, WalletDbShared, ZBalanceEventSender, ZCoinBuilder,
-            ZcoinConsensusParams};
+use super::{z_coin_errors::*, BlockDbImpl, CheckPointBlockInfo, WalletDbShared, ZCoinBuilder, ZcoinConsensusParams};
 use crate::utxo::rpc_clients::NO_TX_ERROR_CODE;
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, DAY_IN_SECONDS};
 use crate::z_coin::storage::{BlockProcessingMode, DataConnStmtCacheWrapper};
@@ -33,6 +32,7 @@ use zcash_primitives::zip32::ExtendedSpendingKey;
 pub(crate) mod z_coin_grpc {
     tonic::include_proto!("pirate.wallet.sdk.rpc");
 }
+use crate::z_coin::z_balance_streaming::ZBalanceEventSender;
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{ChainSpec, CompactBlock as TonicCompactBlock};
 

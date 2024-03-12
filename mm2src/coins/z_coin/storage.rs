@@ -1,4 +1,4 @@
-use crate::z_coin::{ValidateBlocksError, ZBalanceEventSender, ZcoinConsensusParams, ZcoinStorageError};
+use crate::z_coin::{ValidateBlocksError, ZcoinConsensusParams, ZcoinStorageError};
 
 pub mod blockdb;
 pub use blockdb::*;
@@ -10,6 +10,7 @@ pub(crate) use z_params::ZcashParamsWasmImpl;
 
 pub use walletdb::*;
 
+use crate::z_coin::z_balance_streaming::ZBalanceEventSender;
 use mm2_err_handle::mm_error::MmResult;
 #[cfg(target_arch = "wasm32")]
 use walletdb::wasm::storage::DataConnStmtCacheWasm;

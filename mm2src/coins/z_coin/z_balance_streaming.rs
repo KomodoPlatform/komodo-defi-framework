@@ -1,15 +1,36 @@
 use crate::common::Future01CompatExt;
-use crate::z_coin::{ZBalanceEvent, ZCoin};
+use crate::hd_wallet::AsyncMutex;
+use crate::z_coin::ZCoin;
 use crate::{MarketCoinOps, MmCoin};
+
 use async_trait::async_trait;
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::log::{error, info};
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
 use futures_util::StreamExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 use mm2_event_stream::{Event, EventStreamConfiguration};
+use std::sync::Arc;
+
+pub enum ZBalanceEvent {
+    Triggered,
+}
+
+pub type ZBalanceEventSender = UnboundedSender<ZBalanceEvent>;
+pub type ZBalanceEventHandler = Arc<AsyncMutex<UnboundedReceiver<ZBalanceEvent>>>;
+
+pub(crate) fn get_z_balance_event_handlers(ctx: &MmArc) -> Option<(ZBalanceEventSender, ZBalanceEventHandler)> {
+    if ctx.event_stream_configuration.is_some() {
+        let (sender, receiver): (UnboundedSender<ZBalanceEvent>, UnboundedReceiver<ZBalanceEvent>) =
+            futures::channel::mpsc::unbounded();
+        Some((sender, Arc::new(AsyncMutex::new(receiver))))
+    } else {
+        None
+    }
+}
 
 #[async_trait]
 impl EventBehaviour for ZCoin {
