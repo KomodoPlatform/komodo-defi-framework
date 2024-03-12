@@ -219,6 +219,7 @@ impl RpcCommonOps for TendermintCoin {
 }
 
 pub struct TendermintCoinImpl {
+    activation_mode: ActivationMode,
     ticker: String,
     /// As seconds
     avg_blocktime: u8,
@@ -238,6 +239,13 @@ pub struct TendermintCoinImpl {
     client: TendermintRpcClient,
     chain_registry_name: Option<String>,
     pub(crate) ctx: MmWeak,
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub enum ActivationMode {
+    #[default]
+    Native,
+    Keplr
 }
 
 #[derive(Clone)]
@@ -533,6 +541,7 @@ impl TendermintCoin {
             })?;
 
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
+            activation_mode: Default::default(),
             ticker,
             account_id,
             account_prefix: protocol_info.account_prefix,
