@@ -66,93 +66,32 @@ pub enum ETHAddressScanner {
 
 #[async_trait]
 #[cfg_attr(test, mockable)]
-impl HDAddressBalanceScanner for ETHAddressScanner {
+impl HDAddressBalanceScanner for EthCoin {
     type Address = Address;
 
-    async fn is_address_used(&self, _address: &Self::Address) -> BalanceResult<bool> {
-        // Todo: reimplement HDAddressBalanceScanner for coins
-        Ok(false)
+    // Todo: count calculates the number of transactions sent from the address whether it's for ERC20 or ETH.
+    // Todo: We should check balance for ERC20 tokens as well, if we want to add address to HD wallet if it either has ETH or ERC20 tokens.
+    // Todo: We would also need to share HD wallet instance between ETH and ERC20 tokens. What about if a token was not enabled?
+    // Todo: We need to rescan for this token when enabled in this case.
+    // Todo: test all these cases
+    async fn is_address_used(&self, address: &Self::Address) -> BalanceResult<bool> {
+        let count = self.transaction_count(*address, None).await?;
+        if count > U256::zero() {
+            return Ok(true);
+        }
 
-        // match self {
-        //     ETHAddressScanner::Web3 { web3_instances, coin_type } => {
-        //         let current_block = match web3.eth().block_number().await {
-        //             Ok(block) => block,
-        //             Err(e) => {
-        //                 return Err(BalanceError::Transport(format!("Error {} on eth_block_number", e)).into());
-        //             },
-        //         };
-        //
-        //         let from_block = BlockNumber::Earliest;
-        //         let to_block = BlockNumber::Number(current_block);
-        //
-        //         match coin_type {
-        //             EthCoinType::Eth => {
-        //                 // It makes sense to check transactions to the hd address first since an address
-        //                 // should have incoming transactions before making any outgoing ones, so this will
-        //                 // avoid an additional call in almost all cases
-        //                 let to_traces = eth_traces(web3, vec![], vec![*address], from_block, to_block, Some(1)).await?;
-        //
-        //                 if !to_traces.is_empty() {
-        //                     return Ok(true);
-        //                 }
-        //
-        //                 let from_traces =
-        //                     eth_traces(web3, vec![*address], vec![], from_block, to_block, Some(1)).await?;
-        //
-        //                 Ok(!from_traces.is_empty())
-        //             },
-        //             EthCoinType::Erc20 { token_addr, .. } => {
-        //                 // It makes sense to check transactions to the hd address first since an address
-        //                 // should have incoming transactions before making any outgoing ones, so this will
-        //                 // avoid an additional call in almost all cases
-        //                 let to_events = erc20_transfer_events(
-        //                     web3,
-        //                     *token_addr,
-        //                     None,
-        //                     Some(*address),
-        //                     from_block,
-        //                     to_block,
-        //                     Some(1),
-        //                 )
-        //                 .await?;
-        //
-        //                 if !to_events.is_empty() {
-        //                     return Ok(true);
-        //                 }
-        //
-        //                 let from_events = erc20_transfer_events(
-        //                     web3,
-        //                     *token_addr,
-        //                     Some(*address),
-        //                     None,
-        //                     from_block,
-        //                     to_block,
-        //                     Some(1),
-        //                 )
-        //                 .await?;
-        //
-        //                 Ok(!from_events.is_empty())
-        //             },
-        //         }
-        //     },
-        // }
+        self.address_balance(*address)
+            .and_then(|balance| Ok(balance > U256::zero()))
+            .compat()
+            .await
     }
 }
 
 #[async_trait]
 impl HDWalletBalanceOps for EthCoin {
-    type HDAddressScanner = ETHAddressScanner;
+    type HDAddressScanner = Self;
 
-    async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> {
-        // Todo: once this https://github.com/KomodoPlatform/komodo-defi-framework/issues/2071 is done it will be a shared Arc
-        let web3_instances: Vec<Web3Instance> = self.web3_instances.lock().await.clone();
-
-        Ok(ETHAddressScanner::Web3 {
-            // Todo: once this https://github.com/KomodoPlatform/komodo-defi-framework/issues/2071 is done it will be a shared Arc
-            web3_instances: AsyncMutex::new(web3_instances),
-            coin_type: self.coin_type.clone(),
-        })
-    }
+    async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> { Ok(self.clone()) }
 
     async fn enable_hd_wallet<XPubExtractor>(
         &self,
