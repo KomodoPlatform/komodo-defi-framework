@@ -21,7 +21,7 @@ const TENDERMINT_TEST_BIP39_SEED: &str =
     "emerge canoe salmon dolphin glow priority random become gasp sell blade argue";
 
 #[test]
-fn test_tendermint_activation_and_balance() {
+fn test_tendermint_balance() {
     let coins = json!([atom_testnet_conf()]);
     let expected_address = "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz";
 
@@ -38,7 +38,7 @@ fn test_tendermint_activation_and_balance() {
 
     let result: RpcV2Response<TendermintActivationResult> = serde_json::from_value(activation_result).unwrap();
     assert_eq!(result.result.address, expected_address);
-    let expected_balance: BigDecimal = "0.575457".parse().unwrap();
+    let expected_balance: BigDecimal = "0.572203".parse().unwrap();
     assert_eq!(result.result.balance.unwrap().spendable, expected_balance);
 
     let my_balance = block_on(my_balance(&mm, ATOM_TICKER));
@@ -93,6 +93,8 @@ fn test_tendermint_hd_address() {
 
 #[test]
 fn test_tendermint_withdraw() {
+    const MY_ADDRESS: &str = "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v";
+
     let coins = json!([atom_testnet_conf()]);
 
     let conf = Mm2TestConf::seednode(ATOM_TEST_WITHDRAW_SEED, &coins);
@@ -127,18 +129,10 @@ fn test_tendermint_withdraw() {
     assert_eq!(tx_details.to, vec![
         "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz".to_owned()
     ]);
-    assert_eq!(tx_details.from, vec![
-        "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v".to_owned()
-    ]);
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     // withdraw and send transaction to ourselves
-    let tx_details = block_on(withdraw_v1(
-        &mm,
-        ATOM_TICKER,
-        "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v",
-        "0.1",
-        None,
-    ));
+    let tx_details = block_on(withdraw_v1(&mm, ATOM_TICKER, MY_ADDRESS, "0.1", None));
     println!("Withdraw to self {}", serde_json::to_string(&tx_details).unwrap());
 
     // TODO how to check it if the fee is dynamic?
@@ -152,26 +146,17 @@ fn test_tendermint_withdraw() {
     let expected_received: BigDecimal = "0.1".parse().unwrap();
     assert_eq!(tx_details.received_by_me, expected_received);
 
-    assert_eq!(tx_details.to, vec![
-        "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v".to_owned()
-    ]);
-    assert_eq!(tx_details.from, vec![
-        "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v".to_owned()
-    ]);
+    assert_eq!(tx_details.to, vec![MY_ADDRESS.to_owned()]);
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
-    let tx_details = block_on(withdraw_v1(
-        &mm,
-        ATOM_TICKER,
-        "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v",
-        "0.1",
-        None,
-    ));
     let send_raw_tx = block_on(send_raw_transaction(&mm, ATOM_TICKER, &tx_details.tx_hex));
     println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
 
 #[test]
 fn test_tendermint_withdraw_hd() {
+    const MY_ADDRESS: &str = "iaa1tpd0um0r3z0y88p3gkv3y38dq8lmqc2xs9u0pv";
+
     let coins = json!([iris_testnet_conf()]);
     let coin = coins[0]["coin"].as_str().unwrap();
 
@@ -211,18 +196,10 @@ fn test_tendermint_withdraw_hd() {
     assert_eq!(tx_details.to, vec![
         "iaa1llp0f6qxemgh4g4m5ewk0ew0hxj76avuz8kwd5".to_owned()
     ]);
-    assert_eq!(tx_details.from, vec![
-        "iaa1tpd0um0r3z0y88p3gkv3y38dq8lmqc2xs9u0pv".to_owned()
-    ]);
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     // withdraw and send transaction to ourselves
-    let tx_details = block_on(withdraw_v1(
-        &mm,
-        coin,
-        "iaa1tpd0um0r3z0y88p3gkv3y38dq8lmqc2xs9u0pv",
-        "0.1",
-        Some(path_to_address.clone()),
-    ));
+    let tx_details = block_on(withdraw_v1(&mm, coin, MY_ADDRESS, "0.1", Some(path_to_address)));
     println!("Withdraw to self {}", serde_json::to_string(&tx_details).unwrap());
 
     // TODO how to check it if the fee is dynamic?
@@ -236,20 +213,9 @@ fn test_tendermint_withdraw_hd() {
     let expected_received: BigDecimal = "0.1".parse().unwrap();
     assert_eq!(tx_details.received_by_me, expected_received);
 
-    assert_eq!(tx_details.to, vec![
-        "iaa1tpd0um0r3z0y88p3gkv3y38dq8lmqc2xs9u0pv".to_owned()
-    ]);
-    assert_eq!(tx_details.from, vec![
-        "iaa1tpd0um0r3z0y88p3gkv3y38dq8lmqc2xs9u0pv".to_owned()
-    ]);
+    assert_eq!(tx_details.to, vec![MY_ADDRESS.to_owned()]);
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
-    let tx_details = block_on(withdraw_v1(
-        &mm,
-        coin,
-        "iaa1tpd0um0r3z0y88p3gkv3y38dq8lmqc2xs9u0pv",
-        "0.1",
-        Some(path_to_address),
-    ));
     let send_raw_tx = block_on(send_raw_transaction(&mm, coin, &tx_details.tx_hex));
     println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
@@ -274,7 +240,7 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
         "userpass": mm.userpass,
         "method": "withdraw",
         "coin": ATOM_TICKER,
-        "to": "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz",
+        "to": "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v",
         "amount": "0.1",
         "fee": {
             "type": "CosmosGas",
@@ -290,7 +256,7 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
 }
 
 #[test]
-fn test_tendermint_ibc_withdraw() {
+fn test_tendermint_token_ibc_withdraw() {
     // visit `{rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
     const IBC_SOURCE_CHANNEL: &str = "channel-93";
 
@@ -332,17 +298,10 @@ fn test_tendermint_ibc_withdraw() {
     assert_eq!(tx_details.to, vec![IBC_TARGET_ADDRESS.to_owned()]);
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
-    let tx_details = block_on(ibc_withdraw(
-        &mm,
-        IBC_SOURCE_CHANNEL,
-        token,
-        IBC_TARGET_ADDRESS,
-        "0.1",
-        None,
-    ));
     let send_raw_tx = block_on(send_raw_transaction(&mm, token, &tx_details.tx_hex));
     println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
+
 #[test]
 fn test_tendermint_ibc_withdraw_hd() {
     // visit `{rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
@@ -376,7 +335,7 @@ fn test_tendermint_ibc_withdraw_hd() {
         coin,
         IBC_TARGET_ADDRESS,
         "0.1",
-        Some(path_to_address.clone()),
+        Some(path_to_address),
     ));
     println!(
         "IBC transfer to atom address {}",
@@ -386,20 +345,14 @@ fn test_tendermint_ibc_withdraw_hd() {
     assert_eq!(tx_details.to, vec![IBC_TARGET_ADDRESS.to_owned()]);
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
-    let tx_details = block_on(ibc_withdraw(
-        &mm,
-        IBC_SOURCE_CHANNEL,
-        coin,
-        IBC_TARGET_ADDRESS,
-        "0.1",
-        Some(path_to_address),
-    ));
     let send_raw_tx = block_on(send_raw_transaction(&mm, coin, &tx_details.tx_hex));
     println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
 
 #[test]
-fn test_tendermint_token_activation_and_withdraw() {
+fn test_tendermint_token_withdraw() {
+    const MY_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
+
     let coins = json!([iris_testnet_conf(), iris_nimda_testnet_conf()]);
     let platform_coin = coins[0]["coin"].as_str().unwrap();
     let token = coins[1]["coin"].as_str().unwrap();
@@ -443,18 +396,10 @@ fn test_tendermint_token_activation_and_withdraw() {
     assert_eq!(tx_details.to, vec![
         "iaa1llp0f6qxemgh4g4m5ewk0ew0hxj76avuz8kwd5".to_owned()
     ]);
-    assert_eq!(tx_details.from, vec![
-        "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2".to_owned()
-    ]);
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     // withdraw and send transaction to ourselves
-    let tx_details = block_on(withdraw_v1(
-        &mm,
-        token,
-        "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2",
-        "0.1",
-        None,
-    ));
+    let tx_details = block_on(withdraw_v1(&mm, token, MY_ADDRESS, "0.1", None));
     println!("Withdraw to self {}", serde_json::to_string(&tx_details).unwrap());
 
     let expected_total: BigDecimal = "0.1".parse().unwrap();
@@ -471,20 +416,9 @@ fn test_tendermint_token_activation_and_withdraw() {
 
     assert_eq!(tx_details.spent_by_me, expected_total);
     assert_eq!(tx_details.received_by_me, expected_received);
-    assert_eq!(tx_details.to, vec![
-        "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2".to_owned()
-    ]);
-    assert_eq!(tx_details.from, vec![
-        "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2".to_owned()
-    ]);
+    assert_eq!(tx_details.to, vec![MY_ADDRESS.to_owned()]);
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
-    let tx_details = block_on(withdraw_v1(
-        &mm,
-        token,
-        "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2",
-        "0.1",
-        None,
-    ));
     let send_raw_tx = block_on(send_raw_transaction(&mm, token, &tx_details.tx_hex));
     println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }

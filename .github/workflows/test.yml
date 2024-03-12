@@ -28,12 +28,6 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
 
-      # - name: Install protoc
-      #   run: |
-      #     wget https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-linux-x86_64.zip
-      #     unzip protoc-25.3-linux-x86_64.zip
-      #     sudo mv bin/protoc /usr/bin/
-
       - name: Install build deps
         run: |
           sudo apt-get update -y

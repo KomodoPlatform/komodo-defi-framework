@@ -1760,10 +1760,8 @@ impl TendermintCoin {
                 let request = GetTxsEventRequest {
                     events: vec![events_string],
                     order_by: TendermintResultOrder::Ascending as i32,
-                    pagination: None,
                     // FIXME: Put correct data here
-                    limit: 0,
-                    page: 0,
+                    ..Default::default()
                 };
                 let encoded_request = request.encode_to_vec();
 
@@ -2343,10 +2341,8 @@ impl MarketCoinOps for TendermintCoin {
         let request = GetTxsEventRequest {
             events: vec![events_string],
             order_by: TendermintResultOrder::Ascending as i32,
-            pagination: None,
             // FIXME: Put correct data here
-            limit: 0,
-            page: 0,
+            ..Default::default()
         };
         let encoded_request = request.encode_to_vec();
 
@@ -3056,9 +3052,8 @@ pub mod tendermint_coin_tests {
         let request = GetTxsEventRequest {
             events: vec![events.into()],
             order_by: TendermintResultOrder::Ascending as i32,
-            pagination: None,
-            page: 0,
-            limit: 0,
+            // FIXME: Put correct data here
+            ..Default::default()
         };
         let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
             Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
