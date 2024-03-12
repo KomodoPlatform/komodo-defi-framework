@@ -1,9 +1,10 @@
 use futures::StreamExt;
 use futures_ticker::Ticker;
-use libp2p::{multiaddr::Protocol,
+use libp2p::{core::Endpoint,
+             multiaddr::Protocol,
              request_response::{Behaviour as RequestResponse, Config as RequestResponseConfig, Event, HandlerEvent,
                                 InboundFailure, OutboundFailure, ProtocolSupport, ResponseChannel},
-             swarm::{NetworkBehaviour, ToSwarm},
+             swarm::{ConnectionDenied, ConnectionId, NetworkBehaviour, ToSwarm},
              Multiaddr, PeerId};
 use log::{info, warn};
 use rand::seq::SliceRandom;
@@ -105,6 +106,17 @@ impl NetworkBehaviour for PeersExchange {
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         self.request_response
             .handle_established_outbound_connection(connection_id, peer, addr, role_override)
+    }
+
+    fn handle_pending_outbound_connection(
+        &mut self,
+        connection_id: ConnectionId,
+        maybe_peer: Option<PeerId>,
+        addresses: &[Multiaddr],
+        effective_role: Endpoint,
+    ) -> Result<Vec<Multiaddr>, ConnectionDenied> {
+        self.request_response
+            .handle_pending_outbound_connection(connection_id, maybe_peer, addresses, effective_role)
     }
 
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {

@@ -4,6 +4,7 @@ use jsonrpc_core::Call;
 use mm2_metamask::{detect_metamask_provider, Eip1193Provider, MetamaskResult, MetamaskSession};
 use serde_json::Value as Json;
 use std::fmt;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use web3::{RequestId, Transport};
 
@@ -15,6 +16,7 @@ pub(crate) struct MetamaskEthConfig {
 #[derive(Clone)]
 pub(crate) struct MetamaskTransport {
     inner: Arc<MetamaskTransportInner>,
+    pub(crate) last_request_failed: Arc<AtomicBool>,
 }
 
 struct MetamaskTransportInner {
@@ -35,7 +37,10 @@ impl MetamaskTransport {
             eip1193,
             _event_handlers: event_handlers,
         };
-        Ok(MetamaskTransport { inner: Arc::new(inner) })
+        Ok(MetamaskTransport {
+            inner: Arc::new(inner),
+            last_request_failed: Arc::new(AtomicBool::new(false)),
+        })
     }
 }
 

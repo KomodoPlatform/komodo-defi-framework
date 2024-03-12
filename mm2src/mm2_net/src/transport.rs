@@ -77,7 +77,7 @@ pub struct GuiAuthValidationGenerator {
 }
 
 /// gui-auth specific data-type that needed in order to perform gui-auth calls
-#[derive(Serialize, Clone)]
+#[derive(Clone, Serialize)]
 pub struct GuiAuthValidation {
     pub coin_ticker: String,
     pub address: String,

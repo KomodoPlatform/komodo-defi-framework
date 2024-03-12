@@ -49,9 +49,9 @@ ethereum-types = { version = "0.13", default-features = false, features = ["std"
 ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
 # Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
 #enum_dispatch = "0.1"
-tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", features = ["rustls-tls-native-roots"]}
 futures01 = { version = "0.1", package = "futures" }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+futures-ticker = "0.0.3"
 # using select macro requires the crate to be named futures, compilation failed with futures03 name
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
 group = "0.8.0"
@@ -100,6 +100,7 @@ sha3 = "0.9"
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
 tendermint-rpc = { version = "=0.23.7", default-features = false }
+tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", features = ["rustls-tls-native-roots"]}
 tiny-bip39 = "0.8.0"
 url = { version = "2.2.2", features = ["serde"] }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }

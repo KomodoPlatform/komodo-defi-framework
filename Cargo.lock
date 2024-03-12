@@ -1005,6 +1005,7 @@ dependencies = [
  "ff 0.8.0",
  "futures 0.1.29",
  "futures 0.3.28",
+ "futures-ticker",
  "futures-util",
  "group 0.8.0",
  "gstuff",
@@ -1128,6 +1129,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -1168,6 +1170,7 @@ dependencies = [
  "primitive-types",
  "rand 0.7.3",
  "regex",
+ "rustc-hash",
  "ser_error",
  "ser_error_derive",
  "serde",
