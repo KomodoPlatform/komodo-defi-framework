@@ -6400,18 +6400,21 @@ impl EthCoin {
         let time_lock_u32 = args
             .time_lock
             .try_into()
-            .map_err(|e: TryFromIntError| TransactionErr::Plain(e.to_string()))?;
+            .map_err(|e: TryFromIntError| TransactionErr::Plain(ERRL!("{}", e)))?;
         let token_id = self.parse_token_id(args.token_id)?;
         let token_id_u256 =
-            U256::from_dec_str(&token_id.to_string()).map_err(|e| NumConversError::new(e.to_string()))?;
+            U256::from_dec_str(&token_id.to_string()).map_err(|e| NumConversError::new(ERRL!("{}", e)))?;
         let htlc_data = self.prepare_htlc_data(&args, taker_address, token_address, time_lock_u32);
 
         match &self.coin_type {
             EthCoinType::Eth => match contract_type {
                 ContractType::Erc1155 => {
-                    let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
+                    let function = ERC1155_CONTRACT
+                        .function("safeTransferFrom")
+                        .map_err(|e| TransactionErr::AbiError(ERRL!("{}", e)))?;
+                    info!("Got ERC1155 safeTransferFrom ...");
                     let amount_u256 = U256::from_dec_str(&args.amount.to_string())
-                        .map_err(|e| NumConversError::new(e.to_string()))?;
+                        .map_err(|e| NumConversError::new(ERRL!("{}", e)))?;
                     let data = function.encode_input(&[
                         Token::Address(self.my_address),
                         Token::Address(swap_contract_address),
@@ -6424,7 +6427,10 @@ impl EthCoin {
                         .await
                 },
                 ContractType::Erc721 => {
-                    let function = ERC721_CONTRACT.function("safeTransferFrom")?;
+                    let function = ERC721_CONTRACT
+                        .function("safeTransferFrom")
+                        .map_err(|e| TransactionErr::AbiError(ERRL!("{}", e)))?;
+                    info!("Got ERC721 safeTransferFrom ...");
                     let data = function.encode_input(&[
                         Token::Address(self.my_address),
                         Token::Address(swap_contract_address),

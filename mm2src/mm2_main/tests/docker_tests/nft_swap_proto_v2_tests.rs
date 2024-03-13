@@ -33,3 +33,27 @@ fn send_and_spend_erc721_maker_payment() {
     };
     block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
 }
+
+#[test]
+fn send_and_spend_erc1155_maker_payment() {
+    let maker_global_nft = global_nft_with_random_privkey(nft_swap_contract());
+    let taker_eth_coin = eth_coin_with_random_privkey(nft_swap_contract());
+
+    let time_lock = now_sec() - 100;
+    let taker_pubkey = taker_eth_coin.derive_htlc_pubkey(&[]);
+
+    let send_payment_args: SendNftMakerPaymentArgs<EthCoin> = SendNftMakerPaymentArgs {
+        time_lock,
+        taker_secret_hash: &[0; 32],
+        maker_secret_hash: &[0; 32],
+        amount: 3.into(),
+        taker_pub: &taker_eth_coin.parse_pubkey(&taker_pubkey).unwrap(),
+        swap_unique_data: &[],
+        token_address: &erc721_contract().to_bytes(),
+        token_id: &BigUint::from(1u32).to_bytes(),
+        chain: &Chain::Eth.to_bytes(),
+        contract_type: &ContractType::Erc1155.to_bytes(),
+        swap_contract_address: &nft_swap_contract().to_bytes(),
+    };
+    block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
+}
