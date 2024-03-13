@@ -65,19 +65,22 @@ pub(crate) async fn fetch_tx_history_from_db(
     let tx_table = db_transaction.table::<WalletDbTransactionsTable>().await?;
     let total_tx_count = tx_table.count_all().await? as u32;
     let offset = match paging_options {
-        PagingOptionsEnum::FromId(from_address_id) => from_address_id + 1,
         PagingOptionsEnum::PageNumber(page_number) => ((page_number.get() - 1) * limit) as i64,
+        PagingOptionsEnum::FromId(tx_id) => tx_id,
     };
 
+    // received notes
     let txs = tx_table
         .cursor_builder()
         .only("ticker", z.ticker())?
         .bound("height", 0u32, u32::MAX)
+        .offset(offset as u32)
         .open_cursor(WalletDbAccountsTable::TICKER_ACCOUNT_INDEX)
         .await?
         .collect()
         .await?;
 
+    // received notes
     let rn_table = db_transaction.table::<WalletDbReceivedNotesTable>().await?;
     let received_notes = rn_table
         .cursor_builder()

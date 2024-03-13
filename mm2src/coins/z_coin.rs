@@ -13,22 +13,22 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
                   UtxoCommonOps, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom};
 use crate::utxo::{UnsupportedAddr, UtxoFeeDetails};
-use crate::TxFeeDetails;
+use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
+use crate::z_coin::z_tx_history::{fetch_tx_history_from_db, ZCoinTxHistoryItem};
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput,
             DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
-            MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions,
+            MmCoinEnum, NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionArgs, PaymentInstructions,
             PaymentInstructionsErr, PrivKeyActivationPolicy, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
             RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundError, RefundPaymentArgs,
             RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin,
-            TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
-            TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
-use crate::{NumConversError, TransactionDetails};
-use crate::{Transaction, WithdrawError};
+            TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
+            TransactionEnum, TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 
 use async_trait::async_trait;
 use bitcrypto::dhash256;
@@ -102,8 +102,6 @@ cfg_wasm32!(
 );
 
 #[allow(unused)] mod z_coin_errors;
-use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
-use crate::z_coin::z_tx_history::{fetch_tx_history_from_db, ZCoinTxHistoryItem};
 pub use z_coin_errors::*;
 
 pub mod storage;
@@ -182,6 +180,8 @@ impl Parameters for ZcoinConsensusParams {
             NetworkUpgrade::Blossom => self.blossom_activation_height.map(BlockHeight::from),
             NetworkUpgrade::Heartwood => self.heartwood_activation_height.map(BlockHeight::from),
             NetworkUpgrade::Canopy => self.canopy_activation_height.map(BlockHeight::from),
+            #[cfg(feature = "zfuture")]
+            NetworkUpgrade::ZFuture => unimplemented!(),
         }
     }
 
