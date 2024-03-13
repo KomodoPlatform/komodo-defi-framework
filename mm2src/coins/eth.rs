@@ -6366,67 +6366,46 @@ impl EthCoin {
         args: SendNftMakerPaymentArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
         let contract_type = self.parse_contract_type(args.contract_type)?;
-        match contract_type {
-            ContractType::Erc1155 => {
-                if !is_positive_integer(&args.amount) {
-                    return Err(TransactionErr::Plain(
-                        "ERC-1155 amount must be a positive integer".to_string(),
-                    ));
-                }
-            },
-            ContractType::Erc721 => {
-                if args.amount != BigDecimal::from(1) {
-                    return Err(TransactionErr::Plain("ERC-721 amount must be 1".to_string()));
-                }
-            },
-        }
-        if args.taker_secret_hash.len() != 32 {
-            return Err(TransactionErr::Plain("taker_secret_hash must be 32 bytes".to_string()));
-        }
-        if args.maker_secret_hash.len() != 32 {
-            return Err(TransactionErr::Plain("maker_secret_hash must be 32 bytes".to_string()));
-        }
+        self.validate_payment_args(&args, &contract_type)
+            .map_err(TransactionErr::Plain)?;
 
         let taker_address = addr_from_raw_pubkey(args.taker_pub).map_err(TransactionErr::Plain)?;
+        let token_address = self.parse_token_contract_address(args.token_address)?;
         let swap_contract_address = self.parse_token_contract_address(args.swap_contract_address)?;
         let time_lock_u32 = args
             .time_lock
             .try_into()
             .map_err(|e: TryFromIntError| TransactionErr::Plain(e.to_string()))?;
-        let id = self.etomic_swap_id(time_lock_u32, args.maker_secret_hash);
-        let _gas = U256::from(ETH_GAS);
         let token_id = self.parse_token_id(args.token_id)?;
         let token_id_u256 =
             U256::from_dec_str(&token_id.to_string()).map_err(|e| NumConversError::new(e.to_string()))?;
-        let amount_u256 =
-            U256::from_dec_str(&args.amount.to_string()).map_err(|e| NumConversError::new(e.to_string()))?;
-
-        // todo after getting data for sign and send in EthCoinType::Eth match:
-        // re-check do we need changes in sign_and_send_transaction function for nft broadcast to etomic swap address.
-        // UPD: Yes, changes are needed as sign_and_send_transaction returns Box type.
+        let htlc_data = self.prepare_htlc_data(&args, taker_address, token_address, time_lock_u32);
 
         match &self.coin_type {
             EthCoinType::Eth => match contract_type {
                 ContractType::Erc1155 => {
                     let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
-                    let additional_data = ethabi::encode(&[
-                        Token::FixedBytes(id),
-                        Token::Address(taker_address),
-                        Token::Address(swap_contract_address),
-                        Token::FixedBytes(args.taker_secret_hash.to_vec()),
-                        Token::FixedBytes(args.maker_secret_hash.to_vec()),
-                        Token::Uint(U256::from(time_lock_u32)),
-                    ]);
+                    let amount_u256 = U256::from_dec_str(&args.amount.to_string())
+                        .map_err(|e| NumConversError::new(e.to_string()))?;
                     let _data = function.encode_input(&[
                         Token::Address(self.my_address),
                         Token::Address(swap_contract_address),
                         Token::Uint(token_id_u256),
                         Token::Uint(amount_u256),
-                        Token::Bytes(additional_data),
+                        Token::Bytes(htlc_data),
                     ])?;
+                    let _gas = U256::from(ETH_GAS);
                     todo!()
                 },
                 ContractType::Erc721 => {
+                    let function = ERC721_CONTRACT.function("safeTransferFrom")?;
+                    let _data = function.encode_input(&[
+                        Token::Address(self.my_address),
+                        Token::Address(swap_contract_address),
+                        Token::Uint(token_id_u256),
+                        Token::Bytes(htlc_data),
+                    ])?;
+                    let _gas = U256::from(ETH_GAS);
                     todo!()
                 },
             },
@@ -6437,6 +6416,51 @@ impl EthCoin {
                 "Nft Protocol is not supported yet for NFT Swaps!".to_string(),
             )),
         }
+    }
+
+    fn validate_payment_args(
+        &self,
+        args: &SendNftMakerPaymentArgs<Self>,
+        contract_type: &ContractType,
+    ) -> Result<(), String> {
+        match contract_type {
+            ContractType::Erc1155 => {
+                if !is_positive_integer(&args.amount) {
+                    return Err("ERC-1155 amount must be a positive integer".to_string());
+                }
+            },
+            ContractType::Erc721 => {
+                if args.amount != BigDecimal::from(1) {
+                    return Err("ERC-721 amount must be 1".to_string());
+                }
+            },
+        }
+        if args.taker_secret_hash.len() != 32 {
+            return Err("taker_secret_hash must be 32 bytes".to_string());
+        }
+        if args.maker_secret_hash.len() != 32 {
+            return Err("maker_secret_hash must be 32 bytes".to_string());
+        }
+
+        Ok(())
+    }
+
+    fn prepare_htlc_data(
+        &self,
+        args: &SendNftMakerPaymentArgs<'_, Self>,
+        taker_address: Address,
+        token_address: Address,
+        time_lock: u32,
+    ) -> Vec<u8> {
+        let id = self.etomic_swap_id(time_lock, args.maker_secret_hash);
+        ethabi::encode(&[
+            Token::FixedBytes(id),
+            Token::Address(taker_address),
+            Token::Address(token_address),
+            Token::FixedBytes(args.taker_secret_hash.to_vec()),
+            Token::FixedBytes(args.maker_secret_hash.to_vec()),
+            Token::Uint(U256::from(time_lock)),
+        ])
     }
 }
 
