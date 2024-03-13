@@ -69,13 +69,12 @@ pub(crate) async fn fetch_tx_history_from_db(
         PagingOptionsEnum::FromId(tx_id) => tx_id,
     };
 
-    // received notes
+    // transactions notes
     let txs = tx_table
         .cursor_builder()
         .only("ticker", z.ticker())?
-        .bound("height", 0u32, u32::MAX)
         .offset(offset as u32)
-        .open_cursor(WalletDbAccountsTable::TICKER_ACCOUNT_INDEX)
+        .open_cursor(WalletDbTransactionsTable::TICKER_BLOCK_INDEX)
         .await?
         .collect()
         .await?;
@@ -85,7 +84,6 @@ pub(crate) async fn fetch_tx_history_from_db(
     let received_notes = rn_table
         .cursor_builder()
         .only("ticker", z.ticker())?
-        .bound("height", 0u32, u32::MAX)
         .open_cursor(WalletDbReceivedNotesTable::TICKER_ACCOUNT_INDEX)
         .await?
         .collect()
