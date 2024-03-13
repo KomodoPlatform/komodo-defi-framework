@@ -258,7 +258,7 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
 #[test]
 fn test_tendermint_token_ibc_withdraw() {
     // visit `{rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
-    const IBC_SOURCE_CHANNEL: &str = "channel-93";
+    const IBC_SOURCE_CHANNEL: &str = "channel-151";
 
     const IBC_TARGET_ADDRESS: &str = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl";
     const MY_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
@@ -305,7 +305,7 @@ fn test_tendermint_token_ibc_withdraw() {
 #[test]
 fn test_tendermint_ibc_withdraw_hd() {
     // visit `{rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
-    const IBC_SOURCE_CHANNEL: &str = "channel-93";
+    const IBC_SOURCE_CHANNEL: &str = "channel-152";
 
     const IBC_TARGET_ADDRESS: &str = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl";
     const MY_ADDRESS: &str = "iaa1tpd0um0r3z0y88p3gkv3y38dq8lmqc2xs9u0pv";
