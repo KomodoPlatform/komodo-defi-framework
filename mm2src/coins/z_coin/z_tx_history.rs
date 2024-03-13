@@ -52,6 +52,7 @@ pub(crate) struct ZTxHistoryRes {
     pub(crate) skipped: usize,
 }
 
+/// Fetch transaction history from the database.
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn fetch_tx_history_from_db(
     z: &ZCoin,
@@ -68,27 +69,29 @@ pub(crate) async fn fetch_tx_history_from_db(
         PagingOptionsEnum::FromId(tx_id) => tx_id,
     };
 
-    // transactions notes
+    // Fetch transactions
     let txs = tx_table
         .cursor_builder()
         .only("ticker", z.ticker())?
         .offset(offset as u32)
-        .open_cursor(WalletDbTransactionsTable::TICKER_BLOCK_INDEX)
+        .limit(limit)
+        .reverse()
+        .open_cursor("ticker")
         .await?
         .collect()
         .await?;
 
-    // received notes
+    // Fetch received notes
     let rn_table = db_transaction.table::<WalletDbReceivedNotesTable>().await?;
     let received_notes = rn_table
         .cursor_builder()
         .only("ticker", z.ticker())?
-        .open_cursor(WalletDbReceivedNotesTable::TICKER_ACCOUNT_INDEX)
+        .open_cursor("ticker")
         .await?
         .collect()
         .await?;
 
-    // detect blocks
+    // Fetch blocks
     let blocks_table = db_transaction.table::<WalletDbBlocksTable>().await?;
     let blocks = blocks_table
         .cursor_builder()
@@ -98,35 +101,37 @@ pub(crate) async fn fetch_tx_history_from_db(
         .collect()
         .await?;
 
+    // Process transactions and construct tx_details
     let mut tx_details = vec![];
     for (tx_id, tx) in txs {
-        let height = blocks
+        if let Some((_, WalletDbBlocksTable { height, time, .. })) = blocks
             .iter()
-            .find(|(_, block)| tx.block.map(|b| b == block.height).unwrap_or_default());
-        if let Some((_, WalletDbBlocksTable { height, time, .. })) = height {
+            .find(|(_, block)| tx.block.map(|b| b == block.height).unwrap_or_default())
+        {
             let internal_id = tx_id;
-            let mut tx_hash = tx.txid;
             let mut received_amount = 0;
             let mut spent_amount = 0;
 
             for (_, note) in &received_notes {
                 if internal_id == note.tx {
-                    received_amount += (note.value.to_u64().ok_or_else(|| {
+                    received_amount += note.value.to_u64().ok_or_else(|| {
                         ZTxHistoryError::IndexedDbError("Number is too large to fit in a u64".to_string())
-                    })?) as i64;
+                    })? as i64;
                 }
 
                 // detecting spent amount by "spent" field in received_notes table
                 if let Some(spent) = &note.spent {
                     if &BigInt::from(internal_id) == spent {
-                        spent_amount += (note.value.to_u64().ok_or_else(|| {
+                        spent_amount += note.value.to_u64().ok_or_else(|| {
                             ZTxHistoryError::IndexedDbError("Number is too large to fit in a u64".to_string())
-                        })?) as i64;
+                        })? as i64;
                     }
                 }
             }
 
+            let mut tx_hash = tx.txid;
             tx_hash.reverse();
+
             tx_details.push(ZCoinTxHistoryItem {
                 tx_hash,
                 internal_id: internal_id as i64,

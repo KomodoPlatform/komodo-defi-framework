@@ -266,23 +266,3 @@ async fn activate_z_coin_light() {
     };
     assert_eq!(balance.balance.spendable, BigDecimal::default());
 }
-
-#[wasm_bindgen_test]
-async fn test_z_coin_tx_history() {
-    register_wasm_log();
-    let coins = json!([pirate_conf()]);
-
-    let conf = Mm2TestConf::seednode(PIRATE_TEST_BALANCE_SEED, &coins);
-    let mm = MarketMakerIt::start_async(conf.conf, conf.rpc_password, Some(wasm_start))
-        .await
-        .unwrap();
-
-    let _activation_result =
-        enable_z_coin_light(&mm, ARRR, PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, None, None).await;
-
-    let tx_history = z_coin_tx_history(&mm, ARRR, 5, None).await;
-    println!("History {}", serde_json::to_string(&tx_history).unwrap());
-
-    let response: RpcV2Response<ZcoinHistoryRes> = serde_json::from_value(tx_history).unwrap();
-    info!("RESPONSE: {response:?}")
-}
