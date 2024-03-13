@@ -29,7 +29,7 @@ fn send_and_spend_erc721_maker_payment() {
         token_id: &BigUint::from(1u32).to_bytes(),
         chain: &Chain::Eth.to_bytes(),
         contract_type: &ContractType::Erc721.to_bytes(),
-        swap_contract_address: nft_swap_contract().as_bytes(),
+        swap_contract_address: &nft_swap_contract().to_bytes(),
     };
     block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
 }
