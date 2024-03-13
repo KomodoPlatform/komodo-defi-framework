@@ -15,27 +15,16 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v3
+
       - name: Install toolchain
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal --component rustfmt clippy
           rustup default nightly-2022-10-29
 
-      - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y libudev-dev protobuf-compiler=3.12.4-1ubuntu7.22.04.1
-
-      - name: Install MacOS dependencies
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install protobuf@3
-
-      - name: Install Windows dependencies
-        if: matrix.os == 'windows-latest'
-        uses: crazy-max/ghaction-chocolatey@v3
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
         with:
-          args: install protoc --version=3.6.1
+          deps: ('protoc' 'libudev-dev')
 
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache
@@ -60,10 +49,10 @@ jobs:
           rustup default nightly-2022-10-29
           rustup target add wasm32-unknown-unknown
 
-      - name: Install protoc
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y protobuf-compiler=3.12.4-1ubuntu7.22.04.1
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache

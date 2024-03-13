@@ -29,17 +29,15 @@ jobs:
           rustup default nightly-2022-10-29
 
       - name: Install build deps
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y protobuf-compiler
-          protoc --version
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache
 
       - name: Test
         run: |
-          # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
           cargo test --bins --lib --no-fail-fast
 
   mac-x86-64-unit:
@@ -57,15 +55,18 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
-          rustup target add x86_64-apple-darwin
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache
 
       - name: Test
         run: |
-          # wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
-          cargo test --bins --lib --target x86_64-apple-darwin --no-fail-fast
+          cargo test --bins --lib --no-fail-fast
 
   win-x86-64-unit:
     timeout-minutes: 90
@@ -83,27 +84,16 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
 
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache
 
       - name: Test
         run: |
-          # Invoke-WebRequest -Uri https://github.com/KomodoPlatform/komodo/raw/d456be35acd1f8584e1e4f971aea27bd0644d5c5/zcutil/wget64.exe -OutFile \wget64.exe
-          # Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
-
-          # Set Path in variable
-          # $config = "C:\ProgramData\Docker\config\daemon.json"
-
-          # $json = Get-Content $config | Out-String | ConvertFrom-Json
-          # $json | Add-Member -Type NoteProperty -Name 'experimental' -Value $True
-          # $json | ConvertTo-Json | Set-Content $config
-
-          # Check the file content
-          # type $config
-
-          # Restart-Service docker
-          # Get-Service docker
-
           cargo test --bins --lib --no-fail-fast
 
   linux-x86-64-mm2-integration:
@@ -123,9 +113,9 @@ jobs:
           rustup default nightly-2022-10-29
 
       - name: Install build deps
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y protobuf-compiler
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache
@@ -145,18 +135,24 @@ jobs:
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_MACOS }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
-    - uses: actions/checkout@v3
-    - name: Install toolchain
-      run: |
-        rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
-        rustup default nightly-2022-10-29
-        rustup target add x86_64-apple-darwin
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
+          rustup default nightly-2022-10-29
 
-    - name: Cargo cache
-      uses: ./.github/actions/cargo-cache
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
-    - name: Test
-      run: cargo test --test 'mm2_tests_main' --no-fail-fast --target x86_64-apple-darwin
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
+
+      - name: Test
+        run: |
+          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/master/zcutil/fetch-params-alt.sh | bash
+          cargo test --test 'mm2_tests_main' --no-fail-fast
 
   win-x86-64-mm2-integration:
     timeout-minutes: 90
@@ -173,6 +169,11 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache
@@ -199,6 +200,11 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
 
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache
 
@@ -223,6 +229,11 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
           rustup target add wasm32-unknown-unknown
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
