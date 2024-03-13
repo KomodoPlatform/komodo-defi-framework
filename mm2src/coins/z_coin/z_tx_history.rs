@@ -3,8 +3,7 @@ use common::PagingOptionsEnum;
 use mm2_err_handle::prelude::MmError;
 
 cfg_wasm32!(
-    use crate::z_coin::storage::wasm::tables::{WalletDbAccountsTable, WalletDbBlocksTable, WalletDbReceivedNotesTable,
-                                           WalletDbTransactionsTable};
+    use crate::z_coin::storage::wasm::tables::{WalletDbBlocksTable, WalletDbReceivedNotesTable, WalletDbTransactionsTable};
     use crate::MarketCoinOps;
     use mm2_number::BigInt;
     use num_traits::ToPrimitive;
