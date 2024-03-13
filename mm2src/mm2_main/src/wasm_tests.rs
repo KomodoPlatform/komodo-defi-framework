@@ -1,5 +1,4 @@
 use crate::mm2::lp_init;
-use common::block_on;
 use common::executor::{spawn, Timer};
 use common::log::info;
 use common::log::wasm_log::register_wasm_log;
@@ -12,7 +11,7 @@ use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, enab
                                   pirate_conf, rick_conf, start_swaps, test_qrc20_history_impl,
                                   wait_for_swaps_finish_and_check_status, z_coin_tx_history, MarketMakerIt,
                                   Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, ARRR, MORTY,
-                                  PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK, ZOMBIE_TICKER};
+                                  PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{EnableCoinBalance, RpcV2Response, ZcoinHistoryRes};
 use serde_json::json;
@@ -278,7 +277,7 @@ async fn test_z_coin_tx_history() {
         .await
         .unwrap();
 
-    let activation_result =
+    let _activation_result =
         enable_z_coin_light(&mm, ARRR, PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, None, None).await;
 
     let tx_history = z_coin_tx_history(&mm, ARRR, 5, None).await;
