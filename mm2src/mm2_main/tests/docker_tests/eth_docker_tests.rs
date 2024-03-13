@@ -108,11 +108,16 @@ fn fill_erc721(to_addr: Address, token_id: U256) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc721_contract = Contract::from_json(GETH_WEB3.eth(), erc721_contract(), ERC721_TEST_ABI.as_bytes()).unwrap();
 
+    let options = Options {
+        gas: Some(U256::from(1_000_000)),
+        ..Options::default()
+    };
+
     let tx_hash = block_on(erc721_contract.call(
         "mint",
         (Token::Address(to_addr), Token::Uint(token_id)),
         geth_account(),
-        Options::default(),
+        options,
     ))
     .unwrap();
     wait_for_confirmation(tx_hash);
@@ -247,7 +252,7 @@ pub fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
 
     fill_eth(global_nft.my_address, U256::from(10).pow(U256::from(20)));
     fill_erc721(global_nft.my_address, U256::from(1));
-    fill_erc1155(global_nft.my_address, U256::from(1), U256::from(3));
+    fill_erc1155(global_nft.my_address, U256::from(2), U256::from(3));
     block_on(fill_nfts_info(&global_nft));
 
     global_nft

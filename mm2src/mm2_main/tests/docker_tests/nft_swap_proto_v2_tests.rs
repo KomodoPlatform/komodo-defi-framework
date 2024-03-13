@@ -50,7 +50,7 @@ fn send_and_spend_erc1155_maker_payment() {
         taker_pub: &taker_eth_coin.parse_pubkey(&taker_pubkey).unwrap(),
         swap_unique_data: &[],
         token_address: &erc721_contract().to_bytes(),
-        token_id: &BigUint::from(1u32).to_bytes(),
+        token_id: &BigUint::from(2u32).to_bytes(),
         chain: &Chain::Eth.to_bytes(),
         contract_type: &ContractType::Erc1155.to_bytes(),
         swap_contract_address: &nft_swap_contract().to_bytes(),
