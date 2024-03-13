@@ -8,7 +8,7 @@ use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{qtum, utxo_common, Address, GetUtxoListOps, UtxoCommonOps};
 use crate::utxo::{PrivKeyPolicyNotAllowed, UTXO_LOCK};
 use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfos, StakingInfosError,
-            StakingInfosFut, StakingInfosResult, TransactionDetails, TransactionType};
+            StakingInfosFut, StakingInfosResult, TransactionData, TransactionDetails, TransactionType};
 use bitcrypto::dhash256;
 use common::now_sec;
 use derive_more::Display;
@@ -323,8 +323,10 @@ impl QtumCoin {
         let my_balance_change = &received_by_me - &spent_by_me;
 
         Ok(TransactionDetails {
-            tx_hex: serialize(&generated_tx.signed).into(),
-            tx_hash: generated_tx.signed.hash().reversed().to_vec().to_tx_hash(),
+            tx: TransactionData::Signed {
+                tx_hex: serialize(&generated_tx.signed).into(),
+                tx_hash: generated_tx.signed.hash().reversed().to_vec().to_tx_hash(),
+            },
             from: vec![my_address_string],
             to: vec![to_address],
             total_amount: qtum_amount,

@@ -401,7 +401,7 @@ async fn test_get_raw_tx_bytes_on_add_transactions_impl() {
     let mut tx2 = tx1.clone();
     tx2.internal_id = BytesJson(vec![1; 32]);
 
-    let expected_tx_hex = tx1.tx_hex.clone();
+    let expected_tx_hex = tx1.tx.tx_hex().unwrap().clone();
 
     let transactions = [tx1, tx2];
     storage

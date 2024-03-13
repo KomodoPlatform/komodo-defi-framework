@@ -3,8 +3,8 @@ use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
 use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, AddressBuilder, FeePolicy,
                   GetUtxoListOps, PrivKeyPolicy, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails,
                   UtxoTx, UTXO_LOCK};
-use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionDetails, WithdrawError,
-            WithdrawFee, WithdrawFrom, WithdrawRequest, WithdrawResult};
+use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionData, TransactionDetails,
+            WithdrawError, WithdrawFee, WithdrawFrom, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
@@ -213,8 +213,10 @@ where
             spent_by_me: big_decimal_from_sat(data.spent_by_me as i64, decimals),
             received_by_me: big_decimal_from_sat(data.received_by_me as i64, decimals),
             my_balance_change: big_decimal_from_sat(data.received_by_me as i64 - data.spent_by_me as i64, decimals),
-            tx_hash: signed.hash().reversed().to_vec().to_tx_hash(),
-            tx_hex,
+            tx: TransactionData::Signed {
+                tx_hash: signed.hash().reversed().to_vec().to_tx_hash(),
+                tx_hex,
+            },
             fee_details: Some(fee_details.into()),
             block_height: 0,
             coin: ticker,

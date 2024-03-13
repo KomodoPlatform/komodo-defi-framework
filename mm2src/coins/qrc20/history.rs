@@ -194,7 +194,8 @@ impl Qrc20Coin {
         let mut input_transactions = HistoryUtxoTxMap::new();
         let qtum_details = try_s!(utxo_common::tx_details_by_hash(self, &tx_hash.0, &mut input_transactions).await);
         // Deserialize the UtxoTx to get a script pubkey
-        let qtum_tx: UtxoTx = try_s!(deserialize(qtum_details.tx_hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+        let qtum_tx: UtxoTx =
+            try_s!(deserialize(qtum_details.tx.tx_hex().unwrap().as_slice()).map_err(|e| ERRL!("{:?}", e)));
 
         let miner_fee = {
             let total_qtum_fee = match qtum_details.fee_details {
@@ -225,7 +226,7 @@ impl Qrc20Coin {
         miner_fee: BigDecimal,
     ) -> Result<TxTransferMap, String> {
         let my_address = try_s!(self.utxo.derivation_method.single_addr_or_err());
-        let tx_hash: H256Json = try_s!(H256Json::from_str(&qtum_details.tx_hash));
+        let tx_hash: H256Json = try_s!(H256Json::from_str(&qtum_details.tx.tx_hash().unwrap()));
         if qtum_tx.outputs.len() <= (receipt.output_index as usize) {
             return ERR!(
                 "Length of the transaction {:?} outputs less than output_index {}",

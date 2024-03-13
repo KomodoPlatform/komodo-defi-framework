@@ -13,7 +13,6 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
                   UtxoCommonOps, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom};
 use crate::utxo::{UnsupportedAddr, UtxoFeeDetails};
-use crate::TxFeeDetails;
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput,
             DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
             MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions,
@@ -29,6 +28,7 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use crate::{NumConversError, TransactionDetails};
 use crate::{Transaction, WithdrawError};
+use crate::{TransactionData, TxFeeDetails};
 
 use async_trait::async_trait;
 use bitcrypto::dhash256;
@@ -2062,8 +2062,10 @@ impl InitWithdrawCoin for ZCoin {
         let spent_by_me = big_decimal_from_sat_unsigned(data.spent_by_me, self.decimals());
 
         Ok(TransactionDetails {
-            tx_hex: tx_bytes.into(),
-            tx_hash: hex::encode(&tx_hash),
+            tx: TransactionData::Signed {
+                tx_hex: tx_bytes.into(),
+                tx_hash: hex::encode(&tx_hash),
+            },
             from: vec![self.z_fields.my_z_addr_encoded.clone()],
             to: vec![req.to],
             my_balance_change: &received_by_me - &spent_by_me,

@@ -2086,10 +2086,8 @@ pub enum TransactionType {
 /// Transaction details
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TransactionDetails {
-    /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction_bytes` RPC to broadcast the transaction
-    pub tx_hex: BytesJson,
-    /// Transaction hash in hexadecimal format
-    tx_hash: String,
+    #[serde(flatten)]
+    pub tx: TransactionData,
     /// Coins are sent from these addresses
     from: Vec<String>,
     /// Coins are sent to these addresses
@@ -2121,6 +2119,36 @@ pub struct TransactionDetails {
     #[serde(default)]
     transaction_type: TransactionType,
     memo: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum TransactionData {
+    Signed {
+        /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction_bytes` RPC to broadcast the transaction
+        tx_hex: BytesJson,
+        /// Transaction hash in hexadecimal format
+        tx_hash: String,
+    },
+    /// This can contain entirely different data depending on the platform.
+    /// Perhaps using generics would be more suitable here?
+    Unsigned(Json),
+}
+
+impl TransactionData {
+    pub fn tx_hex(&self) -> Option<&BytesJson> {
+        match self {
+            TransactionData::Signed { tx_hex, .. } => Some(tx_hex),
+            TransactionData::Unsigned(_) => None,
+        }
+    }
+
+    pub fn tx_hash(&self) -> Option<&str> {
+        match self {
+            TransactionData::Signed { tx_hash, .. } => Some(tx_hash),
+            TransactionData::Unsigned(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -22,7 +22,8 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFrom, WithdrawFut,
             WithdrawRequest};
-use crate::{DexFee, MmCoinEnum, PaymentInstructionArgs, ValidateWatcherSpendInput, WatcherReward, WatcherRewardError};
+use crate::{DexFee, MmCoinEnum, PaymentInstructionArgs, TransactionData, ValidateWatcherSpendInput, WatcherReward,
+            WatcherRewardError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -240,8 +241,10 @@ impl TendermintToken {
 
             let hash = sha256(&tx_bytes);
             Ok(TransactionDetails {
-                tx_hash: hex::encode_upper(hash.as_slice()),
-                tx_hex: tx_bytes.into(),
+                tx: TransactionData::Signed {
+                    tx_hash: hex::encode_upper(hash.as_slice()),
+                    tx_hex: tx_bytes.into(),
+                },
                 from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
@@ -767,8 +770,10 @@ impl MmCoin for TendermintToken {
 
             let hash = sha256(&tx_bytes);
             Ok(TransactionDetails {
-                tx_hash: hex::encode_upper(hash.as_slice()),
-                tx_hex: tx_bytes.into(),
+                tx: TransactionData::Signed {
+                    tx_hash: hex::encode_upper(hash.as_slice()),
+                    tx_hex: tx_bytes.into(),
+                },
                 from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,

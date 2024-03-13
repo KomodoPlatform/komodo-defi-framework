@@ -6,7 +6,7 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
-use coins::tendermint::{tendermint_priv_key_policy, TendermintCoin, TendermintCommons, TendermintConf,
+use coins::tendermint::{tendermint_priv_key_policy, KeplrInfo, TendermintCoin, TendermintCommons, TendermintConf,
                         TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo, TendermintToken,
                         TendermintTokenActivationParams, TendermintTokenInitError, TendermintTokenProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
@@ -43,6 +43,7 @@ pub struct TendermintActivationParams {
     /// /account'/change/address_index`.
     #[serde(default)]
     pub path_to_address: StandardHDCoinAddress,
+    with_pubkey: Option<KeplrInfo>,
 }
 
 impl TxHistory for TendermintActivationParams {
@@ -195,6 +196,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             activation_request.rpc_urls,
             activation_request.tx_history,
             priv_key_policy,
+            activation_request.with_pubkey,
         )
         .await
     }

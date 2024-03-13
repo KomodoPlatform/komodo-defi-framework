@@ -16,19 +16,20 @@ use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
             CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType, TxFeeDetails,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom, WithdrawFut, WithdrawRequest};
+            HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
+            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundError, RefundPaymentArgs,
+            RefundResult, RpcCommonOps, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps,
+            TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFrom, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
@@ -51,7 +52,7 @@ use cosmrs::tendermint::PublicKey;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin};
+use crypto::{GlobalHDAccountArc, Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin};
 use derive_more::Display;
 use futures::future::try_join_all;
 use futures::lock::Mutex as AsyncMutex;
@@ -218,8 +219,14 @@ impl RpcCommonOps for TendermintCoin {
     }
 }
 
+/// An alternative to `crate::PrivKeyBuildPolicy`, typical only for ETH coin.
+pub enum TendermintPrivKeyBuildPolicy {
+    IguanaPrivKey(IguanaPrivKey),
+    GlobalHDAccount(GlobalHDAccountArc),
+    // Keplr(KeplrArc),
+}
+
 pub struct TendermintCoinImpl {
-    activation_mode: ActivationMode,
     ticker: String,
     /// As seconds
     avg_blocktime: u8,
@@ -239,13 +246,13 @@ pub struct TendermintCoinImpl {
     client: TendermintRpcClient,
     chain_registry_name: Option<String>,
     pub(crate) ctx: MmWeak,
+    with_pubkey: Option<KeplrInfo>,
 }
 
-#[derive(Debug, Default, PartialEq)]
-pub enum ActivationMode {
-    #[default]
-    Native,
-    Keplr
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct KeplrInfo {
+    account_address: AccountId,
+    account_public_key: PublicKey,
 }
 
 #[derive(Clone)]
@@ -486,6 +493,7 @@ impl TendermintCoin {
         rpc_urls: Vec<String>,
         tx_history: bool,
         priv_key_policy: TendermintPrivKeyPolicy,
+        with_pubkey: Option<KeplrInfo>,
     ) -> MmResult<Self, TendermintInitError> {
         if rpc_urls.is_empty() {
             return MmError::err(TendermintInitError {
@@ -541,7 +549,6 @@ impl TendermintCoin {
             })?;
 
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
-            activation_mode: Default::default(),
             ticker,
             account_id,
             account_prefix: protocol_info.account_prefix,
@@ -557,6 +564,7 @@ impl TendermintCoin {
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
             chain_registry_name: protocol_info.chain_registry_name,
             ctx: ctx.weak(),
+            with_pubkey,
         })))
     }
 
@@ -699,8 +707,10 @@ impl TendermintCoin {
 
             let hash = sha256(&tx_bytes);
             Ok(TransactionDetails {
-                tx_hash: hex::encode_upper(hash.as_slice()),
-                tx_hex: tx_bytes.into(),
+                tx: TransactionData::Signed {
+                    tx_hash: hex::encode_upper(hash.as_slice()),
+                    tx_hex: tx_bytes.into(),
+                },
                 from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
@@ -1186,6 +1196,23 @@ impl TendermintCoin {
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
         sign_doc.sign(&signkey)
+    }
+
+    pub(super) fn any_to_sign_doc(
+        &self,
+        account_info: BaseAccount,
+        tx_payload: Any,
+        fee: Fee,
+        timeout_height: u64,
+        memo: String,
+    ) -> cosmrs::Result<SignDoc> {
+        let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
+        let auth_info = SignerInfo::single_direct(
+            Some(self.with_pubkey.as_ref().unwrap().account_public_key.into()),
+            account_info.sequence,
+        )
+        .auth_info(fee);
+        SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)
     }
 
     pub fn add_activated_token_info(&self, ticker: String, decimals: u8, denom: Denom) {
@@ -1928,7 +1955,7 @@ impl MmCoin for TendermintCoin {
                 )));
             }
 
-            let (account_id, priv_key) = match req.from {
+            let (account_id, _priv_key) = match req.from {
                 Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
                     let priv_key = coin
                         .priv_key_policy
@@ -1996,16 +2023,17 @@ impl MmCoin for TendermintCoin {
 
             let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
 
-            let fee_amount_u64 = coin
-                .calculate_account_fee_amount_as_u64(
-                    &account_id,
-                    &priv_key,
-                    msg_send,
-                    timeout_height,
-                    memo.clone(),
-                    req.fee,
-                )
-                .await?;
+            let fee_amount_u64 = 1000;
+            // let fee_amount_u64 = coin
+            //     .calculate_account_fee_amount_as_u64(
+            //         &account_id,
+            //         &priv_key,
+            //         msg_send,
+            //         timeout_height,
+            //         memo.clone(),
+            //         req.fee,
+            //     )
+            //     .await?;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
             let fee_amount = Coin {
@@ -2050,19 +2078,19 @@ impl MmCoin for TendermintCoin {
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let account_info = coin.account_info(&account_id).await?;
-            let tx_raw = coin
-                .any_to_signed_raw_tx(&priv_key, account_info, msg_send, fee, timeout_height, memo.clone())
+            let sign_doc = coin
+                .any_to_sign_doc(account_info, msg_send, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let tx_bytes = tx_raw
-                .to_bytes()
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-
-            let hash = sha256(&tx_bytes);
+            let tx = json!({
+                "body_bytes": sign_doc.body_bytes,
+                "auth_info_bytes": sign_doc.auth_info_bytes,
+                "chain_id": sign_doc.chain_id,
+                "account_number": sign_doc.account_number,
+            });
 
             Ok(TransactionDetails {
-                tx_hash: hex::encode_upper(hash.as_slice()),
-                tx_hex: tx_bytes.into(),
+                tx: TransactionData::Unsigned(tx),
                 from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
@@ -2078,7 +2106,7 @@ impl MmCoin for TendermintCoin {
                     gas_limit,
                 })),
                 coin: coin.ticker.to_string(),
-                internal_id: hash.to_vec().into(),
+                internal_id: vec![].into(),
                 kmd_rewards: None,
                 transaction_type: TransactionType::default(),
                 memo: Some(memo),
@@ -2952,6 +2980,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             priv_key_policy,
+            None,
         ))
         .unwrap();
 
@@ -3064,6 +3093,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             priv_key_policy,
+            None,
         ))
         .unwrap();
 
@@ -3122,6 +3152,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             priv_key_policy,
+            None,
         ))
         .unwrap();
 
@@ -3194,6 +3225,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             priv_key_policy,
+            None,
         ))
         .unwrap();
 
@@ -3388,6 +3420,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             priv_key_policy,
+            None,
         ))
         .unwrap();
 
@@ -3468,6 +3501,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             priv_key_policy,
+            None,
         ))
         .unwrap();
 
@@ -3542,6 +3576,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             priv_key_policy,
+            None,
         ))
         .unwrap();
 
@@ -3612,6 +3647,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             priv_key_policy,
+            None,
         ))
         .unwrap();
 
@@ -3664,6 +3700,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             priv_key_policy,
+            None,
         ))
         .unwrap();
 

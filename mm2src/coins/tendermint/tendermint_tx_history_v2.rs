@@ -4,7 +4,8 @@ use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHisto
 use crate::tendermint::{CustomTendermintMsgType, TendermintFeeDetails};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionDetails, TransactionType, TxFeeDetails};
+use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionData, TransactionDetails, TransactionType,
+            TxFeeDetails};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::Timer;
@@ -720,8 +721,10 @@ where
                             received_by_me: tx_amounts.received_by_me,
                             // This can be 0 since it gets remapped in `coins::my_tx_history_v2`
                             my_balance_change: BigDecimal::default(),
-                            tx_hash: tx_hash.to_string(),
-                            tx_hex: msg.into(),
+                            tx: TransactionData::Signed {
+                                tx_hash: tx_hash.to_string(),
+                                tx_hex: msg.into(),
+                            },
                             fee_details: Some(TxFeeDetails::Tendermint(fee_details.clone())),
                             block_height: tx.height.into(),
                             coin: transfer_details.denom.clone(),

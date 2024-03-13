@@ -20,8 +20,8 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, C
             RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
             SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult,
             SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TakerSwapMakerCoin, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
             VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
@@ -1702,9 +1702,11 @@ impl MmCoin for SlpToken {
 
             let tx_hash: BytesJson = signed.hash().reversed().take().to_vec().into();
             let details = TransactionDetails {
-                tx_hex: serialize(&signed).into(),
                 internal_id: tx_hash.clone(),
-                tx_hash: tx_hash.to_tx_hash(),
+                tx: TransactionData::Signed {
+                    tx_hex: serialize(&signed).into(),
+                    tx_hash: tx_hash.to_tx_hash(),
+                },
                 from: vec![my_address_string],
                 to: vec![to_address],
                 total_amount,

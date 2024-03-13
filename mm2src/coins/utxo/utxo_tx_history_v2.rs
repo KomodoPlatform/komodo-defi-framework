@@ -511,7 +511,7 @@ where
 
         let txs_with_height: HashMap<H256Json, u64> = self.all_tx_ids_with_height.clone().into_iter().collect();
         for mut tx in unconfirmed {
-            let found = match H256Json::from_str(&tx.tx_hash) {
+            let found = match H256Json::from_str(&tx.tx.tx_hash().expect("TODO")) {
                 Ok(unconfirmed_tx_hash) => txs_with_height.get(&unconfirmed_tx_hash),
                 Err(_) => None,
             };

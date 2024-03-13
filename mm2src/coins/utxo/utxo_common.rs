@@ -22,15 +22,15 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPayment
             SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest, SignUtxoTransactionParams,
             SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps,
-            SwapTxTypeWithSecretHash, TradePreimageValue, TransactionFut, TransactionResult, TxFeeDetails, TxGenError,
-            TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateSwapV2TxError, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
-            ValidateTakerFundingSpendPreimageError, ValidateTakerFundingSpendPreimageResult,
-            ValidateTakerPaymentSpendPreimageError, ValidateTakerPaymentSpendPreimageResult,
-            ValidateWatcherSpendInput, VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult,
-            WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
-            INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            SwapTxTypeWithSecretHash, TradePreimageValue, TransactionData, TransactionFut, TransactionResult,
+            TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxError,
+            ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageError,
+            ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageError,
+            ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput, VerificationError, VerificationResult,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFrom,
+            WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
+            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
@@ -3609,7 +3609,7 @@ where
     let mut history_map: HashMap<H256Json, TransactionDetails> = history
         .into_iter()
         .filter_map(|tx| {
-            let tx_hash = H256Json::from_str(&tx.tx_hash).ok()?;
+            let tx_hash = H256Json::from_str(&tx.tx.tx_hash()?).ok()?;
             Some((tx_hash, tx))
         })
         .collect();
@@ -4059,8 +4059,10 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
         spent_by_me: big_decimal_from_sat_unsigned(spent_by_me, coin.as_ref().decimals),
         my_balance_change: big_decimal_from_sat(received_by_me as i64 - spent_by_me as i64, coin.as_ref().decimals),
         total_amount: big_decimal_from_sat_unsigned(input_amount, coin.as_ref().decimals),
-        tx_hash: tx.hash().reversed().to_vec().to_tx_hash(),
-        tx_hex: verbose_tx.hex,
+        tx: TransactionData::Signed {
+            tx_hash: tx.hash().reversed().to_vec().to_tx_hash(),
+            tx_hex: verbose_tx.hex,
+        },
         fee_details: Some(fee_details.into()),
         block_height: verbose_tx.height.unwrap_or(0),
         coin: ticker.clone(),
@@ -4119,10 +4121,11 @@ where
         let error = "There is no need to update KMD rewards".to_owned();
         return MmError::err(UtxoRpcError::Internal(error));
     }
-    let tx: UtxoTx = deserialize(tx_details.tx_hex.as_slice()).map_to_mm(|e| {
+    let tx: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).map_to_mm(|e| {
         UtxoRpcError::Internal(format!(
             "Error deserializing the {:?} transaction hex: {:?}",
-            tx_details.tx_hash, e
+            tx_details.tx.tx_hash().unwrap(),
+            e
         ))
     })?;
     let kmd_rewards = coin.calc_interest_of_tx(&tx, input_transactions).await?;

@@ -4,7 +4,8 @@ use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses,
                                 TxHistoryStorageBuilder, WalletId};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAccountAddressId, HistorySyncState,
-            MmCoin, MmCoinEnum, Transaction, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
+            MmCoin, MmCoinEnum, Transaction, TransactionData, TransactionDetails, TransactionType, TxFeeDetails,
+            UtxoRpcError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
@@ -239,8 +240,10 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
 
         TransactionDetails {
             coin: self.coin,
-            tx_hex: self.tx.tx_hex().into(),
-            tx_hash: tx_hash.to_tx_hash(),
+            tx: TransactionData::Signed {
+                tx_hex: self.tx.tx_hex().into(),
+                tx_hash: tx_hash.to_tx_hash(),
+            },
             from,
             to,
             total_amount: self.total_amount,

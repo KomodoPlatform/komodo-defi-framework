@@ -26,7 +26,7 @@ use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, Websoc
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_structs::{ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
                               WithdrawErc721};
-use crate::{DexFee, RpcCommonOps, ValidateWatcherSpendInput, WatcherSpendType};
+use crate::{DexFee, RpcCommonOps, TransactionData, ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
@@ -810,8 +810,10 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         my_balance_change: &received_by_me - &spent_by_me,
         spent_by_me,
         received_by_me,
-        tx_hex,
-        tx_hash: tx_hash_str,
+        tx: TransactionData::Signed {
+            tx_hex,
+            tx_hash: tx_hash_str,
+        },
         block_height: 0,
         fee_details: Some(fee_details.into()),
         coin: coin.ticker.clone(),
@@ -3015,8 +3017,10 @@ impl EthCoin {
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: trace.block_number,
-                    tx_hash: format!("{:02x}", BytesJson(raw.hash.as_bytes().to_vec())),
-                    tx_hex: BytesJson(rlp::encode(&raw).to_vec()),
+                    tx: TransactionData::Signed {
+                        tx_hash: format!("{:02x}", BytesJson(raw.hash.as_bytes().to_vec())),
+                        tx_hex: BytesJson(rlp::encode(&raw).to_vec()),
+                    },
                     internal_id,
                     timestamp: block.timestamp.into_or_max(),
                     kmd_rewards: None,
@@ -3379,8 +3383,10 @@ impl EthCoin {
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: block_number.as_u64(),
-                    tx_hash: format!("{:02x}", BytesJson(raw.hash.as_bytes().to_vec())),
-                    tx_hex: BytesJson(rlp::encode(&raw).to_vec()),
+                    tx: TransactionData::Signed {
+                        tx_hash: format!("{:02x}", BytesJson(raw.hash.as_bytes().to_vec())),
+                        tx_hex: BytesJson(rlp::encode(&raw).to_vec()),
+                    },
                     internal_id: BytesJson(internal_id.to_vec()),
                     timestamp: block.timestamp.into_or_max(),
                     kmd_rewards: None,
