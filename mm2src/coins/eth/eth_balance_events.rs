@@ -17,36 +17,60 @@ use super::EthCoin;
 use crate::{eth::{u256_to_big_decimal, Erc20TokenInfo},
             BalanceError, MmCoin};
 
+type BalanceResult = Result<(String, HashMap<String, BigDecimal>), (String, MmError<BalanceError>)>;
+
 /// This implementation differs from others, as they immediately return
 /// an error if any of the requests fails. This one completes all futures
 /// and returns their results individually.
-async fn get_all_balance_results_concurrently(
-    coin: &EthCoin,
-) -> Vec<Result<(String, BigDecimal), (String, MmError<BalanceError>)>> {
+async fn get_all_balance_results_concurrently(coin: &EthCoin) -> Vec<BalanceResult> {
     let mut tokens = coin.get_erc_tokens_infos();
-    // Todo: support HD wallet
-    let my_address = match coin.derivation_method.single_addr_or_err().await {
-        Ok(addr) => addr,
-        Err(e) => return vec![Err((coin.ticker.clone(), e.map(BalanceError::from)))],
+
+    let addresses = match coin.my_addresses().await {
+        Ok(addresses) => addresses,
+        Err(e) => {
+            return vec![Err((coin.ticker.clone(), e.into()))];
+        },
     };
 
-    // Workaround for performance purposes.
-    //
-    // Unlike tokens, the platform coin length is constant (=1). Instead of creating a generic
-    // type and mapping the platform coin and the entire token list (which can grow at any time), we map
-    // the platform coin to Erc20TokenInfo so that we can use the token list right away without
-    // additional mapping.
-    tokens.insert(coin.ticker.clone(), Erc20TokenInfo {
-        token_address: my_address,
-        decimals: coin.decimals,
-    });
+    let mut all_jobs = FuturesUnordered::new();
 
-    let jobs = tokens
-        .into_iter()
-        .map(|(token_ticker, info)| async move { fetch_balance(coin, my_address, token_ticker, &info).await })
-        .collect::<FuturesUnordered<_>>();
+    for address in addresses {
+        // Workaround for performance purposes.
+        //
+        // Unlike tokens, the platform coin length is constant (=1). Instead of creating a generic
+        // type and mapping the platform coin and the entire token list (which can grow at any time), we map
+        // the platform coin to Erc20TokenInfo so that we can use the token list right away without
+        // additional mapping.
+        tokens.insert(coin.ticker.clone(), Erc20TokenInfo {
+            token_address: address,
+            decimals: coin.decimals,
+        });
 
-    jobs.collect().await
+        let jobs = tokens.iter().map(|(token_ticker, info)| {
+            let coin = coin.clone();
+            let token_ticker = token_ticker.clone();
+            let info = info.clone();
+            async move { fetch_balance(&coin, address, token_ticker, &info).await }
+        });
+
+        all_jobs.extend(jobs);
+    }
+
+    let results: Vec<_> = all_jobs.collect().await;
+
+    let mut final_results: Vec<BalanceResult> = Vec::new();
+    for result in results {
+        match result {
+            Ok((ticker, (address, balance))) => {
+                let mut balances = HashMap::new();
+                balances.insert(address, balance);
+                final_results.push(Ok((ticker, balances)));
+            },
+            Err((ticker, e)) => final_results.push(Err((ticker, e))),
+        }
+    }
+
+    final_results
 }
 
 async fn fetch_balance(
@@ -54,7 +78,7 @@ async fn fetch_balance(
     address: Address,
     token_ticker: String,
     info: &Erc20TokenInfo,
-) -> Result<(String, BigDecimal), (String, MmError<BalanceError>)> {
+) -> Result<(String, (String, BigDecimal)), (String, MmError<BalanceError>)> {
     let (balance_as_u256, decimals) = if token_ticker == coin.ticker {
         (
             coin.address_balance(address)
@@ -75,7 +99,7 @@ async fn fetch_balance(
     let balance_as_big_decimal =
         u256_to_big_decimal(balance_as_u256, decimals).map_err(|e| (token_ticker.clone(), e.into()))?;
 
-    Ok((token_ticker, balance_as_big_decimal))
+    Ok((token_ticker, (address.to_string(), balance_as_big_decimal)))
 }
 
 #[async_trait]
@@ -87,7 +111,7 @@ impl EventBehaviour for EthCoin {
         const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
 
         async fn start_polling(coin: EthCoin, ctx: MmArc, interval: f64) {
-            let mut cache: HashMap<String, BigDecimal> = HashMap::new();
+            let mut cache: HashMap<String, HashMap<String, BigDecimal>> = HashMap::new();
 
             loop {
                 let now = Instant::now();
@@ -96,15 +120,21 @@ impl EventBehaviour for EthCoin {
                 for result in get_all_balance_results_concurrently(&coin).await {
                     match result {
                         Ok((ticker, balance)) => {
-                            if Some(&balance) == cache.get(&ticker) {
-                                continue;
-                            }
+                            for (address, balance) in balance {
+                                if Some(&balance) == cache.get(&ticker).and_then(|map| map.get(&address)) {
+                                    continue;
+                                }
 
-                            balance_updates.push(json!({
-                                "ticker": ticker,
-                                "balance": { "spendable": balance, "unspendable": BigDecimal::default() }
-                            }));
-                            cache.insert(ticker.to_owned(), balance);
+                                balance_updates.push(json!({
+                                    "ticker": ticker,
+                                    "address": address,
+                                    "balance": { "spendable": balance, "unspendable": BigDecimal::default() }
+                                }));
+                                cache
+                                    .entry(ticker.clone())
+                                    .or_insert_with(HashMap::new)
+                                    .insert(address, balance);
+                            }
                         },
                         Err((ticker, e)) => {
                             log::error!("Failed getting balance for '{ticker}' with {interval} interval. Error: {e}");
