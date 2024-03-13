@@ -6426,7 +6426,8 @@ impl EthCoin {
                         .await
                 },
                 ContractType::Erc721 => {
-                    // ERC721 contract has overloaded versions of the safeTransferFrom function
+                    // ERC721 contract has overloaded versions of the safeTransferFrom function,
+                    // but Contract::function method returns only the first if there are overloaded versions of the same function.
                     let functions = ERC721_CONTRACT
                         .functions_by_name("safeTransferFrom")
                         .map_err(|e| TransactionErr::AbiError(ERRL!("{}", e)))?;
