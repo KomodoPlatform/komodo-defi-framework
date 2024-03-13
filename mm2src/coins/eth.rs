@@ -3454,7 +3454,7 @@ impl EthCoin {
     ) -> Result<SignedEthTx, TransactionErr> {
         let ctx = MmArc::from_weak(&self.ctx)
             .ok_or("!ctx")
-            .map_err(|e| TransactionErr::Plain(e.to_string()))?;
+            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
         let coin = self.clone();
         match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(ref key_pair)
@@ -6412,7 +6412,6 @@ impl EthCoin {
                     let function = ERC1155_CONTRACT
                         .function("safeTransferFrom")
                         .map_err(|e| TransactionErr::AbiError(ERRL!("{}", e)))?;
-                    info!("Got ERC1155 safeTransferFrom ...");
                     let amount_u256 = U256::from_dec_str(&args.amount.to_string())
                         .map_err(|e| NumConversError::new(ERRL!("{}", e)))?;
                     let data = function.encode_input(&[
@@ -6427,10 +6426,27 @@ impl EthCoin {
                         .await
                 },
                 ContractType::Erc721 => {
-                    let function = ERC721_CONTRACT
-                        .function("safeTransferFrom")
+                    // ERC721 contract has overloaded versions of the safeTransferFrom function
+                    let functions = ERC721_CONTRACT
+                        .functions_by_name("safeTransferFrom")
                         .map_err(|e| TransactionErr::AbiError(ERRL!("{}", e)))?;
-                    info!("Got ERC721 safeTransferFrom ...");
+
+                    // Find the correct function variant by inspecting the input parameters.
+                    let function = functions
+                        .iter()
+                        .find(|f| {
+                            f.inputs.len() == 4
+                                && matches!(
+                                    f.inputs.last().map(|input| &input.kind),
+                                    Some(&ethabi::ParamType::Bytes)
+                                )
+                        })
+                        .ok_or_else(|| {
+                            TransactionErr::AbiError(
+                                "Failed to find the correct safeTransferFrom function variant".to_string(),
+                            )
+                        })?;
+
                     let data = function.encode_input(&[
                         Token::Address(self.my_address),
                         Token::Address(swap_contract_address),

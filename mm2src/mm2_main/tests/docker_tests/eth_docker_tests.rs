@@ -245,6 +245,7 @@ pub fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
     ))
     .unwrap();
 
+    fill_eth(global_nft.my_address, U256::from(10).pow(U256::from(20)));
     fill_erc721(global_nft.my_address, U256::from(1));
     fill_erc1155(global_nft.my_address, U256::from(1), U256::from(3));
     block_on(fill_nfts_info(&global_nft));
