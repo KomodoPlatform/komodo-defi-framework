@@ -3445,6 +3445,31 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
+    async fn sign_and_send_transaction_async(
+        &self,
+        value: U256,
+        action: Action,
+        data: Vec<u8>,
+        gas: U256,
+    ) -> Result<SignedEthTx, TransactionErr> {
+        let ctx = MmArc::from_weak(&self.ctx)
+            .ok_or("!ctx")
+            .map_err(|e| TransactionErr::Plain(e.to_string()))?;
+        let coin = self.clone();
+        match coin.priv_key_policy {
+            EthPrivKeyPolicy::Iguana(ref key_pair)
+            | EthPrivKeyPolicy::HDWallet {
+                activated_key: ref key_pair,
+                ..
+            } => sign_and_send_transaction_with_keypair(ctx, &coin, key_pair, value, action, data, gas).await,
+            EthPrivKeyPolicy::Trezor => Err(TransactionErr::Plain(ERRL!("Trezor is not supported for EVM yet!"))),
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => {
+                sign_and_send_transaction_with_metamask(coin, value, action, data, gas).await
+            },
+        }
+    }
+
     pub fn send_to_address(&self, address: Address, value: U256) -> EthTxFut {
         match &self.coin_type {
             EthCoinType::Eth => self.sign_and_send_transaction(value, Action::Call(address), vec![], U256::from(21000)),
@@ -6387,26 +6412,28 @@ impl EthCoin {
                     let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
                     let amount_u256 = U256::from_dec_str(&args.amount.to_string())
                         .map_err(|e| NumConversError::new(e.to_string()))?;
-                    let _data = function.encode_input(&[
+                    let data = function.encode_input(&[
                         Token::Address(self.my_address),
                         Token::Address(swap_contract_address),
                         Token::Uint(token_id_u256),
                         Token::Uint(amount_u256),
                         Token::Bytes(htlc_data),
                     ])?;
-                    let _gas = U256::from(ETH_GAS);
-                    todo!()
+                    let gas = U256::from(ETH_GAS);
+                    self.sign_and_send_transaction_async(0.into(), Action::Call(token_address), data, gas)
+                        .await
                 },
                 ContractType::Erc721 => {
                     let function = ERC721_CONTRACT.function("safeTransferFrom")?;
-                    let _data = function.encode_input(&[
+                    let data = function.encode_input(&[
                         Token::Address(self.my_address),
                         Token::Address(swap_contract_address),
                         Token::Uint(token_id_u256),
                         Token::Bytes(htlc_data),
                     ])?;
-                    let _gas = U256::from(ETH_GAS);
-                    todo!()
+                    let gas = U256::from(ETH_GAS);
+                    self.sign_and_send_transaction_async(0.into(), Action::Call(token_address), data, gas)
+                        .await
                 },
             },
             EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
