@@ -618,7 +618,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 hd_wallet_storage,
                 derivation_path: path_to_coin.clone(),
                 accounts: HDAccountsMutex::new(accounts),
-                enabled_address: Some(*path_to_address),
+                enabled_address: *path_to_address,
                 gap_limit,
             };
             let derivation_method = DerivationMethod::HDWallet(hd_wallet);
@@ -656,7 +656,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 hd_wallet_storage,
                 derivation_path: path_to_coin.clone(),
                 accounts: HDAccountsMutex::new(accounts),
-                enabled_address: Some(*path_to_address),
+                enabled_address: *path_to_address,
                 gap_limit,
             };
             let derivation_method = DerivationMethod::HDWallet(hd_wallet);

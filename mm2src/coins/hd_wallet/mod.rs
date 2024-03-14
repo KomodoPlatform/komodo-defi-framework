@@ -280,12 +280,9 @@ where
     pub derivation_path: StandardHDPathToCoin,
     /// Contains information about the accounts enabled for this HD wallet.
     pub accounts: HDAccountsMutex<HDAccount>,
+    // Todo: This should be removed in the future to enable simultaneous swaps from multiple addresses
     /// The address that's specifically enabled for certain operations, e.g. swaps.
-    ///
-    /// For some wallet types, such as hardware wallets, this will be `None`
-    /// until these operations are supported for them. When set, this address
-    /// is ready to facilitate swap transactions and other specific operations.
-    pub enabled_address: Option<HDAccountAddressId>,
+    pub enabled_address: HDAccountAddressId,
     /// Defines the maximum number of consecutive addresses that can be generated
     /// without any associated transactions. If an address outside this limit
     /// receives transactions, they won't be identified.
@@ -345,7 +342,7 @@ where
     }
 
     async fn get_enabled_address(&self) -> Option<<Self::HDAccount as HDAccountOps>::HDAddress> {
-        let enabled_address = self.enabled_address?;
+        let enabled_address = self.enabled_address;
         let account = self.get_account(enabled_address.account_id).await?;
         let hd_address_id = HDAddressId {
             chain: enabled_address.chain,

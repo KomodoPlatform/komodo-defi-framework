@@ -110,7 +110,8 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             TransactionEnum, TransactionErr, UnexpectedDerivationMethod, VerificationError, WithdrawError,
             WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
-use crate::hd_wallet::{HDAccountAddressId, HDAccountOps, HDWalletCoinOps, HDWalletStorageError};
+use crate::hd_wallet::{HDAccountAddressId, HDAccountOps, HDAddressOps, HDWalletCoinOps, HDWalletOps,
+                       HDWalletStorageError};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::{CoinAssocTypes, ToBytes};
 
@@ -1039,6 +1040,7 @@ impl ToBytes for Signature {
     fn to_bytes(&self) -> Vec<u8> { self.to_vec() }
 }
 
+#[async_trait]
 impl<T: UtxoCommonOps> CoinAssocTypes for T {
     type Address = Address;
     type AddressParseError = MmError<AddrFromStrError>;
@@ -1051,11 +1053,15 @@ impl<T: UtxoCommonOps> CoinAssocTypes for T {
     type Sig = Signature;
     type SigParseError = MmError<secp256k1::Error>;
 
-    fn my_addr(&self) -> &Self::Address {
+    async fn my_addr(&self) -> Self::Address {
         match &self.as_ref().derivation_method {
-            DerivationMethod::SingleAddress(addr) => addr,
-            // Todo: implement for HD wallet enabled address, this is required for trade_v2_test_rick_and_morty
-            DerivationMethod::HDWallet(_) => todo!(),
+            DerivationMethod::SingleAddress(addr) => addr.clone(),
+            // Todo: Expect should not fail but we need to handle it properly
+            DerivationMethod::HDWallet(hd_wallet) => hd_wallet
+                .get_enabled_address()
+                .await
+                .expect("Getting enabled address should not fail!")
+                .address(),
         }
     }
 

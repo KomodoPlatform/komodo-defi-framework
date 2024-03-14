@@ -1465,6 +1465,7 @@ pub trait ToBytes {
 }
 
 /// Defines associated types specific to each coin (Pubkey, Address, etc.)
+#[async_trait]
 pub trait CoinAssocTypes {
     type Address: Send + Sync + fmt::Display;
     type AddressParseError: fmt::Debug + Send + fmt::Display;
@@ -1477,7 +1478,7 @@ pub trait CoinAssocTypes {
     type Sig: ToBytes + Send + Sync;
     type SigParseError: fmt::Debug + Send + fmt::Display;
 
-    fn my_addr(&self) -> &Self::Address;
+    async fn my_addr(&self) -> Self::Address;
 
     fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError>;
 

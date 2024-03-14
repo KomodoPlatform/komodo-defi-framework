@@ -285,7 +285,7 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
             hd_wallet_storage: HDWalletCoinStorage::default(),
             derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
             accounts: HDAccountsMutex::new(hd_accounts),
-            enabled_address: None,
+            enabled_address: HDAccountAddressId::default(),
             gap_limit: 20,
         },
         address_format: UtxoAddressFormat::Standard,

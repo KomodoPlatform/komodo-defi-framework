@@ -434,6 +434,7 @@ impl ToBytes for TestSig {
     fn to_bytes(&self) -> Vec<u8> { vec![] }
 }
 
+#[async_trait]
 impl CoinAssocTypes for TestCoin {
     type Address = String;
     type AddressParseError = String;
@@ -446,7 +447,7 @@ impl CoinAssocTypes for TestCoin {
     type Sig = TestSig;
     type SigParseError = String;
 
-    fn my_addr(&self) -> &Self::Address { todo!() }
+    async fn my_addr(&self) -> Self::Address { todo!() }
 
     fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> { todo!() }
 
