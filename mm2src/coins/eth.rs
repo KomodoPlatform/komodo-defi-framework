@@ -3445,31 +3445,6 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    async fn sign_and_send_transaction_async(
-        &self,
-        value: U256,
-        action: Action,
-        data: Vec<u8>,
-        gas: U256,
-    ) -> Result<SignedEthTx, TransactionErr> {
-        let ctx = MmArc::from_weak(&self.ctx)
-            .ok_or("!ctx")
-            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
-        let coin = self.clone();
-        match coin.priv_key_policy {
-            EthPrivKeyPolicy::Iguana(ref key_pair)
-            | EthPrivKeyPolicy::HDWallet {
-                activated_key: ref key_pair,
-                ..
-            } => sign_and_send_transaction_with_keypair(ctx, &coin, key_pair, value, action, data, gas).await,
-            EthPrivKeyPolicy::Trezor => Err(TransactionErr::Plain(ERRL!("Trezor is not supported for EVM yet!"))),
-            #[cfg(target_arch = "wasm32")]
-            EthPrivKeyPolicy::Metamask(_) => {
-                sign_and_send_transaction_with_metamask(coin, value, action, data, gas).await
-            },
-        }
-    }
-
     pub fn send_to_address(&self, address: Address, value: U256) -> EthTxFut {
         match &self.coin_type {
             EthCoinType::Eth => self.sign_and_send_transaction(value, Action::Call(address), vec![], U256::from(21000)),
@@ -6217,9 +6192,14 @@ impl ToBytes for SignedEthTx {
     fn to_bytes(&self) -> Vec<u8> {
         let mut stream = RlpStream::new();
         self.rlp_append(&mut stream);
-        // there is minimal but risk that stream.out() may panic
-        debug_assert!(stream.is_finished(), "RlpStream must be finished before calling out");
-        Vec::from(stream.out())
+        // Handle potential panicking.
+        if stream.is_finished() {
+            Vec::from(stream.out())
+        } else {
+            // TODO: Consider returning Result<Vec<u8>, Error> in future refactoring for better error handling.
+            warn!("RlpStream was not finished; returning an empty Vec as a fail-safe.");
+            vec![]
+        }
     }
 }
 
@@ -6422,7 +6402,8 @@ impl EthCoin {
                         Token::Bytes(htlc_data),
                     ])?;
                     let gas = U256::from(ETH_GAS);
-                    self.sign_and_send_transaction_async(0.into(), Action::Call(token_address), data, gas)
+                    self.sign_and_send_transaction(0.into(), Action::Call(token_address), data, gas)
+                        .compat()
                         .await
                 },
                 ContractType::Erc721 => {
@@ -6455,7 +6436,8 @@ impl EthCoin {
                         Token::Bytes(htlc_data),
                     ])?;
                     let gas = U256::from(ETH_GAS);
-                    self.sign_and_send_transaction_async(0.into(), Action::Call(token_address), data, gas)
+                    self.sign_and_send_transaction(0.into(), Action::Call(token_address), data, gas)
+                        .compat()
                         .await
                 },
             },
