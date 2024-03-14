@@ -1953,23 +1953,24 @@ impl MmCoin for TendermintCoin {
                 )));
             }
 
-            let (account_id, _priv_key) = match req.from {
-                Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
-                    let priv_key = coin
-                        .priv_key_policy
-                        .hd_wallet_derived_priv_key_or_err(path_to_address)?;
-                    let account_id = account_id_from_privkey(priv_key.as_slice(), &coin.account_prefix)
-                        .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
-                    (account_id, priv_key)
-                },
-                Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
-                    return MmError::err(WithdrawError::UnexpectedFromAddress(
-                        "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
-                            .to_string(),
-                    ))
-                },
-                None => (coin.account_id.clone(), *coin.priv_key_policy.activated_key_or_err()?),
-            };
+            // let (account_id, _priv_key) = match req.from {
+            //     Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+            //         let priv_key = coin
+            //             .priv_key_policy
+            //             .hd_wallet_derived_priv_key_or_err(path_to_address)?;
+            //         let account_id = account_id_from_privkey(priv_key.as_slice(), &coin.account_prefix)
+            //             .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+            //         (account_id, priv_key)
+            //     },
+            //     Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
+            //         return MmError::err(WithdrawError::UnexpectedFromAddress(
+            //             "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
+            //                 .to_string(),
+            //         ))
+            //     },
+            //     None => (coin.account_id.clone(), *coin.priv_key_policy.activated_key_or_err()?),
+            // };
+            let account_id = coin.with_pubkey.as_ref().unwrap().account_address.clone();
 
             let (balance_denom, balance_dec) = coin
                 .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
