@@ -2084,10 +2084,12 @@ impl MmCoin for TendermintCoin {
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx = json!({
-                "body_bytes": sign_doc.body_bytes,
-                "auth_info_bytes": sign_doc.auth_info_bytes,
-                "chain_id": sign_doc.chain_id,
-                "account_number": sign_doc.account_number,
+                "sign_doc": {
+                    "body_bytes": sign_doc.body_bytes,
+                    "auth_info_bytes": sign_doc.auth_info_bytes,
+                    "chain_id": sign_doc.chain_id,
+                    "account_number": sign_doc.account_number,
+                }
             });
 
             Ok(TransactionDetails {
