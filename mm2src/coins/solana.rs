@@ -9,7 +9,7 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, 
             RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
             SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult,
             SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionFut, TransactionResult, TransactionType, TxMarshalingErr,
+            TransactionData, TransactionDetails, TransactionFut, TransactionResult, TransactionType, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
             ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherReward, WatcherRewardError,
@@ -272,8 +272,10 @@ async fn withdraw_base_coin_impl(coin: SolanaCoin, req: WithdrawRequest) -> With
     };
     let spent_by_me = &total_amount + &res.sol_required;
     Ok(TransactionDetails {
-        tx_hex: serialized_tx.into(),
-        tx_hash: tx.signatures[0].to_string(),
+        tx: TransactionData::Signed {
+            tx_hex: serialized_tx.into(),
+            tx_hash: tx.signatures[0].to_string(),
+        },
         from: vec![coin.my_address.clone()],
         to: vec![req.to],
         total_amount: spent_by_me.clone(),

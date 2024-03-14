@@ -8048,7 +8048,10 @@ mod trezor_tests {
             "m/84'/1'/0'/0/0",
         ))
         .expect("withdraw must end successfully");
-        log!("tx_hex={}", serde_json::to_string(&tx_details.tx_hex).unwrap());
+        log!(
+            "tx_hex={}",
+            serde_json::to_string(&tx_details.tx.tx_hex().unwrap()).unwrap()
+        );
     }
 
     /// Helper to init trezor and wait for completion

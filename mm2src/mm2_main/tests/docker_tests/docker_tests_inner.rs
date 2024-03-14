@@ -2478,9 +2478,11 @@ fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_
         ))
         .wait()
         .unwrap();
-    coin.send_raw_tx(&hex::encode(&withdraw.tx_hex.0)).wait().unwrap();
+    coin.send_raw_tx(&hex::encode(&withdraw.tx.tx_hex().unwrap().0))
+        .wait()
+        .unwrap();
     let confirm_payment_input = ConfirmPaymentInput {
-        payment_tx: withdraw.tx_hex.0,
+        payment_tx: withdraw.tx.tx_hex().unwrap().0.to_owned(),
         confirmations: 1,
         requires_nota: false,
         wait_until: wait_until_sec(10),

@@ -123,10 +123,15 @@ fn test_spl_transactions() {
     assert_eq!(valid_tx_details.coin, "USDC".to_string());
     assert_ne!(valid_tx_details.timestamp, 0);
 
-    let tx_str = hex::encode(&*valid_tx_details.tx_hex.0);
+    let tx_str = hex::encode(&*valid_tx_details.tx.tx_hex().unwrap().0);
     let res = block_on(usdc_sol_coin.send_raw_tx(&tx_str).compat()).unwrap();
     println!("{:?}", res);
 
-    let res2 = block_on(usdc_sol_coin.send_raw_tx_bytes(&valid_tx_details.tx_hex.0).compat()).unwrap();
+    let res2 = block_on(
+        usdc_sol_coin
+            .send_raw_tx_bytes(&valid_tx_details.tx.tx_hex().unwrap().0)
+            .compat(),
+    )
+    .unwrap();
     assert_eq!(res, res2);
 }

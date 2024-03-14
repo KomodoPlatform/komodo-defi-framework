@@ -291,10 +291,15 @@ fn solana_test_transactions() {
     .unwrap();
     println!("{:?}", valid_tx_details);
 
-    let tx_str = hex::encode(&*valid_tx_details.tx_hex.0);
+    let tx_str = hex::encode(&*valid_tx_details.tx.tx_hex().unwrap().0);
     let res = block_on(sol_coin.send_raw_tx(&tx_str).compat()).unwrap();
 
-    let res2 = block_on(sol_coin.send_raw_tx_bytes(&valid_tx_details.tx_hex.0).compat()).unwrap();
+    let res2 = block_on(
+        sol_coin
+            .send_raw_tx_bytes(&valid_tx_details.tx.tx_hex().unwrap().0)
+            .compat(),
+    )
+    .unwrap();
     assert_eq!(res, res2);
 
     //println!("{:?}", res);

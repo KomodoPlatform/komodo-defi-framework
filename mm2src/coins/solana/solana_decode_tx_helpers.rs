@@ -1,6 +1,6 @@
 extern crate serde_derive;
 
-use crate::{NumConversResult, SolanaCoin, SolanaFeeDetails, TransactionDetails, TransactionType};
+use crate::{NumConversResult, SolanaCoin, SolanaFeeDetails, TransactionData, TransactionDetails, TransactionType};
 use mm2_number::BigDecimal;
 use solana_sdk::native_token::lamports_to_sol;
 use std::convert::TryFrom;
@@ -54,8 +54,10 @@ impl SolanaConfirmedTransaction {
                 };
                 let fee = BigDecimal::try_from(lamports_to_sol(self.meta.fee))?;
                 let tx = TransactionDetails {
-                    tx_hex: Default::default(),
-                    tx_hash: self.transaction.signatures[0].to_string(),
+                    tx: TransactionData::Signed {
+                        tx_hex: Default::default(),
+                        tx_hash: self.transaction.signatures[0].to_string(),
+                    },
                     from: vec![instruction.parsed.info.source.clone()],
                     to: vec![instruction.parsed.info.destination.clone()],
                     total_amount: amount,
