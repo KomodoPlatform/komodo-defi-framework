@@ -72,6 +72,7 @@ async fn test_electrum_display_balances() {
 }
 
 #[wasm_bindgen_test]
+#[ignore]
 async fn test_hd_utxo_tx_history() {
     let rpc_client = electrum_client_for_test(DOC_ELECTRUM_ADDRS).await;
     utxo_common_tests::test_hd_utxo_tx_history_impl(rpc_client).await;

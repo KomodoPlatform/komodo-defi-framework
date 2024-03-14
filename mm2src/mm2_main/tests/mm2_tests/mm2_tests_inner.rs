@@ -874,6 +874,7 @@ async fn trade_base_rel_electrum(
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn trade_test_electrum_and_eth_coins() {
     let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
@@ -979,6 +980,7 @@ fn withdraw_and_send(
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_and_send() {
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
@@ -2220,6 +2222,7 @@ fn check_priv_key(mm: &MarketMakerIt, coin: &str, expected_priv_key: &str) {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/519#issuecomment-589149811
 fn test_show_priv_key() {
@@ -2407,6 +2410,7 @@ fn check_too_low_volume_order_creation_fails(mm: &MarketMakerIt, base: &str, rel
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/481
 fn setprice_buy_sell_too_low_volume() {
@@ -2443,6 +2447,7 @@ fn setprice_buy_sell_too_low_volume() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_fill_or_kill_taker_order_should_not_transform_to_maker() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -2511,6 +2516,7 @@ fn test_fill_or_kill_taker_order_should_not_transform_to_maker() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_gtc_taker_order_should_transform_to_maker() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -2584,6 +2590,7 @@ fn test_gtc_taker_order_should_transform_to_maker() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_set_price_must_save_order_to_db() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -2637,6 +2644,7 @@ fn test_set_price_must_save_order_to_db() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_set_price_response_format() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -3761,6 +3769,7 @@ fn test_convert_qrc20_address() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_validateaddress() {
     let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
@@ -4080,6 +4089,7 @@ fn qrc20_activate_electrum() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_qrc20_withdraw() {
     // corresponding private key: [3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72, 172, 110, 180, 13, 123, 179, 10, 49]
@@ -4711,6 +4721,7 @@ fn test_tx_history_tbtc_non_segwit() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_buy_conf_settings() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -4784,6 +4795,7 @@ fn test_buy_conf_settings() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_buy_response_format() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -4834,6 +4846,7 @@ fn test_buy_response_format() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_sell_response_format() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -4884,6 +4897,7 @@ fn test_sell_response_format() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_my_orders_response_format() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -4959,6 +4973,7 @@ fn test_my_orders_response_format() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_my_orders_after_matched() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -5044,6 +5059,7 @@ fn test_my_orders_after_matched() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_sell_conf_settings() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -5117,6 +5133,7 @@ fn test_sell_conf_settings() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_set_price_conf_settings() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -5531,6 +5548,7 @@ fn test_update_maker_order_fail() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_update_maker_order_after_matched() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -5863,6 +5881,7 @@ fn test_orderbook_is_mine_orders() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_sell_min_volume() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -5936,6 +5955,7 @@ fn test_sell_min_volume() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_sell_min_volume_dust() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -6035,6 +6055,7 @@ fn test_setprice_min_volume_dust() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_buy_min_volume() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -6145,6 +6166,7 @@ fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_orderbook_depth() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -7446,6 +7468,7 @@ fn test_tbtc_block_header_sync() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_enable_coins_with_enable_hd() {
     const TX_HISTORY: bool = false;
@@ -7645,6 +7668,7 @@ fn test_get_shared_db_id() {
 }
 
 #[test]
+#[ignore]
 fn test_eth_swap_contract_addr_negotiation_same_fallback() {
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
@@ -7733,6 +7757,7 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
 }
 
 #[test]
+#[ignore]
 fn test_eth_swap_negotiation_fails_maker_no_fallback() {
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();

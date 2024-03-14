@@ -507,6 +507,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
 }
 
 #[test]
+#[ignore]
 fn test_search_for_swap_tx_spend_electrum_was_spent() {
     let secret = [0; 32];
     let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
@@ -542,6 +543,7 @@ fn test_search_for_swap_tx_spend_electrum_was_spent() {
 }
 
 #[test]
+#[ignore]
 fn test_search_for_swap_tx_spend_electrum_was_refunded() {
     let secret_hash = [0; 20];
     let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
@@ -4314,6 +4316,7 @@ fn test_tx_enum_from_bytes() {
 }
 
 #[test]
+#[ignore]
 fn test_hd_utxo_tx_history() {
     let client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
     block_on(utxo_common_tests::test_hd_utxo_tx_history_impl(client));

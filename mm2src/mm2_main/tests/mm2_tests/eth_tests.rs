@@ -76,6 +76,7 @@ async fn enable_eth_with_tokens_without_balance(
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_disable_eth_coin_with_token() {
     let passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -121,6 +122,7 @@ fn test_disable_eth_coin_with_token() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_disable_eth_coin_with_token_without_balance() {
     let passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();

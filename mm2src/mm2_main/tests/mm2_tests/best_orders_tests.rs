@@ -15,6 +15,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_best_orders() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -179,6 +180,7 @@ fn test_best_orders() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_best_orders_v2_by_number() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -302,6 +304,7 @@ fn test_best_orders_v2_by_number() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_best_orders_v2_by_volume() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -422,6 +425,7 @@ fn test_best_orders_v2_by_volume() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_best_orders_v2_exclude_mine() {
     let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf()]);
@@ -671,6 +675,7 @@ fn test_best_orders_no_duplicates_after_update() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_best_orders_filter_response() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();

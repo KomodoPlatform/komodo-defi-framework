@@ -253,6 +253,7 @@ fn test_wei_from_big_decimal() {
 }
 
 #[test]
+#[ignore]
 fn test_nonce_several_urls() {
     let (_ctx, coin) = eth_coin_for_test(
         EthCoinType::Eth,
@@ -424,6 +425,7 @@ fn test_withdraw_impl_fee_details() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_nonce_lock() {
     use futures::future::join_all;

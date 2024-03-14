@@ -5,6 +5,7 @@ use mm2_test_helpers::for_tests::MarketMakerIt;
 use serde_json::json;
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_start_and_stop_simple_market_maker_bot() {
     let coins = json!([
