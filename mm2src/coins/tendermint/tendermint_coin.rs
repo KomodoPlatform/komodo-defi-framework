@@ -68,6 +68,7 @@ use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
 use prost::{DecodeError, Message};
 use rpc::v1::types::Bytes as BytesJson;
+use serde::Deserializer;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -245,13 +246,58 @@ pub struct TendermintCoinImpl {
     client: TendermintRpcClient,
     chain_registry_name: Option<String>,
     pub(crate) ctx: MmWeak,
-    with_pubkey: Option<KeplrInfo>,
+    with_pubkey: Option<PubkeyActivation>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct KeplrInfo {
+pub struct PubkeyActivation {
     account_address: AccountId,
+    #[serde(deserialize_with = "deserialize_account_public_key")]
     account_public_key: PublicKey,
+}
+
+fn deserialize_account_public_key<'de, D>(deserializer: D) -> Result<PublicKey, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value: Json = serde::Deserialize::deserialize(deserializer)?;
+
+    match value {
+        Json::Object(mut map) => {
+            if let Some(type_) = map.remove("type") {
+                if let Some(value) = map.remove("value") {
+                    match type_.as_str() {
+                        Some("ed25519") => {
+                            let value: Vec<u8> = value
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|i| i.as_u64().unwrap() as u8)
+                                .collect();
+                            Ok(PublicKey::from_raw_ed25519(&value).unwrap())
+                        },
+                        Some("secp256k1") => {
+                            let value: Vec<u8> = value
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|i| i.as_u64().unwrap() as u8)
+                                .collect();
+                            Ok(PublicKey::from_raw_secp256k1(&value).unwrap())
+                        },
+                        _ => Err(serde::de::Error::custom(
+                            "Unsupported pubkey algorithm. Use one of ['ed25519', 'secp256k1']",
+                        )),
+                    }
+                } else {
+                    Err(serde::de::Error::custom("Missing field 'value'."))
+                }
+            } else {
+                Err(serde::de::Error::custom("Missing field 'type'."))
+            }
+        },
+        _ => Err(serde::de::Error::custom("Invalid data.")),
+    }
 }
 
 #[derive(Clone)]
@@ -493,7 +539,7 @@ impl TendermintCoin {
         rpc_urls: Vec<String>,
         tx_history: bool,
         priv_key_policy: TendermintPrivKeyPolicy,
-        with_pubkey: Option<KeplrInfo>,
+        with_pubkey: Option<PubkeyActivation>,
     ) -> MmResult<Self, TendermintInitError> {
         if rpc_urls.is_empty() {
             return MmError::err(TendermintInitError {
