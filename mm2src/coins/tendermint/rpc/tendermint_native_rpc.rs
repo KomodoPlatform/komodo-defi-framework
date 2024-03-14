@@ -319,7 +319,7 @@ impl Client for HttpClient {
     where
         R: SimpleRequest,
     {
-        self.inner.perform(request).await.map(R::Output::from)
+        self.inner.perform(request).await.map(From::from)
     }
 }
 

@@ -142,7 +142,7 @@ impl LightRpcClient {
             };
 
             cfg_wasm32!(
-                let  client = CompactTxStreamerClient::new(TonicClient::new(url.to_string())).accept_gzip();
+                let client = CompactTxStreamerClient::new(TonicClient::new(url.to_string())).accept_compressed(CompressionEncoding::Gzip);
             );
 
             rpc_clients.push(client);
