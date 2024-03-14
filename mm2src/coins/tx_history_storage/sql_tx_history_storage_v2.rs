@@ -461,12 +461,12 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
                 sql_transaction.execute(&insert_tx_in_cache_sql(&wallet_id)?, tx_cache_params)?;
 
                 let params = [
-                    tx_hash.to_string(),
-                    internal_id.clone(),
-                    tx.block_height.to_string(),
-                    confirmation_status.to_sql_param_str(),
-                    token_id,
-                    tx_json,
+                    tx_hash,
+                    &internal_id,
+                    &tx.block_height.to_string(),
+                    &confirmation_status.to_sql_param_str(),
+                    &token_id,
+                    &tx_json,
                 ];
                 sql_transaction.execute(&insert_tx_in_history_sql(&wallet_id)?, params)?;
 

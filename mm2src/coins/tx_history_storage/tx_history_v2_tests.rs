@@ -363,24 +363,24 @@ async fn test_add_and_get_tx_from_cache_impl() {
     let tx = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
 
     storage
-        .add_tx_to_cache(&wallet_id_1, &tx.tx_hash, &tx.tx_hex)
+        .add_tx_to_cache(&wallet_id_1, tx.tx.tx_hash().unwrap(), tx.tx.tx_hex().unwrap())
         .await
         .unwrap();
 
     let tx_hex_from_1 = storage
-        .tx_bytes_from_cache(&wallet_id_1, &tx.tx_hash)
+        .tx_bytes_from_cache(&wallet_id_1, tx.tx.tx_hash().unwrap())
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(tx_hex_from_1, tx.tx_hex);
+    assert_eq!(&tx_hex_from_1, tx.tx.tx_hex().unwrap());
 
     // Since `wallet_id_1` and `wallet_id_2` wallets have the same `ticker`, the wallets must have one transaction cache.
     let tx_hex_from_2 = storage
-        .tx_bytes_from_cache(&wallet_id_2, &tx.tx_hash)
+        .tx_bytes_from_cache(&wallet_id_2, tx.tx.tx_hash().unwrap())
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(tx_hex_from_2, tx.tx_hex);
+    assert_eq!(&tx_hex_from_2, tx.tx.tx_hex().unwrap());
 }
 
 async fn test_get_raw_tx_bytes_on_add_transactions_impl() {

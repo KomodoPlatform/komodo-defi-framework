@@ -16,20 +16,19 @@ use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
             CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
-            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundError, RefundPaymentArgs,
-            RefundResult, RpcCommonOps, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps,
-            TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
-            TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawError, WithdrawFee, WithdrawFrom, WithdrawFut, WithdrawRequest};
+            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
+            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
+            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
@@ -52,7 +51,7 @@ use cosmrs::tendermint::PublicKey;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{GlobalHDAccountArc, Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin};
+use crypto::{Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin};
 use derive_more::Display;
 use futures::future::try_join_all;
 use futures::lock::Mutex as AsyncMutex;
@@ -219,12 +218,12 @@ impl RpcCommonOps for TendermintCoin {
     }
 }
 
-/// An alternative to `crate::PrivKeyBuildPolicy`, typical only for ETH coin.
-pub enum TendermintPrivKeyBuildPolicy {
-    IguanaPrivKey(IguanaPrivKey),
-    GlobalHDAccount(GlobalHDAccountArc),
-    // Keplr(KeplrArc),
-}
+// TODO
+// pub enum TendermintActivationPolicy {
+//     IguanaPrivKey(crate::IguanaPrivKey),
+//     GlobalHDAccount(crypto::GlobalHDAccountArc),
+//     WithPubkey(Pubkey and Address),
+// }
 
 pub struct TendermintCoinImpl {
     ticker: String,
@@ -485,6 +484,7 @@ impl TendermintCommons for TendermintCoin {
 }
 
 impl TendermintCoin {
+    #[allow(clippy::too_many_arguments)]
     pub async fn init(
         ctx: &MmArc,
         ticker: String,
@@ -1207,11 +1207,9 @@ impl TendermintCoin {
         memo: String,
     ) -> cosmrs::Result<SignDoc> {
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
-        let auth_info = SignerInfo::single_direct(
-            Some(self.with_pubkey.as_ref().unwrap().account_public_key.into()),
-            account_info.sequence,
-        )
-        .auth_info(fee);
+        // TODO
+        let pubkey = self.with_pubkey.as_ref().unwrap().account_public_key.into();
+        let auth_info = SignerInfo::single_direct(Some(pubkey), account_info.sequence).auth_info(fee);
         SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)
     }
 
@@ -2023,7 +2021,8 @@ impl MmCoin for TendermintCoin {
 
             let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
 
-            let fee_amount_u64 = 1000;
+            // TODO: We need some manual calculations as we can't simulate TXs on pubkey activation
+            let fee_amount_u64 = 35000;
             // let fee_amount_u64 = coin
             //     .calculate_account_fee_amount_as_u64(
             //         &account_id,
@@ -2078,6 +2077,8 @@ impl MmCoin for TendermintCoin {
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let account_info = coin.account_info(&account_id).await?;
+
+            // TODO: handle pubkey and privkey activation modes here
             let sign_doc = coin
                 .any_to_sign_doc(account_info, msg_send, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;

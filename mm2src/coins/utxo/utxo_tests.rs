@@ -3109,7 +3109,7 @@ fn test_withdraw_to_p2pkh() {
         memo: None,
     };
     let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
-    let transaction: UtxoTx = deserialize(tx_details.tx_hex.as_slice()).unwrap();
+    let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
     let output_script: Script = transaction.outputs[0].script_pubkey.clone().into();
 
     let expected_script = Builder::build_p2pkh(p2pkh_address.hash());
@@ -3159,7 +3159,7 @@ fn test_withdraw_to_p2sh() {
         memo: None,
     };
     let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
-    let transaction: UtxoTx = deserialize(tx_details.tx_hex.as_slice()).unwrap();
+    let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
     let output_script: Script = transaction.outputs[0].script_pubkey.clone().into();
 
     let expected_script = Builder::build_p2sh(p2sh_address.hash());
@@ -3209,7 +3209,7 @@ fn test_withdraw_to_p2wpkh() {
         memo: None,
     };
     let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
-    let transaction: UtxoTx = deserialize(tx_details.tx_hex.as_slice()).unwrap();
+    let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
     let output_script: Script = transaction.outputs[0].script_pubkey.clone().into();
 
     let expected_script = Builder::build_p2wpkh(p2wpkh_address.hash()).expect("valid p2wpkh script");

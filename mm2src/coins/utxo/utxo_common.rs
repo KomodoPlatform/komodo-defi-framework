@@ -3609,7 +3609,7 @@ where
     let mut history_map: HashMap<H256Json, TransactionDetails> = history
         .into_iter()
         .filter_map(|tx| {
-            let tx_hash = H256Json::from_str(&tx.tx.tx_hash()?).ok()?;
+            let tx_hash = H256Json::from_str(tx.tx.tx_hash()?).ok()?;
             Some((tx_hash, tx))
         })
         .collect();
@@ -4117,15 +4117,19 @@ pub async fn update_kmd_rewards<T>(
 where
     T: UtxoCommonOps + UtxoStandardOps + MarketCoinOps,
 {
+    let (Some(tx_hex), Some(tx_hash)) = (tx_details.tx.tx_hex(), tx_details.tx.tx_hash()) else {
+        return MmError::err(UtxoRpcError::Internal("Invalid TransactionDetails".to_string()));
+    };
+
     if !tx_details.should_update_kmd_rewards() {
         let error = "There is no need to update KMD rewards".to_owned();
         return MmError::err(UtxoRpcError::Internal(error));
     }
-    let tx: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).map_to_mm(|e| {
+
+    let tx: UtxoTx = deserialize(tx_hex.as_slice()).map_to_mm(|e| {
         UtxoRpcError::Internal(format!(
             "Error deserializing the {:?} transaction hex: {:?}",
-            tx_details.tx.tx_hash().unwrap(),
-            e
+            tx_hash, e
         ))
     })?;
     let kmd_rewards = coin.calc_interest_of_tx(&tx, input_transactions).await?;
