@@ -261,7 +261,8 @@ fn test_nonce_several_urls() {
     .unwrap();
     let (_ctx, coin) = eth_coin_from_keypair(
         EthCoinType::Eth,
-        &[ETH_DEV_NODE, "http://195.201.0.6:8989", "https://rpc2.sepolia.org"],
+        // "http://195.201.0.6:8989" => is a failing URL to test the fallback
+        &[ETH_DEV_NODE, "http://195.201.0.6:8989"],
         None,
         key_pair,
     );
