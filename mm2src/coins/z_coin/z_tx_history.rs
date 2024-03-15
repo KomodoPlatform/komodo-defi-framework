@@ -10,12 +10,12 @@ cfg_wasm32!(
 );
 
 cfg_native!(
+    use crate::z_coin::BLOCKS_TABLE;
     use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
     use db_common::sqlite::rusqlite::Error as SqliteError;
     use db_common::sqlite::rusqlite::Row;
     use db_common::sqlite::offset_by_id;
     use common::async_blocking;
-    use crate::z_coin::{BLOCKS_TABLE};
 );
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -30,25 +30,9 @@ pub(crate) struct ZCoinTxHistoryItem {
     pub(crate) spent_amount: i64,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-impl ZCoinTxHistoryItem {
-    fn try_from_sql_row(row: &Row<'_>) -> Result<Self, SqliteError> {
-        let mut tx_hash: Vec<u8> = row.get(0)?;
-        tx_hash.reverse();
-        Ok(ZCoinTxHistoryItem {
-            tx_hash,
-            internal_id: row.get(1)?,
-            height: row.get(2)?,
-            timestamp: row.get(3)?,
-            received_amount: row.get(4)?,
-            spent_amount: row.get(5)?,
-        })
-    }
-}
-
 pub(crate) struct ZTxHistoryRes {
-    pub(crate) transactions: Vec<ZCoinTxHistoryItem>,
     pub(crate) total_tx_count: u32,
+    pub(crate) transactions: Vec<ZCoinTxHistoryItem>,
     pub(crate) skipped: usize,
 }
 
@@ -148,6 +132,22 @@ pub(crate) async fn fetch_tx_history_from_db(
         total_tx_count,
         skipped: offset as usize,
     })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ZCoinTxHistoryItem {
+    fn try_from_sql_row(row: &Row<'_>) -> Result<Self, SqliteError> {
+        let mut tx_hash: Vec<u8> = row.get(0)?;
+        tx_hash.reverse();
+        Ok(ZCoinTxHistoryItem {
+            tx_hash,
+            internal_id: row.get(1)?,
+            height: row.get(2)?,
+            timestamp: row.get(3)?,
+            received_amount: row.get(4)?,
+            spent_amount: row.get(5)?,
+        })
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
