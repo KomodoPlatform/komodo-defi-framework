@@ -7,7 +7,7 @@ pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, 
                                       ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 
-use crate::docker_tests::eth_docker_tests::{fill_eth, geth_account};
+use super::eth_docker_tests::{fill_eth, geth_account, global_nft_with_privkey};
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
 use coins::eth::{addr_from_raw_pubkey, eth_coin_from_conf_and_request, EthCoin};
@@ -515,6 +515,18 @@ pub fn generate_utxo_coin_with_random_privkey(
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, balance, timeout);
     (ctx, coin, priv_key)
+}
+
+/// Generates a pair of utxo coin and global NFT_ETH. Fills utxo and NFT_ETH addresses with balance enough for swaps.
+/// If mint_nft true, mints one ERC721 and 3 ERC1155 tokens to NFT_ETH address.
+pub fn utxo_nft_eth_pair_with_random_privkey(
+    utxo_ticker: &str,
+    swap_contract: web3::types::Address,
+    mint_nft: bool,
+) -> (UtxoStandardCoin, EthCoin) {
+    let (ctx, utxo, priv_key) = generate_utxo_coin_with_random_privkey(utxo_ticker, 1000.into());
+    let global_nft = global_nft_with_privkey(&ctx, swap_contract, priv_key, mint_nft);
+    (utxo, global_nft)
 }
 
 /// Get only one address assigned the specified label.

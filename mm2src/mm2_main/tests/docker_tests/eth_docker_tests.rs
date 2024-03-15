@@ -8,8 +8,10 @@ use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 use coins::{CoinProtocol, ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, PrivKeyBuildPolicy, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash};
 use common::{block_on, now_sec};
+use crypto::Secp256k1Secret;
 use ethereum_types::U256;
 use futures01::Future;
+use mm2_core::mm_ctx::MmArc;
 use mm2_number::{BigDecimal, BigUint};
 use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf, nft_dev_conf};
 use std::thread;
@@ -104,7 +106,7 @@ fn fill_erc20(to_addr: Address, amount: U256) {
     wait_for_confirmation(tx_hash);
 }
 
-fn fill_erc721(to_addr: Address, token_id: U256) {
+pub(crate) fn fill_erc721(to_addr: Address, token_id: U256) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc721_contract = Contract::from_json(GETH_WEB3.eth(), erc721_contract(), ERC721_TEST_ABI.as_bytes()).unwrap();
 
@@ -123,7 +125,7 @@ fn fill_erc721(to_addr: Address, token_id: U256) {
     wait_for_confirmation(tx_hash);
 }
 
-fn fill_erc1155(to_addr: Address, token_id: U256, amount: U256) {
+pub(crate) fn fill_erc1155(to_addr: Address, token_id: U256, amount: U256) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc1155_contract =
         Contract::from_json(GETH_WEB3.eth(), erc1155_contract(), ERC1155_TEST_ABI.as_bytes()).unwrap();
@@ -143,30 +145,30 @@ fn fill_erc1155(to_addr: Address, token_id: U256, amount: U256) {
     wait_for_confirmation(tx_hash);
 }
 
-async fn fill_nfts_info(eth_coin: &EthCoin) {
+pub(crate) async fn fill_nfts_info(eth_coin: &EthCoin, tokens_ids: u32, erc1155_amount: BigDecimal) {
     let nft_infos_lock = eth_coin.nfts_infos.clone();
     let mut nft_infos = nft_infos_lock.lock().await;
 
     let erc721_nft_info = NftInfo {
         token_address: erc721_contract(),
-        token_id: BigUint::from(1u32), // Assuming a tokenId of 1 for simplicity
+        token_id: BigUint::from(tokens_ids),
         chain: Chain::Eth,
         contract_type: ContractType::Erc721,
         amount: BigDecimal::from(1),
     };
     let erc721_address_str = eth_addr_to_hex(&erc721_contract());
-    let erc721_key = format!("{},{}", erc721_address_str, 1);
+    let erc721_key = format!("{},{}", erc721_address_str, tokens_ids);
     nft_infos.insert(erc721_key, erc721_nft_info);
 
     let erc1155_nft_info = NftInfo {
         token_address: erc1155_contract(),
-        token_id: BigUint::from(1u32),
+        token_id: BigUint::from(tokens_ids),
         chain: Chain::Eth,
         contract_type: ContractType::Erc1155,
-        amount: BigDecimal::from(3),
+        amount: erc1155_amount,
     };
     let erc1155_address_str = eth_addr_to_hex(&erc1155_contract());
-    let erc1155_key = format!("{},{}", erc1155_address_str, 1);
+    let erc1155_key = format!("{},{}", erc1155_address_str, tokens_ids);
     nft_infos.insert(erc1155_key, erc1155_nft_info);
 }
 
@@ -228,7 +230,9 @@ pub fn erc20_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
     erc20_coin
 }
 
-/// Creates global NFT supplied with one ERC721 and 3 ERC1155 tokens owned by user in nfts_infos field
+/// Creates global NFT from generated random privkey supplied with 100 ETH,
+/// one ERC721 and 3 ERC1155 tokens owned by NFT address in nfts_infos field
+#[allow(dead_code)]
 pub fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
     let nft_conf = nft_dev_conf();
     let req = json!({
@@ -252,8 +256,46 @@ pub fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
 
     fill_eth(global_nft.my_address, U256::from(10).pow(U256::from(20)));
     fill_erc721(global_nft.my_address, U256::from(1));
-    fill_erc1155(global_nft.my_address, U256::from(2), U256::from(3));
-    block_on(fill_nfts_info(&global_nft));
+    fill_erc1155(global_nft.my_address, U256::from(1), U256::from(3));
+    block_on(fill_nfts_info(&global_nft, 1u32, BigDecimal::from(3)));
+
+    global_nft
+}
+
+/// Generates global NFT from privkey supplied with 100 ETH.
+/// If mint_nft true, mints one ERC721 and 3 ERC1155 tokens to NFT_ETH address.
+pub fn global_nft_with_privkey(
+    ctx: &MmArc,
+    swap_contract: Address,
+    priv_key: Secp256k1Secret,
+    mint_nft: bool,
+) -> EthCoin {
+    let nft_conf = nft_dev_conf();
+    let req = json!({
+        "method": "enable",
+        "coin": "NFT_ETH",
+        "urls": ["http://127.0.0.1:8545"],
+        "swap_contract_address": swap_contract,
+    });
+
+    let global_nft = block_on(eth_coin_from_conf_and_request(
+        ctx,
+        "NFT_ETH",
+        &nft_conf,
+        &req,
+        CoinProtocol::NFT {
+            platform: "ETH".to_string(),
+        },
+        PrivKeyBuildPolicy::IguanaPrivKey(priv_key),
+    ))
+    .unwrap();
+
+    fill_eth(global_nft.my_address, U256::from(10).pow(U256::from(20)));
+    if mint_nft {
+        fill_erc721(global_nft.my_address, U256::from(1));
+        fill_erc1155(global_nft.my_address, U256::from(1), U256::from(3));
+        block_on(fill_nfts_info(&global_nft, 1u32, BigDecimal::from(3)));
+    }
 
     global_nft
 }
