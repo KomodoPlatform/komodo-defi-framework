@@ -11,7 +11,6 @@ use common::{block_on, now_sec};
 use crypto::Secp256k1Secret;
 use ethereum_types::U256;
 use futures01::Future;
-use mm2_core::mm_ctx::MmArc;
 use mm2_number::{BigDecimal, BigUint};
 use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf, nft_dev_conf};
 use std::thread;
@@ -264,12 +263,7 @@ pub fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
 
 /// Generates global NFT from privkey supplied with 100 ETH.
 /// If mint_nft true, mints one ERC721 and 3 ERC1155 tokens to NFT_ETH address.
-pub fn global_nft_with_privkey(
-    ctx: &MmArc,
-    swap_contract: Address,
-    priv_key: Secp256k1Secret,
-    mint_nft: bool,
-) -> EthCoin {
+pub fn global_nft_with_privkey(swap_contract: Address, priv_key: Secp256k1Secret, mint_nft: bool) -> EthCoin {
     let nft_conf = nft_dev_conf();
     let req = json!({
         "method": "enable",
@@ -279,7 +273,7 @@ pub fn global_nft_with_privkey(
     });
 
     let global_nft = block_on(eth_coin_from_conf_and_request(
-        ctx,
+        &MM_CTX,
         "NFT_ETH",
         &nft_conf,
         &req,

@@ -524,8 +524,8 @@ pub fn utxo_nft_eth_pair_with_random_privkey(
     swap_contract: web3::types::Address,
     mint_nft: bool,
 ) -> (UtxoStandardCoin, EthCoin) {
-    let (ctx, utxo, priv_key) = generate_utxo_coin_with_random_privkey(utxo_ticker, 1000.into());
-    let global_nft = global_nft_with_privkey(&ctx, swap_contract, priv_key, mint_nft);
+    let (_, utxo, priv_key) = generate_utxo_coin_with_random_privkey(utxo_ticker, 1000.into());
+    let global_nft = global_nft_with_privkey(swap_contract, priv_key, mint_nft);
     (utxo, global_nft)
 }
 
