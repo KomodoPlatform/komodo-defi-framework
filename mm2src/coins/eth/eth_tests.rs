@@ -252,8 +252,9 @@ fn test_wei_from_big_decimal() {
     assert_eq!(expected_wei, wei);
 }
 
+// FIXME: Theoretically, this might fail because it uses the same address as `test_nonce_lock`
+// which in this case doesn't guard against nonce reuse if these two tests happen to run concurrently.
 #[test]
-#[ignore]
 fn test_nonce_several_urls() {
     let (_ctx, coin) = eth_coin_for_test(
         EthCoinType::Eth,
@@ -262,12 +263,14 @@ fn test_nonce_several_urls() {
     );
 
     log!("My address {:?}", coin.my_address);
-    log!("before payment");
-    let payment = coin.send_to_address(coin.my_address, 200000000.into()).wait().unwrap();
+    let old_nonce = coin.clone().get_addr_nonce(coin.my_address).wait().unwrap();
 
+    let payment = coin.send_to_address(coin.my_address, 200000000.into()).wait().unwrap();
     log!("{:?}", payment);
+
     let new_nonce = coin.clone().get_addr_nonce(coin.my_address).wait().unwrap();
-    log!("{:?}", new_nonce);
+
+    assert_eq!(old_nonce.0 + 1, new_nonce.0);
 }
 
 #[test]
@@ -425,7 +428,6 @@ fn test_withdraw_impl_fee_details() {
 }
 
 #[test]
-#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_nonce_lock() {
     use futures::future::join_all;
@@ -440,9 +442,6 @@ fn test_nonce_lock() {
         futures.push(coin.send_to_address(coin.my_address, 200000000.into()).compat());
     }
     let results = block_on(join_all(futures));
-    for result in results.iter() {
-        println!("{:?}", result);
-    }
     for result in results {
         result.unwrap();
     }
