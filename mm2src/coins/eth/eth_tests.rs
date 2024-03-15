@@ -252,14 +252,18 @@ fn test_wei_from_big_decimal() {
     assert_eq!(expected_wei, wei);
 }
 
-// FIXME: Theoretically, this might fail because it uses the same address as `test_nonce_lock`
-// which in this case doesn't guard against nonce reuse if these two tests happen to run concurrently.
 #[test]
 fn test_nonce_several_urls() {
-    let (_ctx, coin) = eth_coin_for_test(
+    // NOTE: Don't use the same address as the ones used in other nonce tests to avoid nonce reuse.
+    let key_pair = KeyPair::from_secret_slice(
+        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
+    )
+    .unwrap();
+    let (_ctx, coin) = eth_coin_from_keypair(
         EthCoinType::Eth,
         &[ETH_DEV_NODE, "http://195.201.0.6:8989", "https://rpc2.sepolia.org"],
         None,
+        key_pair,
     );
 
     log!("My address {:?}", coin.my_address);
