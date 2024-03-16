@@ -806,7 +806,7 @@ fn send_and_spend_erc1155_maker_payment() {
 #[test]
 fn test_nonce_several_urls() {
     // Use one working and one failing URL.
-    let coin = eth_coin_with_random_privkey_using_urls(swap_contract, &[GETH_RPC_URL, "http://127.0.0.1:0"]);
+    let coin = eth_coin_with_random_privkey_using_urls(swap_contract(), &[GETH_RPC_URL, "http://127.0.0.1:0"]);
     let (old_nonce, _) = coin.clone().get_addr_nonce(coin.my_address).wait().unwrap();
 
     // Send a payment to increase the nonce.

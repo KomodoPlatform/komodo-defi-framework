@@ -4316,9 +4316,8 @@ fn test_tx_enum_from_bytes() {
 }
 
 #[test]
-#[ignore]
 fn test_hd_utxo_tx_history() {
-    let client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     block_on(utxo_common_tests::test_hd_utxo_tx_history_impl(client));
 }
 
