@@ -5063,7 +5063,10 @@ impl EthCoin {
 
     /// Requests the nonce from all available nodes and returns the highest nonce available with the list of nodes that returned the highest nonce.
     /// Transactions will be sent using the nodes that returned the highest nonce.
-    fn get_addr_nonce(self, addr: Address) -> Box<dyn Future<Item = (U256, Vec<Web3Instance>), Error = String> + Send> {
+    pub fn get_addr_nonce(
+        self,
+        addr: Address,
+    ) -> Box<dyn Future<Item = (U256, Vec<Web3Instance>), Error = String> + Send> {
         const TMP_SOCKET_DURATION: Duration = Duration::from_secs(300);
 
         let fut = async move {

@@ -253,32 +253,6 @@ fn test_wei_from_big_decimal() {
 }
 
 #[test]
-fn test_nonce_several_urls() {
-    // NOTE: Don't use the same address as the ones used in other nonce tests to avoid nonce reuse.
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
-    )
-    .unwrap();
-    let (_ctx, coin) = eth_coin_from_keypair(
-        EthCoinType::Eth,
-        // "http://195.201.0.6:8989" => is a failing URL to test the fallback
-        &[ETH_DEV_NODE, "http://195.201.0.6:8989"],
-        None,
-        key_pair,
-    );
-
-    log!("My address {:?}", coin.my_address);
-    let old_nonce = coin.clone().get_addr_nonce(coin.my_address).wait().unwrap();
-
-    let payment = coin.send_to_address(coin.my_address, 200000000.into()).wait().unwrap();
-    log!("{:?}", payment);
-
-    let new_nonce = coin.clone().get_addr_nonce(coin.my_address).wait().unwrap();
-
-    assert_eq!(old_nonce.0 + 1, new_nonce.0);
-}
-
-#[test]
 fn test_wait_for_payment_spend_timeout() {
     EthCoin::spend_events.mock_safe(|_, _, _, _| MockResult::Return(Box::new(futures01::future::ok(vec![]))));
     EthCoin::current_block.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(900))));
@@ -430,28 +404,6 @@ fn test_withdraw_impl_fee_details() {
         .into(),
     );
     assert_eq!(expected, tx_details.fee_details);
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_nonce_lock() {
-    use futures::future::join_all;
-    use mm2_test_helpers::for_tests::wait_for_log;
-
-    // send several transactions concurrently to check that they are not using same nonce
-    // using real ETH dev node
-    let (ctx, coin) = eth_coin_for_test(EthCoinType::Eth, ETH_DEV_NODES, None);
-    let mut futures = vec![];
-
-    for _ in 0..5 {
-        futures.push(coin.send_to_address(coin.my_address, 200000000.into()).compat());
-    }
-    let results = block_on(join_all(futures));
-    for result in results {
-        result.unwrap();
-    }
-
-    block_on(wait_for_log(&ctx, 1.1, |line| line.contains("get_addr_nonce…"))).unwrap();
 }
 
 #[test]
