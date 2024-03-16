@@ -17,6 +17,10 @@ impl CurrentBlock for UtxoStandardActivationResult {
 
 impl GetAddressesBalances for UtxoStandardActivationResult {
     fn get_addresses_balances(&self) -> HashMap<String, BigDecimal> {
-        self.wallet_balance.to_addresses_total_balances()
+        self.wallet_balance
+            .to_addresses_total_balances(&self.ticker)
+            .into_iter()
+            .map(|(address, balance)| (address, balance.unwrap_or_default()))
+            .collect()
     }
 }

@@ -1,6 +1,6 @@
 use crate::coin_balance::HDAddressBalance;
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
-use crate::{lp_coinfind_or_err, CoinBalance, CoinWithDerivationMethod, MmCoinEnum};
+use crate::{lp_coinfind_or_err, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod, MmCoinEnum};
 use async_trait::async_trait;
 use common::PagingOptionsEnum;
 use crypto::{Bip44Chain, RpcDerivationPath};
@@ -31,7 +31,7 @@ pub struct HDAccountBalanceResponse {
     pub derivation_path: RpcDerivationPath,
     pub addresses: Vec<HDAddressBalance>,
     // Todo: Add option to get total balance of all addresses in addition to page_balance
-    pub page_balance: CoinBalance,
+    pub page_balances: CoinBalanceMap,
     pub limit: usize,
     pub skipped: u32,
     pub total: u32,
@@ -64,6 +64,7 @@ pub mod common_impl {
     use crate::coin_balance::HDWalletBalanceOps;
     use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDWalletOps};
     use common::calc_total_pages;
+    use std::collections::HashMap;
 
     pub async fn account_balance_rpc<Coin>(
         coin: &Coin,
@@ -91,15 +92,21 @@ pub mod common_impl {
         let addresses = coin
             .known_addresses_balances_with_ids(&hd_account, params.chain, from_address_id..to_address_id)
             .await?;
-        let page_balance = addresses.iter().fold(CoinBalance::default(), |total, addr_balance| {
-            total + addr_balance.balance.clone()
-        });
+
+        let mut page_balances: CoinBalanceMap = HashMap::new();
+        for addr_balance in &addresses {
+            for (ticker, balance) in &addr_balance.balances {
+                let total_balance = page_balances.entry(ticker.clone()).or_insert_with(CoinBalance::default);
+                *total_balance += balance.clone();
+            }
+        }
+        drop_mutability!(page_balances);
 
         let result = HDAccountBalanceResponse {
             account_index: account_id,
             derivation_path: RpcDerivationPath(hd_account.account_derivation_path()),
             addresses,
-            page_balance,
+            page_balances,
             limit: params.limit,
             skipped: std::cmp::min(from_address_id, total_addresses_number),
             total: total_addresses_number,

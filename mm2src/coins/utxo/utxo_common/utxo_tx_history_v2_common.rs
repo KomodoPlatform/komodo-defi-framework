@@ -278,10 +278,14 @@ where
 /// Requests balances of all activated addresses.
 pub async fn my_addresses_balances<Coin>(coin: &Coin) -> BalanceResult<HashMap<String, BigDecimal>>
 where
-    Coin: CoinBalanceReportOps,
+    Coin: CoinBalanceReportOps + MarketCoinOps,
 {
     let coin_balance = coin.coin_balance_report().await?;
-    Ok(coin_balance.to_addresses_total_balances())
+    let addresses_balances = coin_balance.to_addresses_total_balances(coin.ticker());
+    Ok(addresses_balances
+        .into_iter()
+        .map(|(addr, balance)| (addr, balance.unwrap_or_default()))
+        .collect())
 }
 
 /// [`UtxoTxHistoryOps::request_tx_history`] implementation.

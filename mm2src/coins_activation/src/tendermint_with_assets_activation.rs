@@ -266,7 +266,7 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
             });
         }
 
-        let balances = self.all_balances().await.mm_err(|e| TendermintInitError {
+        let balances = self.get_all_balances().await.mm_err(|e| TendermintInitError {
             ticker: self.ticker().to_owned(),
             kind: TendermintInitErrorKind::RpcError(e.to_string()),
         })?;

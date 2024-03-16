@@ -78,7 +78,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::future::Future as Future03;
 use std::num::{NonZeroUsize, TryFromIntError};
-use std::ops::{Add, Deref};
+use std::ops::{Add, AddAssign, Deref};
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering as AtomicOrdering;
@@ -1775,6 +1775,9 @@ pub trait MarketCoinOps {
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
 
+    /// Get all balances for the coin and its tokens. Returns a map of ticker to balance.
+    fn all_balances(&self) -> BalanceFut<CoinBalanceMap>;
+
     fn my_spendable_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
     }
@@ -2145,6 +2148,11 @@ pub struct TradeFee {
     pub paid_from_trading_vol: bool,
 }
 
+/// A type alias for a HashMap where the key is a String representing the coin/token ticker,
+/// and the value is a `CoinBalance` struct representing the balance of that coin/token.
+/// This is used to represent the balance of a wallet or account for multiple coins/tokens.
+pub type CoinBalanceMap = HashMap<String, CoinBalance>;
+
 #[derive(Clone, Debug, Default, PartialEq, PartialOrd, Serialize)]
 pub struct CoinBalance {
     pub spendable: BigDecimal,
@@ -2172,6 +2180,13 @@ impl Add for CoinBalance {
             spendable: self.spendable + rhs.spendable,
             unspendable: self.unspendable + rhs.unspendable,
         }
+    }
+}
+
+impl AddAssign for CoinBalance {
+    fn add_assign(&mut self, rhs: Self) {
+        self.spendable += rhs.spendable;
+        self.unspendable += rhs.unspendable;
     }
 }
 
@@ -5109,7 +5124,7 @@ where
                             address: empty_address.address().to_string(),
                             derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
                             chain,
-                            balance: CoinBalance::default(),
+                            balances: CoinBalanceMap::default(),
                         });
                 balances.extend(empty_addresses);
 
@@ -5118,7 +5133,7 @@ where
                     address: checking_address.to_string(),
                     derivation_path: RpcDerivationPath(checking_address_der_path.clone()),
                     chain,
-                    balance: non_empty_balance,
+                    balances: non_empty_balance,
                 });
                 // Reset the counter of unused addresses to zero since we found a non-empty address.
                 unused_addresses_counter = 0;

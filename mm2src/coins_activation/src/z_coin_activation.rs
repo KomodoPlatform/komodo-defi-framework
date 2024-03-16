@@ -53,7 +53,11 @@ impl CurrentBlock for ZcoinActivationResult {
 
 impl GetAddressesBalances for ZcoinActivationResult {
     fn get_addresses_balances(&self) -> HashMap<String, BigDecimal> {
-        self.wallet_balance.to_addresses_total_balances()
+        self.wallet_balance
+            .to_addresses_total_balances(&self.ticker)
+            .into_iter()
+            .map(|(address, balance)| (address, balance.unwrap_or_default()))
+            .collect()
     }
 }
 
@@ -299,7 +303,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
             current_block,
             wallet_balance: CoinBalanceReport::Iguana(IguanaWalletBalance {
                 address: self.my_z_address_encoded(),
-                balance,
+                balances: HashMap::from([(self.ticker().to_string(), balance)]),
             }),
             first_sync_block,
         })

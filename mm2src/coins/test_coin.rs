@@ -1,6 +1,6 @@
 #![allow(clippy::all)]
 
-use super::{CoinBalance, FundingTxSpend, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
+use super::{CoinBalance, CoinBalanceMap, FundingTxSpend, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
             RawTransactionRequest, SearchForFundingSpendErr, SwapOps, TradeFee, TransactionEnum, TransactionFut,
             WaitForTakerPaymentSpendError};
 use crate::coin_errors::ValidatePaymentResult;
@@ -75,6 +75,8 @@ impl MarketCoinOps for TestCoin {
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> { unimplemented!() }
+
+    fn all_balances(&self) -> BalanceFut<CoinBalanceMap> { unimplemented!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
 

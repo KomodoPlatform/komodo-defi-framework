@@ -54,6 +54,7 @@ where
     } else {
         None
     };
+    // Todo: should we do the same for eth?
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::RequestingWalletBalance)?;
     let wallet_balance = coin
         .enable_coin_balance(
@@ -62,6 +63,7 @@ where
             &activation_params.path_to_address,
         )
         .await
+        // Todo: should we do the same from_enable_coin_balance_err for eth?
         .mm_err(|enable_err| InitUtxoStandardError::from_enable_coin_balance_err(enable_err, ticker.clone()))?;
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::ActivatingCoin)?;
 

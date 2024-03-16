@@ -22,7 +22,7 @@ use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBui
                                 UtxoFieldsWithIguanaSecretBuilder};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
-use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod,
+use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod,
             CoinWithPrivKeyPolicy, ConfirmPaymentInput, DelegationError, DelegationFut, DexFee,
             GetWithdrawSenderAddress, IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
             PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
@@ -839,6 +839,9 @@ impl MarketCoinOps for QtumCoin {
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> { utxo_common::my_balance(self.clone()) }
 
+    // Todo: When implementing HD wallet for QTUM, we should include QRC20 info in QTUM struct and modify this.
+    fn all_balances(&self) -> BalanceFut<CoinBalanceMap> { todo!() }
+
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }
 
     fn platform_ticker(&self) -> &str { self.ticker() }
@@ -1121,14 +1124,16 @@ impl HDWalletBalanceOps for QtumCoin {
         utxo_common::all_known_addresses_balances(self, hd_account).await
     }
 
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<CoinBalance> {
-        utxo_common::address_balance(self, address).await
+    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<CoinBalanceMap> {
+        let ticker = self.ticker().to_string();
+        let address_balance = utxo_common::address_balance(self, address).await?;
+        Ok(HashMap::from([(ticker, address_balance)]))
     }
 
     async fn known_addresses_balances(
         &self,
         addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, CoinBalance)>> {
+    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, CoinBalanceMap)>> {
         utxo_common::addresses_balances(self, addresses).await
     }
 

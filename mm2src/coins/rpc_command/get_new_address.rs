@@ -430,7 +430,7 @@ pub(crate) mod common_impl {
                 address: address.to_string(),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
-                balance,
+                balances: balance,
             },
         })
     }
@@ -474,7 +474,7 @@ pub(crate) mod common_impl {
                 address: address.to_string(),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
-                balance,
+                balances: balance,
             },
         })
     }

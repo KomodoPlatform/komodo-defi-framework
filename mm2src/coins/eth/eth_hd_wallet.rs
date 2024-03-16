@@ -75,6 +75,7 @@ impl HDAddressBalanceScanner for EthCoin {
     // Todo: We would also need to share HD wallet instance between ETH and ERC20 tokens. What about if a token was not enabled?
     // Todo: We need to rescan for this token when enabled in this case.
     // Todo: test all these cases
+    // Todo: maybe recheck for all tokens and ETH.
     async fn is_address_used(&self, address: &Self::Address) -> BalanceResult<bool> {
         let count = self.transaction_count(*address, None).await?;
         if count > U256::zero() {
@@ -138,23 +139,31 @@ impl HDWalletBalanceOps for EthCoin {
             .await
     }
 
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<CoinBalance> {
-        let balance = self
-            .address_balance(*address)
-            .and_then(move |result| Ok(u256_to_big_decimal(result, self.decimals())?))
-            .compat()
-            .await?;
+    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<CoinBalanceMap> {
+        let mut balances = CoinBalanceMap::new();
+        if self.ticker() == self.platform_ticker() {
+            let balance = self
+                .address_balance(*address)
+                .and_then(move |result| Ok(u256_to_big_decimal(result, self.decimals())?))
+                .compat()
+                .await?;
 
-        Ok(CoinBalance {
-            spendable: balance,
-            unspendable: BigDecimal::from(0),
-        })
+            let platform_coin_balance = CoinBalance {
+                spendable: balance,
+                unspendable: BigDecimal::from(0),
+            };
+
+            balances.insert(self.platform_ticker().to_string(), platform_coin_balance);
+        }
+
+        balances.extend(self.get_tokens_balance_list_for_address(*address).await?);
+        Ok(balances)
     }
 
     async fn known_addresses_balances(
         &self,
         addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, CoinBalance)>> {
+    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, CoinBalanceMap)>> {
         let mut balance_futs = Vec::new();
         for address in addresses {
             let fut = async move {

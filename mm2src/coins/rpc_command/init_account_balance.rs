@@ -122,8 +122,9 @@ pub mod common_impl {
     use super::*;
     use crate::coin_balance::HDWalletBalanceOps;
     use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDWalletOps};
-    use crate::{CoinBalance, CoinWithDerivationMethod};
+    use crate::{CoinBalance, CoinBalanceMap, CoinWithDerivationMethod};
     use crypto::RpcDerivationPath;
+    use std::collections::HashMap;
     use std::fmt;
 
     pub async fn init_account_balance_rpc<Coin>(
@@ -143,16 +144,22 @@ pub mod common_impl {
             .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;
 
         let addresses = coin.all_known_addresses_balances(&hd_account).await?;
-        let total_balance = addresses
-            .iter()
-            .fold(CoinBalance::default(), |total_balance, address_balance| {
-                total_balance + address_balance.balance.clone()
-            });
+
+        let mut total_balances: CoinBalanceMap = HashMap::new();
+        for addr_balance in &addresses {
+            for (ticker, balance) in &addr_balance.balances {
+                let total_balance = total_balances
+                    .entry(ticker.clone())
+                    .or_insert_with(CoinBalance::default);
+                *total_balance += balance.clone();
+            }
+        }
+        drop_mutability!(total_balances);
 
         Ok(HDAccountBalance {
             account_index: account_id,
             derivation_path: RpcDerivationPath(hd_account.account_derivation_path()),
-            total_balance,
+            total_balances,
             addresses,
         })
     }

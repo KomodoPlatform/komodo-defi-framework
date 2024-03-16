@@ -89,7 +89,7 @@ async fn fetch_balance(
         )
     } else {
         (
-            coin.get_token_balance_by_address(info.token_address)
+            coin.get_token_balance(info.token_address)
                 .await
                 .map_err(|e| (token_ticker.clone(), e))?,
             info.decimals,

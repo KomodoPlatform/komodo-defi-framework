@@ -8,7 +8,7 @@ use coins::{eth::{v2_activation::{Erc20Protocol, EthTokenActivationError},
                   valid_addr_from_str, EthCoin},
             CoinBalance, CoinProtocol, CoinWithDerivationMethod, MarketCoinOps, MmCoin, MmCoinEnum};
 use common::Future01CompatExt;
-use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::*;
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -126,10 +126,9 @@ impl TokenActivationOps for EthCoin {
             EthTokenActivationParams::Erc20(erc20_init_params) => match protocol_conf {
                 EthTokenProtocol::Erc20(erc20_protocol) => {
                     let token = platform_coin
-                        .initialize_erc20_token(erc20_init_params, erc20_protocol, ticker)
+                        .initialize_erc20_token(erc20_init_params, erc20_protocol, ticker.clone())
                         .await?;
 
-                    // Todo: We only return the enabled address for swaps in the response for now, init_token method should allow scanning and returning all addresses with balances
                     let address = display_eth_address(&token.derivation_method().single_addr_or_err().await?);
                     let token_contract_address = token.erc20_token_address().ok_or_else(|| {
                         EthTokenActivationError::InternalError("Token contract address is missing".to_string())

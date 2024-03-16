@@ -1966,13 +1966,26 @@ impl MarketCoinOps for EthCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let decimals = self.decimals;
         let fut = self
-            .my_balance()
+            .get_balance()
             .and_then(move |result| Ok(u256_to_big_decimal(result, decimals)?))
             .map(|spendable| CoinBalance {
                 spendable,
                 unspendable: BigDecimal::from(0),
             });
         Box::new(fut)
+    }
+
+    fn all_balances(&self) -> BalanceFut<CoinBalanceMap> {
+        let coin = self.clone();
+        let fut = async move {
+            let platform_balance = coin.my_balance().compat().await?;
+            let token_balances = coin.get_tokens_balance_list().await?;
+            let mut balances = CoinBalanceMap::new();
+            balances.insert(coin.ticker().to_string(), platform_balance);
+            balances.extend(token_balances.into_iter());
+            Ok(balances)
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
@@ -4028,7 +4041,7 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn my_balance(&self) -> BalanceFut<U256> {
+    fn get_balance(&self) -> BalanceFut<U256> {
         let coin = self.clone();
         let fut = async move {
             let my_address = coin.derivation_method.single_addr_or_err().await?;
@@ -4037,12 +4050,17 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    pub async fn get_tokens_balance_list(&self) -> Result<HashMap<String, CoinBalance>, MmError<BalanceError>> {
+    pub async fn get_tokens_balance_list_for_address(
+        &self,
+        address: Address,
+    ) -> Result<CoinBalanceMap, MmError<BalanceError>> {
         let coin = || self;
         let mut requests = Vec::new();
         for (token_ticker, info) in self.get_erc_tokens_infos() {
             let fut = async move {
-                let balance_as_u256 = coin().get_token_balance_by_address(info.token_address).await?;
+                let balance_as_u256 = coin()
+                    .get_token_balance_for_address(address, info.token_address)
+                    .await?;
                 let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;
                 let balance = CoinBalance::new(balance_as_big_decimal);
                 Ok((token_ticker, balance))
@@ -4053,13 +4071,20 @@ impl EthCoin {
         try_join_all(requests).await.map(|res| res.into_iter().collect())
     }
 
-    async fn get_token_balance_by_address(&self, token_address: Address) -> Result<U256, MmError<BalanceError>> {
-        let coin = self.clone();
-        let function = ERC20_CONTRACT.function("balanceOf")?;
+    pub async fn get_tokens_balance_list(&self) -> Result<CoinBalanceMap, MmError<BalanceError>> {
         let my_address = self.derivation_method.single_addr_or_err().await?;
-        let data = function.encode_input(&[Token::Address(my_address)])?;
-        let res = coin
-            .call_request(my_address, token_address, None, Some(data.into()))
+        self.get_tokens_balance_list_for_address(my_address).await
+    }
+
+    async fn get_token_balance_for_address(
+        &self,
+        address: Address,
+        token_address: Address,
+    ) -> Result<U256, MmError<BalanceError>> {
+        let function = ERC20_CONTRACT.function("balanceOf")?;
+        let data = function.encode_input(&[Token::Address(address)])?;
+        let res = self
+            .call_request(address, token_address, None, Some(data.into()))
             .await?;
         let decoded = function.decode_output(&res.0)?;
 
@@ -4070,6 +4095,11 @@ impl EthCoin {
                 MmError::err(BalanceError::InvalidResponse(error))
             },
         }
+    }
+
+    async fn get_token_balance(&self, token_address: Address) -> Result<U256, MmError<BalanceError>> {
+        let my_address = self.derivation_method.single_addr_or_err().await?;
+        self.get_token_balance_for_address(my_address, token_address).await
     }
 
     async fn erc1155_balance(&self, token_addr: Address, token_id: &str) -> MmResult<BigDecimal, BalanceError> {

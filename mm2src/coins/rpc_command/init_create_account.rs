@@ -382,7 +382,9 @@ pub(crate) mod common_impl {
     use crate::coin_balance::HDWalletBalanceOps;
     use crate::hd_wallet::{create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps,
                            HDCoinHDAccount, HDWalletOps};
+    use crate::CoinBalanceMap;
     use crypto::Secp256k1ExtendedPublicKey;
+    use std::collections::HashMap;
 
     pub async fn init_create_new_account_rpc<'a, Coin, XPubExtractor>(
         coin: &Coin,
@@ -417,16 +419,21 @@ pub(crate) mod common_impl {
             Vec::new()
         };
 
-        let total_balance = addresses
-            .iter()
-            .fold(CoinBalance::default(), |total_balance, address_balance| {
-                total_balance + address_balance.balance.clone()
-            });
+        let mut total_balances: CoinBalanceMap = HashMap::new();
+        for addr_balance in &addresses {
+            for (ticker, balance) in &addr_balance.balances {
+                let total_balance = total_balances
+                    .entry(ticker.clone())
+                    .or_insert_with(CoinBalance::default);
+                *total_balance += balance.clone();
+            }
+        }
+        drop_mutability!(total_balances);
 
         Ok(HDAccountBalance {
             account_index,
             derivation_path: RpcDerivationPath(account_derivation_path),
-            total_balance,
+            total_balances,
             addresses,
         })
     }

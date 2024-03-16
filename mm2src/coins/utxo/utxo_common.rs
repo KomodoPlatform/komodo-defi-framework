@@ -12,10 +12,10 @@ use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_hd_wallet::UtxoHDAddress;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::watcher_common::validate_watcher_reward;
-use crate::{scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
-            DexFee, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress,
-            RawTransactionError, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
-            RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs, RewardTarget,
+use crate::{scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod,
+            ConfirmPaymentInput, DexFee, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+            GetWithdrawSenderAddress, RawTransactionError, RawTransactionRequest, RawTransactionRes,
+            RawTransactionResult, RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs, RewardTarget,
             SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest, SignUtxoTransactionParams,
             SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps,
@@ -228,10 +228,11 @@ where
 
 /// Requests balances of the given `addresses`.
 /// The pairs `(Address, CoinBalance)` are guaranteed to be in the same order in which they were requested.
-pub async fn addresses_balances<T>(coin: &T, addresses: Vec<Address>) -> BalanceResult<Vec<(Address, CoinBalance)>>
+pub async fn addresses_balances<T>(coin: &T, addresses: Vec<Address>) -> BalanceResult<Vec<(Address, CoinBalanceMap)>>
 where
     T: UtxoCommonOps + GetUtxoMapOps + MarketCoinOps,
 {
+    let ticker = coin.ticker();
     if coin.as_ref().check_utxo_maturity {
         let (unspents_map, _) = coin.get_mature_unspent_ordered_map(addresses.clone()).await?;
         addresses
@@ -242,7 +243,7 @@ where
                     BalanceError::Internal(error)
                 })?;
                 let balance = unspents.to_coin_balance(coin.as_ref().decimals);
-                Ok((address, balance))
+                Ok((address, HashMap::from([(ticker.to_string(), balance)])))
             })
             .collect()
     } else {
@@ -256,7 +257,7 @@ where
             .map(|(address, spendable)| {
                 let unspendable = BigDecimal::from(0);
                 let balance = CoinBalance { spendable, unspendable };
-                (address, balance)
+                (address, HashMap::from([(ticker.to_string(), balance)]))
             })
             .collect())
     }

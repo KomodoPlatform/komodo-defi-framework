@@ -1,6 +1,7 @@
 use crate::hd_wallet::{HDAccountAddressId, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress, HDCoinHDAccount,
                        HDWalletCoinOps, HDWalletOps, HDXPubExtractor, NewAccountCreationError, NewAddressDerivingError};
-use crate::{BalanceError, BalanceResult, CoinBalance, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps};
+use crate::{BalanceError, BalanceResult, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod, DerivationMethod,
+            MarketCoinOps};
 use async_trait::async_trait;
 use common::log::{debug, info};
 use crypto::{Bip44Chain, RpcDerivationPath};
@@ -43,19 +44,21 @@ pub enum CoinBalanceReport {
 
 impl CoinBalanceReport {
     /// Returns a map where the key is address, and the value is the address's total balance [`CoinBalance::total`].
-    pub fn to_addresses_total_balances(&self) -> HashMap<String, BigDecimal> {
+    pub fn to_addresses_total_balances(&self, ticker: &str) -> HashMap<String, Option<BigDecimal>> {
         match self {
             CoinBalanceReport::Iguana(IguanaWalletBalance {
                 ref address,
-                ref balance,
-            }) => iter::once((address.clone(), balance.get_total())).collect(),
+                ref balances,
+            }) => iter::once((address.clone(), balances.get(ticker).map(|b| b.get_total()))).collect(),
             CoinBalanceReport::HD(HDWalletBalance { ref accounts }) => accounts
                 .iter()
                 .flat_map(|account_balance| {
-                    account_balance
-                        .addresses
-                        .iter()
-                        .map(|addr_balance| (addr_balance.address.clone(), addr_balance.balance.get_total()))
+                    account_balance.addresses.iter().map(|addr_balance| {
+                        (
+                            addr_balance.address.clone(),
+                            addr_balance.balances.get(ticker).map(|b| b.get_total()),
+                        )
+                    })
                 })
                 .collect(),
         }
@@ -65,7 +68,7 @@ impl CoinBalanceReport {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct IguanaWalletBalance {
     pub address: String,
-    pub balance: CoinBalance,
+    pub balances: CoinBalanceMap,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -77,7 +80,7 @@ pub struct HDWalletBalance {
 pub struct HDAccountBalance {
     pub account_index: u32,
     pub derivation_path: RpcDerivationPath,
-    pub total_balance: CoinBalance,
+    pub total_balances: CoinBalanceMap,
     pub addresses: Vec<HDAddressBalance>,
 }
 
@@ -86,7 +89,7 @@ pub struct HDAddressBalance {
     pub address: String,
     pub derivation_path: RpcDerivationPath,
     pub chain: Bip44Chain,
-    pub balance: CoinBalance,
+    pub balances: CoinBalanceMap,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -132,7 +135,7 @@ where
                 .map(|balance| {
                     CoinBalanceReport::Iguana(IguanaWalletBalance {
                         address: my_address.to_string(),
-                        balance,
+                        balances: HashMap::from([(self.ticker().to_string(), balance)]),
                     })
                 })
                 .mm_err(BalanceError::from),
@@ -173,13 +176,13 @@ where
     {
         match self.derivation_method() {
             DerivationMethod::SingleAddress(my_address) => self
-                .my_balance()
+                .all_balances()
                 .compat()
                 .await
-                .map(|balance| {
+                .map(|balances| {
                     CoinBalanceReport::Iguana(IguanaWalletBalance {
                         address: my_address.to_string(),
-                        balance,
+                        balances,
                     })
                 })
                 .mm_err(EnableCoinBalanceError::from),
@@ -228,13 +231,21 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         for (_account_id, hd_account) in accounts {
             let addresses = self.all_known_addresses_balances(&hd_account).await?;
 
-            let total_balance = addresses.iter().fold(CoinBalance::default(), |total, addr_balance| {
-                total + addr_balance.balance.clone()
-            });
+            let mut total_balances: CoinBalanceMap = HashMap::new();
+            for addr_balance in &addresses {
+                for (ticker, balance) in &addr_balance.balances {
+                    let total_balance = total_balances
+                        .entry(ticker.clone())
+                        .or_insert_with(CoinBalance::default);
+                    *total_balance += balance.clone();
+                }
+            }
+            drop_mutability!(total_balances);
+
             let account_balance = HDAccountBalance {
                 account_index: hd_account.account_id(),
                 derivation_path: RpcDerivationPath(hd_account.account_derivation_path()),
-                total_balance,
+                total_balances,
                 addresses,
             };
 
@@ -283,7 +294,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
                 address: address.to_string(),
                 derivation_path: RpcDerivationPath(derivation_path),
                 chain,
-                balance,
+                balances: balance,
             })
             .collect();
         Ok(balances)
@@ -292,14 +303,14 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
     /// Requests balance of the given `address`.
     /// This function is expected to be more efficient than ['HDWalletBalanceOps::is_address_used'] in most cases
     /// since many of RPC clients allow us to request the address balance without the history.
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<CoinBalance>;
+    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<CoinBalanceMap>;
 
     /// Requests balances of the given `addresses`.
     /// The pairs `(Address, CoinBalance)` are guaranteed to be in the same order in which they were requested.
     async fn known_addresses_balances(
         &self,
         addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, CoinBalance)>>;
+    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, CoinBalanceMap)>>;
 
     /// Checks if the address has been used by the user by checking if the transaction history of the given `address` is not empty.
     /// Please note the function can return zero balance even if the address has been used before.
@@ -307,7 +318,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         &self,
         address: &HDBalanceAddress<Self>,
         address_scanner: &Self::HDAddressScanner,
-    ) -> BalanceResult<AddressBalanceStatus<CoinBalance>> {
+    ) -> BalanceResult<AddressBalanceStatus<CoinBalanceMap>> {
         if !address_scanner.is_address_used(address).await? {
             return Ok(AddressBalanceStatus::NotUsed);
         }
@@ -367,13 +378,21 @@ pub mod common_impl {
             gen_new_addresses(coin, hd_wallet, hd_account, chain, &mut addresses, min_addresses_number).await?
         }
 
-        let total_balance = addresses.iter().fold(CoinBalance::default(), |total, addr_balance| {
-            total + addr_balance.balance.clone()
-        });
+        let mut total_balances: CoinBalanceMap = HashMap::new();
+        for addr_balance in &addresses {
+            for (ticker, balance) in &addr_balance.balances {
+                let total_balance = total_balances
+                    .entry(ticker.clone())
+                    .or_insert_with(CoinBalance::default);
+                *total_balance += balance.clone();
+            }
+        }
+        drop_mutability!(total_balances);
+
         let account_balance = HDAccountBalance {
             account_index: hd_account.account_id(),
             derivation_path: RpcDerivationPath(hd_account.account_derivation_path()),
-            total_balance,
+            total_balances,
             addresses,
         };
 
@@ -506,7 +525,7 @@ pub mod common_impl {
                 address: hd_address.address().to_string(),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
-                balance: CoinBalance::default(),
+                balances: CoinBalanceMap::default(),
             });
             addresses_to_request.push(hd_address.address().clone());
         }
@@ -518,7 +537,7 @@ pub mod common_impl {
             // The balances are guaranteed to be in the same order as they were requests.
             .zip(new_addresses)
             .map(|((_address, balance), mut address_info)| {
-                address_info.balance = balance;
+                address_info.balances = balance;
                 address_info
             });
 

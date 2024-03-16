@@ -366,7 +366,7 @@ fn test_withdraw_impl_manual_fee() {
         }),
         memo: None,
     };
-    coin.my_balance().wait().unwrap();
+    coin.get_balance().wait().unwrap();
 
     let tx_details = block_on(withdraw_impl(coin, withdraw_req)).unwrap();
     let expected = Some(
@@ -411,7 +411,7 @@ fn test_withdraw_impl_fee_details() {
         }),
         memo: None,
     };
-    coin.my_balance().wait().unwrap();
+    coin.get_balance().wait().unwrap();
 
     let tx_details = block_on(withdraw_impl(coin, withdraw_req)).unwrap();
     let expected = Some(

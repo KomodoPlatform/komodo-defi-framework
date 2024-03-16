@@ -188,7 +188,7 @@ pub struct EthNode {
     pub gui_auth: bool,
 }
 
-#[derive(Serialize, SerializeErrorType)]
+#[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EthTokenActivationError {
     InternalError(String),
@@ -257,6 +257,28 @@ pub struct Erc20TokenActivationRequest {
     pub required_confirmations: Option<u64>,
 }
 
+/// Holds ERC-20 token-specific activation parameters when using the task manager for activation.
+#[derive(Clone, Deserialize)]
+pub struct InitErc20TokenActivationRequest {
+    /// The number of confirmations required for swap transactions.
+    pub required_confirmations: Option<u64>,
+    /// Parameters for HD wallet account and addresses initialization.
+    #[serde(flatten)]
+    pub enable_params: EnabledCoinBalanceParams,
+    /// This determines which Address of the HD account to be used for swaps for this Token.
+    /// If not specified, the first non-change address for the first account is used.
+    #[serde(default)]
+    pub path_to_address: HDAccountAddressId,
+}
+
+impl From<InitErc20TokenActivationRequest> for Erc20TokenActivationRequest {
+    fn from(req: InitErc20TokenActivationRequest) -> Self {
+        Erc20TokenActivationRequest {
+            required_confirmations: req.required_confirmations,
+        }
+    }
+}
+
 /// Encapsulates the request parameters for NFT activation, specifying the provider to be used.
 #[derive(Clone, Deserialize)]
 pub struct NftActivationRequest {
@@ -277,9 +299,19 @@ pub enum EthTokenProtocol {
 }
 
 /// Details for an ERC-20 token protocol.
+#[derive(Clone)]
 pub struct Erc20Protocol {
     pub platform: String,
     pub token_addr: Address,
+}
+
+impl From<Erc20Protocol> for CoinProtocol {
+    fn from(erc20_protocol: Erc20Protocol) -> Self {
+        CoinProtocol::ERC20 {
+            platform: erc20_protocol.platform,
+            contract_address: erc20_protocol.token_addr.to_string(),
+        }
+    }
 }
 
 /// Details for an NFT protocol.

@@ -13,15 +13,15 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_scri
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
                   FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DerivationMethod,
-            DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
-            MmCoinEnum, NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionArgs, PaymentInstructions,
-            PaymentInstructionsErr, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest,
-            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult,
-            SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TakerSwapMakerCoin, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr,
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinBalanceMap, CoinFutSpawner, ConfirmPaymentInput,
+            DerivationMethod, DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin,
+            MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionArgs,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyPolicyNotAllowed, RawTransactionFut,
+            RawTransactionRequest, RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult,
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
+            SignatureResult, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TakerSwapMakerCoin, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
             VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
@@ -1142,6 +1142,8 @@ impl MarketCoinOps for SlpToken {
         let fut = async move { Ok(coin.my_coin_balance().await?) };
         Box::new(fut.boxed().compat())
     }
+
+    fn all_balances(&self) -> BalanceFut<CoinBalanceMap> { todo!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.platform_coin.my_balance().map(|res| res.spendable))

@@ -1,4 +1,5 @@
-use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, WatcherOps};
+use super::{CoinBalance, CoinBalanceMap, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum,
+            WatcherOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::HDAccountAddressId;
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
@@ -407,6 +408,8 @@ impl MarketCoinOps for SolanaCoin {
         });
         Box::new(fut)
     }
+
+    fn all_balances(&self) -> BalanceFut<CoinBalanceMap> { todo!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         let decimals = self.decimals as u64;
