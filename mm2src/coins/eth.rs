@@ -27,7 +27,7 @@ use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_structs::{Chain, ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
                               WithdrawErc721};
 use crate::{CoinAssocTypes, DexFee, MakerNftSwapOpsV2, NftAssocTypes, RefundMakerPaymentArgs, RpcCommonOps,
-            SendNftMakerPaymentArgs, SpendMakerPaymentArgs, ToBytes, ValidateMakerPaymentArgs,
+            SendNftMakerPaymentArgs, SpendMakerPaymentArgs, ToBytes, ValidateNftMakerPaymentArgs,
             ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
@@ -6338,9 +6338,9 @@ impl MakerNftSwapOpsV2 for EthCoin {
 
     async fn validate_nft_maker_payment_v2(
         &self,
-        _args: ValidateMakerPaymentArgs<'_, Self>,
+        args: ValidateNftMakerPaymentArgs<'_, Self>,
     ) -> ValidatePaymentResult<()> {
-        todo!()
+        self.validate_nft_maker_payment_v2_impl(args).await
     }
 
     async fn spend_nft_maker_payment_v2(
@@ -6371,8 +6371,13 @@ impl EthCoin {
         args: SendNftMakerPaymentArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
         let contract_type = self.parse_contract_type(args.contract_type)?;
-        self.validate_payment_args(&args, &contract_type)
-            .map_err(TransactionErr::Plain)?;
+        self.validate_payment_args(
+            args.taker_secret_hash,
+            args.maker_secret_hash,
+            &args.amount,
+            &contract_type,
+        )
+        .map_err(TransactionErr::Plain)?;
 
         let taker_address = addr_from_raw_pubkey(args.taker_pub).map_err(TransactionErr::Plain)?;
         let token_address = self.parse_token_contract_address(args.token_address)?;
@@ -6450,27 +6455,29 @@ impl EthCoin {
         }
     }
 
-    fn validate_payment_args(
+    fn validate_payment_args<'a>(
         &self,
-        args: &SendNftMakerPaymentArgs<Self>,
+        taker_secret_hash: &'a [u8],
+        maker_secret_hash: &'a [u8],
+        amount: &BigDecimal,
         contract_type: &ContractType,
     ) -> Result<(), String> {
         match contract_type {
             ContractType::Erc1155 => {
-                if !is_positive_integer(&args.amount) {
+                if !is_positive_integer(amount) {
                     return Err("ERC-1155 amount must be a positive integer".to_string());
                 }
             },
             ContractType::Erc721 => {
-                if args.amount != BigDecimal::from(1) {
+                if amount != &BigDecimal::from(1) {
                     return Err("ERC-721 amount must be 1".to_string());
                 }
             },
         }
-        if args.taker_secret_hash.len() != 32 {
+        if taker_secret_hash.len() != 32 {
             return Err("taker_secret_hash must be 32 bytes".to_string());
         }
-        if args.maker_secret_hash.len() != 32 {
+        if maker_secret_hash.len() != 32 {
             return Err("maker_secret_hash must be 32 bytes".to_string());
         }
 
@@ -6493,6 +6500,81 @@ impl EthCoin {
             Token::FixedBytes(args.maker_secret_hash.to_vec()),
             Token::Uint(U256::from(time_lock)),
         ])
+    }
+
+    async fn validate_nft_maker_payment_v2_impl(
+        &self,
+        args: ValidateNftMakerPaymentArgs<'_, Self>,
+    ) -> ValidatePaymentResult<()> {
+        let contract_type = self.parse_contract_type(args.contract_type)?;
+        self.validate_payment_args(
+            args.taker_secret_hash,
+            args.maker_secret_hash,
+            &args.amount,
+            &contract_type,
+        )
+        .map_err(ValidatePaymentError::InternalError)?;
+        let _expected_swap_contract = self.parse_token_contract_address(args.swap_contract_address)?;
+        let _maker_address = addr_from_raw_pubkey(args.maker_pub).map_err(ValidatePaymentError::InternalError)?;
+        let time_lock_u32 = args
+            .time_lock
+            .try_into()
+            .map_err(ValidatePaymentError::TimelockOverflow)?;
+        let _swap_id = self.etomic_swap_id(time_lock_u32, args.maker_secret_hash);
+
+        todo!()
+    }
+
+    #[allow(dead_code)]
+    async fn payment_status_v2(
+        &self,
+        swap_contract_addr: Address,
+        swap_id: Token,
+        contract: Contract,
+        state_type: StateType,
+    ) -> Result<U256, PaymentStatusErr> {
+        let function_name = state_type.as_str();
+        let function = contract.function(function_name)?;
+        let data = function.encode_input(&[swap_id])?;
+        let bytes = self.call_request(swap_contract_addr, None, Some(data.into())).await?;
+        let decoded_tokens = function.decode_output(&bytes.0)?;
+        let _state = decoded_tokens.get(2).ok_or_else(|| {
+            PaymentStatusErr::Internal("Payment status must contain 'state' as the 2nd token".to_string())
+        })?;
+        todo!()
+    }
+}
+
+#[derive(Debug, Display)]
+enum PaymentStatusErr {
+    #[display(fmt = "Abi error: {}", _0)]
+    AbiError(String),
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+}
+
+impl From<ethabi::Error> for PaymentStatusErr {
+    fn from(e: ethabi::Error) -> Self { Self::AbiError(e.to_string()) }
+}
+
+impl From<web3::Error> for PaymentStatusErr {
+    fn from(err: web3::Error) -> Self { Self::Transport(err.to_string()) }
+}
+
+#[allow(dead_code)]
+enum StateType {
+    MakerPayments,
+    TakerPayments,
+}
+
+impl StateType {
+    fn as_str(&self) -> &'static str {
+        match self {
+            StateType::MakerPayments => "makerPayments",
+            StateType::TakerPayments => "takerPayments",
+        }
     }
 }
 
