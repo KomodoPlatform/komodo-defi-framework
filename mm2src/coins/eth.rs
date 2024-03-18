@@ -6400,6 +6400,10 @@ impl EthCoin {
         let taker_address = addr_from_raw_pubkey(args.taker_pub).map_err(TransactionErr::Plain)?;
         let token_address = self.parse_token_contract_address(args.token_address)?;
         let swap_contract_address = self.parse_token_contract_address(args.swap_contract_address)?;
+        log!(
+            "swap_contract_address in SEND MAKER FUNCTION{:?}",
+            swap_contract_address
+        );
         let time_lock_u32 = args
             .time_lock
             .try_into()
@@ -6425,7 +6429,7 @@ impl EthCoin {
                         Token::Bytes(htlc_data),
                     ])?;
                     let gas = U256::from(ETH_GAS);
-                    self.sign_and_send_transaction(0.into(), Action::Call(token_address), data, gas)
+                    self.sign_and_send_transaction(0.into(), Action::Call(self.my_address), data, gas)
                         .compat()
                         .await
                 },
