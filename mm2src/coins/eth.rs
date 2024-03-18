@@ -6400,10 +6400,6 @@ impl EthCoin {
         let taker_address = addr_from_raw_pubkey(args.taker_pub).map_err(TransactionErr::Plain)?;
         let token_address = self.parse_token_contract_address(args.token_address)?;
         let swap_contract_address = self.parse_token_contract_address(args.swap_contract_address)?;
-        log!(
-            "swap_contract_address in SEND MAKER FUNCTION{:?}",
-            swap_contract_address
-        );
         let time_lock_u32 = args
             .time_lock
             .try_into()
@@ -6429,7 +6425,7 @@ impl EthCoin {
                         Token::Bytes(htlc_data),
                     ])?;
                     let gas = U256::from(ETH_GAS);
-                    self.sign_and_send_transaction(0.into(), Action::Call(self.my_address), data, gas)
+                    self.sign_and_send_transaction(0.into(), Action::Call(token_address), data, gas)
                         .compat()
                         .await
                 },
@@ -6537,6 +6533,7 @@ impl EthCoin {
         )
         .map_err(ValidatePaymentError::InternalError)?;
         let expected_swap_contract = self.parse_token_contract_address(args.swap_contract_address)?;
+        let expected_token_address = self.parse_token_contract_address(args.token_address)?;
         let maker_address = addr_from_raw_pubkey(args.maker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
         let time_lock_u32 = args
             .time_lock
@@ -6572,10 +6569,11 @@ impl EthCoin {
                 tx_from_rpc, maker_address
             )));
         }
-        if tx_from_rpc.to != Some(expected_swap_contract) {
+        // As we call "safeTransferFrom" directly from token_address, then 'to' should be expected_token_address
+        if tx_from_rpc.to != Some(expected_token_address) {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Payment tx {:?} was sent to wrong address, expected {:?}",
-                tx_from_rpc, expected_swap_contract,
+                tx_from_rpc, expected_token_address,
             )));
         }
         match self.coin_type {
