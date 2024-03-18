@@ -184,6 +184,14 @@ impl TendermintConf {
     }
 }
 
+pub enum TendermintActivationPolicy {
+    PrivateKey(PrivKeyPolicy<Secp256k1Secret>),
+    PublicKey {
+        account_address: AccountId,
+        account_public_key: PublicKey,
+    },
+}
+
 struct TendermintRpcClient(AsyncMutex<TendermintRpcClientImpl>);
 
 struct TendermintRpcClientImpl {
@@ -218,13 +226,6 @@ impl RpcCommonOps for TendermintCoin {
         ));
     }
 }
-
-// TODO
-// pub enum TendermintActivationPolicy {
-//     IguanaPrivKey(crate::IguanaPrivKey),
-//     GlobalHDAccount(crypto::GlobalHDAccountArc),
-//     WithPubkey(Pubkey and Address),
-// }
 
 pub struct TendermintCoinImpl {
     ticker: String,
@@ -548,18 +549,21 @@ impl TendermintCoin {
             });
         }
 
-        let priv_key = priv_key_policy.activated_key_or_err().mm_err(|e| TendermintInitError {
-            ticker: ticker.clone(),
-            kind: TendermintInitErrorKind::Internal(e.to_string()),
-        })?;
+        let account_id = if let Some(with_pubkey) = &with_pubkey {
+            with_pubkey.account_address.clone()
+        } else {
+            let priv_key = priv_key_policy.activated_key_or_err().mm_err(|e| TendermintInitError {
+                ticker: ticker.clone(),
+                kind: TendermintInitErrorKind::Internal(e.to_string()),
+            })?;
 
-        let account_id =
             account_id_from_privkey(priv_key.as_slice(), &protocol_info.account_prefix).mm_err(|kind| {
                 TendermintInitError {
                     ticker: ticker.clone(),
                     kind,
                 }
-            })?;
+            })?
+        };
 
         let rpc_clients = clients_from_urls(rpc_urls.as_ref()).mm_err(|kind| TendermintInitError {
             ticker: ticker.clone(),
