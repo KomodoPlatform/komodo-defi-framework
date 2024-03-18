@@ -6533,7 +6533,7 @@ impl EthCoin {
         )
         .map_err(ValidatePaymentError::InternalError)?;
         let expected_swap_contract = self.parse_token_contract_address(args.swap_contract_address)?;
-        let _maker_address = addr_from_raw_pubkey(args.maker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
+        let maker_address = addr_from_raw_pubkey(args.maker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
         let time_lock_u32 = args
             .time_lock
             .try_into()
@@ -6553,8 +6553,67 @@ impl EthCoin {
                 maker_status
             )));
         }
-
-        todo!()
+        let tx_from_rpc = self
+            .transaction(TransactionId::Hash(args.maker_payment_tx.hash))
+            .await?;
+        let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
+            ValidatePaymentError::TxDoesNotExist(format!(
+                "Didn't find provided tx {:?} on ETH node",
+                args.maker_payment_tx.hash
+            ))
+        })?;
+        if tx_from_rpc.from != Some(maker_address) {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Payment tx {:?} was sent from wrong address, expected {:?}",
+                tx_from_rpc, maker_address
+            )));
+        }
+        if tx_from_rpc.to != Some(expected_swap_contract) {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Payment tx {:?} was sent to wrong address, expected {:?}",
+                tx_from_rpc, expected_swap_contract,
+            )));
+        }
+        match self.coin_type {
+            EthCoinType::Nft { .. } => match contract_type {
+                ContractType::Erc1155 => {
+                    let function = NFT_SWAP_CONTRACT
+                        .function("onERC1155Received")
+                        .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
+                    let decoded = decode_contract_call(function, &tx_from_rpc.input.0)
+                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
+                    if decoded[0] != Token::Address(maker_address) {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Invalid `operator` {:?}, expected {:?}",
+                            decoded[0],
+                            Token::Address(maker_address)
+                        )));
+                    }
+                    if decoded[1] != Token::Address(maker_address) {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Invalid `sender` {:?}, expected {:?}",
+                            decoded[1],
+                            Token::Address(maker_address)
+                        )));
+                    }
+                    // TODO complete other checks
+                },
+                ContractType::Erc721 => {
+                    let function = NFT_SWAP_CONTRACT
+                        .function("onERC721Received")
+                        .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
+                    let _decoded = decode_contract_call(function, &tx_from_rpc.input.0)
+                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
+                    // TODO complete other checks
+                },
+            },
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } => {
+                return MmError::err(ValidatePaymentError::InternalError(
+                    "EthCoinType must be Nft".to_string(),
+                ))
+            },
+        }
+        Ok(())
     }
 
     async fn payment_status_v2(
