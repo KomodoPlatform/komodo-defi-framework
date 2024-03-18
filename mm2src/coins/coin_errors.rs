@@ -1,4 +1,4 @@
-use crate::eth::{CoinAssocTypesError, NftAssocTypesError};
+use crate::eth::{CoinAssocTypesError, NftAssocTypesError, PaymentStatusErr};
 use crate::{eth::Web3RpcError, my_tx_history_v2::MyTxHistoryErrorV2, utxo::rpc_clients::UtxoRpcError, DelegationError,
             NumConversError, TxHistoryError, UnexpectedDerivationMethod, WithdrawError};
 use futures01::Future;
@@ -97,6 +97,15 @@ impl From<NftAssocTypesError> for ValidatePaymentError {
 
 impl From<CoinAssocTypesError> for ValidatePaymentError {
     fn from(err: CoinAssocTypesError) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<PaymentStatusErr> for ValidatePaymentError {
+    fn from(err: PaymentStatusErr) -> Self {
+        match err {
+            PaymentStatusErr::Transport(e) => Self::Transport(e),
+            PaymentStatusErr::AbiError(e) | PaymentStatusErr::Internal(e) => Self::InternalError(e),
+        }
+    }
 }
 
 #[derive(Debug, Display)]

@@ -141,12 +141,28 @@ pub const ERC20_ABI: &str = include_str!("eth/erc20_abi.json");
 const ERC721_ABI: &str = include_str!("eth/erc721_abi.json");
 /// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1155.md
 const ERC1155_ABI: &str = include_str!("eth/erc1155_abi.json");
+const NFT_SWAP_CONTRACT_ABI: &str = include_str!("eth/nft_swap_contract_abi.json");
 /// Payment states from etomic swap smart contract: https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol#L5
 pub enum PaymentState {
     Uninitialized,
     Sent,
     Spent,
     Refunded,
+}
+#[allow(dead_code)]
+enum MakerPaymentState {
+    Uninitialized,
+    PaymentSent,
+    TakerSpent,
+    MakerRefunded,
+}
+#[allow(dead_code)]
+enum TakerPaymentState {
+    Uninitialized,
+    PaymentSent,
+    TakerApproved,
+    MakerSpent,
+    TakerRefunded,
 }
 // Ethgasstation API returns response in 10^8 wei units. So 10 from their API mean 1 gwei
 const ETH_GAS_STATION_DECIMALS: u8 = 8;
@@ -183,6 +199,7 @@ lazy_static! {
     pub static ref ERC20_CONTRACT: Contract = Contract::load(ERC20_ABI.as_bytes()).unwrap();
     pub static ref ERC721_CONTRACT: Contract = Contract::load(ERC721_ABI.as_bytes()).unwrap();
     pub static ref ERC1155_CONTRACT: Contract = Contract::load(ERC1155_ABI.as_bytes()).unwrap();
+    pub static ref NFT_SWAP_CONTRACT: Contract = Contract::load(NFT_SWAP_CONTRACT_ABI.as_bytes()).unwrap();
 }
 
 pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>> + Send>;
@@ -5879,7 +5896,7 @@ pub async fn eth_coin_from_conf_and_request(
     }
 
     let (coin_type, decimals) = match protocol {
-        CoinProtocol::ETH | CoinProtocol::NFT { .. } => (EthCoinType::Eth, ETH_DECIMALS),
+        CoinProtocol::ETH => (EthCoinType::Eth, ETH_DECIMALS),
         CoinProtocol::ERC20 {
             platform,
             contract_address,
@@ -5900,6 +5917,7 @@ pub async fn eth_coin_from_conf_and_request(
             };
             (EthCoinType::Erc20 { platform, token_addr }, decimals)
         },
+        CoinProtocol::NFT { platform } => (EthCoinType::Nft { platform }, ETH_DECIMALS),
         _ => return ERR!("Expect ETH, ERC20 or NFT protocol"),
     };
 
@@ -6392,7 +6410,7 @@ impl EthCoin {
         let htlc_data = self.prepare_htlc_data(&args, taker_address, token_address, time_lock_u32);
 
         match &self.coin_type {
-            EthCoinType::Eth => match contract_type {
+            EthCoinType::Nft { .. } => match contract_type {
                 ContractType::Erc1155 => {
                     let function = ERC1155_CONTRACT
                         .function("safeTransferFrom")
@@ -6449,8 +6467,8 @@ impl EthCoin {
             EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
                 "ERC20 Protocol is not supported for NFT Swaps".to_string(),
             )),
-            EthCoinType::Nft { .. } => Err(TransactionErr::ProtocolNotSupported(
-                "Nft Protocol is not supported yet for NFT Swaps!".to_string(),
+            EthCoinType::Eth => Err(TransactionErr::ProtocolNotSupported(
+                "ETH Protocol is not supported for NFT Swaps!".to_string(),
             )),
         }
     }
@@ -6514,23 +6532,36 @@ impl EthCoin {
             &contract_type,
         )
         .map_err(ValidatePaymentError::InternalError)?;
-        let _expected_swap_contract = self.parse_token_contract_address(args.swap_contract_address)?;
-        let _maker_address = addr_from_raw_pubkey(args.maker_pub).map_err(ValidatePaymentError::InternalError)?;
+        let expected_swap_contract = self.parse_token_contract_address(args.swap_contract_address)?;
+        let _maker_address = addr_from_raw_pubkey(args.maker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
         let time_lock_u32 = args
             .time_lock
             .try_into()
             .map_err(ValidatePaymentError::TimelockOverflow)?;
-        let _swap_id = self.etomic_swap_id(time_lock_u32, args.maker_secret_hash);
+        let swap_id = self.etomic_swap_id(time_lock_u32, args.maker_secret_hash);
+        let maker_status = self
+            .payment_status_v2(
+                expected_swap_contract,
+                Token::FixedBytes(swap_id),
+                &NFT_SWAP_CONTRACT,
+                StateType::MakerPayments,
+            )
+            .await?;
+        if maker_status != U256::from(MakerPaymentState::PaymentSent as u8) {
+            return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                "Maker Payment state is not PAYMENT_STATE_SENT, got {}",
+                maker_status
+            )));
+        }
 
         todo!()
     }
 
-    #[allow(dead_code)]
     async fn payment_status_v2(
         &self,
         swap_contract_addr: Address,
         swap_id: Token,
-        contract: Contract,
+        contract: &Contract,
         state_type: StateType,
     ) -> Result<U256, PaymentStatusErr> {
         let function_name = state_type.as_str();
@@ -6538,15 +6569,21 @@ impl EthCoin {
         let data = function.encode_input(&[swap_id])?;
         let bytes = self.call_request(swap_contract_addr, None, Some(data.into())).await?;
         let decoded_tokens = function.decode_output(&bytes.0)?;
-        let _state = decoded_tokens.get(2).ok_or_else(|| {
+        let state = decoded_tokens.get(2).ok_or_else(|| {
             PaymentStatusErr::Internal("Payment status must contain 'state' as the 2nd token".to_string())
         })?;
-        todo!()
+        match state {
+            Token::Uint(state) => Ok(*state),
+            _ => Err(PaymentStatusErr::Internal(format!(
+                "Payment status must be uint, got {:?}",
+                state
+            ))),
+        }
     }
 }
 
 #[derive(Debug, Display)]
-enum PaymentStatusErr {
+pub enum PaymentStatusErr {
     #[display(fmt = "Abi error: {}", _0)]
     AbiError(String),
     #[display(fmt = "Transport error: {}", _0)]

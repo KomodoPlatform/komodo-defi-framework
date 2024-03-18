@@ -1,5 +1,4 @@
-use super::docker_tests_common::{utxo_nft_eth_pair_with_random_privkey, MYCOIN};
-use super::eth_docker_tests::{erc721_contract, nft_swap_contract};
+use super::eth_docker_tests::{erc721_contract, global_nft_with_random_privkey, nft_swap_contract};
 use coins::eth::EthCoin;
 use coins::nft::nft_structs::{Chain, ContractType};
 use coins::{CoinAssocTypes, MakerNftSwapOpsV2, SendNftMakerPaymentArgs, SwapOps, ToBytes};
@@ -12,9 +11,8 @@ fn send_and_spend_erc721_maker_payment() {
     // as EtomicSwapNft will have its own contract address, due to EIP-170 contract size limitations.
     // TODO need to add NFT conf in coin conf and refactor enable nft a bit
 
-    let (_maker_utxo, maker_global_nft) = utxo_nft_eth_pair_with_random_privkey(MYCOIN, nft_swap_contract(), true);
-    // We can treat taker global NFT as ETH coin, as they are generated with same priv key and configurations
-    let (_taker_utxo, taker_global_nft) = utxo_nft_eth_pair_with_random_privkey(MYCOIN, nft_swap_contract(), false);
+    let maker_global_nft = global_nft_with_random_privkey(nft_swap_contract());
+    let taker_global_nft = global_nft_with_random_privkey(nft_swap_contract());
 
     let time_lock = now_sec() - 100;
     let taker_pubkey = taker_global_nft.derive_htlc_pubkey(&[]);
@@ -37,9 +35,8 @@ fn send_and_spend_erc721_maker_payment() {
 
 #[test]
 fn send_and_spend_erc1155_maker_payment() {
-    let (_maker_utxo, maker_global_nft) = utxo_nft_eth_pair_with_random_privkey(MYCOIN, nft_swap_contract(), true);
-    // We can treat taker global NFT as ETH coin
-    let (_taker_utxo, taker_global_nft) = utxo_nft_eth_pair_with_random_privkey(MYCOIN, nft_swap_contract(), false);
+    let maker_global_nft = global_nft_with_random_privkey(nft_swap_contract());
+    let taker_global_nft = global_nft_with_random_privkey(nft_swap_contract());
 
     let time_lock = now_sec() - 100;
     let taker_pubkey = taker_global_nft.derive_htlc_pubkey(&[]);
