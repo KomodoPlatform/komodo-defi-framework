@@ -192,6 +192,25 @@ pub enum TendermintActivationPolicy {
     },
 }
 
+impl TendermintActivationPolicy {
+    pub fn with_private_key(private_key: PrivKeyPolicy<Secp256k1Secret>) -> Self {
+        Self::PrivateKey(private_key)
+
+    }
+
+    pub fn with_public_key(account_address: AccountId, account_public_key: PublicKey) -> Self {
+        Self::PublicKey {
+            account_address,
+            account_public_key
+        }
+    }
+
+    pub fn account_id(&self) -> AccountId {
+        // for Self::PublicKey we have to do prefix validation.
+        todo!()
+    }
+}
+
 struct TendermintRpcClient(AsyncMutex<TendermintRpcClientImpl>);
 
 struct TendermintRpcClientImpl {
@@ -234,7 +253,7 @@ pub struct TendermintCoinImpl {
     /// My address
     pub account_id: AccountId,
     pub(super) account_prefix: String,
-    pub(super) priv_key_policy: TendermintPrivKeyPolicy,
+    pub(super) activation_policy: TendermintActivationPolicy,
     pub(crate) decimals: u8,
     pub(super) denom: Denom,
     chain_id: ChainId,
@@ -247,58 +266,6 @@ pub struct TendermintCoinImpl {
     client: TendermintRpcClient,
     chain_registry_name: Option<String>,
     pub(crate) ctx: MmWeak,
-    with_pubkey: Option<PubkeyActivation>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct PubkeyActivation {
-    account_address: AccountId,
-    #[serde(deserialize_with = "deserialize_account_public_key")]
-    account_public_key: PublicKey,
-}
-
-fn deserialize_account_public_key<'de, D>(deserializer: D) -> Result<PublicKey, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value: Json = serde::Deserialize::deserialize(deserializer)?;
-
-    match value {
-        Json::Object(mut map) => {
-            if let Some(type_) = map.remove("type") {
-                if let Some(value) = map.remove("value") {
-                    match type_.as_str() {
-                        Some("ed25519") => {
-                            let value: Vec<u8> = value
-                                .as_array()
-                                .unwrap()
-                                .iter()
-                                .map(|i| i.as_u64().unwrap() as u8)
-                                .collect();
-                            Ok(PublicKey::from_raw_ed25519(&value).unwrap())
-                        },
-                        Some("secp256k1") => {
-                            let value: Vec<u8> = value
-                                .as_array()
-                                .unwrap()
-                                .iter()
-                                .map(|i| i.as_u64().unwrap() as u8)
-                                .collect();
-                            Ok(PublicKey::from_raw_secp256k1(&value).unwrap())
-                        },
-                        _ => Err(serde::de::Error::custom(
-                            "Unsupported pubkey algorithm. Use one of ['ed25519', 'secp256k1']",
-                        )),
-                    }
-                } else {
-                    Err(serde::de::Error::custom("Missing field 'value'."))
-                }
-            } else {
-                Err(serde::de::Error::custom("Missing field 'type'."))
-            }
-        },
-        _ => Err(serde::de::Error::custom("Invalid data.")),
-    }
 }
 
 #[derive(Clone)]
@@ -539,8 +506,7 @@ impl TendermintCoin {
         protocol_info: TendermintProtocolInfo,
         rpc_urls: Vec<String>,
         tx_history: bool,
-        priv_key_policy: TendermintPrivKeyPolicy,
-        with_pubkey: Option<PubkeyActivation>,
+        activation_policy: TendermintActivationPolicy,
     ) -> MmResult<Self, TendermintInitError> {
         if rpc_urls.is_empty() {
             return MmError::err(TendermintInitError {
@@ -549,21 +515,20 @@ impl TendermintCoin {
             });
         }
 
-        let account_id = if let Some(with_pubkey) = &with_pubkey {
-            with_pubkey.account_address.clone()
-        } else {
-            let priv_key = priv_key_policy.activated_key_or_err().mm_err(|e| TendermintInitError {
-                ticker: ticker.clone(),
-                kind: TendermintInitErrorKind::Internal(e.to_string()),
-            })?;
 
-            account_id_from_privkey(priv_key.as_slice(), &protocol_info.account_prefix).mm_err(|kind| {
-                TendermintInitError {
-                    ticker: ticker.clone(),
-                    kind,
-                }
-            })?
-        };
+        let account_id = activation_policy.account_id();
+
+        // let priv_key = priv_key_policy.activated_key_or_err().mm_err(|e| TendermintInitError {
+        //     ticker: ticker.clone(),
+        //     kind: TendermintInitErrorKind::Internal(e.to_string()),
+        // })?;
+
+        // account_id_from_privkey(priv_key.as_slice(), &protocol_info.account_prefix).mm_err(|kind| {
+        //     TendermintInitError {
+        //         ticker: ticker.clone(),
+        //         kind,
+        //     }
+        // })?
 
         let rpc_clients = clients_from_urls(rpc_urls.as_ref()).mm_err(|kind| TendermintInitError {
             ticker: ticker.clone(),
@@ -602,7 +567,7 @@ impl TendermintCoin {
             ticker,
             account_id,
             account_prefix: protocol_info.account_prefix,
-            priv_key_policy,
+            activation_policy,
             decimals: protocol_info.decimals,
             denom,
             chain_id,
@@ -614,7 +579,6 @@ impl TendermintCoin {
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
             chain_registry_name: protocol_info.chain_registry_name,
             ctx: ctx.weak(),
-            with_pubkey,
         })))
     }
 

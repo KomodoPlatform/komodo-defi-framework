@@ -6,7 +6,7 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
-use coins::tendermint::{tendermint_priv_key_policy, PubkeyActivation, TendermintCoin, TendermintCommons,
+use coins::tendermint::{tendermint_priv_key_policy, TendermintActivationPolicy, TendermintCoin, TendermintCommons,
                         TendermintConf, TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo,
                         TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
                         TendermintTokenProtocolInfo};
@@ -45,6 +45,57 @@ pub struct TendermintActivationParams {
     #[serde(default)]
     pub path_to_address: StandardHDCoinAddress,
     with_pubkey: Option<PubkeyActivation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct PubkeyActivation {
+    account_address: AccountId,
+    #[serde(deserialize_with = "deserialize_account_public_key")]
+    account_public_key: PublicKey,
+}
+
+fn deserialize_account_public_key<'de, D>(deserializer: D) -> Result<PublicKey, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value: Json = serde::Deserialize::deserialize(deserializer)?;
+
+    match value {
+        Json::Object(mut map) => {
+            if let Some(type_) = map.remove("type") {
+                if let Some(value) = map.remove("value") {
+                    match type_.as_str() {
+                        Some("ed25519") => {
+                            let value: Vec<u8> = value
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|i| i.as_u64().unwrap() as u8)
+                                .collect();
+                            Ok(PublicKey::from_raw_ed25519(&value).unwrap())
+                        },
+                        Some("secp256k1") => {
+                            let value: Vec<u8> = value
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|i| i.as_u64().unwrap() as u8)
+                                .collect();
+                            Ok(PublicKey::from_raw_secp256k1(&value).unwrap())
+                        },
+                        _ => Err(serde::de::Error::custom(
+                            "Unsupported pubkey algorithm. Use one of ['ed25519', 'secp256k1']",
+                        )),
+                    }
+                } else {
+                    Err(serde::de::Error::custom("Missing field 'value'."))
+                }
+            } else {
+                Err(serde::de::Error::custom("Missing field 'type'."))
+            }
+        },
+        _ => Err(serde::de::Error::custom("Invalid data.")),
+    }
 }
 
 impl TxHistory for TendermintActivationParams {
