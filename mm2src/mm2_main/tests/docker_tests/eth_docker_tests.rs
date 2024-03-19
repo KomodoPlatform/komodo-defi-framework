@@ -12,7 +12,6 @@ use ethereum_types::U256;
 use futures01::Future;
 use mm2_number::{BigDecimal, BigUint};
 use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf, nft_dev_conf};
-use std::cmp::min;
 use std::thread;
 use std::time::Duration;
 use web3::contract::{Contract, Options};
@@ -105,7 +104,7 @@ fn fill_erc20(to_addr: Address, amount: U256) {
     wait_for_confirmation(tx_hash);
 }
 
-pub(crate) fn fill_erc721(to_addr: Address, token_id: U256) {
+pub(crate) fn mint_erc721(to_addr: Address, token_id: U256) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc721_contract = Contract::from_json(GETH_WEB3.eth(), erc721_contract(), ERC721_TEST_ABI.as_bytes()).unwrap();
 
@@ -122,9 +121,18 @@ pub(crate) fn fill_erc721(to_addr: Address, token_id: U256) {
     ))
     .unwrap();
     wait_for_confirmation(tx_hash);
+
+    let owner: Address =
+        block_on(erc721_contract.query("ownerOf", Token::Uint(token_id), None, Options::default(), None)).unwrap();
+
+    assert_eq!(
+        owner, to_addr,
+        "The ownership of the tokenID {:?} does not match the expected address {:?}.",
+        token_id, to_addr
+    );
 }
 
-pub(crate) fn fill_erc1155(to_addr: Address, token_id: U256, amount: U256) {
+pub(crate) fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc1155_contract =
         Contract::from_json(GETH_WEB3.eth(), erc1155_contract(), ERC1155_TEST_ABI.as_bytes()).unwrap();
@@ -142,33 +150,54 @@ pub(crate) fn fill_erc1155(to_addr: Address, token_id: U256, amount: U256) {
     ))
     .unwrap();
     wait_for_confirmation(tx_hash);
+
+    // Check the balance of the token for the to_addr
+    let balance: U256 = block_on(erc1155_contract.query(
+        "balanceOf",
+        (Token::Address(to_addr), Token::Uint(token_id)),
+        None,
+        Options::default(),
+        None,
+    ))
+    .unwrap();
+
+    assert_eq!(
+        balance, amount,
+        "The balance of tokenId {:?} for address {:?} does not match the expected amount {:?}.",
+        token_id, to_addr, amount
+    );
 }
 
-pub(crate) async fn fill_nfts_info(eth_coin: &EthCoin, tokens_ids: u32, erc1155_amount: BigDecimal) {
+pub(crate) async fn fill_erc1155_info(eth_coin: &EthCoin, tokens_id: u32, amount: u32) {
+    let nft_infos_lock = eth_coin.nfts_infos.clone();
+    let mut nft_infos = nft_infos_lock.lock().await;
+
+    let erc1155_nft_info = NftInfo {
+        token_address: erc1155_contract(),
+        token_id: BigUint::from(tokens_id),
+        chain: Chain::Eth,
+        contract_type: ContractType::Erc1155,
+        amount: BigDecimal::from(amount),
+    };
+    let erc1155_address_str = eth_addr_to_hex(&erc1155_contract());
+    let erc1155_key = format!("{},{}", erc1155_address_str, tokens_id);
+    nft_infos.insert(erc1155_key, erc1155_nft_info);
+}
+
+pub(crate) async fn fill_erc721_info(eth_coin: &EthCoin, tokens_id: u32) {
     let nft_infos_lock = eth_coin.nfts_infos.clone();
     let mut nft_infos = nft_infos_lock.lock().await;
 
     let erc721_nft_info = NftInfo {
         token_address: erc721_contract(),
-        token_id: BigUint::from(tokens_ids),
+        token_id: BigUint::from(tokens_id),
         chain: Chain::Eth,
         contract_type: ContractType::Erc721,
         amount: BigDecimal::from(1),
     };
     let erc721_address_str = eth_addr_to_hex(&erc721_contract());
-    let erc721_key = format!("{},{}", erc721_address_str, tokens_ids);
+    let erc721_key = format!("{},{}", erc721_address_str, tokens_id);
     nft_infos.insert(erc721_key, erc721_nft_info);
-
-    let erc1155_nft_info = NftInfo {
-        token_address: erc1155_contract(),
-        token_id: BigUint::from(tokens_ids),
-        chain: Chain::Eth,
-        contract_type: ContractType::Erc1155,
-        amount: erc1155_amount,
-    };
-    let erc1155_address_str = eth_addr_to_hex(&erc1155_contract());
-    let erc1155_key = format!("{},{}", erc1155_address_str, tokens_ids);
-    nft_infos.insert(erc1155_key, erc1155_nft_info);
 }
 
 /// Creates ETH protocol coin supplied with 100 ETH
@@ -229,9 +258,15 @@ pub fn erc20_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
     erc20_coin
 }
 
-/// Creates global NFT from generated random privkey supplied with 100 ETH,
-/// one ERC721 and 3 ERC1155 tokens owned by NFT address in nfts_infos field
-pub fn global_nft_with_random_privkey(swap_contract: Address, mint_nft: bool) -> EthCoin {
+pub enum TestNftType {
+    Erc1155 { token_id: u32, amount: u32 },
+    Erc721 { token_id: u32 },
+}
+
+/// Generates a global NFT coin instance with a random private key and an initial 100 ETH balance.
+/// Optionally mints a specified NFT (either ERC721 or ERC1155) to the global NFT address,
+/// with details recorded in the `nfts_infos` field based on the provided `nft_type`.
+pub fn global_nft_with_random_privkey(swap_contract: Address, nft_type: Option<TestNftType>) -> EthCoin {
     let nft_conf = nft_dev_conf();
     let req = json!({
         "method": "enable",
@@ -253,10 +288,18 @@ pub fn global_nft_with_random_privkey(swap_contract: Address, mint_nft: bool) ->
     .unwrap();
 
     fill_eth(global_nft.my_address, U256::from(10).pow(U256::from(20)));
-    if mint_nft {
-        fill_erc721(global_nft.my_address, U256::from(1));
-        fill_erc1155(global_nft.my_address, U256::from(1), U256::from(3));
-        block_on(fill_nfts_info(&global_nft, 1u32, BigDecimal::from(3)));
+
+    if let Some(nft_type) = nft_type {
+        match nft_type {
+            TestNftType::Erc1155 { token_id, amount } => {
+                mint_erc1155(global_nft.my_address, U256::from(token_id), U256::from(amount));
+                block_on(fill_erc1155_info(&global_nft, token_id, amount));
+            },
+            TestNftType::Erc721 { token_id } => {
+                mint_erc721(global_nft.my_address, U256::from(token_id));
+                block_on(fill_erc721_info(&global_nft, token_id));
+            },
+        }
     }
 
     global_nft

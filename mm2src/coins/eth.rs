@@ -6691,10 +6691,10 @@ impl EthCoin {
                                             Token::FixedBytes(args.maker_secret_hash.to_vec())
                                         )));
                                     }
-                                    if decoded_params[4] != Token::Uint(U256::from(args.time_lock)) {
+                                    if decoded_params[5] != Token::Uint(U256::from(args.time_lock)) {
                                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                                             "Invalid 'time_lock' {:?}, expected {:?}",
-                                            decoded_params[4],
+                                            decoded_params[5],
                                             Token::Uint(U256::from(args.time_lock))
                                         )));
                                     }

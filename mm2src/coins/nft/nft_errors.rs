@@ -213,10 +213,6 @@ pub enum UpdateNftError {
     CoinDoesntSupportNft {
         coin: String,
     },
-    #[display(fmt = "Global NFT type mismatch for token '{}'", token)]
-    GlobalNftTypeMismatch {
-        token: String,
-    },
 }
 
 impl From<GetNftInfoError> for UpdateNftError {
@@ -273,8 +269,7 @@ impl HttpStatusCode for UpdateNftError {
             | UpdateNftError::SerdeError(_)
             | UpdateNftError::ProtectFromSpamError(_)
             | UpdateNftError::NoSuchCoin { .. }
-            | UpdateNftError::CoinDoesntSupportNft { .. }
-            | UpdateNftError::GlobalNftTypeMismatch { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | UpdateNftError::CoinDoesntSupportNft { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
