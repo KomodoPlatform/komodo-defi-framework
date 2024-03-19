@@ -15,6 +15,7 @@ use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::mm_error::MmError;
 use mm2_err_handle::prelude::*;
+use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
 use std::time::Duration;
@@ -79,6 +80,15 @@ impl From<RegisterCoinError> for InitErc20Error {
     }
 }
 
+impl From<RpcTaskError> for InitErc20Error {
+    fn from(rpc_err: RpcTaskError) -> Self {
+        match rpc_err {
+            RpcTaskError::Timeout(duration) => InitErc20Error::TaskTimedOut { duration },
+            internal_error => InitErc20Error::Internal(internal_error.to_string()),
+        }
+    }
+}
+
 #[async_trait]
 impl InitTokenActivationOps for EthCoin {
     type ActivationRequest = InitErc20TokenActivationRequest;
@@ -98,7 +108,6 @@ impl InitTokenActivationOps for EthCoin {
         platform_coin: Self::PlatformCoin,
         activation_request: &Self::ActivationRequest,
         protocol_conf: Self::ProtocolInfo,
-        // Todo: use task handle and look for other init methods for inspiration
         _task_handle: InitTokenTaskHandleShared<Self>,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let token = platform_coin
@@ -127,7 +136,7 @@ impl InitTokenActivationOps for EthCoin {
             Some(
                 RpcTaskXPubExtractor::new_trezor_extractor(
                     &ctx,
-                    task_handle,
+                    task_handle.clone(),
                     erc20_xpub_extractor_rpc_statuses(),
                     protocol_conf.into(),
                 )
@@ -137,6 +146,7 @@ impl InitTokenActivationOps for EthCoin {
             None
         };
 
+        task_handle.update_in_progress_status(InitTokenInProgressStatus::RequestingWalletBalance)?;
         let wallet_balance = self
             .enable_coin_balance(
                 xpub_extractor,
@@ -145,6 +155,7 @@ impl InitTokenActivationOps for EthCoin {
             )
             .await
             .mm_err(|e| EthTokenActivationError::InternalError(e.to_string()))?;
+        task_handle.update_in_progress_status(InitTokenInProgressStatus::ActivatingCoin)?;
 
         // Todo: this should be included in the result probably
         // let token_contract_address = token.erc20_token_address().ok_or_else(|| {

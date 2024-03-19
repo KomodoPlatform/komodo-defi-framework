@@ -54,7 +54,6 @@ where
     } else {
         None
     };
-    // Todo: should we do the same for eth?
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::RequestingWalletBalance)?;
     let wallet_balance = coin
         .enable_coin_balance(
