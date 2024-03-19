@@ -125,7 +125,6 @@ pub async fn enable_coins_eth_electrum(
         enable_electrum_json(mm, "MORTY", false, marty_electrums(), path_to_address.clone()).await,
     );
     replies.insert("ETH", enable_native(mm, "ETH", eth_urls, path_to_address.clone()).await);
-    replies.insert("JST", enable_native(mm, "JST", eth_urls, path_to_address).await);
     replies
 }
 

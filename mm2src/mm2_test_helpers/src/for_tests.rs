@@ -1863,6 +1863,29 @@ pub async fn enable_eth_coin(
     json::from_str(&enable.1).unwrap()
 }
 
+pub async fn enable_eth_coin_hd(
+    mm: &MarketMakerIt,
+    coin: &str,
+    urls: &[&str],
+    swap_contract_address: &str,
+    path_to_address: Option<StandardHDCoinAddress>,
+) -> Json {
+    let enable = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "enable",
+            "coin": coin,
+            "urls": urls,
+            "swap_contract_address": swap_contract_address,
+            "mm2": 1,
+            "path_to_address": path_to_address.unwrap_or_default(),
+        }))
+        .await
+        .unwrap();
+    assert_eq!(enable.0, StatusCode::OK, "'enable' failed: {}", enable.1);
+    json::from_str(&enable.1).unwrap()
+}
+
 pub async fn enable_spl(mm: &MarketMakerIt, coin: &str) -> Json {
     let req = json!({
         "userpass": mm.userpass,
@@ -2196,12 +2219,18 @@ pub async fn wait_for_swap_status(mm: &MarketMakerIt, uuid: &str, wait_sec: i64)
     }
 }
 
-pub async fn wait_for_swap_finished(mm: &MarketMakerIt, uuid: &str, wait_sec: i64) {
+/// Wait until one of the MM2 isntances has the swap finished.
+/// This is useful because we don't then have to wait for each of them if the swap failed.
+/// Since failures (e.g. `MakerPaymentTransactionFailed`) doesn't get communicated to
+/// the other side of the swap, it is left waiting till timeout.
+pub async fn wait_for_swap_finished_on_any(mms: &[&MarketMakerIt], uuid: &str, wait_sec: i64) {
     let wait_until = get_utc_timestamp() + wait_sec;
-    loop {
-        let status = my_swap_status(mm, uuid).await.unwrap();
-        if status["result"]["is_finished"].as_bool().unwrap() {
-            break;
+    'outer: loop {
+        for mm in mms {
+            let status = my_swap_status(mm, uuid).await.unwrap();
+            if status["result"]["is_finished"].as_bool().unwrap() {
+                break 'outer;
+            }
         }
 
         if get_utc_timestamp() > wait_until {
@@ -2210,6 +2239,10 @@ pub async fn wait_for_swap_finished(mm: &MarketMakerIt, uuid: &str, wait_sec: i6
 
         Timer::sleep(0.5).await;
     }
+}
+
+pub async fn wait_for_swap_finished(mm: &MarketMakerIt, uuid: &str, wait_sec: i64) {
+    wait_for_swap_finished_on_any(&[mm], uuid, wait_sec).await
 }
 
 pub async fn wait_for_swap_contract_negotiation(mm: &MarketMakerIt, swap: &str, expected_contract: Json, until: i64) {
@@ -2335,6 +2368,31 @@ pub async fn check_stats_swap_status(mm: &MarketMakerIt, uuid: &str) {
             || taker_actual_events.as_slice() == TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT
             || taker_actual_events.as_slice() == TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT
     );
+}
+
+pub async fn wait_check_stats_swap_status(mm: &MarketMakerIt, uuid: &str, timeout: i64) {
+    let wait_until = get_utc_timestamp() + timeout;
+    loop {
+        let response = mm
+            .rpc(&json!({
+                "method": "stats_swap_status",
+                "params": {
+                    "uuid": uuid,
+                }
+            }))
+            .await
+            .unwrap();
+        assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
+        let status_response: Json = json::from_str(&response.1).unwrap();
+        if !status_response["result"]["maker"].is_null() && !status_response["result"]["taker"].is_null() {
+            break;
+        }
+        Timer::sleep(1.).await;
+        if get_utc_timestamp() > wait_until {
+            panic!("Timed out waiting for swap stats status uuid={}", uuid);
+        }
+    }
+    check_stats_swap_status(mm, uuid).await;
 }
 
 pub async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {
@@ -3089,8 +3147,7 @@ pub async fn wait_for_swaps_finish_and_check_status(
     maker_price: f64,
 ) {
     for uuid in uuids.iter() {
-        wait_for_swap_finished(maker, uuid.as_ref(), 900).await;
-        wait_for_swap_finished(taker, uuid.as_ref(), 900).await;
+        wait_for_swap_finished_on_any(&[maker, taker], uuid.as_ref(), 900).await;
 
         log!("Checking taker status..");
         check_my_swap_status(
