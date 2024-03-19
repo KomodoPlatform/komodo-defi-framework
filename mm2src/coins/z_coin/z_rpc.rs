@@ -684,7 +684,7 @@ pub enum SyncStatus {
 /// - `requested`: The requested block height during synchronization.
 /// - `is_pre_sapling`: Indicates whether the block predates the Sapling activation.
 /// - `actual`: The actual block height used for synchronization(may be altered).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FirstSyncBlock {
     pub requested: u64,
