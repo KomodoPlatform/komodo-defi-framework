@@ -62,6 +62,7 @@ fn send_and_spend_erc1155_maker_payment() {
         taker_secret_hash: &[0; 32],
         maker_secret_hash: &[0; 32],
         amount: 3.into(),
+        taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
         token_address: &erc1155_contract().to_bytes(),

@@ -1597,6 +1597,8 @@ pub struct ValidateNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub maker_secret_hash: &'a [u8],
     /// Payment amount
     pub amount: BigDecimal,
+    /// Taker's HTLC pubkey
+    pub taker_pub: &'a Coin::Pubkey,
     /// Maker's HTLC pubkey
     pub maker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
