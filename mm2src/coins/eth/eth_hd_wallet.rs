@@ -70,22 +70,26 @@ pub enum ETHAddressScanner {
 impl HDAddressBalanceScanner for EthCoin {
     type Address = Address;
 
-    // Todo: count calculates the number of transactions sent from the address whether it's for ERC20 or ETH.
-    // Todo: We should check balance for ERC20 tokens as well, if we want to add address to HD wallet if it either has ETH or ERC20 tokens.
-    // Todo: We would also need to share HD wallet instance between ETH and ERC20 tokens. What about if a token was not enabled?
-    // Todo: We need to rescan for this token when enabled in this case.
-    // Todo: test all these cases
-    // Todo: maybe recheck for all tokens and ETH.
     async fn is_address_used(&self, address: &Self::Address) -> BalanceResult<bool> {
+        // Count calculates the number of transactions sent from the address whether it's for ERC20 or ETH.
+        // If the count is greater than 0, then the address is used.
+        // If the count is 0, then we check for the balance of the address to make sure there was no received transactions.
         let count = self.transaction_count(*address, None).await?;
         if count > U256::zero() {
             return Ok(true);
         }
 
-        self.address_balance(*address)
-            .and_then(|balance| Ok(balance > U256::zero()))
-            .compat()
-            .await
+        // We check for platform balance only first to reduce the number of requests to the node.
+        // If this is a token added using init_token, then we check for this token balance only, and
+        // we don't check for platform balance or other tokens that was added before.
+        let platform_balance = self.address_balance(*address).compat().await?;
+        if !platform_balance.is_zero() {
+            return Ok(true);
+        }
+
+        // This is done concurrently which increases the cost of the requests to the node. but it's better than doing it sequentially to reduce the time.
+        let token_balance_map = self.get_tokens_balance_list_for_address(*address).await?;
+        Ok(token_balance_map.values().any(|balance| !balance.get_total().is_zero()))
     }
 }
 

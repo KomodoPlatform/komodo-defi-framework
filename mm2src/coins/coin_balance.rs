@@ -35,6 +35,7 @@ impl From<BalanceError> for EnableCoinBalanceError {
     fn from(e: BalanceError) -> Self { EnableCoinBalanceError::BalanceError(e) }
 }
 
+// Todo: maintain backward compatibility for this for other coins that used it before eth hd wallet was introduced
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "wallet_type")]
 pub enum CoinBalanceReport {
