@@ -1,8 +1,10 @@
 use super::eth_docker_tests::{erc1155_contract, erc721_contract, global_nft_with_random_privkey, nft_swap_contract};
 use coins::eth::EthCoin;
 use coins::nft::nft_structs::{Chain, ContractType};
-use coins::{CoinAssocTypes, MakerNftSwapOpsV2, SendNftMakerPaymentArgs, SwapOps, ToBytes, ValidateNftMakerPaymentArgs};
+use coins::{CoinAssocTypes, ConfirmPaymentInput, MakerNftSwapOpsV2, MarketCoinOps, SendNftMakerPaymentArgs, SwapOps,
+            ToBytes, Transaction, ValidateNftMakerPaymentArgs};
 use common::{block_on, now_sec};
+use futures01::Future;
 use mm2_number::BigUint;
 
 #[test]
@@ -32,6 +34,16 @@ fn send_and_spend_erc721_maker_payment() {
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
     let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
+
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: maker_payment.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 60,
+        check_every: 1,
+    };
+    maker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
+
     let validate_args = ValidateNftMakerPaymentArgs {
         maker_payment_tx: &maker_payment,
         time_lock,
@@ -73,6 +85,16 @@ fn send_and_spend_erc1155_maker_payment() {
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
     let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
+
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: maker_payment.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 60,
+        check_every: 1,
+    };
+    maker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
+
     let validate_args = ValidateNftMakerPaymentArgs {
         maker_payment_tx: &maker_payment,
         time_lock,
