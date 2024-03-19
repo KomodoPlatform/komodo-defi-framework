@@ -561,7 +561,7 @@ pub(super) async fn init_light_client<'a>(
         blocks_db,
         wallet_db: wallet_db.clone(),
         consensus_params: builder.protocol_info.consensus_params.clone(),
-        sync_status_notifier: sync_status_notifier.clone(),
+        sync_status_notifier,
         main_sync_state_finished: false,
         on_tx_gen_watcher,
         watch_for_tx: None,
