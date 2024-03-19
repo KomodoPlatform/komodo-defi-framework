@@ -6550,7 +6550,7 @@ impl EthCoin {
             .await?;
         if maker_status != U256::from(MakerPaymentState::PaymentSent as u8) {
             return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                "Maker Payment state is not PAYMENT_STATE_SENT, got {}",
+                "NFT Maker Payment state is not PAYMENT_STATE_SENT, got {}",
                 maker_status
             )));
         }
@@ -6565,14 +6565,14 @@ impl EthCoin {
         })?;
         if tx_from_rpc.from != Some(maker_address) {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Maker Payment tx {:?} was sent from wrong address, expected {:?}",
+                "NFT Maker Payment tx {:?} was sent from wrong address, expected {:?}",
                 tx_from_rpc, maker_address
             )));
         }
         // As we call "safeTransferFrom" directly from token_address, then 'to' should be expected_token_address
         if tx_from_rpc.to != Some(expected_token_address) {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Payment tx {:?} was sent to wrong address, expected {:?}",
+                "NFT Maker Payment tx {:?} was sent to wrong address, expected {:?}",
                 tx_from_rpc, expected_token_address,
             )));
         }
@@ -6581,7 +6581,7 @@ impl EthCoin {
             Some(r) => r,
             None => {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Receipt wasn't found in Maker Payment tx {:?}",
+                    "Receipt wasn't found in NFT Maker Payment tx {:?}",
                     tx_from_rpc
                 )))
             },
@@ -6604,14 +6604,14 @@ impl EthCoin {
                             .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
                         if decoded[0] != Token::Address(maker_address) {
                             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                "Invalid `operator` {:?}, expected {:?}",
+                                "NFT Maker Payment `operator` {:?} is invalid, expected {:?}",
                                 decoded[0],
                                 Token::Address(maker_address)
                             )));
                         }
                         if decoded[1] != Token::Address(maker_address) {
                             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                "Invalid `maker` {:?}, expected {:?}",
+                                "NFT Maker Payment `sender` {:?} is invalid, expected maker address {:?}",
                                 decoded[1],
                                 Token::Address(maker_address)
                             )));
@@ -6621,7 +6621,7 @@ impl EthCoin {
                             .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
                         if decoded[2] != Token::Uint(token_id) {
                             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                "Invalid `token_id` {:?}, expected {:?}",
+                                "NFT Maker Payment `token_id` {:?} is invalid, expected {:?}",
                                 decoded[2],
                                 Token::Uint(token_id)
                             )));
@@ -6630,7 +6630,7 @@ impl EthCoin {
                             .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
                         if decoded[3] != Token::Uint(value) {
                             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                "Invalid `amount` {:?}, expected {:?}",
+                                "NFT Maker Payment `amount` {:?} is invalid, expected {:?}",
                                 decoded[3],
                                 Token::Uint(value)
                             )));
@@ -6663,6 +6663,34 @@ impl EthCoin {
                                         Token::Address(taker_address)
                                     )));
                                 }
+                                if decoded_params[2] != Token::Address(expected_token_address) {
+                                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                                        "Invalid `token_address` {:?}, expected {:?}",
+                                        decoded_params[2],
+                                        Token::Address(expected_token_address)
+                                    )));
+                                }
+                                if decoded_params[3] != Token::FixedBytes(args.taker_secret_hash.to_vec()) {
+                                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                                        "Invalid 'taker_secret_hash' {:?}, expected {:?}",
+                                        decoded_params[3],
+                                        Token::FixedBytes(args.taker_secret_hash.to_vec())
+                                    )));
+                                }
+                                if decoded_params[4] != Token::FixedBytes(args.maker_secret_hash.to_vec()) {
+                                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                                        "Invalid 'maker_secret_hash' {:?}, expected {:?}",
+                                        decoded_params[4],
+                                        Token::FixedBytes(args.maker_secret_hash.to_vec())
+                                    )));
+                                }
+                                if decoded_params[5] != Token::Uint(U256::from(args.time_lock)) {
+                                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                                        "Invalid 'time_lock' {:?}, expected {:?}",
+                                        decoded_params[5],
+                                        Token::Uint(U256::from(args.time_lock))
+                                    )));
+                                }
                             } else {
                                 return MmError::err(ValidatePaymentError::TxDeserializationError(
                                     "Failed to decode HTLCParams from data_bytes".to_string(),
@@ -6676,6 +6704,9 @@ impl EthCoin {
                     }
                 },
                 ContractType::Erc721 => {
+                    let _topic = H256::from_slice(
+                        keccak256("onERC721Received(address,address,uint256,bytes)".as_bytes()).as_ref(),
+                    );
                     let function = NFT_SWAP_CONTRACT
                         .function("onERC721Received")
                         .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
