@@ -117,7 +117,7 @@ impl TendermintToken {
             let (account_id, priv_key) = match req.from {
                 Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
                     let priv_key = platform
-                        .priv_key_policy
+                        .activation_policy
                         .hd_wallet_derived_priv_key_or_err(path_to_address)?;
                     let account_id = account_id_from_privkey(priv_key.as_slice(), &platform.account_prefix)
                         .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
@@ -131,7 +131,7 @@ impl TendermintToken {
                 },
                 None => (
                     platform.account_id.clone(),
-                    *platform.priv_key_policy.activated_key_or_err()?,
+                    *platform.activation_policy.activated_key_or_err()?,
                 ),
             };
 
@@ -648,7 +648,7 @@ impl MmCoin for TendermintToken {
             let (account_id, priv_key) = match req.from {
                 Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
                     let priv_key = platform
-                        .priv_key_policy
+                        .activation_policy
                         .hd_wallet_derived_priv_key_or_err(path_to_address)?;
                     let account_id = account_id_from_privkey(priv_key.as_slice(), &platform.account_prefix)
                         .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
@@ -662,7 +662,7 @@ impl MmCoin for TendermintToken {
                 },
                 None => (
                     platform.account_id.clone(),
-                    *platform.priv_key_policy.activated_key_or_err()?,
+                    *platform.activation_policy.activated_key_or_err()?,
                 ),
             };
 

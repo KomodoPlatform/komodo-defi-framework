@@ -10,6 +10,8 @@ mod tendermint_coin;
 mod tendermint_token;
 pub mod tendermint_tx_history_v2;
 
+pub use cosmrs::tendermint::PublicKey as TendermintPublicKey;
+pub use cosmrs::AccountId;
 pub use tendermint_coin::*;
 pub use tendermint_token::*;
 
