@@ -2427,7 +2427,7 @@ fn test_maker_order_should_kick_start_and_appear_in_orderbook_on_restart() {
 
     thread::sleep(Duration::from_secs(2));
 
-    log!("Get RICK/MORTY orderbook on Bob side");
+    log!("Get MYCOIN/MYCOIN1 orderbook on Bob side");
     let rc = block_on(mm_bob_dup.rpc(&json!({
         "userpass": mm_bob_dup.userpass,
         "method": "orderbook",
@@ -2503,7 +2503,7 @@ fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_
 
     thread::sleep(Duration::from_secs(2));
 
-    log!("Get RICK/MORTY orderbook on Bob side");
+    log!("Get MYCOIN/MYCOIN1 orderbook on Bob side");
     let rc = block_on(mm_bob_dup.rpc(&json!({
         "userpass": mm_bob_dup.userpass,
         "method": "orderbook",
@@ -3064,7 +3064,7 @@ fn test_withdraw_not_sufficient_balance() {
     })))
     .unwrap();
 
-    assert!(withdraw.0.is_client_error(), "RICK withdraw: {}", withdraw.1);
+    assert!(withdraw.0.is_client_error(), "MYCOIN withdraw: {}", withdraw.1);
     log!("error: {:?}", withdraw.1);
     let error: RpcErrorResponse<withdraw_error::NotSufficientBalance> =
         serde_json::from_str(&withdraw.1).expect("Expected 'RpcErrorResponse<NotSufficientBalance>'");
@@ -3097,7 +3097,7 @@ fn test_withdraw_not_sufficient_balance() {
     })))
     .unwrap();
 
-    assert!(withdraw.0.is_client_error(), "RICK withdraw: {}", withdraw.1);
+    assert!(withdraw.0.is_client_error(), "MYCOIN withdraw: {}", withdraw.1);
     log!("error: {:?}", withdraw.1);
     let error: RpcErrorResponse<withdraw_error::NotSufficientBalance> =
         serde_json::from_str(&withdraw.1).expect("Expected 'RpcErrorResponse<NotSufficientBalance>'");
@@ -5377,4 +5377,142 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
         erc20_enable["address"].as_str().unwrap(),
         "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B"
     );
+}
+
+fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "orderbook_depth",
+        "pairs": [("MYCOIN", "MYCOIN1"), ("MYCOIN", "ETH"), ("MYCOIN1", "ETH")],
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!orderbook_depth: {}", rc.1);
+    let response: OrderbookDepthResponse = serde_json::from_str(&rc.1).unwrap();
+    let mycoin_mycoin1 = response
+        .result
+        .iter()
+        .find(|pair_depth| pair_depth.pair.0 == "MYCOIN" && pair_depth.pair.1 == "MYCOIN1")
+        .unwrap();
+    assert_eq!(3, mycoin_mycoin1.depth.asks);
+    assert_eq!(2, mycoin_mycoin1.depth.bids);
+
+    let mycoin_eth = response
+        .result
+        .iter()
+        .find(|pair_depth| pair_depth.pair.0 == "MYCOIN" && pair_depth.pair.1 == "ETH")
+        .unwrap();
+    assert_eq!(1, mycoin_eth.depth.asks);
+    assert_eq!(1, mycoin_eth.depth.bids);
+
+    let mycoin1_eth = response
+        .result
+        .iter()
+        .find(|pair_depth| pair_depth.pair.0 == "MYCOIN1" && pair_depth.pair.1 == "ETH")
+        .unwrap();
+    assert_eq!(0, mycoin1_eth.depth.asks);
+    assert_eq!(0, mycoin1_eth.depth.bids);
+}
+
+#[test]
+fn test_orderbook_depth() {
+    let bob_priv_key = random_secp256k1_secret();
+    let alice_priv_key = random_secp256k1_secret();
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
+    // Fill bob's addresses with coins.
+    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), bob_priv_key);
+    generate_utxo_coin_with_privkey("MYCOIN1", 1000.into(), bob_priv_key);
+    fill_eth_erc20_with_private_key(bob_priv_key);
+
+    // Fill alice's addresses with coins.
+    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), alice_priv_key);
+    generate_utxo_coin_with_privkey("MYCOIN1", 1000.into(), alice_priv_key);
+    fill_eth_erc20_with_private_key(alice_priv_key);
+
+    let coins = json!([
+        mycoin_conf(1000),
+        mycoin1_conf(1000),
+        eth_dev_conf(),
+        erc20_dev_conf(&erc20_contract_checksum())
+    ]);
+
+    let bob_conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+
+    // Enable all the coins for bob
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
+    dbg!(block_on(enable_eth_coin(
+        &mm_bob,
+        "ETH",
+        &[GETH_RPC_URL],
+        &swap_contract,
+        None,
+        false
+    )));
+    dbg!(block_on(enable_eth_coin(
+        &mm_bob,
+        "ERC20DEV",
+        &[GETH_RPC_URL],
+        &swap_contract,
+        None,
+        false
+    )));
+
+    // issue sell request on Bob side by setting base/rel price
+    log!("Issue bob sell requests");
+    let bob_orders = [
+        // (base, rel, price, volume, min_volume)
+        ("MYCOIN", "MYCOIN1", "0.9", "0.9", None),
+        ("MYCOIN", "MYCOIN1", "0.8", "0.9", None),
+        ("MYCOIN", "MYCOIN1", "0.7", "0.9", Some("0.9")),
+        ("MYCOIN", "ETH", "0.8", "0.9", None),
+        ("MYCOIN1", "MYCOIN", "0.8", "0.9", None),
+        ("MYCOIN1", "MYCOIN", "0.9", "0.9", None),
+        ("ETH", "MYCOIN", "0.8", "0.9", None),
+    ];
+    for (base, rel, price, volume, min_volume) in bob_orders.iter() {
+        let rc = block_on(mm_bob.rpc(&json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": volume,
+            "min_volume": min_volume.unwrap_or("0.00777"),
+            "cancel_previous": false,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    }
+
+    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob.ip.to_string()]);
+    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {}", mm_alice.log_path.display());
+
+    block_on(mm_bob.wait_for_log(22., |log| {
+        log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
+    }))
+    .unwrap();
+
+    request_and_check_orderbook_depth(&mm_alice);
+    // request MYCOIN/MYCOIN1 orderbook to subscribe Alice
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "orderbook",
+        "base": "MYCOIN",
+        "rel": "MYCOIN1",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+    request_and_check_orderbook_depth(&mm_alice);
+
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.stop()).unwrap();
 }

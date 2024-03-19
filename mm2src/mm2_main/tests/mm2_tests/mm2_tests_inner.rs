@@ -11,17 +11,18 @@ use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_rpc::data::legacy::{CoinInitResponse, MmVersionResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::*;
-#[cfg(all(not(target_arch = "wasm32")))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
+use mm2_test_helpers::for_tests::check_stats_swap_status;
 use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
-                                  check_recent_swaps, check_stats_swap_status, enable_qrc20, eth_testnet_conf,
-                                  find_metrics_in_json, from_env_file, get_shared_db_id, mm_spat, morty_conf,
-                                  rick_conf, sign_message, start_swaps, tbtc_segwit_conf, tbtc_with_spv_conf,
-                                  test_qrc20_history_impl, tqrc20_conf, verify_message,
-                                  wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
-                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
-                                  DOC_ELECTRUM_ADDRS, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE,
-                                  ETH_MAINNET_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
-                                  RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
+                                  check_recent_swaps, enable_qrc20, eth_testnet_conf, find_metrics_in_json,
+                                  from_env_file, get_shared_db_id, mm_spat, morty_conf, rick_conf, sign_message,
+                                  start_swaps, tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl,
+                                  tqrc20_conf, verify_message, wait_for_swaps_finish_and_check_status,
+                                  wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf,
+                                  Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_DEV_NODES,
+                                  ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT,
+                                  MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
+                                  TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -4835,139 +4836,6 @@ fn test_orderbook_is_mine_orders() {
     );
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
-    let rc = block_on(mm_alice.rpc(&json! ({
-        "userpass": mm_alice.userpass,
-        "method": "orderbook_depth",
-        "pairs": [("RICK", "MORTY"), ("RICK", "ETH"), ("MORTY", "ETH")],
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!orderbook_depth: {}", rc.1);
-    let response: OrderbookDepthResponse = json::from_str(&rc.1).unwrap();
-    let rick_morty = response
-        .result
-        .iter()
-        .find(|pair_depth| pair_depth.pair.0 == "RICK" && pair_depth.pair.1 == "MORTY")
-        .unwrap();
-    assert_eq!(3, rick_morty.depth.asks);
-    assert_eq!(2, rick_morty.depth.bids);
-
-    let rick_eth = response
-        .result
-        .iter()
-        .find(|pair_depth| pair_depth.pair.0 == "RICK" && pair_depth.pair.1 == "ETH")
-        .unwrap();
-    assert_eq!(1, rick_eth.depth.asks);
-    assert_eq!(1, rick_eth.depth.bids);
-
-    let morty_eth = response
-        .result
-        .iter()
-        .find(|pair_depth| pair_depth.pair.0 == "MORTY" && pair_depth.pair.1 == "ETH")
-        .unwrap();
-    assert_eq!(0, morty_eth.depth.asks);
-    assert_eq!(0, morty_eth.depth.bids);
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_orderbook_depth() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
-
-    // start bob and immediately place the orders
-    let mut mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".into(),
-        None,
-    )
-    .unwrap();
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-
-    // Enable coins on Bob side. Print the replies in case we need the "address".
-    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES, None));
-    log!("enable_coins (bob): {:?}", bob_coins);
-    // issue sell request on Bob side by setting base/rel price
-    log!("Issue bob sell requests");
-
-    let bob_orders = [
-        // (base, rel, price, volume, min_volume)
-        ("RICK", "MORTY", "0.9", "0.9", None),
-        ("RICK", "MORTY", "0.8", "0.9", None),
-        ("RICK", "MORTY", "0.7", "0.9", Some("0.9")),
-        ("RICK", "ETH", "0.8", "0.9", None),
-        ("MORTY", "RICK", "0.8", "0.9", None),
-        ("MORTY", "RICK", "0.9", "0.9", None),
-        ("ETH", "RICK", "0.8", "0.9", None),
-    ];
-    for (base, rel, price, volume, min_volume) in bob_orders.iter() {
-        let rc = block_on(mm_bob.rpc(&json! ({
-            "userpass": mm_bob.userpass,
-            "method": "setprice",
-            "base": base,
-            "rel": rel,
-            "price": price,
-            "volume": volume,
-            "min_volume": min_volume.unwrap_or("0.00777"),
-            "cancel_previous": false,
-        })))
-        .unwrap();
-        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    }
-
-    let mm_alice = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
-            "passphrase": "alice passphrase",
-            "coins": coins,
-            "seednodes": [mm_bob.ip.to_string()],
-            "rpc_password": "pass",
-        }),
-        "pass".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!("Alice log path: {}", mm_alice.log_path.display());
-
-    block_on(mm_bob.wait_for_log(22., |log| {
-        log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
-    }))
-    .unwrap();
-
-    request_and_check_orderbook_depth(&mm_alice);
-    // request RICK/MORTY orderbook to subscribe Alice
-    let rc = block_on(mm_alice.rpc(&json! ({
-        "userpass": mm_alice.userpass,
-        "method": "orderbook",
-        "base": "RICK",
-        "rel": "MORTY",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
-
-    request_and_check_orderbook_depth(&mm_alice);
-
-    block_on(mm_bob.stop()).unwrap();
-    block_on(mm_alice.stop()).unwrap();
-}
 
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/932
 #[test]
