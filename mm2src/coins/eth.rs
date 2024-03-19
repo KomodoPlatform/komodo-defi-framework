@@ -6596,6 +6596,13 @@ impl EthCoin {
                         let transfer_events = receipt.logs.iter().filter(|log| {
                             log.address == expected_token_address && log.topics.get(0).unwrap() == &topic
                         });
+                        let count = transfer_events.clone().count();
+                        if count == 0 {
+                            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                                "No events found in receipt {:?}",
+                                receipt
+                            )));
+                        }
                         for log in transfer_events {
                             let function = NFT_SWAP_CONTRACT
                                 .function("onERC1155Received")
@@ -6710,6 +6717,13 @@ impl EthCoin {
                         let transfer_events = receipt.logs.iter().filter(|log| {
                             log.address == expected_token_address && log.topics.get(0).unwrap() == &topic
                         });
+                        let count = transfer_events.clone().count();
+                        if count == 0 {
+                            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                                "No events found in receipt {:?}",
+                                receipt
+                            )));
+                        }
                         for log in transfer_events {
                             let function = NFT_SWAP_CONTRACT
                                 .function("onERC721Received")

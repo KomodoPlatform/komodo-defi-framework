@@ -12,6 +12,7 @@ use ethereum_types::U256;
 use futures01::Future;
 use mm2_number::{BigDecimal, BigUint};
 use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf, nft_dev_conf};
+use std::cmp::min;
 use std::thread;
 use std::time::Duration;
 use web3::contract::{Contract, Options};
@@ -230,7 +231,7 @@ pub fn erc20_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
 
 /// Creates global NFT from generated random privkey supplied with 100 ETH,
 /// one ERC721 and 3 ERC1155 tokens owned by NFT address in nfts_infos field
-pub fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
+pub fn global_nft_with_random_privkey(swap_contract: Address, mint_nft: bool) -> EthCoin {
     let nft_conf = nft_dev_conf();
     let req = json!({
         "method": "enable",
@@ -252,9 +253,11 @@ pub fn global_nft_with_random_privkey(swap_contract: Address) -> EthCoin {
     .unwrap();
 
     fill_eth(global_nft.my_address, U256::from(10).pow(U256::from(20)));
-    fill_erc721(global_nft.my_address, U256::from(1));
-    fill_erc1155(global_nft.my_address, U256::from(1), U256::from(3));
-    block_on(fill_nfts_info(&global_nft, 1u32, BigDecimal::from(3)));
+    if mint_nft {
+        fill_erc721(global_nft.my_address, U256::from(1));
+        fill_erc1155(global_nft.my_address, U256::from(1), U256::from(3));
+        block_on(fill_nfts_info(&global_nft, 1u32, BigDecimal::from(3)));
+    }
 
     global_nft
 }
