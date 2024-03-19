@@ -21,7 +21,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
             RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
             SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, ToBytes, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
             TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
@@ -59,7 +59,7 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
 use itertools::Itertools;
-use keys::KeyPair;
+use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
@@ -105,7 +105,21 @@ const MIN_TIME_LOCK: i64 = 50;
 
 const ACCOUNT_SEQUENCE_ERR: &str = "incorrect account sequence";
 
-type TendermintPrivKeyPolicy = PrivKeyPolicy<Secp256k1Secret>;
+type TendermintPrivKeyPolicy = PrivKeyPolicy<TendermintKeyPair>;
+
+pub struct TendermintKeyPair {
+    private_key_secret: Secp256k1Secret,
+    public_key: Public,
+}
+
+impl TendermintKeyPair {
+    fn new(private_key_secret: Secp256k1Secret, public_key: Public) -> Self {
+        Self {
+            private_key_secret,
+            public_key,
+        }
+    }
+}
 
 #[async_trait]
 pub trait TendermintCommons {
@@ -184,7 +198,7 @@ impl TendermintConf {
 }
 
 pub enum TendermintActivationPolicy {
-    PrivateKey(PrivKeyPolicy<Secp256k1Secret>),
+    PrivateKey(PrivKeyPolicy<TendermintKeyPair>),
     PublicKey {
         account_address: AccountId,
         account_public_key: PublicKey,
@@ -192,7 +206,7 @@ pub enum TendermintActivationPolicy {
 }
 
 impl TendermintActivationPolicy {
-    pub fn with_private_key_policy(private_key_policy: PrivKeyPolicy<Secp256k1Secret>) -> Self {
+    pub fn with_private_key_policy(private_key_policy: PrivKeyPolicy<TendermintKeyPair>) -> Self {
         Self::PrivateKey(private_key_policy)
     }
 
@@ -210,8 +224,18 @@ impl TendermintActivationPolicy {
 
     pub fn public_key(&self) -> Result<PublicKey, MmError<PrivKeyPolicyNotAllowed>> {
         match self {
-            TendermintActivationPolicy::PrivateKey(_private_key) => {
-                todo!()
+            TendermintActivationPolicy::PrivateKey(private_key_policy) => match private_key_policy {
+                PrivKeyPolicy::Iguana(pair) => {
+                    Ok(PublicKey::from_raw_secp256k1(&pair.public_key.to_bytes()).expect("TODO"))
+                },
+                PrivKeyPolicy::HDWallet {
+                    bip39_secp_priv_key, ..
+                } => Ok(PublicKey::from_raw_secp256k1(&bip39_secp_priv_key.public_key().to_bytes()).expect("TODO")),
+                PrivKeyPolicy::Trezor => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                    "Trezor is not supported yet!".to_string(),
+                )),
+                #[cfg(target_arch = "wasm32")]
+                PrivKeyPolicy::Metamask(_) => unreachable!(),
             },
             TendermintActivationPolicy::PublicKey { account_public_key, .. } => Ok(*account_public_key),
         }
@@ -219,7 +243,9 @@ impl TendermintActivationPolicy {
 
     pub fn activated_key_or_err(&self) -> Result<&Secp256k1Secret, MmError<PrivKeyPolicyNotAllowed>> {
         match self {
-            TendermintActivationPolicy::PrivateKey(private_key) => private_key.activated_key_or_err(),
+            TendermintActivationPolicy::PrivateKey(private_key) => {
+                Ok(private_key.activated_key_or_err()?.private_key_secret.as_ref())
+            },
             TendermintActivationPolicy::PublicKey { .. } => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
                 "`activated_key_or_err` is not supported for pubkey-only activations".to_string(),
             )),
@@ -231,9 +257,7 @@ impl TendermintActivationPolicy {
         path_to_address: &StandardHDCoinAddress,
     ) -> Result<Secp256k1Secret, MmError<PrivKeyPolicyNotAllowed>> {
         match self {
-            TendermintActivationPolicy::PrivateKey(private_key) => {
-                private_key.hd_wallet_derived_priv_key_or_err(path_to_address)
-            },
+            TendermintActivationPolicy::PrivateKey(pair) => pair.hd_wallet_derived_priv_key_or_err(path_to_address),
             TendermintActivationPolicy::PublicKey { .. } => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
                 "`hd_wallet_derived_priv_key_or_err` is not supported for pubkey-only activations".to_string(),
             )),
@@ -2894,7 +2918,12 @@ pub fn tendermint_priv_key_policy(
     path_to_address: StandardHDCoinAddress,
 ) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
     match priv_key_build_policy {
-        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(TendermintPrivKeyPolicy::Iguana(iguana)),
+        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
+            let mm2_internal_key_pair = key_pair_from_secret(iguana.as_ref()).expect("TODO");
+            let tendermint_pair = TendermintKeyPair::new(iguana, *mm2_internal_key_pair.public());
+
+            Ok(TendermintPrivKeyPolicy::Iguana(tendermint_pair))
+        },
         PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
             let derivation_path = conf.derivation_path.as_ref().or_mm_err(|| TendermintInitError {
                 ticker: ticker.to_string(),
@@ -2907,9 +2936,13 @@ pub fn tendermint_priv_key_policy(
                     kind: TendermintInitErrorKind::InvalidPrivKey(e.to_string()),
                 })?;
             let bip39_secp_priv_key = global_hd.root_priv_key().clone();
+            let pubkey = bip39_secp_priv_key.public_key().to_bytes();
+            let tendermint_pair =
+                TendermintKeyPair::new(activated_priv_key, Public::from_slice(&pubkey).expect("TODO"));
+
             Ok(TendermintPrivKeyPolicy::HDWallet {
                 derivation_path: derivation_path.clone(),
-                activated_key: activated_priv_key,
+                activated_key: tendermint_pair,
                 bip39_secp_priv_key,
             })
         },
@@ -3016,9 +3049,9 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let activation_policy = TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(
-            key_pair.private().secret,
-        ));
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3130,9 +3163,9 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let activation_policy = TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(
-            key_pair.private().secret,
-        ));
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3190,9 +3223,9 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let activation_policy = TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(
-            key_pair.private().secret,
-        ));
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3264,9 +3297,9 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let activation_policy = TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(
-            key_pair.private().secret,
-        ));
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3460,9 +3493,9 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let activation_policy = TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(
-            key_pair.private().secret,
-        ));
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3542,9 +3575,9 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let activation_policy = TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(
-            key_pair.private().secret,
-        ));
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3618,9 +3651,9 @@ pub mod tendermint_coin_tests {
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let activation_policy = TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(
-            key_pair.private().secret,
-        ));
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -3690,9 +3723,9 @@ pub mod tendermint_coin_tests {
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let activation_policy = TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(
-            key_pair.private().secret,
-        ));
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
 
         let coin = common::block_on(TendermintCoin::init(
             &ctx,
@@ -3744,9 +3777,9 @@ pub mod tendermint_coin_tests {
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let activation_policy = TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(
-            key_pair.private().secret,
-        ));
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
 
         let coin = common::block_on(TendermintCoin::init(
             &ctx,
