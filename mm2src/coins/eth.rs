@@ -6565,7 +6565,7 @@ impl EthCoin {
         })?;
         if tx_from_rpc.from != Some(maker_address) {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Payment tx {:?} was sent from wrong address, expected {:?}",
+                "Maker Payment tx {:?} was sent from wrong address, expected {:?}",
                 tx_from_rpc, maker_address
             )));
         }
@@ -6576,27 +6576,47 @@ impl EthCoin {
                 tx_from_rpc, expected_token_address,
             )));
         }
+        let receipt = self.transaction_receipt(args.maker_payment_tx.hash).await?;
+        let receipt = match receipt {
+            Some(r) => r,
+            None => {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Receipt wasn't found in Maker Payment tx {:?}",
+                    tx_from_rpc
+                )))
+            },
+        };
         match self.coin_type {
             EthCoinType::Nft { .. } => match contract_type {
                 ContractType::Erc1155 => {
-                    let function = NFT_SWAP_CONTRACT
-                        .function("onERC1155Received")
-                        .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
-                    let decoded = decode_contract_call(function, &tx_from_rpc.input.0)
-                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
-                    if decoded[0] != Token::Address(maker_address) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Invalid `operator` {:?}, expected {:?}",
-                            decoded[0],
-                            Token::Address(maker_address)
-                        )));
-                    }
-                    if decoded[1] != Token::Address(maker_address) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Invalid `sender` {:?}, expected {:?}",
-                            decoded[1],
-                            Token::Address(maker_address)
-                        )));
+                    let topic = H256::from_slice(
+                        keccak256("onERC1155Received(address,address,uint256,uint256,bytes)".as_bytes()).as_ref(),
+                    );
+                    let transfer_events = receipt
+                        .logs
+                        .iter()
+                        .filter(|log| log.address == expected_token_address && log.topics.get(0).unwrap() == &topic);
+                    log!("ERC1155 Transfer Events \n {:?}", transfer_events);
+                    for log in transfer_events {
+                        let function = NFT_SWAP_CONTRACT
+                            .function("onERC1155Received")
+                            .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
+                        let decoded = decode_contract_call(function, &log.data.0)
+                            .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
+                        if decoded[0] != Token::Address(maker_address) {
+                            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                                "Invalid `operator` {:?}, expected {:?}",
+                                decoded[0],
+                                Token::Address(maker_address)
+                            )));
+                        }
+                        if decoded[1] != Token::Address(maker_address) {
+                            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                                "Invalid `sender` {:?}, expected {:?}",
+                                decoded[1],
+                                Token::Address(maker_address)
+                            )));
+                        }
                     }
                     // TODO complete other checks
                 },
