@@ -4836,7 +4836,6 @@ fn test_orderbook_is_mine_orders() {
     );
 }
 
-
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/932
 #[test]
 #[cfg(not(target_arch = "wasm32"))]

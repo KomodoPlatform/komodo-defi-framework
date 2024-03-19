@@ -5489,7 +5489,9 @@ fn test_orderbook_depth() {
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     }
 
-    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob.ip.to_string()]);
+    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
+        .ip
+        .to_string()]);
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
