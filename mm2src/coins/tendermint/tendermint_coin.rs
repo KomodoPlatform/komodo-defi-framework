@@ -71,6 +71,7 @@ use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::io;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -209,14 +210,28 @@ impl TendermintActivationPolicy {
 
     pub fn with_public_key(account_public_key: PublicKey) -> Self { Self::PublicKey(account_public_key) }
 
-    pub fn account_id(&self) -> AccountId {
-        // for Self::PublicKey we have to do prefix validation.
-        todo!()
+    fn generate_account_id(&self, account_prefix: &str) -> Result<AccountId, ErrorReport> {
+        match self {
+            Self::PrivateKey(priv_key_policy) => {
+                let pk = priv_key_policy.activated_key().ok_or_else(|| {
+                    ErrorReport::new(io::Error::new(io::ErrorKind::NotFound, "Activated key not found"))
+                })?;
+
+                Ok(
+                    account_id_from_privkey(pk.private_key_secret.as_slice(), account_prefix)
+                        .map_err(|e| ErrorReport::new(io::Error::new(io::ErrorKind::InvalidData, e.to_string())))?,
+                )
+            },
+
+            Self::PublicKey(account_public_key) => {
+                account_id_from_raw_pubkey(account_prefix, &account_public_key.to_bytes())
+            },
+        }
     }
 
-    pub fn public_key(&self) -> Result<PublicKey, MmError<PrivKeyPolicyNotAllowed>> {
+    fn public_key(&self) -> Result<PublicKey, MmError<PrivKeyPolicyNotAllowed>> {
         match self {
-            TendermintActivationPolicy::PrivateKey(private_key_policy) => match private_key_policy {
+            Self::PrivateKey(private_key_policy) => match private_key_policy {
                 PrivKeyPolicy::Iguana(pair) => {
                     Ok(PublicKey::from_raw_secp256k1(&pair.public_key.to_bytes()).expect("TODO"))
                 },
@@ -229,28 +244,26 @@ impl TendermintActivationPolicy {
                 #[cfg(target_arch = "wasm32")]
                 PrivKeyPolicy::Metamask(_) => unreachable!(),
             },
-            TendermintActivationPolicy::PublicKey(account_public_key) => Ok(*account_public_key),
+            Self::PublicKey(account_public_key) => Ok(*account_public_key),
         }
     }
 
-    pub fn activated_key_or_err(&self) -> Result<&Secp256k1Secret, MmError<PrivKeyPolicyNotAllowed>> {
+    pub(crate) fn activated_key_or_err(&self) -> Result<&Secp256k1Secret, MmError<PrivKeyPolicyNotAllowed>> {
         match self {
-            TendermintActivationPolicy::PrivateKey(private_key) => {
-                Ok(private_key.activated_key_or_err()?.private_key_secret.as_ref())
-            },
-            TendermintActivationPolicy::PublicKey(_) => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
+            Self::PrivateKey(private_key) => Ok(private_key.activated_key_or_err()?.private_key_secret.as_ref()),
+            Self::PublicKey(_) => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
                 "`activated_key_or_err` is not supported for pubkey-only activations".to_string(),
             )),
         }
     }
 
-    pub fn hd_wallet_derived_priv_key_or_err(
+    pub(crate) fn hd_wallet_derived_priv_key_or_err(
         &self,
         path_to_address: &StandardHDCoinAddress,
     ) -> Result<Secp256k1Secret, MmError<PrivKeyPolicyNotAllowed>> {
         match self {
-            TendermintActivationPolicy::PrivateKey(pair) => pair.hd_wallet_derived_priv_key_or_err(path_to_address),
-            TendermintActivationPolicy::PublicKey(_) => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
+            Self::PrivateKey(pair) => pair.hd_wallet_derived_priv_key_or_err(path_to_address),
+            Self::PublicKey(_) => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
                 "`hd_wallet_derived_priv_key_or_err` is not supported for pubkey-only activations".to_string(),
             )),
         }
@@ -567,26 +580,12 @@ impl TendermintCoin {
             });
         }
 
-        // TODO: this can be handled in `TendermintActivationPolicy`
-        let account_id = match &activation_policy {
-            TendermintActivationPolicy::PrivateKey(priv_key_policy) => {
-                let pk = priv_key_policy.activated_key_or_err().mm_err(|e| TendermintInitError {
-                    ticker: ticker.clone(),
-                    kind: TendermintInitErrorKind::Internal(e.to_string()),
-                })?;
-
-                account_id_from_privkey(pk.private_key_secret.as_slice(), &protocol_info.account_prefix).mm_err(
-                    |kind| TendermintInitError {
-                        ticker: ticker.clone(),
-                        kind,
-                    },
-                )?
-            },
-
-            TendermintActivationPolicy::PublicKey(account_public_key) => {
-                account_id_from_raw_pubkey(&protocol_info.account_prefix, &account_public_key.to_bytes()).expect("TODO")
-            },
-        };
+        let account_id = activation_policy
+            .generate_account_id(&protocol_info.account_prefix)
+            .map_to_mm(|e| TendermintInitError {
+                ticker: ticker.clone(),
+                kind: TendermintInitErrorKind::CouldNotGenerateAccountId(e.to_string()),
+            })?;
 
         let rpc_clients = clients_from_urls(rpc_urls.as_ref()).mm_err(|kind| TendermintInitError {
             ticker: ticker.clone(),
