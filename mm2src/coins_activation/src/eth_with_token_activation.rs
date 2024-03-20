@@ -16,11 +16,11 @@ use coins::eth::{Erc20TokenInfo, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
-use coins::{CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum};
+use coins::{CoinBalance, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps, MmCoin, MmCoinEnum};
 
 use crate::platform_coin_with_tokens::InitPlatformCoinWithTokensTask;
-use common::true_f;
 use common::Future01CompatExt;
+use common::{drop_mutability, true_f};
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::HwRpcError;
 use mm2_core::mm_ctx::MmArc;
@@ -32,7 +32,7 @@ use mm2_number::BigDecimal;
 use rpc_task::RpcTaskHandleShared;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {
@@ -190,36 +190,65 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
     }
 }
 
+#[derive(Serialize, Clone)]
+pub struct IguanaEthWithTokensActivationResult {
+    current_block: u64,
+    eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
+    erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    nfts_infos: HashMap<String, NftInfo>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct HDEthWithTokensActivationResult {
+    current_block: u64,
+    ticker: String,
+    wallet_balance: CoinBalanceReport,
+    // Todo: should be part of wallet_balance instead
+    nfts_infos: HashMap<String, NftInfo>,
+}
+
 /// Represents the result of activating an Ethereum-based coin along with its associated tokens (ERC20 and NFTs).
 ///
 /// This structure provides a snapshot of the relevant activation data, including the current blockchain block,
 /// information about Ethereum addresses and their balances, ERC-20 token balances, and a summary of NFT ownership.
 #[derive(Serialize, Clone)]
-pub struct EthWithTokensActivationResult {
-    current_block: u64,
-    ticker: String,
-    wallet_balance: CoinBalanceReport,
-    // Todo: should be part of wallet_balance or not?
-    nfts_infos: HashMap<String, NftInfo>,
+#[serde(untagged)]
+pub enum EthWithTokensActivationResult {
+    Iguana(IguanaEthWithTokensActivationResult),
+    HD(HDEthWithTokensActivationResult),
 }
 
 impl GetPlatformBalance for EthWithTokensActivationResult {
     fn get_platform_balance(&self) -> Option<BigDecimal> {
-        self.wallet_balance
-            .to_addresses_total_balances(&self.ticker)
-            .iter()
-            .fold(None, |maybe_total, (_, maybe_balance)| {
-                match (maybe_total, maybe_balance) {
-                    (Some(total), Some(balance)) => Some(total + balance),
-                    (None, Some(balance)) => Some(balance.clone()),
-                    (total, None) => total,
-                }
-            })
+        match self {
+            EthWithTokensActivationResult::Iguana(result) => result
+                .eth_addresses_infos
+                .iter()
+                .fold(Some(BigDecimal::from(0)), |total, (_, addr_info)| {
+                    total.and_then(|t| addr_info.balances.as_ref().map(|b| t + b.get_total()))
+                }),
+            EthWithTokensActivationResult::HD(result) => result
+                .wallet_balance
+                .to_addresses_total_balances(&result.ticker)
+                .iter()
+                .fold(None, |maybe_total, (_, maybe_balance)| {
+                    match (maybe_total, maybe_balance) {
+                        (Some(total), Some(balance)) => Some(total + balance),
+                        (None, Some(balance)) => Some(balance.clone()),
+                        (total, None) => total,
+                    }
+                }),
+        }
     }
 }
 
 impl CurrentBlock for EthWithTokensActivationResult {
-    fn current_block(&self) -> u64 { self.current_block }
+    fn current_block(&self) -> u64 {
+        match self {
+            EthWithTokensActivationResult::Iguana(result) => result.current_block,
+            EthWithTokensActivationResult::HD(result) => result.current_block,
+        }
+    }
 }
 
 #[async_trait]
@@ -298,78 +327,105 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             .await
             .map_err(EthActivationV2Error::InternalError)?;
 
-        let xpub_extractor = if self.is_trezor() {
-            let ctx = MmArc::from_weak(&self.ctx).ok_or(EthActivationV2Error::InvalidHardwareWalletCall)?;
-            let task_handle = task_handle.ok_or_else(|| {
-                EthActivationV2Error::InternalError("Hardware wallet must be accessed under task manager".to_string())
-            })?;
-            Some(
-                RpcTaskXPubExtractor::new_trezor_extractor(
-                    &ctx,
-                    task_handle,
-                    eth_xpub_extractor_rpc_statuses(),
-                    CoinProtocol::ETH,
-                )
-                .map_err(|_| MmError::new(EthActivationV2Error::HwError(HwRpcError::NotInitialized)))?,
-            )
-        } else {
-            None
-        };
-
-        let wallet_balance = self
-            .enable_coin_balance(
-                xpub_extractor,
-                activation_request.platform_request.enable_params.clone(),
-                &activation_request.platform_request.path_to_address,
-            )
-            .await
-            .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
-
         let nfts_map = if let Some(MmCoinEnum::EthCoin(nft_global)) = nft_global {
             nft_global.nfts_infos.lock().await.clone()
         } else {
             Default::default()
         };
 
-        // Todo: fix get_balances
-        // if !activation_request.get_balances {
-        //     drop_mutability!(eth_address_info);
-        //     let tickers: HashSet<_> = self.get_erc_tokens_infos().into_keys().collect();
-        //     erc20_address_info.tickers = Some(tickers);
-        //     drop_mutability!(erc20_address_info);
-        //
-        //     return Ok(EthWithTokensActivationResult {
-        //         current_block,
-        //         eth_addresses_infos: HashMap::from([(my_address.clone(), eth_address_info)]),
-        //         erc20_addresses_infos: HashMap::from([(my_address, erc20_address_info)]),
-        //         nfts_infos: nfts_map,
-        //     });
-        // }
+        match self.derivation_method() {
+            DerivationMethod::SingleAddress(my_address) => {
+                let pubkey = self.get_public_key().await?;
+                let mut eth_address_info = CoinAddressInfo {
+                    derivation_method: self.derivation_method().to_response().await?,
+                    pubkey: pubkey.clone(),
+                    balances: None,
+                    tickers: None,
+                };
+                let mut erc20_address_info = CoinAddressInfo {
+                    derivation_method: self.derivation_method().to_response().await?,
+                    pubkey,
+                    balances: None,
+                    tickers: None,
+                };
+                if !activation_request.get_balances {
+                    drop_mutability!(eth_address_info);
+                    let tickers: HashSet<_> = self.get_erc_tokens_infos().into_keys().collect();
+                    erc20_address_info.tickers = Some(tickers);
+                    drop_mutability!(erc20_address_info);
 
-        // let eth_balance = self
-        //     .my_balance()
-        //     .compat()
-        //     .await
-        //     .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
-        // eth_address_info.balances = Some(eth_balance);
-        // drop_mutability!(eth_address_info);
+                    return Ok(EthWithTokensActivationResult::Iguana(
+                        IguanaEthWithTokensActivationResult {
+                            current_block,
+                            eth_addresses_infos: HashMap::from([(my_address.to_string(), eth_address_info)]),
+                            erc20_addresses_infos: HashMap::from([(my_address.to_string(), erc20_address_info)]),
+                            nfts_infos: nfts_map,
+                        },
+                    ));
+                }
 
-        // Todo: recheck this
-        // Todo: get_tokens_balance_list use get_token_balance_by_address that uses the enabled address
-        // Todo: We should pass and address to this function so that we can get balances for all HD wallet enabled addresses on activation
-        // let token_balances = self
-        //     .get_tokens_balance_list()
-        //     .await
-        //     .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
-        // erc20_address_info.balances = Some(token_balances);
-        // drop_mutability!(erc20_address_info);
+                let eth_balance = self
+                    .my_balance()
+                    .compat()
+                    .await
+                    .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
+                eth_address_info.balances = Some(eth_balance);
+                drop_mutability!(eth_address_info);
 
-        Ok(EthWithTokensActivationResult {
-            current_block,
-            ticker: self.ticker().to_string(),
-            wallet_balance,
-            nfts_infos: nfts_map,
-        })
+                let token_balances = self
+                    .get_tokens_balance_list()
+                    .await
+                    .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
+                erc20_address_info.balances = Some(token_balances);
+                drop_mutability!(erc20_address_info);
+
+                Ok(EthWithTokensActivationResult::Iguana(
+                    IguanaEthWithTokensActivationResult {
+                        current_block,
+                        eth_addresses_infos: HashMap::from([(my_address.to_string(), eth_address_info)]),
+                        erc20_addresses_infos: HashMap::from([(my_address.to_string(), erc20_address_info)]),
+                        nfts_infos: nfts_map,
+                    },
+                ))
+            },
+            DerivationMethod::HDWallet(_) => {
+                let xpub_extractor = if self.is_trezor() {
+                    let ctx = MmArc::from_weak(&self.ctx).ok_or(EthActivationV2Error::InvalidHardwareWalletCall)?;
+                    let task_handle = task_handle.ok_or_else(|| {
+                        EthActivationV2Error::InternalError(
+                            "Hardware wallet must be accessed under task manager".to_string(),
+                        )
+                    })?;
+                    Some(
+                        RpcTaskXPubExtractor::new_trezor_extractor(
+                            &ctx,
+                            task_handle,
+                            eth_xpub_extractor_rpc_statuses(),
+                            CoinProtocol::ETH,
+                        )
+                        .map_err(|_| MmError::new(EthActivationV2Error::HwError(HwRpcError::NotInitialized)))?,
+                    )
+                } else {
+                    None
+                };
+
+                let wallet_balance = self
+                    .enable_coin_balance(
+                        xpub_extractor,
+                        activation_request.platform_request.enable_params.clone(),
+                        &activation_request.platform_request.path_to_address,
+                    )
+                    .await
+                    .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+
+                Ok(EthWithTokensActivationResult::HD(HDEthWithTokensActivationResult {
+                    current_block,
+                    ticker: self.ticker().to_string(),
+                    wallet_balance,
+                    nfts_infos: nfts_map,
+                }))
+            },
+        }
     }
 
     fn start_history_background_fetching(
