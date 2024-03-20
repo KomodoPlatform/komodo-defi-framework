@@ -6,9 +6,9 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
-use coins::tendermint::{tendermint_priv_key_policy, AccountId, TendermintActivationPolicy, TendermintCoin,
-                        TendermintCommons, TendermintConf, TendermintInitError, TendermintInitErrorKind,
-                        TendermintProtocolInfo, TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
+use coins::tendermint::{tendermint_priv_key_policy, TendermintActivationPolicy, TendermintCoin, TendermintCommons,
+                        TendermintConf, TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo,
+                        TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
                         TendermintTokenInitError, TendermintTokenProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
@@ -44,17 +44,11 @@ pub struct TendermintActivationParams {
     /// /account'/change/address_index`.
     #[serde(default)]
     pub path_to_address: StandardHDCoinAddress,
-    with_pubkey: Option<PubkeyActivation>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct PubkeyActivation {
-    account_address: AccountId,
     #[serde(deserialize_with = "deserialize_account_public_key")]
-    account_public_key: TendermintPublicKey,
+    with_pubkey: Option<TendermintPublicKey>,
 }
 
-fn deserialize_account_public_key<'de, D>(deserializer: D) -> Result<TendermintPublicKey, D::Error>
+fn deserialize_account_public_key<'de, D>(deserializer: D) -> Result<Option<TendermintPublicKey>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -72,7 +66,7 @@ where
                                 .iter()
                                 .map(|i| i.as_u64().unwrap() as u8)
                                 .collect();
-                            Ok(TendermintPublicKey::from_raw_ed25519(&value).unwrap())
+                            Ok(Some(TendermintPublicKey::from_raw_ed25519(&value).unwrap()))
                         },
                         Some("secp256k1") => {
                             let value: Vec<u8> = value
@@ -81,7 +75,7 @@ where
                                 .iter()
                                 .map(|i| i.as_u64().unwrap() as u8)
                                 .collect();
-                            Ok(TendermintPublicKey::from_raw_secp256k1(&value).unwrap())
+                            Ok(Some(TendermintPublicKey::from_raw_secp256k1(&value).unwrap()))
                         },
                         _ => Err(serde::de::Error::custom(
                             "Unsupported pubkey algorithm. Use one of ['ed25519', 'secp256k1']",
@@ -227,8 +221,8 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let conf = TendermintConf::try_from_json(&ticker, coin_conf)?;
 
-        let activation_policy = if let Some(with_pubkey) = activation_request.with_pubkey {
-            TendermintActivationPolicy::with_public_key(with_pubkey.account_address, with_pubkey.account_public_key)
+        let activation_policy = if let Some(pubkey) = activation_request.with_pubkey {
+            TendermintActivationPolicy::with_public_key(pubkey)
         } else {
             let private_key_policy =
                 PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).mm_err(|e| TendermintInitError {
