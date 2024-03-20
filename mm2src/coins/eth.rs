@@ -6458,7 +6458,7 @@ impl EthCoin {
                         Token::Uint(token_id_u256),
                         Token::Bytes(htlc_data),
                     ])?;
-                    let gas = U256::from(ETH_GAS);
+                    let gas = U256::from(200_000);
                     self.sign_and_send_transaction(0.into(), Action::Call(token_address), data, gas)
                         .compat()
                         .await
@@ -6590,8 +6590,9 @@ impl EthCoin {
             EthCoinType::Nft { .. } => {
                 match contract_type {
                     ContractType::Erc1155 => {
+                        // as we use safeTransferFrom method, we can find erc1155 token payment info in logs emitted by events
                         let topic = H256::from_slice(
-                            keccak256("onERC1155Received(address,address,uint256,uint256,bytes)".as_bytes()).as_ref(),
+                            keccak256("TransferSingle(address,address,address,uint256,uint256)".as_bytes()).as_ref(),
                         );
                         let transfer_events = receipt.logs.iter().filter(|log| {
                             log.address == expected_token_address && log.topics.get(0).unwrap() == &topic
@@ -6604,116 +6605,33 @@ impl EthCoin {
                             )));
                         }
                         for log in transfer_events {
-                            let function = NFT_SWAP_CONTRACT
-                                .function("onERC1155Received")
-                                .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
-                            let decoded = decode_contract_call(function, &log.data.0)
-                                .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
-                            if decoded[0] != Token::Address(maker_address) {
-                                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                    "NFT Maker Payment `operator` {:?} is invalid, expected {:?}",
-                                    decoded[0],
-                                    Token::Address(maker_address)
-                                )));
-                            }
-                            if decoded[1] != Token::Address(maker_address) {
-                                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                    "NFT Maker Payment `sender` {:?} is invalid, expected maker address {:?}",
-                                    decoded[1],
-                                    Token::Address(maker_address)
-                                )));
-                            }
-                            let token_id = self.parse_token_id(args.token_id)?;
-                            let token_id = U256::from_dec_str(&token_id.to_string())
-                                .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
-                            if decoded[2] != Token::Uint(token_id) {
-                                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                    "NFT Maker Payment `token_id` {:?} is invalid, expected {:?}",
-                                    decoded[2],
-                                    Token::Uint(token_id)
-                                )));
-                            }
-                            let value = U256::from_dec_str(&args.amount.to_string())
-                                .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
-                            if decoded[3] != Token::Uint(value) {
-                                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                    "NFT Maker Payment `amount` {:?} is invalid, expected {:?}",
-                                    decoded[3],
-                                    Token::Uint(value)
-                                )));
-                            }
+                            let expected_maker = &H256::from(maker_address);
+                            let valid_operator = log.topics.get(1).map_or(false, |op| op == expected_maker);
+                            let valid_from = log.topics.get(2).map_or(false, |from| from == expected_maker);
+                            let valid_to = log
+                                .topics
+                                .get(3)
+                                .map_or(false, |to| to == &H256::from(expected_swap_contract));
 
-                            if let Some(Token::Bytes(data_bytes)) = decoded.get(4) {
-                                let htlc_params = &[
-                                    ethabi::ParamType::FixedBytes(32),
-                                    ethabi::ParamType::Address,
-                                    ethabi::ParamType::Address,
-                                    ethabi::ParamType::FixedBytes(32),
-                                    ethabi::ParamType::FixedBytes(32),
-                                    ethabi::ParamType::Uint(256),
-                                ];
+                            if valid_operator && valid_from && valid_to {
+                                let params = &[ethabi::ParamType::Uint(256), ethabi::ParamType::Uint(256)];
 
-                                if let Ok(decoded_params) = ethabi::decode(htlc_params, data_bytes) {
-                                    if decoded_params[0] != Token::FixedBytes(swap_id.clone()) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid 'swap_id' {:?}, expected {:?}",
-                                            decoded_params[0],
-                                            Token::FixedBytes(swap_id)
-                                        )));
+                                if let Ok(decoded_params) = ethabi::decode(params, &log.data.0) {
+                                    let valid_id = decoded_params[0] == Token::Uint(U256::from(args.token_id));
+                                    let value = U256::from_dec_str(&args.amount.to_string())
+                                        .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
+                                    let valid_amount = decoded_params[1] == Token::Uint(value);
+                                    if valid_id && valid_amount {
+                                        return Ok(());
                                     }
-                                    let taker_address = addr_from_raw_pubkey(args.taker_pub)
-                                        .map_to_mm(ValidatePaymentError::InternalError)?;
-                                    if decoded_params[1] != Token::Address(taker_address) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid `taker` {:?}, expected {:?}",
-                                            decoded_params[1],
-                                            Token::Address(taker_address)
-                                        )));
-                                    }
-                                    if decoded_params[2] != Token::Address(expected_token_address) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid `token_address` {:?}, expected {:?}",
-                                            decoded_params[2],
-                                            Token::Address(expected_token_address)
-                                        )));
-                                    }
-                                    if decoded_params[3] != Token::FixedBytes(args.taker_secret_hash.to_vec()) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid 'taker_secret_hash' {:?}, expected {:?}",
-                                            decoded_params[3],
-                                            Token::FixedBytes(args.taker_secret_hash.to_vec())
-                                        )));
-                                    }
-                                    if decoded_params[4] != Token::FixedBytes(args.maker_secret_hash.to_vec()) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid 'maker_secret_hash' {:?}, expected {:?}",
-                                            decoded_params[4],
-                                            Token::FixedBytes(args.maker_secret_hash.to_vec())
-                                        )));
-                                    }
-                                    if decoded_params[5] != Token::Uint(U256::from(args.time_lock)) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid 'time_lock' {:?}, expected {:?}",
-                                            decoded_params[5],
-                                            Token::Uint(U256::from(args.time_lock))
-                                        )));
-                                    }
-                                } else {
-                                    return MmError::err(ValidatePaymentError::TxDeserializationError(
-                                        "Failed to decode HTLCParams from data_bytes".to_string(),
-                                    ));
                                 }
-                            } else {
-                                return MmError::err(ValidatePaymentError::TxDeserializationError(
-                                    "Expected bytes for HTLCParams data".to_string(),
-                                ));
+                                // TODO add MakerPaymentSent event check
                             }
                         }
                     },
                     ContractType::Erc721 => {
-                        let topic = H256::from_slice(
-                            keccak256("onERC721Received(address,address,uint256,bytes)".as_bytes()).as_ref(),
-                        );
+                        let topic =
+                            H256::from_slice(keccak256("Transfer(address,address,uint256)".as_bytes()).as_ref());
                         let transfer_events = receipt.logs.iter().filter(|log| {
                             log.address == expected_token_address && log.topics.get(0).unwrap() == &topic
                         });
@@ -6724,103 +6642,8 @@ impl EthCoin {
                                 receipt
                             )));
                         }
-                        for log in transfer_events {
-                            let function = NFT_SWAP_CONTRACT
-                                .function("onERC721Received")
-                                .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
-                            let decoded = decode_contract_call(function, &log.data.0)
-                                .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
-                            if decoded[0] != Token::Address(maker_address) {
-                                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                    "NFT Maker Payment `operator` {:?} is invalid, expected {:?}",
-                                    decoded[0],
-                                    Token::Address(maker_address)
-                                )));
-                            }
-                            if decoded[1] != Token::Address(maker_address) {
-                                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                    "NFT Maker Payment `sender` {:?} is invalid, expected maker address {:?}",
-                                    decoded[1],
-                                    Token::Address(maker_address)
-                                )));
-                            }
-                            let token_id = self.parse_token_id(args.token_id)?;
-                            let token_id = U256::from_dec_str(&token_id.to_string())
-                                .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
-                            if decoded[2] != Token::Uint(token_id) {
-                                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                    "NFT Maker Payment `token_id` {:?} is invalid, expected {:?}",
-                                    decoded[2],
-                                    Token::Uint(token_id)
-                                )));
-                            }
-
-                            if let Some(Token::Bytes(data_bytes)) = decoded.get(3) {
-                                let htlc_params = &[
-                                    ethabi::ParamType::FixedBytes(32),
-                                    ethabi::ParamType::Address,
-                                    ethabi::ParamType::Address,
-                                    ethabi::ParamType::FixedBytes(32),
-                                    ethabi::ParamType::FixedBytes(32),
-                                    ethabi::ParamType::Uint(256),
-                                ];
-
-                                if let Ok(decoded_params) = ethabi::decode(htlc_params, data_bytes) {
-                                    if decoded_params[0] != Token::FixedBytes(swap_id.clone()) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid 'swap_id' {:?}, expected {:?}",
-                                            decoded_params[0],
-                                            Token::FixedBytes(swap_id)
-                                        )));
-                                    }
-                                    let taker_address = addr_from_raw_pubkey(args.taker_pub)
-                                        .map_to_mm(ValidatePaymentError::InternalError)?;
-                                    if decoded_params[1] != Token::Address(taker_address) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid `taker` {:?}, expected {:?}",
-                                            decoded_params[1],
-                                            Token::Address(taker_address)
-                                        )));
-                                    }
-                                    if decoded_params[2] != Token::Address(expected_token_address) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid `token_address` {:?}, expected {:?}",
-                                            decoded_params[2],
-                                            Token::Address(expected_token_address)
-                                        )));
-                                    }
-                                    if decoded_params[3] != Token::FixedBytes(args.taker_secret_hash.to_vec()) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid 'taker_secret_hash' {:?}, expected {:?}",
-                                            decoded_params[3],
-                                            Token::FixedBytes(args.taker_secret_hash.to_vec())
-                                        )));
-                                    }
-                                    if decoded_params[4] != Token::FixedBytes(args.maker_secret_hash.to_vec()) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid 'maker_secret_hash' {:?}, expected {:?}",
-                                            decoded_params[4],
-                                            Token::FixedBytes(args.maker_secret_hash.to_vec())
-                                        )));
-                                    }
-                                    if decoded_params[5] != Token::Uint(U256::from(args.time_lock)) {
-                                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                                            "Invalid 'time_lock' {:?}, expected {:?}",
-                                            decoded_params[5],
-                                            Token::Uint(U256::from(args.time_lock))
-                                        )));
-                                    }
-                                } else {
-                                    return MmError::err(ValidatePaymentError::TxDeserializationError(
-                                        "Failed to decode HTLCParams from data_bytes".to_string(),
-                                    ));
-                                }
-                            } else {
-                                return MmError::err(ValidatePaymentError::TxDeserializationError(
-                                    "Expected bytes for HTLCParams data".to_string(),
-                                ));
-                            }
-                        }
+                        // TODO add checks
+                        return Ok(());
                     },
                 }
             },
@@ -6830,7 +6653,9 @@ impl EthCoin {
                 ))
             },
         }
-        Ok(())
+        MmError::err(ValidatePaymentError::WrongPaymentTx(
+            "Didnt match expected Maker NFT Payment params".to_string(),
+        ))
     }
 
     async fn payment_status_v2(

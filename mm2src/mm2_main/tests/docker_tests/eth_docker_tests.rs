@@ -109,7 +109,7 @@ pub(crate) fn mint_erc721(to_addr: Address, token_id: U256) {
     let erc721_contract = Contract::from_json(GETH_WEB3.eth(), erc721_contract(), ERC721_TEST_ABI.as_bytes()).unwrap();
 
     let options = Options {
-        gas: Some(U256::from(1_000_000)),
+        gas: Some(U256::from(150_000)),
         ..Options::default()
     };
 
