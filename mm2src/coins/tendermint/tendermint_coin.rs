@@ -479,7 +479,6 @@ pub fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> MmResult<Accoun
     Ok(AccountId::new(prefix, pubkey_hash.as_slice())?)
 }
 
-// Add tests to this function
 pub fn account_id_from_raw_pubkey(prefix: &str, pubkey: &[u8]) -> Result<AccountId, ErrorReport> {
     let pubkey_hash = dhash160(pubkey);
     AccountId::new(prefix, pubkey_hash.as_slice())
@@ -3827,5 +3826,28 @@ pub mod tendermint_coin_tests {
             };
             block_on(coin.wait_for_confirmations(confirm_payment_input).compat()).unwrap_err();
         }
+    }
+
+    #[test]
+    fn test_generate_account_id() {
+        let key_pair = key_pair_from_seed("best seed").unwrap();
+
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let pb = PublicKey::from_raw_secp256k1(&key_pair.public().to_bytes()).unwrap();
+
+        let pk_activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+        // Derive account id from the private key.
+        let pk_account_id = pk_activation_policy.generate_account_id("cosmos").unwrap();
+        assert_eq!(
+            pk_account_id.to_string(),
+            "cosmos1aghdjgt5gzntzqgdxdzhjfry90upmtfsy2wuwp"
+        );
+
+        let pb_activation_policy = TendermintActivationPolicy::with_public_key(pb);
+        // Derive account id from the public key.
+        let pb_account_id = pb_activation_policy.generate_account_id("cosmos").unwrap();
+        // Public and private keys are from the same keypair, account ids must be equal.
+        assert_eq!(pk_account_id, pb_account_id);
     }
 }
