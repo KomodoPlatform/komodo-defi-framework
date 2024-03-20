@@ -44,6 +44,7 @@ pub struct TendermintActivationParams {
     /// /account'/change/address_index`.
     #[serde(default)]
     pub path_to_address: StandardHDCoinAddress,
+    #[serde(default)]
     #[serde(deserialize_with = "deserialize_account_public_key")]
     with_pubkey: Option<TendermintPublicKey>,
 }
