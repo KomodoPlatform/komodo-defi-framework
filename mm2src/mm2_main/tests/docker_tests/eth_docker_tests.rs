@@ -130,6 +130,7 @@ pub(crate) fn mint_erc721(to_addr: Address, token_id: U256) {
         "The ownership of the tokenID {:?} does not match the expected address {:?}.",
         token_id, to_addr
     );
+    println!("\n to_addr {:?}, current ERC721 owner {:?} \n", to_addr, owner)
 }
 
 pub(crate) fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
@@ -166,6 +167,7 @@ pub(crate) fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
         "The balance of tokenId {:?} for address {:?} does not match the expected amount {:?}.",
         token_id, to_addr, amount
     );
+    println!("\n to_addr {:?}, ERC1155 balance {:?} \n", to_addr, balance);
 }
 
 pub(crate) async fn fill_erc1155_info(eth_coin: &EthCoin, tokens_id: u32, amount: u32) {

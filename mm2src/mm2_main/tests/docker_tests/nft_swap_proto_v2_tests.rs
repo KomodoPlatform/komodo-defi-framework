@@ -14,7 +14,7 @@ fn send_and_spend_erc721_maker_payment() {
     // as EtomicSwapNft will have its own contract address, due to EIP-170 contract size limitations.
     // TODO need to add NFT conf in coin conf and refactor enable nft a bit
 
-    let erc721_nft = TestNftType::Erc721 { token_id: 1 };
+    let erc721_nft = TestNftType::Erc721 { token_id: 2 };
 
     let maker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), Some(erc721_nft));
     let taker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), None);
@@ -31,7 +31,7 @@ fn send_and_spend_erc721_maker_payment() {
         taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
         swap_unique_data: &[],
         token_address: &erc721_contract().to_bytes(),
-        token_id: &BigUint::from(1u32).to_bytes(),
+        token_id: &BigUint::from(2u32).to_bytes(),
         chain: &Chain::Eth.to_bytes(),
         contract_type: &ContractType::Erc721.to_bytes(),
         swap_contract_address: &nft_swap_contract().to_bytes(),
