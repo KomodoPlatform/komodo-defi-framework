@@ -37,6 +37,7 @@ fn send_and_spend_erc721_maker_payment() {
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
     let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
+    println!("Maker sent ERC721 NFT Payment tx hash {:02x}", maker_payment.tx_hash());
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: maker_payment.tx_hex(),
@@ -90,6 +91,7 @@ fn send_and_spend_erc1155_maker_payment() {
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
     let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
+    println!("Maker sent ERC1155 NFT Payment tx hash {:02x}", maker_payment.tx_hash());
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: maker_payment.tx_hex(),

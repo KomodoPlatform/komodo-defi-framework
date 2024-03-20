@@ -52,7 +52,6 @@ use ethkey::{public_to_address, sign, verify_address, KeyPair, Public, Signature
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
 use futures01::Future;
-use hex::ToHex;
 use http::{StatusCode, Uri};
 use instant::Instant;
 use keys::Public as HtlcPubKey;
@@ -6409,10 +6408,6 @@ impl EthCoin {
         let token_id_u256 =
             U256::from_dec_str(&token_id.to_string()).map_err(|e| NumConversError::new(ERRL!("{}", e)))?;
         let htlc_data = self.prepare_htlc_data(&args, taker_address, token_address, time_lock_u32);
-
-        println!("htlc_data vec \n {:?} \n", htlc_data);
-        let hex_htlc_data = htlc_data.encode_hex::<String>();
-        println!("hex_htlc_data \n {:?} \n", hex_htlc_data);
 
         match &self.coin_type {
             EthCoinType::Nft { .. } => match contract_type {
