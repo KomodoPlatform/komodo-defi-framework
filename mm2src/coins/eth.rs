@@ -6404,9 +6404,7 @@ impl EthCoin {
             .time_lock
             .try_into()
             .map_err(|e: TryFromIntError| TransactionErr::Plain(ERRL!("{}", e)))?;
-        let token_id = self.parse_token_id(args.token_id)?;
-        let token_id_u256 =
-            U256::from_dec_str(&token_id.to_string()).map_err(|e| NumConversError::new(ERRL!("{}", e)))?;
+        let token_id_u256 = U256::from(args.token_id);
         let htlc_data = self.prepare_htlc_data(&args, taker_address, token_address, time_lock_u32);
 
         match &self.coin_type {
@@ -6464,11 +6462,8 @@ impl EthCoin {
                         .await
                 },
             },
-            EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
-                "ERC20 Protocol is not supported for NFT Swaps".to_string(),
-            )),
-            EthCoinType::Eth => Err(TransactionErr::ProtocolNotSupported(
-                "ETH Protocol is not supported for NFT Swaps!".to_string(),
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
+                "ETH and ERC20 Protocols are not supported for NFT Swaps".to_string(),
             )),
         }
     }
