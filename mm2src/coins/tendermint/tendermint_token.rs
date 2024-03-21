@@ -6,7 +6,6 @@ use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATO
             TX_DEFAULT_MEMO};
 use crate::coin_errors::ValidatePaymentResult;
 use crate::rpc_command::tendermint::IBCWithdrawRequest;
-use crate::tendermint::account_id_from_privkey;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
             CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
@@ -20,10 +19,8 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
             VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFrom, WithdrawFut,
-            WithdrawRequest};
-use crate::{DexFee, MmCoinEnum, PaymentInstructionArgs, TransactionData, ValidateWatcherSpendInput, WatcherReward,
-            WatcherRewardError};
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
+use crate::{DexFee, MmCoinEnum, PaymentInstructionArgs, ValidateWatcherSpendInput, WatcherReward, WatcherRewardError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -114,26 +111,7 @@ impl TendermintToken {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
-            let (account_id, priv_key) = match req.from {
-                Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
-                    let priv_key = platform
-                        .activation_policy
-                        .hd_wallet_derived_priv_key_or_err(path_to_address)?;
-                    let account_id = account_id_from_privkey(priv_key.as_slice(), &platform.account_prefix)
-                        .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
-                    (account_id, priv_key)
-                },
-                Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
-                    return MmError::err(WithdrawError::UnexpectedFromAddress(
-                        "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
-                            .to_string(),
-                    ))
-                },
-                None => (
-                    platform.account_id.clone(),
-                    *platform.activation_policy.activated_key_or_err()?,
-                ),
-            };
+            let (account_id, maybe_pk) = platform.account_id_and_pk_for_withdraw(req.from)?;
 
             let (base_denom_balance, base_denom_balance_dec) = platform
                 .get_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())
@@ -203,12 +181,7 @@ impl TendermintToken {
             let (_, gas_limit) = platform.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = platform
-                .calculate_account_fee_amount_as_u64(
-                    msg_transfer.clone(),
-                    timeout_height,
-                    memo.clone(),
-                    req.fee,
-                )
+                .calculate_account_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone(), req.fee)
                 .await?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
@@ -229,20 +202,18 @@ impl TendermintToken {
             let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
             let account_info = platform.account_info(&account_id).await?;
-            let tx_raw = platform
-                .any_to_signed_raw_tx(&priv_key, account_info, msg_transfer, fee, timeout_height, memo.clone())
+
+            let tx = platform
+                .any_to_transaction_data(maybe_pk, msg_transfer, account_info, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let tx_bytes = tx_raw
-                .to_bytes()
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            let internal_id = {
+                let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
+                sha256(&hex_vec).to_vec().into()
+            };
 
-            let hash = sha256(&tx_bytes);
             Ok(TransactionDetails {
-                tx: TransactionData::Signed {
-                    tx_hash: hex::encode_upper(hash.as_slice()),
-                    tx_hex: tx_bytes.into(),
-                },
+                tx,
                 from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
@@ -258,7 +229,7 @@ impl TendermintToken {
                     gas_limit,
                 })),
                 coin: token.ticker.clone(),
-                internal_id: hash.to_vec().into(),
+                internal_id,
                 kmd_rewards: None,
                 transaction_type: TransactionType::default(),
                 memo: Some(memo),
@@ -643,26 +614,7 @@ impl MmCoin for TendermintToken {
                 )));
             }
 
-            let (account_id, priv_key) = match req.from {
-                Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
-                    let priv_key = platform
-                        .activation_policy
-                        .hd_wallet_derived_priv_key_or_err(path_to_address)?;
-                    let account_id = account_id_from_privkey(priv_key.as_slice(), &platform.account_prefix)
-                        .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
-                    (account_id, priv_key)
-                },
-                Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
-                    return MmError::err(WithdrawError::UnexpectedFromAddress(
-                        "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
-                            .to_string(),
-                    ))
-                },
-                None => (
-                    platform.account_id.clone(),
-                    *platform.activation_policy.activated_key_or_err()?,
-                ),
-            };
+            let (account_id, maybe_pk) = platform.account_id_and_pk_for_withdraw(req.from)?;
 
             let (base_denom_balance, base_denom_balance_dec) = platform
                 .get_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())
@@ -730,12 +682,7 @@ impl MmCoin for TendermintToken {
             let (_, gas_limit) = platform.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = platform
-                .calculate_account_fee_amount_as_u64(
-                    msg_send.clone(),
-                    timeout_height,
-                    memo.clone(),
-                    req.fee,
-                )
+                .calculate_account_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone(), req.fee)
                 .await?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
@@ -756,20 +703,18 @@ impl MmCoin for TendermintToken {
             let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
             let account_info = platform.account_info(&account_id).await?;
-            let tx_raw = platform
-                .any_to_signed_raw_tx(&priv_key, account_info, msg_send, fee, timeout_height, memo.clone())
+
+            let tx = platform
+                .any_to_transaction_data(maybe_pk, msg_send, account_info, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let tx_bytes = tx_raw
-                .to_bytes()
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            let internal_id = {
+                let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
+                sha256(&hex_vec).to_vec().into()
+            };
 
-            let hash = sha256(&tx_bytes);
             Ok(TransactionDetails {
-                tx: TransactionData::Signed {
-                    tx_hash: hex::encode_upper(hash.as_slice()),
-                    tx_hex: tx_bytes.into(),
-                },
+                tx,
                 from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
@@ -785,7 +730,7 @@ impl MmCoin for TendermintToken {
                     gas_limit,
                 })),
                 coin: token.ticker.clone(),
-                internal_id: hash.to_vec().into(),
+                internal_id,
                 kmd_rewards: None,
                 transaction_type: TransactionType::default(),
                 memo: Some(memo),

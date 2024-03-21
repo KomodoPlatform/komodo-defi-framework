@@ -648,23 +648,7 @@ impl TendermintCoin {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
-            let (account_id, priv_key) = match req.from {
-                Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
-                    let priv_key = coin
-                        .activation_policy
-                        .hd_wallet_derived_priv_key_or_err(path_to_address)?;
-                    let account_id = account_id_from_privkey(priv_key.as_slice(), &coin.account_prefix)
-                        .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
-                    (account_id, priv_key)
-                },
-                Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
-                    return MmError::err(WithdrawError::UnexpectedFromAddress(
-                        "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
-                            .to_string(),
-                    ))
-                },
-                None => (coin.account_id.clone(), *coin.activation_policy.activated_key_or_err()?),
-            };
+            let (account_id, maybe_pk) = coin.account_id_and_pk_for_withdraw(req.from)?;
 
             let (balance_denom, balance_dec) = coin
                 .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
@@ -764,20 +748,18 @@ impl TendermintCoin {
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let account_info = coin.account_info(&account_id).await?;
-            let tx_raw = coin
-                .any_to_signed_raw_tx(&priv_key, account_info, msg_transfer, fee, timeout_height, memo.clone())
+
+            let tx = coin
+                .any_to_transaction_data(maybe_pk, msg_transfer, account_info, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let tx_bytes = tx_raw
-                .to_bytes()
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            let internal_id = {
+                let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
+                sha256(&hex_vec).to_vec().into()
+            };
 
-            let hash = sha256(&tx_bytes);
             Ok(TransactionDetails {
-                tx: TransactionData::Signed {
-                    tx_hash: hex::encode_upper(hash.as_slice()),
-                    tx_hex: tx_bytes.into(),
-                },
+                tx,
                 from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
@@ -793,7 +775,7 @@ impl TendermintCoin {
                     gas_limit,
                 })),
                 coin: coin.ticker.to_string(),
-                internal_id: hash.to_vec().into(),
+                internal_id,
                 kmd_rewards: None,
                 transaction_type: TransactionType::default(),
                 memo: Some(memo),
@@ -1217,6 +1199,77 @@ impl TendermintCoin {
             .amount
             .parse()
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(super) fn account_id_and_pk_for_withdraw(
+        &self,
+        withdraw_from: Option<WithdrawFrom>,
+    ) -> Result<(AccountId, Option<H256>), WithdrawError> {
+        if let TendermintActivationPolicy::PublicKey(_) = self.activation_policy {
+            return Ok((self.account_id.clone(), None));
+        }
+
+        match withdraw_from {
+            Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+                let priv_key = self
+                    .activation_policy
+                    .hd_wallet_derived_priv_key_or_err(path_to_address)
+                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+
+                let account_id = account_id_from_privkey(priv_key.as_slice(), &self.account_prefix)
+                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+
+                Ok((account_id, Some(priv_key)))
+            },
+            Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
+                Err(WithdrawError::UnexpectedFromAddress(
+                    "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!".to_string(),
+                ))
+            },
+            None => {
+                let activated_key = self
+                    .activation_policy
+                    .activated_key_or_err()
+                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+
+                Ok((self.account_id.clone(), Some(*activated_key)))
+            },
+        }
+    }
+
+    pub(super) fn any_to_transaction_data(
+        &self,
+        maybe_pk: Option<H256>,
+        message: Any,
+        account_info: BaseAccount,
+        fee: Fee,
+        timeout_height: u64,
+        memo: String,
+    ) -> Result<TransactionData, ErrorReport> {
+        if let Some(priv_key) = maybe_pk {
+            let tx_raw = self.any_to_signed_raw_tx(&priv_key, account_info, message, fee, timeout_height, memo)?;
+            let tx_bytes = tx_raw.to_bytes()?;
+            let hash = sha256(&tx_bytes);
+
+            Ok(TransactionData::Signed {
+                tx_hash: hex::encode_upper(hash.as_slice()),
+                tx_hex: tx_bytes.into(),
+            })
+        } else {
+            let sign_doc = self.any_to_sign_doc(account_info, message, fee, timeout_height, memo)?;
+
+            let tx = json!({
+                "sign_doc": {
+                    "body_bytes": sign_doc.body_bytes,
+                    "auth_info_bytes": sign_doc.auth_info_bytes,
+                    "chain_id": sign_doc.chain_id,
+                    "account_number": sign_doc.account_number,
+                }
+            });
+
+            Ok(TransactionData::Unsigned(tx))
+        }
     }
 
     fn gen_create_htlc_tx(
@@ -2023,7 +2076,7 @@ impl MmCoin for TendermintCoin {
                 )));
             }
 
-            let account_id = coin.account_id.clone();
+            let (account_id, maybe_pk) = coin.account_id_and_pk_for_withdraw(req.from)?;
 
             let (balance_denom, balance_dec) = coin
                 .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
@@ -2123,22 +2176,17 @@ impl MmCoin for TendermintCoin {
 
             let account_info = coin.account_info(&account_id).await?;
 
-            // TODO: handle pubkey and privkey activation modes here
-            let sign_doc = coin
-                .any_to_sign_doc(account_info, msg_send, fee, timeout_height, memo.clone())
+            let tx = coin
+                .any_to_transaction_data(maybe_pk, msg_send, account_info, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let tx = json!({
-                "sign_doc": {
-                    "body_bytes": sign_doc.body_bytes,
-                    "auth_info_bytes": sign_doc.auth_info_bytes,
-                    "chain_id": sign_doc.chain_id,
-                    "account_number": sign_doc.account_number,
-                }
-            });
+            let internal_id = {
+                let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
+                sha256(&hex_vec).to_vec().into()
+            };
 
             Ok(TransactionDetails {
-                tx: TransactionData::Unsigned(tx),
+                tx,
                 from: vec![account_id.to_string()],
                 to: vec![req.to],
                 my_balance_change: &received_by_me - &total_amount,
@@ -2154,7 +2202,7 @@ impl MmCoin for TendermintCoin {
                     gas_limit,
                 })),
                 coin: coin.ticker.to_string(),
-                internal_id: vec![].into(),
+                internal_id,
                 kmd_rewards: None,
                 transaction_type: TransactionType::default(),
                 memo: Some(memo),
