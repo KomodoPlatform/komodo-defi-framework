@@ -1,6 +1,6 @@
 use crate::coin_balance::HDAddressBalance;
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
-use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
+use crate::{lp_coinfind_or_err, CoinBalance, CoinBalanceMap, CoinsContext, MmCoinEnum};
 use async_trait::async_trait;
 use common::{SerdeInfallible, SuccessResponse};
 use crypto::RpcDerivationPath;
@@ -16,17 +16,24 @@ pub type ScanAddressesTaskManager = RpcTaskManager<InitScanAddressesTask>;
 pub type ScanAddressesTaskManagerShared = RpcTaskManagerShared<InitScanAddressesTask>;
 pub type ScanAddressesTaskHandleShared = RpcTaskHandleShared<InitScanAddressesTask>;
 pub type ScanAddressesRpcTaskStatus = RpcTaskStatus<
-    ScanAddressesResponse,
+    ScanAddressesResponseEnum,
     HDAccountBalanceRpcError,
     ScanAddressesInProgressStatus,
     ScanAddressesAwaitingStatus,
 >;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct ScanAddressesResponse {
+pub struct ScanAddressesResponse<BalanceMap> {
     pub account_index: u32,
     pub derivation_path: RpcDerivationPath,
-    pub new_addresses: Vec<HDAddressBalance>,
+    pub new_addresses: Vec<HDAddressBalance<BalanceMap>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ScanAddressesResponseEnum {
+    Single(ScanAddressesResponse<CoinBalance>),
+    Map(ScanAddressesResponse<CoinBalanceMap>),
 }
 
 #[derive(Deserialize)]
@@ -51,10 +58,12 @@ pub enum ScanAddressesInProgressStatus {
 
 #[async_trait]
 pub trait InitScanAddressesRpcOps {
+    type BalanceMap;
+
     async fn init_scan_for_new_addresses_rpc(
         &self,
         params: ScanAddressesParams,
-    ) -> MmResult<ScanAddressesResponse, HDAccountBalanceRpcError>;
+    ) -> MmResult<ScanAddressesResponse<Self::BalanceMap>, HDAccountBalanceRpcError>;
 }
 
 pub struct InitScanAddressesTask {
@@ -63,7 +72,7 @@ pub struct InitScanAddressesTask {
 }
 
 impl RpcTaskTypes for InitScanAddressesTask {
-    type Item = ScanAddressesResponse;
+    type Item = ScanAddressesResponseEnum;
     type Error = HDAccountBalanceRpcError;
     type InProgressStatus = ScanAddressesInProgressStatus;
     type AwaitingStatus = ScanAddressesAwaitingStatus;
@@ -80,9 +89,15 @@ impl RpcTask for InitScanAddressesTask {
 
     async fn run(&mut self, _task_handle: ScanAddressesTaskHandleShared) -> Result<Self::Item, MmError<Self::Error>> {
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => utxo.init_scan_for_new_addresses_rpc(self.req.params.clone()).await,
-            MmCoinEnum::QtumCoin(ref qtum) => qtum.init_scan_for_new_addresses_rpc(self.req.params.clone()).await,
-            MmCoinEnum::EthCoin(ref eth) => eth.init_scan_for_new_addresses_rpc(self.req.params.clone()).await,
+            MmCoinEnum::UtxoCoin(ref utxo) => Ok(ScanAddressesResponseEnum::Single(
+                utxo.init_scan_for_new_addresses_rpc(self.req.params.clone()).await?,
+            )),
+            MmCoinEnum::QtumCoin(ref qtum) => Ok(ScanAddressesResponseEnum::Single(
+                qtum.init_scan_for_new_addresses_rpc(self.req.params.clone()).await?,
+            )),
+            MmCoinEnum::EthCoin(ref eth) => Ok(ScanAddressesResponseEnum::Map(
+                eth.init_scan_for_new_addresses_rpc(self.req.params.clone()).await?,
+            )),
             _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),
         }
     }
@@ -129,7 +144,7 @@ pub async fn cancel_scan_for_new_addresses(
 
 pub mod common_impl {
     use super::*;
-    use crate::coin_balance::HDWalletBalanceOps;
+    use crate::coin_balance::{HDWalletBalanceMap, HDWalletBalanceOps};
     use crate::hd_wallet::{HDAccountOps, HDWalletOps};
     use crate::CoinWithDerivationMethod;
     use std::collections::HashSet;
@@ -138,7 +153,7 @@ pub mod common_impl {
     pub async fn scan_for_new_addresses_rpc<Coin>(
         coin: &Coin,
         params: ScanAddressesParams,
-    ) -> MmResult<ScanAddressesResponse, HDAccountBalanceRpcError>
+    ) -> MmResult<ScanAddressesResponse<HDWalletBalanceMap<Coin>>, HDAccountBalanceRpcError>
     where
         Coin: CoinWithDerivationMethod + HDWalletBalanceOps + Sync,
     {

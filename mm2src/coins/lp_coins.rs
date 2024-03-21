@@ -293,6 +293,7 @@ use nft::nft_errors::GetNftInfoError;
 use script::Script;
 
 pub mod z_coin;
+use crate::coin_balance::{BalanceMapOps, HDWalletBalanceMap};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -1775,9 +1776,6 @@ pub trait MarketCoinOps {
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
 
-    /// Get all balances for the coin and its tokens. Returns a map of ticker to balance.
-    fn all_balances(&self) -> BalanceFut<CoinBalanceMap>;
-
     fn my_spendable_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
     }
@@ -2153,10 +2151,31 @@ pub struct TradeFee {
 /// This is used to represent the balance of a wallet or account for multiple coins/tokens.
 pub type CoinBalanceMap = HashMap<String, CoinBalance>;
 
+impl BalanceMapOps for CoinBalanceMap {
+    fn new() -> Self { HashMap::new() }
+
+    fn add(&mut self, other: Self) {
+        for (ticker, balance) in other {
+            let total_balance = self.entry(ticker).or_insert_with(CoinBalance::default);
+            *total_balance += balance;
+        }
+    }
+
+    fn get_total_for_ticker(&self, ticker: &str) -> Option<BigDecimal> { self.get(ticker).map(|b| b.get_total()) }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, PartialOrd, Serialize)]
 pub struct CoinBalance {
     pub spendable: BigDecimal,
     pub unspendable: BigDecimal,
+}
+
+impl BalanceMapOps for CoinBalance {
+    fn new() -> Self { CoinBalance::default() }
+
+    fn add(&mut self, other: Self) { *self += other; }
+
+    fn get_total_for_ticker(&self, _ticker: &str) -> Option<BigDecimal> { Some(self.get_total()) }
 }
 
 impl CoinBalance {
@@ -3884,13 +3903,6 @@ where
 ///
 /// Implementors of this trait will typically be coins or tokens that are either used within
 /// a traditional single address scheme or leverage the power and flexibility of HD wallets.
-///
-/// # Associated Types
-///
-/// - `Self::Address`: Represents the type used for addresses in the implementing coin.
-/// - `Self::HDWallet`: The HD wallet type associated with the coin, which should provide operations
-///   for address derivation, account creation, etc.
-#[async_trait]
 pub trait CoinWithDerivationMethod: HDWalletCoinOps {
     /// Returns the address derivation method associated with the coin.
     ///
@@ -3909,6 +3921,17 @@ pub trait CoinWithDerivationMethod: HDWalletCoinOps {
     fn has_hd_wallet_derivation_method(&self) -> bool {
         matches!(self.derivation_method(), DerivationMethod::HDWallet(_))
     }
+}
+
+/// The `IguanaBalanceOps` trait provides an interface for fetching the balance of a coin and its tokens.
+/// This trait should be implemented by coins that use the iguana derivation method.
+#[async_trait]
+pub trait IguanaBalanceOps {
+    /// The type of balance map for the coin.
+    type BalanceMap: BalanceMapOps;
+
+    /// Fetches the balance of the coin and its tokens if the coin uses an iguana derivation method.
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceMap>;
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -5086,7 +5109,7 @@ pub async fn scan_for_new_addresses_impl<T>(
     address_scanner: &T::HDAddressScanner,
     chain: Bip44Chain,
     gap_limit: u32,
-) -> BalanceResult<Vec<HDAddressBalance>>
+) -> BalanceResult<Vec<HDAddressBalance<HDWalletBalanceMap<T>>>>
 where
     T: HDWalletBalanceOps + Sync,
     HDCoinAddress<T>: fmt::Display,
@@ -5124,7 +5147,7 @@ where
                             address: empty_address.address().to_string(),
                             derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
                             chain,
-                            balances: CoinBalanceMap::default(),
+                            balance: HDWalletBalanceMap::<T>::new(),
                         });
                 balances.extend(empty_addresses);
 
@@ -5133,7 +5156,7 @@ where
                     address: checking_address.to_string(),
                     derivation_path: RpcDerivationPath(checking_address_der_path.clone()),
                     chain,
-                    balances: non_empty_balance,
+                    balance: non_empty_balance,
                 });
                 // Reset the counter of unused addresses to zero since we found a non-empty address.
                 unused_addresses_counter = 0;

@@ -1,5 +1,6 @@
 use crate::prelude::{CurrentBlock, GetAddressesBalances};
 use coins::coin_balance::CoinBalanceReport;
+use coins::CoinBalance;
 use mm2_number::BigDecimal;
 use serde_derive::Serialize;
 use std::collections::HashMap;
@@ -8,7 +9,7 @@ use std::collections::HashMap;
 pub struct UtxoStandardActivationResult {
     pub ticker: String,
     pub current_block: u64,
-    pub wallet_balance: CoinBalanceReport,
+    pub wallet_balance: CoinBalanceReport<CoinBalance>,
 }
 
 impl CurrentBlock for UtxoStandardActivationResult {

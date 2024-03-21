@@ -5,7 +5,7 @@ use crate::prelude::{coin_conf_with_protocol, CoinConfWithProtocolError, Current
 use crate::token::TokenProtocolParams;
 use async_trait::async_trait;
 use coins::coin_balance::CoinBalanceReport;
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinProtocol, CoinsContext, MmCoinEnum, RegisterCoinError};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinBalanceMap, CoinProtocol, CoinsContext, MmCoinEnum, RegisterCoinError};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::HwRpcError;
@@ -227,7 +227,7 @@ where
 pub struct InitTokenActivationResult {
     pub ticker: String,
     pub current_block: u64,
-    pub wallet_balance: CoinBalanceReport,
+    pub wallet_balance: CoinBalanceReport<CoinBalanceMap>,
 }
 
 impl CurrentBlock for InitTokenActivationResult {

@@ -2,7 +2,8 @@ use crate::coin_balance::HDAddressBalance;
 use crate::hd_wallet::{AddressDerivingError, ConfirmAddressStatus, HDConfirmAddress, HDConfirmAddressError,
                        InvalidBip44ChainError, NewAddressDeriveConfirmError, NewAddressDerivingError,
                        RpcTaskConfirmAddress};
-use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinsContext, MmCoinEnum, UnexpectedDerivationMethod};
+use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinBalanceMap, CoinFindError, CoinsContext, MmCoinEnum,
+            UnexpectedDerivationMethod};
 use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
@@ -24,7 +25,7 @@ pub type GetNewAddressTaskManager = RpcTaskManager<InitGetNewAddressTask>;
 pub type GetNewAddressTaskManagerShared = RpcTaskManagerShared<InitGetNewAddressTask>;
 pub type GetNewAddressTaskHandleShared = RpcTaskHandleShared<InitGetNewAddressTask>;
 pub type GetNewAddressRpcTaskStatus = RpcTaskStatus<
-    GetNewAddressResponse,
+    GetNewAddressResponseEnum,
     GetNewAddressRpcError,
     GetNewAddressInProgressStatus,
     GetNewAddressAwaitingStatus,
@@ -212,8 +213,15 @@ pub struct GetNewAddressParams {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct GetNewAddressResponse {
-    new_address: HDAddressBalance,
+pub struct GetNewAddressResponse<BalanceMap> {
+    new_address: HDAddressBalance<BalanceMap>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
+pub enum GetNewAddressResponseEnum {
+    Single(GetNewAddressResponse<CoinBalance>),
+    Map(GetNewAddressResponse<CoinBalanceMap>),
 }
 
 #[derive(Clone, Serialize)]
@@ -238,19 +246,21 @@ impl ConfirmAddressStatus for GetNewAddressInProgressStatus {
 
 #[async_trait]
 pub trait GetNewAddressRpcOps {
+    type BalanceMap;
+
     /// Generates a new address.
     /// TODO remove once GUI integrates `task::get_new_address::init`.
     async fn get_new_address_rpc_without_conf(
         &self,
         params: GetNewAddressParams,
-    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>;
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceMap>, GetNewAddressRpcError>;
 
     /// Generates and asks the user to confirm a new address.
     async fn get_new_address_rpc<ConfirmAddress>(
         &self,
         params: GetNewAddressParams,
         confirm_address: &ConfirmAddress,
-    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceMap>, GetNewAddressRpcError>
     where
         ConfirmAddress: HDConfirmAddress;
 }
@@ -263,7 +273,7 @@ pub struct InitGetNewAddressTask {
 }
 
 impl RpcTaskTypes for InitGetNewAddressTask {
-    type Item = GetNewAddressResponse;
+    type Item = GetNewAddressResponseEnum;
     type Error = GetNewAddressRpcError;
     type InProgressStatus = GetNewAddressInProgressStatus;
     type AwaitingStatus = GetNewAddressAwaitingStatus;
@@ -283,7 +293,7 @@ impl RpcTask for InitGetNewAddressTask {
             coin: &Coin,
             params: GetNewAddressParams,
             task_handle: GetNewAddressTaskHandleShared,
-        ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+        ) -> MmResult<GetNewAddressResponse<<Coin as GetNewAddressRpcOps>::BalanceMap>, GetNewAddressRpcError>
         where
             Coin: GetNewAddressRpcOps + Send + Sync,
         {
@@ -302,15 +312,15 @@ impl RpcTask for InitGetNewAddressTask {
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => {
-                get_new_address_helper(&self.ctx, utxo, self.req.params.clone(), task_handle).await
-            },
-            MmCoinEnum::QtumCoin(ref qtum) => {
-                get_new_address_helper(&self.ctx, qtum, self.req.params.clone(), task_handle).await
-            },
-            MmCoinEnum::EthCoin(ref eth) => {
-                get_new_address_helper(&self.ctx, eth, self.req.params.clone(), task_handle).await
-            },
+            MmCoinEnum::UtxoCoin(ref utxo) => Ok(GetNewAddressResponseEnum::Single(
+                get_new_address_helper(&self.ctx, utxo, self.req.params.clone(), task_handle).await?,
+            )),
+            MmCoinEnum::QtumCoin(ref qtum) => Ok(GetNewAddressResponseEnum::Single(
+                get_new_address_helper(&self.ctx, qtum, self.req.params.clone(), task_handle).await?,
+            )),
+            MmCoinEnum::EthCoin(ref eth) => Ok(GetNewAddressResponseEnum::Map(
+                get_new_address_helper(&self.ctx, eth, self.req.params.clone(), task_handle).await?,
+            )),
             _ => MmError::err(GetNewAddressRpcError::CoinIsActivatedNotWithHDWallet),
         }
     }
@@ -320,12 +330,18 @@ impl RpcTask for InitGetNewAddressTask {
 pub async fn get_new_address(
     ctx: MmArc,
     req: GetNewAddressRequest,
-) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError> {
+) -> MmResult<GetNewAddressResponseEnum, GetNewAddressRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
-        MmCoinEnum::UtxoCoin(utxo) => utxo.get_new_address_rpc_without_conf(req.params).await,
-        MmCoinEnum::QtumCoin(qtum) => qtum.get_new_address_rpc_without_conf(req.params).await,
-        MmCoinEnum::EthCoin(eth) => eth.get_new_address_rpc_without_conf(req.params).await,
+        MmCoinEnum::UtxoCoin(utxo) => Ok(GetNewAddressResponseEnum::Single(
+            utxo.get_new_address_rpc_without_conf(req.params).await?,
+        )),
+        MmCoinEnum::QtumCoin(qtum) => Ok(GetNewAddressResponseEnum::Single(
+            qtum.get_new_address_rpc_without_conf(req.params).await?,
+        )),
+        MmCoinEnum::EthCoin(eth) => Ok(GetNewAddressResponseEnum::Map(
+            eth.get_new_address_rpc_without_conf(req.params).await?,
+        )),
         _ => MmError::err(GetNewAddressRpcError::CoinIsActivatedNotWithHDWallet),
     }
 }
@@ -386,7 +402,7 @@ pub async fn cancel_get_new_address(
 
 pub(crate) mod common_impl {
     use super::*;
-    use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceOps};
+    use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceMap, HDWalletBalanceOps};
     use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDWalletOps};
     use crate::CoinWithDerivationMethod;
     use crypto::RpcDerivationPath;
@@ -400,7 +416,7 @@ pub(crate) mod common_impl {
     pub async fn get_new_address_rpc_without_conf<Coin>(
         coin: &Coin,
         params: GetNewAddressParams,
-    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<HDWalletBalanceMap<Coin>>, GetNewAddressRpcError>
     where
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Sync + Send,
         HDCoinAddress<Coin>: fmt::Display,
@@ -430,7 +446,7 @@ pub(crate) mod common_impl {
                 address: address.to_string(),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
-                balances: balance,
+                balance,
             },
         })
     }
@@ -439,7 +455,7 @@ pub(crate) mod common_impl {
         coin: &Coin,
         params: GetNewAddressParams,
         confirm_address: &ConfirmAddress,
-    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<HDWalletBalanceMap<Coin>>, GetNewAddressRpcError>
     where
         ConfirmAddress: HDConfirmAddress,
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Send + Sync,
@@ -474,7 +490,7 @@ pub(crate) mod common_impl {
                 address: address.to_string(),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
-                balances: balance,
+                balance,
             },
         })
     }

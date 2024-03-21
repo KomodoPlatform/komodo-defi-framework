@@ -1975,19 +1975,6 @@ impl MarketCoinOps for EthCoin {
         Box::new(fut)
     }
 
-    fn all_balances(&self) -> BalanceFut<CoinBalanceMap> {
-        let coin = self.clone();
-        let fut = async move {
-            let platform_balance = coin.my_balance().compat().await?;
-            let token_balances = coin.get_tokens_balance_list().await?;
-            let mut balances = CoinBalanceMap::new();
-            balances.insert(coin.ticker().to_string(), platform_balance);
-            balances.extend(token_balances.into_iter());
-            Ok(balances)
-        };
-        Box::new(fut.boxed().compat())
-    }
-
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(
             self.eth_balance()
@@ -6173,11 +6160,26 @@ impl CoinWithDerivationMethod for EthCoin {
 }
 
 #[async_trait]
+impl IguanaBalanceOps for EthCoin {
+    type BalanceMap = CoinBalanceMap;
+
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceMap> {
+        let platform_balance = self.my_balance().compat().await?;
+        let token_balances = self.get_tokens_balance_list().await?;
+        let mut balances = CoinBalanceMap::new();
+        balances.insert(self.ticker().to_string(), platform_balance);
+        balances.extend(token_balances.into_iter());
+        Ok(balances)
+    }
+}
+
+#[async_trait]
 impl GetNewAddressRpcOps for EthCoin {
+    type BalanceMap = CoinBalanceMap;
     async fn get_new_address_rpc_without_conf(
         &self,
         params: GetNewAddressParams,
-    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError> {
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceMap>, GetNewAddressRpcError> {
         get_new_address::common_impl::get_new_address_rpc_without_conf(self, params).await
     }
 
@@ -6185,7 +6187,7 @@ impl GetNewAddressRpcOps for EthCoin {
         &self,
         params: GetNewAddressParams,
         confirm_address: &ConfirmAddress,
-    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceMap>, GetNewAddressRpcError>
     where
         ConfirmAddress: HDConfirmAddress,
     {
@@ -6195,42 +6197,50 @@ impl GetNewAddressRpcOps for EthCoin {
 
 #[async_trait]
 impl AccountBalanceRpcOps for EthCoin {
+    type BalanceMap = CoinBalanceMap;
+
     async fn account_balance_rpc(
         &self,
         params: AccountBalanceParams,
-    ) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError> {
+    ) -> MmResult<HDAccountBalanceResponse<Self::BalanceMap>, HDAccountBalanceRpcError> {
         account_balance::common_impl::account_balance_rpc(self, params).await
     }
 }
 
 #[async_trait]
 impl InitAccountBalanceRpcOps for EthCoin {
+    type BalanceMap = CoinBalanceMap;
+
     async fn init_account_balance_rpc(
         &self,
         params: InitAccountBalanceParams,
-    ) -> MmResult<HDAccountBalance, HDAccountBalanceRpcError> {
+    ) -> MmResult<HDAccountBalance<Self::BalanceMap>, HDAccountBalanceRpcError> {
         init_account_balance::common_impl::init_account_balance_rpc(self, params).await
     }
 }
 
 #[async_trait]
 impl InitScanAddressesRpcOps for EthCoin {
+    type BalanceMap = CoinBalanceMap;
+
     async fn init_scan_for_new_addresses_rpc(
         &self,
         params: ScanAddressesParams,
-    ) -> MmResult<ScanAddressesResponse, HDAccountBalanceRpcError> {
+    ) -> MmResult<ScanAddressesResponse<Self::BalanceMap>, HDAccountBalanceRpcError> {
         init_scan_for_new_addresses::common_impl::scan_for_new_addresses_rpc(self, params).await
     }
 }
 
 #[async_trait]
 impl InitCreateAccountRpcOps for EthCoin {
+    type BalanceMap = CoinBalanceMap;
+
     async fn init_create_account_rpc<XPubExtractor>(
         &self,
         params: CreateNewAccountParams,
         state: CreateAccountState,
         xpub_extractor: Option<XPubExtractor>,
-    ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
+    ) -> MmResult<HDAccountBalance<Self::BalanceMap>, CreateAccountRpcError>
     where
         XPubExtractor: HDXPubExtractor + Send,
     {

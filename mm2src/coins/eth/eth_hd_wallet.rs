@@ -96,6 +96,7 @@ impl HDAddressBalanceScanner for EthCoin {
 #[async_trait]
 impl HDWalletBalanceOps for EthCoin {
     type HDAddressScanner = Self;
+    type BalanceMap = CoinBalanceMap;
 
     async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> { Ok(self.clone()) }
 
@@ -105,7 +106,7 @@ impl HDWalletBalanceOps for EthCoin {
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
         path_to_address: &HDAccountAddressId,
-    ) -> MmResult<HDWalletBalance, EnableCoinBalanceError>
+    ) -> MmResult<HDWalletBalance<Self::BalanceMap>, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Send,
     {
@@ -118,7 +119,7 @@ impl HDWalletBalanceOps for EthCoin {
         hd_account: &mut HDCoinHDAccount<Self>,
         address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
-    ) -> BalanceResult<Vec<HDAddressBalance>> {
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceMap>>> {
         scan_for_new_addresses_impl(
             self,
             hd_wallet,
@@ -133,7 +134,7 @@ impl HDWalletBalanceOps for EthCoin {
     async fn all_known_addresses_balances(
         &self,
         hd_account: &HDCoinHDAccount<Self>,
-    ) -> BalanceResult<Vec<HDAddressBalance>> {
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceMap>>> {
         let external_addresses = hd_account
             .known_addresses_number(Bip44Chain::External)
             // A UTXO coin should support both [`Bip44Chain::External`] and [`Bip44Chain::Internal`].
@@ -143,7 +144,7 @@ impl HDWalletBalanceOps for EthCoin {
             .await
     }
 
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<CoinBalanceMap> {
+    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceMap> {
         let mut balances = CoinBalanceMap::new();
         if self.ticker() == self.platform_ticker() {
             let balance = self
@@ -167,7 +168,7 @@ impl HDWalletBalanceOps for EthCoin {
     async fn known_addresses_balances(
         &self,
         addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, CoinBalanceMap)>> {
+    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceMap)>> {
         let mut balance_futs = Vec::new();
         for address in addresses {
             let fut = async move {

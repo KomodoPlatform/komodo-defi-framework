@@ -16,7 +16,8 @@ use coins::eth::{Erc20TokenInfo, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
-use coins::{CoinBalance, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps, MmCoin, MmCoinEnum};
+use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps,
+            MmCoin, MmCoinEnum};
 
 use crate::platform_coin_with_tokens::InitPlatformCoinWithTokensTask;
 use common::Future01CompatExt;
@@ -202,7 +203,7 @@ pub struct IguanaEthWithTokensActivationResult {
 pub struct HDEthWithTokensActivationResult {
     current_block: u64,
     ticker: String,
-    wallet_balance: CoinBalanceReport,
+    wallet_balance: CoinBalanceReport<CoinBalanceMap>,
     // Todo: should be part of wallet_balance instead
     nfts_infos: HashMap<String, NftInfo>,
 }
@@ -348,6 +349,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                     balances: None,
                     tickers: None,
                 };
+                // Todo: get_balances is not used in HDWallet case, should we fix this?
                 if !activation_request.get_balances {
                     drop_mutability!(eth_address_info);
                     let tickers: HashSet<_> = self.get_erc_tokens_infos().into_keys().collect();

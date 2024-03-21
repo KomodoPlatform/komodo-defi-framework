@@ -13,6 +13,7 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
                   UtxoCommonOps, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom};
 use crate::utxo::{UnsupportedAddr, UtxoFeeDetails};
+use crate::TxFeeDetails;
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput,
             DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
             MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions,
@@ -26,7 +27,6 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError, VerificationResult,
             WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
-use crate::{CoinBalanceMap, TxFeeDetails};
 use crate::{NumConversError, TransactionDetails};
 use crate::{Transaction, WithdrawError};
 
@@ -1184,16 +1184,6 @@ impl MarketCoinOps for ZCoin {
                 .await
                 .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))?;
             Ok(CoinBalance::new(big_decimal_from_sat_unsigned(sat, coin.decimals())))
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn all_balances(&self) -> BalanceFut<CoinBalanceMap> {
-        let coin = self.clone();
-        let fut = async move {
-            let ticker = coin.ticker();
-            let balance = coin.my_balance().compat().await?;
-            Ok(HashMap::from([(ticker.to_string(), balance)]))
         };
         Box::new(fut.boxed().compat())
     }

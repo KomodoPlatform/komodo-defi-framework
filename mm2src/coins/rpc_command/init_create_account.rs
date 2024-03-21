@@ -1,7 +1,7 @@
-use crate::coin_balance::HDAccountBalance;
+use crate::coin_balance::{BalanceMapOps, HDAccountBalance, HDAccountBalanceEnum};
 use crate::hd_wallet::{HDExtractPubkeyError, HDXPubExtractor, NewAccountCreationError, RpcTaskXPubExtractor};
-use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinFindError, CoinProtocol, CoinWithDerivationMethod,
-            CoinsContext, MarketCoinOps, MmCoinEnum, UnexpectedDerivationMethod};
+use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinProtocol, CoinWithDerivationMethod, CoinsContext,
+            MarketCoinOps, MmCoinEnum, UnexpectedDerivationMethod};
 use async_trait::async_trait;
 use common::{true_f, HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
@@ -24,8 +24,12 @@ pub type CreateAccountAwaitingStatus = HwRpcTaskAwaitingStatus;
 pub type CreateAccountTaskManager = RpcTaskManager<InitCreateAccountTask>;
 pub type CreateAccountTaskManagerShared = RpcTaskManagerShared<InitCreateAccountTask>;
 pub type CreateAccountTaskHandleShared = RpcTaskHandleShared<InitCreateAccountTask>;
-pub type CreateAccountRpcTaskStatus =
-    RpcTaskStatus<HDAccountBalance, CreateAccountRpcError, CreateAccountInProgressStatus, CreateAccountAwaitingStatus>;
+pub type CreateAccountRpcTaskStatus = RpcTaskStatus<
+    HDAccountBalanceEnum,
+    CreateAccountRpcError,
+    CreateAccountInProgressStatus,
+    CreateAccountAwaitingStatus,
+>;
 
 type CreateAccountXPubExtractor = RpcTaskXPubExtractor<InitCreateAccountTask>;
 
@@ -199,12 +203,14 @@ impl CreateAccountState {
 
 #[async_trait]
 pub trait InitCreateAccountRpcOps {
+    type BalanceMap;
+
     async fn init_create_account_rpc<XPubExtractor>(
         &self,
         params: CreateNewAccountParams,
         state: CreateAccountState,
         xpub_extractor: Option<XPubExtractor>,
-    ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
+    ) -> MmResult<HDAccountBalance<Self::BalanceMap>, CreateAccountRpcError>
     where
         XPubExtractor: HDXPubExtractor + Send;
 
@@ -221,7 +227,7 @@ pub struct InitCreateAccountTask {
 }
 
 impl RpcTaskTypes for InitCreateAccountTask {
-    type Item = HDAccountBalance;
+    type Item = HDAccountBalanceEnum;
     type Error = CreateAccountRpcError;
     type InProgressStatus = CreateAccountInProgressStatus;
     type AwaitingStatus = CreateAccountAwaitingStatus;
@@ -238,6 +244,7 @@ impl RpcTask for InitCreateAccountTask {
             match self.coin {
                 MmCoinEnum::UtxoCoin(utxo) => utxo.revert_creating_account(account_id).await,
                 MmCoinEnum::QtumCoin(qtum) => qtum.revert_creating_account(account_id).await,
+                MmCoinEnum::EthCoin(eth) => eth.revert_creating_account(account_id).await,
                 _ => (),
             }
         };
@@ -252,7 +259,7 @@ impl RpcTask for InitCreateAccountTask {
             task_handle: CreateAccountTaskHandleShared,
             is_trezor: bool,
             coin_protocol: CoinProtocol,
-        ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
+        ) -> MmResult<HDAccountBalance<<Coin as InitCreateAccountRpcOps>::BalanceMap>, CreateAccountRpcError>
         where
             Coin: InitCreateAccountRpcOps + Send + Sync,
         {
@@ -279,7 +286,7 @@ impl RpcTask for InitCreateAccountTask {
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => {
+            MmCoinEnum::UtxoCoin(ref utxo) => Ok(HDAccountBalanceEnum::Single(
                 create_new_account_helper(
                     &self.ctx,
                     utxo,
@@ -289,9 +296,9 @@ impl RpcTask for InitCreateAccountTask {
                     utxo.is_trezor(),
                     CoinProtocol::UTXO,
                 )
-                .await
-            },
-            MmCoinEnum::QtumCoin(ref qtum) => {
+                .await?,
+            )),
+            MmCoinEnum::QtumCoin(ref qtum) => Ok(HDAccountBalanceEnum::Single(
                 create_new_account_helper(
                     &self.ctx,
                     qtum,
@@ -301,9 +308,9 @@ impl RpcTask for InitCreateAccountTask {
                     qtum.is_trezor(),
                     CoinProtocol::QTUM,
                 )
-                .await
-            },
-            MmCoinEnum::EthCoin(ref eth) => {
+                .await?,
+            )),
+            MmCoinEnum::EthCoin(ref eth) => Ok(HDAccountBalanceEnum::Map(
                 create_new_account_helper(
                     &self.ctx,
                     eth,
@@ -313,8 +320,8 @@ impl RpcTask for InitCreateAccountTask {
                     eth.is_trezor(),
                     CoinProtocol::ETH,
                 )
-                .await
-            },
+                .await?,
+            )),
             _ => MmError::err(CreateAccountRpcError::CoinIsActivatedNotWithHDWallet),
         }
     }
@@ -379,19 +386,17 @@ pub async fn cancel_create_new_account(
 
 pub(crate) mod common_impl {
     use super::*;
-    use crate::coin_balance::HDWalletBalanceOps;
+    use crate::coin_balance::{HDWalletBalanceMap, HDWalletBalanceOps};
     use crate::hd_wallet::{create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps,
                            HDCoinHDAccount, HDWalletOps};
-    use crate::CoinBalanceMap;
     use crypto::Secp256k1ExtendedPublicKey;
-    use std::collections::HashMap;
 
     pub async fn init_create_new_account_rpc<'a, Coin, XPubExtractor>(
         coin: &Coin,
         params: CreateNewAccountParams,
         state: CreateAccountState,
         xpub_extractor: Option<XPubExtractor>,
-    ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
+    ) -> MmResult<HDAccountBalance<HDWalletBalanceMap<Coin>>, CreateAccountRpcError>
     where
         Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey>
             + HDWalletBalanceOps
@@ -419,21 +424,17 @@ pub(crate) mod common_impl {
             Vec::new()
         };
 
-        let mut total_balances: CoinBalanceMap = HashMap::new();
-        for addr_balance in &addresses {
-            for (ticker, balance) in &addr_balance.balances {
-                let total_balance = total_balances
-                    .entry(ticker.clone())
-                    .or_insert_with(CoinBalance::default);
-                *total_balance += balance.clone();
-            }
-        }
-        drop_mutability!(total_balances);
+        let total_balance = addresses
+            .iter()
+            .fold(HDWalletBalanceMap::<Coin>::new(), |mut total, addr_balance| {
+                total.add(addr_balance.balance.clone());
+                total
+            });
 
         Ok(HDAccountBalance {
             account_index,
             derivation_path: RpcDerivationPath(account_derivation_path),
-            total_balances,
+            total_balance,
             addresses,
         })
     }
@@ -451,7 +452,7 @@ pub(crate) mod common_impl {
 #[cfg(all(feature = "for-tests", not(target_arch = "wasm32")))]
 pub mod for_tests {
     use super::{init_create_new_account, init_create_new_account_status, CreateAccountRpcError};
-    use crate::coin_balance::HDAccountBalance;
+    use crate::coin_balance::HDAccountBalanceEnum;
     use common::executor::Timer;
     use common::{now_ms, wait_until_ms};
     use mm2_core::mm_ctx::MmArc;
@@ -465,7 +466,7 @@ pub mod for_tests {
         ctx: MmArc,
         ticker: &str,
         account_id: Option<u32>,
-    ) -> MmResult<HDAccountBalance, CreateAccountRpcError> {
+    ) -> MmResult<HDAccountBalanceEnum, CreateAccountRpcError> {
         let req = serde_json::from_value(json!({
             "coin": ticker,
             "params": {

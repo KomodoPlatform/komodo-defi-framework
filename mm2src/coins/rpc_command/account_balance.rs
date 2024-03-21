@@ -26,12 +26,12 @@ pub struct AccountBalanceParams {
 }
 
 #[derive(Debug, PartialEq, Serialize)]
-pub struct HDAccountBalanceResponse {
+pub struct HDAccountBalanceResponse<BalanceMap> {
     pub account_index: u32,
     pub derivation_path: RpcDerivationPath,
-    pub addresses: Vec<HDAddressBalance>,
+    pub addresses: Vec<HDAddressBalance<BalanceMap>>,
     // Todo: Add option to get total balance of all addresses in addition to page_balance
-    pub page_balances: CoinBalanceMap,
+    pub page_balance: BalanceMap,
     pub limit: usize,
     pub skipped: u32,
     pub total: u32,
@@ -39,37 +39,51 @@ pub struct HDAccountBalanceResponse {
     pub paging_options: PagingOptionsEnum<u32>,
 }
 
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum HDAccountBalanceResponseEnum {
+    Single(HDAccountBalanceResponse<CoinBalance>),
+    Map(HDAccountBalanceResponse<CoinBalanceMap>),
+}
+
 #[async_trait]
 pub trait AccountBalanceRpcOps {
+    type BalanceMap;
+
     async fn account_balance_rpc(
         &self,
         params: AccountBalanceParams,
-    ) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError>;
+    ) -> MmResult<HDAccountBalanceResponse<Self::BalanceMap>, HDAccountBalanceRpcError>;
 }
 
 pub async fn account_balance(
     ctx: MmArc,
     req: HDAccountBalanceRequest,
-) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError> {
+) -> MmResult<HDAccountBalanceResponseEnum, HDAccountBalanceRpcError> {
     match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::UtxoCoin(utxo) => utxo.account_balance_rpc(req.params).await,
-        MmCoinEnum::QtumCoin(qtum) => qtum.account_balance_rpc(req.params).await,
-        MmCoinEnum::EthCoin(eth) => eth.account_balance_rpc(req.params).await,
+        MmCoinEnum::UtxoCoin(utxo) => Ok(HDAccountBalanceResponseEnum::Single(
+            utxo.account_balance_rpc(req.params).await?,
+        )),
+        MmCoinEnum::QtumCoin(qtum) => Ok(HDAccountBalanceResponseEnum::Single(
+            qtum.account_balance_rpc(req.params).await?,
+        )),
+        MmCoinEnum::EthCoin(eth) => Ok(HDAccountBalanceResponseEnum::Map(
+            eth.account_balance_rpc(req.params).await?,
+        )),
         _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),
     }
 }
 
 pub mod common_impl {
     use super::*;
-    use crate::coin_balance::HDWalletBalanceOps;
+    use crate::coin_balance::{BalanceMapOps, HDWalletBalanceMap, HDWalletBalanceOps};
     use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDWalletOps};
     use common::calc_total_pages;
-    use std::collections::HashMap;
 
     pub async fn account_balance_rpc<Coin>(
         coin: &Coin,
         params: AccountBalanceParams,
-    ) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError>
+    ) -> MmResult<HDAccountBalanceResponse<HDWalletBalanceMap<Coin>>, HDAccountBalanceRpcError>
     where
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Sync,
         HDCoinAddress<Coin>: fmt::Display + Clone,
@@ -93,20 +107,18 @@ pub mod common_impl {
             .known_addresses_balances_with_ids(&hd_account, params.chain, from_address_id..to_address_id)
             .await?;
 
-        let mut page_balances: CoinBalanceMap = HashMap::new();
-        for addr_balance in &addresses {
-            for (ticker, balance) in &addr_balance.balances {
-                let total_balance = page_balances.entry(ticker.clone()).or_insert_with(CoinBalance::default);
-                *total_balance += balance.clone();
-            }
-        }
-        drop_mutability!(page_balances);
+        let page_balance = addresses
+            .iter()
+            .fold(HDWalletBalanceMap::<Coin>::new(), |mut total, addr_balance| {
+                total.add(addr_balance.balance.clone());
+                total
+            });
 
         let result = HDAccountBalanceResponse {
             account_index: account_id,
             derivation_path: RpcDerivationPath(hd_account.account_derivation_path()),
             addresses,
-            page_balances,
+            page_balance,
             limit: params.limit,
             skipped: std::cmp::min(from_address_id, total_addresses_number),
             total: total_addresses_number,
