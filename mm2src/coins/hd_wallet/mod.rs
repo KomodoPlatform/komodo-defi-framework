@@ -129,8 +129,9 @@ where
     /// This is used in order not to check the transaction history for each address,
     /// but to request the balance of addresses whose index is less than `address_number`.
     pub external_addresses_number: u32,
-    // Todo: This can be made an option to fully support no change/internal addresses for Ethereum
-    // Todo: but there are some backward compatibility considerations for DB that is currently used for Trezqor
+    /// The number of internal addresses that we know have been used by the user.
+    /// This is used in order not to check the transaction history for each address,
+    /// but to request the balance of addresses whose index is less than `address_number`.
     pub internal_addresses_number: u32,
     /// The cache of derived addresses.
     /// This is used at [`HDWalletCoinOps::derive_address`].

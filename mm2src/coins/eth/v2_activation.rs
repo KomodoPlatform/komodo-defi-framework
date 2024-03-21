@@ -382,8 +382,6 @@ impl EthCoin {
             // We inherit the derivation method from the parent/platform coin
             // If we want a new wallet for each token we can add this as an option in the future
             // storage ticker will be the platform coin ticker
-            // Todo: rescan all enabled addresses for this token and use gap limit as well to find other addresses that has this token balance
-            // Todo: we should add an option for scan_for_new_addresses methods to scan only for this token or all enabled tokens and the platform coin
             derivation_method: self.derivation_method.clone(),
             coin_type: EthCoinType::Erc20 {
                 platform: protocol.platform,
