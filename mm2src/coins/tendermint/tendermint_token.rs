@@ -204,8 +204,6 @@ impl TendermintToken {
 
             let fee_amount_u64 = platform
                 .calculate_account_fee_amount_as_u64(
-                    &account_id,
-                    &priv_key,
                     msg_transfer.clone(),
                     timeout_height,
                     memo.clone(),
@@ -733,8 +731,6 @@ impl MmCoin for TendermintToken {
 
             let fee_amount_u64 = platform
                 .calculate_account_fee_amount_as_u64(
-                    &account_id,
-                    &priv_key,
                     msg_send.clone(),
                     timeout_height,
                     memo.clone(),

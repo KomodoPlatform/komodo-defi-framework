@@ -717,14 +717,7 @@ impl TendermintCoin {
             let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT);
 
             let fee_amount_u64 = coin
-                .calculate_account_fee_amount_as_u64(
-                    &account_id,
-                    &priv_key,
-                    msg_transfer.clone(),
-                    timeout_height,
-                    memo.clone(),
-                    req.fee,
-                )
+                .calculate_account_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone(), req.fee)
                 .await?;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
@@ -1025,9 +1018,20 @@ impl TendermintCoin {
     ) -> MmResult<Fee, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
 
+        let Ok(activated_priv_key) = self
+            .activation_policy
+            .activated_key_or_err() else {
+                let fee_amount = Coin {
+                    denom: self.platform_denom().clone(),
+                    // TODO: this seems to be a reasonable default for pubkey-only activations, but can be probably improved
+                    amount: 35000_u64.into(),
+                };
+
+                return Ok(Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT));
+            };
+
         let (response, raw_response) = loop {
             let account_info = self.account_info(&self.account_id).await?;
-            let activated_priv_key = self.activation_policy.activated_key_or_err()?;
             let tx_bytes = self
                 .gen_simulated_tx(
                     account_info,
@@ -1090,14 +1094,20 @@ impl TendermintCoin {
     #[allow(deprecated)]
     pub(super) async fn calculate_account_fee_amount_as_u64(
         &self,
-        account_id: &AccountId,
-        priv_key: &Secp256k1Secret,
         msg: Any,
         timeout_height: u64,
         memo: String,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<u64, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
+
+        let account_id = &self.account_id;
+        let Ok(priv_key) = self
+            .activation_policy
+            .activated_key_or_err() else {
+                // TODO: this seems to be a reasonable default for pubkey-only activations, but can be probably improved
+                return Ok(35000);
+            };
 
         let (response, raw_response) = loop {
             let account_info = self.account_info(account_id).await?;
@@ -1691,10 +1701,6 @@ impl TendermintCoin {
 
         let fee_uamount = self
             .calculate_account_fee_amount_as_u64(
-                &self.account_id,
-                self.activation_policy
-                    .activated_key_or_err()
-                    .mm_err(|e| TradePreimageError::InternalError(e.to_string()))?,
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
@@ -1743,16 +1749,7 @@ impl TendermintCoin {
         .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
         let fee_uamount = self
-            .calculate_account_fee_amount_as_u64(
-                &self.account_id,
-                self.activation_policy
-                    .activated_key_or_err()
-                    .mm_err(|e| TradePreimageError::InternalError(e.to_string()))?,
-                msg_send,
-                timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
-                None,
-            )
+            .calculate_account_fee_amount_as_u64(msg_send, timeout_height, TX_DEFAULT_MEMO.to_owned(), None)
             .await?;
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, decimals);
 
@@ -2026,23 +2023,6 @@ impl MmCoin for TendermintCoin {
                 )));
             }
 
-            // let (account_id, _priv_key) = match req.from {
-            //     Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
-            //         let priv_key = coin
-            //             .priv_key_policy
-            //             .hd_wallet_derived_priv_key_or_err(path_to_address)?;
-            //         let account_id = account_id_from_privkey(priv_key.as_slice(), &coin.account_prefix)
-            //             .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
-            //         (account_id, priv_key)
-            //     },
-            //     Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
-            //         return MmError::err(WithdrawError::UnexpectedFromAddress(
-            //             "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
-            //                 .to_string(),
-            //         ))
-            //     },
-            //     None => (coin.account_id.clone(), *coin.priv_key_policy.activated_key_or_err()?),
-            // };
             let account_id = coin.account_id.clone();
 
             let (balance_denom, balance_dec) = coin
@@ -2095,18 +2075,9 @@ impl MmCoin for TendermintCoin {
 
             let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
 
-            // TODO: We need some manual calculations as we can't simulate TXs on pubkey activation
-            let fee_amount_u64 = 35000;
-            // let fee_amount_u64 = coin
-            //     .calculate_account_fee_amount_as_u64(
-            //         &account_id,
-            //         &priv_key,
-            //         msg_send,
-            //         timeout_height,
-            //         memo.clone(),
-            //         req.fee,
-            //     )
-            //     .await?;
+            let fee_amount_u64 = coin
+                .calculate_account_fee_amount_as_u64(msg_send, timeout_height, memo.clone(), req.fee)
+                .await?;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
             let fee_amount = Coin {
