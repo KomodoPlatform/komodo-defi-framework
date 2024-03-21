@@ -229,18 +229,22 @@ impl TendermintActivationPolicy {
         }
     }
 
-    fn public_key(&self) -> Result<PublicKey, MmError<PrivKeyPolicyNotAllowed>> {
+    fn public_key(&self) -> Result<PublicKey, io::Error> {
         match self {
             Self::PrivateKey(private_key_policy) => match private_key_policy {
-                PrivKeyPolicy::Iguana(pair) => {
-                    Ok(PublicKey::from_raw_secp256k1(&pair.public_key.to_bytes()).expect("TODO"))
-                },
+                PrivKeyPolicy::Iguana(pair) => PublicKey::from_raw_secp256k1(&pair.public_key.to_bytes())
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Couldn't generate public key")),
+
                 PrivKeyPolicy::HDWallet {
                     bip39_secp_priv_key, ..
-                } => Ok(PublicKey::from_raw_secp256k1(&bip39_secp_priv_key.public_key().to_bytes()).expect("TODO")),
-                PrivKeyPolicy::Trezor => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
-                    "Trezor is not supported yet!".to_string(),
+                } => PublicKey::from_raw_secp256k1(&bip39_secp_priv_key.public_key().to_bytes())
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Couldn't generate public key")),
+
+                PrivKeyPolicy::Trezor => Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "Trezor is not supported yet!",
                 )),
+
                 #[cfg(target_arch = "wasm32")]
                 PrivKeyPolicy::Metamask(_) => unreachable!(),
             },
@@ -1277,7 +1281,7 @@ impl TendermintCoin {
         memo: String,
     ) -> cosmrs::Result<SignDoc> {
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
-        let pubkey = self.activation_policy.public_key().expect("TODO").into();
+        let pubkey = self.activation_policy.public_key()?.into();
         let auth_info = SignerInfo::single_direct(Some(pubkey), account_info.sequence).auth_info(fee);
         SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)
     }
@@ -2922,7 +2926,11 @@ pub fn tendermint_priv_key_policy(
 ) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
     match priv_key_build_policy {
         PrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
-            let mm2_internal_key_pair = key_pair_from_secret(iguana.as_ref()).expect("TODO");
+            let mm2_internal_key_pair = key_pair_from_secret(iguana.as_ref()).mm_err(|e| TendermintInitError {
+                ticker: ticker.to_string(),
+                kind: TendermintInitErrorKind::Internal(e.to_string()),
+            })?;
+
             let tendermint_pair = TendermintKeyPair::new(iguana, *mm2_internal_key_pair.public());
 
             Ok(TendermintPrivKeyPolicy::Iguana(tendermint_pair))
@@ -2939,9 +2947,14 @@ pub fn tendermint_priv_key_policy(
                     kind: TendermintInitErrorKind::InvalidPrivKey(e.to_string()),
                 })?;
             let bip39_secp_priv_key = global_hd.root_priv_key().clone();
-            let pubkey = bip39_secp_priv_key.public_key().to_bytes();
-            let tendermint_pair =
-                TendermintKeyPair::new(activated_priv_key, Public::from_slice(&pubkey).expect("TODO"));
+            let pubkey = Public::from_slice(&bip39_secp_priv_key.public_key().to_bytes()).map_to_mm(|e| {
+                TendermintInitError {
+                    ticker: ticker.to_string(),
+                    kind: TendermintInitErrorKind::Internal(e.to_string()),
+                }
+            })?;
+
+            let tendermint_pair = TendermintKeyPair::new(activated_priv_key, pubkey);
 
             Ok(TendermintPrivKeyPolicy::HDWallet {
                 derivation_path: derivation_path.clone(),
