@@ -6664,7 +6664,6 @@ impl EthCoin {
                                     Token::Uint(U256::from(args.time_lock))
                                 )));
                             }
-                            println!("ERC1155 Payment validated\n {:?}", tx_from_rpc);
                         } else {
                             return MmError::err(ValidatePaymentError::TxDeserializationError(
                                 "Failed to decode HTLCParams from data_bytes".to_string(),
@@ -6677,9 +6676,28 @@ impl EthCoin {
                     }
                 },
                 ContractType::Erc721 => {
-                    let function = ERC721_CONTRACT
-                        .function("safeTransferFrom")
-                        .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
+                    // ERC721 contract has overloaded versions of the safeTransferFrom function,
+                    // but Contract::function method returns only the first if there are overloaded versions of the same function.
+                    let functions = ERC721_CONTRACT
+                        .functions_by_name("safeTransferFrom")
+                        .map_err(|e| ValidatePaymentError::InternalError(ERRL!("{}", e)))?;
+
+                    // Find the correct function variant by inspecting the input parameters.
+                    let function = functions
+                        .iter()
+                        .find(|f| {
+                            f.inputs.len() == 4
+                                && matches!(
+                                    f.inputs.last().map(|input| &input.kind),
+                                    Some(&ethabi::ParamType::Bytes)
+                                )
+                        })
+                        .ok_or_else(|| {
+                            ValidatePaymentError::InternalError(
+                                "Failed to find the correct safeTransferFrom function variant".to_string(),
+                            )
+                        })?;
+
                     let decoded = decode_contract_call(function, &tx_from_rpc.input.0)
                         .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
                     if decoded[0] != Token::Address(maker_address) {
