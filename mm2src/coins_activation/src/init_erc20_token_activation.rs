@@ -7,7 +7,7 @@ use coins::coin_balance::EnableCoinBalanceOps;
 use coins::eth::v2_activation::{Erc20Protocol, EthTokenActivationError, InitErc20TokenActivationRequest};
 use coins::eth::EthCoin;
 use coins::hd_wallet::RpcTaskXPubExtractor;
-use coins::{MarketCoinOps, RegisterCoinError};
+use coins::{MarketCoinOps, MmCoin, RegisterCoinError};
 use common::Future01CompatExt;
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::HwRpcError;
@@ -39,7 +39,6 @@ pub enum InitErc20Error {
     Internal(String),
 }
 
-// Todo: maybe move this
 impl From<InitErc20Error> for InitTokenError {
     fn from(e: InitErc20Error) -> Self {
         match e {
@@ -117,7 +116,7 @@ impl InitTokenActivationOps for EthCoin {
         Ok(token)
     }
 
-    // Todo: similar to utxo_activation a common method for getting activation result can be made
+    // Todo: similar to utxo_activation a common method for getting activation result can be made, needed when more protocols that have tokens are supported
     async fn get_activation_result(
         &self,
         ctx: MmArc,
@@ -157,14 +156,16 @@ impl InitTokenActivationOps for EthCoin {
             .mm_err(|e| EthTokenActivationError::InternalError(e.to_string()))?;
         task_handle.update_in_progress_status(InitTokenInProgressStatus::ActivatingCoin)?;
 
-        // Todo: this should be included in the result probably
-        // let token_contract_address = token.erc20_token_address().ok_or_else(|| {
-        //     EthTokenActivationError::InternalError("Token contract address is missing".to_string())
-        // })?;
+        let token_contract_address = self
+            .erc20_token_address()
+            .ok_or_else(|| EthTokenActivationError::InternalError("Token contract address is missing".to_string()))?;
 
         Ok(InitTokenActivationResult {
             ticker,
+            platform_coin: self.platform_ticker().to_owned(),
+            token_contract_address: format!("{:#02x}", token_contract_address),
             current_block,
+            required_confirmations: self.required_confirmations(),
             wallet_balance,
         })
     }

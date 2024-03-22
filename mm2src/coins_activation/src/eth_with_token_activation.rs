@@ -204,7 +204,7 @@ pub struct HDEthWithTokensActivationResult {
     current_block: u64,
     ticker: String,
     wallet_balance: CoinBalanceReport<CoinBalanceMap>,
-    // Todo: should be part of wallet_balance instead
+    // Todo: Move to wallet_balance when implementing HDWallet for NFTs
     nfts_infos: HashMap<String, NftInfo>,
 }
 
@@ -349,7 +349,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                     balances: None,
                     tickers: None,
                 };
-                // Todo: get_balances is not used in HDWallet case, should we fix this?
+                // Todo: make get_balances work with HDWallet if it's needed
                 if !activation_request.get_balances {
                     drop_mutability!(eth_address_info);
                     let tickers: HashSet<_> = self.get_erc_tokens_infos().into_keys().collect();

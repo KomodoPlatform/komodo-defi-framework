@@ -428,7 +428,7 @@ impl EthCoin {
         // all spawned futures related to global Non-Fungible Token will be aborted as well.
         let abortable_system = self.abortable_system.create_subsystem()?;
 
-        // Todo: support HD wallet for NFTs
+        // Todo: support HD wallet for NFTs, currently we get nfts for enabled address only and there might be some issues when activating NFTs while ETH is activated with HD wallet
         let my_address = self.derivation_method.single_addr_or_err().await?;
         let nft_infos = get_nfts_for_activation(&chain, &my_address, url).await?;
 

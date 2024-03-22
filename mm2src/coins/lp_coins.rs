@@ -3725,7 +3725,7 @@ impl<T> PrivKeyPolicy<T> {
         }
     }
 
-    // TODO: eliminate and use hdwallet.derivation_path
+    // Todo: this can be removed after the HDWallet is fully implemented for all protocols
     fn path_to_coin_or_err(&self) -> Result<&StandardHDPathToCoin, MmError<PrivKeyPolicyNotAllowed>> {
         self.path_to_coin().or_mm_err(|| {
             PrivKeyPolicyNotAllowed::UnsupportedMethod(

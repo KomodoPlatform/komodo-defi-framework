@@ -226,7 +226,10 @@ where
 #[derive(Clone, Serialize)]
 pub struct InitTokenActivationResult {
     pub ticker: String,
+    pub platform_coin: String,
+    pub token_contract_address: String,
     pub current_block: u64,
+    pub required_confirmations: u64,
     pub wallet_balance: CoinBalanceReport<CoinBalanceMap>,
 }
 

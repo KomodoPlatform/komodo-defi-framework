@@ -145,23 +145,21 @@ impl HDWalletBalanceOps for EthCoin {
     }
 
     async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceMap> {
+        let balance = self
+            .address_balance(*address)
+            .and_then(move |result| Ok(u256_to_big_decimal(result, self.decimals())?))
+            .compat()
+            .await?;
+
+        let coin_balance = CoinBalance {
+            spendable: balance,
+            unspendable: BigDecimal::from(0),
+        };
+
         let mut balances = CoinBalanceMap::new();
-        if self.ticker() == self.platform_ticker() {
-            let balance = self
-                .address_balance(*address)
-                .and_then(move |result| Ok(u256_to_big_decimal(result, self.decimals())?))
-                .compat()
-                .await?;
-
-            let platform_coin_balance = CoinBalance {
-                spendable: balance,
-                unspendable: BigDecimal::from(0),
-            };
-
-            balances.insert(self.platform_ticker().to_string(), platform_coin_balance);
-        }
-
-        balances.extend(self.get_tokens_balance_list_for_address(*address).await?);
+        balances.insert(self.ticker().to_string(), coin_balance);
+        let token_balances = self.get_tokens_balance_list_for_address(*address).await?;
+        balances.extend(token_balances);
         Ok(balances)
     }
 

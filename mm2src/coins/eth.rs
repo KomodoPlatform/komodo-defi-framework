@@ -6040,6 +6040,7 @@ impl From<CryptoCtxError> for GetEthAddressError {
     fn from(e: CryptoCtxError) -> Self { GetEthAddressError::Internal(e.to_string()) }
 }
 
+// Todo: `get_eth_address` should be removed since NFT is now part of the coins ctx.
 /// `get_eth_address` returns wallet address for coin with `ETH` protocol type.
 /// Note: result address has mixed-case checksum form.
 pub async fn get_eth_address(
@@ -6056,7 +6057,6 @@ pub async fn get_eth_address(
     }
     .into();
 
-    // Todo: This creates an HD wallet different from the ETH one for NFT, we should combine them in the future when implementing NFT HD wallet
     let (_, derivation_method) =
         build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None).await?;
     let my_address = match derivation_method {
