@@ -6397,7 +6397,7 @@ impl EthCoin {
         )
         .map_err(TransactionErr::Plain)?;
 
-        let taker_address = addr_from_raw_pubkey(args.taker_pub).map_err(TransactionErr::Plain)?;
+        let taker_address = addr_from_raw_pubkey(args.taker_pub).map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
         let token_address = self.parse_token_contract_address(args.token_address)?;
         let swap_contract_address = self.parse_token_contract_address(args.swap_contract_address)?;
         let time_lock_u32 = args
@@ -6797,7 +6797,7 @@ impl EthCoin {
         match state {
             Token::Uint(state) => Ok(*state),
             _ => Err(PaymentStatusErr::Internal(format!(
-                "Payment status must be uint, got {:?}",
+                "Payment status must be Uint, got {:?}",
                 state
             ))),
         }
