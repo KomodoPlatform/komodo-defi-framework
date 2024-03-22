@@ -2219,6 +2219,30 @@ pub async fn wait_for_swap_status(mm: &MarketMakerIt, uuid: &str, wait_sec: i64)
     }
 }
 
+/// Wait until a specific swap event happens and return immediately, returning the latest polled status.
+pub async fn wait_for_swap_event(mm: &MarketMakerIt, uuid: &str, event: &str, wait_sec: i64) -> serde_json::Value {
+    let wait_until = get_utc_timestamp() + wait_sec;
+
+    // Wait for the swap to start first.
+    wait_for_swap_status(mm, uuid, wait_sec).await;
+
+    // Wait for the event to happen.
+    loop {
+        let swap_status = my_swap_status(mm, uuid).await.unwrap();
+        let events = swap_status["result"]["events"].as_array().unwrap();
+        if events.iter().any(|item| item["event"]["type"] == event) {
+            // Break and return the swap status.
+            return swap_status;
+        }
+
+        if get_utc_timestamp() > wait_until {
+            panic!("Timed out waiting for swap {} event {}", uuid, event);
+        }
+
+        // Don't sleep so that the caller catches the event as soon as possible.
+    }
+}
+
 /// Wait until one of the MM2 isntances has the swap finished.
 /// This is useful because we don't then have to wait for each of them if the swap failed.
 /// Since failures (e.g. `MakerPaymentTransactionFailed`) doesn't get communicated to

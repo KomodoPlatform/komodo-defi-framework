@@ -17,12 +17,12 @@ use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_s
                                   check_recent_swaps, enable_qrc20, eth_testnet_conf, find_metrics_in_json,
                                   from_env_file, get_shared_db_id, mm_spat, morty_conf, rick_conf, sign_message,
                                   start_swaps, tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl,
-                                  tqrc20_conf, verify_message, wait_for_swaps_finish_and_check_status,
-                                  wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf,
-                                  Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_DEV_NODES,
-                                  ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT,
-                                  MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
-                                  TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
+                                  tqrc20_conf, verify_message, wait_for_swap_event,
+                                  wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
+                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
+                                  DOC_ELECTRUM_ADDRS, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE,
+                                  ETH_MAINNET_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
+                                  RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -6579,4 +6579,117 @@ mod trezor_tests {
         log!("tx_hex={}", serde_json::to_string(&tx_details.tx_hex).unwrap());
         block_on(mm_bob.stop()).unwrap();
     }
+}
+
+// The test used to execute that swap used in utxo_tests::test_search_for_swap_tx_spend_electrum_was_spent.
+#[test]
+#[ignore]
+fn content_search_for_swap_tx_spend_electrum_was_spent() {
+    // Bob has 20 Doc
+    let bob_seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
+    // Alice (HD) has 7.5 Marty
+    let alice_hd_seed = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([rick_conf(), morty_conf()]);
+
+    let bob_conf = Mm2TestConf::seednode(bob_seed, &coins);
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+    block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
+
+    let alice_conf = Mm2TestConf::light_node_with_hd_account(alice_hd_seed, &coins, &[&mm_bob.ip.to_string()]);
+    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {}", mm_alice.log_path.display());
+    block_on(enable_electrum(&mm_alice, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    block_on(enable_electrum(&mm_alice, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
+
+    let uuids = block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[("RICK", "MORTY")],
+        1.,
+        1.,
+        0.005,
+    ));
+
+    let bob_swap_status = block_on(wait_for_swap_event(&mm_bob, &uuids[0], "Finished", 30));
+    let alice_swap_status = block_on(wait_for_swap_event(&mm_alice, &uuids[0], "Finished", 30));
+
+    log!("Bob swap status: {}", bob_swap_status);
+    log!("Alice swap status: {}", alice_swap_status);
+}
+
+// The test used to execute that swap used in utxo_tests::test_search_for_swap_tx_spend_electrum_was_refunded.
+#[test]
+#[ignore]
+fn content_search_for_swap_tx_spend_electrum_was_refunded() {
+    // Bob has 20 Doc
+    let bob_seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
+    // Alice (HD) has 7.5 Marty
+    let alice_hd_seed = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([rick_conf(), morty_conf()]);
+
+    let mut mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": bob_seed,
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+            "use_watchers": false,
+            "is_watcher": false,
+        }),
+        "pass".into(),
+        None,
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+    block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
+
+    let mut mm_alice = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": alice_hd_seed,
+            "coins": coins,
+            "seednodes": [mm_bob.ip.to_string()],
+            "rpc_password": "pass",
+            "enable_hd": true,
+            "use_watchers": false,
+            "is_watcher": false,
+        }),
+        "pass".into(),
+        None,
+    )
+    .unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {}", mm_alice.log_path.display());
+    block_on(enable_electrum(&mm_alice, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    block_on(enable_electrum(&mm_alice, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
+
+    let uuids = block_on(start_swaps(
+        &mut mm_alice,
+        &mut mm_bob,
+        &[("MORTY", "RICK")],
+        1.,
+        1.,
+        0.005,
+    ));
+
+    let alice_swap_status = block_on(wait_for_swap_event(&mm_alice, &uuids[0], "MakerPaymentSent", 30));
+
+    // Stop alice after sending the maker payment to not reveal the secret.
+    block_on(mm_alice.stop()).unwrap();
+
+    let bob_swap_status = block_on(wait_for_swap_event(&mm_bob, &uuids[0], "Finished", 99999));
+
+    log!("Alice swap status: {}", alice_swap_status);
+    log!("Bob swap status: {}", bob_swap_status);
 }
