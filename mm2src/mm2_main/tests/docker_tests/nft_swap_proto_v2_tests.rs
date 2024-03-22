@@ -37,13 +37,13 @@ fn send_and_spend_erc721_maker_payment() {
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
     let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
-    println!("Maker sent ERC721 Payment tx {:?}", maker_payment);
+    println!("Maker sent ERC721 NFT Payment tx hash {:02x}", maker_payment.tx_hash());
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: maker_payment.tx_hex(),
         confirmations: 1,
         requires_nota: false,
-        wait_until: now_sec() + 60, // ERC721 tokens need more time for confirmation
+        wait_until: now_sec() + 60,
         check_every: 1,
     };
     maker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
@@ -58,7 +58,7 @@ fn send_and_spend_erc721_maker_payment() {
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
         token_address: &erc721_contract().to_bytes(),
-        token_id: &BigUint::from(1u32).to_bytes(),
+        token_id: &BigUint::from(2u32).to_bytes(),
         chain: &Chain::Eth.to_bytes(),
         contract_type: &ContractType::Erc721.to_bytes(),
         swap_contract_address: &nft_swap_contract().to_bytes(),
@@ -69,7 +69,7 @@ fn send_and_spend_erc721_maker_payment() {
 #[test]
 #[ignore]
 fn send_and_spend_erc1155_maker_payment() {
-    let erc1155_nft = TestNftType::Erc1155 { token_id: 1, amount: 3 };
+    let erc1155_nft = TestNftType::Erc1155 { token_id: 4, amount: 3 };
 
     let maker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), Some(erc1155_nft));
     let taker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), None);
@@ -86,13 +86,13 @@ fn send_and_spend_erc1155_maker_payment() {
         taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
         swap_unique_data: &[],
         token_address: &erc1155_contract().to_bytes(),
-        token_id: &BigUint::from(1u32).to_bytes(),
+        token_id: &BigUint::from(4u32).to_bytes(),
         chain: &Chain::Eth.to_bytes(),
         contract_type: &ContractType::Erc1155.to_bytes(),
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
     let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
-    println!("Maker sent ERC1155 Payment tx {:?}", maker_payment);
+    println!("Maker sent ERC1155 NFT Payment tx hash {:02x}", maker_payment.tx_hash());
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: maker_payment.tx_hex(),
@@ -113,7 +113,7 @@ fn send_and_spend_erc1155_maker_payment() {
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
         token_address: &erc1155_contract().to_bytes(),
-        token_id: &BigUint::from(1u32).to_bytes(),
+        token_id: &BigUint::from(4u32).to_bytes(),
         chain: &Chain::Eth.to_bytes(),
         contract_type: &ContractType::Erc1155.to_bytes(),
         swap_contract_address: &nft_swap_contract().to_bytes(),
