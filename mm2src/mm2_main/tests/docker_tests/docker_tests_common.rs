@@ -49,7 +49,7 @@ use testcontainers::clients::Cli;
 use testcontainers::core::WaitFor;
 use testcontainers::{Container, GenericImage, RunnableImage};
 use web3::transports::Http;
-use web3::types::TransactionRequest;
+use web3::types::{BlockId, BlockNumber, TransactionRequest};
 use web3::Web3;
 
 lazy_static! {
@@ -1043,8 +1043,19 @@ pub fn withdraw_max_and_send_v1(mm: &MarketMakerIt, coin: &str, to: &str) -> Tra
     tx_details
 }
 
+async fn get_current_gas_limit(web3: &Web3<Http>) {
+    match web3.eth().block(BlockId::Number(BlockNumber::Latest)).await {
+        Ok(Some(block)) => {
+            log!("Current gas limit: {}", block.gas_limit);
+        },
+        Ok(None) => log!("Latest block information is not available."),
+        Err(e) => log!("Failed to fetch the latest block: {}", e),
+    }
+}
+
 pub fn init_geth_node() {
     unsafe {
+        block_on(get_current_gas_limit(&GETH_WEB3));
         let accounts = block_on(GETH_WEB3.eth().accounts()).unwrap();
         GETH_ACCOUNT = accounts[0];
         log!("GETH ACCOUNT {:?}", GETH_ACCOUNT);

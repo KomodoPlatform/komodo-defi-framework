@@ -43,7 +43,7 @@ fn send_and_spend_erc721_maker_payment() {
         payment_tx: maker_payment.tx_hex(),
         confirmations: 1,
         requires_nota: false,
-        wait_until: now_sec() + 60,
+        wait_until: now_sec() + 200,
         check_every: 1,
     };
     maker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
@@ -67,7 +67,6 @@ fn send_and_spend_erc721_maker_payment() {
 }
 
 #[test]
-#[ignore]
 fn send_and_spend_erc1155_maker_payment() {
     let erc1155_nft = TestNftType::Erc1155 { token_id: 4, amount: 3 };
 
