@@ -294,7 +294,7 @@ use script::Script;
 
 pub mod z_coin;
 use crate::coin_errors::ValidatePaymentResult;
-use crate::eth::NftAssocTypesError;
+use crate::eth::{Erc721FunctionError, NftAssocTypesError};
 use crate::utxo::swap_proto_v2_scripts;
 use crate::utxo::utxo_common::{payment_script, WaitForOutputSpendErr};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
@@ -685,6 +685,15 @@ impl From<NumConversError> for TransactionErr {
 
 impl From<ethabi::Error> for TransactionErr {
     fn from(e: ethabi::Error) -> Self { TransactionErr::AbiError(e.to_string()) }
+}
+
+impl From<Erc721FunctionError> for TransactionErr {
+    fn from(e: Erc721FunctionError) -> Self {
+        match e {
+            Erc721FunctionError::AbiError(e) => Self::AbiError(e),
+            Erc721FunctionError::FunctionNotFound(e) => Self::Plain(e),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
