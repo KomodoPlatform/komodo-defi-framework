@@ -3,7 +3,6 @@ pub mod docker_tests_common;
 mod docker_ordermatch_tests;
 mod docker_tests_inner;
 mod eth_docker_tests;
-mod nft_swap_proto_v2_tests;
 pub mod qrc20_tests;
 mod slp_tests;
 #[cfg(feature = "enable-solana")] mod solana_tests;

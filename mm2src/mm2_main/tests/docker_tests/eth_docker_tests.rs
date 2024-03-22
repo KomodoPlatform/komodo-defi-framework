@@ -5,8 +5,10 @@ use super::docker_tests_common::{random_secp256k1_secret, ERC1155_TEST_ABI, ERC7
 use bitcrypto::dhash160;
 use coins::eth::{checksum_address, eth_addr_to_hex, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
-use coins::{CoinProtocol, ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, PrivKeyBuildPolicy, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash};
+use coins::{CoinAssocTypes, CoinProtocol, ConfirmPaymentInput, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps,
+            PrivKeyBuildPolicy, RefundPaymentArgs, SearchForSwapTxSpendInput, SendNftMakerPaymentArgs,
+            SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, ToBytes, Transaction,
+            ValidateNftMakerPaymentArgs};
 use common::{block_on, now_sec};
 use ethereum_types::U256;
 use futures01::Future;
@@ -608,4 +610,116 @@ fn send_and_spend_erc20_maker_payment() {
 
     let expected = FoundSwapTxSpend::Spent(payment_spend);
     assert_eq!(expected, search_tx);
+}
+
+#[test]
+fn send_and_spend_erc721_maker_payment() {
+    // in prod we will need to enable global NFT for taker or add new field (for nft swap address) in EthCoin,
+    // as EtomicSwapNft will have its own contract address, due to EIP-170 contract size limitations.
+    // TODO need to add NFT conf in coin conf and refactor enable nft a bit
+
+    let erc721_nft = TestNftType::Erc721 { token_id: 2 };
+
+    let maker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), Some(erc721_nft));
+    let taker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), None);
+
+    let time_lock = now_sec() + 1000;
+    let maker_pubkey = maker_global_nft.derive_htlc_pubkey(&[]);
+    let taker_pubkey = taker_global_nft.derive_htlc_pubkey(&[]);
+
+    let send_payment_args: SendNftMakerPaymentArgs<EthCoin> = SendNftMakerPaymentArgs {
+        time_lock,
+        taker_secret_hash: &[0; 32],
+        maker_secret_hash: &[0; 32],
+        amount: 1.into(),
+        taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
+        swap_unique_data: &[],
+        token_address: &erc721_contract().to_bytes(),
+        token_id: &BigUint::from(2u32).to_bytes(),
+        chain: &Chain::Eth.to_bytes(),
+        contract_type: &ContractType::Erc721.to_bytes(),
+        swap_contract_address: &nft_swap_contract().to_bytes(),
+    };
+    let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
+    println!("Maker sent ERC721 NFT Payment tx hash {:02x}", maker_payment.tx_hash());
+
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: maker_payment.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 70,
+        check_every: 1,
+    };
+    maker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
+
+    let validate_args = ValidateNftMakerPaymentArgs {
+        maker_payment_tx: &maker_payment,
+        time_lock,
+        taker_secret_hash: &[0; 32],
+        maker_secret_hash: &[0; 32],
+        amount: 1.into(),
+        taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
+        maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
+        swap_unique_data: &[],
+        token_address: &erc721_contract().to_bytes(),
+        token_id: &BigUint::from(2u32).to_bytes(),
+        chain: &Chain::Eth.to_bytes(),
+        contract_type: &ContractType::Erc721.to_bytes(),
+        swap_contract_address: &nft_swap_contract().to_bytes(),
+    };
+    block_on(maker_global_nft.validate_nft_maker_payment_v2(validate_args)).unwrap();
+}
+
+#[test]
+fn send_and_spend_erc1155_maker_payment() {
+    let erc1155_nft = TestNftType::Erc1155 { token_id: 4, amount: 3 };
+
+    let maker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), Some(erc1155_nft));
+    let taker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), None);
+
+    let time_lock = now_sec() + 1000;
+    let maker_pubkey = maker_global_nft.derive_htlc_pubkey(&[]);
+    let taker_pubkey = taker_global_nft.derive_htlc_pubkey(&[]);
+
+    let send_payment_args: SendNftMakerPaymentArgs<EthCoin> = SendNftMakerPaymentArgs {
+        time_lock,
+        taker_secret_hash: &[0; 32],
+        maker_secret_hash: &[0; 32],
+        amount: 3.into(),
+        taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
+        swap_unique_data: &[],
+        token_address: &erc1155_contract().to_bytes(),
+        token_id: &BigUint::from(4u32).to_bytes(),
+        chain: &Chain::Eth.to_bytes(),
+        contract_type: &ContractType::Erc1155.to_bytes(),
+        swap_contract_address: &nft_swap_contract().to_bytes(),
+    };
+    let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
+    println!("Maker sent ERC1155 NFT Payment tx hash {:02x}", maker_payment.tx_hash());
+
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: maker_payment.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 60,
+        check_every: 1,
+    };
+    maker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
+
+    let validate_args = ValidateNftMakerPaymentArgs {
+        maker_payment_tx: &maker_payment,
+        time_lock,
+        taker_secret_hash: &[0; 32],
+        maker_secret_hash: &[0; 32],
+        amount: 3.into(),
+        taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
+        maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
+        swap_unique_data: &[],
+        token_address: &erc1155_contract().to_bytes(),
+        token_id: &BigUint::from(4u32).to_bytes(),
+        chain: &Chain::Eth.to_bytes(),
+        contract_type: &ContractType::Erc1155.to_bytes(),
+        swap_contract_address: &nft_swap_contract().to_bytes(),
+    };
+    block_on(maker_global_nft.validate_nft_maker_payment_v2(validate_args)).unwrap();
 }
