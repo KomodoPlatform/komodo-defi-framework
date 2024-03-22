@@ -98,6 +98,7 @@ const ABCI_REQUEST_PROVE: bool = false;
 const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 125_000;
+pub const GAS_WANTED_BASE_VALUE: f64 = 50_000.;
 pub(crate) const TX_DEFAULT_MEMO: &str = "";
 
 // https://github.com/irisnet/irismod/blob/5016c1be6fdbcffc319943f33713f4a057622f0a/modules/htlc/types/validation.go#L19-L22
@@ -654,7 +655,6 @@ impl TendermintCoin {
                 .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
                 .await?;
 
-            // << BEGIN TX SIMULATION FOR FEE CALCULATION
             let (amount_denom, amount_dec) = if req.max {
                 let amount_denom = balance_denom;
                 (amount_denom, big_decimal_from_sat_unsigned(amount_denom, coin.decimals))
@@ -696,7 +696,6 @@ impl TendermintCoin {
                 .map_to_mm(WithdrawError::Transport)?;
 
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-            // >> END TX SIMULATION FOR FEE CALCULATION
 
             let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT);
 
@@ -1003,13 +1002,15 @@ impl TendermintCoin {
         let Ok(activated_priv_key) = self
             .activation_policy
             .activated_key_or_err() else {
+                let (gas_price, gas_limit) = self.gas_info_for_withdraw(&withdraw_fee, GAS_LIMIT_DEFAULT);
+                let amount = ((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil();
+
                 let fee_amount = Coin {
                     denom: self.platform_denom().clone(),
-                    // TODO: this seems to be a reasonable default for pubkey-only activations, but can be probably improved
-                    amount: 35000_u64.into(),
+                    amount: (amount as u64).into(),
                 };
 
-                return Ok(Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT));
+                return Ok(Fee::from_amount_and_gas(fee_amount, gas_limit));
             };
 
         let (response, raw_response) = loop {
@@ -1087,8 +1088,8 @@ impl TendermintCoin {
         let Ok(priv_key) = self
             .activation_policy
             .activated_key_or_err() else {
-                // TODO: this seems to be a reasonable default for pubkey-only activations, but can be probably improved
-                return Ok(35000);
+                let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
+                return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil() as u64);
             };
 
         let (response, raw_response) = loop {
@@ -2082,7 +2083,6 @@ impl MmCoin for TendermintCoin {
                 .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
                 .await?;
 
-            // << BEGIN TX SIMULATION FOR FEE CALCULATION
             let (amount_denom, amount_dec) = if req.max {
                 let amount_denom = balance_denom;
                 (amount_denom, big_decimal_from_sat_unsigned(amount_denom, coin.decimals))
@@ -2124,7 +2124,6 @@ impl MmCoin for TendermintCoin {
                 .map_to_mm(WithdrawError::Transport)?;
 
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-            // >> END TX SIMULATION FOR FEE CALCULATION
 
             let (_, gas_limit) = coin.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
 
