@@ -108,7 +108,7 @@ fn eth_coin_from_keypair(
         chain_id: None,
         trezor_coin: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        nonce_lock: new_nonce_lock(),
+        address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
         erc20_tokens_infos: Default::default(),
         nfts_infos: Arc::new(Default::default()),
         abortable_system: AbortableQueue::default(),

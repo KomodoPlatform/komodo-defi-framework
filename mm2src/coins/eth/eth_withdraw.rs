@@ -235,8 +235,8 @@ where
 
         let (tx_hash, tx_hex) = match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
-                // Todo: nonce_lock is still global for all addresses but this needs to be per address
-                let _nonce_lock = coin.nonce_lock.lock().await;
+                let address_lock = coin.get_address_lock(my_address.to_string()).await;
+                let _nonce_lock = address_lock.lock().await;
                 let (nonce, _) = coin
                     .clone()
                     .get_addr_nonce(my_address)

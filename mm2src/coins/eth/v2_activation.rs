@@ -403,7 +403,7 @@ impl EthCoin {
             chain_id: self.chain_id,
             trezor_coin: self.trezor_coin.clone(),
             logs_block_range: self.logs_block_range,
-            nonce_lock: self.nonce_lock.clone(),
+            address_nonce_locks: self.address_nonce_locks.clone(),
             erc20_tokens_infos: Default::default(),
             nfts_infos: Default::default(),
             abortable_system,
@@ -454,7 +454,7 @@ impl EthCoin {
             chain_id: self.chain_id,
             trezor_coin: self.trezor_coin.clone(),
             logs_block_range: self.logs_block_range,
-            nonce_lock: self.nonce_lock.clone(),
+            address_nonce_locks: self.address_nonce_locks.clone(),
             erc20_tokens_infos: Default::default(),
             nfts_infos: Arc::new(AsyncMutex::new(nft_infos)),
             abortable_system,
@@ -559,9 +559,11 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let trezor_coin: Option<String> = json::from_value(conf["trezor_coin"].clone()).ok();
 
-    let nonce_lock = {
+    let address_nonce_locks = {
         let mut map = NONCE_LOCK.lock().unwrap();
-        map.entry(ticker.to_string()).or_insert_with(new_nonce_lock).clone()
+        Arc::new(AsyncMutex::new(
+            map.entry(ticker.to_string()).or_insert_with(new_nonce_lock).clone(),
+        ))
     };
 
     // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
@@ -588,7 +590,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         chain_id,
         trezor_coin,
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
-        nonce_lock,
+        address_nonce_locks,
         erc20_tokens_infos: Default::default(),
         nfts_infos: Default::default(),
         abortable_system,
@@ -602,7 +604,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
     Ok(coin)
 }
 
-// Todo: This function can be refactored to use builder pattern like UTXO
 /// Processes the given `priv_key_policy` and generates corresponding `KeyPair`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
 /// or [`PrivKeyBuildPolicy::GlobalHDAccount`], otherwise returns `PrivKeyPolicyNotAllowed` error.
@@ -678,9 +679,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 .await
                 .mm_err(EthActivationV2Error::from)?;
             let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin).await?;
-            // Todo: use fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) } like UTXO
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
-            // Todo: Maybe we can make a constructor for HDWallet struct
             let hd_wallet = EthHDWallet {
                 hd_wallet_rmd160,
                 hd_wallet_storage,
