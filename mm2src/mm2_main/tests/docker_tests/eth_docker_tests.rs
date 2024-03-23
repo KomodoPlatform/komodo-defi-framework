@@ -104,7 +104,6 @@ pub fn eth_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
         &eth_conf,
         &req,
         CoinProtocol::ETH,
-        // Todo: support HD wallet and add tests for it
         PrivKeyBuildPolicy::IguanaPrivKey(secret),
     ))
     .unwrap();
@@ -139,7 +138,6 @@ pub fn erc20_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
             platform: "ETH".to_string(),
             contract_address: checksum_address(&format!("{:02x}", erc20_contract())),
         },
-        // Todo: support HD wallet and add tests for it
         PrivKeyBuildPolicy::IguanaPrivKey(random_secp256k1_secret()),
     ))
     .unwrap();

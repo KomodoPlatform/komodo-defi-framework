@@ -274,6 +274,8 @@ pub enum InitTokenError {
     UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
     TokenCreationError { ticker: String, error: String },
+    #[display(fmt = "Could not fetch balance: {}", _0)]
+    CouldNotFetchBalance(String),
     #[display(fmt = "Platform coin {} is not activated", _0)]
     PlatformCoinIsNotActivated(String),
     #[display(fmt = "{} is not a platform coin for token {}", platform_coin_ticker, token_ticker)]
@@ -328,7 +330,8 @@ impl HttpStatusCode for InitTokenError {
             | InitTokenError::PlatformCoinIsNotActivated(_) => StatusCode::BAD_REQUEST,
             InitTokenError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
             InitTokenError::HwError(_) => StatusCode::GONE,
-            InitTokenError::UnsupportedPlatformCoin { .. }
+            InitTokenError::CouldNotFetchBalance(_)
+            | InitTokenError::UnsupportedPlatformCoin { .. }
             | InitTokenError::Transport(_)
             | InitTokenError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }

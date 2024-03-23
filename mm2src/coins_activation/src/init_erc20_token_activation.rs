@@ -3,7 +3,7 @@ use crate::init_token::{InitTokenActivationOps, InitTokenActivationResult, InitT
                         InitTokenInProgressStatus, InitTokenTaskHandleShared, InitTokenTaskManagerShared,
                         InitTokenUserAction};
 use async_trait::async_trait;
-use coins::coin_balance::EnableCoinBalanceOps;
+use coins::coin_balance::{EnableCoinBalanceError, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{Erc20Protocol, EthTokenActivationError, InitErc20TokenActivationRequest};
 use coins::eth::EthCoin;
 use coins::hd_wallet::RpcTaskXPubExtractor;
@@ -33,6 +33,8 @@ pub enum InitErc20Error {
     TokenIsAlreadyActivated { ticker: String },
     #[display(fmt = "Error on  token {} creation: {}", ticker, error)]
     TokenCreationError { ticker: String, error: String },
+    #[display(fmt = "Could not fetch balance: {}", _0)]
+    CouldNotFetchBalance(String),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -48,6 +50,7 @@ impl From<InitErc20Error> for InitTokenError {
             InitErc20Error::TokenCreationError { ticker, error } => {
                 InitTokenError::TokenCreationError { ticker, error }
             },
+            InitErc20Error::CouldNotFetchBalance(error) => InitTokenError::CouldNotFetchBalance(error),
             InitErc20Error::Transport(transport) => InitTokenError::Transport(transport),
             InitErc20Error::Internal(internal) => InitTokenError::Internal(internal),
         }
@@ -84,6 +87,16 @@ impl From<RpcTaskError> for InitErc20Error {
         match rpc_err {
             RpcTaskError::Timeout(duration) => InitErc20Error::TaskTimedOut { duration },
             internal_error => InitErc20Error::Internal(internal_error.to_string()),
+        }
+    }
+}
+
+impl From<EnableCoinBalanceError> for InitErc20Error {
+    fn from(e: EnableCoinBalanceError) -> Self {
+        match e {
+            EnableCoinBalanceError::NewAddressDerivingError(err) => InitErc20Error::Internal(err.to_string()),
+            EnableCoinBalanceError::NewAccountCreationError(err) => InitErc20Error::Internal(err.to_string()),
+            EnableCoinBalanceError::BalanceError(err) => InitErc20Error::CouldNotFetchBalance(err.to_string()),
         }
     }
 }
@@ -152,8 +165,7 @@ impl InitTokenActivationOps for EthCoin {
                 activation_request.enable_params.clone(),
                 &activation_request.path_to_address,
             )
-            .await
-            .mm_err(|e| EthTokenActivationError::InternalError(e.to_string()))?;
+            .await?;
         task_handle.update_in_progress_status(InitTokenInProgressStatus::ActivatingCoin)?;
 
         let token_contract_address = self

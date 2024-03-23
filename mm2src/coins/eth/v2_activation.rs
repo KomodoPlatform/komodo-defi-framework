@@ -128,6 +128,20 @@ impl From<ParseChainTypeError> for EthActivationV2Error {
     fn from(e: ParseChainTypeError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
 }
 
+impl From<EnableCoinBalanceError> for EthActivationV2Error {
+    fn from(e: EnableCoinBalanceError) -> Self {
+        match e {
+            EnableCoinBalanceError::NewAddressDerivingError(err) => {
+                EthActivationV2Error::InternalError(err.to_string())
+            },
+            EnableCoinBalanceError::NewAccountCreationError(err) => {
+                EthActivationV2Error::InternalError(err.to_string())
+            },
+            EnableCoinBalanceError::BalanceError(err) => EthActivationV2Error::CouldNotFetchBalance(err.to_string()),
+        }
+    }
+}
+
 /// An alternative to `crate::PrivKeyActivationPolicy`, typical only for ETH coin.
 #[derive(Clone, Deserialize)]
 pub enum EthPrivKeyActivationPolicy {

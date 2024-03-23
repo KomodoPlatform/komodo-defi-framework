@@ -417,8 +417,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                         activation_request.platform_request.enable_params.clone(),
                         &activation_request.platform_request.path_to_address,
                     )
-                    .await
-                    .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+                    .await?;
 
                 Ok(EthWithTokensActivationResult::HD(HDEthWithTokensActivationResult {
                     current_block,
