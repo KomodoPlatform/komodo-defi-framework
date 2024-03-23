@@ -723,7 +723,7 @@ fn test_rpc_password_from_json_no_userpass() {
 ///
 /// Please note that it
 #[allow(clippy::too_many_arguments)]
-#[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc-native-tests"))]
+#[allow(dead_code)]
 async fn trade_base_rel_electrum(
     bob_priv_key_policy: Mm2InitPrivKeyPolicy,
     alice_priv_key_policy: Mm2InitPrivKeyPolicy,
