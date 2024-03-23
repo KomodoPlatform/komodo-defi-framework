@@ -35,18 +35,26 @@ impl From<BalanceError> for EnableCoinBalanceError {
     fn from(e: BalanceError) -> Self { EnableCoinBalanceError::BalanceError(e) }
 }
 
+/// `BalanceMapOps` is a trait that should be implemented for a type that represents balance/s of a wallet.
+/// For instance, if the wallet is for a platform coin and it's tokens, the implementing type should be able to return the balances of the coin and its associated tokens.
 pub trait BalanceMapOps {
+    /// Creates a new balance map.
     fn new() -> Self
     where
         Self: Sized;
 
+    /// Adds another balance map to the current balance map.
     fn add(&mut self, other: Self)
     where
         Self: Sized;
 
+    /// Returns the total balance for the specified ticker.
     fn get_total_for_ticker(&self, ticker: &str) -> Option<BigDecimal>;
 }
 
+/// `CoinBalanceReport` is an enum that encapsulates the balance of a specific wallet.
+/// It provides two variants: `Iguana` and `HD`, each representing a different type of wallet.
+/// This enum is used to abstract the differences between these two types of wallets, allowing for more generic operations on the balances.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "wallet_type")]
 pub enum CoinBalanceReport<BalanceMap>
@@ -61,7 +69,7 @@ impl<BalanceMap> CoinBalanceReport<BalanceMap>
 where
     BalanceMap: BalanceMapOps,
 {
-    /// Returns a map where the key is address, and the value is the address's total balance [`CoinBalance::total`].
+    /// Returns a map where the key is address, and the value is the address's total balance for the specified ticker.
     pub fn to_addresses_total_balances(&self, ticker: &str) -> HashMap<String, Option<BigDecimal>> {
         match self {
             CoinBalanceReport::Iguana(IguanaWalletBalance {
@@ -83,26 +91,34 @@ where
     }
 }
 
+/// `IguanaWalletBalance` represents the balance of an Iguana wallet.
+/// The BalanceMap generic parameter can be any type that represents the balance/s of a single address.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct IguanaWalletBalance<BalanceMap> {
     pub address: String,
     pub balance: BalanceMap,
 }
 
+/// `HDWalletBalance` is a struct representing the balance of an HD wallet.
+/// The BalanceMap generic parameter can be any type that represents balance/s.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct HDWalletBalance<BalanceMap> {
     pub accounts: Vec<HDAccountBalance<BalanceMap>>,
 }
 
+/// `HDAccountBalance` is a struct representing the balance of a single account in an HD wallet.
+/// The BalanceMap generic parameter can be any type that represents balance/s.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct HDAccountBalance<BalanceMap> {
     pub account_index: u32,
     pub derivation_path: RpcDerivationPath,
-    // This and others were changed, revert this change to total_balance
     pub total_balance: BalanceMap,
     pub addresses: Vec<HDAddressBalance<BalanceMap>>,
 }
 
+/// `HDAccountBalanceEnum` is an enum that encapsulates the balance of an account in an HD wallet.
+/// It provides two variants: `Single` and `Map`, each representing a different type of balance.
+/// `Single` is used when the balance is for one coin, while `Map` is used when the balance is for multiple coins.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum HDAccountBalanceEnum {
@@ -110,6 +126,7 @@ pub enum HDAccountBalanceEnum {
     Map(HDAccountBalance<CoinBalanceMap>),
 }
 
+/// `HDAddressBalance` is a struct representing the balance of a single address in an HD wallet.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct HDAddressBalance<BalanceMap> {
     pub address: String,
@@ -141,9 +158,12 @@ pub struct EnabledCoinBalanceParams {
     pub min_addresses_number: Option<u32>,
 }
 
+/// `CoinBalanceReportOps` provides methods for getting the balance of a coin for different types of wallets.
 #[async_trait]
 pub trait CoinBalanceReportOps {
+    /// The BalanceMap type is a type that represents the balance of a coin or a coin and its associated tokens for a certain wallet.
     type BalanceMap: BalanceMapOps;
+    /// Returns the balance of a coin or a coin and its associated tokens for a certain wallet.
     async fn coin_balance_report(&self) -> BalanceResult<CoinBalanceReport<Self::BalanceMap>>;
 }
 
@@ -227,11 +247,15 @@ where
     }
 }
 
+/// `HDWalletBalanceOps` provides different methods related to the balance of an HD wallet.
 #[async_trait]
 pub trait HDWalletBalanceOps: HDWalletCoinOps {
+    /// The type of the scanner that will be used to scan for balances in an HD wallet.
     type HDAddressScanner: HDAddressBalanceScanner<Address = HDCoinAddress<Self>> + Sync;
+    /// The type that represents a balance in an HD wallet.
     type BalanceMap: BalanceMapOps + Clone + Send;
 
+    /// Returns the scanner of balances for the HD wallet.
     async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner>;
 
     /// Requests balances of already known addresses, and if it's prescribed by [`EnableCoinParams::scan_policy`],
@@ -366,11 +390,14 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         -> MmResult<(), String>;
 }
 
+/// `HDAddressBalanceScanner` trait provides different methods related to scanning for balances in an HD wallet.
 #[async_trait]
 #[cfg_attr(test, mockable)]
 pub trait HDAddressBalanceScanner {
+    /// The type of address that the scanner will be scanning for.
     type Address: Send + Sync;
 
+    /// Checks if the given `address` has been used before.
     async fn is_address_used(&self, address: &Self::Address) -> BalanceResult<bool>;
 }
 

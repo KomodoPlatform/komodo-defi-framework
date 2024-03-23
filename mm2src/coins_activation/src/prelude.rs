@@ -101,7 +101,9 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
     Ok((conf, protocol))
 }
 
+/// A trait to be implemented for coin activation requests to determine some information about the request.
 pub trait ActivationRequestInfo {
+    /// Checks if the activation request is for a hardware wallet.
     fn is_hw_policy(&self) -> bool;
 }
 

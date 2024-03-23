@@ -6280,6 +6280,7 @@ impl InitCreateAccountRpcOps for EthCoin {
     }
 }
 
+/// Converts and extended public key derived using BIP32 to an Ethereum public key.
 pub fn pubkey_from_extended(extended_pubkey: &Secp256k1ExtendedPublicKey) -> Public {
     let serialized = extended_pubkey.public_key().serialize_uncompressed();
     let mut pubkey_uncompressed = Public::default();
