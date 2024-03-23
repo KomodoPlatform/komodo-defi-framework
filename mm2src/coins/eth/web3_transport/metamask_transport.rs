@@ -8,11 +8,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use web3::{RequestId, Transport};
 
+/// Configuration for working with the MetaMask wallet.
 pub struct MetamaskEthConfig {
     /// The `ChainId` that the MetaMask wallet should be targeted on each RPC.
     pub chain_id: u64,
 }
 
+/// Transport layer for interacting with the MetaMask wallet.
 #[derive(Clone)]
 pub struct MetamaskTransport {
     inner: Arc<MetamaskTransportInner>,

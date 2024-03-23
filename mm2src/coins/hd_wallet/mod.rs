@@ -69,6 +69,7 @@ const DEFAULT_ACCOUNT_LIMIT: u32 = ChildNumber::HARDENED_FLAG;
 const DEFAULT_ADDRESS_LIMIT: u32 = ChildNumber::HARDENED_FLAG;
 const DEFAULT_RECEIVER_CHAIN: Bip44Chain = Bip44Chain::External;
 
+/// A generic HD address that can be used with any HD wallet.
 #[derive(Clone)]
 pub struct HDAddress<Address, Pubkey> {
     pub address: Address,
@@ -91,6 +92,7 @@ where
     fn derivation_path(&self) -> &DerivationPath { &self.derivation_path }
 }
 
+/// A generic HD address that can be used with any HD wallet.
 #[derive(Clone, Debug)]
 pub struct HDAddressesCache<HDAddress> {
     cache: Arc<AsyncMutex<HashMap<HDAddressId, HDAddress>>>,
@@ -114,6 +116,7 @@ impl<HDAddress> HDAddressesCache<HDAddress> {
     pub async fn lock(&self) -> AsyncMutexGuard<'_, HashMap<HDAddressId, HDAddress>> { self.cache.lock().await }
 }
 
+/// A generic HD account that can be used with any HD wallet.
 #[derive(Clone, Debug)]
 pub struct HDAccount<HDAddress>
 where
@@ -437,6 +440,7 @@ where
     fn hd_wallet_storage(&self) -> &HDWalletCoinStorage { &self.hd_wallet_storage }
 }
 
+/// Unique identifier for an HD wallet address within the whole wallet context.
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub struct HDAccountAddressId {
     pub account_id: u32,

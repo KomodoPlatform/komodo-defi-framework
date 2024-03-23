@@ -119,20 +119,25 @@ pub(crate) trait HDWalletStorageInternalOps {
     async fn clear_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()>;
 }
 
+/// `HDWalletStorageOps` is a trait that allows us to interact with the storage implementation of the HD wallet.
 #[async_trait]
 pub trait HDWalletStorageOps {
+    /// Getter for the HD wallet storage.
     fn hd_wallet_storage(&self) -> &HDWalletCoinStorage;
 
+    /// Loads all accounts from the HD wallet storage.
     async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
         let storage = self.hd_wallet_storage();
         storage.load_all_accounts().await
     }
 
+    /// Loads a specific account from the HD wallet storage.
     async fn load_account(&self, account_id: u32) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
         let storage = self.hd_wallet_storage();
         storage.load_account(account_id).await
     }
 
+    /// Updates the number of external addresses for a specific account.
     async fn update_external_addresses_number(
         &self,
         account_id: u32,
@@ -144,6 +149,7 @@ pub trait HDWalletStorageOps {
             .await
     }
 
+    /// Updates the number of internal addresses for a specific account.
     async fn update_internal_addresses_number(
         &self,
         account_id: u32,
@@ -155,11 +161,13 @@ pub trait HDWalletStorageOps {
             .await
     }
 
+    /// Saves new account details to the HD wallet storage.
     async fn upload_new_account(&self, account_info: HDAccountStorageItem) -> HDWalletStorageResult<()> {
         let storage = self.hd_wallet_storage();
         storage.upload_new_account(account_info).await
     }
 
+    /// Deletes all accounts from the HD wallet storage.
     async fn clear_accounts(&self) -> HDWalletStorageResult<()> {
         let storage = self.hd_wallet_storage();
         storage.clear_accounts().await

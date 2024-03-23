@@ -212,11 +212,13 @@ pub struct GetNewAddressParams {
     pub(crate) gap_limit: Option<u32>,
 }
 
+/// Generic response for the `get_new_address` RPC command.
 #[derive(Clone, Debug, Serialize)]
 pub struct GetNewAddressResponse<BalanceMap> {
     new_address: HDAddressBalance<BalanceMap>,
 }
 
+/// Enum for the response of the `get_new_address` RPC command.
 #[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub enum GetNewAddressResponseEnum {
@@ -244,6 +246,7 @@ impl ConfirmAddressStatus for GetNewAddressInProgressStatus {
     }
 }
 
+/// A trait for the `get_new_address` RPC commands.
 #[async_trait]
 pub trait GetNewAddressRpcOps {
     type BalanceMap;

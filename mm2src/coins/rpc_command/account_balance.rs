@@ -39,6 +39,7 @@ pub struct HDAccountBalanceResponse<BalanceMap> {
     pub paging_options: PagingOptionsEnum<u32>,
 }
 
+/// Enum for the response of the `account_balance` RPC command.
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum HDAccountBalanceResponseEnum {
@@ -46,6 +47,7 @@ pub enum HDAccountBalanceResponseEnum {
     Map(HDAccountBalanceResponse<CoinBalanceMap>),
 }
 
+/// Trait for the `account_balance` RPC command.
 #[async_trait]
 pub trait AccountBalanceRpcOps {
     type BalanceMap;
@@ -56,6 +58,7 @@ pub trait AccountBalanceRpcOps {
     ) -> MmResult<HDAccountBalanceResponse<Self::BalanceMap>, HDAccountBalanceRpcError>;
 }
 
+/// `account_balance` RPC command implementation.
 pub async fn account_balance(
     ctx: MmArc,
     req: HDAccountBalanceRequest,
@@ -80,6 +83,7 @@ pub mod common_impl {
     use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDWalletOps};
     use common::calc_total_pages;
 
+    /// Common implementation for the `account_balance` RPC command.
     pub async fn account_balance_rpc<Coin>(
         coin: &Coin,
         params: AccountBalanceParams,

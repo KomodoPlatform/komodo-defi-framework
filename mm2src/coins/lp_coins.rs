@@ -3755,6 +3755,7 @@ pub trait CoinWithPrivKeyPolicy {
     fn priv_key_policy(&self) -> &PrivKeyPolicy<Self::KeyPair>;
 }
 
+/// A common function to get the extended public key for a certain coin and derivation path.
 pub async fn extract_extended_pubkey<Coin, XPubExtractor>(
     coin: &Coin,
     xpub_extractor: Option<XPubExtractor>,

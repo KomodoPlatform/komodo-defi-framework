@@ -57,14 +57,6 @@ impl HDWalletCoinOps for EthCoin {
 
 impl HDCoinWithdrawOps for EthCoin {}
 
-/// The ETH/ERC20 address balance scanner.
-pub enum ETHAddressScanner {
-    Web3 {
-        web3_instances: AsyncMutex<Vec<Web3Instance>>,
-        coin_type: EthCoinType,
-    },
-}
-
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl HDAddressBalanceScanner for EthCoin {

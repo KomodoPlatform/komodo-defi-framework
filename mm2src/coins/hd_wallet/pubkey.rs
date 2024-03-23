@@ -26,6 +26,7 @@ pub trait ExtractExtendedPubkey {
         XPubExtractor: HDXPubExtractor + Send;
 }
 
+/// A trait for extracting an extended public key from an external source.
 #[async_trait]
 pub trait HDXPubExtractor: Sync {
     async fn extract_xpub(
@@ -35,6 +36,7 @@ pub trait HDXPubExtractor: Sync {
     ) -> MmResult<XPub, HDExtractPubkeyError>;
 }
 
+/// The task for extracting an extended public key from an external source.
 pub enum RpcTaskXPubExtractor<Task: RpcTask> {
     Trezor {
         hw_ctx: HardwareWalletArc,

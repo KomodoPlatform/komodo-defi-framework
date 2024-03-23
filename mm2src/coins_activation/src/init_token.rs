@@ -33,11 +33,14 @@ pub type InitTokenStatusError = RpcTaskStatusError;
 pub type InitTokenUserActionError = RpcTaskUserActionError;
 pub type CancelInitTokenError = CancelRpcTaskError;
 
+/// Request for the `init_token` RPC command.
 #[derive(Debug, Deserialize, Clone)]
 pub struct InitTokenReq<T> {
     ticker: String,
     activation_params: T,
 }
+
+/// Trait for the initializing an EVM token using the task manager.
 #[async_trait]
 pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sync + 'static {
     type ActivationRequest: Clone + Send + Sync;
@@ -54,8 +57,10 @@ pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sy
     type AwaitingStatus: Clone + Send + Sync;
     type UserAction: NotMmError + Send + Sync;
 
+    /// Getter for the token initialization task manager.
     fn rpc_task_manager(activation_ctx: &CoinsActivationContext) -> &InitTokenTaskManagerShared<Self>;
 
+    /// Activates a token and returns the activated token instance.
     async fn init_token(
         ticker: String,
         platform_coin: Self::PlatformCoin,
@@ -64,6 +69,7 @@ pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sy
         task_handle: InitTokenTaskHandleShared<Self>,
     ) -> Result<Self, MmError<Self::ActivationError>>;
 
+    /// Returns the result of the token activation.
     async fn get_activation_result(
         &self,
         ctx: MmArc,
@@ -73,6 +79,7 @@ pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sy
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>;
 }
 
+/// Implementation of the init token RPC command.
 pub async fn init_token<Token>(
     ctx: MmArc,
     request: InitTokenReq<Token::ActivationRequest>,
@@ -115,6 +122,7 @@ where
     Ok(InitTokenResponse { task_id })
 }
 
+/// Implementation of the init token status RPC command.
 pub async fn init_token_status<Token: InitTokenActivationOps>(
     ctx: MmArc,
     req: InitTokenStatusRequest,
@@ -135,6 +143,7 @@ where
         .map(|rpc_task| rpc_task.map_err(InitTokenError::from))
 }
 
+/// Implementation of the init token user action RPC command.
 pub async fn init_token_user_action<Token: InitTokenActivationOps>(
     ctx: MmArc,
     req: InitTokenUserActionRequest<Token::UserAction>,
@@ -147,6 +156,7 @@ pub async fn init_token_user_action<Token: InitTokenActivationOps>(
     Ok(SuccessResponse::new())
 }
 
+/// Implementation of the cancel init token RPC command.
 pub async fn cancel_init_token<Standalone: InitTokenActivationOps>(
     ctx: MmArc,
     req: CancelRpcTaskRequest,
@@ -159,6 +169,7 @@ pub async fn cancel_init_token<Standalone: InitTokenActivationOps>(
     Ok(SuccessResponse::new())
 }
 
+/// A struct that contains the info needed by the task that initializes the token.
 #[derive(Clone)]
 pub struct InitTokenTask<Token: InitTokenActivationOps> {
     ctx: MmArc,
@@ -223,6 +234,7 @@ where
     }
 }
 
+/// Response for the init token RPC command.
 #[derive(Clone, Serialize)]
 pub struct InitTokenActivationResult {
     pub ticker: String,
@@ -237,10 +249,12 @@ impl CurrentBlock for InitTokenActivationResult {
     fn current_block(&self) -> u64 { self.current_block }
 }
 
+/// Trait for the initial status of the token initialization task.
 pub trait InitTokenInitialStatus {
     fn initial_status() -> Self;
 }
 
+/// Status of the token initialization task.
 #[derive(Clone, Serialize)]
 pub enum InitTokenInProgressStatus {
     ActivatingCoin,

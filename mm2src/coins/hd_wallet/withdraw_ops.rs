@@ -6,16 +6,18 @@ use crypto::{StandardHDPath, StandardHDPathError};
 use mm2_err_handle::prelude::*;
 use std::str::FromStr;
 
+/// Represents the source of the funds for a withdrawal operation.
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum WithdrawFrom {
+    /// The address id of the sender address which is specified by the account id, chain, and address id.
     AddressId(HDAccountAddressId),
-    /// Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
+    /// The derivation path of the sender address in the BIP-44 format.
+    ///
+    /// IMPORTANT: Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
     /// `serde::Deserialize` returns "data did not match any variant of untagged enum WithdrawFrom".
     /// It's better to show the user an informative error.
-    DerivationPath {
-        derivation_path: String,
-    },
+    DerivationPath { derivation_path: String },
 }
 
 impl WithdrawFrom {
@@ -41,6 +43,7 @@ impl WithdrawFrom {
     }
 }
 
+/// Contains the details of the sender address for a withdraw operation.
 pub struct WithdrawSenderAddress<Address, Pubkey> {
     pub(crate) address: Address,
     pub(crate) pubkey: Pubkey,

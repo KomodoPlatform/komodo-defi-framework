@@ -23,27 +23,35 @@ use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use web3::types::TransactionRequest;
 
+/// `EthWithdraw` trait provides methods for withdrawing Ethereum and ERC20 tokens.
+/// This allows different implementations of withdrawal logic for different types of wallets.
 #[async_trait]
 pub trait EthWithdraw
 where
     Self: Sized + Sync,
 {
+    /// A getter for the coin that implements this trait.
     fn coin(&self) -> &EthCoin;
 
+    /// A getter for the withdrawal request.
     fn request(&self) -> &WithdrawRequest;
 
+    /// Executes the logic that should be performed just before generating a transaction.
     #[allow(clippy::result_large_err)]
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>>;
 
+    /// Executes the logic that should be performed just before finishing the withdrawal.
     #[allow(clippy::result_large_err)]
     fn on_finishing(&self) -> Result<(), MmError<WithdrawError>>;
 
+    /// Signs the transaction with a Trezor hardware wallet.
     async fn sign_tx_with_trezor(
         &self,
         derivation_path: &DerivationPath,
         unsigned_tx: &UnSignedEthTx,
     ) -> Result<SignedEthTx, MmError<WithdrawError>>;
 
+    /// Transforms the `from` parameter of the withdrawal request into an address.
     async fn get_from_address(&self, req: &WithdrawRequest) -> Result<H160, MmError<WithdrawError>> {
         let coin = self.coin();
         match req.from {
@@ -52,6 +60,7 @@ where
         }
     }
 
+    /// Gets the key pair for the address from which the withdrawal is made.
     #[allow(clippy::result_large_err)]
     fn get_key_pair(&self, req: &WithdrawRequest) -> Result<KeyPair, MmError<WithdrawError>> {
         let coin = self.coin();
@@ -76,6 +85,7 @@ where
         }
     }
 
+    /// Gets the derivation path for the address from which the withdrawal is made using the `from` parameter.
     #[allow(clippy::result_large_err)]
     fn get_from_derivation_path(&self, from: &WithdrawFrom) -> Result<DerivationPath, MmError<WithdrawError>> {
         let coin = self.coin();
@@ -85,6 +95,7 @@ where
         Ok(derivation_path)
     }
 
+    /// Gets the derivation path for the address from which the withdrawal is made using the withdrawal request.
     async fn get_withdraw_derivation_path(
         &self,
         req: &WithdrawRequest,
@@ -105,6 +116,7 @@ where
         }
     }
 
+    /// Signs the transaction and returns the transaction hash and the signed transaction.
     async fn sign_withdraw_tx(
         &self,
         req: &WithdrawRequest,
@@ -130,6 +142,8 @@ where
         }
     }
 
+    /// Sends the transaction and returns the transaction hash and the signed transaction.
+    /// This method should only be used when withdrawing using an external wallet like MetaMask.
     #[cfg(target_arch = "wasm32")]
     async fn send_withdraw_tx(
         &self,
@@ -168,6 +182,7 @@ where
         }
     }
 
+    /// Builds the withdrawal transaction and returns the transaction details.
     async fn build(self) -> WithdrawResult {
         let coin = self.coin();
         let ticker = coin.deref().ticker.clone();

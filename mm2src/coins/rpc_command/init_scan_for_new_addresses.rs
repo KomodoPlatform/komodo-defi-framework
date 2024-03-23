@@ -22,6 +22,7 @@ pub type ScanAddressesRpcTaskStatus = RpcTaskStatus<
     ScanAddressesAwaitingStatus,
 >;
 
+/// Generic response for the `scan_for_new_addresses` RPC commands.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ScanAddressesResponse<BalanceMap> {
     pub account_index: u32,
@@ -29,6 +30,7 @@ pub struct ScanAddressesResponse<BalanceMap> {
     pub new_addresses: Vec<HDAddressBalance<BalanceMap>>,
 }
 
+/// Enum for the response of the `scan_for_new_addresses` RPC commands.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum ScanAddressesResponseEnum {
@@ -56,6 +58,7 @@ pub enum ScanAddressesInProgressStatus {
     InProgress,
 }
 
+/// Trait for the `scan_for_new_addresses` RPC commands.
 #[async_trait]
 pub trait InitScanAddressesRpcOps {
     type BalanceMap;

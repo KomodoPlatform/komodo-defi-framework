@@ -9,6 +9,7 @@ use itertools::Itertools;
 use mm2_err_handle::mm_error::{MmError, MmResult};
 use std::collections::HashMap;
 
+/// Unique identifier for an HD address within an account.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct HDAddressId {
     pub chain: Bip44Chain,

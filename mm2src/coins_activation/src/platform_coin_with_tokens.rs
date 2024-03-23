@@ -494,6 +494,7 @@ where
     Ok(activation_result)
 }
 
+/// A struct that contains the info needed by the task that initializes a platform coin with tokens.
 pub struct InitPlatformCoinWithTokensTask<Platform: PlatformCoinWithTokensActivationOps> {
     ctx: MmArc,
     request: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
@@ -527,10 +528,12 @@ where
     }
 }
 
+/// Trait for the initial status of the task that initializes a platform coin with tokens.
 pub trait InitPlatformCoinWithTokensInitialStatus {
     fn initial_status() -> Self;
 }
 
+/// The status of the task that initializes a platform coin with tokens.
 #[derive(Clone, Serialize)]
 pub enum InitPlatformCoinWithTokensInProgressStatus {
     ActivatingCoin,
@@ -551,6 +554,7 @@ impl InitPlatformCoinWithTokensInitialStatus for InitPlatformCoinWithTokensInPro
     fn initial_status() -> Self { InitPlatformCoinWithTokensInProgressStatus::ActivatingCoin }
 }
 
+/// Implementation of the init platform coin with tokens RPC command.
 pub async fn init_platform_coin_with_tokens<Platform>(
     ctx: MmArc,
     request: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
@@ -579,6 +583,7 @@ where
     Ok(EnablePlatformCoinWithTokensResponse { task_id })
 }
 
+/// Implementation of the init platform coin with tokens status RPC command.
 pub async fn init_platform_coin_with_tokens_status<Platform: PlatformCoinWithTokensActivationOps>(
     ctx: MmArc,
     req: EnablePlatformCoinWithTokensStatusRequest,
@@ -605,6 +610,7 @@ where
         .map(|rpc_task| rpc_task.map_err(|e| e))
 }
 
+/// Implementation of the init platform coin with tokens user action RPC command.
 pub async fn init_platform_coin_with_tokens_user_action<Platform: PlatformCoinWithTokensActivationOps>(
     ctx: MmArc,
     req: InitPlatformCoinWithTokensUserActionRequest<Platform::UserAction>,
@@ -621,6 +627,7 @@ where
     Ok(SuccessResponse::new())
 }
 
+/// Implementation of the cancel init platform coin with tokens RPC command.
 pub async fn cancel_init_platform_coin_with_tokens<Platform: PlatformCoinWithTokensActivationOps>(
     ctx: MmArc,
     req: CancelRpcTaskRequest,

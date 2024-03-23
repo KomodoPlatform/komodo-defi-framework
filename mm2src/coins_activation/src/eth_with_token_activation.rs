@@ -191,6 +191,7 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
     }
 }
 
+/// Activation result for activating an EVM-based coin along with its associated tokens (ERC20 and NFTs) for Iguana wallets.
 #[derive(Serialize, Clone)]
 pub struct IguanaEthWithTokensActivationResult {
     current_block: u64,
@@ -199,6 +200,7 @@ pub struct IguanaEthWithTokensActivationResult {
     nfts_infos: HashMap<String, NftInfo>,
 }
 
+/// Activation result for activating an EVM-based coin along with its associated tokens (ERC20 and NFTs) for HD wallets.
 #[derive(Serialize, Clone)]
 pub struct HDEthWithTokensActivationResult {
     current_block: u64,
