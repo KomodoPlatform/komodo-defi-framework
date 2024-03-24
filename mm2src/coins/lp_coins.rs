@@ -644,7 +644,6 @@ pub enum TransactionErr {
     ProtocolNotSupported(String),
     NftAssocTypesError(String),
     NumConversError(NumConversError),
-    AbiError(String),
 }
 
 impl TransactionErr {
@@ -664,8 +663,7 @@ impl TransactionErr {
             TransactionErr::TxRecoverable(_, err) => err.to_string(),
             TransactionErr::Plain(err)
             | TransactionErr::ProtocolNotSupported(err)
-            | TransactionErr::NftAssocTypesError(err)
-            | TransactionErr::AbiError(err) => err.to_string(),
+            | TransactionErr::NftAssocTypesError(err) => err.to_string(),
             TransactionErr::NumConversError(err) => err.to_string(),
         }
     }
@@ -683,15 +681,10 @@ impl From<NumConversError> for TransactionErr {
     fn from(e: NumConversError) -> Self { TransactionErr::NumConversError(e) }
 }
 
-impl From<ethabi::Error> for TransactionErr {
-    fn from(e: ethabi::Error) -> Self { TransactionErr::AbiError(e.to_string()) }
-}
-
 impl From<Erc721FunctionError> for TransactionErr {
     fn from(e: Erc721FunctionError) -> Self {
         match e {
-            Erc721FunctionError::AbiError(e) => Self::AbiError(e),
-            Erc721FunctionError::FunctionNotFound(e) => Self::Plain(e),
+            Erc721FunctionError::AbiError(e) | Erc721FunctionError::FunctionNotFound(e) => Self::Plain(e),
         }
     }
 }

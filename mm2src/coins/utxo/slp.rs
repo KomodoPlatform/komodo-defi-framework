@@ -2173,8 +2173,7 @@ mod slp_tests {
             TransactionErr::TxRecoverable(_tx, err) => err,
             TransactionErr::Plain(err)
             | TransactionErr::ProtocolNotSupported(err)
-            | TransactionErr::NftAssocTypesError(err)
-            | TransactionErr::AbiError(err) => err,
+            | TransactionErr::NftAssocTypesError(err) => err,
             TransactionErr::NumConversError(err) => err.to_string(),
         };
 

@@ -103,7 +103,9 @@ impl From<PaymentStatusErr> for ValidatePaymentError {
     fn from(err: PaymentStatusErr) -> Self {
         match err {
             PaymentStatusErr::Transport(e) => Self::Transport(e),
-            PaymentStatusErr::AbiError(e) | PaymentStatusErr::Internal(e) => Self::InternalError(e),
+            PaymentStatusErr::AbiError(e)
+            | PaymentStatusErr::Internal(e)
+            | PaymentStatusErr::TxDeserializationError(e) => Self::InternalError(e),
         }
     }
 }
