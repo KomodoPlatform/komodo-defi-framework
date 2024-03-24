@@ -636,7 +636,6 @@ fn send_and_spend_erc721_maker_payment() {
         swap_unique_data: &[],
         token_address: &erc721_contract().to_bytes(),
         token_id: &BigUint::from(2u32).to_bytes(),
-        chain: &Chain::Eth.to_bytes(),
         contract_type: &ContractType::Erc721.to_bytes(),
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
@@ -663,7 +662,6 @@ fn send_and_spend_erc721_maker_payment() {
         swap_unique_data: &[],
         token_address: &erc721_contract().to_bytes(),
         token_id: &BigUint::from(2u32).to_bytes(),
-        chain: &Chain::Eth.to_bytes(),
         contract_type: &ContractType::Erc721.to_bytes(),
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
@@ -690,7 +688,6 @@ fn send_and_spend_erc1155_maker_payment() {
         swap_unique_data: &[],
         token_address: &erc1155_contract().to_bytes(),
         token_id: &BigUint::from(4u32).to_bytes(),
-        chain: &Chain::Eth.to_bytes(),
         contract_type: &ContractType::Erc1155.to_bytes(),
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
@@ -717,7 +714,6 @@ fn send_and_spend_erc1155_maker_payment() {
         swap_unique_data: &[],
         token_address: &erc1155_contract().to_bytes(),
         token_id: &BigUint::from(4u32).to_bytes(),
-        chain: &Chain::Eth.to_bytes(),
         contract_type: &ContractType::Erc1155.to_bytes(),
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };

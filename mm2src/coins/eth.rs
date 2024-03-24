@@ -24,10 +24,10 @@ use super::eth::Action::{Call, Create};
 use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
 use crate::lp_price::get_base_price_in_rel;
-use crate::nft::nft_structs::{Chain, ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
+use crate::nft::nft_structs::{ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
                               WithdrawErc721};
 use crate::{CoinAssocTypes, DexFee, MakerNftSwapOpsV2, NftAssocTypes, RefundMakerPaymentArgs, RpcCommonOps,
-            SendNftMakerPaymentArgs, SpendMakerPaymentArgs, ToBytes, ValidateNftMakerPaymentArgs,
+            SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes, ValidateNftMakerPaymentArgs,
             ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
@@ -126,7 +126,7 @@ use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod nonce;
 use crate::coin_errors::ValidatePaymentResult;
-use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError, ParseContractTypeError};
+use crate::nft::nft_errors::{GetNftInfoError, ParseContractTypeError};
 use crate::{PrivKeyPolicy, TransactionResult, WithdrawFrom};
 use nonce::ParityNonce;
 
@@ -6240,13 +6240,8 @@ impl From<keys::Error> for CoinAssocTypesError {
 #[derive(Debug, Display)]
 pub enum NftAssocTypesError {
     Utf8Error(String),
-    ParseChainError(ParseChainTypeError),
     ParseContractTypeError(ParseContractTypeError),
     ParseTokenContractError(String),
-}
-
-impl From<ParseChainTypeError> for NftAssocTypesError {
-    fn from(e: ParseChainTypeError) -> Self { NftAssocTypesError::ParseChainError(e) }
 }
 
 impl From<ParseContractTypeError> for NftAssocTypesError {
@@ -6303,10 +6298,6 @@ impl ToBytes for BigUint {
     fn to_bytes(&self) -> Vec<u8> { self.to_bytes_be() }
 }
 
-impl ToBytes for Chain {
-    fn to_bytes(&self) -> Vec<u8> { self.to_ticker().as_bytes().to_vec() }
-}
-
 impl ToBytes for ContractType {
     fn to_bytes(&self) -> Vec<u8> { self.to_string().into_bytes() }
 }
@@ -6316,8 +6307,6 @@ impl NftAssocTypes for EthCoin {
     type TokenContractAddrParseError = NftAssocTypesError;
     type TokenId = BigUint;
     type TokenIdParseError = NftAssocTypesError;
-    type Chain = Chain;
-    type ChainParseError = NftAssocTypesError;
     type ContractType = ContractType;
     type ContractTypeParseError = NftAssocTypesError;
 
@@ -6332,11 +6321,6 @@ impl NftAssocTypes for EthCoin {
 
     fn parse_token_id(&self, token_id: &[u8]) -> Result<Self::TokenId, Self::TokenIdParseError> {
         Ok(BigUint::from_bytes_be(token_id))
-    }
-
-    fn parse_chain(&self, chain: &[u8]) -> Result<Self::Chain, Self::ChainParseError> {
-        let chain_str = from_utf8(chain).map_err(|e| NftAssocTypesError::Utf8Error(e.to_string()))?;
-        Chain::from_ticker(chain_str).map_err(NftAssocTypesError::from)
     }
 
     fn parse_contract_type(&self, contract_type: &[u8]) -> Result<Self::ContractType, Self::ContractTypeParseError> {
@@ -6363,9 +6347,9 @@ impl MakerNftSwapOpsV2 for EthCoin {
 
     async fn spend_nft_maker_payment_v2(
         &self,
-        _args: SpendMakerPaymentArgs<'_, Self>,
+        args: SpendNftMakerPaymentArgs<'_, Self>,
     ) -> Result<Self::Tx, TransactionErr> {
-        todo!()
+        self.spend_nft_maker_payment_v2_impl(args).await
     }
 
     async fn refund_nft_maker_payment_v2_timelock(
@@ -6700,6 +6684,14 @@ impl EthCoin {
                 state
             ))),
         }
+    }
+
+    async fn spend_nft_maker_payment_v2_impl(
+        &self,
+        args: SpendNftMakerPaymentArgs<'_, Self>,
+    ) -> Result<SignedEthTx, TransactionErr> {
+        let _contract_type = self.parse_contract_type(args.contract_type)?;
+        todo!()
     }
 }
 
