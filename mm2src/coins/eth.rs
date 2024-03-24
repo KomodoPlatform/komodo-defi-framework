@@ -6711,7 +6711,7 @@ impl EthCoin {
                     let (state, htlc_params) = self
                         .status_and_htlc_params_from_tx_data(
                             etomic_swap_contract,
-                            &ERC1155_CONTRACT,
+                            &NFT_SWAP_CONTRACT,
                             &decoded,
                             4,
                             StateType::MakerPayments,
@@ -6755,7 +6755,7 @@ impl EthCoin {
                     let (state, htlc_params) = self
                         .status_and_htlc_params_from_tx_data(
                             etomic_swap_contract,
-                            &ERC721_CONTRACT,
+                            &NFT_SWAP_CONTRACT,
                             &decoded,
                             3,
                             StateType::MakerPayments,
