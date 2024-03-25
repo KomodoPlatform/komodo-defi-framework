@@ -2,7 +2,6 @@ use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, Blo
                              ZcoinConsensusParams, ZcoinStorageRes};
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
 
-use crate::z_coin::z_balance_streaming::ZBalanceEvent;
 use async_trait::async_trait;
 use futures_util::SinkExt;
 use mm2_core::mm_ctx::MmArc;
