@@ -107,7 +107,7 @@ cfg_wasm32!(
 );
 
 #[allow(unused)] mod z_coin_errors;
-use crate::z_coin::z_balance_streaming::{get_z_balance_event_handlers, ZBalanceEventHandler};
+use crate::z_coin::z_balance_streaming::ZBalanceEventHandler;
 pub use z_coin_errors::*;
 
 pub mod storage;
@@ -997,10 +997,13 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         );
 
         let blocks_db = self.init_blocks_db().await?;
-        let (z_balance_event_sender, z_balance_event_handler) = match get_z_balance_event_handlers(self.ctx) {
-            Some((sender, receiver)) => (Some(sender), Some(receiver)),
-            None => (None, None),
+        let (z_balance_event_sender, z_balance_event_handler) = if self.ctx.event_stream_configuration.is_some() {
+            let (sender, receiver) = futures::channel::mpsc::unbounded();
+            (Some(sender), Some(Arc::new(AsyncMutex::new(receiver))))
+        } else {
+            (None, None)
         };
+
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => {

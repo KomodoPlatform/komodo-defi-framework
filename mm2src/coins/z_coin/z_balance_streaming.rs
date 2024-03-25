@@ -15,22 +15,8 @@ use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 use mm2_event_stream::{Event, EventStreamConfiguration};
 use std::sync::Arc;
 
-pub enum ZBalanceEvent {
-    Triggered,
-}
-
-pub type ZBalanceEventSender = UnboundedSender<ZBalanceEvent>;
-pub type ZBalanceEventHandler = Arc<AsyncMutex<UnboundedReceiver<ZBalanceEvent>>>;
-
-pub(crate) fn get_z_balance_event_handlers(ctx: &MmArc) -> Option<(ZBalanceEventSender, ZBalanceEventHandler)> {
-    if ctx.event_stream_configuration.is_some() {
-        let (sender, receiver): (UnboundedSender<ZBalanceEvent>, UnboundedReceiver<ZBalanceEvent>) =
-            futures::channel::mpsc::unbounded();
-        Some((sender, Arc::new(AsyncMutex::new(receiver))))
-    } else {
-        None
-    }
-}
+pub type ZBalanceEventSender = UnboundedSender<()>;
+pub type ZBalanceEventHandler = Arc<AsyncMutex<UnboundedReceiver<()>>>;
 
 #[async_trait]
 impl EventBehaviour for ZCoin {
@@ -69,36 +55,32 @@ impl EventBehaviour for ZCoin {
 
         // Locks the balance change handler, iterates through received events, and updates balance changes accordingly.
         let mut bal = z_balance_change_handler.lock().await;
-        while let Some(event) = bal.next().await {
-            match event {
-                ZBalanceEvent::Triggered => {
-                    match self.my_balance().compat().await {
-                        Ok(balance) => {
-                            let payload = json!({
-                                "ticker": self.ticker(),
-                                "address": self.my_z_address_encoded(),
-                                "balance": { "spendable": balance.spendable, "unspendable": balance.unspendable }
-                            });
+        while (bal.next().await).is_some() {
+            match self.my_balance().compat().await {
+                Ok(balance) => {
+                    let payload = json!({
+                        "ticker": self.ticker(),
+                        "address": self.my_z_address_encoded(),
+                        "balance": { "spendable": balance.spendable, "unspendable": balance.unspendable }
+                    });
 
-                            ctx.stream_channel_controller
-                                .broadcast(Event::new(Self::EVENT_NAME.to_string(), payload.to_string()))
-                                .await;
-                        },
-                        Err(err) => {
-                            let ticker = self.ticker();
-                            error!("Failed getting balance for '{ticker}'. Error: {err}");
-                            let e = serde_json::to_value(err).expect("Serialization should't fail.");
-                            return ctx
-                                .stream_channel_controller
-                                .broadcast(Event::new(
-                                    format!("{}:{}", Self::ERROR_EVENT_NAME, ticker),
-                                    e.to_string(),
-                                ))
-                                .await;
-                        },
-                    };
+                    ctx.stream_channel_controller
+                        .broadcast(Event::new(Self::EVENT_NAME.to_string(), payload.to_string()))
+                        .await;
                 },
-            }
+                Err(err) => {
+                    let ticker = self.ticker();
+                    error!("Failed getting balance for '{ticker}'. Error: {err}");
+                    let e = serde_json::to_value(err).expect("Serialization should't fail.");
+                    return ctx
+                        .stream_channel_controller
+                        .broadcast(Event::new(
+                            format!("{}:{}", Self::ERROR_EVENT_NAME, ticker),
+                            e.to_string(),
+                        ))
+                        .await;
+                },
+            };
         }
     }
 

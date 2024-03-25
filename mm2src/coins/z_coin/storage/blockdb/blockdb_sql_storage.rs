@@ -3,7 +3,6 @@ use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, Blo
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
 use crate::z_coin::ZcoinConsensusParams;
 
-use crate::z_coin::z_balance_streaming::ZBalanceEvent;
 use common::async_blocking;
 use db_common::sqlite::rusqlite::{params, Connection};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas, rusqlite};
@@ -232,10 +231,7 @@ impl BlockDbImpl {
                     // we send a `Triggered` event to update the balance change.
                     if tx_size > 0 {
                         if let Some(mut sender) = z_balance_change_sender.clone() {
-                            sender
-                                .send(ZBalanceEvent::Triggered)
-                                .await
-                                .expect("No receiver is available/dropped");
+                            sender.send(()).await.expect("No receiver is available/dropped");
                         };
                     };
                 },

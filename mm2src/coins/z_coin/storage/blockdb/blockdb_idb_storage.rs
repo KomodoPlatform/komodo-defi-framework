@@ -125,7 +125,7 @@ impl BlockDbImpl {
     }
 
     /// Asynchronously rewinds the storage to a specified block height, effectively
-    /// removing data beyond the specified height from the storage.    
+    /// removing data beyond the specified height from the storage.
     pub async fn rewind_to_height(&self, height: BlockHeight) -> ZcoinStorageRes<usize> {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
@@ -258,10 +258,7 @@ impl BlockDbImpl {
                     // we trigger a `Triggered` event to update the balance change.
                     if tx_size > 0 {
                         if let Some(mut sender) = z_balance_change_sender.clone() {
-                            sender
-                                .send(ZBalanceEvent::Triggered)
-                                .await
-                                .expect("No receiver is available/dropped");
+                            sender.send(()).await.expect("No receiver is available/dropped");
                         };
                     };
                 },
