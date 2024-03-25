@@ -6728,12 +6728,12 @@ impl EthCoin {
                     let data = spend_func
                         .encode_input(&[
                             htlc_params[0].clone(), // swap_id
-                            decoded[3].clone(),     // amount
                             Token::Address(args.maker_payment_tx.sender()),
                             Token::FixedBytes(args.taker_secret_hash.to_vec()),
                             Token::FixedBytes(args.maker_secret.to_vec()),
                             htlc_params[2].clone(), // tokenAddress
                             decoded[2].clone(),     // tokenId
+                            decoded[3].clone(),     // amount
                         ])
                         .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
                     self.sign_and_send_transaction(
@@ -6822,6 +6822,16 @@ impl EthCoin {
     }
 }
 
+// Representation of the Solidity HTLCParams struct.
+//
+// struct HTLCParams {
+//     bytes32 id;
+//     address taker;
+//     address tokenAddress;
+//     bytes32 takerSecretHash;
+//     bytes32 makerSecretHash;
+//     uint32 paymentLockTime;
+// }
 fn htlc_params() -> &'static [ethabi::ParamType] {
     &[
         ethabi::ParamType::FixedBytes(32),

@@ -435,11 +435,6 @@
 				"type": "bytes32"
 			},
 			{
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			},
-			{
 				"internalType": "address",
 				"name": "taker",
 				"type": "address"
@@ -463,6 +458,11 @@
 				"internalType": "uint256",
 				"name": "tokenId",
 				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
 			}
 		],
 		"name": "refundErc1155MakerPaymentSecret",
@@ -476,11 +476,6 @@
 				"internalType": "bytes32",
 				"name": "id",
 				"type": "bytes32"
-			},
-			{
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
 			},
 			{
 				"internalType": "address",
@@ -505,6 +500,11 @@
 			{
 				"internalType": "uint256",
 				"name": "tokenId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "amount",
 				"type": "uint256"
 			}
 		],
@@ -683,11 +683,6 @@
 				"type": "bytes32"
 			},
 			{
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			},
-			{
 				"internalType": "address",
 				"name": "maker",
 				"type": "address"
@@ -710,6 +705,11 @@
 			{
 				"internalType": "uint256",
 				"name": "tokenId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "amount",
 				"type": "uint256"
 			}
 		],
