@@ -24,6 +24,17 @@ type BalanceResult = Result<(String, HashMap<String, BigDecimal>), (String, MmEr
 /// and returns their results individually.
 async fn get_all_balance_results_concurrently(coin: &EthCoin) -> Vec<BalanceResult> {
     let mut tokens = coin.get_erc_tokens_infos();
+    // Workaround for performance purposes.
+    //
+    // Unlike tokens, the platform coin length is constant (=1). Instead of creating a generic
+    // type and mapping the platform coin and the entire token list (which can grow at any time), we map
+    // the platform coin to Erc20TokenInfo so that we can use the token list right away without
+    // additional mapping.
+    tokens.insert(coin.ticker.clone(), Erc20TokenInfo {
+        token_address: Address::default(),
+        decimals: coin.decimals,
+    });
+    drop_mutability!(tokens);
 
     let addresses = match coin.my_addresses().await {
         Ok(addresses) => addresses,
@@ -35,17 +46,6 @@ async fn get_all_balance_results_concurrently(coin: &EthCoin) -> Vec<BalanceResu
     let mut all_jobs = FuturesUnordered::new();
 
     for address in addresses {
-        // Workaround for performance purposes.
-        //
-        // Unlike tokens, the platform coin length is constant (=1). Instead of creating a generic
-        // type and mapping the platform coin and the entire token list (which can grow at any time), we map
-        // the platform coin to Erc20TokenInfo so that we can use the token list right away without
-        // additional mapping.
-        tokens.insert(coin.ticker.clone(), Erc20TokenInfo {
-            token_address: address,
-            decimals: coin.decimals,
-        });
-
         let jobs = tokens.iter().map(|(token_ticker, info)| {
             let coin = coin.clone();
             let token_ticker = token_ticker.clone();
