@@ -147,7 +147,7 @@ jobs:
           deps: ('protoc')
 
       - name: Set loopback address
-        run: ./scripts/ci/macos-ifconfig.sh
+        run: ./scripts/ci/lo0_config.sh
 
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache
