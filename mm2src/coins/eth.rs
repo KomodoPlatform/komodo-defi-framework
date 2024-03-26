@@ -6571,37 +6571,14 @@ impl EthCoin {
                         .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
                     let decoded = decode_contract_call(function, &tx_from_rpc.input.0)
                         .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
-                    if decoded[0] != Token::Address(maker_address) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "NFT Maker Payment `maker_address` {:?} is invalid, expected {:?}",
-                            decoded[0],
-                            Token::Address(maker_address)
-                        )));
-                    }
-                    if decoded[1] != Token::Address(etomic_swap_contract) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "NFT Maker Payment `etomic_swap_contract` {:?} is invalid, expected address {:?}",
-                            decoded[1],
-                            Token::Address(maker_address)
-                        )));
-                    }
-                    let token_id = U256::from(args.token_id);
-                    if decoded[2] != Token::Uint(token_id) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "NFT Maker Payment `token_id` {:?} is invalid, expected {:?}",
-                            decoded[2],
-                            Token::Uint(token_id)
-                        )));
-                    }
-                    let value = U256::from_dec_str(&args.amount.to_string())
-                        .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
-                    if decoded[3] != Token::Uint(value) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "NFT Maker Payment `amount` {:?} is invalid, expected {:?}",
-                            decoded[3],
-                            Token::Uint(value)
-                        )));
-                    }
+
+                    let validation_params = ValidationParams {
+                        maker_address,
+                        etomic_swap_contract,
+                        token_id: args.token_id,
+                        amount: Some(args.amount.to_string()),
+                    };
+                    validate_decoded_data(&decoded, &validation_params)?;
 
                     let taker_address =
                         addr_from_raw_pubkey(args.taker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
@@ -6619,28 +6596,14 @@ impl EthCoin {
                     let function = self.erc721_transfer_with_data()?;
                     let decoded = decode_contract_call(function, &tx_from_rpc.input.0)
                         .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
-                    if decoded[0] != Token::Address(maker_address) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "NFT Maker Payment `maker_address` {:?} is invalid, expected {:?}",
-                            decoded[0],
-                            Token::Address(maker_address)
-                        )));
-                    }
-                    if decoded[1] != Token::Address(etomic_swap_contract) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "NFT Maker Payment `etomic_swap_contract` {:?} is invalid, expected address {:?}",
-                            decoded[1],
-                            Token::Address(maker_address)
-                        )));
-                    }
-                    let token_id = U256::from(args.token_id);
-                    if decoded[2] != Token::Uint(token_id) {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "NFT Maker Payment `token_id` {:?} is invalid, expected {:?}",
-                            decoded[2],
-                            Token::Uint(token_id)
-                        )));
-                    }
+
+                    let validation_params = ValidationParams {
+                        maker_address,
+                        etomic_swap_contract,
+                        token_id: args.token_id,
+                        amount: None,
+                    };
+                    validate_decoded_data(&decoded, &validation_params)?;
 
                     let taker_address =
                         addr_from_raw_pubkey(args.taker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
@@ -6887,6 +6850,51 @@ impl StateType {
 /// function to check if BigDecimal is a positive integer
 #[inline(always)]
 fn is_positive_integer(amount: &BigDecimal) -> bool { amount == &amount.with_scale(0) && amount > &BigDecimal::from(0) }
+
+struct ValidationParams<'a> {
+    maker_address: Address,
+    etomic_swap_contract: Address,
+    token_id: &'a [u8],
+    // Optional, as it's not needed for ERC721
+    amount: Option<String>,
+}
+
+/// Validates decoded data from tx input, related to `safeTransferFrom` contract call
+fn validate_decoded_data(decoded: &[Token], params: &ValidationParams) -> Result<(), MmError<ValidatePaymentError>> {
+    if decoded[0] != Token::Address(params.maker_address) {
+        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+            "NFT Maker Payment `maker_address` {:?} is invalid, expected {:?}",
+            decoded[0],
+            Token::Address(params.maker_address)
+        )));
+    }
+    if decoded[1] != Token::Address(params.etomic_swap_contract) {
+        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+            "NFT Maker Payment `etomic_swap_contract` {:?} is invalid, expected address {:?}",
+            decoded[1],
+            Token::Address(params.etomic_swap_contract)
+        )));
+    }
+    let token_id = U256::from(params.token_id);
+    if decoded[2] != Token::Uint(token_id) {
+        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+            "NFT Maker Payment `token_id` {:?} is invalid, expected {:?}",
+            decoded[2],
+            Token::Uint(token_id)
+        )));
+    }
+    if let Some(amount) = &params.amount {
+        let value = U256::from_dec_str(amount).map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
+        if decoded[3] != Token::Uint(value) {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "NFT Maker Payment `amount` {:?} is invalid, expected {:?}",
+                decoded[3],
+                Token::Uint(value)
+            )));
+        }
+    }
+    Ok(())
+}
 
 #[derive(Debug, Display)]
 pub enum HtlcParamsError {
