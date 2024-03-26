@@ -16,8 +16,19 @@ use std::collections::HashMap;
 use super::EthCoin;
 use crate::{eth::{u256_to_big_decimal, Erc20TokenInfo},
             BalanceError, MmCoin};
+struct BalanceData {
+    ticker: String,
+    address: String,
+    balance: BigDecimal,
+}
 
-type BalanceResult = Result<(String, HashMap<String, BigDecimal>), (String, MmError<BalanceError>)>;
+struct BalanceFetchError {
+    ticker: String,
+    address: String,
+    error: MmError<BalanceError>,
+}
+
+type BalanceResult = Result<BalanceData, BalanceFetchError>;
 
 /// This implementation differs from others, as they immediately return
 /// an error if any of the requests fails. This one completes all futures
@@ -39,7 +50,11 @@ async fn get_all_balance_results_concurrently(coin: &EthCoin) -> Vec<BalanceResu
     let addresses = match coin.my_addresses().await {
         Ok(addresses) => addresses,
         Err(e) => {
-            return vec![Err((coin.ticker.clone(), e.into()))];
+            return vec![Err(BalanceFetchError {
+                ticker: coin.ticker.clone(),
+                address: "".to_string(),
+                error: e.into(),
+            })];
         },
     };
 
@@ -56,21 +71,7 @@ async fn get_all_balance_results_concurrently(coin: &EthCoin) -> Vec<BalanceResu
         all_jobs.extend(jobs);
     }
 
-    let results: Vec<_> = all_jobs.collect().await;
-
-    let mut final_results: Vec<BalanceResult> = Vec::new();
-    for result in results {
-        match result {
-            Ok((ticker, (address, balance))) => {
-                let mut balances = HashMap::new();
-                balances.insert(address, balance);
-                final_results.push(Ok((ticker, balances)));
-            },
-            Err((ticker, e)) => final_results.push(Err((ticker, e))),
-        }
-    }
-
-    final_results
+    all_jobs.collect().await
 }
 
 async fn fetch_balance(
@@ -78,28 +79,43 @@ async fn fetch_balance(
     address: Address,
     token_ticker: String,
     info: &Erc20TokenInfo,
-) -> Result<(String, (String, BigDecimal)), (String, MmError<BalanceError>)> {
+) -> Result<BalanceData, BalanceFetchError> {
     let (balance_as_u256, decimals) = if token_ticker == coin.ticker {
         (
             coin.address_balance(address)
                 .compat()
                 .await
-                .map_err(|e| (token_ticker.clone(), e))?,
+                .map_err(|error| BalanceFetchError {
+                    ticker: token_ticker.clone(),
+                    address: address.to_string(),
+                    error,
+                })?,
             coin.decimals,
         )
     } else {
         (
             coin.get_token_balance(info.token_address)
                 .await
-                .map_err(|e| (token_ticker.clone(), e))?,
+                .map_err(|error| BalanceFetchError {
+                    ticker: token_ticker.clone(),
+                    address: address.to_string(),
+                    error,
+                })?,
             info.decimals,
         )
     };
 
-    let balance_as_big_decimal =
-        u256_to_big_decimal(balance_as_u256, decimals).map_err(|e| (token_ticker.clone(), e.into()))?;
+    let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, decimals).map_err(|e| BalanceFetchError {
+        ticker: token_ticker.clone(),
+        address: address.to_string(),
+        error: e.into(),
+    })?;
 
-    Ok((token_ticker, (address.to_string(), balance_as_big_decimal)))
+    Ok(BalanceData {
+        ticker: token_ticker,
+        address: address.to_string(),
+        balance: balance_as_big_decimal,
+    })
 }
 
 #[async_trait]
@@ -119,29 +135,32 @@ impl EventBehaviour for EthCoin {
                 let mut balance_updates = vec![];
                 for result in get_all_balance_results_concurrently(&coin).await {
                     match result {
-                        Ok((ticker, balance)) => {
-                            for (address, balance) in balance {
-                                if Some(&balance) == cache.get(&ticker).and_then(|map| map.get(&address)) {
-                                    continue;
-                                }
-
-                                balance_updates.push(json!({
-                                    "ticker": ticker,
-                                    "address": address,
-                                    "balance": { "spendable": balance, "unspendable": BigDecimal::default() }
-                                }));
-                                cache
-                                    .entry(ticker.clone())
-                                    .or_insert_with(HashMap::new)
-                                    .insert(address, balance);
+                        Ok(res) => {
+                            if Some(&res.balance) == cache.get(&res.ticker).and_then(|map| map.get(&res.address)) {
+                                continue;
                             }
+
+                            balance_updates.push(json!({
+                                "ticker": res.ticker,
+                                "address": res.address,
+                                "balance": { "spendable": res.balance, "unspendable": BigDecimal::default() }
+                            }));
+                            cache
+                                .entry(res.ticker.clone())
+                                .or_insert_with(HashMap::new)
+                                .insert(res.address, res.balance);
                         },
-                        Err((ticker, e)) => {
-                            log::error!("Failed getting balance for '{ticker}' with {interval} interval. Error: {e}");
-                            let e = serde_json::to_value(e).expect("Serialization should't fail.");
+                        Err(err) => {
+                            log::error!(
+                                "Failed getting balance for '{}:{}' with {interval} interval. Error: {}",
+                                err.ticker,
+                                err.address,
+                                err.error
+                            );
+                            let e = serde_json::to_value(err.error).expect("Serialization should't fail.");
                             ctx.stream_channel_controller
                                 .broadcast(Event::new(
-                                    format!("{}:{}", EthCoin::ERROR_EVENT_NAME, ticker),
+                                    format!("{}:{}:{}", EthCoin::ERROR_EVENT_NAME, err.ticker, err.address),
                                     e.to_string(),
                                 ))
                                 .await;
