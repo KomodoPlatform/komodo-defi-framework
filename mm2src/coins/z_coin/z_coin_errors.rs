@@ -20,8 +20,7 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use zcash_client_backend::data_api::error::ChainInvalid;
 #[cfg(not(target_arch = "wasm32"))]
 use zcash_client_sqlite::error::SqliteClientError;
-#[cfg(target_arch = "wasm32")]
-use zcash_extras::NoteId;
+#[cfg(target_arch = "wasm32")] use zcash_extras::NoteId;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
@@ -107,10 +106,10 @@ pub enum GenTxError {
     GetWitnessErr(GetUnspentWitnessErr),
     FailedToGetMerklePath,
     #[display(
-    fmt = "Not enough {} to generate a tx: available {}, required at least {}",
-    coin,
-    available,
-    required
+        fmt = "Not enough {} to generate a tx: available {}, required at least {}",
+        coin,
+        available,
+        required
     )]
     InsufficientBalance {
         coin: String,
@@ -471,11 +470,11 @@ impl From<DbTransactionError> for ZcoinStorageError {
         match e {
             DbTransactionError::ErrorSerializingItem(_) | DbTransactionError::ErrorDeserializingItem(_) => {
                 ZcoinStorageError::DecodingError(e.to_string())
-            }
+            },
             DbTransactionError::ErrorUploadingItem(_) => ZcoinStorageError::AddToStorageErr(e.to_string()),
             DbTransactionError::ErrorGettingItems(_) | DbTransactionError::ErrorCountingItems(_) => {
                 ZcoinStorageError::GetFromStorageError(e.to_string())
-            }
+            },
             DbTransactionError::ErrorDeletingItems(_) => ZcoinStorageError::RemoveFromStorageErr(e.to_string()),
             DbTransactionError::NoSuchTable { .. }
             | DbTransactionError::ErrorCreatingTransaction(_)
