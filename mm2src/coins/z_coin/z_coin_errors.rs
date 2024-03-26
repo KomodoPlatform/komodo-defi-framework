@@ -278,7 +278,6 @@ pub(crate) enum ZTxHistoryError {
     Sql(SqliteError),
     #[cfg(target_arch = "wasm32")]
     IndexedDbError(String),
-    #[cfg(not(target_arch = "wasm32"))]
     FromIdDoesNotExist(i64),
 }
 

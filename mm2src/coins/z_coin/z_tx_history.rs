@@ -50,7 +50,12 @@ pub(crate) async fn fetch_tx_history_from_db(
     let total_tx_count = tx_table.count_all().await? as u32;
     let offset = match paging_options {
         PagingOptionsEnum::PageNumber(page_number) => ((page_number.get() - 1) * limit) as i64,
-        PagingOptionsEnum::FromId(tx_id) => tx_id,
+        PagingOptionsEnum::FromId(tx_id) => {
+            if tx_id > total_tx_count as i64 {
+                return MmError::err(ZTxHistoryError::FromIdDoesNotExist(tx_id));
+            }
+            (total_tx_count as i64 - tx_id) + 1
+        },
     };
 
     // Fetch transactions
