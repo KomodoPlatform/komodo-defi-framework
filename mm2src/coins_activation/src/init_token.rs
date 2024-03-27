@@ -40,7 +40,7 @@ pub struct InitTokenReq<T> {
     activation_params: T,
 }
 
-/// Trait for the initializing an EVM token using the task manager.
+/// Trait for the initializing a token using the task manager.
 #[async_trait]
 pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sync + 'static {
     type ActivationRequest: Clone + Send + Sync;
