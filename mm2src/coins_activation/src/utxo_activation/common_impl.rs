@@ -73,8 +73,7 @@ where
     Ok(result)
 }
 
-pub(crate) fn xpub_extractor_rpc_statuses(
-) -> HwConnectStatuses<UtxoStandardInProgressStatus, UtxoStandardAwaitingStatus> {
+fn xpub_extractor_rpc_statuses() -> HwConnectStatuses<UtxoStandardInProgressStatus, UtxoStandardAwaitingStatus> {
     HwConnectStatuses {
         on_connect: UtxoStandardInProgressStatus::WaitingForTrezorToConnect,
         on_connected: UtxoStandardInProgressStatus::ActivatingCoin,

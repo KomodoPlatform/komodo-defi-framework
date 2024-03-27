@@ -1,6 +1,6 @@
 use crate::context::CoinsActivationContext;
-use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       InitPlatformCoinWithTokensAwaitingStatus,
+use crate::platform_coin_with_tokens::{platform_coin_xpub_extractor_rpc_statuses, EnablePlatformCoinWithTokensError,
+                                       GetPlatformBalance, InitPlatformCoinWithTokensAwaitingStatus,
                                        InitPlatformCoinWithTokensInProgressStatus,
                                        InitPlatformCoinWithTokensTaskManagerShared,
                                        InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
@@ -22,7 +22,6 @@ use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod,
 use crate::platform_coin_with_tokens::InitPlatformCoinWithTokensTask;
 use common::Future01CompatExt;
 use common::{drop_mutability, true_f};
-use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::HwRpcError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -34,6 +33,8 @@ use rpc_task::RpcTaskHandleShared;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
+
+pub type EthTaskManagerShared = InitPlatformCoinWithTokensTaskManagerShared<EthCoin>;
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {
@@ -404,7 +405,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                         RpcTaskXPubExtractor::new_trezor_extractor(
                             &ctx,
                             task_handle,
-                            eth_xpub_extractor_rpc_statuses(),
+                            platform_coin_xpub_extractor_rpc_statuses(),
                             CoinProtocol::ETH,
                         )
                         .map_err(|_| MmError::new(EthActivationV2Error::HwError(HwRpcError::NotInitialized)))?,
@@ -467,20 +468,5 @@ fn eth_priv_key_build_policy(
             Ok(EthPrivKeyBuildPolicy::Metamask(metamask_ctx))
         },
         EthPrivKeyActivationPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
-    }
-}
-
-pub type EthTaskManagerShared = InitPlatformCoinWithTokensTaskManagerShared<EthCoin>;
-
-pub(crate) fn eth_xpub_extractor_rpc_statuses(
-) -> HwConnectStatuses<InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensAwaitingStatus> {
-    HwConnectStatuses {
-        on_connect: InitPlatformCoinWithTokensInProgressStatus::WaitingForTrezorToConnect,
-        on_connected: InitPlatformCoinWithTokensInProgressStatus::ActivatingCoin,
-        on_connection_failed: InitPlatformCoinWithTokensInProgressStatus::Finishing,
-        on_button_request: InitPlatformCoinWithTokensInProgressStatus::FollowHwDeviceInstructions,
-        on_pin_request: InitPlatformCoinWithTokensAwaitingStatus::EnterTrezorPin,
-        on_passphrase_request: InitPlatformCoinWithTokensAwaitingStatus::EnterTrezorPassphrase,
-        on_ready: InitPlatformCoinWithTokensInProgressStatus::ActivatingCoin,
     }
 }

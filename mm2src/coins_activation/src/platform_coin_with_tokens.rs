@@ -8,7 +8,7 @@ use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBui
 use coins::{lp_coinfind, lp_coinfind_any, CoinProtocol, CoinsContext, MmCoinEnum, PrivKeyPolicyNotAllowed,
             UnexpectedDerivationMethod};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
-use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
+use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -642,6 +642,19 @@ where
         .map_to_mm(|poison| CancelInitPlatformCoinWithTokensError::Internal(poison.to_string()))?;
     task_manager.cancel_task(req.task_id)?;
     Ok(SuccessResponse::new())
+}
+
+pub(crate) fn platform_coin_xpub_extractor_rpc_statuses(
+) -> HwConnectStatuses<InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensAwaitingStatus> {
+    HwConnectStatuses {
+        on_connect: InitPlatformCoinWithTokensInProgressStatus::WaitingForTrezorToConnect,
+        on_connected: InitPlatformCoinWithTokensInProgressStatus::ActivatingCoin,
+        on_connection_failed: InitPlatformCoinWithTokensInProgressStatus::Finishing,
+        on_button_request: InitPlatformCoinWithTokensInProgressStatus::FollowHwDeviceInstructions,
+        on_pin_request: InitPlatformCoinWithTokensAwaitingStatus::EnterTrezorPin,
+        on_passphrase_request: InitPlatformCoinWithTokensAwaitingStatus::EnterTrezorPassphrase,
+        on_ready: InitPlatformCoinWithTokensInProgressStatus::ActivatingCoin,
+    }
 }
 
 pub mod for_tests {
