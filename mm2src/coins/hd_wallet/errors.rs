@@ -4,14 +4,15 @@ use crypto::trezor::{TrezorError, TrezorProcessingError};
 use crypto::{Bip32DerPathError, Bip44Chain, CryptoCtxError, HwError, HwProcessingError, StandardHDPathError, XpubError};
 use rpc_task::RpcTaskError;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum AddressDerivingError {
     #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
     InvalidBip44Chain {
         chain: Bip44Chain,
     },
     #[display(fmt = "BIP32 address deriving error: {}", _0)]
-    Bip32Error(Bip32Error),
+    Bip32Error(String),
     Internal(String),
 }
 
@@ -20,7 +21,7 @@ impl From<InvalidBip44ChainError> for AddressDerivingError {
 }
 
 impl From<Bip32Error> for AddressDerivingError {
-    fn from(e: Bip32Error) -> Self { AddressDerivingError::Bip32Error(e) }
+    fn from(e: Bip32Error) -> Self { AddressDerivingError::Bip32Error(e.to_string()) }
 }
 
 #[derive(Display)]
@@ -30,7 +31,7 @@ pub enum NewAddressDerivingError {
     #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
     InvalidBip44Chain { chain: Bip44Chain },
     #[display(fmt = "BIP32 address deriving error: {}", _0)]
-    Bip32Error(Bip32Error),
+    Bip32Error(String),
     #[display(fmt = "Wallet storage error: {}", _0)]
     WalletStorageError(HDWalletStorageError),
     #[display(fmt = "Internal error: {}", _0)]
@@ -38,7 +39,7 @@ pub enum NewAddressDerivingError {
 }
 
 impl From<Bip32Error> for NewAddressDerivingError {
-    fn from(e: Bip32Error) -> Self { NewAddressDerivingError::Bip32Error(e) }
+    fn from(e: Bip32Error) -> Self { NewAddressDerivingError::Bip32Error(e.to_string()) }
 }
 
 impl From<AddressDerivingError> for NewAddressDerivingError {

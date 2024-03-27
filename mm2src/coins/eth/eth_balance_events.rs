@@ -11,7 +11,7 @@ use mm2_err_handle::prelude::MmError;
 use mm2_event_stream::{behaviour::{EventBehaviour, EventInitStatus},
                        Event, EventStreamConfiguration};
 use mm2_number::BigDecimal;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::EthCoin;
 use crate::{eth::{u256_to_big_decimal, Erc20TokenInfo},
@@ -33,7 +33,7 @@ type BalanceResult = Result<BalanceData, BalanceFetchError>;
 /// This implementation differs from others, as they immediately return
 /// an error if any of the requests fails. This one completes all futures
 /// and returns their results individually.
-async fn get_all_balance_results_concurrently(coin: &EthCoin) -> Vec<BalanceResult> {
+async fn get_all_balance_results_concurrently(coin: &EthCoin, addresses: HashSet<Address>) -> Vec<BalanceResult> {
     let mut tokens = coin.get_erc_tokens_infos();
     // Workaround for performance purposes.
     //
@@ -46,17 +46,6 @@ async fn get_all_balance_results_concurrently(coin: &EthCoin) -> Vec<BalanceResu
         decimals: coin.decimals,
     });
     drop_mutability!(tokens);
-
-    let addresses = match coin.my_addresses().await {
-        Ok(addresses) => addresses,
-        Err(e) => {
-            return vec![Err(BalanceFetchError {
-                ticker: coin.ticker.clone(),
-                address: "".to_string(),
-                error: e.into(),
-            })];
-        },
-    };
 
     let mut all_jobs = FuturesUnordered::new();
 
@@ -127,13 +116,42 @@ impl EventBehaviour for EthCoin {
         const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
 
         async fn start_polling(coin: EthCoin, ctx: MmArc, interval: f64) {
+            async fn sleep_remaining_time(interval: f64, now: Instant) {
+                // If the interval is x seconds,
+                // our goal is to broadcast changed balances every x seconds.
+                // To achieve this, we need to subtract the time complexity of each iteration.
+                // Given that an iteration already takes 80% of the interval,
+                // this will lead to inconsistency in the events.
+                let remaining_time = interval - now.elapsed().as_secs_f64();
+                // Not worth to make a call for less than `0.1` durations
+                if remaining_time >= 0.1 {
+                    Timer::sleep(remaining_time).await;
+                }
+            }
+
             let mut cache: HashMap<String, HashMap<String, BigDecimal>> = HashMap::new();
 
             loop {
                 let now = Instant::now();
 
+                let addresses = match coin.my_addresses().await {
+                    Ok(addresses) => addresses,
+                    Err(e) => {
+                        log::error!("Failed getting addresses for {}. Error: {}", coin.ticker, e);
+                        let e = serde_json::to_value(e).expect("Serialization shouldn't fail.");
+                        ctx.stream_channel_controller
+                            .broadcast(Event::new(
+                                format!("{}:{}", EthCoin::ERROR_EVENT_NAME, coin.ticker),
+                                e.to_string(),
+                            ))
+                            .await;
+                        sleep_remaining_time(interval, now).await;
+                        continue;
+                    },
+                };
+
                 let mut balance_updates = vec![];
-                for result in get_all_balance_results_concurrently(&coin).await {
+                for result in get_all_balance_results_concurrently(&coin, addresses).await {
                     match result {
                         Ok(res) => {
                             if Some(&res.balance) == cache.get(&res.ticker).and_then(|map| map.get(&res.address)) {
@@ -157,7 +175,7 @@ impl EventBehaviour for EthCoin {
                                 err.address,
                                 err.error
                             );
-                            let e = serde_json::to_value(err.error).expect("Serialization should't fail.");
+                            let e = serde_json::to_value(err.error).expect("Serialization shouldn't fail.");
                             ctx.stream_channel_controller
                                 .broadcast(Event::new(
                                     format!("{}:{}:{}", EthCoin::ERROR_EVENT_NAME, err.ticker, err.address),
@@ -177,15 +195,7 @@ impl EventBehaviour for EthCoin {
                         .await;
                 }
 
-                // If the interval is x seconds, our goal is to broadcast changed balances every x seconds.
-                // To achieve this, we need to subtract the time complexity of each iteration.
-                // Given that an iteration already takes 80% of the interval, this will lead to inconsistency
-                // in the events.
-                let remaining_time = interval - now.elapsed().as_secs_f64();
-                // Not worth to make a call for less than `0.1` durations
-                if remaining_time >= 0.1 {
-                    Timer::sleep(remaining_time).await;
-                }
+                sleep_remaining_time(interval, now).await;
             }
         }
 

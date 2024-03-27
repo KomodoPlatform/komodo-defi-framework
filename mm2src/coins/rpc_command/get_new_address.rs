@@ -111,7 +111,7 @@ impl From<NewAddressDerivingError> for GetNewAddressRpcError {
                 GetNewAddressRpcError::AddressLimitReached { max_addresses_number }
             },
             NewAddressDerivingError::InvalidBip44Chain { chain } => GetNewAddressRpcError::InvalidBip44Chain { chain },
-            NewAddressDerivingError::Bip32Error(bip32) => GetNewAddressRpcError::Internal(bip32.to_string()),
+            NewAddressDerivingError::Bip32Error(bip32) => GetNewAddressRpcError::Internal(bip32),
             NewAddressDerivingError::WalletStorageError(storage) => {
                 GetNewAddressRpcError::WalletStorageError(storage.to_string())
             },
@@ -124,7 +124,7 @@ impl From<AddressDerivingError> for GetNewAddressRpcError {
     fn from(e: AddressDerivingError) -> Self {
         match e {
             AddressDerivingError::InvalidBip44Chain { chain } => GetNewAddressRpcError::InvalidBip44Chain { chain },
-            AddressDerivingError::Bip32Error(bip32) => GetNewAddressRpcError::ErrorDerivingAddress(bip32.to_string()),
+            AddressDerivingError::Bip32Error(bip32) => GetNewAddressRpcError::ErrorDerivingAddress(bip32),
             AddressDerivingError::Internal(internal) => GetNewAddressRpcError::Internal(internal),
         }
     }
