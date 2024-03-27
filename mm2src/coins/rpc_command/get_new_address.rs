@@ -7,6 +7,7 @@ use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinBalanceMap, CoinF
 use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
+use crypto::trezor::TrezorMessageType;
 use crypto::{from_hw_error, Bip44Chain, HwError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
@@ -148,6 +149,9 @@ impl From<HDConfirmAddressError> for GetNewAddressRpcError {
             HDConfirmAddressError::InvalidAddress { expected, found } => GetNewAddressRpcError::Internal(format!(
                 "Confirmation address mismatched: expected '{expected}, found '{found}''"
             )),
+            HDConfirmAddressError::NoAddressReceived => {
+                GetNewAddressRpcError::Internal("No address received".to_string())
+            },
             HDConfirmAddressError::Internal(internal) => GetNewAddressRpcError::Internal(internal),
         }
     }
@@ -296,6 +300,7 @@ impl RpcTask for InitGetNewAddressTask {
             coin: &Coin,
             params: GetNewAddressParams,
             task_handle: GetNewAddressTaskHandleShared,
+            trezor_message_type: TrezorMessageType,
         ) -> MmResult<GetNewAddressResponse<<Coin as GetNewAddressRpcOps>::BalanceMap>, GetNewAddressRpcError>
         where
             Coin: GetNewAddressRpcOps + Send + Sync,
@@ -310,19 +315,40 @@ impl RpcTask for InitGetNewAddressTask {
                 on_ready: GetNewAddressInProgressStatus::RequestingAccountBalance,
             };
             let confirm_address: RpcTaskConfirmAddress<InitGetNewAddressTask> =
-                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses)?;
+                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses, trezor_message_type)?;
             coin.get_new_address_rpc(params, &confirm_address).await
         }
 
         match self.coin {
             MmCoinEnum::UtxoCoin(ref utxo) => Ok(GetNewAddressResponseEnum::Single(
-                get_new_address_helper(&self.ctx, utxo, self.req.params.clone(), task_handle).await?,
+                get_new_address_helper(
+                    &self.ctx,
+                    utxo,
+                    self.req.params.clone(),
+                    task_handle,
+                    TrezorMessageType::Bitcoin,
+                )
+                .await?,
             )),
             MmCoinEnum::QtumCoin(ref qtum) => Ok(GetNewAddressResponseEnum::Single(
-                get_new_address_helper(&self.ctx, qtum, self.req.params.clone(), task_handle).await?,
+                get_new_address_helper(
+                    &self.ctx,
+                    qtum,
+                    self.req.params.clone(),
+                    task_handle,
+                    TrezorMessageType::Bitcoin,
+                )
+                .await?,
             )),
             MmCoinEnum::EthCoin(ref eth) => Ok(GetNewAddressResponseEnum::Map(
-                get_new_address_helper(&self.ctx, eth, self.req.params.clone(), task_handle).await?,
+                get_new_address_helper(
+                    &self.ctx,
+                    eth,
+                    self.req.params.clone(),
+                    task_handle,
+                    TrezorMessageType::Ethereum,
+                )
+                .await?,
             )),
             _ => MmError::err(GetNewAddressRpcError::CoinIsActivatedNotWithHDWallet),
         }

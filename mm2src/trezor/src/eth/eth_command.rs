@@ -65,10 +65,11 @@ impl<'a> TrezorSession<'a> {
     pub async fn get_eth_address<'b>(
         &'b mut self,
         derivation_path: DerivationPath,
+        show_display: bool,
     ) -> TrezorResult<TrezorResponse<'a, 'b, Option<String>>> {
         let req = proto_ethereum::EthereumGetAddress {
             address_n: derivation_path.iter().map(|child| child.0).collect(),
-            show_display: None,
+            show_display: Some(show_display),
             encoded_network: None,
             chunkify: None,
         };
