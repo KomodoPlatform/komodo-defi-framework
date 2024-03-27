@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use coins::coin_balance::CoinBalanceReport;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinBalanceMap, CoinProtocol, CoinsContext, MmCoinEnum, RegisterCoinError};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
-use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
+use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::HwRpcError;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -269,6 +269,19 @@ pub enum InitTokenInProgressStatus {
 
 impl InitTokenInitialStatus for InitTokenInProgressStatus {
     fn initial_status() -> Self { InitTokenInProgressStatus::ActivatingCoin }
+}
+
+pub(crate) fn token_xpub_extractor_rpc_statuses(
+) -> HwConnectStatuses<InitTokenInProgressStatus, InitTokenAwaitingStatus> {
+    HwConnectStatuses {
+        on_connect: InitTokenInProgressStatus::WaitingForTrezorToConnect,
+        on_connected: InitTokenInProgressStatus::ActivatingCoin,
+        on_connection_failed: InitTokenInProgressStatus::Finishing,
+        on_button_request: InitTokenInProgressStatus::FollowHwDeviceInstructions,
+        on_pin_request: InitTokenAwaitingStatus::EnterTrezorPin,
+        on_passphrase_request: InitTokenAwaitingStatus::EnterTrezorPassphrase,
+        on_ready: InitTokenInProgressStatus::ActivatingCoin,
+    }
 }
 
 #[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]

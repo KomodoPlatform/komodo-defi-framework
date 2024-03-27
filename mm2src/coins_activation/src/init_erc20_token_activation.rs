@@ -1,7 +1,7 @@
 use crate::context::CoinsActivationContext;
-use crate::init_token::{InitTokenActivationOps, InitTokenActivationResult, InitTokenAwaitingStatus, InitTokenError,
-                        InitTokenInProgressStatus, InitTokenTaskHandleShared, InitTokenTaskManagerShared,
-                        InitTokenUserAction};
+use crate::init_token::{token_xpub_extractor_rpc_statuses, InitTokenActivationOps, InitTokenActivationResult,
+                        InitTokenAwaitingStatus, InitTokenError, InitTokenInProgressStatus, InitTokenTaskHandleShared,
+                        InitTokenTaskManagerShared, InitTokenUserAction};
 use async_trait::async_trait;
 use coins::coin_balance::{EnableCoinBalanceError, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{Erc20Protocol, EthTokenActivationError, InitErc20TokenActivationRequest};
@@ -9,7 +9,6 @@ use coins::eth::EthCoin;
 use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::{MarketCoinOps, MmCoin, RegisterCoinError};
 use common::Future01CompatExt;
-use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::HwRpcError;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -149,7 +148,7 @@ impl InitTokenActivationOps for EthCoin {
                 RpcTaskXPubExtractor::new_trezor_extractor(
                     &ctx,
                     task_handle.clone(),
-                    erc20_xpub_extractor_rpc_statuses(),
+                    token_xpub_extractor_rpc_statuses(),
                     protocol_conf.into(),
                 )
                 .mm_err(|_| InitErc20Error::HwError(HwRpcError::NotInitialized))?,
@@ -180,18 +179,5 @@ impl InitTokenActivationOps for EthCoin {
             required_confirmations: self.required_confirmations(),
             wallet_balance,
         })
-    }
-}
-
-pub(crate) fn erc20_xpub_extractor_rpc_statuses(
-) -> HwConnectStatuses<InitTokenInProgressStatus, InitTokenAwaitingStatus> {
-    HwConnectStatuses {
-        on_connect: InitTokenInProgressStatus::WaitingForTrezorToConnect,
-        on_connected: InitTokenInProgressStatus::ActivatingCoin,
-        on_connection_failed: InitTokenInProgressStatus::Finishing,
-        on_button_request: InitTokenInProgressStatus::FollowHwDeviceInstructions,
-        on_pin_request: InitTokenAwaitingStatus::EnterTrezorPin,
-        on_passphrase_request: InitTokenAwaitingStatus::EnterTrezorPassphrase,
-        on_ready: InitTokenInProgressStatus::ActivatingCoin,
     }
 }
