@@ -1,6 +1,6 @@
 use crate::eth::{CoinAssocTypesError, Erc721FunctionError, HtlcParamsError, NftAssocTypesError, PaymentStatusErr};
-use crate::{eth::Web3RpcError, my_tx_history_v2::MyTxHistoryErrorV2, utxo::rpc_clients::UtxoRpcError, DelegationError,
-            NumConversError, TxHistoryError, UnexpectedDerivationMethod, WithdrawError};
+use crate::{eth::Web3RpcError, utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
+use enum_derives::EnumFromStringify;
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
@@ -12,11 +12,20 @@ pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<Valida
 pub type ValidatePaymentResult<T> = Result<T, MmError<ValidatePaymentError>>;
 
 /// Enum covering possible error cases of swap payment validation
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum ValidatePaymentError {
     /// Should be used to indicate internal MM2 state problems (e.g., DB errors, etc.).
+    #[from_stringify(
+        "CoinAssocTypesError",
+        "Erc721FunctionError",
+        "NftAssocTypesError",
+        "NumConversError",
+        "UnexpectedDerivationMethod",
+        "keys::Error"
+    )]
     InternalError(String),
     /// Problem with deserializing the transaction, or one of the transaction parts is invalid.
+    #[from_stringify("rlp::DecoderError", "serialization::Error")]
     TxDeserializationError(String),
     /// One of the input parameters is invalid.
     InvalidParameter(String),
@@ -29,6 +38,7 @@ pub enum ValidatePaymentError {
     /// Payment transaction is in unexpected state. E.g., `Uninitialized` instead of `Sent` for ETH payment.
     UnexpectedPaymentState(String),
     /// Transport (RPC) error.
+    #[from_stringify("web3::Error")]
     Transport(String),
     /// Transaction has wrong properties, for example, it has been sent to a wrong address.
     WrongPaymentTx(String),
@@ -40,28 +50,8 @@ pub enum ValidatePaymentError {
     NftProtocolNotSupported,
 }
 
-impl From<rlp::DecoderError> for ValidatePaymentError {
-    fn from(err: rlp::DecoderError) -> Self { Self::TxDeserializationError(err.to_string()) }
-}
-
-impl From<web3::Error> for ValidatePaymentError {
-    fn from(err: web3::Error) -> Self { Self::Transport(err.to_string()) }
-}
-
-impl From<NumConversError> for ValidatePaymentError {
-    fn from(err: NumConversError) -> Self { Self::InternalError(err.to_string()) }
-}
-
 impl From<SPVError> for ValidatePaymentError {
     fn from(err: SPVError) -> Self { Self::SPVError(err) }
-}
-
-impl From<serialization::Error> for ValidatePaymentError {
-    fn from(err: serialization::Error) -> Self { Self::TxDeserializationError(err.to_string()) }
-}
-
-impl From<UnexpectedDerivationMethod> for ValidatePaymentError {
-    fn from(err: UnexpectedDerivationMethod) -> Self { Self::InternalError(err.to_string()) }
 }
 
 impl From<UtxoRpcError> for ValidatePaymentError {
@@ -87,18 +77,6 @@ impl From<Web3RpcError> for ValidatePaymentError {
     }
 }
 
-impl From<keys::Error> for ValidatePaymentError {
-    fn from(err: keys::Error) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<NftAssocTypesError> for ValidatePaymentError {
-    fn from(err: NftAssocTypesError) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<CoinAssocTypesError> for ValidatePaymentError {
-    fn from(err: CoinAssocTypesError) -> Self { Self::InternalError(err.to_string()) }
-}
-
 impl From<PaymentStatusErr> for ValidatePaymentError {
     fn from(err: PaymentStatusErr) -> Self {
         match err {
@@ -110,10 +88,6 @@ impl From<PaymentStatusErr> for ValidatePaymentError {
     }
 }
 
-impl From<Erc721FunctionError> for ValidatePaymentError {
-    fn from(err: Erc721FunctionError) -> Self { Self::InternalError(err.to_string()) }
-}
-
 impl From<HtlcParamsError> for ValidatePaymentError {
     fn from(err: HtlcParamsError) -> Self {
         match err {
@@ -123,32 +97,9 @@ impl From<HtlcParamsError> for ValidatePaymentError {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum MyAddressError {
+    #[from_stringify("UnexpectedDerivationMethod")]
     UnexpectedDerivationMethod(String),
     InternalError(String),
-}
-
-impl From<UnexpectedDerivationMethod> for MyAddressError {
-    fn from(err: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(err.to_string()) }
-}
-
-impl From<MyAddressError> for WithdrawError {
-    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<MyAddressError> for UtxoRpcError {
-    fn from(err: MyAddressError) -> Self { Self::Internal(err.to_string()) }
-}
-
-impl From<MyAddressError> for DelegationError {
-    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<MyAddressError> for TxHistoryError {
-    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<MyAddressError> for MyTxHistoryErrorV2 {
-    fn from(err: MyAddressError) -> Self { Self::Internal(err.to_string()) }
 }

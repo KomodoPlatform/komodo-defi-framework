@@ -208,20 +208,17 @@ pub type GasStationResult = Result<GasStationData, MmError<GasStationReqErr>>;
 type EthPrivKeyPolicy = PrivKeyPolicy<KeyPair>;
 type GasDetails = (U256, U256);
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum GasStationReqErr {
     #[display(fmt = "Transport '{}' error: {}", uri, error)]
     Transport {
         uri: String,
         error: String,
     },
+    #[from_stringify("serde_json::Error")]
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
     Internal(String),
-}
-
-impl From<serde_json::Error> for GasStationReqErr {
-    fn from(e: serde_json::Error) -> Self { GasStationReqErr::InvalidResponse(e.to_string()) }
 }
 
 impl From<SlurpError> for GasStationReqErr {
@@ -237,10 +234,11 @@ impl From<SlurpError> for GasStationReqErr {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum Web3RpcError {
     #[display(fmt = "Transport: {}", _0)]
     Transport(String),
+    #[from_stringify("serde_json::Error")]
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
     #[display(fmt = "Timeout: {}", _0)]
@@ -261,10 +259,6 @@ impl From<GasStationReqErr> for Web3RpcError {
     }
 }
 
-impl From<serde_json::Error> for Web3RpcError {
-    fn from(e: serde_json::Error) -> Self { Web3RpcError::InvalidResponse(e.to_string()) }
-}
-
 impl From<web3::Error> for Web3RpcError {
     fn from(e: web3::Error) -> Self {
         let error_str = e.to_string();
@@ -278,10 +272,6 @@ impl From<web3::Error> for Web3RpcError {
             _ => Web3RpcError::Internal(error_str),
         }
     }
-}
-
-impl From<web3::Error> for RawTransactionError {
-    fn from(e: web3::Error) -> Self { RawTransactionError::Transport(e.to_string()) }
 }
 
 impl From<Web3RpcError> for RawTransactionError {

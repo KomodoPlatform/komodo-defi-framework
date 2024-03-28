@@ -4,7 +4,8 @@
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetConfirmedTxError, GetTxError,
                   GetTxHeightError, ScripthashNotification};
-use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
+use crate::{big_decimal_from_sat_unsigned, MyAddressError, NumConversError, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared};
 use async_trait::async_trait;
 use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx, TransactionInput,
             TxHashAlgo};
@@ -18,6 +19,7 @@ use common::log::{debug, LogOnError};
 use common::log::{error, info, warn};
 use common::{median, now_float, now_ms, now_sec, OrdRange};
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use futures::channel::oneshot as async_oneshot;
 use futures::compat::{Future01CompatExt, Stream01CompatExt};
 use futures::future::{join_all, FutureExt, TryFutureExt};
@@ -292,11 +294,12 @@ pub struct SpentOutputInfo {
 pub type UtxoRpcResult<T> = Result<T, MmError<UtxoRpcError>>;
 pub type UtxoRpcFut<T> = Box<dyn Future<Item = T, Error = MmError<UtxoRpcError>> + Send + 'static>;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum UtxoRpcError {
     Transport(JsonRpcError),
     ResponseParseError(JsonRpcError),
     InvalidResponse(String),
+    #[from_stringify("MyAddressError")]
     Internal(String),
 }
 
