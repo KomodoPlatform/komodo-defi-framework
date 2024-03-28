@@ -42,6 +42,10 @@ async fn get_all_balance_results_concurrently(coin: &EthCoin, addresses: HashSet
     // the platform coin to Erc20TokenInfo so that we can use the token list right away without
     // additional mapping.
     tokens.insert(coin.ticker.clone(), Erc20TokenInfo {
+        // This is a dummy value, since there is no token address for the platform coin.
+        // In the fetch_balance function, we check if the token_ticker is equal to this
+        // coin's ticker to avoid using token_address to fetch the balance
+        // and to use address_balance instead.
         token_address: Address::default(),
         decimals: coin.decimals,
     });

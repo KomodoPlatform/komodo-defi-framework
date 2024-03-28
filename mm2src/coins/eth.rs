@@ -494,9 +494,13 @@ pub struct Web3Instance {
     is_parity: bool,
 }
 
+/// Information about a token that follows the ERC20 protocol on an EVM-based network.
 #[derive(Clone, Debug)]
 pub struct Erc20TokenInfo {
+    /// The contract address of the token on the EVM-based network.
     pub token_address: Address,
+    /// The number of decimal places the token uses.
+    /// This represents the smallest unit that the token can be divided into.
     pub decimals: u8,
 }
 
