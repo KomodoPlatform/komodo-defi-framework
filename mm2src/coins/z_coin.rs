@@ -1043,7 +1043,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
             z_spending_key,
             z_tx_prover: Arc::new(z_tx_prover),
             light_wallet_db,
-            consensus_params: self.protocol_info.consensus_params.clone(),
+            consensus_params: self.protocol_info.consensus_params,
             sync_state_connector,
             z_balance_event_handler,
         });
