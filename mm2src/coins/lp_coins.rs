@@ -294,7 +294,6 @@ use script::Script;
 
 pub mod z_coin;
 use crate::coin_errors::ValidatePaymentResult;
-use crate::eth::{Erc721FunctionError, NftAssocTypesError};
 use crate::utxo::swap_proto_v2_scripts;
 use crate::utxo::utxo_common::{payment_script, WaitForOutputSpendErr};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
@@ -638,9 +637,6 @@ pub enum TransactionErr {
     #[from_stringify("keys::Error")]
     Plain(String),
     ProtocolNotSupported(String),
-    #[from_stringify("NftAssocTypesError")]
-    NftAssocTypesError(String),
-    NumConversError(NumConversError),
 }
 
 impl TransactionErr {
@@ -658,22 +654,7 @@ impl TransactionErr {
     pub fn get_plain_text_format(&self) -> String {
         match self {
             TransactionErr::TxRecoverable(_, err) => err.to_string(),
-            TransactionErr::Plain(err)
-            | TransactionErr::ProtocolNotSupported(err)
-            | TransactionErr::NftAssocTypesError(err) => err.to_string(),
-            TransactionErr::NumConversError(err) => err.to_string(),
-        }
-    }
-}
-
-impl From<NumConversError> for TransactionErr {
-    fn from(e: NumConversError) -> Self { TransactionErr::NumConversError(e) }
-}
-
-impl From<Erc721FunctionError> for TransactionErr {
-    fn from(e: Erc721FunctionError) -> Self {
-        match e {
-            Erc721FunctionError::AbiError(e) | Erc721FunctionError::FunctionNotFound(e) => Self::Plain(e),
+            TransactionErr::Plain(err) | TransactionErr::ProtocolNotSupported(err) => err.to_string(),
         }
     }
 }
