@@ -61,7 +61,7 @@ macro_rules! trim_left {
 }
 
 impl<'a> TrezorSession<'a> {
-    /// Unused for now. Added for future use like implementation of an rpc returning eth address
+    /// Retrieves the EVM address associated with a given derivation path from the Trezor device.
     pub async fn get_eth_address<'b>(
         &'b mut self,
         derivation_path: DerivationPath,
@@ -77,6 +77,7 @@ impl<'a> TrezorSession<'a> {
         self.call(req, result_handler).await
     }
 
+    /// Retrieves the EVM public key associated with a given derivation path from the Trezor device.
     pub async fn get_eth_public_key<'b>(
         &'b mut self,
         derivation_path: &DerivationPath,
@@ -90,6 +91,7 @@ impl<'a> TrezorSession<'a> {
         self.call(req, result_handler).await
     }
 
+    /// Signs a transaction for any EVM-based chain using the Trezor device.
     pub async fn sign_eth_tx(
         &mut self,
         derivation_path: &DerivationPath,
