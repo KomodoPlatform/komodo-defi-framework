@@ -1471,7 +1471,7 @@ pub trait NftAssocTypes {
     type ContractType: ToBytes + Send + Sync;
     type ContractTypeParseError: fmt::Debug + Send + fmt::Display;
 
-    fn parse_token_contract_address(
+    fn parse_contract_address(
         &self,
         token_contract_addr: &[u8],
     ) -> Result<Self::TokenContractAddr, Self::TokenContractAddrParseError>;

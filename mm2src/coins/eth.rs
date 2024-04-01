@@ -6299,7 +6299,7 @@ impl NftAssocTypes for EthCoin {
     type ContractType = ContractType;
     type ContractTypeParseError = NftAssocTypesError;
 
-    fn parse_token_contract_address(
+    fn parse_contract_address(
         &self,
         token_contract_addr: &[u8],
     ) -> Result<Self::TokenContractAddr, Self::TokenContractAddrParseError> {
@@ -6370,8 +6370,8 @@ impl EthCoin {
         ));
 
         let taker_address = try_tx_s!(addr_from_raw_pubkey(args.taker_pub));
-        let token_address = try_tx_s!(self.parse_token_contract_address(args.token_address));
-        let swap_contract_address = try_tx_s!(self.parse_token_contract_address(args.swap_contract_address));
+        let token_address = try_tx_s!(self.parse_contract_address(args.token_address));
+        let swap_contract_address = try_tx_s!(self.parse_contract_address(args.swap_contract_address));
         let time_lock_u32 = try_tx_s!(args.time_lock.try_into());
         let token_id_u256 = U256::from(args.token_id);
         let htlc_data = self.prepare_htlc_data(&args, taker_address, token_address, time_lock_u32);
@@ -6497,8 +6497,8 @@ impl EthCoin {
             &contract_type,
         )
         .map_err(ValidatePaymentError::InternalError)?;
-        let etomic_swap_contract = self.parse_token_contract_address(args.swap_contract_address)?;
-        let token_address = self.parse_token_contract_address(args.token_address)?;
+        let etomic_swap_contract = self.parse_contract_address(args.swap_contract_address)?;
+        let token_address = self.parse_contract_address(args.token_address)?;
         let maker_address = addr_from_raw_pubkey(args.maker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
         let time_lock_u32 = args
             .time_lock
@@ -6607,7 +6607,7 @@ impl EthCoin {
 
     async fn payment_status_v2(
         &self,
-        swap_contract_addr: Address,
+        swap_contract: Address,
         swap_id: Token,
         contract: &Contract,
         state_type: StateType,
@@ -6615,7 +6615,7 @@ impl EthCoin {
         let function_name = state_type.as_str();
         let function = contract.function(function_name)?;
         let data = function.encode_input(&[swap_id])?;
-        let bytes = self.call_request(swap_contract_addr, None, Some(data.into())).await?;
+        let bytes = self.call_request(swap_contract, None, Some(data.into())).await?;
         let decoded_tokens = function.decode_output(&bytes.0)?;
         let state = decoded_tokens.get(2).ok_or_else(|| {
             PaymentStatusErr::Internal("Payment status must contain 'state' as the 2nd token".to_string())
@@ -6634,7 +6634,7 @@ impl EthCoin {
         args: SpendNftMakerPaymentArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
         let contract_type = try_tx_s!(self.parse_contract_type(args.contract_type));
-        let etomic_swap_contract = try_tx_s!(self.parse_token_contract_address(args.swap_contract_address));
+        let etomic_swap_contract = try_tx_s!(self.parse_contract_address(args.swap_contract_address));
         if args.maker_secret.len() != 32 {
             return Err(TransactionErr::Plain(ERRL!("maker_secret must be 32 bytes")));
         }
@@ -6726,7 +6726,7 @@ impl EthCoin {
 
     async fn status_and_htlc_params_from_tx_data(
         &self,
-        swap_contract_addr: Address,
+        swap_contract: Address,
         contract: &Contract,
         decoded_data: &[Token],
         index: usize,
@@ -6735,7 +6735,7 @@ impl EthCoin {
         if let Some(Token::Bytes(data_bytes)) = decoded_data.get(index) {
             if let Ok(htlc_params) = ethabi::decode(htlc_params(), data_bytes) {
                 let state = self
-                    .payment_status_v2(swap_contract_addr, htlc_params[0].clone(), contract, state_type)
+                    .payment_status_v2(swap_contract, htlc_params[0].clone(), contract, state_type)
                     .await?;
                 Ok((state, htlc_params))
             } else {
