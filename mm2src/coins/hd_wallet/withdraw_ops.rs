@@ -54,15 +54,7 @@ pub struct WithdrawSenderAddress<Address, Pubkey> {
 #[async_trait]
 pub trait HDCoinWithdrawOps: HDWalletCoinOps {
     /// Fetches the sender address for a withdraw operation.
-    ///
-    /// # Parameters
-    ///
-    /// * `hd_wallet`: The HD wallet from which the withdraw is being made.
-    /// * `from`: The address id or the derivation path of the sender address.
-    ///
-    /// # Returns
-    ///
-    /// A struct representing the sender address or an error if the address is not activated.
+    /// This is the address from which the funds will be withdrawn.
     async fn get_withdraw_hd_sender(
         &self,
         hd_wallet: &Self::HDWallet,

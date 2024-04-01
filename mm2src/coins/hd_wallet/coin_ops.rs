@@ -20,17 +20,10 @@ pub struct HDAddressId {
 /// This trait outlines fundamental operations like address derivation, account creation, and more.
 #[async_trait]
 pub trait HDWalletCoinOps {
-    /// The type representing the HD Wallet operations associated with this coin.
+    /// Any type that represents a Hierarchical Deterministic (HD) wallet.
     type HDWallet: HDWalletOps + HDWalletStorageOps + Send + Sync;
 
-    /// Derives an address for the coin that implements this trait from an extended public key.
-    ///
-    /// # Parameters
-    /// - `extended_pubkey`: The extended public key from which the address will be derived.
-    /// - `derivation_path`: The derivation path of the address.
-    ///
-    /// # Returns
-    /// A result containing the derived `HDCoinHDAddress<Self>` instance or an error.
+    /// Derives an address for the coin that implements this trait from an extended public key and a derivation path.
     fn address_from_extended_pubkey(
         &self,
         extended_pubkey: &Secp256k1ExtendedPublicKey,
@@ -38,14 +31,6 @@ pub trait HDWalletCoinOps {
     ) -> HDCoinHDAddress<Self>;
 
     /// Retrieves an HD address from the cache or derives it if it hasn't been derived yet.
-    ///
-    /// # Parameters
-    /// - `hd_account`: The HD account from which the address will be derived.
-    /// - `hd_addresses_cache`: The cache of derived addresses.
-    /// - `hd_address_id`: The unique address identifier.
-    ///
-    /// # Returns
-    /// A result containing the derived `HDCoinHDAddress<Self>` instance or an error.
     fn derive_address_with_cache(
         &self,
         hd_account: &HDCoinHDAccount<Self>,
@@ -77,14 +62,6 @@ pub trait HDWalletCoinOps {
     }
 
     /// Derives a single HD address for a given account, chain, and address identifier.
-    ///
-    /// # Parameters
-    /// - `hd_account`: The HD account from which the address will be derived.
-    /// - `chain`: The Bip44 chain identifier.
-    /// - `address_id`: The unique address identifier.
-    ///
-    /// # Returns
-    /// A result containing the derived `HDCoinHDAddress<Self>` instance or an error.
     async fn derive_address(
         &self,
         hd_account: &HDCoinHDAccount<Self>,
@@ -101,13 +78,6 @@ pub trait HDWalletCoinOps {
     }
 
     /// Derives a set of HD addresses for a coin using the specified HD account and address identifiers.
-    ///
-    /// # Parameters
-    /// - `hd_account`: The HD account associated with the addresses.
-    /// - `address_ids`: An iterator of `HDAddressId` items specifying which addresses to derive.
-    ///
-    /// # Returns
-    /// A result containing a vector of derived `HDCoinHDAddress<Self>` instances or an error.
     #[cfg(not(target_arch = "wasm32"))]
     async fn derive_addresses<Ids>(
         &self,
@@ -158,15 +128,8 @@ pub trait HDWalletCoinOps {
         Ok(result)
     }
 
-    /// Derives known HD addresses for a specific account and chain.
+    /// Retrieves or derives known HD addresses for a specific account and chain.
     /// Essentially, this retrieves addresses that have been interacted with in the past.
-    ///
-    /// # Parameters
-    /// - `hd_account`: The HD account from which to derive known addresses.
-    /// - `chain`: The Bip44 chain identifier.
-    ///
-    /// # Returns
-    /// A result containing a vector of previously generated `HDAddress<Self::Address, Self::Pubkey>` instances or an error.
     async fn derive_known_addresses(
         &self,
         hd_account: &HDCoinHDAccount<Self>,
@@ -180,14 +143,6 @@ pub trait HDWalletCoinOps {
     }
 
     /// Generates a new address for a coin and updates the corresponding number of used `hd_account` addresses.
-    ///
-    /// # Parameters
-    /// - `hd_wallet`: The specified HD wallet from which the address will be derived.
-    /// - `hd_account`: The mutable HD account.
-    /// - `chain`: The Bip44 chain identifier.
-    ///
-    /// # Returns
-    /// A result containing the generated `HDAddress<Self::Address, Self::Pubkey>` instance or an error.
     async fn generate_new_address(
         &self,
         hd_wallet: &Self::HDWallet,
@@ -208,15 +163,6 @@ pub trait HDWalletCoinOps {
     /// This method prompts the user to verify if the derived address matches
     /// the hardware wallet display, ensuring security and accuracy when
     /// dealing with hardware wallets.
-    ///
-    /// # Parameters
-    /// - `hd_wallet`: The specified HD wallet.
-    /// - `hd_account`: The mutable HD account.
-    /// - `chain`: The Bip44 chain identifier.
-    /// - `confirm_address`: Address confirmation method.
-    ///
-    /// # Returns
-    /// A result containing the confirmed `HDAddress<Self::Address, Self::Pubkey>` instance or an error.
     async fn generate_and_confirm_new_address<ConfirmAddress>(
         &self,
         hd_wallet: &Self::HDWallet,
@@ -253,17 +199,8 @@ pub trait HDWalletCoinOps {
         Ok(hd_address)
     }
 
-    /// Updates the count of known addresses for a specified HD account and chain.
+    /// Updates the count of known addresses for a specified HD account and chain/change path.
     /// This is useful for tracking the number of created addresses.
-    ///
-    /// # Parameters
-    /// - `hd_wallet`: The specified HD wallet.
-    /// - `hd_account`: The mutable HD account to be updated.
-    /// - `chain`: The Bip44 chain identifier.
-    /// - `new_known_addresses_number`: The new count of known addresses.
-    ///
-    /// # Returns
-    /// A result indicating success or an error.
     async fn set_known_addresses_number(
         &self,
         hd_wallet: &Self::HDWallet,
