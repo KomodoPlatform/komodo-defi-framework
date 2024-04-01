@@ -24,10 +24,10 @@ pub type ScanAddressesRpcTaskStatus = RpcTaskStatus<
 
 /// Generic response for the `scan_for_new_addresses` RPC commands.
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct ScanAddressesResponse<BalanceMap> {
+pub struct ScanAddressesResponse<BalanceObject> {
     pub account_index: u32,
     pub derivation_path: RpcDerivationPath,
-    pub new_addresses: Vec<HDAddressBalance<BalanceMap>>,
+    pub new_addresses: Vec<HDAddressBalance<BalanceObject>>,
 }
 
 /// Enum for the response of the `scan_for_new_addresses` RPC commands.
@@ -61,12 +61,12 @@ pub enum ScanAddressesInProgressStatus {
 /// Trait for the `scan_for_new_addresses` RPC commands.
 #[async_trait]
 pub trait InitScanAddressesRpcOps {
-    type BalanceMap;
+    type BalanceObject;
 
     async fn init_scan_for_new_addresses_rpc(
         &self,
         params: ScanAddressesParams,
-    ) -> MmResult<ScanAddressesResponse<Self::BalanceMap>, HDAccountBalanceRpcError>;
+    ) -> MmResult<ScanAddressesResponse<Self::BalanceObject>, HDAccountBalanceRpcError>;
 }
 
 pub struct InitScanAddressesTask {
@@ -147,7 +147,7 @@ pub async fn cancel_scan_for_new_addresses(
 
 pub mod common_impl {
     use super::*;
-    use crate::coin_balance::{HDWalletBalanceMap, HDWalletBalanceOps};
+    use crate::coin_balance::{HDWalletBalanceObject, HDWalletBalanceOps};
     use crate::hd_wallet::{HDAccountOps, HDWalletOps};
     use crate::CoinWithDerivationMethod;
     use std::collections::HashSet;
@@ -156,7 +156,7 @@ pub mod common_impl {
     pub async fn scan_for_new_addresses_rpc<Coin>(
         coin: &Coin,
         params: ScanAddressesParams,
-    ) -> MmResult<ScanAddressesResponse<HDWalletBalanceMap<Coin>>, HDAccountBalanceRpcError>
+    ) -> MmResult<ScanAddressesResponse<HDWalletBalanceObject<Coin>>, HDAccountBalanceRpcError>
     where
         Coin: CoinWithDerivationMethod + HDWalletBalanceOps + Sync,
     {

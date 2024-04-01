@@ -1,4 +1,4 @@
-use crate::coin_balance::{BalanceMapOps, HDAccountBalance, HDAccountBalanceEnum};
+use crate::coin_balance::{BalanceObjectOps, HDAccountBalance, HDAccountBalanceEnum};
 use crate::hd_wallet::{HDExtractPubkeyError, HDXPubExtractor, NewAccountCreationError, RpcTaskXPubExtractor};
 use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinProtocol, CoinWithDerivationMethod, CoinsContext,
             MarketCoinOps, MmCoinEnum, UnexpectedDerivationMethod};
@@ -203,14 +203,14 @@ impl CreateAccountState {
 
 #[async_trait]
 pub trait InitCreateAccountRpcOps {
-    type BalanceMap;
+    type BalanceObject;
 
     async fn init_create_account_rpc<XPubExtractor>(
         &self,
         params: CreateNewAccountParams,
         state: CreateAccountState,
         xpub_extractor: Option<XPubExtractor>,
-    ) -> MmResult<HDAccountBalance<Self::BalanceMap>, CreateAccountRpcError>
+    ) -> MmResult<HDAccountBalance<Self::BalanceObject>, CreateAccountRpcError>
     where
         XPubExtractor: HDXPubExtractor + Send;
 
@@ -259,7 +259,7 @@ impl RpcTask for InitCreateAccountTask {
             task_handle: CreateAccountTaskHandleShared,
             is_trezor: bool,
             coin_protocol: CoinProtocol,
-        ) -> MmResult<HDAccountBalance<<Coin as InitCreateAccountRpcOps>::BalanceMap>, CreateAccountRpcError>
+        ) -> MmResult<HDAccountBalance<<Coin as InitCreateAccountRpcOps>::BalanceObject>, CreateAccountRpcError>
         where
             Coin: InitCreateAccountRpcOps + Send + Sync,
         {
@@ -386,7 +386,7 @@ pub async fn cancel_create_new_account(
 
 pub(crate) mod common_impl {
     use super::*;
-    use crate::coin_balance::{HDWalletBalanceMap, HDWalletBalanceOps};
+    use crate::coin_balance::{HDWalletBalanceObject, HDWalletBalanceOps};
     use crate::hd_wallet::{create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps,
                            HDCoinHDAccount, HDWalletOps};
     use crypto::Secp256k1ExtendedPublicKey;
@@ -396,7 +396,7 @@ pub(crate) mod common_impl {
         params: CreateNewAccountParams,
         state: CreateAccountState,
         xpub_extractor: Option<XPubExtractor>,
-    ) -> MmResult<HDAccountBalance<HDWalletBalanceMap<Coin>>, CreateAccountRpcError>
+    ) -> MmResult<HDAccountBalance<HDWalletBalanceObject<Coin>>, CreateAccountRpcError>
     where
         Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey>
             + HDWalletBalanceOps
@@ -426,7 +426,7 @@ pub(crate) mod common_impl {
 
         let total_balance = addresses
             .iter()
-            .fold(HDWalletBalanceMap::<Coin>::new(), |mut total, addr_balance| {
+            .fold(HDWalletBalanceObject::<Coin>::new(), |mut total, addr_balance| {
                 total.add(addr_balance.balance.clone());
                 total
             });

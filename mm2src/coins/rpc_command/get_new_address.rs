@@ -218,8 +218,8 @@ pub struct GetNewAddressParams {
 
 /// Generic response for the `get_new_address` RPC command.
 #[derive(Clone, Debug, Serialize)]
-pub struct GetNewAddressResponse<BalanceMap> {
-    new_address: HDAddressBalance<BalanceMap>,
+pub struct GetNewAddressResponse<BalanceObject> {
+    new_address: HDAddressBalance<BalanceObject>,
 }
 
 /// Enum for the response of the `get_new_address` RPC command.
@@ -253,21 +253,21 @@ impl ConfirmAddressStatus for GetNewAddressInProgressStatus {
 /// A trait for the `get_new_address` RPC commands.
 #[async_trait]
 pub trait GetNewAddressRpcOps {
-    type BalanceMap;
+    type BalanceObject;
 
     /// Generates a new address.
     /// TODO remove once GUI integrates `task::get_new_address::init`.
     async fn get_new_address_rpc_without_conf(
         &self,
         params: GetNewAddressParams,
-    ) -> MmResult<GetNewAddressResponse<Self::BalanceMap>, GetNewAddressRpcError>;
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceObject>, GetNewAddressRpcError>;
 
     /// Generates and asks the user to confirm a new address.
     async fn get_new_address_rpc<ConfirmAddress>(
         &self,
         params: GetNewAddressParams,
         confirm_address: &ConfirmAddress,
-    ) -> MmResult<GetNewAddressResponse<Self::BalanceMap>, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceObject>, GetNewAddressRpcError>
     where
         ConfirmAddress: HDConfirmAddress;
 }
@@ -301,7 +301,7 @@ impl RpcTask for InitGetNewAddressTask {
             params: GetNewAddressParams,
             task_handle: GetNewAddressTaskHandleShared,
             trezor_message_type: TrezorMessageType,
-        ) -> MmResult<GetNewAddressResponse<<Coin as GetNewAddressRpcOps>::BalanceMap>, GetNewAddressRpcError>
+        ) -> MmResult<GetNewAddressResponse<<Coin as GetNewAddressRpcOps>::BalanceObject>, GetNewAddressRpcError>
         where
             Coin: GetNewAddressRpcOps + Send + Sync,
         {
@@ -431,7 +431,7 @@ pub async fn cancel_get_new_address(
 
 pub(crate) mod common_impl {
     use super::*;
-    use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceMap, HDWalletBalanceOps};
+    use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceObject, HDWalletBalanceOps};
     use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDWalletOps};
     use crate::CoinWithDerivationMethod;
     use crypto::RpcDerivationPath;
@@ -445,7 +445,7 @@ pub(crate) mod common_impl {
     pub async fn get_new_address_rpc_without_conf<Coin>(
         coin: &Coin,
         params: GetNewAddressParams,
-    ) -> MmResult<GetNewAddressResponse<HDWalletBalanceMap<Coin>>, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<HDWalletBalanceObject<Coin>>, GetNewAddressRpcError>
     where
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Sync + Send,
         HDCoinAddress<Coin>: fmt::Display,
@@ -484,7 +484,7 @@ pub(crate) mod common_impl {
         coin: &Coin,
         params: GetNewAddressParams,
         confirm_address: &ConfirmAddress,
-    ) -> MmResult<GetNewAddressResponse<HDWalletBalanceMap<Coin>>, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<HDWalletBalanceObject<Coin>>, GetNewAddressRpcError>
     where
         ConfirmAddress: HDConfirmAddress,
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Send + Sync,

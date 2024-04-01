@@ -14,7 +14,7 @@ use std::{fmt, iter};
 
 pub type AddressIdRange = Range<u32>;
 pub(crate) type HDBalanceAddress<T> = <<T as HDWalletBalanceOps>::HDAddressScanner as HDAddressBalanceScanner>::Address;
-pub(crate) type HDWalletBalanceMap<T> = <T as HDWalletBalanceOps>::BalanceMap;
+pub(crate) type HDWalletBalanceObject<T> = <T as HDWalletBalanceOps>::BalanceObject;
 
 #[derive(Display)]
 pub enum EnableCoinBalanceError {
@@ -35,21 +35,21 @@ impl From<BalanceError> for EnableCoinBalanceError {
     fn from(e: BalanceError) -> Self { EnableCoinBalanceError::BalanceError(e) }
 }
 
-/// `BalanceMapOps` should be implemented for a type that represents balance/s of a wallet.
+/// `BalanceObjectOps` should be implemented for a type that represents balance/s of a wallet.
 /// For instance, if the wallet is for a platform coin and its tokens, the implementing type should be able to return the balances of the coin and its associated tokens.
-pub trait BalanceMapOps {
-    /// Creates a new balance map.
+pub trait BalanceObjectOps {
+    /// Creates a new balance object.
     fn new() -> Self
     where
         Self: Sized;
 
-    /// Adds another balance map to the current balance map.
+    /// Adds another balance object to the current balance object.
     fn add(&mut self, other: Self)
     where
         Self: Sized;
 
     /// Returns the total balance for the specified ticker.
-    /// If the balance map doesn't contain the specified ticker, it should return `None`.
+    /// If the balance object doesn't contain the specified ticker, it should return `None`.
     fn get_total_for_ticker(&self, ticker: &str) -> Option<BigDecimal>;
 }
 
@@ -58,17 +58,17 @@ pub trait BalanceMapOps {
 /// This enum is used to abstract the differences between these two types of wallets, allowing for more generic operations on the balances.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "wallet_type")]
-pub enum CoinBalanceReport<BalanceMap>
+pub enum CoinBalanceReport<BalanceObject>
 where
-    BalanceMap: BalanceMapOps,
+    BalanceObject: BalanceObjectOps,
 {
-    Iguana(IguanaWalletBalance<BalanceMap>),
-    HD(HDWalletBalance<BalanceMap>),
+    Iguana(IguanaWalletBalance<BalanceObject>),
+    HD(HDWalletBalance<BalanceObject>),
 }
 
-impl<BalanceMap> CoinBalanceReport<BalanceMap>
+impl<BalanceObject> CoinBalanceReport<BalanceObject>
 where
-    BalanceMap: BalanceMapOps,
+    BalanceObject: BalanceObjectOps,
 {
     /// Returns a map where the key is address, and the value is the address's total balance for the specified ticker.
     pub fn to_addresses_total_balances(&self, ticker: &str) -> HashMap<String, Option<BigDecimal>> {
@@ -93,28 +93,28 @@ where
 }
 
 /// `IguanaWalletBalance` represents the balance of an Iguana wallet.
-/// The BalanceMap generic parameter can be any type that represents the balance/s of a single address.
+/// The BalanceObject generic parameter can be any type that represents the balance/s of a single address.
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct IguanaWalletBalance<BalanceMap> {
+pub struct IguanaWalletBalance<BalanceObject> {
     pub address: String,
-    pub balance: BalanceMap,
+    pub balance: BalanceObject,
 }
 
 /// Represents the balance of an HD wallet.
-/// `BalanceMap` is a generic parameter which can be any type represent balance/s.
+/// `BalanceObject` is a generic parameter which can be any type represent balance/s.
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct HDWalletBalance<BalanceMap> {
-    pub accounts: Vec<HDAccountBalance<BalanceMap>>,
+pub struct HDWalletBalance<BalanceObject> {
+    pub accounts: Vec<HDAccountBalance<BalanceObject>>,
 }
 
 /// Represents the balance of a single account in an HD wallet.
-/// `BalanceMap` is a generic parameter which can be any type represent balance/s.
+/// `BalanceObject` is a generic parameter which can be any type represent balance/s.
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct HDAccountBalance<BalanceMap> {
+pub struct HDAccountBalance<BalanceObject> {
     pub account_index: u32,
     pub derivation_path: RpcDerivationPath,
-    pub total_balance: BalanceMap,
-    pub addresses: Vec<HDAddressBalance<BalanceMap>>,
+    pub total_balance: BalanceObject,
+    pub addresses: Vec<HDAddressBalance<BalanceObject>>,
 }
 
 /// Encapsulates the balance of an account in an HD wallet.
@@ -129,11 +129,11 @@ pub enum HDAccountBalanceEnum {
 
 /// Represents the balance of a single address in an HD wallet.
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct HDAddressBalance<BalanceMap> {
+pub struct HDAddressBalance<BalanceObject> {
     pub address: String,
     pub derivation_path: RpcDerivationPath,
     pub chain: Bip44Chain,
-    pub balance: BalanceMap,
+    pub balance: BalanceObject,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -163,21 +163,23 @@ pub struct EnabledCoinBalanceParams {
 #[async_trait]
 pub trait CoinBalanceReportOps {
     /// Represents the balance of a coin or a coin and its associated tokens for a certain wallet..
-    type BalanceMap: BalanceMapOps;
+    type BalanceObject: BalanceObjectOps;
     /// Returns the balance of a coin or a coin and its associated tokens for a certain wallet.
-    async fn coin_balance_report(&self) -> BalanceResult<CoinBalanceReport<Self::BalanceMap>>;
+    async fn coin_balance_report(&self) -> BalanceResult<CoinBalanceReport<Self::BalanceObject>>;
 }
 
 #[async_trait]
 impl<Coin> CoinBalanceReportOps for Coin
 where
-    Coin:
-        CoinWithDerivationMethod + HDWalletBalanceOps + IguanaBalanceOps<BalanceMap = HDWalletBalanceMap<Coin>> + Sync,
+    Coin: CoinWithDerivationMethod
+        + HDWalletBalanceOps
+        + IguanaBalanceOps<BalanceObject = HDWalletBalanceObject<Coin>>
+        + Sync,
     HDCoinAddress<Coin>: fmt::Display + Sync,
 {
-    type BalanceMap = HDWalletBalanceMap<Self>;
+    type BalanceObject = HDWalletBalanceObject<Self>;
 
-    async fn coin_balance_report(&self) -> BalanceResult<CoinBalanceReport<Self::BalanceMap>> {
+    async fn coin_balance_report(&self) -> BalanceResult<CoinBalanceReport<Self::BalanceObject>> {
         match self.derivation_method() {
             DerivationMethod::SingleAddress(my_address) => self
                 .iguana_balances()
@@ -199,14 +201,14 @@ where
 
 #[async_trait]
 pub trait EnableCoinBalanceOps {
-    type BalanceMap: BalanceMapOps;
+    type BalanceObject: BalanceObjectOps;
 
     async fn enable_coin_balance<XPubExtractor>(
         &self,
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
         path_to_address: &HDAccountAddressId,
-    ) -> MmResult<CoinBalanceReport<Self::BalanceMap>, EnableCoinBalanceError>
+    ) -> MmResult<CoinBalanceReport<Self::BalanceObject>, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Send;
 }
@@ -214,18 +216,20 @@ pub trait EnableCoinBalanceOps {
 #[async_trait]
 impl<Coin> EnableCoinBalanceOps for Coin
 where
-    Coin:
-        CoinWithDerivationMethod + HDWalletBalanceOps + IguanaBalanceOps<BalanceMap = HDWalletBalanceMap<Coin>> + Sync,
+    Coin: CoinWithDerivationMethod
+        + HDWalletBalanceOps
+        + IguanaBalanceOps<BalanceObject = HDWalletBalanceObject<Coin>>
+        + Sync,
     HDCoinAddress<Coin>: fmt::Display + Sync,
 {
-    type BalanceMap = HDWalletBalanceMap<Self>;
+    type BalanceObject = HDWalletBalanceObject<Self>;
 
     async fn enable_coin_balance<XPubExtractor>(
         &self,
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
         path_to_address: &HDAccountAddressId,
-    ) -> MmResult<CoinBalanceReport<Self::BalanceMap>, EnableCoinBalanceError>
+    ) -> MmResult<CoinBalanceReport<Self::BalanceObject>, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Send,
     {
@@ -254,7 +258,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
     /// The type of the scanner that will be used to scan for balances in an HD wallet.
     type HDAddressScanner: HDAddressBalanceScanner<Address = HDCoinAddress<Self>> + Sync;
     /// Represents a balance in an HD wallet.
-    type BalanceMap: BalanceMapOps + Clone + Send;
+    type BalanceObject: BalanceObjectOps + Clone + Send;
 
     /// Returns the scanner of balances for the HD wallet.
     async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner>;
@@ -268,7 +272,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
         path_to_address: &HDAccountAddressId,
-    ) -> MmResult<HDWalletBalance<Self::BalanceMap>, EnableCoinBalanceError>
+    ) -> MmResult<HDWalletBalance<Self::BalanceObject>, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Send;
 
@@ -280,13 +284,13 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         hd_account: &mut HDCoinHDAccount<Self>,
         address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
-    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceMap>>>;
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>>;
 
     /// Requests balances of every activated HD account.
     async fn all_accounts_balances(
         &self,
         hd_wallet: &Self::HDWallet,
-    ) -> BalanceResult<Vec<HDAccountBalance<Self::BalanceMap>>> {
+    ) -> BalanceResult<Vec<HDAccountBalance<Self::BalanceObject>>> {
         let accounts = hd_wallet.get_accounts().await;
 
         let mut result = Vec::with_capacity(accounts.len());
@@ -295,7 +299,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
 
             let total_balance = addresses
                 .iter()
-                .fold(Self::BalanceMap::new(), |mut total, addr_balance| {
+                .fold(Self::BalanceObject::new(), |mut total, addr_balance| {
                     total.add(addr_balance.balance.clone());
                     total
                 });
@@ -317,7 +321,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
     async fn all_known_addresses_balances(
         &self,
         hd_account: &HDCoinHDAccount<Self>,
-    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceMap>>>;
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>>;
 
     /// Requests balances of known addresses of the given `address_ids` addresses at the specified `chain`.
     async fn known_addresses_balances_with_ids<Ids>(
@@ -325,7 +329,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         hd_account: &HDCoinHDAccount<Self>,
         chain: Bip44Chain,
         address_ids: Ids,
-    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceMap>>>
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>>
     where
         HDCoinAddress<Self>: fmt::Display + Clone,
         Ids: Iterator<Item = u32> + Send,
@@ -361,14 +365,14 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
     /// Requests balance of the given `address`.
     /// This function is expected to be more efficient than ['HDWalletBalanceOps::is_address_used'] in most cases
     /// since many of RPC clients allow us to request the address balance without the history.
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceMap>;
+    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceObject>;
 
     /// Requests balances of the given `addresses`.
     /// The pairs `(Address, CoinBalance)` are guaranteed to be in the same order in which they were requested.
     async fn known_addresses_balances(
         &self,
         addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceMap)>>;
+    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceObject)>>;
 
     /// Checks if the address has been used by the user by checking if the transaction history of the given `address` is not empty.
     /// Please note the function can return zero balance even if the address has been used before.
@@ -376,7 +380,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         &self,
         address: &HDBalanceAddress<Self>,
         address_scanner: &Self::HDAddressScanner,
-    ) -> BalanceResult<AddressBalanceStatus<Self::BalanceMap>> {
+    ) -> BalanceResult<AddressBalanceStatus<Self::BalanceObject>> {
         if !address_scanner.is_address_used(address).await? {
             return Ok(AddressBalanceStatus::NotUsed);
         }
@@ -421,7 +425,7 @@ pub mod common_impl {
         address_scanner: &Coin::HDAddressScanner,
         scan_new_addresses: bool,
         min_addresses_number: Option<u32>,
-    ) -> MmResult<HDAccountBalance<HDWalletBalanceMap<Coin>>, EnableCoinBalanceError>
+    ) -> MmResult<HDAccountBalance<HDWalletBalanceObject<Coin>>, EnableCoinBalanceError>
     where
         Coin: HDWalletBalanceOps + MarketCoinOps + Sync,
         HDCoinAddress<Coin>: fmt::Display,
@@ -441,7 +445,7 @@ pub mod common_impl {
 
         let total_balance = addresses
             .iter()
-            .fold(HDWalletBalanceMap::<Coin>::new(), |mut total, addr_balance| {
+            .fold(HDWalletBalanceObject::<Coin>::new(), |mut total, addr_balance| {
                 total.add(addr_balance.balance.clone());
                 total
             });
@@ -462,7 +466,7 @@ pub mod common_impl {
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
         path_to_address: &HDAccountAddressId,
-    ) -> MmResult<HDWalletBalance<HDWalletBalanceMap<Coin>>, EnableCoinBalanceError>
+    ) -> MmResult<HDWalletBalance<HDWalletBalanceObject<Coin>>, EnableCoinBalanceError>
     where
         Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey>
             + HDWalletBalanceOps
@@ -547,7 +551,7 @@ pub mod common_impl {
         hd_wallet: &Coin::HDWallet,
         hd_account: &mut HDCoinHDAccount<Coin>,
         chain: Bip44Chain,
-        result_addresses: &mut Vec<HDAddressBalance<HDWalletBalanceMap<Coin>>>,
+        result_addresses: &mut Vec<HDAddressBalance<HDWalletBalanceObject<Coin>>>,
         min_addresses_number: u32,
     ) -> MmResult<(), EnableCoinBalanceError>
     where
@@ -582,7 +586,7 @@ pub mod common_impl {
                 address: hd_address.address().to_string(),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
-                balance: HDWalletBalanceMap::<Coin>::new(),
+                balance: HDWalletBalanceObject::<Coin>::new(),
             });
             addresses_to_request.push(hd_address.address().clone());
         }

@@ -31,7 +31,7 @@ where
             InProgressStatus = UtxoStandardInProgressStatus,
             AwaitingStatus = UtxoStandardAwaitingStatus,
             UserAction = UtxoStandardUserAction,
-        > + EnableCoinBalanceOps<BalanceMap = CoinBalance>
+        > + EnableCoinBalanceOps<BalanceObject = CoinBalance>
         + MarketCoinOps,
 {
     let ticker = coin.ticker().to_owned();

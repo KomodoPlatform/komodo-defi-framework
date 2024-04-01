@@ -1,5 +1,5 @@
 use super::*;
-use crate::coin_balance::{HDAddressBalance, HDWalletBalanceMap, HDWalletBalanceOps};
+use crate::coin_balance::{HDAddressBalance, HDWalletBalanceObject, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::EthCoinType;
 use crate::hd_wallet::{HDCoinAddress, HDCoinHDAccount, HDCoinWithdrawOps, TrezorCoinError};
@@ -146,7 +146,7 @@ pub async fn scan_for_new_addresses<T>(
     hd_account: &mut HDCoinHDAccount<T>,
     address_scanner: &T::HDAddressScanner,
     gap_limit: u32,
-) -> BalanceResult<Vec<HDAddressBalance<HDWalletBalanceMap<T>>>>
+) -> BalanceResult<Vec<HDAddressBalance<HDWalletBalanceObject<T>>>>
 where
     T: HDWalletBalanceOps + Sync,
     HDCoinAddress<T>: std::fmt::Display,
@@ -178,7 +178,7 @@ where
 pub async fn all_known_addresses_balances<T>(
     coin: &T,
     hd_account: &HDCoinHDAccount<T>,
-) -> BalanceResult<Vec<HDAddressBalance<HDWalletBalanceMap<T>>>>
+) -> BalanceResult<Vec<HDAddressBalance<HDWalletBalanceObject<T>>>>
 where
     T: HDWalletBalanceOps + Sync,
     HDCoinAddress<T>: std::fmt::Display + Clone,

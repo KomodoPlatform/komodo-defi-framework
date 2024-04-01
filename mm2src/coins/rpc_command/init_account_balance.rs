@@ -1,4 +1,4 @@
-use crate::coin_balance::{BalanceMapOps, HDAccountBalance, HDAccountBalanceEnum};
+use crate::coin_balance::{BalanceObjectOps, HDAccountBalance, HDAccountBalanceEnum};
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
 use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
 use async_trait::async_trait;
@@ -40,12 +40,12 @@ pub struct InitAccountBalanceParams {
 
 #[async_trait]
 pub trait InitAccountBalanceRpcOps {
-    type BalanceMap;
+    type BalanceObject;
 
     async fn init_account_balance_rpc(
         &self,
         params: InitAccountBalanceParams,
-    ) -> MmResult<HDAccountBalance<Self::BalanceMap>, HDAccountBalanceRpcError>;
+    ) -> MmResult<HDAccountBalance<Self::BalanceObject>, HDAccountBalanceRpcError>;
 }
 
 pub struct InitAccountBalanceTask {
@@ -128,7 +128,7 @@ pub async fn cancel_account_balance(
 
 pub mod common_impl {
     use super::*;
-    use crate::coin_balance::{HDWalletBalanceMap, HDWalletBalanceOps};
+    use crate::coin_balance::{HDWalletBalanceObject, HDWalletBalanceOps};
     use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDWalletOps};
     use crate::CoinWithDerivationMethod;
     use crypto::RpcDerivationPath;
@@ -137,7 +137,7 @@ pub mod common_impl {
     pub async fn init_account_balance_rpc<Coin>(
         coin: &Coin,
         params: InitAccountBalanceParams,
-    ) -> MmResult<HDAccountBalance<HDWalletBalanceMap<Coin>>, HDAccountBalanceRpcError>
+    ) -> MmResult<HDAccountBalance<HDWalletBalanceObject<Coin>>, HDAccountBalanceRpcError>
     where
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Sync,
         HDCoinAddress<Coin>: fmt::Display + Clone,
@@ -154,7 +154,7 @@ pub mod common_impl {
 
         let total_balance = addresses
             .iter()
-            .fold(HDWalletBalanceMap::<Coin>::new(), |mut total, addr_balance| {
+            .fold(HDWalletBalanceObject::<Coin>::new(), |mut total, addr_balance| {
                 total.add(addr_balance.balance.clone());
                 total
             });

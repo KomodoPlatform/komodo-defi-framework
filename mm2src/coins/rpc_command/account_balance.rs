@@ -26,12 +26,12 @@ pub struct AccountBalanceParams {
 }
 
 #[derive(Debug, PartialEq, Serialize)]
-pub struct HDAccountBalanceResponse<BalanceMap> {
+pub struct HDAccountBalanceResponse<BalanceObject> {
     pub account_index: u32,
     pub derivation_path: RpcDerivationPath,
-    pub addresses: Vec<HDAddressBalance<BalanceMap>>,
+    pub addresses: Vec<HDAddressBalance<BalanceObject>>,
     // Todo: Add option to get total balance of all addresses in addition to page_balance
-    pub page_balance: BalanceMap,
+    pub page_balance: BalanceObject,
     pub limit: usize,
     pub skipped: u32,
     pub total: u32,
@@ -50,12 +50,12 @@ pub enum HDAccountBalanceResponseEnum {
 /// Trait for the `account_balance` RPC command.
 #[async_trait]
 pub trait AccountBalanceRpcOps {
-    type BalanceMap;
+    type BalanceObject;
 
     async fn account_balance_rpc(
         &self,
         params: AccountBalanceParams,
-    ) -> MmResult<HDAccountBalanceResponse<Self::BalanceMap>, HDAccountBalanceRpcError>;
+    ) -> MmResult<HDAccountBalanceResponse<Self::BalanceObject>, HDAccountBalanceRpcError>;
 }
 
 /// `account_balance` RPC command implementation.
@@ -79,7 +79,7 @@ pub async fn account_balance(
 
 pub mod common_impl {
     use super::*;
-    use crate::coin_balance::{BalanceMapOps, HDWalletBalanceMap, HDWalletBalanceOps};
+    use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject, HDWalletBalanceOps};
     use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDWalletOps};
     use common::calc_total_pages;
 
@@ -87,7 +87,7 @@ pub mod common_impl {
     pub async fn account_balance_rpc<Coin>(
         coin: &Coin,
         params: AccountBalanceParams,
-    ) -> MmResult<HDAccountBalanceResponse<HDWalletBalanceMap<Coin>>, HDAccountBalanceRpcError>
+    ) -> MmResult<HDAccountBalanceResponse<HDWalletBalanceObject<Coin>>, HDAccountBalanceRpcError>
     where
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Sync,
         HDCoinAddress<Coin>: fmt::Display + Clone,
@@ -113,7 +113,7 @@ pub mod common_impl {
 
         let page_balance = addresses
             .iter()
-            .fold(HDWalletBalanceMap::<Coin>::new(), |mut total, addr_balance| {
+            .fold(HDWalletBalanceObject::<Coin>::new(), |mut total, addr_balance| {
                 total.add(addr_balance.balance.clone());
                 total
             });

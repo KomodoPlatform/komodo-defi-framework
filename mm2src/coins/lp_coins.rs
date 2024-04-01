@@ -293,7 +293,7 @@ use nft::nft_errors::GetNftInfoError;
 use script::Script;
 
 pub mod z_coin;
-use crate::coin_balance::{BalanceMapOps, HDWalletBalanceMap};
+use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -2151,7 +2151,7 @@ pub struct TradeFee {
 /// This is used to represent the balance of a wallet or account for multiple coins/tokens.
 pub type CoinBalanceMap = HashMap<String, CoinBalance>;
 
-impl BalanceMapOps for CoinBalanceMap {
+impl BalanceObjectOps for CoinBalanceMap {
     fn new() -> Self { HashMap::new() }
 
     fn add(&mut self, other: Self) {
@@ -2170,7 +2170,7 @@ pub struct CoinBalance {
     pub unspendable: BigDecimal,
 }
 
-impl BalanceMapOps for CoinBalance {
+impl BalanceObjectOps for CoinBalance {
     fn new() -> Self { CoinBalance::default() }
 
     fn add(&mut self, other: Self) { *self += other; }
@@ -3928,11 +3928,11 @@ pub trait CoinWithDerivationMethod: HDWalletCoinOps {
 /// This trait should be implemented by coins that use the iguana derivation method.
 #[async_trait]
 pub trait IguanaBalanceOps {
-    /// The type of balance map for the coin.
-    type BalanceMap: BalanceMapOps;
+    /// The object that holds the balance/s of the coin.
+    type BalanceObject: BalanceObjectOps;
 
     /// Fetches the balance of the coin and its tokens if the coin uses an iguana derivation method.
-    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceMap>;
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject>;
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -5110,7 +5110,7 @@ pub async fn scan_for_new_addresses_impl<T>(
     address_scanner: &T::HDAddressScanner,
     chain: Bip44Chain,
     gap_limit: u32,
-) -> BalanceResult<Vec<HDAddressBalance<HDWalletBalanceMap<T>>>>
+) -> BalanceResult<Vec<HDAddressBalance<HDWalletBalanceObject<T>>>>
 where
     T: HDWalletBalanceOps + Sync,
     HDCoinAddress<T>: fmt::Display,
@@ -5148,7 +5148,7 @@ where
                             address: empty_address.address().to_string(),
                             derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
                             chain,
-                            balance: HDWalletBalanceMap::<T>::new(),
+                            balance: HDWalletBalanceObject::<T>::new(),
                         });
                 balances.extend(empty_addresses);
 

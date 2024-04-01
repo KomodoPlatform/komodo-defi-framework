@@ -1385,9 +1385,9 @@ impl CoinWithDerivationMethod for BchCoin {
 
 #[async_trait]
 impl IguanaBalanceOps for BchCoin {
-    type BalanceMap = CoinBalance;
+    type BalanceObject = CoinBalance;
 
-    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceMap> { self.my_balance().compat().await }
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> { self.my_balance().compat().await }
 }
 
 #[async_trait]
@@ -1426,7 +1426,7 @@ impl HDCoinWithdrawOps for BchCoin {}
 #[async_trait]
 impl HDWalletBalanceOps for BchCoin {
     type HDAddressScanner = UtxoAddressScanner;
-    type BalanceMap = CoinBalance;
+    type BalanceObject = CoinBalance;
 
     async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> {
         utxo_common::produce_hd_address_scanner(self).await
@@ -1438,7 +1438,7 @@ impl HDWalletBalanceOps for BchCoin {
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
         path_to_address: &HDAccountAddressId,
-    ) -> MmResult<HDWalletBalance<Self::BalanceMap>, EnableCoinBalanceError>
+    ) -> MmResult<HDWalletBalance<Self::BalanceObject>, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Send,
     {
@@ -1451,25 +1451,25 @@ impl HDWalletBalanceOps for BchCoin {
         hd_account: &mut HDCoinHDAccount<Self>,
         address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
-    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceMap>>> {
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
         utxo_common::scan_for_new_addresses(self, hd_wallet, hd_account, address_scanner, gap_limit).await
     }
 
     async fn all_known_addresses_balances(
         &self,
         hd_account: &HDCoinHDAccount<Self>,
-    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceMap>>> {
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
         utxo_common::all_known_addresses_balances(self, hd_account).await
     }
 
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceMap> {
+    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceObject> {
         utxo_common::address_balance(self, address).await
     }
 
     async fn known_addresses_balances(
         &self,
         addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceMap)>> {
+    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceObject)>> {
         utxo_common::addresses_balances(self, addresses).await
     }
 

@@ -1053,9 +1053,9 @@ impl CoinWithDerivationMethod for QtumCoin {
 
 #[async_trait]
 impl IguanaBalanceOps for QtumCoin {
-    type BalanceMap = CoinBalance;
+    type BalanceObject = CoinBalance;
 
-    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceMap> { self.my_balance().compat().await }
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> { self.my_balance().compat().await }
 }
 
 #[async_trait]
@@ -1094,7 +1094,7 @@ impl HDCoinWithdrawOps for QtumCoin {}
 #[async_trait]
 impl HDWalletBalanceOps for QtumCoin {
     type HDAddressScanner = UtxoAddressScanner;
-    type BalanceMap = CoinBalance;
+    type BalanceObject = CoinBalance;
 
     async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> {
         utxo_common::produce_hd_address_scanner(self).await
@@ -1106,7 +1106,7 @@ impl HDWalletBalanceOps for QtumCoin {
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
         path_to_address: &HDAccountAddressId,
-    ) -> MmResult<HDWalletBalance<Self::BalanceMap>, EnableCoinBalanceError>
+    ) -> MmResult<HDWalletBalance<Self::BalanceObject>, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Send,
     {
@@ -1119,25 +1119,25 @@ impl HDWalletBalanceOps for QtumCoin {
         hd_account: &mut HDCoinHDAccount<Self>,
         address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
-    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceMap>>> {
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
         utxo_common::scan_for_new_addresses(self, hd_wallet, hd_account, address_scanner, gap_limit).await
     }
 
     async fn all_known_addresses_balances(
         &self,
         hd_account: &HDCoinHDAccount<Self>,
-    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceMap>>> {
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
         utxo_common::all_known_addresses_balances(self, hd_account).await
     }
 
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceMap> {
+    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceObject> {
         utxo_common::address_balance(self, address).await
     }
 
     async fn known_addresses_balances(
         &self,
         addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceMap)>> {
+    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceObject)>> {
         utxo_common::addresses_balances(self, addresses).await
     }
 
@@ -1151,12 +1151,12 @@ impl HDWalletBalanceOps for QtumCoin {
 
 #[async_trait]
 impl GetNewAddressRpcOps for QtumCoin {
-    type BalanceMap = CoinBalance;
+    type BalanceObject = CoinBalance;
 
     async fn get_new_address_rpc_without_conf(
         &self,
         params: GetNewAddressParams,
-    ) -> MmResult<GetNewAddressResponse<Self::BalanceMap>, GetNewAddressRpcError> {
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceObject>, GetNewAddressRpcError> {
         get_new_address::common_impl::get_new_address_rpc_without_conf(self, params).await
     }
 
@@ -1164,7 +1164,7 @@ impl GetNewAddressRpcOps for QtumCoin {
         &self,
         params: GetNewAddressParams,
         confirm_address: &ConfirmAddress,
-    ) -> MmResult<GetNewAddressResponse<Self::BalanceMap>, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceObject>, GetNewAddressRpcError>
     where
         ConfirmAddress: HDConfirmAddress,
     {
@@ -1174,50 +1174,50 @@ impl GetNewAddressRpcOps for QtumCoin {
 
 #[async_trait]
 impl AccountBalanceRpcOps for QtumCoin {
-    type BalanceMap = CoinBalance;
+    type BalanceObject = CoinBalance;
 
     async fn account_balance_rpc(
         &self,
         params: AccountBalanceParams,
-    ) -> MmResult<HDAccountBalanceResponse<Self::BalanceMap>, HDAccountBalanceRpcError> {
+    ) -> MmResult<HDAccountBalanceResponse<Self::BalanceObject>, HDAccountBalanceRpcError> {
         account_balance::common_impl::account_balance_rpc(self, params).await
     }
 }
 
 #[async_trait]
 impl InitAccountBalanceRpcOps for QtumCoin {
-    type BalanceMap = CoinBalance;
+    type BalanceObject = CoinBalance;
 
     async fn init_account_balance_rpc(
         &self,
         params: InitAccountBalanceParams,
-    ) -> MmResult<HDAccountBalance<Self::BalanceMap>, HDAccountBalanceRpcError> {
+    ) -> MmResult<HDAccountBalance<Self::BalanceObject>, HDAccountBalanceRpcError> {
         init_account_balance::common_impl::init_account_balance_rpc(self, params).await
     }
 }
 
 #[async_trait]
 impl InitScanAddressesRpcOps for QtumCoin {
-    type BalanceMap = CoinBalance;
+    type BalanceObject = CoinBalance;
 
     async fn init_scan_for_new_addresses_rpc(
         &self,
         params: ScanAddressesParams,
-    ) -> MmResult<ScanAddressesResponse<Self::BalanceMap>, HDAccountBalanceRpcError> {
+    ) -> MmResult<ScanAddressesResponse<Self::BalanceObject>, HDAccountBalanceRpcError> {
         init_scan_for_new_addresses::common_impl::scan_for_new_addresses_rpc(self, params).await
     }
 }
 
 #[async_trait]
 impl InitCreateAccountRpcOps for QtumCoin {
-    type BalanceMap = CoinBalance;
+    type BalanceObject = CoinBalance;
 
     async fn init_create_account_rpc<XPubExtractor>(
         &self,
         params: CreateNewAccountParams,
         state: CreateAccountState,
         xpub_extractor: Option<XPubExtractor>,
-    ) -> MmResult<HDAccountBalance<Self::BalanceMap>, CreateAccountRpcError>
+    ) -> MmResult<HDAccountBalance<Self::BalanceObject>, CreateAccountRpcError>
     where
         XPubExtractor: HDXPubExtractor + Send,
     {
