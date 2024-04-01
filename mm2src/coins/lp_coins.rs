@@ -1515,7 +1515,7 @@ pub struct SendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + NftAssocTypes + ?S
     pub token_id: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a [u8],
-    // Etomic swap contract address
+    /// Etomic swap contract address
     pub swap_contract_address: &'a [u8],
 }
 
@@ -1559,7 +1559,7 @@ pub struct ValidateNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub token_id: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a [u8],
-    // Etomic swap contract address
+    /// Etomic swap contract address
     pub swap_contract_address: &'a [u8],
 }
 
@@ -1614,7 +1614,7 @@ pub struct SpendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub swap_unique_data: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a [u8],
-    // Etomic swap contract address
+    /// Etomic swap contract address
     pub swap_contract_address: &'a [u8],
 }
 

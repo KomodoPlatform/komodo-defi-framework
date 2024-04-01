@@ -149,14 +149,14 @@ pub enum PaymentState {
     Refunded,
 }
 #[allow(dead_code)]
-enum MakerPaymentState {
+enum MakerPaymentStateV2 {
     Uninitialized,
     PaymentSent,
     TakerSpent,
     MakerRefunded,
 }
 #[allow(dead_code)]
-enum TakerPaymentState {
+enum TakerPaymentStateV2 {
     Uninitialized,
     PaymentSent,
     TakerApproved,
@@ -6513,7 +6513,7 @@ impl EthCoin {
                 StateType::MakerPayments,
             )
             .await?;
-        if maker_status != U256::from(MakerPaymentState::PaymentSent as u8) {
+        if maker_status != U256::from(MakerPaymentStateV2::PaymentSent as u8) {
             return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                 "NFT Maker Payment state is not PAYMENT_STATE_SENT, got {}",
                 maker_status
@@ -6654,7 +6654,7 @@ impl EthCoin {
                         )
                         .await
                     );
-                    if state != U256::from(MakerPaymentState::PaymentSent as u8) {
+                    if state != U256::from(MakerPaymentStateV2::PaymentSent as u8) {
                         return Err(TransactionErr::Plain(ERRL!(
                             "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                             args.maker_payment_tx,
@@ -6693,7 +6693,7 @@ impl EthCoin {
                         )
                         .await
                     );
-                    if state != U256::from(MakerPaymentState::PaymentSent as u8) {
+                    if state != U256::from(MakerPaymentStateV2::PaymentSent as u8) {
                         return Err(TransactionErr::Plain(ERRL!(
                             "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                             args.maker_payment_tx,
