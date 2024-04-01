@@ -2716,8 +2716,6 @@ pub enum WithdrawError {
     },
     #[display(fmt = "DB error {}", _0)]
     DbError(String),
-    #[display(fmt = "chain id not set: {}", _0)]
-    ChainIdRequired(String),
     #[display(fmt = "My address is {}, while current Nft owner is {}", my_address, token_owner)]
     MyAddressNotNftOwner {
         my_address: String,
@@ -2750,7 +2748,6 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_)
             | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
             | WithdrawError::NotEnoughNftsAmount { .. }
-            | WithdrawError::ChainIdRequired(_)
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]

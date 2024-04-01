@@ -467,7 +467,7 @@ pub struct EthCoinImpl {
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
     /// Using a weak reference by default in order to avoid circular references and leaks.
     pub ctx: MmWeak,
-    chain_id: Option<u64>,
+    chain_id: u64,
     /// The name of the coin with which Trezor wallet associates this asset.
     trezor_coin: Option<String>,
     /// the block range used for eth_getLogs
@@ -767,7 +767,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     };
 
     let secret = eth_coin.priv_key_policy.activated_key_or_err()?.secret();
-    let signed = tx.sign(secret, eth_coin.chain_id);
+    let signed = tx.sign(secret, Some(eth_coin.chain_id));
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
 
@@ -858,7 +858,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     };
 
     let secret = eth_coin.priv_key_policy.activated_key_or_err()?.secret();
-    let signed = tx.sign(secret, eth_coin.chain_id);
+    let signed = tx.sign(secret, Some(eth_coin.chain_id));
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
 
@@ -2326,7 +2326,7 @@ async fn sign_transaction_with_keypair(
     };
 
     Ok((
-        tx.sign(key_pair.secret(), coin.chain_id),
+        tx.sign(key_pair.secret(), Some(coin.chain_id)),
         web3_instances_with_latest_nonce,
     ))
 }
@@ -5892,6 +5892,10 @@ pub async fn eth_coin_from_conf_and_request(
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
 
+    let chain_id = try_s!(conf["chain_id"]
+        .as_u64()
+        .ok_or_else(|| format!("chain_id is not set for {}", ticker)));
+
     let trezor_coin: Option<String> = json::from_value(conf["trezor_coin"].clone()).unwrap_or(None);
 
     let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
@@ -5938,7 +5942,7 @@ pub async fn eth_coin_from_conf_and_request(
         history_sync_state: Mutex::new(initial_history_state),
         ctx: ctx.weak(),
         required_confirmations,
-        chain_id: conf["chain_id"].as_u64(),
+        chain_id,
         trezor_coin,
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         address_nonce_locks,

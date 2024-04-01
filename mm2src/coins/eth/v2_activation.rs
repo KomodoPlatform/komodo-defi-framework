@@ -24,9 +24,8 @@ pub enum EthActivationV2Error {
     InvalidSwapContractAddr(String),
     InvalidFallbackSwapContract(String),
     InvalidPathToAddress(String),
-    #[display(fmt = "Expected either 'chain_id' or 'rpc_chain_id' to be set")]
-    #[cfg(target_arch = "wasm32")]
-    ExpectedRpcChainId,
+    #[display(fmt = "`chain_id` should be set for evm coins or tokens")]
+    ChainIdNotSet,
     #[display(fmt = "Platform coin {} activation failed. {}", ticker, error)]
     ActivationFailed {
         ticker: String,
@@ -512,7 +511,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     )
     .await?;
 
-    let chain_id = conf["chain_id"].as_u64();
+    let chain_id = conf["chain_id"].as_u64().ok_or(EthActivationV2Error::ChainIdNotSet)?;
     let web3_instances = match (req.rpc_mode, &priv_key_policy) {
         (
             EthRpcMode::Default,
@@ -544,9 +543,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
         },
         #[cfg(target_arch = "wasm32")]
         (EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(_)) => {
-            let chain_id = chain_id
-                .or_else(|| conf["rpc_chain_id"].as_u64())
-                .or_mm_err(|| EthActivationV2Error::ExpectedRpcChainId)?;
             build_metamask_transport(ctx, ticker.to_string(), chain_id).await?
         },
         #[cfg(target_arch = "wasm32")]

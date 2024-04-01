@@ -46,10 +46,7 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
                 EnablePlatformCoinWithTokensError::InvalidPayload(e)
             },
             EthActivationV2Error::InvalidPathToAddress(e) => EnablePlatformCoinWithTokensError::InvalidPayload(e),
-            #[cfg(target_arch = "wasm32")]
-            EthActivationV2Error::ExpectedRpcChainId => {
-                EnablePlatformCoinWithTokensError::InvalidPayload(err.to_string())
-            },
+            EthActivationV2Error::ChainIdNotSet => EnablePlatformCoinWithTokensError::InvalidPayload(err.to_string()),
             EthActivationV2Error::ActivationFailed { ticker, error } => {
                 EnablePlatformCoinWithTokensError::PlatformCoinCreationError { ticker, error }
             },

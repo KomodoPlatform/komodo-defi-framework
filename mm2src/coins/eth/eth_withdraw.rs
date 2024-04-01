@@ -126,7 +126,7 @@ where
         match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {
                 let key_pair = self.get_key_pair(req)?;
-                let signed = unsigned_tx.sign(key_pair.secret(), coin.chain_id);
+                let signed = unsigned_tx.sign(key_pair.secret(), Some(coin.chain_id));
                 let bytes = rlp::encode(&signed);
 
                 Ok((signed.hash, BytesJson::from(bytes.to_vec())))
@@ -367,11 +367,8 @@ impl EthWithdraw for InitEthWithdraw {
         let sign_processor = TrezorRpcTaskProcessor::new(self.task_handle.clone(), trezor_statuses);
         let sign_processor = Arc::new(sign_processor);
         let mut trezor_session = hw_ctx.trezor(sign_processor).await?;
-        let chain_id = coin
-            .chain_id
-            .or_mm_err(|| WithdrawError::ChainIdRequired(String::from("chain_id is required for Trezor wallet")))?;
         let unverified_tx = trezor_session
-            .sign_eth_tx(derivation_path, unsigned_tx, chain_id)
+            .sign_eth_tx(derivation_path, unsigned_tx, coin.chain_id)
             .await?;
         Ok(SignedEthTx::new(unverified_tx).map_to_mm(|err| WithdrawError::InternalError(err.to_string()))?)
     }
