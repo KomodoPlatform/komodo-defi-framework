@@ -5,7 +5,8 @@ use crate::eth::for_tests::random_eth_coin_for_test;
 use crate::{DexFee, IguanaPrivKey};
 use common::{block_on, now_sec};
 use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_test_helpers::for_tests::{ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE};
+use mm2_test_helpers::for_tests::{ETH_DEV_CHAIN_ID, ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT,
+                                  ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODE};
 use mocktopus::mocking::*;
 
 /// The gas price for the tests
@@ -216,7 +217,7 @@ fn test_nonce_several_urls() {
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
-        chain_id: 1,
+        chain_id: ETH_DEV_CHAIN_ID,
         trezor_coin: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
@@ -270,7 +271,7 @@ fn test_wait_for_payment_spend_timeout() {
         web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
-        chain_id: 1,
+        chain_id: ETH_DEV_CHAIN_ID,
         trezor_coin: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
@@ -346,7 +347,7 @@ fn test_gas_station() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_withdraw_impl_manual_fee() {
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_DEV_CHAIN_ID);
 
     EthCoin::address_balance.mock_safe(|_, _| {
         let balance = wei_from_big_decimal(&1000000000.into(), 18).unwrap();
@@ -391,6 +392,7 @@ fn test_withdraw_impl_fee_details() {
         },
         &["http://dummy.dummy"],
         None,
+        ETH_DEV_CHAIN_ID,
     );
 
     EthCoin::address_balance.mock_safe(|_, _| {
@@ -434,7 +436,7 @@ fn test_nonce_lock() {
 
     // send several transactions concurrently to check that they are not using same nonce
     // using real ETH dev node
-    let (ctx, coin) = random_eth_coin_for_test(EthCoinType::Eth, ETH_DEV_NODES, None);
+    let (ctx, coin) = random_eth_coin_for_test(EthCoinType::Eth, ETH_DEV_NODES, None, ETH_DEV_CHAIN_ID);
     let my_address = block_on(coin.derivation_method.single_addr_or_err()).unwrap();
     let mut futures = vec![];
     for _ in 0..5 {
@@ -485,7 +487,7 @@ fn get_sender_trade_preimage() {
 
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
 
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_DEV_CHAIN_ID);
 
     let actual = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::UpperBound(150.into()),
@@ -545,6 +547,7 @@ fn get_erc20_sender_trade_preimage() {
         },
         &["http://dummy.dummy"],
         None,
+        ETH_DEV_CHAIN_ID,
     );
 
     // value is allowed
@@ -601,7 +604,7 @@ fn get_erc20_sender_trade_preimage() {
 fn get_receiver_trade_preimage() {
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
 
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_DEV_CHAIN_ID);
     let amount = u256_to_big_decimal((ETH_GAS * GAS_PRICE).into(), 18).expect("!u256_to_big_decimal");
     let expected_fee = TradeFee {
         coin: "ETH".to_owned(),
@@ -635,7 +638,7 @@ fn test_get_fee_to_send_taker_fee() {
 
     let dex_fee_amount = u256_to_big_decimal(DEX_FEE_AMOUNT.into(), 18).expect("!u256_to_big_decimal");
 
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_DEV_CHAIN_ID);
     let actual = block_on(coin.get_fee_to_send_taker_fee(
         DexFee::Standard(MmNumber::from(dex_fee_amount.clone())),
         FeeApproxStage::WithoutApprox,
@@ -650,6 +653,7 @@ fn test_get_fee_to_send_taker_fee() {
         },
         &["http://dummy.dummy"],
         None,
+        ETH_DEV_CHAIN_ID,
     );
     let actual = block_on(coin.get_fee_to_send_taker_fee(
         DexFee::Standard(MmNumber::from(dex_fee_amount)),
@@ -678,6 +682,7 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
         },
         &[ETH_MAINNET_NODE],
         None,
+        ETH_MAINNET_CHAIN_ID,
     );
     let dex_fee_amount = u256_to_big_decimal(DEX_FEE_AMOUNT.into(), 18).expect("!u256_to_big_decimal");
 
@@ -695,7 +700,7 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
 
 #[test]
 fn validate_dex_fee_invalid_sender_eth() {
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None, ETH_MAINNET_CHAIN_ID);
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
     let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
@@ -729,6 +734,7 @@ fn validate_dex_fee_invalid_sender_erc() {
         },
         &[ETH_MAINNET_NODE],
         None,
+        ETH_MAINNET_CHAIN_ID,
     );
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0xd6403b41c79f9c9e9c83c03d920ee1735e7854d85d94cef48d95dfeca95cd600
@@ -765,7 +771,7 @@ fn sender_compressed_pub(tx: &SignedEthTx) -> [u8; 33] {
 
 #[test]
 fn validate_dex_fee_eth_confirmed_before_min_block() {
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None, ETH_MAINNET_CHAIN_ID);
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
     let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
@@ -801,6 +807,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
         },
         &[ETH_MAINNET_NODE],
         None,
+        ETH_MAINNET_CHAIN_ID,
     );
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0xd6403b41c79f9c9e9c83c03d920ee1735e7854d85d94cef48d95dfeca95cd600
@@ -831,7 +838,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
 
 #[test]
 fn test_negotiate_swap_contract_addr_no_fallback() {
-    let (_, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None);
+    let (_, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None, ETH_MAINNET_CHAIN_ID);
 
     let input = None;
     let error = coin.negotiate_swap_contract_addr(input).unwrap_err().into_inner();
@@ -860,7 +867,12 @@ fn test_negotiate_swap_contract_addr_no_fallback() {
 fn test_negotiate_swap_contract_addr_has_fallback() {
     let fallback = Address::from_str("0x8500AFc0bc5214728082163326C2FF0C73f4a871").unwrap();
 
-    let (_, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], Some(fallback));
+    let (_, coin) = eth_coin_for_test(
+        EthCoinType::Eth,
+        &[ETH_MAINNET_NODE],
+        Some(fallback),
+        ETH_MAINNET_CHAIN_ID,
+    );
 
     let input = None;
     let result = coin.negotiate_swap_contract_addr(input).unwrap();
@@ -980,7 +992,7 @@ fn test_message_hash() {
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
-        chain_id: 1,
+        chain_id: ETH_DEV_CHAIN_ID,
         trezor_coin: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
@@ -1030,7 +1042,7 @@ fn test_sign_verify_message() {
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
-        chain_id: 1,
+        chain_id: ETH_DEV_CHAIN_ID,
         trezor_coin: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
@@ -1089,7 +1101,7 @@ fn test_eth_extract_secret() {
         web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: true }]),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
-        chain_id: 1,
+        chain_id: 3,
         trezor_coin: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),

@@ -5,7 +5,8 @@ use crypto::privkey::key_pair_from_seed;
 use crypto::CryptoCtx;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_test_helpers::for_tests::{ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT, ETH_SEPOLIA_NODES};
+use mm2_test_helpers::for_tests::{ETH_DEV_CHAIN_ID, ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT, ETH_SEPOLIA_CHAIN_ID,
+                                  ETH_SEPOLIA_NODES};
 use mm2_test_helpers::get_passphrase;
 use wasm_bindgen_test::*;
 use web_sys::console;
@@ -48,7 +49,7 @@ async fn test_send() {
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
-        chain_id: 1,
+        chain_id: ETH_DEV_CHAIN_ID,
         trezor_coin: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
@@ -81,6 +82,7 @@ async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
             "coin": "ETH",
             "name": "ethereum",
             "fname": "Ethereum",
+            "chain_id": 1337,
             "protocol":{
                 "type": "ETH"
             },
@@ -128,7 +130,7 @@ async fn wasm_test_sign_eth_tx() {
 #[wasm_bindgen_test]
 async fn wasm_test_withdraw_eth() {
     // we need to hold ref to _ctx until the end of the test (because of the weak ref to MmCtx in EthCoinImpl)
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, ETH_SEPOLIA_NODES, None); // use sepolia as usualy some amount exists there
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, ETH_SEPOLIA_NODES, None, ETH_SEPOLIA_CHAIN_ID); // use sepolia as usualy some amount exists there
 
     let withdraw_req = WithdrawRequest {
         amount: "0.00001".parse().unwrap(),

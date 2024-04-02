@@ -388,8 +388,8 @@ fn test_check_balance_on_order_post() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0x996a8aE0304680F6A69b8A9d7C6E37D65AB5AB56"}}}
+        {"coin":"ETH","name":"ethereum","chain_id":1,"protocol":{"type":"ETH"},"rpcport":80},
+        {"coin":"JST","name":"jst","chain_id":1,"protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0x996a8aE0304680F6A69b8A9d7C6E37D65AB5AB56"}}}
     ]);
 
     // start bob and immediately place the order
@@ -2271,7 +2271,7 @@ fn test_show_priv_key() {
 fn test_electrum_and_enable_response() {
     let coins = json! ([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"},"mature_confirmations":101},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        eth_dev_conf(),
     ]);
 
     let mm = MarketMakerIt::start(
@@ -3284,9 +3284,7 @@ fn test_convert_segwit_address() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_convert_eth_address() {
-    let coins = json!([
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-    ]);
+    let coins = json!([eth_dev_conf()]);
 
     // start mm and immediately place the order
     let mm = MarketMakerIt::start(
@@ -4222,7 +4220,7 @@ fn test_qrc20_withdraw_error() {
 fn test_get_raw_transaction() {
     let coins = json! ([
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        {"coin":"ETH","name":"ethereum","chain_id":1,"protocol":{"type":"ETH"}},
     ]);
     let mm = MarketMakerIt::start(
         json! ({

@@ -37,12 +37,13 @@ pub(crate) fn eth_coin_for_test(
     coin_type: EthCoinType,
     urls: &[&str],
     fallback_swap_contract: Option<Address>,
+    chain_id: u64,
 ) -> (MmArc, EthCoin) {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair)
+    eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair, chain_id)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -50,10 +51,11 @@ pub(crate) fn random_eth_coin_for_test(
     coin_type: EthCoinType,
     urls: &[&str],
     fallback_swap_contract: Option<Address>,
+    chain_id: u64,
 ) -> (MmArc, EthCoin) {
     let key_pair = Random.generate().unwrap();
     fill_eth(key_pair.address(), 0.001);
-    eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair)
+    eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair, chain_id)
 }
 
 fn eth_coin_from_keypair(
@@ -61,6 +63,7 @@ fn eth_coin_from_keypair(
     urls: &[&str],
     fallback_swap_contract: Option<Address>,
     key_pair: KeyPair,
+    chain_id: u64,
 ) -> (MmArc, EthCoin) {
     let mut web3_instances = vec![];
     for url in urls.iter() {
@@ -105,7 +108,7 @@ fn eth_coin_from_keypair(
         web3_instances: AsyncMutex::new(web3_instances),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
-        chain_id: 1,
+        chain_id,
         trezor_coin: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
