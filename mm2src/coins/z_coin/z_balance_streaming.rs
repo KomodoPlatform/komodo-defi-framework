@@ -1,5 +1,4 @@
 use crate::common::Future01CompatExt;
-use crate::hd_wallet::AsyncMutex;
 use crate::z_coin::ZCoin;
 use crate::{MarketCoinOps, MmCoin};
 
@@ -9,6 +8,7 @@ use common::log::{error, info};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
+use futures::lock::Mutex as AsyncMutex;
 use futures_util::StreamExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
