@@ -991,7 +991,19 @@ impl TendermintCoin {
                 Ok((tx_id, tx_raw))
             },
             TendermintActivationPolicy::PublicKey(_) => {
-                // TODO: Figure out a communication bridge we can use for sending unsigned TX and
+                let account_info = try_tx_s!(self.account_info(&self.account_id).await);
+                let sign_doc = try_tx_s!(self.any_to_sign_doc(account_info, tx_payload, fee, timeout_height, memo));
+
+                let _unsigned_tx = json!({
+                    "sign_doc": {
+                        "body_bytes": sign_doc.body_bytes,
+                        "auth_info_bytes": sign_doc.auth_info_bytes,
+                        "chain_id": sign_doc.chain_id,
+                        "account_number": sign_doc.account_number,
+                    }
+                });
+
+                // TODO: Figure out a req-res communication bridge we can use for sending unsigned TX and
                 // receiving it's broadcasted hash.
                 todo!()
             },
