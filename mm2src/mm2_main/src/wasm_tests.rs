@@ -130,7 +130,7 @@ async fn trade_base_rel_electrum(
     for (base, rel) in pairs.iter() {
         log!("Get {}/{} orderbook", base, rel);
         let rc = mm_bob
-            .rpc(&json! ({
+            .rpc(&json!({
                 "userpass": mm_bob.userpass,
                 "method": "orderbook",
                 "base": base,
@@ -250,7 +250,6 @@ async fn trade_v2_test_rick_and_morty() {
 
 #[wasm_bindgen_test]
 async fn activate_z_coin_light() {
-    register_wasm_log();
     let coins = json!([pirate_conf()]);
 
     let conf = Mm2TestConf::seednode(PIRATE_TEST_BALANCE_SEED, &coins);
