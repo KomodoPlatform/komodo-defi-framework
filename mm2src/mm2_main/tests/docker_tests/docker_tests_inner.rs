@@ -13,7 +13,7 @@ use common::{block_on, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use futures01::Future;
 use mm2_number::{BigDecimal, MmNumber};
-use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf, get_locked_amount, kmd_conf,
+use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_dev_conf, get_locked_amount, kmd_conf,
                                   max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
                                   MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::{get_passphrase, structs::*};
@@ -3367,7 +3367,7 @@ fn test_match_utxo_with_eth_taker_sell() {
     generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), alice_priv_key);
     generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), bob_priv_key);
 
-    let coins = json!([mycoin_conf(1000), eth_testnet_conf()]);
+    let coins = json!([mycoin_conf(1000), eth_dev_conf()]);
 
     let mut mm_bob = MarketMakerIt::start(
         json!({
@@ -3444,7 +3444,7 @@ fn test_match_utxo_with_eth_taker_buy() {
 
     generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), alice_priv_key);
     generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), bob_priv_key);
-    let coins = json!([mycoin_conf(1000), eth_testnet_conf()]);
+    let coins = json!([mycoin_conf(1000), eth_dev_conf()]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",

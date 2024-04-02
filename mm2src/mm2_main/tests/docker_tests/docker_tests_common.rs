@@ -2,8 +2,8 @@ pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
 pub use mm2_number::MmNumber;
 use mm2_rpc::data::legacy::BalanceResponse;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                      enable_native, enable_native_bch, eth_jst_testnet_conf, eth_sepolia_conf,
-                                      eth_testnet_conf, jst_sepolia_conf, mm_dump, MarketMakerIt, ETH_DEV_NODES,
+                                      enable_native, enable_native_bch, eth_dev_conf, eth_jst_testnet_conf,
+                                      eth_sepolia_conf, jst_sepolia_conf, mm_dump, MarketMakerIt, ETH_DEV_NODES,
                                       ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 
@@ -179,7 +179,7 @@ pub fn eth_distributor() -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "ETH",
-        &eth_testnet_conf(),
+        &eth_dev_conf(),
         &req,
         CoinProtocol::ETH,
         priv_key_policy,

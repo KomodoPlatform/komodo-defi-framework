@@ -771,23 +771,12 @@ pub fn tbtc_legacy_conf() -> Json {
     })
 }
 
-pub fn eth_testnet_conf() -> Json {
-    json!({
-        "coin": "ETH",
-        "name": "ethereum",
-        "mm2": 1,
-        "derivation_path": "m/44'/60'",
-        "protocol": {
-            "type": "ETH"
-        }
-    })
-}
-
 pub fn eth_testnet_conf_trezor() -> Json {
     json!({
         "coin": "ETH",
         "name": "ethereum",
         "mm2": 1,
+        "chain_id": 1337,
         "derivation_path": "m/44'/1'", // Trezor uses coin type 1 for testnet
         "protocol": {
             "type": "ETH"
@@ -858,6 +847,7 @@ pub fn eth_jst_testnet_conf() -> Json {
     json!({
         "coin": "JST",
         "name": "jst",
+        "chain_id": 1337,
         "derivation_path": "m/44'/60'",
         "protocol": {
             "type": "ERC20",

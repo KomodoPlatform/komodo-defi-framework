@@ -1,7 +1,7 @@
 use common::block_on;
 use http::StatusCode;
-use mm2_test_helpers::for_tests::{disable_coin, disable_coin_err, enable_eth_with_tokens, eth_jst_testnet_conf,
-                                  eth_testnet_conf, get_passphrase, MarketMakerIt, Mm2TestConf,
+use mm2_test_helpers::for_tests::{disable_coin, disable_coin_err, enable_eth_with_tokens, eth_dev_conf,
+                                  eth_jst_testnet_conf, get_passphrase, MarketMakerIt, Mm2TestConf,
                                   ETH_DEV_FALLBACK_CONTRACT, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT};
 use mm2_test_helpers::structs::{EnableEthWithTokensResponse, RpcV2Response};
 use serde_json::{self as json, json, Value as Json};
@@ -49,7 +49,7 @@ async fn enable_eth_with_tokens_without_balance(
 #[cfg(not(target_arch = "wasm32"))]
 fn test_disable_eth_coin_with_token() {
     let passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-    let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf(),]);
+    let coins = json!([eth_dev_conf(), eth_jst_testnet_conf(),]);
     let conf = Mm2TestConf::seednode(&passphrase, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
     block_on(enable_eth_with_tokens(&mm, "ETH", &["JST"], ETH_DEV_NODES, None));
@@ -94,7 +94,7 @@ fn test_disable_eth_coin_with_token() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_disable_eth_coin_with_token_without_balance() {
     let passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-    let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf(),]);
+    let coins = json!([eth_dev_conf(), eth_jst_testnet_conf(),]);
     let conf = Mm2TestConf::seednode(&passphrase, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
     let enable_eth_with_tokens = block_on(enable_eth_with_tokens_without_balance(
@@ -133,7 +133,7 @@ fn test_disable_eth_coin_with_token_without_balance() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_sign_eth_transaction() {
     let passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
-    let coins = json!([eth_testnet_conf()]);
+    let coins = json!([eth_dev_conf()]);
     let conf = Mm2TestConf::seednode(&passphrase, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
     block_on(enable_eth(&mm, "ETH", ETH_DEV_NODES));

@@ -21,9 +21,9 @@ use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, gen
                              REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
-use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf,
-                                  eth_testnet_conf, mm_dump, my_balance, my_swap_status, mycoin1_conf, mycoin_conf,
-                                  start_swaps, wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
+use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf, mm_dump,
+                                  my_balance, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
+                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
                                   DEFAULT_RPC_PASSWORD};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
@@ -1019,7 +1019,7 @@ fn test_watcher_waits_for_taker_eth() {
 #[test]
 #[ignore]
 fn test_two_watchers_spend_maker_payment_eth_erc20() {
-    let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf()]);
+    let coins = json!([eth_dev_conf(), eth_jst_testnet_conf()]);
 
     let alice_passphrase =
         String::from("spice describe gravity federal blast come thank unfair canal monkey style afraid");

@@ -4,7 +4,7 @@ use crypto::privkey::key_pair_from_seed;
 #[cfg(not(target_arch = "wasm32"))]
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT},
+use mm2_test_helpers::{for_tests::{eth_dev_conf, eth_jst_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT},
                        get_passphrase};
 
 lazy_static! {
@@ -25,7 +25,7 @@ pub fn eth_distributor() -> EthCoin {
     block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "ETH",
-        &eth_testnet_conf(),
+        &eth_dev_conf(),
         &req,
         CoinProtocol::ETH,
         priv_key_policy,
@@ -76,7 +76,7 @@ fn eth_coin_from_keypair(
 
     let conf = json!({
         "coins":[
-            eth_testnet_conf(),
+            eth_dev_conf(),
             eth_jst_testnet_conf()
         ]
     });
