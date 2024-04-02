@@ -1,5 +1,6 @@
-use crate::eth::{CoinAssocTypesError, Erc721FunctionError, HtlcParamsError, NftAssocTypesError, PaymentStatusErr};
-use crate::{eth::Web3RpcError, utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
+use crate::eth::{CoinAssocTypesError, NftAssocTypesError, Web3RpcError};
+use crate::nft::trading_proto_v2::errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr};
+use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
 use enum_derives::EnumFromStringify;
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;

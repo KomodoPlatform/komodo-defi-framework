@@ -7,6 +7,7 @@ pub mod nft_structs;
 pub(crate) mod storage;
 
 #[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;
+pub(crate) mod trading_proto_v2;
 
 use crate::{coin_conf, get_my_address, lp_coinfind_or_err, CoinsContext, MarketCoinOps, MmCoinEnum, MmCoinStruct,
             MyAddressReq, WithdrawError};
