@@ -148,6 +148,7 @@ pub enum PaymentState {
     Spent,
     Refunded,
 }
+
 #[allow(dead_code)]
 pub(crate) enum MakerPaymentStateV2 {
     Uninitialized,
@@ -155,6 +156,7 @@ pub(crate) enum MakerPaymentStateV2 {
     TakerSpent,
     MakerRefunded,
 }
+
 #[allow(dead_code)]
 pub(crate) enum TakerPaymentStateV2 {
     Uninitialized,

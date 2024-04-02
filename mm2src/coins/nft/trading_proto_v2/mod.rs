@@ -6,7 +6,7 @@ use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
 use mm2_number::BigDecimal;
 use std::convert::TryInto;
-use web3::types::TransactionId;
+use web3::types::{Transaction as Web3Tx, TransactionId};
 
 pub(crate) mod errors;
 use errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr};
@@ -168,6 +168,35 @@ impl EthCoin {
         Ok(function)
     }
 
+    async fn validate_from_to_and_maker_status(
+        &self,
+        tx_from_rpc: &Web3Tx,
+        expected_from: Address,
+        expected_to: Address,
+        maker_status: U256,
+    ) -> ValidatePaymentResult<()> {
+        if maker_status != U256::from(MakerPaymentStateV2::PaymentSent as u8) {
+            return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                "NFT Maker Payment state is not PAYMENT_STATE_SENT, got {}",
+                maker_status
+            )));
+        }
+        if tx_from_rpc.from != Some(expected_from) {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "NFT Maker Payment tx {:?} was sent from wrong address, expected {:?}",
+                tx_from_rpc, expected_from
+            )));
+        }
+        // As NFT owner calls "safeTransferFrom" directly, then in Transaction 'to' field we expect token_address
+        if tx_from_rpc.to != Some(expected_to) {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "NFT Maker Payment tx {:?} was sent to wrong address, expected {:?}",
+                tx_from_rpc, expected_to,
+            )));
+        }
+        Ok(())
+    }
+
     pub(crate) async fn validate_nft_maker_payment_v2_impl(
         &self,
         args: ValidateNftMakerPaymentArgs<'_, Self>,
@@ -196,12 +225,6 @@ impl EthCoin {
                 StateType::MakerPayments,
             )
             .await?;
-        if maker_status != U256::from(MakerPaymentStateV2::PaymentSent as u8) {
-            return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                "NFT Maker Payment state is not PAYMENT_STATE_SENT, got {}",
-                maker_status
-            )));
-        }
         let tx_from_rpc = self
             .transaction(TransactionId::Hash(args.maker_payment_tx.hash))
             .await?;
@@ -211,73 +234,38 @@ impl EthCoin {
                 args.maker_payment_tx.hash
             ))
         })?;
-        if tx_from_rpc.from != Some(maker_address) {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "NFT Maker Payment tx {:?} was sent from wrong address, expected {:?}",
-                tx_from_rpc, maker_address
-            )));
-        }
-        // As NFT owner calls "safeTransferFrom" directly, then in Transaction 'to' field we expect token_address
-        if tx_from_rpc.to != Some(token_address) {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "NFT Maker Payment tx {:?} was sent to wrong address, expected {:?}",
-                tx_from_rpc, token_address,
-            )));
-        }
+        self.validate_from_to_and_maker_status(tx_from_rpc, maker_address, token_address, maker_status)
+            .await?;
         match self.coin_type {
-            EthCoinType::Nft { .. } => match contract_type {
-                ContractType::Erc1155 => {
-                    let function = ERC1155_CONTRACT
-                        .function("safeTransferFrom")
-                        .map_to_mm(|e| ValidatePaymentError::InternalError(e.to_string()))?;
-                    let decoded = decode_contract_call(function, &tx_from_rpc.input.0)
-                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
+            EthCoinType::Nft { .. } => {
+                let (decoded, index_bytes) =
+                    self.get_decoded_tx_data_and_index_bytes(&contract_type, &tx_from_rpc.input.0)?;
 
-                    let validation_params = ValidationParams {
-                        maker_address,
-                        etomic_swap_contract,
-                        token_id: args.token_id,
-                        amount: Some(args.amount.to_string()),
-                    };
-                    validate_decoded_data(&decoded, &validation_params)?;
+                let amount = if matches!(contract_type, ContractType::Erc1155) {
+                    Some(args.amount.to_string())
+                } else {
+                    None
+                };
 
-                    let taker_address =
-                        addr_from_raw_pubkey(args.taker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
-                    let htlc_params = ExpectedHtlcParams {
-                        swap_id,
-                        taker_address,
-                        token_address,
-                        taker_secret_hash: args.taker_secret_hash.to_vec(),
-                        maker_secret_hash: args.maker_secret_hash.to_vec(),
-                        time_lock: U256::from(args.time_lock),
-                    };
-                    decode_and_validate_htlc_params(decoded, 4, htlc_params)?;
-                },
-                ContractType::Erc721 => {
-                    let function = self.erc721_transfer_with_data()?;
-                    let decoded = decode_contract_call(function, &tx_from_rpc.input.0)
-                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
+                let validation_params = ValidationParams {
+                    maker_address,
+                    etomic_swap_contract,
+                    token_id: args.token_id,
+                    amount,
+                };
+                validate_decoded_data(&decoded, &validation_params)?;
 
-                    let validation_params = ValidationParams {
-                        maker_address,
-                        etomic_swap_contract,
-                        token_id: args.token_id,
-                        amount: None,
-                    };
-                    validate_decoded_data(&decoded, &validation_params)?;
-
-                    let taker_address =
-                        addr_from_raw_pubkey(args.taker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
-                    let htlc_params = ExpectedHtlcParams {
-                        swap_id,
-                        taker_address,
-                        token_address,
-                        taker_secret_hash: args.taker_secret_hash.to_vec(),
-                        maker_secret_hash: args.maker_secret_hash.to_vec(),
-                        time_lock: U256::from(args.time_lock),
-                    };
-                    decode_and_validate_htlc_params(decoded, 3, htlc_params)?;
-                },
+                let taker_address =
+                    addr_from_raw_pubkey(args.taker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
+                let htlc_params = ExpectedHtlcParams {
+                    swap_id,
+                    taker_address,
+                    token_address,
+                    taker_secret_hash: args.taker_secret_hash.to_vec(),
+                    maker_secret_hash: args.maker_secret_hash.to_vec(),
+                    time_lock: U256::from(args.time_lock),
+                };
+                decode_and_validate_htlc_params(decoded, index_bytes, htlc_params)?;
             },
             EthCoinType::Eth | EthCoinType::Erc20 { .. } => {
                 return MmError::err(ValidatePaymentError::InternalError(
@@ -288,6 +276,7 @@ impl EthCoin {
         Ok(())
     }
 
+    /// Retrieves the payment status from a given smart contract based on the swap ID and state type.
     async fn payment_status_v2(
         &self,
         swap_contract: Address,
@@ -312,6 +301,22 @@ impl EthCoin {
         }
     }
 
+    /// Identifies the correct "safeTransferFrom" function based on the contract type (either ERC1155 or ERC721)
+    /// and decodes the provided contract call bytes using the ABI of the identified function. Additionally, it returns
+    /// the index position of the "bytes" field within the function's parameters.
+    pub(crate) fn get_decoded_tx_data_and_index_bytes(
+        &self,
+        contract_type: &ContractType,
+        contract_call_bytes: &[u8],
+    ) -> Result<(Vec<Token>, usize), PrepareTxDataError> {
+        let (send_func, index_bytes) = match contract_type {
+            ContractType::Erc1155 => (ERC1155_CONTRACT.function("safeTransferFrom")?, 4),
+            ContractType::Erc721 => (self.erc721_transfer_with_data()?, 3),
+        };
+        let decoded = decode_contract_call(send_func, contract_call_bytes)?;
+        Ok((decoded, index_bytes))
+    }
+
     pub(crate) async fn spend_nft_maker_payment_v2_impl(
         &self,
         args: SpendNftMakerPaymentArgs<'_, Self>,
@@ -321,12 +326,9 @@ impl EthCoin {
         if args.maker_secret.len() != 32 {
             return Err(TransactionErr::Plain(ERRL!("maker_secret must be 32 bytes")));
         }
+        let (decoded, index_bytes) =
+            try_tx_s!(self.get_decoded_tx_data_and_index_bytes(&contract_type, &args.maker_payment_tx.data));
 
-        let (send_func, index_bytes) = match contract_type {
-            ContractType::Erc1155 => (try_tx_s!(ERC1155_CONTRACT.function("safeTransferFrom")), 4),
-            ContractType::Erc721 => (try_tx_s!(self.erc721_transfer_with_data()), 3),
-        };
-        let decoded = try_tx_s!(decode_contract_call(send_func, &args.maker_payment_tx.data));
         let (state, htlc_params) = try_tx_s!(
             self.status_and_htlc_params_from_tx_data(
                 etomic_swap_contract,
@@ -337,7 +339,6 @@ impl EthCoin {
             )
             .await
         );
-
         match self.coin_type {
             EthCoinType::Nft { .. } => {
                 let data =
@@ -353,6 +354,10 @@ impl EthCoin {
         }
     }
 
+    /// Prepares the encoded transaction data for spending a maker's NFT payment on the blockchain.
+    ///
+    /// This function selects the appropriate contract function based on the NFT's contract type (ERC1155 or ERC721)
+    /// and encodes the input parameters required for the blockchain transaction.
     fn prepare_spend_nft_maker_v2_data(
         &self,
         contract_type: ContractType,

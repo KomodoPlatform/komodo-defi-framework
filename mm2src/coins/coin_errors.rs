@@ -1,5 +1,5 @@
 use crate::eth::{CoinAssocTypesError, NftAssocTypesError, Web3RpcError};
-use crate::nft::trading_proto_v2::errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr};
+use crate::nft::trading_proto_v2::errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr, PrepareTxDataError};
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
 use enum_derives::EnumFromStringify;
 use futures01::Future;
@@ -22,7 +22,8 @@ pub enum ValidatePaymentError {
         "NftAssocTypesError",
         "NumConversError",
         "UnexpectedDerivationMethod",
-        "keys::Error"
+        "keys::Error",
+        "PrepareTxDataError"
     )]
     InternalError(String),
     /// Problem with deserializing the transaction, or one of the transaction parts is invalid.
