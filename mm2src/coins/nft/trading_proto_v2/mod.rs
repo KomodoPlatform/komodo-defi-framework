@@ -59,6 +59,132 @@ impl EthCoin {
         }
     }
 
+    pub(crate) async fn validate_nft_maker_payment_v2_impl(
+        &self,
+        args: ValidateNftMakerPaymentArgs<'_, Self>,
+    ) -> ValidatePaymentResult<()> {
+        let contract_type = self.parse_contract_type(args.contract_type)?;
+        self.validate_payment_args(
+            args.taker_secret_hash,
+            args.maker_secret_hash,
+            &args.amount,
+            &contract_type,
+        )
+        .map_err(ValidatePaymentError::InternalError)?;
+        let etomic_swap_contract = self.parse_contract_address(args.swap_contract_address)?;
+        let token_address = self.parse_contract_address(args.token_address)?;
+        let maker_address = addr_from_raw_pubkey(args.maker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
+        let time_lock_u32 = args
+            .time_lock
+            .try_into()
+            .map_err(ValidatePaymentError::TimelockOverflow)?;
+        let swap_id = self.etomic_swap_id(time_lock_u32, args.maker_secret_hash);
+        let maker_status = self
+            .payment_status_v2(
+                etomic_swap_contract,
+                Token::FixedBytes(swap_id.clone()),
+                &NFT_SWAP_CONTRACT,
+                StateType::MakerPayments,
+            )
+            .await?;
+        let tx_from_rpc = self
+            .transaction(TransactionId::Hash(args.maker_payment_tx.hash))
+            .await?;
+        let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
+            ValidatePaymentError::TxDoesNotExist(format!(
+                "Didn't find provided tx {:?} on ETH node",
+                args.maker_payment_tx.hash
+            ))
+        })?;
+        self.validate_from_to_and_maker_status(tx_from_rpc, maker_address, token_address, maker_status)
+            .await?;
+        match self.coin_type {
+            EthCoinType::Nft { .. } => {
+                let (decoded, index_bytes) =
+                    self.get_decoded_tx_data_and_index_bytes(&contract_type, &tx_from_rpc.input.0)?;
+
+                let amount = if matches!(contract_type, ContractType::Erc1155) {
+                    Some(args.amount.to_string())
+                } else {
+                    None
+                };
+
+                let validation_params = ValidationParams {
+                    maker_address,
+                    etomic_swap_contract,
+                    token_id: args.token_id,
+                    amount,
+                };
+                validate_decoded_data(&decoded, &validation_params)?;
+
+                let taker_address =
+                    addr_from_raw_pubkey(args.taker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
+                let htlc_params = ExpectedHtlcParams {
+                    swap_id,
+                    taker_address,
+                    token_address,
+                    taker_secret_hash: args.taker_secret_hash.to_vec(),
+                    maker_secret_hash: args.maker_secret_hash.to_vec(),
+                    time_lock: U256::from(args.time_lock),
+                };
+                decode_and_validate_htlc_params(decoded, index_bytes, htlc_params)?;
+            },
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } => {
+                return MmError::err(ValidatePaymentError::InternalError(
+                    "EthCoinType must be Nft".to_string(),
+                ))
+            },
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn spend_nft_maker_payment_v2_impl(
+        &self,
+        args: SpendNftMakerPaymentArgs<'_, Self>,
+    ) -> Result<SignedEthTx, TransactionErr> {
+        let contract_type = try_tx_s!(self.parse_contract_type(args.contract_type));
+        let etomic_swap_contract = try_tx_s!(self.parse_contract_address(args.swap_contract_address));
+        if args.maker_secret.len() != 32 {
+            return Err(TransactionErr::Plain(ERRL!("maker_secret must be 32 bytes")));
+        }
+        let (decoded, index_bytes) =
+            try_tx_s!(self.get_decoded_tx_data_and_index_bytes(&contract_type, &args.maker_payment_tx.data));
+
+        let (state, htlc_params) = try_tx_s!(
+            self.status_and_htlc_params_from_tx_data(
+                etomic_swap_contract,
+                &NFT_SWAP_CONTRACT,
+                &decoded,
+                index_bytes,
+                StateType::MakerPayments,
+            )
+            .await
+        );
+        match self.coin_type {
+            EthCoinType::Nft { .. } => {
+                let data =
+                    try_tx_s!(self.prepare_spend_nft_maker_v2_data(contract_type, &args, decoded, htlc_params, state));
+
+                self.sign_and_send_transaction(0.into(), Action::Call(etomic_swap_contract), data, U256::from(ETH_GAS))
+                    .compat()
+                    .await
+            },
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
+                "ETH and ERC20 Protocols are not supported for NFT Swaps".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) async fn refund_nft_maker_payment_v2_timelock_impl(
+        &self,
+        args: RefundPaymentArgs<'_>,
+    ) -> Result<SignedEthTx, TransactionErr> {
+        let _etomic_swap_contract = try_tx_s!(args.swap_contract_address.try_to_address());
+        let tx: UnverifiedTransaction = try_tx_s!(rlp::decode(args.payment_tx));
+        let _payment = try_tx_s!(SignedEthTx::new(tx));
+        todo!()
+    }
+
     fn prepare_nft_maker_payment_v2_data(
         &self,
         contract_type: ContractType,
@@ -197,85 +323,6 @@ impl EthCoin {
         Ok(())
     }
 
-    pub(crate) async fn validate_nft_maker_payment_v2_impl(
-        &self,
-        args: ValidateNftMakerPaymentArgs<'_, Self>,
-    ) -> ValidatePaymentResult<()> {
-        let contract_type = self.parse_contract_type(args.contract_type)?;
-        self.validate_payment_args(
-            args.taker_secret_hash,
-            args.maker_secret_hash,
-            &args.amount,
-            &contract_type,
-        )
-        .map_err(ValidatePaymentError::InternalError)?;
-        let etomic_swap_contract = self.parse_contract_address(args.swap_contract_address)?;
-        let token_address = self.parse_contract_address(args.token_address)?;
-        let maker_address = addr_from_raw_pubkey(args.maker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
-        let time_lock_u32 = args
-            .time_lock
-            .try_into()
-            .map_err(ValidatePaymentError::TimelockOverflow)?;
-        let swap_id = self.etomic_swap_id(time_lock_u32, args.maker_secret_hash);
-        let maker_status = self
-            .payment_status_v2(
-                etomic_swap_contract,
-                Token::FixedBytes(swap_id.clone()),
-                &NFT_SWAP_CONTRACT,
-                StateType::MakerPayments,
-            )
-            .await?;
-        let tx_from_rpc = self
-            .transaction(TransactionId::Hash(args.maker_payment_tx.hash))
-            .await?;
-        let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
-            ValidatePaymentError::TxDoesNotExist(format!(
-                "Didn't find provided tx {:?} on ETH node",
-                args.maker_payment_tx.hash
-            ))
-        })?;
-        self.validate_from_to_and_maker_status(tx_from_rpc, maker_address, token_address, maker_status)
-            .await?;
-        match self.coin_type {
-            EthCoinType::Nft { .. } => {
-                let (decoded, index_bytes) =
-                    self.get_decoded_tx_data_and_index_bytes(&contract_type, &tx_from_rpc.input.0)?;
-
-                let amount = if matches!(contract_type, ContractType::Erc1155) {
-                    Some(args.amount.to_string())
-                } else {
-                    None
-                };
-
-                let validation_params = ValidationParams {
-                    maker_address,
-                    etomic_swap_contract,
-                    token_id: args.token_id,
-                    amount,
-                };
-                validate_decoded_data(&decoded, &validation_params)?;
-
-                let taker_address =
-                    addr_from_raw_pubkey(args.taker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
-                let htlc_params = ExpectedHtlcParams {
-                    swap_id,
-                    taker_address,
-                    token_address,
-                    taker_secret_hash: args.taker_secret_hash.to_vec(),
-                    maker_secret_hash: args.maker_secret_hash.to_vec(),
-                    time_lock: U256::from(args.time_lock),
-                };
-                decode_and_validate_htlc_params(decoded, index_bytes, htlc_params)?;
-            },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => {
-                return MmError::err(ValidatePaymentError::InternalError(
-                    "EthCoinType must be Nft".to_string(),
-                ))
-            },
-        }
-        Ok(())
-    }
-
     /// Retrieves the payment status from a given smart contract based on the swap ID and state type.
     async fn payment_status_v2(
         &self,
@@ -315,43 +362,6 @@ impl EthCoin {
         };
         let decoded = decode_contract_call(send_func, contract_call_bytes)?;
         Ok((decoded, index_bytes))
-    }
-
-    pub(crate) async fn spend_nft_maker_payment_v2_impl(
-        &self,
-        args: SpendNftMakerPaymentArgs<'_, Self>,
-    ) -> Result<SignedEthTx, TransactionErr> {
-        let contract_type = try_tx_s!(self.parse_contract_type(args.contract_type));
-        let etomic_swap_contract = try_tx_s!(self.parse_contract_address(args.swap_contract_address));
-        if args.maker_secret.len() != 32 {
-            return Err(TransactionErr::Plain(ERRL!("maker_secret must be 32 bytes")));
-        }
-        let (decoded, index_bytes) =
-            try_tx_s!(self.get_decoded_tx_data_and_index_bytes(&contract_type, &args.maker_payment_tx.data));
-
-        let (state, htlc_params) = try_tx_s!(
-            self.status_and_htlc_params_from_tx_data(
-                etomic_swap_contract,
-                &NFT_SWAP_CONTRACT,
-                &decoded,
-                index_bytes,
-                StateType::MakerPayments,
-            )
-            .await
-        );
-        match self.coin_type {
-            EthCoinType::Nft { .. } => {
-                let data =
-                    try_tx_s!(self.prepare_spend_nft_maker_v2_data(contract_type, &args, decoded, htlc_params, state));
-
-                self.sign_and_send_transaction(0.into(), Action::Call(etomic_swap_contract), data, U256::from(ETH_GAS))
-                    .compat()
-                    .await
-            },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
-                "ETH and ERC20 Protocols are not supported for NFT Swaps".to_string(),
-            )),
-        }
     }
 
     /// Prepares the encoded transaction data for spending a maker's NFT payment on the blockchain.
@@ -427,16 +437,6 @@ impl EthCoin {
                 "Failed to decode HTLCParams from data_bytes"
             )))
         }
-    }
-
-    pub(crate) async fn refund_nft_maker_payment_v2_timelock_impl(
-        &self,
-        args: RefundPaymentArgs<'_>,
-    ) -> Result<SignedEthTx, TransactionErr> {
-        let _etomic_swap_contract = try_tx_s!(args.swap_contract_address.try_to_address());
-        let tx: UnverifiedTransaction = try_tx_s!(rlp::decode(args.payment_tx));
-        let _payment = try_tx_s!(SignedEthTx::new(tx));
-        todo!()
     }
 }
 
