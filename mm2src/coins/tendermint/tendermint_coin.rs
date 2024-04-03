@@ -1005,6 +1005,8 @@ impl TendermintCoin {
 
                 // TODO: Figure out a req-res communication bridge we can use for sending unsigned TX and
                 // receiving it's broadcasted hash.
+                //
+                // Once we receive the tx hash, validate it.
                 todo!()
             },
         }
