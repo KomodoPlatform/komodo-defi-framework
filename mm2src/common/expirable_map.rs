@@ -38,6 +38,10 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
     #[inline]
     pub fn new() -> Self { Self(FxHashMap::default()) }
 
+    /// Returns the associated value if present.
+    #[inline]
+    pub fn get(&mut self, k: &K) -> Option<&V> { self.0.get(k).map(|v| &v.value) }
+
     /// Inserts a key-value pair with an expiration duration.
     ///
     /// If a value already exists for the given key, it will be updated and then
@@ -54,7 +58,7 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
     /// Removes expired entries from the map.
     pub fn clear_expired_entries(&mut self) { self.0.retain(|_k, v| Instant::now() < v.expires_at); }
 
-    // Removes a key-value pair from the map and returns the associated value if present.
+    /// Removes a key-value pair from the map and returns the associated value if present.
     #[inline]
     pub fn remove(&mut self, k: &K) -> Option<V> { self.0.remove(k).map(|v| v.value) }
 }
