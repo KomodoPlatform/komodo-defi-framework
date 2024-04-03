@@ -72,7 +72,7 @@ num-traits = "0.2"
 parity-util-mem = "0.11"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
-prost = "0.10"
+prost = "0.11"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rand6 = { version = "0.6", package = "rand" }
 # TODO: Reduce the size of regex by disabling the features we don't use.
@@ -130,5 +130,5 @@ ethabi = { version = "17.0.0" }
 [build-dependencies]
 chrono = "0.4"
 gstuff = { version = "0.7", features = ["nightly"] }
-prost-build = { version = "0.10.4", default-features = false }
+prost-build = { version = "0.11", default-features = false }
 regex = "1"
