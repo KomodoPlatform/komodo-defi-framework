@@ -26,9 +26,7 @@ use tokio::time;
 #[async_trait]
 pub trait Client {
     /// `/abci_info`: get information about the ABCI application.
-    async fn abci_info(&self) -> Result<abci_info::Response, Error> {
-        self.perform(abci_info::Request).await
-    }
+    async fn abci_info(&self) -> Result<abci_info::Response, Error> { self.perform(abci_info::Request).await }
 
     /// `/abci_query`: query the ABCI application
     async fn abci_query<V>(

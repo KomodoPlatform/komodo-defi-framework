@@ -255,7 +255,9 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
     assert_eq!(tx_details.fee_details["gas_limit"], 150000);
 }
 
+// Ignored because IBC clients aren't maintained and get expired.
 #[test]
+#[ignore]
 fn test_tendermint_token_ibc_withdraw() {
     // visit `{rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
     const IBC_SOURCE_CHANNEL: &str = "channel-151";
@@ -302,7 +304,9 @@ fn test_tendermint_token_ibc_withdraw() {
     println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
 
+// Ignored because IBC clients aren't maintained and get expired.
 #[test]
+#[ignore]
 fn test_tendermint_ibc_withdraw_hd() {
     // visit `{rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
     const IBC_SOURCE_CHANNEL: &str = "channel-152";
