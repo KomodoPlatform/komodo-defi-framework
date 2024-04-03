@@ -4286,6 +4286,7 @@ dependencies = [
  "futures-rustls 0.21.1",
  "gstuff",
  "hex",
+ "instant",
  "lazy_static",
  "mm2_event_stream",
  "mm2_metrics",
