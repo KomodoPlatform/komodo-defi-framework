@@ -20,6 +20,8 @@ use std::future::Future;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
+use crate::data_asker::DataAsker;
+
 cfg_wasm32! {
     use mm2_rpc::wasm_rpc::WasmRpcSender;
     use crate::DbNamespaceId;
@@ -77,6 +79,8 @@ pub struct MmCtx {
     pub rpc_started: Constructible<bool>,
     /// Controller for continuously streaming data using streaming channels of `mm2_event_stream`.
     pub stream_channel_controller: Controller<Event>,
+    /// TODO:
+    pub(crate) data_asker: DataAsker,
     /// Configuration of event streaming used for SSE.
     pub event_stream_configuration: Option<EventStreamConfiguration>,
     /// True if the MarketMaker instance needs to stop.
@@ -146,6 +150,7 @@ impl MmCtx {
             initialized: Constructible::default(),
             rpc_started: Constructible::default(),
             stream_channel_controller: Controller::new(),
+            data_asker: DataAsker::default(),
             event_stream_configuration: None,
             stop: Constructible::default(),
             ffi_handle: Constructible::default(),

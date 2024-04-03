@@ -1,5 +1,3 @@
-use crate::mm_ctx::MmArc;
-
 use common::expirable_map::ExpirableMap;
 use futures::channel::oneshot;
 use futures::lock::Mutex as AsyncMutex;
@@ -10,42 +8,39 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
 
-#[derive(Clone, Debug)]
-struct DataAsker {
+use crate::mm_ctx::{MmArc, MmCtx};
+
+#[derive(Clone, Debug, Default)]
+pub struct DataAsker {
     data_id: Arc<AtomicUsize>,
     awaiting_asks: Arc<AsyncMutex<ExpirableMap<usize, oneshot::Sender<serde_json::Value>>>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct SendAskedData {
+pub struct SendAskedData {
     id: usize,
     data: serde_json::Value,
 }
 
-impl DataAsker {
-    fn new() -> Self {
-        Self {
-            data_id: Default::default(),
-            awaiting_asks: Default::default(),
-        }
-    }
-
-    async fn ask_for_data<Input, Output>(&self, ctx: MmArc, data: Input) -> Output
+impl MmCtx {
+    /// TODO:
+    pub async fn ask_for_data<Input, Output>(&self, data: Input) -> Output
     where
         Input: Serialize,
         Output: DeserializeOwned,
     {
-        let data_id = self.data_id.fetch_add(1, atomic::Ordering::SeqCst);
+        let data_id = self.data_asker.data_id.fetch_add(1, atomic::Ordering::SeqCst);
         let (sender, receiver) = futures::channel::oneshot::channel::<serde_json::Value>();
 
-        self.awaiting_asks
+        self.data_asker
+            .awaiting_asks
             .lock()
             .await
             .insert(data_id, sender, Duration::from_secs(10));
 
-        ctx.stream_channel_controller
+        self.stream_channel_controller
             .broadcast(Event::new(
-                "DATA_ASK".to_string(),
+                "DATA_NEEDED".to_string(),
                 serde_json::to_string(&data).expect("TODO"),
             ))
             .await;
@@ -60,8 +55,9 @@ impl DataAsker {
         todo!()
     }
 
-    async fn send_asked_data(&self, asked_data: SendAskedData) {
-        let mut awaiting_asks = self.awaiting_asks.lock().await;
+    /// TODO:
+    pub async fn send_asked_data(&self, asked_data: SendAskedData) {
+        let mut awaiting_asks = self.data_asker.awaiting_asks.lock().await;
         awaiting_asks.clear_expired_entries();
 
         if let Some(sender) = awaiting_asks.remove(&asked_data.id) {
