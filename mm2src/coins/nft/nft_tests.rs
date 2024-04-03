@@ -113,7 +113,7 @@ cross_test!(test_moralis_requests, {
     );
     let response_meta = send_request_to_uri(uri_meta.as_str()).await.unwrap();
     let nft_moralis: NftFromMoralis = serde_json::from_str(&response_meta.to_string()).unwrap();
-    assert_eq!(41237364, *nft_moralis.block_number.0);
+    assert_eq!(41237364, nft_moralis.block_number.0);
 });
 
 cross_test!(test_antispam_scan_endpoints, {

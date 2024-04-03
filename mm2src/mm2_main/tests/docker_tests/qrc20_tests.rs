@@ -6,9 +6,9 @@ use coins::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin};
 use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::utxo::utxo_common::big_decimal_from_sat;
 use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
-use coins::{CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MarketCoinOps, MmCoin,
-            RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps,
-            SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidatePaymentInput,
+use coins::{CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, MarketCoinOps,
+            MmCoin, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps,
+            SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput,
             WaitForHTLCTxSpendArgs};
 use common::log::debug;
 use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -1743,3 +1743,28 @@ fn test_trade_qrc20_utxo() { trade_base_rel(("QICK", "MYCOIN")); }
 #[test]
 #[ignore]
 fn test_trade_utxo_qrc20() { trade_base_rel(("MYCOIN", "QICK")); }
+
+#[test]
+fn test_send_taker_fee() {
+    // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
+    let (_ctx, coin, _priv_key) =
+        generate_segwit_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.5).unwrap(), Some(0));
+
+    let amount = BigDecimal::from_str("0.01").unwrap();
+    let tx = coin
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, DexFee::Standard(amount.clone().into()), &[])
+        .wait()
+        .expect("!send_taker_fee");
+    assert!(matches!(tx, TransactionEnum::UtxoTx(_)), "Expected UtxoTx");
+
+    coin.validate_fee(ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: coin.my_public_key().unwrap(),
+        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+        dex_fee: &DexFee::Standard(amount.into()),
+        min_block_number: 0,
+        uuid: &[],
+    })
+    .wait()
+    .expect("!validate_fee");
+}
