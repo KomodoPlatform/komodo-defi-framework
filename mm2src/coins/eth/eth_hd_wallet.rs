@@ -24,7 +24,7 @@ impl ExtractExtendedPubkey for EthCoin {
     where
         XPubExtractor: HDXPubExtractor + Send,
     {
-        extract_extended_pubkey(self, xpub_extractor, derivation_path).await
+        extract_extended_pubkey_impl(self, xpub_extractor, derivation_path).await
     }
 }
 

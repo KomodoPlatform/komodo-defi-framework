@@ -1070,7 +1070,7 @@ impl ExtractExtendedPubkey for QtumCoin {
     where
         XPubExtractor: HDXPubExtractor + Send,
     {
-        crate::extract_extended_pubkey(self, xpub_extractor, derivation_path).await
+        crate::extract_extended_pubkey_impl(self, xpub_extractor, derivation_path).await
     }
 }
 
