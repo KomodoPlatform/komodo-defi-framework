@@ -1244,7 +1244,7 @@ impl TendermintCoin {
 
                 if htlc.hash_lock.to_uppercase() == htlc_data.hash_lock.to_uppercase() {
                     let htlc = TransactionEnum::CosmosTransaction(CosmosTransaction {
-                        data: try_s!(TxRaw::decode(&tx.tx[..])),
+                        data: try_s!(TxRaw::decode(tx.tx.as_slice())),
                     });
                     return Ok(Some(htlc));
                 }
@@ -1703,6 +1703,7 @@ impl TendermintCoin {
             match tx_response.code {
                 TX_SUCCESS_CODE => Ok(Some(cosmrs::tendermint::abci::Code::Ok)),
                 err_code => Ok(Some(cosmrs::tendermint::abci::Code::Err(
+                    // This will never panic, as `0` code goes the the success variant above.
                     NonZeroU32::new(err_code).unwrap(),
                 ))),
             }
@@ -1757,11 +1758,14 @@ impl TendermintCoin {
             HTLC_STATE_OPEN => Ok(None),
             HTLC_STATE_COMPLETED => {
                 let events_string = format!("claim_htlc.id='{}'", htlc_id);
+                // TODO: Remove deprecated attribute when new version of tendermint-rs is released
+                #[allow(deprecated)]
                 let request = GetTxsEventRequest {
                     events: vec![events_string],
                     order_by: TendermintResultOrder::Ascending as i32,
-                    // FIXME: Put correct data here
-                    ..Default::default()
+                    page: 1,
+                    limit: 1,
+                    pagination: None,
                 };
                 let encoded_request = request.encode_to_vec();
 
@@ -2338,11 +2342,14 @@ impl MarketCoinOps for TendermintCoin {
         let htlc_id = self.calculate_htlc_id(&htlc.sender, &htlc.to, htlc.amount, args.secret_hash);
 
         let events_string = format!("claim_htlc.id='{}'", htlc_id);
+        // TODO: Remove deprecated attribute when new version of tendermint-rs is released
+        #[allow(deprecated)]
         let request = GetTxsEventRequest {
             events: vec![events_string],
             order_by: TendermintResultOrder::Ascending as i32,
-            // FIXME: Put correct data here
-            ..Default::default()
+            page: 1,
+            limit: 1,
+            pagination: None,
         };
         let encoded_request = request.encode_to_vec();
 
@@ -3049,11 +3056,14 @@ pub mod tendermint_coin_tests {
         .unwrap();
 
         let events = "claim_htlc.id='2B925FC83A106CC81590B3DB108AC2AE496FFA912F368FE5E29BC1ED2B754F2C'";
+        // TODO: Remove deprecated attribute when new version of tendermint-rs is released
+        #[allow(deprecated)]
         let request = GetTxsEventRequest {
             events: vec![events.into()],
             order_by: TendermintResultOrder::Ascending as i32,
-            // FIXME: Put correct data here
-            ..Default::default()
+            page: 1,
+            limit: 1,
+            pagination: None,
         };
         let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
             Some(ABCI_GET_TXS_EVENT_PATH.to_string()),

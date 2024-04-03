@@ -27,7 +27,6 @@ use tokio::time;
 pub trait Client {
     /// `/abci_info`: get information about the ABCI application.
     async fn abci_info(&self) -> Result<abci_info::Response, Error> {
-        // FIXME: This should be a breaking change.
         self.perform(abci_info::Request).await
     }
 

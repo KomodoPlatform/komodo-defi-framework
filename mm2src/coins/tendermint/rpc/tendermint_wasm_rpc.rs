@@ -83,7 +83,6 @@ impl HttpClient {
 
     /// `/abci_info`: get information about the ABCI application.
     pub async fn abci_info(&self) -> Result<abci_info::Response, PerformError> {
-        // FIXME: This should be a breaking change.
         self.perform(abci_info::Request).await
     }
 
