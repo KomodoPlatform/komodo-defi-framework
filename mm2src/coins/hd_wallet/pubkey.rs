@@ -13,6 +13,10 @@ use rpc_task::{RpcTask, RpcTaskHandleShared};
 use std::sync::Arc;
 
 const SHOW_PUBKEY_ON_DISPLAY: bool = false;
+
+/// This trait should be implemented for coins
+/// to support extracting extended public keys from any depth.
+/// The extraction can be from either an internal or external wallet.
 #[async_trait]
 pub trait ExtractExtendedPubkey {
     type ExtendedPublicKey;
