@@ -58,6 +58,7 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
+use instant::Duration;
 use itertools::Itertools;
 use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
@@ -75,7 +76,6 @@ use std::io;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use uuid::Uuid;
 
 // ABCI Request Paths
@@ -1010,7 +1010,10 @@ impl TendermintCoin {
                     }
                 });
 
-                let _data: TxHashData = ctx.ask_for_data(unsigned_tx).await;
+                let _data: TxHashData = ctx
+                    .ask_for_data("TENDERMINT_TX_HASH", unsigned_tx, Duration::from_secs(10))
+                    .await
+                    .expect("TODO");
 
                 // TODO: Figure out a req-res communication bridge we can use for sending unsigned TX and
                 // receiving it's broadcasted hash.
