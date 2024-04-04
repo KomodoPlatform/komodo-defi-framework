@@ -1244,7 +1244,8 @@ impl CoinWithTxHistoryV2 for QtumCoin {
 #[async_trait]
 impl UtxoTxHistoryOps for QtumCoin {
     async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError> {
-        utxo_common::utxo_tx_history_v2_common::my_addresses(self).await
+        let addresses = self.all_addresses().await?;
+        Ok(addresses)
     }
 
     async fn tx_details_by_hash<Storage>(

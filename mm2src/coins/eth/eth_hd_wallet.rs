@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use bip32::DerivationPath;
 use crypto::Secp256k1ExtendedPublicKey;
 use ethereum_types::{Address, Public};
-use std::iter;
 
 pub type EthHDAddress = HDAddress<Address, Public>;
 pub type EthHDAccount = HDAccount<EthHDAddress>;
@@ -175,32 +174,5 @@ impl HDWalletBalanceOps for EthCoin {
         _addresses: HashSet<String>,
     ) -> MmResult<(), String> {
         Ok(())
-    }
-}
-
-impl EthCoin {
-    // Todo: make a common implementation for all coins
-    /// Returns the addresses that are known to the wallet.
-    pub async fn my_addresses(&self) -> MmResult<HashSet<Address>, AddressDerivingError> {
-        match self.derivation_method() {
-            DerivationMethod::SingleAddress(ref my_address) => Ok(iter::once(*my_address).collect()),
-            DerivationMethod::HDWallet(ref hd_wallet) => {
-                let hd_accounts = hd_wallet.get_accounts().await;
-
-                let mut all_addresses = HashSet::new();
-                for (_, hd_account) in hd_accounts {
-                    let external_addresses = self.derive_known_addresses(&hd_account, Bip44Chain::External).await?;
-                    let internal_addresses = self.derive_known_addresses(&hd_account, Bip44Chain::Internal).await?;
-
-                    let addresses_it = external_addresses
-                        .into_iter()
-                        .chain(internal_addresses)
-                        .map(|hd_address| hd_address.address());
-                    all_addresses.extend(addresses_it);
-                }
-
-                Ok(all_addresses)
-            },
-        }
     }
 }

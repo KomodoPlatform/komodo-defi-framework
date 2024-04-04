@@ -1,5 +1,6 @@
 use bip32::DerivationPath;
 use std::fmt::Display;
+use std::hash::Hash;
 
 /// `HDAddressOps` Trait
 ///
@@ -8,7 +9,7 @@ use std::fmt::Display;
 /// in the structure `m / purpose' / coin_type' / account' / chain (or change) / address_index`.
 /// This allows for managing individual addresses within a specific account and chain.
 pub trait HDAddressOps {
-    type Address: Clone + Display + Send + Sync;
+    type Address: Clone + Display + Eq + Hash + Send + Sync;
     type Pubkey: Clone;
 
     fn address(&self) -> Self::Address;

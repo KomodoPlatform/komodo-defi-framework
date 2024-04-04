@@ -5,9 +5,7 @@ use crate::my_tx_history_v2::{CoinWithTxHistoryV2, DisplayAddress, MyTxHistoryEr
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::{electrum_script_hash, ElectrumClient, NativeClient, UtxoRpcClientEnum};
 use crate::utxo::utxo_common::{big_decimal_from_sat, HISTORY_TOO_LARGE_ERROR};
-use crate::utxo::utxo_hd_wallet::UtxoHDWallet;
-use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
-                                      UtxoTxHistoryOps};
+use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::utxo::{output_script, RequestTxHistoryResult, UtxoCoinFields, UtxoCommonOps};
 use crate::{big_decimal_from_sat_unsigned, compare_transactions, BalanceResult, CoinWithDerivationMethod,
             DerivationMethod, HDAccountAddressId, MarketCoinOps, NumConversError, TransactionDetails, TxFeeDetails,
@@ -24,7 +22,6 @@ use rpc::v1::types::{TransactionInputEnum, H256 as H256Json};
 use serialization::deserialize;
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
-use std::iter;
 use std::num::TryFromIntError;
 
 /// [`CoinWithTxHistoryV2::history_wallet_id`] implementation.
@@ -118,35 +115,6 @@ where
         .derive_address(&hd_account, hd_address_id.chain, hd_address_id.address_id)
         .await?;
     Ok(GetTxHistoryFilters::for_address(hd_address.address().display_address()))
-}
-
-/// [`UtxoTxHistoryOps::my_addresses`] implementation.
-pub async fn my_addresses<Coin>(coin: &Coin) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError>
-where
-    Coin: HDWalletCoinOps<HDWallet = UtxoHDWallet> + UtxoCommonOps,
-{
-    const ADDRESSES_CAPACITY: usize = 60;
-
-    match coin.as_ref().derivation_method {
-        DerivationMethod::SingleAddress(ref my_address) => Ok(iter::once(my_address.clone()).collect()),
-        DerivationMethod::HDWallet(ref hd_wallet) => {
-            let hd_accounts = hd_wallet.get_accounts().await;
-
-            let mut all_addresses = HashSet::with_capacity(ADDRESSES_CAPACITY);
-            for (_, hd_account) in hd_accounts {
-                let external_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::External).await?;
-                let internal_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::Internal).await?;
-
-                let addresses_it = external_addresses
-                    .into_iter()
-                    .chain(internal_addresses)
-                    .map(|hd_address| hd_address.address());
-                all_addresses.extend(addresses_it);
-            }
-
-            Ok(all_addresses)
-        },
-    }
 }
 
 /// [`UtxoTxHistoryOps::tx_details_by_hash`] implementation.

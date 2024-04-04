@@ -13,9 +13,8 @@ use super::utxo_standard::UtxoStandardCoin;
 use crate::{utxo::{output_script,
                    rpc_clients::electrum_script_hash,
                    utxo_common::{address_balance, address_to_scripthash},
-                   utxo_tx_history_v2::UtxoTxHistoryOps,
                    ScripthashNotification, UtxoCoinFields},
-            MarketCoinOps, MmCoin};
+            CoinWithDerivationMethod, MarketCoinOps, MmCoin};
 
 macro_rules! try_or_continue {
     ($exp:expr) => {
@@ -118,7 +117,7 @@ impl EventBehaviour for UtxoStandardCoin {
                     continue;
                 },
                 ScripthashNotification::RefreshSubscriptions => {
-                    let my_addresses = try_or_continue!(self.my_addresses().await);
+                    let my_addresses = try_or_continue!(self.all_addresses().await);
                     match subscribe_to_addresses(self.as_ref(), my_addresses).await {
                         Ok(map) => scripthash_to_address_map = map,
                         Err(e) => {
@@ -139,7 +138,7 @@ impl EventBehaviour for UtxoStandardCoin {
 
             let address = match scripthash_to_address_map.get(&notified_scripthash) {
                 Some(t) => Some(t.clone()),
-                None => try_or_continue!(self.my_addresses().await)
+                None => try_or_continue!(self.all_addresses().await)
                     .into_iter()
                     .find_map(|addr| {
                         let script = match output_script(&addr) {

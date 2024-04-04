@@ -15,7 +15,8 @@ use std::collections::{HashMap, HashSet};
 
 use super::EthCoin;
 use crate::{eth::{u256_to_big_decimal, Erc20TokenInfo},
-            BalanceError, MmCoin};
+            BalanceError, CoinWithDerivationMethod, MmCoin};
+
 struct BalanceData {
     ticker: String,
     address: String,
@@ -138,7 +139,7 @@ impl EventBehaviour for EthCoin {
             loop {
                 let now = Instant::now();
 
-                let addresses = match coin.my_addresses().await {
+                let addresses = match coin.all_addresses().await {
                     Ok(addresses) => addresses,
                     Err(e) => {
                         log::error!("Failed getting addresses for {}. Error: {}", coin.ticker, e);

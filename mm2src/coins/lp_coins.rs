@@ -75,7 +75,6 @@ use serde_json::{self as json, Value as Json};
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::collections::HashSet;
-use std::fmt;
 use std::future::Future as Future03;
 use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, AddAssign, Deref};
@@ -84,6 +83,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{fmt, iter};
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 use zcash_primitives::transaction::Transaction as ZTransaction;
 
@@ -3901,12 +3901,14 @@ where
 ///
 /// Implementors of this trait will typically be coins or tokens that are either used within
 /// a traditional single address scheme or leverage the power and flexibility of HD wallets.
+#[async_trait]
 pub trait CoinWithDerivationMethod: HDWalletCoinOps {
     /// Returns the address derivation method associated with the coin.
     ///
     /// Implementors should return the specific `DerivationMethod` that the coin utilizes,
     /// either `SingleAddress` for a static address approach or `HDWallet` for an HD wallet strategy.
     fn derivation_method(&self) -> &DerivationMethod<HDCoinAddress<Self>, Self::HDWallet>;
+
     /// Checks if the coin uses the HD wallet strategy for address derivation.
     ///
     /// This is a utility function that returns `true` if the coin's derivation method is `HDWallet` and
@@ -3918,6 +3920,35 @@ pub trait CoinWithDerivationMethod: HDWalletCoinOps {
     /// - `false` if it uses any other method.
     fn has_hd_wallet_derivation_method(&self) -> bool {
         matches!(self.derivation_method(), DerivationMethod::HDWallet(_))
+    }
+
+    /// Retrieves all addresses associated with the coin.
+    async fn all_addresses(&self) -> MmResult<HashSet<HDCoinAddress<Self>>, AddressDerivingError> {
+        const ADDRESSES_CAPACITY: usize = 60;
+
+        match self.derivation_method() {
+            DerivationMethod::SingleAddress(ref my_address) => Ok(iter::once(my_address.clone()).collect()),
+            DerivationMethod::HDWallet(ref hd_wallet) => {
+                let hd_accounts = hd_wallet.get_accounts().await;
+
+                // We pre-allocate a suitable capacity for the HashSet to try to avoid re-allocations.
+                // If the capacity is exceeded, the HashSet will automatically resize itself by re-allocating,
+                // but this will not happen in most use cases where addresses will be below the capacity.
+                let mut all_addresses = HashSet::with_capacity(ADDRESSES_CAPACITY);
+                for (_, hd_account) in hd_accounts {
+                    let external_addresses = self.derive_known_addresses(&hd_account, Bip44Chain::External).await?;
+                    let internal_addresses = self.derive_known_addresses(&hd_account, Bip44Chain::Internal).await?;
+
+                    let addresses_it = external_addresses
+                        .into_iter()
+                        .chain(internal_addresses)
+                        .map(|hd_address| hd_address.address());
+                    all_addresses.extend(addresses_it);
+                }
+
+                Ok(all_addresses)
+            },
+        }
     }
 }
 

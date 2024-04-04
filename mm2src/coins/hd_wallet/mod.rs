@@ -8,6 +8,7 @@ use primitives::hash::H160;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
+use std::hash::Hash;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -79,7 +80,7 @@ pub struct HDAddress<Address, Pubkey> {
 
 impl<Address, Pubkey> HDAddressOps for HDAddress<Address, Pubkey>
 where
-    Address: Clone + Display + Send + Sync,
+    Address: Clone + Display + Eq + Hash + Send + Sync,
     Pubkey: Clone,
 {
     type Address = Address;
