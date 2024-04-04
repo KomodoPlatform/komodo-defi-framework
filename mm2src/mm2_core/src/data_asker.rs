@@ -11,6 +11,7 @@ use mm2_event_stream::Event;
 use ser_error_derive::SerializeErrorType;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
 
@@ -28,8 +29,6 @@ pub struct DataAsker {
 pub enum AskForDataError {
     #[display(fmt = "Operation timed out. {}", _0)]
     Timeout(TimeoutError),
-    #[display(fmt = "Expected JSON data, but given one(from asker) was not serializable: {:?}", _0)]
-    SerializationError(serde_json::Error),
     #[display(
         fmt = "Expected JSON data, but given(from data provider) one was not deserializable: {:?}",
         _0
@@ -72,13 +71,13 @@ impl MmCtx {
                     .insert(data_id, sender, timeout);
             }
 
-            let data_input = match serde_json::to_string(&data) {
-                Ok(t) => t,
-                Err(e) => return MmError::err(AskForDataError::SerializationError(e)),
-            };
+            let input = json!({
+                "data_id": data_id,
+                "data": data
+            });
 
             self.stream_channel_controller
-                .broadcast(Event::new(format!("{EVENT_NAME}:{data_type}"), data_input))
+                .broadcast(Event::new(format!("{EVENT_NAME}:{data_type}"), input.to_string()))
                 .await;
 
             match receiver.await {
