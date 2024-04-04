@@ -78,7 +78,7 @@ impl MmCtx {
             };
 
             self.stream_channel_controller
-                .broadcast(Event::new(EVENT_NAME.to_owned(), data_input))
+                .broadcast(Event::new(format!("{EVENT_NAME}:{data_type}"), data_input))
                 .await;
 
             match receiver.await {
