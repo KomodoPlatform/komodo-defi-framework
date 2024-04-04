@@ -8,6 +8,7 @@ doctest = false
 
 [dependencies]
 arrayref = "0.3"
+async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1"
 cfg-if = "1.0"
 common = { path = "../common" }
@@ -16,11 +17,14 @@ derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 hex = "0.4.2"
 lazy_static = "1.4"
+mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_metrics = { path = "../mm2_metrics" }
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"
+ser_error = { path = "../derives/ser_error" }
+ser_error_derive = { path = "../derives/ser_error_derive" }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 shared_ref_counter = { path = "../common/shared_ref_counter" }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
@@ -29,8 +33,10 @@ uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 gstuff = { version = "0.7", features = ["nightly"] }
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 mm2_rpc = { path = "../mm2_rpc", features = [ "rpc_facilities" ] }
+wasm-bindgen-test = { version = "0.3.2" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures-rustls = { version = "0.21.1" }
 gstuff = { version = "0.7", features = ["nightly"] }
 instant = "0.1.12"
+tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }

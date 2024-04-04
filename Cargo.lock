@@ -4277,6 +4277,7 @@ name = "mm2_core"
 version = "0.1.0"
 dependencies = [
  "arrayref",
+ "async-std",
  "async-trait",
  "cfg-if 1.0.0",
  "common",
@@ -4288,15 +4289,20 @@ dependencies = [
  "hex",
  "instant",
  "lazy_static",
+ "mm2_err_handle",
  "mm2_event_stream",
  "mm2_metrics",
  "mm2_rpc",
  "primitives",
  "rand 0.7.3",
+ "ser_error",
+ "ser_error_derive",
  "serde",
  "serde_json",
  "shared_ref_counter",
+ "tokio",
  "uuid 1.2.2",
+ "wasm-bindgen-test",
 ]
 
 [[package]]

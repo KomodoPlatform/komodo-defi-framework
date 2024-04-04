@@ -47,6 +47,7 @@ use common::log::{error, warn};
 use common::HttpStatusCode;
 use futures::Future as Future03;
 use http::Response;
+use mm2_core::data_asker::send_asked_data_rpc;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcRequest, MmRpcVersion};
@@ -206,6 +207,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "ibc_chains" => handle_mmrpc(ctx, request, ibc_chains).await,
         "ibc_transfer_channels" => handle_mmrpc(ctx, request, ibc_transfer_channels).await,
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
+        "send_asked_data" => handle_mmrpc(ctx, request, send_asked_data_rpc).await,
         #[cfg(not(target_arch = "wasm32"))]
         native_only_methods => match native_only_methods {
             #[cfg(all(feature = "enable-solana", not(target_os = "ios"), not(target_os = "android")))]
