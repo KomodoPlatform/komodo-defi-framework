@@ -1010,16 +1010,36 @@ impl TendermintCoin {
                     }
                 });
 
-                let _data: TxHashData = ctx
-                    .ask_for_data("TENDERMINT_TX_HASH", unsigned_tx, Duration::from_secs(10))
+                let data: TxHashData = try_tx_s!(ctx
+                    .ask_for_data(
+                        &format!("TX_HASH:{}", self.ticker()),
+                        unsigned_tx,
+                        Duration::from_secs(10),
+                    )
                     .await
-                    .expect("TODO");
+                    .map_err(|e| ERRL!("{}", e)));
 
-                // TODO: Figure out a req-res communication bridge we can use for sending unsigned TX and
-                // receiving it's broadcasted hash.
-                //
-                // Once we receive the tx hash, validate it.
-                todo!()
+                let tx = try_tx_s!(self.request_tx(data.hash.clone()).await.map_err(|e| ERRL!("{}", e)));
+
+                let tx_raw_inner = TxRaw {
+                    body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
+                    auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
+                    signatures: tx.signatures,
+                };
+
+                if sign_doc.body_bytes != tx_raw_inner.body_bytes {
+                    return Err(crate::TransactionErr::Plain(ERRL!(
+                        "Unsigned transaction content don't match with the externally provided transaction."
+                    )));
+                }
+
+                if sign_doc.auth_info_bytes != tx_raw_inner.auth_info_bytes {
+                    return Err(crate::TransactionErr::Plain(ERRL!(
+                        "Provided transaction signer don't match with the unsigned transaction owner."
+                    )));
+                }
+
+                Ok((data.hash, Raw::from(tx_raw_inner)))
             },
         }
     }

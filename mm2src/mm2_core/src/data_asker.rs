@@ -69,7 +69,7 @@ impl MmCtx {
                     .awaiting_asks
                     .lock()
                     .await
-                    .insert(data_id, sender, Duration::from_secs(10));
+                    .insert(data_id, sender, timeout);
             }
 
             let data_input = match serde_json::to_string(&data) {
@@ -155,7 +155,7 @@ mod tests {
 
     cross_test!(simulate_ask_and_send_data, {
         let ctx = MmCtxBuilder::new().into_mm_arc();
-        let ctx2 = ctx.clone();
+        let ctx_clone = ctx.clone();
 
         #[derive(Clone, Debug, Deserialize)]
         struct DummyType {
@@ -164,8 +164,6 @@ mod tests {
 
         thread::scope(|scope| {
             scope.spawn(move || {
-                let ctx = ctx.clone();
-
                 let output: DummyType =
                     block_on(ctx.ask_for_data("TEST", serde_json::Value::Null, Duration::from_secs(3))).unwrap();
                 let output2: DummyType =
@@ -177,8 +175,6 @@ mod tests {
             });
 
             scope.spawn(move || {
-                let ctx = ctx2.clone();
-
                 // Wait until we ask for data from the other thread.
                 common::block_on(Timer::sleep(1.));
 
@@ -189,7 +185,7 @@ mod tests {
                     }),
                 };
 
-                block_on(super::send_asked_data_rpc(ctx.clone(), data)).unwrap();
+                block_on(super::send_asked_data_rpc(ctx_clone.clone(), data)).unwrap();
 
                 // Wait until we ask for data from the other thread.
                 common::block_on(Timer::sleep(1.));
@@ -201,7 +197,7 @@ mod tests {
                     }),
                 };
 
-                block_on(super::send_asked_data_rpc(ctx, data)).unwrap();
+                block_on(super::send_asked_data_rpc(ctx_clone, data)).unwrap();
             });
         });
     });
