@@ -1496,6 +1496,18 @@ pub struct SendMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub swap_unique_data: &'a [u8],
 }
 
+/// Structure representing necessary NFT info for Swap
+pub struct NftSwapInfo<'a> {
+    /// The address of the NFT token
+    pub token_address: &'a [u8],
+    /// The ID of the NFT token.
+    pub token_id: &'a [u8],
+    /// The type of smart contract that governs this NFT
+    pub contract_type: &'a [u8],
+    /// Etomic swap contract address
+    pub swap_contract_address: &'a [u8],
+}
+
 pub struct SendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + NftAssocTypes + ?Sized> {
     /// Maker will be able to refund the payment after this timestamp
     pub time_lock: u64,
@@ -1509,14 +1521,8 @@ pub struct SendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + NftAssocTypes + ?S
     pub taker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
-    /// The address of the NFT token
-    pub token_address: &'a [u8],
-    /// The ID of the NFT token.
-    pub token_id: &'a [u8],
-    /// The type of smart contract that governs this NFT
-    pub contract_type: &'a [u8],
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a [u8],
+    /// Structure representing necessary NFT info for Swap
+    pub nft_swap_info: &'a NftSwapInfo<'a>,
 }
 
 pub struct ValidateMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
@@ -1553,14 +1559,8 @@ pub struct ValidateNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub maker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
-    /// The address of the NFT token
-    pub token_address: &'a [u8],
-    /// The ID of the NFT token.
-    pub token_id: &'a [u8],
-    /// The type of smart contract that governs this NFT
-    pub contract_type: &'a [u8],
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a [u8],
+    /// Structure representing necessary NFT info for Swap
+    pub nft_swap_info: &'a NftSwapInfo<'a>,
 }
 
 pub struct RefundMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {

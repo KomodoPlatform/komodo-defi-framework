@@ -6,7 +6,7 @@ use bitcrypto::{dhash160, sha256};
 use coins::eth::{checksum_address, eth_addr_to_hex, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 use coins::{CoinAssocTypes, CoinProtocol, ConfirmPaymentInput, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps,
-            PrivKeyBuildPolicy, RefundPaymentArgs, SearchForSwapTxSpendInput, SendNftMakerPaymentArgs,
+            NftSwapInfo, PrivKeyBuildPolicy, RefundPaymentArgs, SearchForSwapTxSpendInput, SendNftMakerPaymentArgs,
             SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, ToBytes,
             Transaction, ValidateNftMakerPaymentArgs};
 use common::{block_on, now_sec};
@@ -650,6 +650,13 @@ fn send_and_spend_erc721_maker_payment() {
     let maker_secret = &[1; 32];
     let maker_secret_hash = sha256(maker_secret).to_vec();
 
+    let nft_swap_info = NftSwapInfo {
+        token_address: &erc721_contract().to_bytes(),
+        token_id: &BigUint::from(2u32).to_bytes(),
+        contract_type: &ContractType::Erc721.to_bytes(),
+        swap_contract_address: &nft_swap_contract().to_bytes(),
+    };
+
     let send_payment_args: SendNftMakerPaymentArgs<EthCoin> = SendNftMakerPaymentArgs {
         time_lock,
         taker_secret_hash: &[0; 32],
@@ -657,10 +664,7 @@ fn send_and_spend_erc721_maker_payment() {
         amount: 1.into(),
         taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
         swap_unique_data: &[],
-        token_address: &erc721_contract().to_bytes(),
-        token_id: &BigUint::from(2u32).to_bytes(),
-        contract_type: &ContractType::Erc721.to_bytes(),
-        swap_contract_address: &nft_swap_contract().to_bytes(),
+        nft_swap_info: &nft_swap_info,
     };
     let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
     println!("Maker sent ERC721 NFT Payment tx hash {:02x}", maker_payment.tx_hash());
@@ -683,10 +687,7 @@ fn send_and_spend_erc721_maker_payment() {
         taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
-        token_address: &erc721_contract().to_bytes(),
-        token_id: &BigUint::from(2u32).to_bytes(),
-        contract_type: &ContractType::Erc721.to_bytes(),
-        swap_contract_address: &nft_swap_contract().to_bytes(),
+        nft_swap_info: &nft_swap_info,
     };
     block_on(maker_global_nft.validate_nft_maker_payment_v2(validate_args)).unwrap();
 
@@ -730,6 +731,13 @@ fn send_and_spend_erc1155_maker_payment() {
     let maker_secret = &[1; 32];
     let maker_secret_hash = sha256(maker_secret).to_vec();
 
+    let nft_swap_info = NftSwapInfo {
+        token_address: &erc1155_contract().to_bytes(),
+        token_id: &BigUint::from(4u32).to_bytes(),
+        contract_type: &ContractType::Erc1155.to_bytes(),
+        swap_contract_address: &nft_swap_contract().to_bytes(),
+    };
+
     let send_payment_args: SendNftMakerPaymentArgs<EthCoin> = SendNftMakerPaymentArgs {
         time_lock,
         taker_secret_hash: &[0; 32],
@@ -737,10 +745,7 @@ fn send_and_spend_erc1155_maker_payment() {
         amount: 3.into(),
         taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
         swap_unique_data: &[],
-        token_address: &erc1155_contract().to_bytes(),
-        token_id: &BigUint::from(4u32).to_bytes(),
-        contract_type: &ContractType::Erc1155.to_bytes(),
-        swap_contract_address: &nft_swap_contract().to_bytes(),
+        nft_swap_info: &nft_swap_info,
     };
     let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
     println!("Maker sent ERC1155 NFT Payment tx hash {:02x}", maker_payment.tx_hash());
@@ -763,10 +768,7 @@ fn send_and_spend_erc1155_maker_payment() {
         taker_pub: &taker_global_nft.parse_pubkey(&taker_pubkey).unwrap(),
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
-        token_address: &erc1155_contract().to_bytes(),
-        token_id: &BigUint::from(4u32).to_bytes(),
-        contract_type: &ContractType::Erc1155.to_bytes(),
-        swap_contract_address: &nft_swap_contract().to_bytes(),
+        nft_swap_info: &nft_swap_info,
     };
     block_on(maker_global_nft.validate_nft_maker_payment_v2(validate_args)).unwrap();
 

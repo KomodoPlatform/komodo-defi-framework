@@ -25,7 +25,7 @@ impl EthCoin {
         &self,
         args: SendNftMakerPaymentArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
-        let contract_type = try_tx_s!(self.parse_contract_type(args.contract_type));
+        let contract_type = try_tx_s!(self.parse_contract_type(args.nft_swap_info.contract_type));
         try_tx_s!(self.validate_payment_args(
             args.taker_secret_hash,
             args.maker_secret_hash,
@@ -34,10 +34,10 @@ impl EthCoin {
         ));
 
         let taker_address = try_tx_s!(addr_from_raw_pubkey(args.taker_pub));
-        let token_address = try_tx_s!(self.parse_contract_address(args.token_address));
-        let swap_contract_address = try_tx_s!(self.parse_contract_address(args.swap_contract_address));
+        let token_address = try_tx_s!(self.parse_contract_address(args.nft_swap_info.token_address));
+        let swap_contract_address = try_tx_s!(self.parse_contract_address(args.nft_swap_info.swap_contract_address));
         let time_lock_u32 = try_tx_s!(args.time_lock.try_into());
-        let token_id_u256 = U256::from(args.token_id);
+        let token_id_u256 = U256::from(args.nft_swap_info.token_id);
         let htlc_data = self.prepare_htlc_data(&args, taker_address, token_address, time_lock_u32);
 
         match &self.coin_type {
@@ -63,7 +63,7 @@ impl EthCoin {
         &self,
         args: ValidateNftMakerPaymentArgs<'_, Self>,
     ) -> ValidatePaymentResult<()> {
-        let contract_type = self.parse_contract_type(args.contract_type)?;
+        let contract_type = self.parse_contract_type(args.nft_swap_info.contract_type)?;
         self.validate_payment_args(
             args.taker_secret_hash,
             args.maker_secret_hash,
@@ -71,8 +71,8 @@ impl EthCoin {
             &contract_type,
         )
         .map_err(ValidatePaymentError::InternalError)?;
-        let etomic_swap_contract = self.parse_contract_address(args.swap_contract_address)?;
-        let token_address = self.parse_contract_address(args.token_address)?;
+        let etomic_swap_contract = self.parse_contract_address(args.nft_swap_info.swap_contract_address)?;
+        let token_address = self.parse_contract_address(args.nft_swap_info.token_address)?;
         let maker_address = addr_from_raw_pubkey(args.maker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
         let time_lock_u32 = args
             .time_lock
@@ -112,7 +112,7 @@ impl EthCoin {
                 let validation_params = ValidationParams {
                     maker_address,
                     etomic_swap_contract,
-                    token_id: args.token_id,
+                    token_id: args.nft_swap_info.token_id,
                     amount,
                 };
                 validate_decoded_data(&decoded, &validation_params)?;

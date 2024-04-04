@@ -829,16 +829,3 @@ pub struct NftInfo {
     /// where a single token ID can represent multiple assets.
     pub amount: BigDecimal,
 }
-
-/// Represents the Swap information about a Non-Fungible Token (NFT).
-#[derive(Clone, Debug, Serialize)]
-pub struct NftSwapInfo {
-    /// The address of the NFT token.
-    pub(crate) token_address: Address,
-    /// The ID of the NFT token.
-    pub(crate) token_id: BigUint,
-    /// The blockchain where the NFT exists.
-    pub(crate) chain: Chain,
-    /// The type of smart contract that governs this NFT.
-    pub(crate) contract_type: ContractType,
-}
