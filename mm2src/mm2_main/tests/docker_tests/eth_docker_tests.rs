@@ -701,7 +701,7 @@ fn send_and_spend_erc721_maker_payment() {
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
         contract_type: &ContractType::Erc721,
-        swap_contract_address: &nft_swap_contract().to_bytes(),
+        swap_contract_address: &nft_swap_contract(),
     };
     let spend_tx = block_on(taker_global_nft.spend_nft_maker_payment_v2(spend_payment_args)).unwrap();
 
@@ -782,7 +782,7 @@ fn send_and_spend_erc1155_maker_payment() {
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
         contract_type: &ContractType::Erc1155,
-        swap_contract_address: &nft_swap_contract().to_bytes(),
+        swap_contract_address: &nft_swap_contract(),
     };
     let spend_tx = block_on(taker_global_nft.spend_nft_maker_payment_v2(spend_payment_args)).unwrap();
 
