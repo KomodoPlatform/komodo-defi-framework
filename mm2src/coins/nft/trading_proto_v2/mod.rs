@@ -143,9 +143,7 @@ impl EthCoin {
         );
         match self.coin_type {
             EthCoinType::Nft { .. } => {
-                let data =
-                    try_tx_s!(self.prepare_spend_nft_maker_v2_data(&args, decoded, htlc_params, state));
-
+                let data = try_tx_s!(self.prepare_spend_nft_maker_v2_data(&args, decoded, htlc_params, state));
                 self.sign_and_send_transaction(0.into(), Action::Call(*etomic_swap_contract), data, U256::from(ETH_GAS))
                     .compat()
                     .await
