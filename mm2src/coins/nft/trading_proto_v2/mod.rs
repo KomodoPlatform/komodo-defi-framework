@@ -144,7 +144,7 @@ impl EthCoin {
         match self.coin_type {
             EthCoinType::Nft { .. } => {
                 let data =
-                    try_tx_s!(self.prepare_spend_nft_maker_v2_data(contract_type, &args, decoded, htlc_params, state));
+                    try_tx_s!(self.prepare_spend_nft_maker_v2_data(&args, decoded, htlc_params, state));
 
                 self.sign_and_send_transaction(0.into(), Action::Call(*etomic_swap_contract), data, U256::from(ETH_GAS))
                     .compat()
@@ -320,13 +320,12 @@ impl EthCoin {
     /// and encodes the input parameters required for the blockchain transaction.
     fn prepare_spend_nft_maker_v2_data(
         &self,
-        contract_type: &ContractType,
         args: &SpendNftMakerPaymentArgs<'_, Self>,
         decoded: Vec<Token>,
         htlc_params: Vec<Token>,
         state: U256,
     ) -> Result<Vec<u8>, PrepareTxDataError> {
-        let spend_func = match contract_type {
+        let spend_func = match args.contract_type {
             ContractType::Erc1155 => NFT_SWAP_CONTRACT.function("spendErc1155MakerPayment")?,
             ContractType::Erc721 => NFT_SWAP_CONTRACT.function("spendErc721MakerPayment")?,
         };
@@ -339,7 +338,7 @@ impl EthCoin {
             )));
         }
 
-        let input_tokens = match contract_type {
+        let input_tokens = match args.contract_type {
             ContractType::Erc1155 => vec![
                 htlc_params[0].clone(), // swap_id
                 Token::Address(args.maker_payment_tx.sender()),
