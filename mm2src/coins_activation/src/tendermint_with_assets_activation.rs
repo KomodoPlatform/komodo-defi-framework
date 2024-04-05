@@ -220,6 +220,10 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
+        // TODO: fail if:
+        // - mm2 is on watcher mode
+        // - mm2 using watchers
+
         let conf = TendermintConf::try_from_json(&ticker, coin_conf)?;
 
         let activation_policy = if let Some(pubkey) = activation_request.with_pubkey {
