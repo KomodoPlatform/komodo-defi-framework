@@ -175,7 +175,7 @@ impl EthCoin {
                 let amount_u256 = U256::from_dec_str(&args.amount.to_string())
                     .map_err(|e| PrepareTxDataError::Internal(e.to_string()))?;
                 let data = function.encode_input(&[
-                    Token::Address(self.my_address),
+                    Token::Address(*self.my_addr()),
                     Token::Address(*args.nft_swap_info.swap_contract_address),
                     Token::Uint(U256::from(args.nft_swap_info.token_id)),
                     Token::Uint(amount_u256),
@@ -186,7 +186,7 @@ impl EthCoin {
             ContractType::Erc721 => {
                 let function = self.erc721_transfer_with_data()?;
                 let data = function.encode_input(&[
-                    Token::Address(self.my_address),
+                    Token::Address(*self.my_addr()),
                     Token::Address(*args.nft_swap_info.swap_contract_address),
                     Token::Uint(U256::from(args.nft_swap_info.token_id)),
                     Token::Bytes(htlc_data),
