@@ -42,11 +42,11 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::InvalidPayload(e)
             | EthActivationV2Error::InvalidSwapContractAddr(e)
             | EthActivationV2Error::InvalidFallbackSwapContract(e)
-            | EthActivationV2Error::ErrorDeserializingDerivationPath(e) => {
-                EnablePlatformCoinWithTokensError::InvalidPayload(e)
+            | EthActivationV2Error::ErrorDeserializingDerivationPath(e)
+            | EthActivationV2Error::InvalidPathToAddress(e) => EnablePlatformCoinWithTokensError::InvalidPayload(e),
+            EthActivationV2Error::ChainIdNotSet => {
+                EnablePlatformCoinWithTokensError::Internal("`chain_id` is not set in coin config".to_string())
             },
-            EthActivationV2Error::InvalidPathToAddress(e) => EnablePlatformCoinWithTokensError::InvalidPayload(e),
-            EthActivationV2Error::ChainIdNotSet => EnablePlatformCoinWithTokensError::InvalidPayload(err.to_string()),
             EthActivationV2Error::ActivationFailed { ticker, error } => {
                 EnablePlatformCoinWithTokensError::PlatformCoinCreationError { ticker, error }
             },
