@@ -634,9 +634,10 @@ fn send_and_spend_erc20_maker_payment() {
 
 #[test]
 fn send_and_spend_erc721_maker_payment() {
-    // in prod we will need to enable global NFT for taker or add new field (for nft swap address) in EthCoin,
-    // as EtomicSwapNft will have its own contract address, due to EIP-170 contract size limitations.
-    // TODO need to add NFT conf in coin conf and refactor enable nft a bit
+    // TODO: Evaluate implementation strategy — either employing separate contracts for maker and taker
+    // functionalities for both coins and NFTs, or utilizing the Diamond Standard (EIP-2535) for a unified contract approach.
+    // Decision will inform whether to maintain multiple "swap_contract_address" fields in `EthCoin` for distinct contract types
+    // or a singular field for a Diamond Standard-compatible contract address.
 
     let erc721_nft = TestNftType::Erc721 { token_id: 2 };
 
