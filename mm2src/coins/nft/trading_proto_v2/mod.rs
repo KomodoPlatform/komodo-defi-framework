@@ -323,18 +323,18 @@ impl EthCoin {
         Ok(())
     }
 
-    /// Retrieves the payment status from a given smart contract based on the swap ID and state type.
+    /// Retrieves the payment status from a given smart contract address based on the swap ID and state type.
     async fn payment_status_v2(
         &self,
-        swap_contract: Address,
+        swap_address: Address,
         swap_id: Token,
-        contract: &Contract,
+        contract_abi: &Contract,
         state_type: StateType,
     ) -> Result<U256, PaymentStatusErr> {
         let function_name = state_type.as_str();
-        let function = contract.function(function_name)?;
+        let function = contract_abi.function(function_name)?;
         let data = function.encode_input(&[swap_id])?;
-        let bytes = self.call_request(swap_contract, None, Some(data.into())).await?;
+        let bytes = self.call_request(swap_address, None, Some(data.into())).await?;
         let decoded_tokens = function.decode_output(&bytes.0)?;
         let state = decoded_tokens
             .get(2)
@@ -415,8 +415,8 @@ impl EthCoin {
 
     async fn status_and_htlc_params_from_tx_data(
         &self,
-        swap_contract: Address,
-        contract: &Contract,
+        swap_address: Address,
+        contract_abi: &Contract,
         decoded_data: &[Token],
         index: usize,
         state_type: StateType,
@@ -424,7 +424,7 @@ impl EthCoin {
         if let Some(Token::Bytes(data_bytes)) = decoded_data.get(index) {
             if let Ok(htlc_params) = ethabi::decode(htlc_params(), data_bytes) {
                 let state = self
-                    .payment_status_v2(swap_contract, htlc_params[0].clone(), contract, state_type)
+                    .payment_status_v2(swap_address, htlc_params[0].clone(), contract_abi, state_type)
                     .await?;
                 Ok((state, htlc_params))
             } else {
@@ -539,16 +539,16 @@ fn decode_and_validate_htlc_params(
     Ok(())
 }
 
-// Representation of the Solidity HTLCParams struct.
-//
-// struct HTLCParams {
-//     bytes32 id;
-//     address taker;
-//     address tokenAddress;
-//     bytes32 takerSecretHash;
-//     bytes32 makerSecretHash;
-//     uint32 paymentLockTime;
-// }
+/// Representation of the Solidity HTLCParams struct.
+///
+/// struct HTLCParams {
+///     bytes32 id;
+///     address taker;
+///     address tokenAddress;
+///     bytes32 takerSecretHash;
+///     bytes32 makerSecretHash;
+///     uint32 paymentLockTime;
+/// }
 fn htlc_params() -> &'static [ethabi::ParamType] {
     &[
         ethabi::ParamType::FixedBytes(32),

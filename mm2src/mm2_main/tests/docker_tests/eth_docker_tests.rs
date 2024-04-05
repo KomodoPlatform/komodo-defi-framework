@@ -223,13 +223,13 @@ pub(crate) async fn fill_erc721_info(eth_coin: &EthCoin, tokens_id: u32) {
 }
 
 /// Creates ETH protocol coin supplied with 100 ETH
-pub fn eth_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
+pub fn eth_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
     let eth_conf = eth_dev_conf();
     let req = json!({
         "method": "enable",
         "coin": "ETH",
         "urls": ["http://127.0.0.1:8545"],
-        "swap_contract_address": swap_contract,
+        "swap_contract_address": swap_contract_address,
     });
 
     let secret = random_secp256k1_secret();
@@ -250,13 +250,13 @@ pub fn eth_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
 }
 
 /// Creates ERC20 protocol coin supplied with 1 ETH and 100 token
-pub fn erc20_coin_with_random_privkey(swap_contract: Address) -> EthCoin {
+pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
     let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
     let req = json!({
         "method": "enable",
         "coin": "ERC20DEV",
         "urls": ["http://127.0.0.1:8545"],
-        "swap_contract_address": swap_contract,
+        "swap_contract_address": swap_contract_address,
     });
 
     let erc20_coin = block_on(eth_coin_from_conf_and_request(
@@ -288,13 +288,13 @@ pub enum TestNftType {
 /// Generates a global NFT coin instance with a random private key and an initial 100 ETH balance.
 /// Optionally mints a specified NFT (either ERC721 or ERC1155) to the global NFT address,
 /// with details recorded in the `nfts_infos` field based on the provided `nft_type`.
-pub fn global_nft_with_random_privkey(swap_contract: Address, nft_type: Option<TestNftType>) -> EthCoin {
+pub fn global_nft_with_random_privkey(swap_contract_address: Address, nft_type: Option<TestNftType>) -> EthCoin {
     let nft_conf = nft_dev_conf();
     let req = json!({
         "method": "enable",
         "coin": "NFT_ETH",
         "urls": ["http://127.0.0.1:8545"],
-        "swap_contract_address": swap_contract,
+        "swap_contract_address": swap_contract_address,
     });
 
     let global_nft = block_on(eth_coin_from_conf_and_request(
