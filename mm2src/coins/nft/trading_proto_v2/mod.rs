@@ -17,39 +17,28 @@ use super::ContractType;
 use crate::eth::{addr_from_raw_pubkey, decode_contract_call, EthCoin, EthCoinType, MakerPaymentStateV2, SignedEthTx,
                  TryToAddress, ERC1155_CONTRACT, ERC721_CONTRACT, ETH_GAS, NFT_SWAP_CONTRACT};
 use crate::nft::trading_proto_v2::errors::PrepareTxDataError;
-use crate::{NftAssocTypes, RefundPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, TransactionErr,
-            ValidateNftMakerPaymentArgs};
+use crate::{CoinAssocTypes, NftAssocTypes, RefundPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs,
+            TransactionErr, ValidateNftMakerPaymentArgs};
 
 impl EthCoin {
     pub(crate) async fn send_nft_maker_payment_v2_impl(
         &self,
         args: SendNftMakerPaymentArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
-        try_tx_s!(self.validate_payment_args(
-            args.taker_secret_hash,
-            args.maker_secret_hash,
-            &args.amount,
-            args.nft_swap_info.contract_type,
-        ));
-
-        let taker_address = try_tx_s!(addr_from_raw_pubkey(args.taker_pub));
-        let time_lock_u32 = try_tx_s!(args.time_lock.try_into());
-        let token_id_u256 = U256::from(args.nft_swap_info.token_id);
-        let token_address = args.nft_swap_info.token_address;
-        let htlc_data = self.prepare_htlc_data(&args, taker_address, *token_address, time_lock_u32);
+        try_tx_s!(validate_payment_args(PaymentValidationParams::from(&args)));
+        let htlc_data = try_tx_s!(self.prepare_htlc_data(&args));
 
         match &self.coin_type {
             EthCoinType::Nft { .. } => {
-                let data = try_tx_s!(self.prepare_nft_maker_payment_v2_data(
-                    args.nft_swap_info.contract_type,
-                    *args.nft_swap_info.swap_contract_address,
-                    token_id_u256,
-                    &args,
-                    htlc_data
-                ));
-                self.sign_and_send_transaction(0.into(), Action::Call(*token_address), data, U256::from(ETH_GAS))
-                    .compat()
-                    .await
+                let data = try_tx_s!(self.prepare_nft_maker_payment_v2_data(&args, htlc_data));
+                self.sign_and_send_transaction(
+                    0.into(),
+                    Action::Call(*args.nft_swap_info.token_address),
+                    data,
+                    U256::from(ETH_GAS),
+                )
+                .compat()
+                .await
             },
             EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
                 "ETH and ERC20 Protocols are not supported for NFT Swaps".to_string(),
@@ -62,13 +51,7 @@ impl EthCoin {
         args: ValidateNftMakerPaymentArgs<'_, Self>,
     ) -> ValidatePaymentResult<()> {
         let contract_type = args.nft_swap_info.contract_type;
-        self.validate_payment_args(
-            args.taker_secret_hash,
-            args.maker_secret_hash,
-            &args.amount,
-            contract_type,
-        )
-        .map_err(ValidatePaymentError::InternalError)?;
+        validate_payment_args(PaymentValidationParams::from(&args)).map_err(ValidatePaymentError::InternalError)?;
         let etomic_swap_contract = args.nft_swap_info.swap_contract_address;
         let token_address = args.nft_swap_info.token_address;
         let maker_address = addr_from_raw_pubkey(args.maker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
@@ -185,21 +168,18 @@ impl EthCoin {
 
     fn prepare_nft_maker_payment_v2_data(
         &self,
-        contract_type: &ContractType,
-        swap_contract_address: Address,
-        token_id: U256,
         args: &SendNftMakerPaymentArgs<'_, Self>,
         htlc_data: Vec<u8>,
     ) -> Result<Vec<u8>, PrepareTxDataError> {
-        match contract_type {
+        match args.nft_swap_info.contract_type {
             ContractType::Erc1155 => {
                 let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
                 let amount_u256 = U256::from_dec_str(&args.amount.to_string())
                     .map_err(|e| PrepareTxDataError::Internal(e.to_string()))?;
                 let data = function.encode_input(&[
                     Token::Address(self.my_address),
-                    Token::Address(swap_contract_address),
-                    Token::Uint(token_id),
+                    Token::Address(*args.nft_swap_info.swap_contract_address),
+                    Token::Uint(U256::from(args.nft_swap_info.token_id)),
                     Token::Uint(amount_u256),
                     Token::Bytes(htlc_data),
                 ])?;
@@ -209,8 +189,8 @@ impl EthCoin {
                 let function = self.erc721_transfer_with_data()?;
                 let data = function.encode_input(&[
                     Token::Address(self.my_address),
-                    Token::Address(swap_contract_address),
-                    Token::Uint(token_id),
+                    Token::Address(*args.nft_swap_info.swap_contract_address),
+                    Token::Uint(U256::from(args.nft_swap_info.token_id)),
                     Token::Bytes(htlc_data),
                 ])?;
                 Ok(data)
@@ -218,51 +198,23 @@ impl EthCoin {
         }
     }
 
-    fn validate_payment_args<'a>(
-        &self,
-        taker_secret_hash: &'a [u8],
-        maker_secret_hash: &'a [u8],
-        amount: &BigDecimal,
-        contract_type: &ContractType,
-    ) -> Result<(), String> {
-        match contract_type {
-            ContractType::Erc1155 => {
-                if !is_positive_integer(amount) {
-                    return Err("ERC-1155 amount must be a positive integer".to_string());
-                }
-            },
-            ContractType::Erc721 => {
-                if amount != &BigDecimal::from(1) {
-                    return Err("ERC-721 amount must be 1".to_string());
-                }
-            },
-        }
-        if taker_secret_hash.len() != 32 {
-            return Err("taker_secret_hash must be 32 bytes".to_string());
-        }
-        if maker_secret_hash.len() != 32 {
-            return Err("maker_secret_hash must be 32 bytes".to_string());
-        }
-
-        Ok(())
-    }
-
-    fn prepare_htlc_data(
-        &self,
-        args: &SendNftMakerPaymentArgs<'_, Self>,
-        taker_address: Address,
-        token_address: Address,
-        time_lock: u32,
-    ) -> Vec<u8> {
-        let id = self.etomic_swap_id(time_lock, args.maker_secret_hash);
-        ethabi::encode(&[
+    fn prepare_htlc_data(&self, args: &SendNftMakerPaymentArgs<'_, Self>) -> Result<Vec<u8>, PrepareTxDataError> {
+        let taker_address =
+            addr_from_raw_pubkey(args.taker_pub).map_err(|e| PrepareTxDataError::Internal(ERRL!("{}", e)))?;
+        let time_lock_u32 = args
+            .time_lock
+            .try_into()
+            .map_err(|e| PrepareTxDataError::Internal(ERRL!("{}", e)))?;
+        let id = self.etomic_swap_id(time_lock_u32, args.maker_secret_hash);
+        let encoded = ethabi::encode(&[
             Token::FixedBytes(id),
             Token::Address(taker_address),
-            Token::Address(token_address),
+            Token::Address(*args.nft_swap_info.token_address),
             Token::FixedBytes(args.taker_secret_hash.to_vec()),
             Token::FixedBytes(args.maker_secret_hash.to_vec()),
-            Token::Uint(U256::from(time_lock)),
-        ])
+            Token::Uint(U256::from(time_lock_u32)),
+        ]);
+        Ok(encoded)
     }
 
     /// ERC721 contract has overloaded versions of the `safeTransferFrom` function,
@@ -547,3 +499,84 @@ fn htlc_params() -> &'static [ethabi::ParamType] {
 /// function to check if BigDecimal is a positive integer
 #[inline(always)]
 fn is_positive_integer(amount: &BigDecimal) -> bool { amount == &amount.with_scale(0) && amount > &BigDecimal::from(0) }
+
+struct PaymentValidationParams<'a, T>
+where
+    T: ContractValidation,
+{
+    taker_secret_hash: &'a [u8],
+    maker_secret_hash: &'a [u8],
+    amount: &'a BigDecimal,
+    contract_type: &'a T,
+}
+
+impl<'a, Coin> From<&'a ValidateNftMakerPaymentArgs<'a, Coin>> for PaymentValidationParams<'a, Coin::ContractType>
+where
+    Coin: CoinAssocTypes + NftAssocTypes + ?Sized,
+    <Coin as NftAssocTypes>::ContractType: ContractValidation,
+{
+    fn from(args: &'a ValidateNftMakerPaymentArgs<'a, Coin>) -> Self {
+        Self {
+            taker_secret_hash: args.taker_secret_hash,
+            maker_secret_hash: args.maker_secret_hash,
+            amount: &args.amount,
+            contract_type: args.nft_swap_info.contract_type,
+        }
+    }
+}
+
+impl<'a, Coin> From<&'a SendNftMakerPaymentArgs<'a, Coin>> for PaymentValidationParams<'a, Coin::ContractType>
+where
+    Coin: CoinAssocTypes + NftAssocTypes + ?Sized,
+    <Coin as NftAssocTypes>::ContractType: ContractValidation,
+{
+    fn from(args: &'a SendNftMakerPaymentArgs<'a, Coin>) -> Self {
+        Self {
+            taker_secret_hash: args.taker_secret_hash,
+            maker_secret_hash: args.maker_secret_hash,
+            amount: &args.amount,
+            contract_type: args.nft_swap_info.contract_type,
+        }
+    }
+}
+
+pub trait ContractValidation {
+    fn validate(&self, amount: &BigDecimal) -> Result<(), String>;
+}
+
+impl ContractValidation for ContractType {
+    fn validate(&self, amount: &BigDecimal) -> Result<(), String> {
+        match self {
+            ContractType::Erc1155 => {
+                if !is_positive_integer(amount) {
+                    Err("ERC-1155 amount must be a positive integer".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+            ContractType::Erc721 => {
+                if amount != &BigDecimal::from(1) {
+                    Err("ERC-721 amount must be 1".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+        }
+    }
+}
+
+fn validate_payment_args<'a, T>(args: PaymentValidationParams<'a, T>) -> Result<(), String>
+where
+    T: ContractValidation + 'a,
+{
+    args.contract_type.validate(args.amount)?;
+
+    if args.taker_secret_hash.len() != 32 {
+        return Err("taker_secret_hash must be 32 bytes".to_string());
+    }
+    if args.maker_secret_hash.len() != 32 {
+        return Err("maker_secret_hash must be 32 bytes".to_string());
+    }
+
+    Ok(())
+}
