@@ -956,92 +956,123 @@ impl TendermintCoin {
         sha256(&htlc_id).to_string().to_uppercase()
     }
 
-    pub(super) async fn seq_safe_send_raw_tx_bytes(
+    async fn common_send_raw_tx_bytes(
+        &self,
+        tx_payload: Any,
+        fee: Fee,
+        timeout_height: u64,
+        memo: String,
+        timeout: Duration,
+    ) -> Result<(String, Raw), TransactionErr> {
+        // As there wouldn't be enough time to process the data, to mitigate potential edge problems (such as attempting to send transaction
+        // bytes half a second before expiration, which may take longer to send and result in the transaction amount being wasted due to a timeout),
+        // reduce the expiration time by 5 seconds.
+        let expiration = timeout - Duration::from_secs(5);
+
+        match self.activation_policy {
+            TendermintActivationPolicy::PrivateKey(_) => {
+                try_tx_s!(
+                    self.seq_safe_send_raw_tx_bytes(tx_payload, fee, timeout_height, memo)
+                        .timeout(expiration)
+                        .await
+                )
+            },
+            TendermintActivationPolicy::PublicKey(_) => {
+                try_tx_s!(
+                    self.send_unsigned_tx_externally(tx_payload, fee, timeout_height, memo, expiration)
+                        .timeout(expiration)
+                        .await
+                )
+            },
+        }
+    }
+
+    async fn seq_safe_send_raw_tx_bytes(
         &self,
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
         memo: String,
     ) -> Result<(String, Raw), TransactionErr> {
-        match self.activation_policy {
-            TendermintActivationPolicy::PrivateKey(_) => {
-                let (tx_id, tx_raw) = loop {
-                    let tx_raw = try_tx_s!(self.any_to_signed_raw_tx(
-                        try_tx_s!(self.activation_policy.activated_key_or_err()),
-                        try_tx_s!(self.account_info(&self.account_id).await),
-                        tx_payload.clone(),
-                        fee.clone(),
-                        timeout_height,
-                        memo.clone(),
-                    ));
+        let (tx_id, tx_raw) = loop {
+            let tx_raw = try_tx_s!(self.any_to_signed_raw_tx(
+                try_tx_s!(self.activation_policy.activated_key_or_err()),
+                try_tx_s!(self.account_info(&self.account_id).await),
+                tx_payload.clone(),
+                fee.clone(),
+                timeout_height,
+                memo.clone(),
+            ));
 
-                    match self.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await {
-                        Ok(tx_id) => break (tx_id, tx_raw),
-                        Err(e) => {
-                            if e.contains(ACCOUNT_SEQUENCE_ERR) {
-                                debug!("Got wrong account sequence, trying again.");
-                                continue;
-                            }
-
-                            return Err(crate::TransactionErr::Plain(ERRL!("{}", e)));
-                        },
-                    };
-                };
-
-                Ok((tx_id, tx_raw))
-            },
-            TendermintActivationPolicy::PublicKey(_) => {
-                #[derive(Deserialize)]
-                struct TxHashData {
-                    hash: String,
-                }
-
-                let ctx = try_tx_s!(MmArc::from_weak(&self.ctx).ok_or(ERRL!("ctx must be initialized already")));
-
-                let account_info = try_tx_s!(self.account_info(&self.account_id).await);
-                let sign_doc = try_tx_s!(self.any_to_sign_doc(account_info, tx_payload, fee, timeout_height, memo));
-
-                let unsigned_tx = json!({
-                    "sign_doc": {
-                        "body_bytes": sign_doc.body_bytes,
-                        "auth_info_bytes": sign_doc.auth_info_bytes,
-                        "chain_id": sign_doc.chain_id,
-                        "account_number": sign_doc.account_number,
+            match self.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await {
+                Ok(tx_id) => break (tx_id, tx_raw),
+                Err(e) => {
+                    if e.contains(ACCOUNT_SEQUENCE_ERR) {
+                        debug!("Got wrong account sequence, trying again.");
+                        continue;
                     }
-                });
 
-                let data: TxHashData = try_tx_s!(ctx
-                    .ask_for_data(
-                        &format!("TX_HASH:{}", self.ticker()),
-                        unsigned_tx,
-                        Duration::from_secs(10),
-                    )
-                    .await
-                    .map_err(|e| ERRL!("{}", e)));
+                    return Err(crate::TransactionErr::Plain(ERRL!("{}", e)));
+                },
+            };
+        };
 
-                let tx = try_tx_s!(self.request_tx(data.hash.clone()).await.map_err(|e| ERRL!("{}", e)));
+        Ok((tx_id, tx_raw))
+    }
 
-                let tx_raw_inner = TxRaw {
-                    body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                    auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                    signatures: tx.signatures,
-                };
-
-                if sign_doc.body_bytes != tx_raw_inner.body_bytes {
-                    return Err(crate::TransactionErr::Plain(ERRL!(
-                        "Unsigned transaction content don't match with the externally provided transaction."
-                    )));
-                }
-
-                if sign_doc.auth_info_bytes != tx_raw_inner.auth_info_bytes {
-                    return Err(crate::TransactionErr::Plain(ERRL!(
-                        "Provided transaction signer don't match with the unsigned transaction owner."
-                    )));
-                }
-
-                Ok((data.hash, Raw::from(tx_raw_inner)))
-            },
+    async fn send_unsigned_tx_externally(
+        &self,
+        tx_payload: Any,
+        fee: Fee,
+        timeout_height: u64,
+        memo: String,
+        timeout: Duration,
+    ) -> Result<(String, Raw), TransactionErr> {
+        #[derive(Deserialize)]
+        struct TxHashData {
+            hash: String,
         }
+
+        let ctx = try_tx_s!(MmArc::from_weak(&self.ctx).ok_or(ERRL!("ctx must be initialized already")));
+
+        let account_info = try_tx_s!(self.account_info(&self.account_id).await);
+        let sign_doc = try_tx_s!(self.any_to_sign_doc(account_info, tx_payload, fee, timeout_height, memo));
+
+        let unsigned_tx = json!({
+            "sign_doc": {
+                "body_bytes": sign_doc.body_bytes,
+                "auth_info_bytes": sign_doc.auth_info_bytes,
+                "chain_id": sign_doc.chain_id,
+                "account_number": sign_doc.account_number,
+            }
+        });
+
+        let data: TxHashData = try_tx_s!(ctx
+            .ask_for_data(&format!("TX_HASH:{}", self.ticker()), unsigned_tx, timeout)
+            .await
+            .map_err(|e| ERRL!("{}", e)));
+
+        let tx = try_tx_s!(self.request_tx(data.hash.clone()).await.map_err(|e| ERRL!("{}", e)));
+
+        let tx_raw_inner = TxRaw {
+            body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
+            auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
+            signatures: tx.signatures,
+        };
+
+        if sign_doc.body_bytes != tx_raw_inner.body_bytes {
+            return Err(crate::TransactionErr::Plain(ERRL!(
+                "Unsigned transaction content don't match with the externally provided transaction."
+            )));
+        }
+
+        if sign_doc.auth_info_bytes != tx_raw_inner.auth_info_bytes {
+            return Err(crate::TransactionErr::Plain(ERRL!(
+                "Provided transaction signer don't match with the unsigned transaction owner."
+            )));
+        }
+
+        Ok((data.hash, Raw::from(tx_raw_inner)))
     }
 
     #[allow(deprecated)]
@@ -1527,11 +1558,12 @@ impl TendermintCoin {
             );
 
             let (_tx_id, tx_raw) = try_tx_s!(
-                coin.seq_safe_send_raw_tx_bytes(
+                coin.common_send_raw_tx_bytes(
                     create_htlc_tx.msg_payload.clone(),
                     fee.clone(),
                     timeout_height,
                     TX_DEFAULT_MEMO.into(),
+                    Duration::from_secs(time_lock_duration),
                 )
                 .await
             );
@@ -1551,6 +1583,7 @@ impl TendermintCoin {
         denom: Denom,
         decimals: u8,
         uuid: &[u8],
+        expires_at: u64,
     ) -> TransactionFut {
         let memo = try_tx_fus!(Uuid::from_slice(uuid)).to_string();
         let from_address = self.account_id.clone();
@@ -1579,9 +1612,16 @@ impl TendermintCoin {
                     .await
             );
 
+            let timeout = expires_at.checked_sub(now_sec()).unwrap_or_default();
             let (_tx_id, tx_raw) = try_tx_s!(
-                coin.seq_safe_send_raw_tx_bytes(tx_payload.clone(), fee.clone(), timeout_height, memo.clone())
-                    .await
+                coin.common_send_raw_tx_bytes(
+                    tx_payload.clone(),
+                    fee.clone(),
+                    timeout_height,
+                    memo.clone(),
+                    Duration::from_secs(timeout)
+                )
+                .await
             );
 
             Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
@@ -2613,13 +2653,14 @@ impl MarketCoinOps for TendermintCoin {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8]) -> TransactionFut {
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], timeout: u64) -> TransactionFut {
         self.send_taker_fee_for_denom(
             fee_addr,
             dex_fee.fee_amount().into(),
             self.denom.clone(),
             self.decimals,
             uuid,
+            timeout,
         )
     }
 
@@ -2662,8 +2703,11 @@ impl SwapOps for TendermintCoin {
             .join(",");
 
         let htlc_id = self.calculate_htlc_id(&htlc.sender, &htlc.to, amount, maker_spends_payment_args.secret_hash);
-
         let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(htlc_id, maker_spends_payment_args.secret));
+        let timeout = maker_spends_payment_args
+            .time_lock
+            .checked_sub(now_sec())
+            .unwrap_or_default();
         let coin = self.clone();
 
         let fut = async move {
@@ -2681,11 +2725,12 @@ impl SwapOps for TendermintCoin {
             );
 
             let (_tx_id, tx_raw) = try_tx_s!(
-                coin.seq_safe_send_raw_tx_bytes(
+                coin.common_send_raw_tx_bytes(
                     claim_htlc_tx.msg_payload.clone(),
                     fee.clone(),
                     timeout_height,
                     TX_DEFAULT_MEMO.into(),
+                    Duration::from_secs(timeout),
                 )
                 .await
             );
@@ -2716,6 +2761,10 @@ impl SwapOps for TendermintCoin {
 
         let htlc_id = self.calculate_htlc_id(&htlc.sender, &htlc.to, amount, taker_spends_payment_args.secret_hash);
 
+        let timeout = taker_spends_payment_args
+            .time_lock
+            .checked_sub(now_sec())
+            .unwrap_or_default();
         let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(htlc_id, taker_spends_payment_args.secret));
         let coin = self.clone();
 
@@ -2734,11 +2783,12 @@ impl SwapOps for TendermintCoin {
             );
 
             let (tx_id, tx_raw) = try_tx_s!(
-                coin.seq_safe_send_raw_tx_bytes(
+                coin.common_send_raw_tx_bytes(
                     claim_htlc_tx.msg_payload.clone(),
                     fee.clone(),
                     timeout_height,
                     TX_DEFAULT_MEMO.into(),
+                    Duration::from_secs(timeout),
                 )
                 .await
             );
@@ -3184,11 +3234,12 @@ pub mod tendermint_coin_tests {
             .unwrap()
         });
 
-        let send_tx_fut = coin.seq_safe_send_raw_tx_bytes(
+        let send_tx_fut = coin.common_send_raw_tx_bytes(
             create_htlc_tx.msg_payload.clone(),
             fee,
             timeout_height,
             TX_DEFAULT_MEMO.into(),
+            Duration::from_secs(10),
         );
         block_on(async {
             send_tx_fut.await.unwrap();
@@ -3229,8 +3280,13 @@ pub mod tendermint_coin_tests {
             .unwrap()
         });
 
-        let send_tx_fut =
-            coin.seq_safe_send_raw_tx_bytes(claim_htlc_tx.msg_payload, fee, timeout_height, TX_DEFAULT_MEMO.into());
+        let send_tx_fut = coin.common_send_raw_tx_bytes(
+            claim_htlc_tx.msg_payload,
+            fee,
+            timeout_height,
+            TX_DEFAULT_MEMO.into(),
+            Duration::from_secs(10),
+        );
 
         let (tx_id, _tx_raw) = block_on(async { send_tx_fut.await.unwrap() });
 

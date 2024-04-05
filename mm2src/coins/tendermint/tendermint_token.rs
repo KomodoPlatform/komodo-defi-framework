@@ -242,13 +242,14 @@ impl TendermintToken {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintToken {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8]) -> TransactionFut {
+    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionFut {
         self.platform_coin.send_taker_fee_for_denom(
             fee_addr,
             dex_fee.fee_amount().into(),
             self.denom.clone(),
             self.decimals,
             uuid,
+            expire_at,
         )
     }
 

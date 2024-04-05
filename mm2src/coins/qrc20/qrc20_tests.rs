@@ -321,7 +321,12 @@ fn test_send_taker_fee() {
 
     let amount = BigDecimal::from_str("0.01").unwrap();
     let tx = coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, DexFee::Standard(amount.clone().into()), &[])
+        .send_taker_fee(
+            &DEX_FEE_ADDR_RAW_PUBKEY,
+            DexFee::Standard(amount.clone().into()),
+            &[],
+            20,
+        )
         .wait()
         .unwrap();
     let tx_hash: H256Json = match tx {

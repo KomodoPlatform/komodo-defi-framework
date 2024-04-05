@@ -1,5 +1,3 @@
-use async_std::future::TimeoutError;
-use async_std::prelude::FutureExt;
 use common::expirable_map::ExpirableMap;
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
@@ -27,18 +25,12 @@ pub struct DataAsker {
 
 #[derive(Debug, Display)]
 pub enum AskForDataError {
-    #[display(fmt = "Operation timed out. {}", _0)]
-    Timeout(TimeoutError),
     #[display(
         fmt = "Expected JSON data, but given(from data provider) one was not deserializable: {:?}",
         _0
     )]
     DeserializationError(serde_json::Error),
     Internal(String),
-}
-
-impl From<TimeoutError> for AskForDataError {
-    fn from(e: TimeoutError) -> Self { AskForDataError::Timeout(e) }
 }
 
 impl MmCtx {
@@ -58,40 +50,36 @@ impl MmCtx {
             )));
         }
 
-        let fut = async {
-            let data_id = self.data_asker.data_id.fetch_add(1, atomic::Ordering::SeqCst);
-            let (sender, receiver) = futures::channel::oneshot::channel::<serde_json::Value>();
+        let data_id = self.data_asker.data_id.fetch_add(1, atomic::Ordering::SeqCst);
+        let (sender, receiver) = futures::channel::oneshot::channel::<serde_json::Value>();
 
-            // We don't want to hold the lock, so call this in an inner-scope.
-            {
-                self.data_asker
-                    .awaiting_asks
-                    .lock()
-                    .await
-                    .insert(data_id, sender, timeout);
-            }
+        // We don't want to hold the lock, so call this in an inner-scope.
+        {
+            self.data_asker
+                .awaiting_asks
+                .lock()
+                .await
+                .insert(data_id, sender, timeout);
+        }
 
-            let input = json!({
-                "data_id": data_id,
-                "data": data
-            });
+        let input = json!({
+            "data_id": data_id,
+            "data": data
+        });
 
-            self.stream_channel_controller
-                .broadcast(Event::new(format!("{EVENT_NAME}:{data_type}"), input.to_string()))
-                .await;
+        self.stream_channel_controller
+            .broadcast(Event::new(format!("{EVENT_NAME}:{data_type}"), input.to_string()))
+            .await;
 
-            match receiver.await {
-                Ok(response) => match serde_json::from_value::<Output>(response) {
-                    Ok(value) => Ok(value),
-                    Err(error) => MmError::err(AskForDataError::DeserializationError(error)),
-                },
-                Err(error) => MmError::err(AskForDataError::Internal(format!(
-                    "Sender channel is not alive. {error}"
-                ))),
-            }
-        };
-
-        fut.timeout(timeout).await?
+        match receiver.await {
+            Ok(response) => match serde_json::from_value::<Output>(response) {
+                Ok(value) => Ok(value),
+                Err(error) => MmError::err(AskForDataError::DeserializationError(error)),
+            },
+            Err(error) => MmError::err(AskForDataError::Internal(format!(
+                "Sender channel is not alive. {error}"
+            ))),
+        }
     }
 }
 
