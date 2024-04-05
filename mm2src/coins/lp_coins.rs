@@ -1464,8 +1464,8 @@ pub trait CoinAssocTypes {
 
 /// Defines associated types specific to Non-Fungible Tokens (Token Address, Token Id, etc.)
 pub trait NftAssocTypes {
-    type TokenContractAddr: Send + Sync + fmt::Display;
-    type TokenContractAddrParseError: fmt::Debug + Send + fmt::Display;
+    type ContractAddress: Send + Sync + fmt::Display;
+    type ContractAddrParseError: fmt::Debug + Send + fmt::Display;
     type TokenId: ToBytes + Send + Sync;
     type TokenIdParseError: fmt::Debug + Send + fmt::Display;
     type ContractType: ToBytes + Send + Sync;
@@ -1473,8 +1473,8 @@ pub trait NftAssocTypes {
 
     fn parse_contract_address(
         &self,
-        token_contract_addr: &[u8],
-    ) -> Result<Self::TokenContractAddr, Self::TokenContractAddrParseError>;
+        contract_address: &[u8],
+    ) -> Result<Self::ContractAddress, Self::ContractAddrParseError>;
 
     fn parse_token_id(&self, token_id: &[u8]) -> Result<Self::TokenId, Self::TokenIdParseError>;
 
@@ -1499,13 +1499,13 @@ pub struct SendMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
 /// Structure representing necessary NFT info for Swap
 pub struct NftSwapInfo<'a, Coin: NftAssocTypes + ?Sized> {
     /// The address of the NFT token
-    pub token_address: &'a Coin::TokenContractAddr,
+    pub token_address: &'a Coin::ContractAddress,
     /// The ID of the NFT token.
     pub token_id: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
     /// Etomic swap contract address
-    pub swap_contract_address: &'a Coin::TokenContractAddr,
+    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 pub struct SendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + NftAssocTypes + ?Sized> {
@@ -1615,7 +1615,7 @@ pub struct SpendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + NftAssocTypes + ?
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
     /// Etomic swap contract address
-    pub swap_contract_address: &'a [u8],
+    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 /// Operations specific to maker coin in [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)

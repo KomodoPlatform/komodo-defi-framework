@@ -6299,8 +6299,8 @@ impl ToBytes for ContractType {
 }
 
 impl NftAssocTypes for EthCoin {
-    type TokenContractAddr = Address;
-    type TokenContractAddrParseError = NftAssocTypesError;
+    type ContractAddress = Address;
+    type ContractAddrParseError = NftAssocTypesError;
     type TokenId = BigUint;
     type TokenIdParseError = NftAssocTypesError;
     type ContractType = ContractType;
@@ -6308,9 +6308,9 @@ impl NftAssocTypes for EthCoin {
 
     fn parse_contract_address(
         &self,
-        token_contract_addr: &[u8],
-    ) -> Result<Self::TokenContractAddr, Self::TokenContractAddrParseError> {
-        token_contract_addr
+        contract_address: &[u8],
+    ) -> Result<Self::ContractAddress, Self::ContractAddrParseError> {
+        contract_address
             .try_to_address()
             .map_err(NftAssocTypesError::ParseTokenContractError)
     }

@@ -123,7 +123,7 @@ impl EthCoin {
         &self,
         args: SpendNftMakerPaymentArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
-        let etomic_swap_contract = try_tx_s!(self.parse_contract_address(args.swap_contract_address));
+        let etomic_swap_contract = args.swap_contract_address;
         if args.maker_secret.len() != 32 {
             return Err(TransactionErr::Plain(ERRL!("maker_secret must be 32 bytes")));
         }
@@ -133,7 +133,7 @@ impl EthCoin {
 
         let (state, htlc_params) = try_tx_s!(
             self.status_and_htlc_params_from_tx_data(
-                etomic_swap_contract,
+                *etomic_swap_contract,
                 &NFT_SWAP_CONTRACT,
                 &decoded,
                 index_bytes,
@@ -146,7 +146,7 @@ impl EthCoin {
                 let data =
                     try_tx_s!(self.prepare_spend_nft_maker_v2_data(contract_type, &args, decoded, htlc_params, state));
 
-                self.sign_and_send_transaction(0.into(), Action::Call(etomic_swap_contract), data, U256::from(ETH_GAS))
+                self.sign_and_send_transaction(0.into(), Action::Call(*etomic_swap_contract), data, U256::from(ETH_GAS))
                     .compat()
                     .await
             },
