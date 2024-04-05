@@ -1497,15 +1497,15 @@ pub struct SendMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
 }
 
 /// Structure representing necessary NFT info for Swap
-pub struct NftSwapInfo<'a> {
+pub struct NftSwapInfo<'a, Coin: CoinAssocTypes + NftAssocTypes + ?Sized> {
     /// The address of the NFT token
-    pub token_address: &'a [u8],
+    pub token_address: &'a Coin::TokenContractAddr,
     /// The ID of the NFT token.
     pub token_id: &'a [u8],
     /// The type of smart contract that governs this NFT
-    pub contract_type: &'a [u8],
+    pub contract_type: &'a Coin::ContractType,
     /// Etomic swap contract address
-    pub swap_contract_address: &'a [u8],
+    pub swap_contract_address: &'a Coin::TokenContractAddr,
 }
 
 pub struct SendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + NftAssocTypes + ?Sized> {
@@ -1522,7 +1522,7 @@ pub struct SendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + NftAssocTypes + ?S
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
     /// Structure representing necessary NFT info for Swap
-    pub nft_swap_info: &'a NftSwapInfo<'a>,
+    pub nft_swap_info: &'a NftSwapInfo<'a, Coin>,
 }
 
 pub struct ValidateMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
@@ -1542,7 +1542,7 @@ pub struct ValidateMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub swap_unique_data: &'a [u8],
 }
 
-pub struct ValidateNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
+pub struct ValidateNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + NftAssocTypes + ?Sized> {
     /// Maker payment tx
     pub maker_payment_tx: &'a Coin::Tx,
     /// Maker will be able to refund the payment after this timestamp
@@ -1560,7 +1560,7 @@ pub struct ValidateNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
     /// Structure representing necessary NFT info for Swap
-    pub nft_swap_info: &'a NftSwapInfo<'a>,
+    pub nft_swap_info: &'a NftSwapInfo<'a, Coin>,
 }
 
 pub struct RefundMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
@@ -1597,7 +1597,7 @@ pub struct SpendMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     pub swap_unique_data: &'a [u8],
 }
 
-pub struct SpendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
+pub struct SpendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + NftAssocTypes + ?Sized> {
     /// Maker payment tx
     pub maker_payment_tx: &'a Coin::Tx,
     /// Maker will be able to refund the payment after this timestamp
@@ -1613,7 +1613,7 @@ pub struct SpendNftMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
     /// The type of smart contract that governs this NFT
-    pub contract_type: &'a [u8],
+    pub contract_type: &'a Coin::ContractType,
     /// Etomic swap contract address
     pub swap_contract_address: &'a [u8],
 }

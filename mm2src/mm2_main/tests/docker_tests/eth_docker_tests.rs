@@ -652,10 +652,10 @@ fn send_and_spend_erc721_maker_payment() {
     let maker_secret_hash = sha256(maker_secret).to_vec();
 
     let nft_swap_info = NftSwapInfo {
-        token_address: &erc721_contract().to_bytes(),
+        token_address: &erc721_contract(),
         token_id: &BigUint::from(2u32).to_bytes(),
-        contract_type: &ContractType::Erc721.to_bytes(),
-        swap_contract_address: &nft_swap_contract().to_bytes(),
+        contract_type: &ContractType::Erc721,
+        swap_contract_address: &nft_swap_contract(),
     };
 
     let send_payment_args: SendNftMakerPaymentArgs<EthCoin> = SendNftMakerPaymentArgs {
@@ -700,7 +700,7 @@ fn send_and_spend_erc721_maker_payment() {
         maker_secret,
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
-        contract_type: &ContractType::Erc721.to_bytes(),
+        contract_type: &ContractType::Erc721,
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
     let spend_tx = block_on(taker_global_nft.spend_nft_maker_payment_v2(spend_payment_args)).unwrap();
@@ -733,10 +733,10 @@ fn send_and_spend_erc1155_maker_payment() {
     let maker_secret_hash = sha256(maker_secret).to_vec();
 
     let nft_swap_info = NftSwapInfo {
-        token_address: &erc1155_contract().to_bytes(),
+        token_address: &erc1155_contract(),
         token_id: &BigUint::from(4u32).to_bytes(),
-        contract_type: &ContractType::Erc1155.to_bytes(),
-        swap_contract_address: &nft_swap_contract().to_bytes(),
+        contract_type: &ContractType::Erc1155,
+        swap_contract_address: &nft_swap_contract(),
     };
 
     let send_payment_args: SendNftMakerPaymentArgs<EthCoin> = SendNftMakerPaymentArgs {
@@ -781,7 +781,7 @@ fn send_and_spend_erc1155_maker_payment() {
         maker_secret,
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
-        contract_type: &ContractType::Erc1155.to_bytes(),
+        contract_type: &ContractType::Erc1155,
         swap_contract_address: &nft_swap_contract().to_bytes(),
     };
     let spend_tx = block_on(taker_global_nft.spend_nft_maker_payment_v2(spend_payment_args)).unwrap();
