@@ -1497,7 +1497,7 @@ pub struct SendMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
 }
 
 /// Structure representing necessary NFT info for Swap
-pub struct NftSwapInfo<'a, Coin: CoinAssocTypes + NftAssocTypes + ?Sized> {
+pub struct NftSwapInfo<'a, Coin: NftAssocTypes + ?Sized> {
     /// The address of the NFT token
     pub token_address: &'a Coin::TokenContractAddr,
     /// The ID of the NFT token.
