@@ -9,7 +9,7 @@ use instant::Instant;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
 use mm2_event_stream::{behaviour::{EventBehaviour, EventInitStatus},
-                       Event, EventStreamConfiguration};
+                       ErrorEventName, Event, EventName, EventStreamConfiguration};
 use mm2_number::BigDecimal;
 use std::collections::{HashMap, HashSet};
 
@@ -114,8 +114,9 @@ async fn fetch_balance(
 
 #[async_trait]
 impl EventBehaviour for EthCoin {
-    const EVENT_NAME: &'static str = "COIN_BALANCE";
-    const ERROR_EVENT_NAME: &'static str = "COIN_BALANCE_ERROR";
+    fn event_name() -> EventName { EventName::CoinBalance }
+
+    fn error_event_name() -> ErrorEventName { ErrorEventName::CoinBalanceError }
 
     async fn handle(self, interval: f64, tx: oneshot::Sender<EventInitStatus>) {
         const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
@@ -146,7 +147,7 @@ impl EventBehaviour for EthCoin {
                         let e = serde_json::to_value(e).expect("Serialization shouldn't fail.");
                         ctx.stream_channel_controller
                             .broadcast(Event::new(
-                                format!("{}:{}", EthCoin::ERROR_EVENT_NAME, coin.ticker),
+                                format!("{}:{}", EthCoin::error_event_name(), coin.ticker),
                                 e.to_string(),
                             ))
                             .await;
@@ -183,7 +184,7 @@ impl EventBehaviour for EthCoin {
                             let e = serde_json::to_value(err.error).expect("Serialization shouldn't fail.");
                             ctx.stream_channel_controller
                                 .broadcast(Event::new(
-                                    format!("{}:{}:{}", EthCoin::ERROR_EVENT_NAME, err.ticker, err.address),
+                                    format!("{}:{}:{}", EthCoin::error_event_name(), err.ticker, err.address),
                                     e.to_string(),
                                 ))
                                 .await;
@@ -194,7 +195,7 @@ impl EventBehaviour for EthCoin {
                 if !balance_updates.is_empty() {
                     ctx.stream_channel_controller
                         .broadcast(Event::new(
-                            EthCoin::EVENT_NAME.to_string(),
+                            EthCoin::event_name().to_string(),
                             json!(balance_updates).to_string(),
                         ))
                         .await;
@@ -220,13 +221,13 @@ impl EventBehaviour for EthCoin {
     }
 
     async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {
-        if let Some(event) = config.get_event(Self::EVENT_NAME) {
-            log::info!("{} event is activated for {}", Self::EVENT_NAME, self.ticker,);
+        if let Some(event) = config.get_event(&Self::event_name()) {
+            log::info!("{} event is activated for {}", Self::event_name(), self.ticker,);
 
             let (tx, rx): (Sender<EventInitStatus>, Receiver<EventInitStatus>) = oneshot::channel();
             let fut = self.clone().handle(event.stream_interval_seconds, tx);
             let settings =
-                AbortSettings::info_on_abort(format!("{} event is stopped for {}.", Self::EVENT_NAME, self.ticker));
+                AbortSettings::info_on_abort(format!("{} event is stopped for {}.", Self::event_name(), self.ticker));
             self.spawner().spawn_with_settings(fut, settings);
 
             rx.await.unwrap_or_else(|e| {
