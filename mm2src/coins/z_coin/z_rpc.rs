@@ -758,6 +758,8 @@ impl SaplingSyncLoopHandle {
     fn notify_sync_finished(&mut self) {
         if self.main_sync_state_finished {
             return;
+        } else {
+            self.main_sync_state_finished = true
         }
         self.sync_status_notifier
             .try_send(SyncStatus::Finished {
@@ -928,10 +930,6 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut c
                     client = rpc_from_channel;
                 },
             }
-        }
-
-        if !sync_handle.main_sync_state_finished {
-            sync_handle.main_sync_state_finished = true
         }
 
         Timer::sleep(10.).await;
