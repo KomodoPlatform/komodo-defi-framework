@@ -9,14 +9,13 @@ use std::convert::TryInto;
 use web3::types::{Transaction as Web3Tx, TransactionId};
 
 pub(crate) mod errors;
-use errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr};
-pub(crate) mod structs;
+use errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr, PrepareTxDataError};
+mod structs;
 use structs::{ExpectedHtlcParams, StateType, ValidationParams};
 
 use super::ContractType;
 use crate::eth::{addr_from_raw_pubkey, decode_contract_call, EthCoin, EthCoinType, MakerPaymentStateV2, SignedEthTx,
                  TryToAddress, ERC1155_CONTRACT, ERC721_CONTRACT, ETH_GAS, NFT_SWAP_CONTRACT};
-use crate::nft::trading_proto_v2::errors::PrepareTxDataError;
 use crate::{CoinAssocTypes, RefundPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, TransactionErr,
             ValidateNftMakerPaymentArgs};
 

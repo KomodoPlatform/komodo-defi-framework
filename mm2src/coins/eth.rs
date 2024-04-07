@@ -117,15 +117,16 @@ mod eth_balance_events;
 mod eth_rpc;
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
+pub(crate) mod nft_swap_v2;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
-use crate::nft::WithdrawNftResult;
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod nonce;
 use crate::coin_errors::ValidatePaymentResult;
 use crate::nft::nft_errors::{GetNftInfoError, ParseContractTypeError};
+use crate::nft::WithdrawNftResult;
 use crate::{PrivKeyPolicy, TransactionResult, WithdrawFrom};
 use nonce::ParityNonce;
 
