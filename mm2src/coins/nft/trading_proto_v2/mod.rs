@@ -88,12 +88,10 @@ impl EthCoin {
                 args.maker_payment_tx.hash
             ))
         })?;
-        self.validate_from_to_and_maker_status(tx_from_rpc, maker_address, *token_address, maker_status)
-            .await?;
+        validate_from_to_and_maker_status(tx_from_rpc, maker_address, *token_address, maker_status).await?;
         match self.coin_type {
             EthCoinType::Nft { .. } => {
-                let (decoded, index_bytes) =
-                    self.get_decoded_tx_data_and_index_bytes(contract_type, &tx_from_rpc.input.0)?;
+                let (decoded, index_bytes) = get_decoded_tx_data_and_index_bytes(contract_type, &tx_from_rpc.input.0)?;
 
                 let amount = if matches!(contract_type, &ContractType::Erc1155) {
                     Some(args.amount.to_string())
@@ -139,8 +137,10 @@ impl EthCoin {
             return Err(TransactionErr::Plain(ERRL!("maker_secret must be 32 bytes")));
         }
         let contract_type = args.contract_type;
-        let (decoded, index_bytes) =
-            try_tx_s!(self.get_decoded_tx_data_and_index_bytes(contract_type, &args.maker_payment_tx.data));
+        let (decoded, index_bytes) = try_tx_s!(get_decoded_tx_data_and_index_bytes(
+            contract_type,
+            &args.maker_payment_tx.data
+        ));
 
         let (state, htlc_params) = try_tx_s!(
             self.status_and_htlc_params_from_tx_data(
@@ -195,7 +195,7 @@ impl EthCoin {
                 Ok(data)
             },
             ContractType::Erc721 => {
-                let function = self.erc721_transfer_with_data()?;
+                let function = erc721_transfer_with_data()?;
                 let data = function.encode_input(&[
                     Token::Address(*self.my_addr()),
                     Token::Address(*args.nft_swap_info.swap_contract_address),
@@ -226,62 +226,6 @@ impl EthCoin {
         Ok(encoded)
     }
 
-    /// ERC721 contract has overloaded versions of the `safeTransferFrom` function,
-    /// but `Contract::function` method returns only the first if there are overloaded versions of the same function.
-    /// Provided function retrieves the `safeTransferFrom` variant that includes a `bytes` parameter.
-    /// This variant is specifically used for transferring ERC721 tokens with additional data.
-    fn erc721_transfer_with_data(&self) -> Result<&ethabi::Function, Erc721FunctionError> {
-        let functions = ERC721_CONTRACT
-            .functions_by_name("safeTransferFrom")
-            .map_err(|e| Erc721FunctionError::AbiError(ERRL!("{}", e)))?;
-
-        // Find the correct function variant by inspecting the input parameters.
-        let function = functions
-            .iter()
-            .find(|f| {
-                f.inputs.len() == 4
-                    && matches!(
-                        f.inputs.last().map(|input| &input.kind),
-                        Some(&ethabi::ParamType::Bytes)
-                    )
-            })
-            .ok_or_else(|| {
-                Erc721FunctionError::FunctionNotFound(
-                    "Failed to find the correct safeTransferFrom function variant".to_string(),
-                )
-            })?;
-        Ok(function)
-    }
-
-    async fn validate_from_to_and_maker_status(
-        &self,
-        tx_from_rpc: &Web3Tx,
-        expected_from: Address,
-        expected_to: Address,
-        maker_status: U256,
-    ) -> ValidatePaymentResult<()> {
-        if maker_status != U256::from(MakerPaymentStateV2::PaymentSent as u8) {
-            return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                "NFT Maker Payment state is not PAYMENT_STATE_SENT, got {}",
-                maker_status
-            )));
-        }
-        if tx_from_rpc.from != Some(expected_from) {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "NFT Maker Payment tx {:?} was sent from wrong address, expected {:?}",
-                tx_from_rpc, expected_from
-            )));
-        }
-        // As NFT owner calls "safeTransferFrom" directly, then in Transaction 'to' field we expect token_address
-        if tx_from_rpc.to != Some(expected_to) {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "NFT Maker Payment tx {:?} was sent to wrong address, expected {:?}",
-                tx_from_rpc, expected_to,
-            )));
-        }
-        Ok(())
-    }
-
     /// Retrieves the payment status from a given smart contract address based on the swap ID and state type.
     async fn payment_status_v2(
         &self,
@@ -305,22 +249,6 @@ impl EthCoin {
                 state
             ))),
         }
-    }
-
-    /// Identifies the correct "safeTransferFrom" function based on the contract type (either ERC1155 or ERC721)
-    /// and decodes the provided contract call bytes using the ABI of the identified function. Additionally, it returns
-    /// the index position of the "bytes" field within the function's parameters.
-    pub(crate) fn get_decoded_tx_data_and_index_bytes(
-        &self,
-        contract_type: &ContractType,
-        contract_call_bytes: &[u8],
-    ) -> Result<(Vec<Token>, usize), PrepareTxDataError> {
-        let (send_func, index_bytes) = match contract_type {
-            ContractType::Erc1155 => (ERC1155_CONTRACT.function("safeTransferFrom")?, 4),
-            ContractType::Erc721 => (self.erc721_transfer_with_data()?, 3),
-        };
-        let decoded = decode_contract_call(send_func, contract_call_bytes)?;
-        Ok((decoded, index_bytes))
     }
 
     /// Prepares the encoded transaction data for spending a maker's NFT payment on the blockchain.
@@ -534,4 +462,74 @@ fn validate_payment_args<'a>(
     }
 
     Ok(())
+}
+
+async fn validate_from_to_and_maker_status(
+    tx_from_rpc: &Web3Tx,
+    expected_from: Address,
+    expected_to: Address,
+    maker_status: U256,
+) -> ValidatePaymentResult<()> {
+    if maker_status != U256::from(MakerPaymentStateV2::PaymentSent as u8) {
+        return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+            "NFT Maker Payment state is not PAYMENT_STATE_SENT, got {}",
+            maker_status
+        )));
+    }
+    if tx_from_rpc.from != Some(expected_from) {
+        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+            "NFT Maker Payment tx {:?} was sent from wrong address, expected {:?}",
+            tx_from_rpc, expected_from
+        )));
+    }
+    // As NFT owner calls "safeTransferFrom" directly, then in Transaction 'to' field we expect token_address
+    if tx_from_rpc.to != Some(expected_to) {
+        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+            "NFT Maker Payment tx {:?} was sent to wrong address, expected {:?}",
+            tx_from_rpc, expected_to,
+        )));
+    }
+    Ok(())
+}
+
+/// Identifies the correct "safeTransferFrom" function based on the contract type (either ERC1155 or ERC721)
+/// and decodes the provided contract call bytes using the ABI of the identified function. Additionally, it returns
+/// the index position of the "bytes" field within the function's parameters.
+pub(crate) fn get_decoded_tx_data_and_index_bytes(
+    contract_type: &ContractType,
+    contract_call_bytes: &[u8],
+) -> Result<(Vec<Token>, usize), PrepareTxDataError> {
+    let (send_func, index_bytes) = match contract_type {
+        ContractType::Erc1155 => (ERC1155_CONTRACT.function("safeTransferFrom")?, 4),
+        ContractType::Erc721 => (erc721_transfer_with_data()?, 3),
+    };
+    let decoded = decode_contract_call(send_func, contract_call_bytes)?;
+    Ok((decoded, index_bytes))
+}
+
+/// ERC721 contract has overloaded versions of the `safeTransferFrom` function,
+/// but `Contract::function` method returns only the first if there are overloaded versions of the same function.
+/// Provided function retrieves the `safeTransferFrom` variant that includes a `bytes` parameter.
+/// This variant is specifically used for transferring ERC721 tokens with additional data.
+fn erc721_transfer_with_data<'a>() -> Result<&'a ethabi::Function, Erc721FunctionError> {
+    let functions = ERC721_CONTRACT
+        .functions_by_name("safeTransferFrom")
+        .map_err(|e| Erc721FunctionError::AbiError(ERRL!("{}", e)))?;
+
+    // Find the correct function variant by inspecting the input parameters.
+    let function = functions
+        .iter()
+        .find(|f| {
+            f.inputs.len() == 4
+                && matches!(
+                    f.inputs.last().map(|input| &input.kind),
+                    Some(&ethabi::ParamType::Bytes)
+                )
+        })
+        .ok_or_else(|| {
+            Erc721FunctionError::FunctionNotFound(
+                "Failed to find the correct safeTransferFrom function variant".to_string(),
+            )
+        })?;
+    Ok(function)
 }
