@@ -17,15 +17,20 @@ use super::ContractType;
 use crate::eth::{addr_from_raw_pubkey, decode_contract_call, EthCoin, EthCoinType, MakerPaymentStateV2, SignedEthTx,
                  TryToAddress, ERC1155_CONTRACT, ERC721_CONTRACT, ETH_GAS, NFT_SWAP_CONTRACT};
 use crate::nft::trading_proto_v2::errors::PrepareTxDataError;
-use crate::{CoinAssocTypes, NftAssocTypes, RefundPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs,
-            TransactionErr, ValidateNftMakerPaymentArgs};
+use crate::{CoinAssocTypes, RefundPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, TransactionErr,
+            ValidateNftMakerPaymentArgs};
 
 impl EthCoin {
     pub(crate) async fn send_nft_maker_payment_v2_impl(
         &self,
         args: SendNftMakerPaymentArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
-        try_tx_s!(validate_payment_args(PaymentValidationParams::from(&args)));
+        try_tx_s!(validate_payment_args(
+            args.taker_secret_hash,
+            args.maker_secret_hash,
+            &args.amount,
+            args.nft_swap_info.contract_type
+        ));
         let htlc_data = try_tx_s!(self.prepare_htlc_data(&args));
 
         match &self.coin_type {
@@ -51,7 +56,13 @@ impl EthCoin {
         args: ValidateNftMakerPaymentArgs<'_, Self>,
     ) -> ValidatePaymentResult<()> {
         let contract_type = args.nft_swap_info.contract_type;
-        validate_payment_args(PaymentValidationParams::from(&args)).map_err(ValidatePaymentError::InternalError)?;
+        validate_payment_args(
+            args.taker_secret_hash,
+            args.maker_secret_hash,
+            &args.amount,
+            contract_type,
+        )
+        .map_err(ValidatePaymentError::InternalError)?;
         let etomic_swap_contract = args.nft_swap_info.swap_contract_address;
         let token_address = args.nft_swap_info.token_address;
         let maker_address = addr_from_raw_pubkey(args.maker_pub).map_to_mm(ValidatePaymentError::InternalError)?;
@@ -497,81 +508,28 @@ fn htlc_params() -> &'static [ethabi::ParamType] {
 #[inline(always)]
 fn is_positive_integer(amount: &BigDecimal) -> bool { amount == &amount.with_scale(0) && amount > &BigDecimal::from(0) }
 
-struct PaymentValidationParams<'a, T>
-where
-    T: ContractValidation,
-{
+fn validate_payment_args<'a>(
     taker_secret_hash: &'a [u8],
     maker_secret_hash: &'a [u8],
-    amount: &'a BigDecimal,
-    contract_type: &'a T,
-}
-
-impl<'a, Coin> From<&'a ValidateNftMakerPaymentArgs<'a, Coin>> for PaymentValidationParams<'a, Coin::ContractType>
-where
-    Coin: CoinAssocTypes + NftAssocTypes + ?Sized,
-    <Coin as NftAssocTypes>::ContractType: ContractValidation,
-{
-    fn from(args: &'a ValidateNftMakerPaymentArgs<'a, Coin>) -> Self {
-        Self {
-            taker_secret_hash: args.taker_secret_hash,
-            maker_secret_hash: args.maker_secret_hash,
-            amount: &args.amount,
-            contract_type: args.nft_swap_info.contract_type,
-        }
+    amount: &BigDecimal,
+    contract_type: &ContractType,
+) -> Result<(), String> {
+    match contract_type {
+        ContractType::Erc1155 => {
+            if !is_positive_integer(amount) {
+                return Err("ERC-1155 amount must be a positive integer".to_string());
+            }
+        },
+        ContractType::Erc721 => {
+            if amount != &BigDecimal::from(1) {
+                return Err("ERC-721 amount must be 1".to_string());
+            }
+        },
     }
-}
-
-impl<'a, Coin> From<&'a SendNftMakerPaymentArgs<'a, Coin>> for PaymentValidationParams<'a, Coin::ContractType>
-where
-    Coin: CoinAssocTypes + NftAssocTypes + ?Sized,
-    <Coin as NftAssocTypes>::ContractType: ContractValidation,
-{
-    fn from(args: &'a SendNftMakerPaymentArgs<'a, Coin>) -> Self {
-        Self {
-            taker_secret_hash: args.taker_secret_hash,
-            maker_secret_hash: args.maker_secret_hash,
-            amount: &args.amount,
-            contract_type: args.nft_swap_info.contract_type,
-        }
-    }
-}
-
-pub trait ContractValidation {
-    fn validate(&self, amount: &BigDecimal) -> Result<(), String>;
-}
-
-impl ContractValidation for ContractType {
-    fn validate(&self, amount: &BigDecimal) -> Result<(), String> {
-        match self {
-            ContractType::Erc1155 => {
-                if !is_positive_integer(amount) {
-                    Err("ERC-1155 amount must be a positive integer".to_string())
-                } else {
-                    Ok(())
-                }
-            },
-            ContractType::Erc721 => {
-                if amount != &BigDecimal::from(1) {
-                    Err("ERC-721 amount must be 1".to_string())
-                } else {
-                    Ok(())
-                }
-            },
-        }
-    }
-}
-
-fn validate_payment_args<'a, T>(args: PaymentValidationParams<'a, T>) -> Result<(), String>
-where
-    T: ContractValidation + 'a,
-{
-    args.contract_type.validate(args.amount)?;
-
-    if args.taker_secret_hash.len() != 32 {
+    if taker_secret_hash.len() != 32 {
         return Err("taker_secret_hash must be 32 bytes".to_string());
     }
-    if args.maker_secret_hash.len() != 32 {
+    if maker_secret_hash.len() != 32 {
         return Err("maker_secret_hash must be 32 bytes".to_string());
     }
 
