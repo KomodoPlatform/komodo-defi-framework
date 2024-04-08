@@ -373,6 +373,8 @@ pub enum TendermintInitErrorKind {
     #[display(fmt = "avg_blocktime must be in-between '0' and '255'.")]
     AvgBlockTimeInvalid,
     BalanceStreamInitError(String),
+    #[display(fmt = "Watcher features can not be used with pubkey-only activation policy.")]
+    CantUseWatchersWithPubkeyPolicy,
 }
 
 #[derive(Display, Debug, Serialize, SerializeErrorType)]
