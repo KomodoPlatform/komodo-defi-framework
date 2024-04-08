@@ -52,6 +52,10 @@ pub const TRADING_PROTO_UPGRADE_MIGRATION: &[&str] = &[
     "ALTER TABLE my_swaps ADD COLUMN taker_coin_nota BOOLEAN;",
 ];
 
+pub const ADD_OTHER_P2P_PUBKEY_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN other_p2p_pub BLOB;";
+// Storing rational numbers as text to maintain precision
+pub const ADD_DEX_FEE_BURN_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN dex_fee_burn TEXT;";
+
 /// The query to insert swap on migration 1, during this migration swap_type column doesn't exist
 /// in my_swaps table yet.
 const INSERT_MY_SWAP_MIGRATION_1: &str =
@@ -83,6 +87,7 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     taker_volume,
     premium,
     dex_fee,
+    dex_fee_burn,
     secret,
     secret_hash,
     secret_hash_algo,
@@ -91,7 +96,8 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     maker_coin_confs,
     maker_coin_nota,
     taker_coin_confs,
-    taker_coin_nota
+    taker_coin_nota,
+    other_p2p_pub
 ) VALUES (
     :my_coin,
     :other_coin,
@@ -102,6 +108,7 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     :taker_volume,
     :premium,
     :dex_fee,
+    :dex_fee_burn,
     :secret,
     :secret_hash,
     :secret_hash_algo,
@@ -110,7 +117,8 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     :maker_coin_confs,
     :maker_coin_nota,
     :taker_coin_confs,
-    :taker_coin_nota
+    :taker_coin_nota,
+    :other_p2p_pub
 );"#;
 
 pub fn insert_new_swap_v2(ctx: &MmArc, params: &[(&str, &dyn ToSql)]) -> SqlResult<()> {
@@ -322,12 +330,14 @@ pub const SELECT_MY_SWAP_V2_BY_UUID: &str = r#"SELECT
     taker_volume,
     premium,
     dex_fee,
+    dex_fee_burn,
     lock_duration,
     maker_coin_confs,
     maker_coin_nota,
     taker_coin_confs,
     taker_coin_nota,
-    p2p_privkey
+    p2p_privkey,
+    other_p2p_pub
 FROM my_swaps
 WHERE uuid = :uuid;
 "#;

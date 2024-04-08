@@ -4,8 +4,8 @@ use crate::electrums::qtum_electrums;
 use crate::structs::*;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
-use common::log::debug;
-use common::{cfg_native, now_float, now_ms, now_sec, repeatable, wait_until_ms, PagingOptionsEnum};
+use common::log::{debug, info};
+use common::{cfg_native, now_float, now_ms, now_sec, repeatable, wait_until_ms, wait_until_sec, PagingOptionsEnum};
 use common::{get_utc_timestamp, log};
 use crypto::{CryptoCtx, StandardHDCoinAddress};
 use gstuff::{try_s, ERR, ERRL};
@@ -205,8 +205,18 @@ pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &[
     "https://piratelightd3.cryptoforge.cc:443",
     "https://piratelightd4.cryptoforge.cc:443",
 ];
+#[cfg(not(target_arch = "wasm32"))]
 pub const PIRATE_ELECTRUMS: &[&str] = &["node1.chainkeeper.pro:10132"];
+#[cfg(target_arch = "wasm32")]
+pub const PIRATE_ELECTRUMS: &[&str] = &[
+    "electrum3.cipig.net:30008",
+    "electrum1.cipig.net:30008",
+    "electrum2.cipig.net:30008",
+];
+#[cfg(not(target_arch = "wasm32"))]
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://node1.chainkeeper.pro:443"];
+#[cfg(target_arch = "wasm32")]
+pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["https://pirate.battlefield.earth:8581"];
 pub const DEFAULT_RPC_PASSWORD: &str = "pass";
 pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10071",
@@ -767,6 +777,38 @@ pub fn eth_testnet_conf() -> Json {
         "derivation_path": "m/44'/60'",
         "protocol": {
             "type": "ETH"
+        }
+    })
+}
+
+/// ETH configuration used for dockerized Geth dev node
+pub fn eth_dev_conf() -> Json {
+    json!({
+        "coin": "ETH",
+        "name": "ethereum",
+        "mm2": 1,
+        "chain_id": 1337,
+        "derivation_path": "m/44'/60'",
+        "protocol": {
+            "type": "ETH"
+        }
+    })
+}
+
+/// ERC20 token configuration used for dockerized Geth dev node
+pub fn erc20_dev_conf(contract_address: &str) -> Json {
+    json!({
+        "coin": "ERC20DEV",
+        "name": "erc20dev",
+        "chain_id": 1337,
+        "mm2": 1,
+        "derivation_path": "m/44'/60'",
+        "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+                "platform": "ETH",
+                "contract_address": contract_address,
+            }
         }
     })
 }
@@ -2133,7 +2175,7 @@ pub async fn wait_for_swap_status(mm: &MarketMakerIt, uuid: &str, wait_sec: i64)
             panic!("Timed out waiting for swap {} status", uuid);
         }
 
-        Timer::sleep(0.5).await;
+        Timer::sleep(1.).await;
     }
 }
 
@@ -3202,6 +3244,33 @@ pub async fn coins_needed_for_kickstart(mm: &MarketMakerIt) -> Vec<String> {
     result.result
 }
 
+pub async fn enable_z_coin_light(
+    mm: &MarketMakerIt,
+    coin: &str,
+    electrums: &[&str],
+    lightwalletd_urls: &[&str],
+    account: Option<u32>,
+    starting_height: Option<u64>,
+) -> ZCoinActivationResult {
+    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls, starting_height, account).await;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = wait_until_sec(300);
+
+    loop {
+        if now_sec() > timeout {
+            panic!("{} initialization timed out", coin);
+        }
+        let status = init_z_coin_status(mm, init.result.task_id).await;
+        info!("Status {}", json::to_string(&status).unwrap());
+        let status: RpcV2Response<InitZcoinStatus> = json::from_value(status).unwrap();
+        match status.result {
+            InitZcoinStatus::Ok(result) => break result,
+            InitZcoinStatus::Error(e) => panic!("{} initialization error {:?}", coin, e),
+            _ => Timer::sleep(1.).await,
+        }
+    }
+}
+
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_parse_env_file() {
@@ -3316,4 +3385,15 @@ pub async fn init_trezor_user_action_rpc(mm: &MarketMakerIt, task_id: u64, user_
         request.1
     );
     json::from_str(&request.1).unwrap()
+}
+
+pub async fn active_swaps(mm: &MarketMakerIt) -> ActiveSwapsResponse {
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "active_swaps",
+        "params": []
+    });
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "'active_swaps' failed: {}", response.1);
+    json::from_str(&response.1).unwrap()
 }

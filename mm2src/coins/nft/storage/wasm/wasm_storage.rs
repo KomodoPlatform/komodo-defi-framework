@@ -421,6 +421,27 @@ impl NftListStorageOps for NftCacheIDBLocked<'_> {
         update_nft_phishing_for_index(&table, &chain_str, external_index, &domain, possible_phishing).await?;
         Ok(())
     }
+
+    async fn clear_nft_data(&self, chain: &Chain) -> MmResult<(), Self::Error> {
+        let db_transaction = self.get_inner().transaction().await?;
+        let nft_table = db_transaction.table::<NftListTable>().await?;
+        let last_scanned_block_table = db_transaction.table::<LastScannedBlockTable>().await?;
+
+        nft_table.delete_items_by_index("chain", chain.to_string()).await?;
+        last_scanned_block_table
+            .delete_item_by_unique_index("chain", chain.to_string())
+            .await?;
+        Ok(())
+    }
+
+    async fn clear_all_nft_data(&self) -> MmResult<(), Self::Error> {
+        let db_transaction = self.get_inner().transaction().await?;
+        let nft_table = db_transaction.table::<NftListTable>().await?;
+        let last_scanned_block_table = db_transaction.table::<LastScannedBlockTable>().await?;
+        nft_table.clear().await?;
+        last_scanned_block_table.clear().await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -481,20 +502,21 @@ impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
     ) -> MmResult<Vec<NftTransferHistory>, Self::Error> {
         let db_transaction = self.get_inner().transaction().await?;
         let table = db_transaction.table::<NftTransferHistoryTable>().await?;
-        let items = table
+        let mut cursor_iter = table
             .cursor_builder()
             .only("chain", chain.to_string())
-            .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
+            .map_err(|e| WasmNftCacheError::CursorBuilderError(e.to_string()))?
             .bound("block_number", BeBigUint::from(from_block), BeBigUint::from(u64::MAX))
             .open_cursor(CHAIN_BLOCK_NUMBER_INDEX)
             .await
-            .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
-            .collect()
-            .await
-            .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?;
+            .map_err(|e| WasmNftCacheError::OpenCursorError(e.to_string()))?;
 
         let mut res = Vec::new();
-        for (_item_id, item) in items.into_iter() {
+        while let Some((_item_id, item)) = cursor_iter
+            .next()
+            .await
+            .map_err(|e| WasmNftCacheError::GetItemError(e.to_string()))?
+        {
             let transfer = transfer_details_from_item(item)?;
             res.push(transfer);
         }
@@ -592,19 +614,20 @@ impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
     async fn get_transfers_with_empty_meta(&self, chain: Chain) -> MmResult<Vec<NftTokenAddrId>, Self::Error> {
         let db_transaction = self.get_inner().transaction().await?;
         let table = db_transaction.table::<NftTransferHistoryTable>().await?;
-        let items = table
+        let mut cursor_iter = table
             .cursor_builder()
             .only("chain", chain.to_string())
-            .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
+            .map_err(|e| WasmNftCacheError::CursorBuilderError(e.to_string()))?
             .open_cursor("chain")
             .await
-            .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
-            .collect()
-            .await
-            .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?;
+            .map_err(|e| WasmNftCacheError::OpenCursorError(e.to_string()))?;
 
         let mut res = HashSet::new();
-        for (_item_id, item) in items.into_iter() {
+        while let Some((_item_id, item)) = cursor_iter
+            .next()
+            .await
+            .map_err(|e| WasmNftCacheError::GetItemError(e.to_string()))?
+        {
             if item.token_uri.is_none()
                 && item.collection_name.is_none()
                 && item.image_url.is_none()
@@ -722,6 +745,20 @@ impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
             .await?;
         Ok(())
     }
+
+    async fn clear_history_data(&self, chain: &Chain) -> MmResult<(), Self::Error> {
+        let db_transaction = self.get_inner().transaction().await?;
+        let table = db_transaction.table::<NftTransferHistoryTable>().await?;
+        table.delete_items_by_index("chain", chain.to_string()).await?;
+        Ok(())
+    }
+
+    async fn clear_all_history_data(&self) -> MmResult<(), Self::Error> {
+        let db_transaction = self.get_inner().transaction().await?;
+        let table = db_transaction.table::<NftTransferHistoryTable>().await?;
+        table.clear().await?;
+        Ok(())
+    }
 }
 
 async fn update_transfer_phishing_for_index(
@@ -778,25 +815,26 @@ async fn get_last_block_from_table(
     table: DbTable<'_, impl TableSignature + BlockNumberTable>,
     cursor: &str,
 ) -> MmResult<Option<u64>, WasmNftCacheError> {
-    let items = table
+    let maybe_item = table
         .cursor_builder()
         .only("chain", chain.to_string())
-        .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
+        .map_err(|e| WasmNftCacheError::CursorBuilderError(e.to_string()))?
         // Sets lower and upper bounds for block_number field
         .bound("block_number", BeBigUint::from(0u64), BeBigUint::from(u64::MAX))
+        // Cursor returns values from the lowest to highest key indexes.
+        // But we need to get the highest block_number, so reverse the cursor direction.
+        .reverse()
+        .where_first()
         // Opens a cursor by the specified index.
         // In get_last_block_from_table case it is CHAIN_BLOCK_NUMBER_INDEX, as we need to search block_number for specific chain.
-        // Cursor returns values from the lowest to highest key indexes.
         .open_cursor(cursor)
         .await
-        .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?
-        .collect()
+        .map_err(|e| WasmNftCacheError::OpenCursorError(e.to_string()))?
+        .next()
         .await
-        .map_err(|e| WasmNftCacheError::GetLastNftBlockError(e.to_string()))?;
+        .map_err(|e| WasmNftCacheError::GetItemError(e.to_string()))?;
 
-    let maybe_item = items
-        .into_iter()
-        .last()
+    let maybe_item = maybe_item
         .map(|(_item_id, item)| {
             item.get_block_number()
                 .to_u64()
@@ -860,11 +898,11 @@ impl NftListTable {
 }
 
 impl TableSignature for NftListTable {
-    fn table_name() -> &'static str { "nft_list_cache_table" }
+    const TABLE_NAME: &'static str = "nft_list_cache_table";
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if is_initial_upgrade(old_version, new_version) {
-            let table = upgrader.create_table(Self::table_name())?;
+            let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(
                 CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
                 &["chain", "token_address", "token_id"],
@@ -941,11 +979,11 @@ impl NftTransferHistoryTable {
 }
 
 impl TableSignature for NftTransferHistoryTable {
-    fn table_name() -> &'static str { "nft_transfer_history_cache_table" }
+    const TABLE_NAME: &'static str = "nft_transfer_history_cache_table";
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if is_initial_upgrade(old_version, new_version) {
-            let table = upgrader.create_table(Self::table_name())?;
+            let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(
                 CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
                 &["chain", "token_address", "token_id"],
@@ -974,11 +1012,11 @@ pub(crate) struct LastScannedBlockTable {
 }
 
 impl TableSignature for LastScannedBlockTable {
-    fn table_name() -> &'static str { "last_scanned_block_table" }
+    const TABLE_NAME: &'static str = "last_scanned_block_table";
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if is_initial_upgrade(old_version, new_version) {
-            let table = upgrader.create_table(Self::table_name())?;
+            let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_index("chain", true)?;
         }
         Ok(())

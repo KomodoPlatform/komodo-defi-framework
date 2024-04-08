@@ -12,6 +12,7 @@ use mm2_net::p2p::P2PContext;
 use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
 use mocktopus::mocking::*;
 use rand::{seq::SliceRandom, thread_rng, Rng};
+use secp256k1::PublicKey;
 use std::collections::HashSet;
 use std::iter::{self, FromIterator};
 use std::sync::Mutex;
@@ -1212,7 +1213,7 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
         .add_order(ctx.weak(), maker_order, None);
 
     static mut CONNECT_START_CALLED: bool = false;
-    lp_connect_start_bob.mock_safe(|_, _, _| {
+    lp_connect_start_bob.mock_safe(|_, _, _, _| {
         unsafe {
             CONNECT_START_CALLED = true;
         }
@@ -1221,7 +1222,13 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
     });
 
     let connect: TakerConnect = json::from_str(r#"{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connect","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed"}"#).unwrap();
-    block_on(process_taker_connect(ctx, connect.sender_pubkey, connect));
+    let mut prefixed_pub = connect.sender_pubkey.0.to_vec();
+    prefixed_pub.insert(0, 2);
+    block_on(process_taker_connect(
+        ctx,
+        PublicKey::from_slice(&prefixed_pub).unwrap().into(),
+        connect,
+    ));
     assert!(unsafe { !CONNECT_START_CALLED });
 }
 

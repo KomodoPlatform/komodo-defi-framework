@@ -18,8 +18,8 @@ use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, 
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MmCoin,
             MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, TradeFee, TradePreimageValue,
-            TransactionEnum, ValidateFeeArgs, ValidatePaymentInput};
+            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash, TradeFee,
+            TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
 use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use common::{now_sec, wait_until_sec};
@@ -474,7 +474,7 @@ impl MakerSwap {
         // do not use self.r().data here as it is not initialized at this step yet
         let preimage_value = TradePreimageValue::Exact(self.maker_amount.clone());
         let stage = FeeApproxStage::StartSwap;
-        let get_sender_trade_fee_fut = self.maker_coin.get_sender_trade_fee(preimage_value, stage.clone());
+        let get_sender_trade_fee_fut = self.maker_coin.get_sender_trade_fee(preimage_value, stage);
         let maker_payment_trade_fee = match get_sender_trade_fee_fut.await {
             Ok(fee) => fee,
             Err(e) => {
@@ -483,7 +483,7 @@ impl MakerSwap {
                 )]))
             },
         };
-        let taker_payment_spend_trade_fee_fut = self.taker_coin.get_receiver_trade_fee(stage.clone());
+        let taker_payment_spend_trade_fee_fut = self.taker_coin.get_receiver_trade_fee(stage);
         let taker_payment_spend_trade_fee = match taker_payment_spend_trade_fee_fut.compat().await {
             Ok(fee) => fee,
             Err(e) => {
@@ -1041,9 +1041,7 @@ impl MakerSwap {
             watcher_reward,
         };
 
-        let validated_f = self.taker_coin.validate_taker_payment(validate_input).compat();
-
-        if let Err(e) = validated_f.await {
+        if let Err(e) = self.taker_coin.validate_taker_payment(validate_input).await {
             return Ok((Some(MakerSwapCommand::PrepareForMakerPaymentRefund), vec![
                 MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.validate_taker_payment: {}", e).into()),
                 MakerSwapEvent::MakerPaymentWaitRefundStarted {
@@ -1221,7 +1219,9 @@ impl MakerSwap {
                 payment_tx: &maker_payment,
                 time_lock: locktime,
                 other_pubkey: other_maker_coin_htlc_pub.as_slice(),
-                secret_hash: self.secret_hash().as_slice(),
+                tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                    maker_secret_hash: self.secret_hash().as_slice(),
+                },
                 swap_contract_address: &maker_coin_swap_contract_address,
                 swap_unique_data: &self.unique_swap_data(),
                 watcher_reward,
@@ -1522,7 +1522,9 @@ impl MakerSwap {
                     payment_tx: &maker_payment,
                     time_lock: maker_payment_lock,
                     other_pubkey: other_maker_coin_htlc_pub.as_slice(),
-                    secret_hash: secret_hash.as_slice(),
+                    tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+                        maker_secret_hash: secret_hash.as_slice(),
+                    },
                     swap_contract_address: &maker_coin_swap_contract_address,
                     swap_unique_data: &unique_data,
                     watcher_reward,
@@ -2154,8 +2156,8 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
 }
 
 pub struct MakerSwapPreparedParams {
-    maker_payment_trade_fee: TradeFee,
-    taker_payment_spend_trade_fee: TradeFee,
+    pub(super) maker_payment_trade_fee: TradeFee,
+    pub(super) taker_payment_spend_trade_fee: TradeFee,
 }
 
 pub async fn check_balance_for_maker_swap(
@@ -2175,7 +2177,7 @@ pub async fn check_balance_for_maker_swap(
         None => {
             let preimage_value = TradePreimageValue::Exact(volume.to_decimal());
             let maker_payment_trade_fee = my_coin
-                .get_sender_trade_fee(preimage_value, stage.clone())
+                .get_sender_trade_fee(preimage_value, stage)
                 .await
                 .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
             let taker_payment_spend_trade_fee = other_coin

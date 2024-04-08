@@ -7,7 +7,7 @@ use http::header::{ACCEPT, CONTENT_TYPE};
 use http::uri::InvalidUri;
 use http::{StatusCode, Uri};
 use mm2_net::transport::SlurpError;
-use mm2_net::wasm_http::FetchRequest;
+use mm2_net::wasm::http::FetchRequest;
 use std::str::FromStr;
 use tendermint_rpc::endpoint::{abci_info, broadcast};
 pub use tendermint_rpc::endpoint::{abci_query::{AbciQuery, Request as AbciRequest},

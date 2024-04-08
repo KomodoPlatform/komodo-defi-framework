@@ -399,6 +399,7 @@ impl Platform {
                         output.script_pubkey.as_ref(),
                         output.outpoint.index.into(),
                         BlockHashOrHeight::Hash(Default::default()),
+                        self.coin.as_ref().tx_hash_algo,
                     )
                     .compat()
                     .await

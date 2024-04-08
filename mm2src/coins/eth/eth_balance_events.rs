@@ -79,9 +79,7 @@ impl EventBehaviour for EthCoin {
     async fn handle(self, interval: f64, tx: oneshot::Sender<EventInitStatus>) {
         const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
 
-        async fn with_socket(_coin: EthCoin, _ctx: MmArc) { todo!() }
-
-        async fn with_polling(coin: EthCoin, ctx: MmArc, interval: f64) {
+        async fn start_polling(coin: EthCoin, ctx: MmArc, interval: f64) {
             let mut cache: HashMap<String, BigDecimal> = HashMap::new();
 
             loop {
@@ -147,7 +145,7 @@ impl EventBehaviour for EthCoin {
 
         tx.send(EventInitStatus::Success).expect(RECEIVER_DROPPED_MSG);
 
-        with_polling(self, ctx, interval).await
+        start_polling(self, ctx, interval).await
     }
 
     async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {

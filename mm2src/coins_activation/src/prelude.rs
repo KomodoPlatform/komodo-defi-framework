@@ -1,5 +1,5 @@
+use coins::nft::nft_structs::{Chain, ConvertChain};
 use coins::utxo::UtxoActivationParams;
-#[cfg(not(target_arch = "wasm32"))]
 use coins::z_coin::ZcoinActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, MmCoinEnum};
 use mm2_core::mm_ctx::MmArc;
@@ -21,7 +21,6 @@ impl TxHistory for UtxoActivationParams {
     fn tx_history(&self) -> bool { self.tx_history }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl TxHistory for ZcoinActivationParams {
     fn tx_history(&self) -> bool { false }
 }
@@ -72,27 +71,42 @@ pub enum CoinConfWithProtocolError {
     UnexpectedProtocol { ticker: String, protocol: CoinProtocol },
 }
 
+/// Determines the coin configuration and protocol information for a given coin or NFT ticker.
+/// In the case of NFT ticker, it's platform coin config will be returned.
 #[allow(clippy::result_large_err)]
 pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
     ctx: &MmArc,
     coin: &str,
 ) -> Result<(Json, T), MmError<CoinConfWithProtocolError>> {
-    let conf = coin_conf(ctx, coin);
+    let (conf, coin_protocol) = match Chain::from_nft_ticker(coin) {
+        Ok(chain) => {
+            let platform = chain.to_ticker();
+            let platform_conf = coin_conf(ctx, platform);
+            let nft_protocol = CoinProtocol::Nft {
+                platform: platform.to_string(),
+            };
+            (platform_conf, nft_protocol)
+        },
+        Err(_) => {
+            let conf = coin_conf(ctx, coin);
+            let coin_protocol: CoinProtocol = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
+                CoinConfWithProtocolError::CoinProtocolParseError {
+                    ticker: coin.into(),
+                    err,
+                }
+            })?;
+            (conf, coin_protocol)
+        },
+    };
+
     if conf.is_null() {
         return MmError::err(CoinConfWithProtocolError::ConfigIsNotFound(coin.into()));
     }
 
-    let coin_protocol: CoinProtocol = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
-        CoinConfWithProtocolError::CoinProtocolParseError {
-            ticker: coin.into(),
-            err,
-        }
-    })?;
-
-    let coin_protocol =
+    let protocol =
         T::try_from_coin_protocol(coin_protocol).mm_err(|protocol| CoinConfWithProtocolError::UnexpectedProtocol {
             ticker: coin.into(),
             protocol,
         })?;
-    Ok((conf, coin_protocol))
+    Ok((conf, protocol))
 }

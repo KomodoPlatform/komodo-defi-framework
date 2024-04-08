@@ -8,7 +8,7 @@ use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
 use crypto::{from_hw_error, Bip44Chain, HwError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
-use enum_from::EnumFromTrait;
+use enum_derives::EnumFromTrait;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;

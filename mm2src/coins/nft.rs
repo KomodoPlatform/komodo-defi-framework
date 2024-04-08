@@ -3,12 +3,13 @@ use mm2_err_handle::prelude::{MmError, MmResult};
 use url::Url;
 
 pub(crate) mod nft_errors;
-pub(crate) mod nft_structs;
+pub mod nft_structs;
 pub(crate) mod storage;
 
 #[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;
 
-use crate::{coin_conf, get_my_address, lp_coinfind_or_err, MarketCoinOps, MmCoinEnum, MyAddressReq, WithdrawError};
+use crate::{coin_conf, get_my_address, lp_coinfind_or_err, CoinsContext, MarketCoinOps, MmCoinEnum, MmCoinStruct,
+            MyAddressReq, WithdrawError};
 use nft_errors::{GetNftInfoError, UpdateNftError};
 use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftList, NftListReq, NftMetadataReq,
                   NftTransferHistory, NftTransferHistoryFromMoralis, NftTransfersReq, NftsTransferHistoryList,
@@ -16,11 +17,11 @@ use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftLis
 
 use crate::eth::{eth_addr_to_hex, get_eth_address, withdraw_erc1155, withdraw_erc721, EthCoin, EthCoinType,
                  EthTxFeeDetails};
-use crate::nft::nft_errors::{MetaFromUrlError, ProtectFromSpamError, TransferConfirmationsError,
+use crate::nft::nft_errors::{ClearNftDbError, MetaFromUrlError, ProtectFromSpamError, TransferConfirmationsError,
                              UpdateSpamPhishingError};
-use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, NftCommon, NftCtx, NftTransferCommon,
-                              PhishingDomainReq, PhishingDomainRes, RefreshMetadataReq, SpamContractReq,
-                              SpamContractRes, TransferMeta, TransferStatus, UriMeta};
+use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, ClearNftDbReq, NftCommon, NftCtx, NftInfo,
+                              NftTransferCommon, PhishingDomainReq, PhishingDomainRes, RefreshMetadataReq,
+                              SpamContractReq, SpamContractRes, TransferMeta, TransferStatus, UriMeta};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
 use common::parse_rfc3339_to_timestamp;
 use crypto::StandardHDCoinAddress;
@@ -29,8 +30,9 @@ use futures::compat::Future01CompatExt;
 use futures::future::try_join_all;
 use mm2_err_handle::map_to_mm::MapToMmResult;
 use mm2_net::transport::send_post_request_to_uri;
-use mm2_number::{BigDecimal, BigUint};
+use mm2_number::BigUint;
 use regex::Regex;
+use serde::Deserialize;
 use serde_json::Value as Json;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -41,7 +43,7 @@ use web3::types::TransactionId;
 use mm2_net::native_http::send_request_to_uri;
 
 #[cfg(target_arch = "wasm32")]
-use mm2_net::wasm_http::send_request_to_uri;
+use mm2_net::wasm::http::send_request_to_uri;
 
 const MORALIS_API_ENDPOINT: &str = "api/v2";
 /// query parameters for moralis request: The format of the token ID
@@ -94,7 +96,6 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
             protect_from_nft_spam_links(nft, true)?;
         }
     }
-    drop_mutability!(nft_list);
     Ok(nft_list)
 }
 
@@ -103,19 +104,6 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
 /// The function accesses the stored NFT data, based on provided token address,
 /// token ID, and chain, and returns comprehensive information about the NFT.
 /// It also checks and redacts potential spam if `protect_from_spam` in the request is set to true.
-///
-/// # Arguments
-///
-/// * `ctx`: Context required for handling internal operations.
-/// * `req`: A request containing details about the NFT to fetch.
-///
-/// # Returns
-///
-/// On success, returns the whole info about desired Nft.
-/// # Errors
-///
-/// Returns `GetNftInfoError` variants for issues like invalid requests, transport failures,
-/// database errors, and spam protection errors.
 pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, GetNftInfoError> {
     let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(GetNftInfoError::Internal)?;
 
@@ -133,7 +121,6 @@ pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, 
     if req.protect_from_spam {
         protect_from_nft_spam_links(&mut nft, true)?;
     }
-    drop_mutability!(nft);
     Ok(nft)
 }
 
@@ -175,7 +162,6 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
         }
     }
     process_transfers_confirmations(&ctx, req.chains, &mut transfer_history_list).await?;
-    drop_mutability!(transfer_history_list);
     Ok(transfer_history_list)
 }
 
@@ -225,15 +211,6 @@ async fn process_transfers_confirmations(
 /// This function refreshes the NFT transfer history and NFT list cache based on new
 /// data fetched from the provided `url`. The function ensures the local cache is in
 /// sync with the latest data from the source, validates against spam contract addresses and phishing domains.
-///
-/// # Arguments
-///
-/// * `ctx`: Context required for handling internal operations.
-/// * `req`: A request containing details about the NFTs to be updated and the source URL.
-///
-/// # Returns
-///
-/// * `MmResult<(), UpdateNftError>`: A result indicating success or an error.
 pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNftError> {
     let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(GetNftInfoError::Internal)?;
 
@@ -306,11 +283,69 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
             &req.url_antispam,
         )
         .await?;
+        update_nft_global_in_coins_ctx(&ctx, &storage, *chain).await?;
         update_transfers_with_empty_meta(&storage, chain, &req.url, &req.url_antispam).await?;
         update_spam(&storage, *chain, &req.url_antispam).await?;
         update_phishing(&storage, chain, &req.url_antispam).await?;
     }
     Ok(())
+}
+
+/// Updates the global NFT information in the coins context.
+///
+/// This function uses the up-to-date NFT list for a given chain and updates the
+/// corresponding global NFT information in the coins context.
+async fn update_nft_global_in_coins_ctx<T>(ctx: &MmArc, storage: &T, chain: Chain) -> MmResult<(), UpdateNftError>
+where
+    T: NftListStorageOps + NftTransferHistoryStorageOps,
+{
+    let coins_ctx = CoinsContext::from_ctx(ctx).map_to_mm(UpdateNftError::Internal)?;
+    let mut coins = coins_ctx.coins.lock().await;
+    let ticker = chain.to_nft_ticker();
+
+    if let Some(MmCoinStruct {
+        inner: MmCoinEnum::EthCoin(nft_global),
+        ..
+    }) = coins.get_mut(ticker)
+    {
+        let nft_list = storage.get_nft_list(vec![chain], true, 1, None, None).await?;
+        update_nft_infos(nft_global, nft_list.nfts).await;
+        return Ok(());
+    }
+    // if global NFT is None in CoinsContext, then it's just not activated
+    Ok(())
+}
+
+/// Updates the global NFT information with the latest NFT list.
+///
+/// This function replaces the existing NFT information (`nfts_infos`) in the global NFT with the new data provided by `nft_list`.
+/// The `nft_list` must be current, accurately reflecting the NFTs presently owned by the user.
+/// This includes accounting for any changes such as NFTs that have been transferred away, so user is not owner anymore,
+/// or changes in the amounts of ERC1155 tokens.
+/// Ensuring the data's accuracy is vital for maintaining a correct representation of ownership in the global NFT.
+///
+/// # Warning
+/// Using an outdated `nft_list` for this operation may result in incorrect NFT information persisting in the global NFT,
+/// potentially leading to inconsistencies with the actual state of NFT ownership.
+async fn update_nft_infos(nft_global: &mut EthCoin, nft_list: Vec<Nft>) {
+    let new_nft_infos: HashMap<String, NftInfo> = nft_list
+        .into_iter()
+        .map(|nft| {
+            let key = format!("{},{}", nft.common.token_address, nft.token_id);
+            let nft_info = NftInfo {
+                token_address: nft.common.token_address,
+                token_id: nft.token_id,
+                chain: nft.chain,
+                contract_type: nft.contract_type,
+                amount: nft.common.amount,
+            };
+            (key, nft_info)
+        })
+        .collect();
+
+    let mut global_nft_infos = nft_global.nfts_infos.lock().await;
+    // we can do this as some `global_nft_infos` keys may not present in `new_nft_infos`, so we will have to remove them anyway
+    *global_nft_infos = new_nft_infos;
 }
 
 /// `update_spam` function updates spam contracts info in NFT list and NFT transfers.
@@ -418,15 +453,6 @@ fn prepare_uri_for_blocklist_endpoint(
 /// phishing domains using the provided `url_antispam`. If the fetched metadata or its domain
 /// is identified as spam or matches with any phishing domains, the NFT's `possible_spam` and/or
 /// `possible_phishing` flags are set to true.
-///
-/// # Arguments
-///
-/// * `ctx`: Context required for handling internal operations.
-/// * `req`: A request containing details about the NFT whose metadata needs to be refreshed.
-///
-/// # Returns
-///
-/// * `MmResult<(), UpdateNftError>`: A result indicating success or an error.
 pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResult<(), UpdateNftError> {
     let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(GetNftInfoError::Internal)?;
 
@@ -585,19 +611,7 @@ async fn get_moralis_nft_list(
     let ticker = chain.to_ticker();
     let conf = coin_conf(ctx, ticker);
     let my_address = get_eth_address(ctx, &conf, ticker, &StandardHDCoinAddress::default()).await?;
-
-    let mut uri_without_cursor = url.clone();
-    uri_without_cursor.set_path(MORALIS_API_ENDPOINT);
-    uri_without_cursor
-        .path_segments_mut()
-        .map_to_mm(|_| GetNftInfoError::Internal("Invalid URI".to_string()))?
-        .push(&my_address.wallet_address)
-        .push("nft");
-    uri_without_cursor
-        .query_pairs_mut()
-        .append_pair("chain", &chain.to_string())
-        .append_pair(MORALIS_FORMAT_QUERY_NAME, MORALIS_FORMAT_QUERY_VALUE);
-    drop_mutability!(uri_without_cursor);
+    let uri_without_cursor = construct_moralis_uri_for_nft(url, &my_address.wallet_address, chain)?;
 
     // The cursor returned in the previous response (used for getting the next page).
     let mut cursor = String::new();
@@ -606,7 +620,7 @@ async fn get_moralis_nft_list(
         let response = send_request_to_uri(uri.as_str()).await?;
         if let Some(nfts_list) = response["result"].as_array() {
             for nft_json in nfts_list {
-                let nft_moralis: NftFromMoralis = serde_json::from_str(&nft_json.to_string())?;
+                let nft_moralis = NftFromMoralis::deserialize(nft_json)?;
                 let contract_type = match nft_moralis.contract_type {
                     Some(contract_type) => contract_type,
                     None => continue,
@@ -624,10 +638,66 @@ async fn get_moralis_nft_list(
             } else {
                 break;
             }
+        } else {
+            break;
         }
     }
-    drop_mutability!(res_list);
     Ok(res_list)
+}
+
+pub(crate) async fn get_nfts_for_activation(
+    chain: &Chain,
+    my_address: &Address,
+    url: &Url,
+) -> MmResult<HashMap<String, NftInfo>, GetNftInfoError> {
+    let mut nfts_map = HashMap::new();
+    let uri_without_cursor = construct_moralis_uri_for_nft(url, &eth_addr_to_hex(my_address), chain)?;
+
+    // The cursor returned in the previous response (used for getting the next page).
+    let mut cursor = String::new();
+    loop {
+        let uri = format!("{}{}", uri_without_cursor, cursor);
+        let response = send_request_to_uri(uri.as_str()).await?;
+        if let Some(nfts_list) = response["result"].as_array() {
+            process_nft_list_for_activation(nfts_list, chain, &mut nfts_map)?;
+            // if cursor is not null, there are other NFTs on next page,
+            // and we need to send new request with cursor to get info from the next page.
+            if let Some(cursor_res) = response["cursor"].as_str() {
+                cursor = format!("{}{}", "&cursor=", cursor_res);
+                continue;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    Ok(nfts_map)
+}
+
+fn process_nft_list_for_activation(
+    nfts_list: &[Json],
+    chain: &Chain,
+    nfts_map: &mut HashMap<String, NftInfo>,
+) -> MmResult<(), GetNftInfoError> {
+    for nft_json in nfts_list {
+        let nft_moralis = NftFromMoralis::deserialize(nft_json)?;
+        let contract_type = match nft_moralis.contract_type {
+            Some(contract_type) => contract_type,
+            None => continue,
+        };
+        let token_address_str = eth_addr_to_hex(&nft_moralis.common.token_address);
+        let nft_info = NftInfo {
+            token_address: nft_moralis.common.token_address,
+            token_id: nft_moralis.token_id.0.clone(),
+            chain: *chain,
+            contract_type,
+            amount: nft_moralis.common.amount,
+        };
+        let key = format!("{},{}", token_address_str, nft_moralis.token_id.0);
+        nfts_map.insert(key, nft_info);
+    }
+    Ok(())
 }
 
 async fn get_moralis_nft_transfers(
@@ -668,51 +738,7 @@ async fn get_moralis_nft_transfers(
         let uri = format!("{}{}", uri_without_cursor, cursor);
         let response = send_request_to_uri(uri.as_str()).await?;
         if let Some(transfer_list) = response["result"].as_array() {
-            for transfer in transfer_list {
-                let transfer_moralis: NftTransferHistoryFromMoralis = serde_json::from_str(&transfer.to_string())?;
-                let contract_type = match transfer_moralis.contract_type {
-                    Some(contract_type) => contract_type,
-                    None => continue,
-                };
-                let status =
-                    get_transfer_status(&wallet_address, &eth_addr_to_hex(&transfer_moralis.common.to_address));
-                let block_timestamp = parse_rfc3339_to_timestamp(&transfer_moralis.block_timestamp)?;
-                let fee_details = get_fee_details(&eth_coin, &transfer_moralis.common.transaction_hash).await;
-                let transfer_history = NftTransferHistory {
-                    common: NftTransferCommon {
-                        block_hash: transfer_moralis.common.block_hash,
-                        transaction_hash: transfer_moralis.common.transaction_hash,
-                        transaction_index: transfer_moralis.common.transaction_index,
-                        log_index: transfer_moralis.common.log_index,
-                        value: transfer_moralis.common.value,
-                        transaction_type: transfer_moralis.common.transaction_type,
-                        token_address: transfer_moralis.common.token_address,
-                        from_address: transfer_moralis.common.from_address,
-                        to_address: transfer_moralis.common.to_address,
-                        amount: transfer_moralis.common.amount,
-                        verified: transfer_moralis.common.verified,
-                        operator: transfer_moralis.common.operator,
-                        possible_spam: transfer_moralis.common.possible_spam,
-                    },
-                    chain: *chain,
-                    token_id: transfer_moralis.token_id.0,
-                    block_number: *transfer_moralis.block_number,
-                    block_timestamp,
-                    contract_type,
-                    token_uri: None,
-                    token_domain: None,
-                    collection_name: None,
-                    image_url: None,
-                    image_domain: None,
-                    token_name: None,
-                    status,
-                    possible_phishing: false,
-                    fee_details,
-                    confirmations: 0,
-                };
-                // collect NFTs transfers from the page
-                res_list.push(transfer_history);
-            }
+            process_transfer_list(transfer_list, chain, wallet_address.as_str(), &eth_coin, &mut res_list).await?;
             // if the cursor is not null, there are other NFTs transfers on next page,
             // and we need to send new request with cursor to get info from the next page.
             if let Some(cursor_res) = response["cursor"].as_str() {
@@ -721,18 +747,74 @@ async fn get_moralis_nft_transfers(
             } else {
                 break;
             }
+        } else {
+            break;
         }
     }
-    drop_mutability!(res_list);
     Ok(res_list)
 }
 
+async fn process_transfer_list(
+    transfer_list: &[Json],
+    chain: &Chain,
+    wallet_address: &str,
+    eth_coin: &EthCoin,
+    res_list: &mut Vec<NftTransferHistory>,
+) -> MmResult<(), GetNftInfoError> {
+    for transfer in transfer_list {
+        let transfer_moralis = NftTransferHistoryFromMoralis::deserialize(transfer)?;
+        let contract_type = match transfer_moralis.contract_type {
+            Some(contract_type) => contract_type,
+            None => continue,
+        };
+        let status = get_transfer_status(wallet_address, &eth_addr_to_hex(&transfer_moralis.common.to_address));
+        let block_timestamp = parse_rfc3339_to_timestamp(&transfer_moralis.block_timestamp)?;
+        let fee_details = get_fee_details(eth_coin, &transfer_moralis.common.transaction_hash).await;
+        let transfer_history = NftTransferHistory {
+            common: NftTransferCommon {
+                block_hash: transfer_moralis.common.block_hash,
+                transaction_hash: transfer_moralis.common.transaction_hash,
+                transaction_index: transfer_moralis.common.transaction_index,
+                log_index: transfer_moralis.common.log_index,
+                value: transfer_moralis.common.value,
+                transaction_type: transfer_moralis.common.transaction_type,
+                token_address: transfer_moralis.common.token_address,
+                from_address: transfer_moralis.common.from_address,
+                to_address: transfer_moralis.common.to_address,
+                amount: transfer_moralis.common.amount,
+                verified: transfer_moralis.common.verified,
+                operator: transfer_moralis.common.operator,
+                possible_spam: transfer_moralis.common.possible_spam,
+            },
+            chain: *chain,
+            token_id: transfer_moralis.token_id.0,
+            block_number: *transfer_moralis.block_number,
+            block_timestamp,
+            contract_type,
+            token_uri: None,
+            token_domain: None,
+            collection_name: None,
+            image_url: None,
+            image_domain: None,
+            token_name: None,
+            status,
+            possible_phishing: false,
+            fee_details,
+            confirmations: 0,
+        };
+        // collect NFTs transfers from the page
+        res_list.push(transfer_history);
+    }
+    Ok(())
+}
+
+// TODO: get fee details from non fungible token instead of eth coin?
 async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<EthTxFeeDetails> {
     let hash = H256::from_str(transaction_hash).ok()?;
-    let receipt = eth_coin.web3.eth().transaction_receipt(hash).await.ok()?;
+    let receipt = eth_coin.web3().await.ok()?.eth().transaction_receipt(hash).await.ok()?;
     let fee_coin = match eth_coin.coin_type {
         EthCoinType::Eth => eth_coin.ticker(),
-        EthCoinType::Erc20 { .. } => return None,
+        EthCoinType::Erc20 { .. } | EthCoinType::Nft { .. } => return None,
     };
 
     match receipt {
@@ -742,7 +824,9 @@ async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<E
                 Some(gas_price) => EthTxFeeDetails::new(gas_used, gas_price, fee_coin).ok(),
                 None => {
                     let web3_tx = eth_coin
-                        .web3
+                        .web3()
+                        .await
+                        .ok()?
                         .eth()
                         .transaction(TransactionId::Hash(hash))
                         .await
@@ -842,7 +926,6 @@ async fn get_uri_meta(token_uri: Option<&str>, metadata: Option<&str>, url_antis
         }
     }
     update_uri_moralis_ipfs_fields(&mut uri_meta);
-    drop_mutability!(uri_meta);
     uri_meta
 }
 
@@ -1160,30 +1243,6 @@ async fn mark_as_spam_and_build_empty_meta<T: NftListStorageOps + NftTransferHis
     }))
 }
 
-/// `find_wallet_nft_amount` function returns NFT amount of cached NFT.
-/// Note: in db **token_address** is kept in **lowercase**, because Moralis returns all addresses in lowercase.
-pub(crate) async fn find_wallet_nft_amount(
-    ctx: &MmArc,
-    chain: &Chain,
-    token_address: String,
-    token_id: BigUint,
-) -> MmResult<BigDecimal, GetNftInfoError> {
-    let nft_ctx = NftCtx::from_ctx(ctx).map_to_mm(GetNftInfoError::Internal)?;
-
-    let storage = nft_ctx.lock_db().await?;
-    if !NftListStorageOps::is_initialized(&storage, chain).await? {
-        NftListStorageOps::init(&storage, chain).await?;
-    }
-    let nft_meta = storage
-        .get_nft(chain, token_address.to_lowercase(), token_id.clone())
-        .await?
-        .ok_or_else(|| GetNftInfoError::TokenNotFoundInWallet {
-            token_address,
-            token_id: token_id.to_string(),
-        })?;
-    Ok(nft_meta.common.amount)
-}
-
 async fn cache_nfts_from_moralis<T: NftListStorageOps + NftTransferHistoryStorageOps>(
     ctx: &MmArc,
     storage: &T,
@@ -1222,8 +1281,8 @@ async fn update_transfers_with_empty_meta<T>(
 where
     T: NftListStorageOps + NftTransferHistoryStorageOps,
 {
-    let nft_token_addr_id = storage.get_transfers_with_empty_meta(*chain).await?;
-    for addr_id_pair in nft_token_addr_id.into_iter() {
+    let token_addr_id = storage.get_transfers_with_empty_meta(*chain).await?;
+    for addr_id_pair in token_addr_id.into_iter() {
         let mut nft_meta = match get_moralis_metadata(
             addr_id_pair.token_address.clone(),
             addr_id_pair.token_id,
@@ -1395,4 +1454,65 @@ async fn build_nft_from_moralis(
 pub(crate) fn get_domain_from_url(url: Option<&str>) -> Option<String> {
     url.and_then(|uri| Url::parse(uri).ok())
         .and_then(|url| url.domain().map(String::from))
+}
+
+/// Clears NFT data from the database for specified chains.
+pub async fn clear_nft_db(ctx: MmArc, req: ClearNftDbReq) -> MmResult<(), ClearNftDbError> {
+    if req.clear_all {
+        let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(ClearNftDbError::Internal)?;
+        let storage = nft_ctx.lock_db().await?;
+        storage.clear_all_nft_data().await?;
+        storage.clear_all_history_data().await?;
+        return Ok(());
+    }
+
+    if req.chains.is_empty() {
+        return MmError::err(ClearNftDbError::InvalidRequest(
+            "Nothing to clear was specified".to_string(),
+        ));
+    }
+
+    let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(ClearNftDbError::Internal)?;
+    let storage = nft_ctx.lock_db().await?;
+    let mut errors = Vec::new();
+    for chain in req.chains.iter() {
+        if let Err(e) = clear_data_for_chain(&storage, chain).await {
+            errors.push(e);
+        }
+    }
+    if !errors.is_empty() {
+        return MmError::err(ClearNftDbError::DbError(format!("{:?}", errors)));
+    }
+
+    Ok(())
+}
+
+async fn clear_data_for_chain<T>(storage: &T, chain: &Chain) -> MmResult<(), ClearNftDbError>
+where
+    T: NftListStorageOps + NftTransferHistoryStorageOps,
+{
+    let (is_nft_list_init, is_history_init) = (
+        NftListStorageOps::is_initialized(storage, chain).await?,
+        NftTransferHistoryStorageOps::is_initialized(storage, chain).await?,
+    );
+    if is_nft_list_init {
+        storage.clear_nft_data(chain).await?;
+    }
+    if is_history_init {
+        storage.clear_history_data(chain).await?;
+    }
+    Ok(())
+}
+
+fn construct_moralis_uri_for_nft(base_url: &Url, address: &str, chain: &Chain) -> MmResult<Url, GetNftInfoError> {
+    let mut uri = base_url.clone();
+    uri.set_path(MORALIS_API_ENDPOINT);
+    uri.path_segments_mut()
+        .map_to_mm(|_| GetNftInfoError::Internal("Invalid URI".to_string()))?
+        .push(address)
+        .push("nft");
+    uri.query_pairs_mut()
+        .append_pair("chain", &chain.to_string())
+        .append_pair(MORALIS_FORMAT_QUERY_NAME, MORALIS_FORMAT_QUERY_VALUE);
+    Ok(uri)
 }

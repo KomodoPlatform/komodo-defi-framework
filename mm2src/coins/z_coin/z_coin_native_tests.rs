@@ -10,8 +10,8 @@ use super::{z_coin_from_conf_and_params_with_z_key, z_mainnet_constants, Future,
             RefundPaymentArgs, SendPaymentArgs, SpendPaymentArgs, SwapOps, ValidateFeeArgs, ValidatePaymentError,
             ZTransaction};
 use crate::z_coin::{z_htlc::z_send_dex_fee, ZcoinActivationParams, ZcoinRpcMode};
-use crate::CoinProtocol;
 use crate::DexFee;
+use crate::{CoinProtocol, SwapTxTypeWithSecretHash};
 use mm2_number::MmNumber;
 
 #[test]
@@ -62,7 +62,9 @@ fn zombie_coin_send_and_refund_maker_payment() {
         payment_tx: &tx.tx_hex(),
         time_lock,
         other_pubkey: taker_pub,
-        secret_hash: &secret_hash,
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: &secret_hash,
+        },
         swap_contract_address: &None,
         swap_unique_data: pk_data.as_slice(),
         watcher_reward: false,

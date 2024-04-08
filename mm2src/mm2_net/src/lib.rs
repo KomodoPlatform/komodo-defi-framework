@@ -8,7 +8,6 @@ pub mod transport;
 #[cfg(not(target_arch = "wasm32"))] pub mod native_tls;
 #[cfg(all(feature = "event-stream", not(target_arch = "wasm32")))]
 pub mod sse_handler;
+#[cfg(target_arch = "wasm32")] pub mod wasm;
 #[cfg(all(feature = "event-stream", target_arch = "wasm32"))]
 pub mod wasm_event_stream;
-#[cfg(target_arch = "wasm32")] pub mod wasm_http;
-#[cfg(target_arch = "wasm32")] pub mod wasm_ws;

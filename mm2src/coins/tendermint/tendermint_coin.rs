@@ -5,7 +5,7 @@ use super::iris::htlc::{IrisHtlc, MsgClaimHtlc, MsgCreateHtlc, HTLC_STATE_COMPLE
                         HTLC_STATE_REFUNDED};
 use super::iris::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
 use super::rpc::*;
-use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequest,
                                      IBCTransferChannelsRequestError, IBCTransferChannelsResponse,
@@ -1471,83 +1471,79 @@ impl TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    pub(super) fn validate_payment_for_denom(
+    pub(super) async fn validate_payment_for_denom(
         &self,
         input: ValidatePaymentInput,
         denom: Denom,
         decimals: u8,
-    ) -> ValidatePaymentFut<()> {
-        let coin = self.clone();
-        let fut = async move {
-            let tx = cosmrs::Tx::from_bytes(&input.payment_tx)
-                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+    ) -> ValidatePaymentResult<()> {
+        let tx = cosmrs::Tx::from_bytes(&input.payment_tx)
+            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
 
-            if tx.body.messages.len() != 1 {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                    "Payment tx must have exactly one message".into(),
-                ));
-            }
+        if tx.body.messages.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Payment tx must have exactly one message".into(),
+            ));
+        }
 
-            let create_htlc_msg_proto = CreateHtlcProtoRep::decode(tx.body.messages[0].value.as_slice())
-                .map_to_mm(|e| ValidatePaymentError::WrongPaymentTx(e.to_string()))?;
-            let create_htlc_msg = MsgCreateHtlc::try_from(create_htlc_msg_proto)
-                .map_to_mm(|e| ValidatePaymentError::WrongPaymentTx(e.to_string()))?;
+        let create_htlc_msg_proto = CreateHtlcProtoRep::decode(tx.body.messages[0].value.as_slice())
+            .map_to_mm(|e| ValidatePaymentError::WrongPaymentTx(e.to_string()))?;
+        let create_htlc_msg = MsgCreateHtlc::try_from(create_htlc_msg_proto)
+            .map_to_mm(|e| ValidatePaymentError::WrongPaymentTx(e.to_string()))?;
 
-            let sender_pubkey_hash = dhash160(&input.other_pub);
-            let sender = AccountId::new(&coin.account_prefix, sender_pubkey_hash.as_slice())
-                .map_to_mm(|e| ValidatePaymentError::InvalidParameter(e.to_string()))?;
+        let sender_pubkey_hash = dhash160(&input.other_pub);
+        let sender = AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())
+            .map_to_mm(|e| ValidatePaymentError::InvalidParameter(e.to_string()))?;
 
-            let amount = sat_from_big_decimal(&input.amount, decimals)?;
-            let amount = vec![Coin {
-                denom,
-                amount: amount.into(),
-            }];
+        let amount = sat_from_big_decimal(&input.amount, decimals)?;
+        let amount = vec![Coin {
+            denom,
+            amount: amount.into(),
+        }];
 
-            let time_lock = coin.estimate_blocks_from_duration(input.time_lock_duration);
+        let time_lock = self.estimate_blocks_from_duration(input.time_lock_duration);
 
-            let expected_msg = MsgCreateHtlc {
-                sender: sender.clone(),
-                to: coin.account_id.clone(),
-                receiver_on_other_chain: "".into(),
-                sender_on_other_chain: "".into(),
-                amount: amount.clone(),
-                hash_lock: hex::encode(&input.secret_hash),
-                timestamp: 0,
-                time_lock: time_lock as u64,
-                transfer: false,
-            };
-
-            if create_htlc_msg != expected_msg {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Incorrect CreateHtlc message {:?}, expected {:?}",
-                    create_htlc_msg, expected_msg
-                )));
-            }
-
-            let hash = hex::encode_upper(sha256(&input.payment_tx).as_slice());
-            let tx_from_rpc = coin.request_tx(hash).await?;
-            if input.payment_tx != tx_from_rpc.encode_to_vec() {
-                return MmError::err(ValidatePaymentError::InvalidRpcResponse(
-                    "Tx from RPC doesn't match the input".into(),
-                ));
-            }
-
-            let htlc_id = coin.calculate_htlc_id(&sender, &coin.account_id, amount, &input.secret_hash);
-
-            let htlc_response = coin.query_htlc(htlc_id.clone()).await?;
-            let htlc_data = htlc_response
-                .htlc
-                .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {}", htlc_id)))?;
-
-            match htlc_data.state {
-                HTLC_STATE_OPEN => Ok(()),
-                unexpected_state => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                    "{}",
-                    unexpected_state
-                ))),
-            }
+        let expected_msg = MsgCreateHtlc {
+            sender: sender.clone(),
+            to: self.account_id.clone(),
+            receiver_on_other_chain: "".into(),
+            sender_on_other_chain: "".into(),
+            amount: amount.clone(),
+            hash_lock: hex::encode(&input.secret_hash),
+            timestamp: 0,
+            time_lock: time_lock as u64,
+            transfer: false,
         };
-        Box::new(fut.boxed().compat())
+
+        if create_htlc_msg != expected_msg {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Incorrect CreateHtlc message {:?}, expected {:?}",
+                create_htlc_msg, expected_msg
+            )));
+        }
+
+        let hash = hex::encode_upper(sha256(&input.payment_tx).as_slice());
+        let tx_from_rpc = self.request_tx(hash).await?;
+        if input.payment_tx != tx_from_rpc.encode_to_vec() {
+            return MmError::err(ValidatePaymentError::InvalidRpcResponse(
+                "Tx from RPC doesn't match the input".into(),
+            ));
+        }
+
+        let htlc_id = self.calculate_htlc_id(&sender, &self.account_id, amount, &input.secret_hash);
+
+        let htlc_response = self.query_htlc(htlc_id.clone()).await?;
+        let htlc_data = htlc_response
+            .htlc
+            .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {}", htlc_id)))?;
+
+        match htlc_data.state {
+            HTLC_STATE_OPEN => Ok(()),
+            unexpected_state => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                "{}",
+                unexpected_state
+            ))),
+        }
     }
 
     pub(super) async fn get_sender_trade_fee_for_denom(
@@ -2592,12 +2588,14 @@ impl SwapOps for TendermintCoin {
         )
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
         self.validate_payment_for_denom(input, self.denom.clone(), self.decimals)
+            .await
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
         self.validate_payment_for_denom(input, self.denom.clone(), self.decimals)
+            .await
     }
 
     fn check_if_my_payment_sent(
@@ -3404,7 +3402,7 @@ pub mod tendermint_coin_tests {
             unique_swap_data: Vec::new(),
             watcher_reward: None,
         };
-        let validate_err = coin.validate_taker_payment(input).wait().unwrap_err();
+        let validate_err = block_on(coin.validate_taker_payment(input)).unwrap_err();
         match validate_err.into_inner() {
             ValidatePaymentError::WrongPaymentTx(e) => assert!(e.contains("Incorrect CreateHtlc message")),
             unexpected => panic!("Unexpected error variant {:?}", unexpected),
@@ -3430,11 +3428,7 @@ pub mod tendermint_coin_tests {
             unique_swap_data: Vec::new(),
             watcher_reward: None,
         };
-        let validate_err = block_on(
-            coin.validate_payment_for_denom(input, "nim".parse().unwrap(), 6)
-                .compat(),
-        )
-        .unwrap_err();
+        let validate_err = block_on(coin.validate_payment_for_denom(input, "nim".parse().unwrap(), 6)).unwrap_err();
         match validate_err.into_inner() {
             ValidatePaymentError::UnexpectedPaymentState(_) => (),
             unexpected => panic!("Unexpected error variant {:?}", unexpected),

@@ -1,5 +1,5 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, WatcherOps};
-use crate::coin_errors::MyAddressError;
+use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, ConfirmPaymentInput, DexFee, FeeApproxStage,
@@ -328,9 +328,13 @@ impl SwapOps for SplToken {
 
     fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        unimplemented!()
+    }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        unimplemented!()
+    }
 
     fn check_if_my_payment_sent(
         &self,

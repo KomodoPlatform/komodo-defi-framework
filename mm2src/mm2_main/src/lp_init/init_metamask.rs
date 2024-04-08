@@ -4,7 +4,7 @@ use common::{HttpStatusCode, SerdeInfallible, SuccessResponse};
 use crypto::metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
 use crypto::{CryptoCtx, CryptoCtxError, MetamaskCtxInitError};
 use derive_more::Display;
-use enum_from::EnumFromTrait;
+use enum_derives::EnumFromTrait;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::common_errors::WithInternal;

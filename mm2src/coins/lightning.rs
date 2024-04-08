@@ -10,7 +10,7 @@ mod ln_sql;
 pub mod ln_storage;
 pub mod ln_utils;
 
-use crate::coin_errors::MyAddressError;
+use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
 use crate::lightning::ln_utils::{filter_channels, pay_invoice_with_max_total_cltv_expiry_delta, PaymentError};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
@@ -37,7 +37,7 @@ use bitcrypto::{dhash256, ripemd160};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::{error, info, LogOnError, LogState};
-use common::{async_blocking, get_local_duration_since_epoch, log, now_sec, PagingOptionsEnum};
+use common::{async_blocking, get_local_duration_since_epoch, log, now_sec, Future01CompatExt, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -685,13 +685,13 @@ impl SwapOps for LightningCoin {
     }
 
     #[inline]
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        self.validate_swap_payment(input)
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        self.validate_swap_payment(input).compat().await
     }
 
     #[inline]
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        self.validate_swap_payment(input)
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
+        self.validate_swap_payment(input).compat().await
     }
 
     fn check_if_my_payment_sent(

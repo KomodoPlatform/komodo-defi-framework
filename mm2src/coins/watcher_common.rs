@@ -2,7 +2,7 @@ use crate::ValidatePaymentError;
 use mm2_err_handle::prelude::MmError;
 
 pub const REWARD_GAS_AMOUNT: u64 = 70000;
-const REWARD_MARGIN: f64 = 0.05;
+const REWARD_MARGIN: f64 = 0.1;
 
 pub fn validate_watcher_reward(
     expected_reward: u64,

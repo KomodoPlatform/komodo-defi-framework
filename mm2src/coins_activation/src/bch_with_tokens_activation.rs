@@ -212,7 +212,7 @@ impl PlatformWithTokensActivationOps for BchCoin {
     async fn enable_platform_coin(
         ctx: MmArc,
         ticker: String,
-        platform_conf: Json,
+        platform_conf: &Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
@@ -229,7 +229,7 @@ impl PlatformWithTokensActivationOps for BchCoin {
         let platform_coin = bch_coin_with_policy(
             &ctx,
             &ticker,
-            &platform_conf,
+            platform_conf,
             activation_request.platform_request,
             slp_prefix,
             priv_key_policy,
@@ -237,6 +237,13 @@ impl PlatformWithTokensActivationOps for BchCoin {
         .await
         .map_to_mm(|error| BchWithTokensActivationError::PlatformCoinCreationError { ticker, error })?;
         Ok(platform_coin)
+    }
+
+    async fn enable_global_nft(
+        &self,
+        _activation_request: &Self::ActivationRequest,
+    ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
+        Ok(None)
     }
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
@@ -260,6 +267,7 @@ impl PlatformWithTokensActivationOps for BchCoin {
     async fn get_activation_result(
         &self,
         activation_request: &Self::ActivationRequest,
+        _nft_global: &Option<MmCoinEnum>,
     ) -> Result<BchWithTokensActivationResult, MmError<BchWithTokensActivationError>> {
         let current_block = self.as_ref().rpc_client.get_block_count().compat().await?;
 

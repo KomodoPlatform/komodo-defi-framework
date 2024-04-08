@@ -386,11 +386,11 @@ impl AccountTable {
 }
 
 impl TableSignature for AccountTable {
-    fn table_name() -> &'static str { "gui_account" }
+    const TABLE_NAME: &'static str = "gui_account";
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
-            let table = upgrader.create_table(Self::table_name())?;
+            let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(
                 AccountTable::ACCOUNT_ID_INDEX,
                 &["account_type", "account_idx", "device_pubkey"],
@@ -470,11 +470,11 @@ impl TryFrom<EnabledAccountTable> for EnabledAccountId {
 }
 
 impl TableSignature for EnabledAccountTable {
-    fn table_name() -> &'static str { "gui_enabled_account" }
+    const TABLE_NAME: &'static str = "gui_enabled_account";
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
-            let table = upgrader.create_table(Self::table_name())?;
+            let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(
                 AccountTable::ACCOUNT_ID_INDEX,
                 &["account_type", "account_idx", "device_pubkey"],

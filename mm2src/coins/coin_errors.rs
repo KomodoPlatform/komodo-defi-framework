@@ -7,6 +7,8 @@ use std::num::TryFromIntError;
 
 /// Helper type used as result for swap payment validation function(s)
 pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<ValidatePaymentError>> + Send>;
+/// Helper type used as result for swap payment validation function(s)
+pub type ValidatePaymentResult<T> = Result<T, MmError<ValidatePaymentError>>;
 
 /// Enum covering possible error cases of swap payment validation
 #[derive(Debug, Display)]
@@ -33,6 +35,8 @@ pub enum ValidatePaymentError {
     WatcherRewardError(String),
     /// Input payment timelock overflows the type used by specific coin.
     TimelockOverflow(TryFromIntError),
+    #[display(fmt = "Nft Protocol is not supported yet!")]
+    NftProtocolNotSupported,
 }
 
 impl From<rlp::DecoderError> for ValidatePaymentError {
@@ -77,6 +81,7 @@ impl From<Web3RpcError> for ValidatePaymentError {
             Web3RpcError::Internal(internal) | Web3RpcError::Timeout(internal) => {
                 ValidatePaymentError::InternalError(internal)
             },
+            Web3RpcError::NftProtocolNotSupported => ValidatePaymentError::NftProtocolNotSupported,
         }
     }
 }

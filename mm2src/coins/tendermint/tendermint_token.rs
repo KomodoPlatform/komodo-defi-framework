@@ -4,6 +4,7 @@ use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
             TX_DEFAULT_MEMO};
+use crate::coin_errors::ValidatePaymentResult;
 use crate::rpc_command::tendermint::IBCWithdrawRequest;
 use crate::tendermint::account_id_from_privkey;
 use crate::utxo::utxo_common::big_decimal_from_sat;
@@ -335,14 +336,16 @@ impl SwapOps for TendermintToken {
         )
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+    async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
         self.platform_coin
             .validate_payment_for_denom(input, self.denom.clone(), self.decimals)
+            .await
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+    async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
         self.platform_coin
             .validate_payment_for_denom(input, self.denom.clone(), self.decimals)
+            .await
     }
 
     fn check_if_my_payment_sent(

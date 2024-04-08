@@ -62,6 +62,7 @@ pub enum EnableTokenError {
     InvalidConfig(String),
     Transport(String),
     Internal(String),
+    InvalidPayload(String),
 }
 
 impl From<RegisterCoinError> for EnableTokenError {
@@ -161,7 +162,8 @@ impl HttpStatusCode for EnableTokenError {
             EnableTokenError::TokenIsAlreadyActivated(_)
             | EnableTokenError::PlatformCoinIsNotActivated(_)
             | EnableTokenError::TokenConfigIsNotFound { .. }
-            | EnableTokenError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
+            | EnableTokenError::UnexpectedTokenProtocol { .. }
+            | EnableTokenError::InvalidPayload(_) => StatusCode::BAD_REQUEST,
             EnableTokenError::TokenProtocolParseError { .. }
             | EnableTokenError::UnsupportedPlatformCoin { .. }
             | EnableTokenError::UnexpectedDerivationMethod(_)

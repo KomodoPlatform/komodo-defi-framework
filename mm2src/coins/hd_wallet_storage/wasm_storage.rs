@@ -94,11 +94,11 @@ pub struct HDAccountTable {
 }
 
 impl TableSignature for HDAccountTable {
-    fn table_name() -> &'static str { "hd_account" }
+    const TABLE_NAME: &'static str = "hd_account";
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
-            let table = upgrader.create_table(Self::table_name())?;
+            let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(WALLET_ID_INDEX, &["coin", "hd_wallet_rmd160"], false)?;
             table.create_multi_index(
                 WALLET_ACCOUNT_ID_INDEX,

@@ -23,6 +23,8 @@ mod tests {
     use crate::{spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourEvent, AdexResponse, AdexResponseChannel, NetworkInfo,
                 NetworkPorts, NodeType, RelayAddress, RequestResponseBehaviourEvent, SwarmRuntime};
 
+    use super::atomicdex::GossipsubConfig;
+
     static TEST_LISTEN_PORT: AtomicU64 = AtomicU64::new(1);
 
     lazy_static! {
@@ -44,9 +46,11 @@ mod tests {
             let spawner = SwarmRuntime::new(SYSTEM.weak_spawner());
             let node_type = NodeType::RelayInMemory { port };
             let seednodes = seednodes.into_iter().map(RelayAddress::Memory).collect();
-            let (cmd_tx, mut event_rx, peer_id) = spawn_gossipsub(333, None, spawner, seednodes, node_type, |_| {})
-                .await
-                .expect("Error spawning AdexBehaviour");
+
+            let (cmd_tx, mut event_rx, peer_id) =
+                spawn_gossipsub(GossipsubConfig::new_for_tests(spawner, seednodes, node_type), |_| {})
+                    .await
+                    .expect("Error spawning AdexBehaviour");
 
             // spawn a response future
             let cmd_tx_fut = cmd_tx.clone();

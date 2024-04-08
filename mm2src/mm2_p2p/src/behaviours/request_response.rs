@@ -6,8 +6,10 @@ use futures::StreamExt;
 use futures_ticker::Ticker;
 use instant::{Duration, Instant};
 use libp2p::core::upgrade::{read_length_prefixed, write_length_prefixed};
+use libp2p::core::Endpoint;
 use libp2p::request_response::{InboundFailure, Message, OutboundFailure, ProtocolSupport};
-use libp2p::swarm::ToSwarm;
+use libp2p::swarm::{ConnectionDenied, ConnectionId, ToSwarm};
+use libp2p::Multiaddr;
 use libp2p::{request_response::{Behaviour as RequestResponse, Config as RequestResponseConfig,
                                 Event as RequestResponseEvent, RequestId, ResponseChannel},
              swarm::NetworkBehaviour,
@@ -243,6 +245,17 @@ impl NetworkBehaviour for RequestResponseBehaviour {
             .handle_established_outbound_connection(connection_id, peer, addr, role_override)
     }
 
+    fn handle_pending_outbound_connection(
+        &mut self,
+        connection_id: ConnectionId,
+        maybe_peer: Option<PeerId>,
+        addresses: &[Multiaddr],
+        effective_role: Endpoint,
+    ) -> Result<Vec<Multiaddr>, ConnectionDenied> {
+        self.inner
+            .handle_pending_outbound_connection(connection_id, maybe_peer, addresses, effective_role)
+    }
+
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {
         self.inner.on_swarm_event(event)
     }
@@ -403,7 +416,7 @@ pub fn build_request_response_behaviour() -> RequestResponseBehaviour {
     let pending_requests = HashMap::new();
     let events = VecDeque::new();
     let timeout = Duration::from_secs(10);
-    let timeout_interval = Ticker::new(Duration::from_secs(1));
+    let timeout_interval = Ticker::new(Duration::from_secs(3));
 
     RequestResponseBehaviour {
         inner,

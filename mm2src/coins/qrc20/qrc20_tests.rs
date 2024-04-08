@@ -1,17 +1,22 @@
 use super::*;
-use crate::utxo::rpc_clients::UnspentInfo;
 use crate::{DexFee, TxFeeDetails, WaitForHTLCTxSpendArgs};
-use chain::OutPoint;
 use common::{block_on, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use itertools::Itertools;
-use keys::{Address, AddressBuilder};
+use keys::Address;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::Zero;
-use mocktopus::mocking::{MockResult, Mockable};
 use rpc::v1::types::ToTxHash;
 use std::convert::TryFrom;
 use std::mem::discriminant;
+
+cfg_native!(
+    use crate::utxo::rpc_clients::UnspentInfo;
+
+    use chain::OutPoint;
+    use keys::AddressBuilder;
+    use mocktopus::mocking::{MockResult, Mockable};
+);
 
 const EXPECTED_TX_FEE: i64 = 1000;
 const CONTRACT_CALL_GAS_FEE: i64 = (QRC20_GAS_LIMIT_DEFAULT * QRC20_GAS_PRICE_DEFAULT) as i64;
@@ -58,6 +63,7 @@ fn check_tx_fee(coin: &Qrc20Coin, expected_tx_fee: ActualTxFee) {
     assert_eq!(actual_tx_fee, expected_tx_fee);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_withdraw_to_p2sh_address_should_fail() {
     let priv_key = [
@@ -91,6 +97,7 @@ fn test_withdraw_to_p2sh_address_should_fail() {
     assert_eq!(err, expect);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_withdraw_impl_fee_details() {
     Qrc20Coin::get_unspent_ordered_list.mock_safe(|coin, _| {
@@ -180,12 +187,10 @@ fn test_validate_maker_payment() {
         watcher_reward: None,
     };
 
-    coin.validate_maker_payment(input.clone()).wait().unwrap();
+    block_on(coin.validate_maker_payment(input.clone())).unwrap();
 
     input.other_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
-    let error = coin
-        .validate_maker_payment(input.clone())
-        .wait()
+    let error = block_on(coin.validate_maker_payment(input.clone()))
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
@@ -196,9 +201,7 @@ fn test_validate_maker_payment() {
     input.other_pub = correct_maker_pub;
 
     input.amount = BigDecimal::from_str("0.3").unwrap();
-    let error = coin
-        .validate_maker_payment(input.clone())
-        .wait()
+    let error = block_on(coin.validate_maker_payment(input.clone()))
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
@@ -214,9 +217,7 @@ fn test_validate_maker_payment() {
     input.amount = correct_amount;
 
     input.secret_hash = vec![2; 20];
-    let error = coin
-        .validate_maker_payment(input.clone())
-        .wait()
+    let error = block_on(coin.validate_maker_payment(input.clone()))
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
@@ -232,7 +233,7 @@ fn test_validate_maker_payment() {
     input.secret_hash = vec![1; 20];
 
     input.time_lock = 123;
-    let error = coin.validate_maker_payment(input).wait().unwrap_err().into_inner();
+    let error = block_on(coin.validate_maker_payment(input)).unwrap_err().into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::UnexpectedPaymentState(err) => {
@@ -1091,9 +1092,7 @@ fn test_validate_maker_payment_malicious() {
         unique_swap_data: Vec::new(),
         watcher_reward: None,
     };
-    let error = coin
-        .validate_maker_payment(input)
-        .wait()
+    let error = block_on(coin.validate_maker_payment(input))
         .expect_err("'erc20Payment' was called from another swap contract, expected an error")
         .into_inner();
     log!("error: {}", error);

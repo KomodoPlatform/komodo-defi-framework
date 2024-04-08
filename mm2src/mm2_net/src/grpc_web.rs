@@ -4,6 +4,7 @@
 use crate::transport::SlurpError;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use common::{cfg_native, cfg_wasm32};
+use derive_more::Display;
 use http::header::{ACCEPT, CONTENT_TYPE};
 use mm2_err_handle::prelude::*;
 use prost::DecodeError;
@@ -15,7 +16,7 @@ cfg_native! {
 
 cfg_wasm32! {
     use common::{X_GRPC_WEB, APPLICATION_GRPC_WEB_PROTO};
-    use crate::wasm_http::FetchRequest;
+    use crate::wasm::http::FetchRequest;
 }
 
 // one byte for the compression flag plus four bytes for the length
@@ -92,14 +93,20 @@ where
     Ok(msg)
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error, Display)]
 pub enum PostGrpcWebErr {
     DecodeBody(String),
     EncodeBody(String),
     InvalidRequest(String),
+    BadResponse(String),
     Internal(String),
     PayloadTooShort(String),
-    Transport { uri: String, error: String },
+    Status(String),
+    #[display(fmt = "Transport Error — uri: {uri} — error: {error}")]
+    Transport {
+        uri: String,
+        error: String,
+    },
 }
 
 impl From<EncodeBodyError> for PostGrpcWebErr {

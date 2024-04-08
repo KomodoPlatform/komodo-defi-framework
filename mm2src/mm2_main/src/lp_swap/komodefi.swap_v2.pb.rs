@@ -23,6 +23,8 @@ pub struct MakerNegotiation {
     pub maker_coin_swap_contract: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
     #[prost(bytes="vec", optional, tag="7")]
     pub taker_coin_swap_contract: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    #[prost(string, tag="8")]
+    pub taker_coin_address: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Abort {
@@ -105,6 +107,8 @@ pub struct TakerPaymentSpendPreimage {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SwapMessage {
+    #[prost(bytes="vec", tag="10")]
+    pub swap_uuid: ::prost::alloc::vec::Vec<u8>,
     #[prost(oneof="swap_message::Inner", tags="1, 2, 3, 4, 5, 6, 7")]
     pub inner: ::core::option::Option<swap_message::Inner>,
 }

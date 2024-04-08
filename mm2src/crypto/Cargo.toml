@@ -20,7 +20,7 @@ cbc = "0.1.2"
 cipher = "0.4.4"
 common = { path = "../common" }
 derive_more = "0.99"
-enum_from = { path = "../derives/enum_from" }
+enum_derives = { path = "../derives/enum_derives" }
 enum-primitive-derive = "0.2"
 futures = "0.3"
 hex = "0.4.2"

@@ -186,7 +186,7 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
     async fn enable_platform_coin(
         ctx: MmArc,
         ticker: String,
-        platform_conf: Json,
+        platform_conf: &Json,
         activation_request: Self::ActivationRequest,
         _protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
@@ -194,12 +194,19 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         solana_coin_with_policy(
             &ctx,
             &ticker,
-            &platform_conf,
+            platform_conf,
             activation_request.platform_request,
             priv_key_policy,
         )
         .await
         .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })
+    }
+
+    async fn enable_global_nft(
+        &self,
+        _activation_request: &Self::ActivationRequest,
+    ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
+        Ok(None)
     }
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
@@ -223,6 +230,7 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
     async fn get_activation_result(
         &self,
         activation_request: &Self::ActivationRequest,
+        _nft_global: &Option<MmCoinEnum>,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
         let current_block = self
             .current_block()
