@@ -18,6 +18,7 @@ impl EthCoin {
     async fn try_rpc_send(&self, method: &str, params: Vec<jsonrpc_core::Value>) -> Result<Value, web3::Error> {
         let mut clients = self.web3_instances.lock().await;
 
+        let mut error = web3::Error::Unreachable;
         for (i, client) in clients.clone().into_iter().enumerate() {
             let execute_fut = match client.web3.transport() {
                 Web3Transport::Http(http) => http.execute(method, params.clone()),
@@ -35,8 +36,9 @@ impl EthCoin {
                     clients.rotate_left(i);
                     return Ok(r);
                 },
-                Ok(Err(rpc_error)) => {
-                    debug!("Request on '{method}' failed. Error: {rpc_error}");
+                Ok(Err(err)) => {
+                    debug!("Request on '{method}' failed. Error: {err}");
+                    error = err;
 
                     if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
                         socket_transport.stop_connection_loop().await;
@@ -52,9 +54,7 @@ impl EthCoin {
             };
         }
 
-        Err(web3::Error::Transport(web3::error::TransportError::Message(format!(
-            "Request '{method}' failed due to not being able to find a living RPC client"
-        ))))
+        Err(error)
     }
 }
 
